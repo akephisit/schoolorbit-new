@@ -2,10 +2,11 @@ mod db;
 mod models;
 mod services;
 mod handlers;
+mod middleware;
 
 use dotenv::dotenv;
 use ohkami::prelude::*;
-use ohkami::fang::Cors;
+use middleware::MultiCors;
 use std::env;
 
 #[tokio::main]
@@ -52,12 +53,24 @@ async fn main() {
     // Initialize global DB pool for handlers
     handlers::auth::init_db_pool(pool.clone());
 
+    // Get allowed origins from environment or use defaults
+    let allowed_origins = env::var("ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| {
+            println!("⚠️  ALLOWED_ORIGINS not set, using default localhost:5173");
+            "http://localhost:5173".to_string()
+        });
+
+    println!("🔐 CORS allowed origins: {}", allowed_origins);
+
+    // Create CORS middleware with multiple origins support
+    let cors = MultiCors::from_env_string(&allowed_origins)
+        .allow_headers(["Content-Type", "Authorization"])
+        .allow_credentials(false)
+        .max_age(Some(3600));
+
     // Create server with routes
     let app = Ohkami::with(
-        Cors::new("http://localhost:5173")
-            .allow_headers(["Content-Type", "Authorization"])
-            .allow_credentials(false)
-            .max_age(Some(3600)),
+        cors,
         (
             // Health check
             "/health".GET(handlers::health::health_check),
