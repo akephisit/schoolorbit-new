@@ -14,7 +14,7 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-	token: string;
+	// Token is handled via HttpOnly cookie
 	user: {
 		id: string;
 		nationalId: string;
@@ -39,6 +39,7 @@ class ApiClient {
 		try {
 			const response = await fetch(url, {
 				...options,
+				credentials: 'include', // Important for HttpOnly cookies
 				headers: {
 					'Content-Type': 'application/json',
 					...options.headers

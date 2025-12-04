@@ -62,10 +62,10 @@ async fn main() {
 
     println!("🔐 CORS allowed origins: {}", allowed_origins);
 
-    // Create CORS middleware with multiple origins support
+    // Create CORS middleware with multiple origins support and credentials
     let cors = MultiCors::from_env_string(&allowed_origins)
-        .allow_headers(["Content-Type", "Authorization"])
-        .allow_credentials(false)
+        .allow_headers(["Content-Type", "Authorization", "Cookie"])
+        .allow_credentials(true)  // Required for HttpOnly cookies
         .max_age(Some(3600));
 
     // Create server with routes

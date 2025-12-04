@@ -13,7 +13,6 @@ interface User {
 
 interface AuthState {
 	user: User | null;
-	token: string | null;
 	isAuthenticated: boolean;
 	isLoading: boolean;
 	error: string | null;
@@ -22,7 +21,6 @@ interface AuthState {
 class AuthStore {
 	private state = $state<AuthState>({
 		user: null,
-		token: null,
 		isAuthenticated: false,
 		isLoading: false,
 		error: null
@@ -39,10 +37,6 @@ class AuthStore {
 		return this.state.user;
 	}
 
-	get token() {
-		return this.state.token;
-	}
-
 	get isAuthenticated() {
 		return this.state.isAuthenticated;
 	}
@@ -55,15 +49,13 @@ class AuthStore {
 		return this.state.error;
 	}
 
-	// Initialize from localStorage
+	// Initialize from localStorage (User data only)
 	private initializeFromStorage() {
 		try {
-			const token = localStorage.getItem('auth_token');
 			const userStr = localStorage.getItem('auth_user');
 
-			if (token && userStr) {
+			if (userStr) {
 				const user = JSON.parse(userStr);
-				this.state.token = token;
 				this.state.user = user;
 				this.state.isAuthenticated = true;
 			}
@@ -73,10 +65,9 @@ class AuthStore {
 		}
 	}
 
-	// Save to localStorage
-	private saveToStorage(token: string, user: User) {
+	// Save to localStorage (User data only)
+	private saveToStorage(user: User) {
 		try {
-			localStorage.setItem('auth_token', token);
 			localStorage.setItem('auth_user', JSON.stringify(user));
 		} catch (error) {
 			console.error('Failed to save auth to storage:', error);
@@ -86,7 +77,6 @@ class AuthStore {
 	// Clear localStorage
 	private clearStorage() {
 		try {
-			localStorage.removeItem('auth_token');
 			localStorage.removeItem('auth_user');
 		} catch (error) {
 			console.error('Failed to clear auth storage:', error);
@@ -102,14 +92,13 @@ class AuthStore {
 			const response = await apiClient.login(credentials);
 
 			if (response.success && response.data) {
-				const { token, user } = response.data;
+				const { user } = response.data;
 
-				this.state.token = token;
 				this.state.user = user;
 				this.state.isAuthenticated = true;
 
 				if (browser) {
-					this.saveToStorage(token, user);
+					this.saveToStorage(user);
 				}
 
 				// Redirect to dashboard
@@ -132,7 +121,6 @@ class AuthStore {
 	// Logout
 	logout() {
 		this.state.user = null;
-		this.state.token = null;
 		this.state.isAuthenticated = false;
 		this.state.error = null;
 
