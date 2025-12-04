@@ -7,10 +7,10 @@ CREATE TABLE IF NOT EXISTS schools (
     db_connection_string TEXT,
     status VARCHAR(50) NOT NULL DEFAULT 'active',
     config JSONB DEFAULT '{}',
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Create index on subdomain for faster lookups
-CREATE INDEX idx_schools_subdomain ON schools(subdomain);
-CREATE INDEX idx_schools_status ON schools(status);
+CREATE INDEX IF NOT EXISTS idx_schools_subdomain ON schools(subdomain);
+CREATE INDEX IF NOT EXISTS idx_schools_status ON schools(status);

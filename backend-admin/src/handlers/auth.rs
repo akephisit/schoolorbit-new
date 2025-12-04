@@ -1,8 +1,16 @@
 use crate::services::AuthService;
 use crate::models::LoginRequest;
 use shared::types::ApiResponse;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use serde::Serialize;
+use sqlx::PgPool;
+use ohkami::claw::Json;
+
+static DB_POOL: OnceLock<PgPool> = OnceLock::new();
+
+pub fn init_db_pool(pool: PgPool) {
+    DB_POOL.set(pool).ok();
+}
 
 pub struct AuthHandler {
     service: Arc<AuthService>,
@@ -39,5 +47,30 @@ impl AuthHandler {
             }
             Err(e) => Err(format!("{}", e)),
         }
+    }
+}
+
+// Standalone handler function for Ohkami routing
+pub async fn login_handler(Json(req): Json<LoginRequest>) -> String {
+    let pool = match DB_POOL.get() {
+        Some(pool) => pool.clone(),
+        None => return format!("{{\"error\":\"Database not initialized\"}}"),
+    };
+
+    let auth_service = AuthService::new(pool);
+    match auth_service.login(req).await {
+        Ok((admin, token)) => {
+            let response = ApiResponse::success(LoginResponse {
+                token,
+                user: serde_json::json!({
+                    "id": admin.id,
+                    "nationalId": admin.national_id,
+                    "name": admin.name,
+                    "role": admin.role,
+                }),
+            });
+            serde_json::to_string(&response).unwrap()
+        }
+        Err(e) => format!("{{\"error\":\"{}\"}}", e),
     }
 }

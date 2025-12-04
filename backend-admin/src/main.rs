@@ -25,7 +25,7 @@ async fn main() {
         });
 
     // Initialize database pool
-    match db::init_admin_pool(&database_url).await {
+    let pool = match db::init_admin_pool(&database_url).await {
         Ok(pool) => {
             println!("✅ Connected to Neon PostgreSQL");
 
@@ -37,16 +37,21 @@ async fn main() {
                     eprintln!("   Continuing anyway...");
                 }
             }
+            pool
         }
         Err(e) => {
             eprintln!("❌ Database connection failed: {}", e);
             eprintln!("   Server will start but database features will not work");
+            panic!("Cannot start without database");
         }
-    }
+    };
 
     println!("✅ Services initialized");
 
-    // Create server with basic routes
+    // Initialize global DB pool for handlers
+    handlers::auth::init_db_pool(pool.clone());
+
+    // Create server with routes
     let app = Ohkami::new((
         // Health check
         "/health".GET(handlers::health::health_check),
@@ -59,16 +64,19 @@ async fn main() {
                 "status": "running"
             }).to_string()
         }),
+
+        // Auth endpoints
+        "/api/v1/auth/login".POST(handlers::auth::login_handler),
     ));
 
     println!("🌐 Server starting on http://0.0.0.0:8080");
     println!("\nAvailable endpoints:");
-    println!("  GET  /           - API info");
-    println!("  GET  /health     - Health check");
-    println!("\n📝 Next steps:");
-    println!("  1. Set DATABASE_URL in .env file");
-    println!("  2. Run migrations: sqlx migrate run");
-    println!("  3. Create first admin user");
+    println!("  GET  /              - API info");
+    println!("  GET  /health        - Health check");
+    println!("  POST /api/v1/auth/login - Login with national ID");
+    println!("\n📝 Test credentials:");
+    println!("  National ID: 1234567890123");
+    println!("  Password: test123");
 
     app.howl("0.0.0.0:8080").await
 }
