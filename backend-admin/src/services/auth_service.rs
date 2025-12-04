@@ -1,5 +1,5 @@
 use crate::models::{AdminUser, CreateAdminUser, LoginRequest};
-use shared::auth::{generate_token, validate_token, hash_password, verify_password, Claims, UserRole};
+use shared::auth::{generate_token, hash_password, verify_password, Claims, UserRole};
 use shared::error::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -14,18 +14,25 @@ impl AuthService {
     }
 
     pub async fn create_admin(&self, data: CreateAdminUser) -> Result<AdminUser, AppError> {
+        // Validate national ID (13 digits)
+        if !Self::validate_national_id(&data.national_id) {
+            return Err(AppError::ValidationError(
+                "Invalid national ID format. Must be 13 digits.".to_string()
+            ));
+        }
+
         // Hash password
         let password_hash = hash_password(&data.password)?;
 
         // Create admin user
         let admin = sqlx::query_as::<_, AdminUser>(
             r#"
-            INSERT INTO admin_users (email, password_hash, name, role)
+            INSERT INTO admin_users (national_id, password_hash, name, role)
             VALUES ($1, $2, $3, 'super_admin')
             RETURNING *
             "#
         )
-        .bind(&data.email)
+        .bind(&data.national_id)
         .bind(&password_hash)
         .bind(&data.name)
         .fetch_one(&self.pool)
@@ -36,26 +43,33 @@ impl AuthService {
     }
 
     pub async fn login(&self, data: LoginRequest) -> Result<(AdminUser, String), AppError> {
-        // Find user by email
+        // Validate national ID format
+        if !Self::validate_national_id(&data.national_id) {
+            return Err(AppError::ValidationError(
+                "Invalid national ID format".to_string()
+            ));
+        }
+
+        // Find user by national_id
         let admin = sqlx::query_as::<_, AdminUser>(
-            "SELECT * FROM admin_users WHERE email = $1"
+            "SELECT * FROM admin_users WHERE national_id = $1"
         )
-        .bind(&data.email)
+        .bind(&data.national_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?
-        .ok_or_else(|| AppError::Unauthorized("Invalid email or password".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Invalid national ID or password".to_string()))?;
 
         // Verify password
         let is_valid = verify_password(&data.password, &admin.password_hash)?;
         if !is_valid {
-            return Err(AppError::Unauthorized("Invalid email or password".to_string()));
+            return Err(AppError::Unauthorized("Invalid national ID or password".to_string()));
         }
 
         // Generate JWT
         let claims = Claims {
             sub: admin.id.to_string(),
-            email: admin.email.clone(),
+            email: admin.national_id.clone(), // Use national_id in email field for compatibility
             role: UserRole::SuperAdmin,
             school_id: None,
             subdomain: None,
@@ -79,5 +93,23 @@ impl AuthService {
         .ok_or_else(|| AppError::NotFound("Admin user not found".to_string()))?;
 
         Ok(admin)
+    }
+
+    // Validate Thai National ID (13 digits)
+    fn validate_national_id(national_id: &str) -> bool {
+        // Must be exactly 13 digits
+        if national_id.len() != 13 {
+            return false;
+        }
+
+        // All characters must be digits
+        if !national_id.chars().all(|c| c.is_ascii_digit()) {
+            return false;
+        }
+
+        // Optional: Add checksum validation for Thai National ID
+        // (Not implemented here for simplicity)
+
+        true
     }
 }

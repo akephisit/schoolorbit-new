@@ -6,7 +6,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AdminUser {
     pub id: Uuid,
-    pub email: String,
+    pub national_id: String,
     #[serde(skip_serializing)]
     pub password_hash: String,
     pub name: String,
@@ -18,13 +18,14 @@ pub struct AdminUser {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAdminUser {
-    pub email: String,
+    pub national_id: String,
     pub password: String,
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoginRequest {
-    pub email: String,
+    pub national_id: String,
     pub password: String,
 }

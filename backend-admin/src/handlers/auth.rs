@@ -30,7 +30,7 @@ impl AuthHandler {
                     token,
                     user: serde_json::json!({
                         "id": admin.id,
-                        "email": admin.email,
+                        "nationalId": admin.national_id,
                         "name": admin.name,
                         "role": admin.role,
                     }),
