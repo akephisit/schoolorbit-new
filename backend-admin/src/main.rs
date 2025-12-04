@@ -5,6 +5,7 @@ mod handlers;
 
 use dotenv::dotenv;
 use ohkami::prelude::*;
+use ohkami::fang::Cors;
 use std::env;
 
 #[tokio::main]
@@ -52,22 +53,28 @@ async fn main() {
     handlers::auth::init_db_pool(pool.clone());
 
     // Create server with routes
-    let app = Ohkami::new((
-        // Health check
-        "/health".GET(handlers::health::health_check),
+    let app = Ohkami::with(
+        Cors::new("http://localhost:5173")
+            .allow_headers(["Content-Type", "Authorization"])
+            .allow_credentials(false)
+            .max_age(Some(3600)),
+        (
+            // Health check
+            "/health".GET(handlers::health::health_check),
 
-        // Simple info endpoint
-        "/".GET(|| async {
-            serde_json::json!({
-                "service": "SchoolOrbit Backend Admin",
-                "version": "0.1.0",
-                "status": "running"
-            }).to_string()
-        }),
+            // Simple info endpoint
+            "/".GET(|| async {
+                serde_json::json!({
+                    "service": "SchoolOrbit Backend Admin",
+                    "version": "0.1.0",
+                    "status": "running"
+                }).to_string()
+            }),
 
-        // Auth endpoints
-        "/api/v1/auth/login".POST(handlers::auth::login_handler),
-    ));
+            // Auth endpoints
+            "/api/v1/auth/login".POST(handlers::auth::login_handler),
+        ),
+    );
 
     println!("🌐 Server starting on http://0.0.0.0:8080");
     println!("\nAvailable endpoints:");
