@@ -1,0 +1,20 @@
+[workspace]
+members = [
+    "backend-admin",
+    "backend-school",
+    "shared"
+]
+resolver = "2"
+
+[workspace.dependencies]
+ohkami = { version = "0.24", features = ["rt_tokio"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate", "chrono", "uuid"] }
+jsonwebtoken = "9"
+bcrypt = "0.15"
+dotenv = "0.15"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["serde", "v4"] }
+reqwest = { version = "0.12", features = ["json"] }

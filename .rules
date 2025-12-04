@@ -1,0 +1,117 @@
+# Project Rules: SvelteKit + Axum Rust
+
+## 0. Analysis Workflow (ก่อนทำทุกครั้ง)
+* **Step 0 - Consult Documentation:**
+  * Check `/docs/` folder for:
+    * Architecture docs (`architecture.md`, `system-design.md`)
+    * Feature guides (`features/`, `workflows/`)
+    * API documentation (`api/`, `endpoints.md`)
+    * Setup & deployment (`setup.md`, `deployment.md`)
+  * If docs don't exist or are incomplete, search codebase and code comments
+  * When implementing, consider if new docs are needed for future developers
+
+* **Step 1 - Understand the Request:**
+  * Clarify requirements with user if ambiguous
+  * Identify which parts of the stack are affected (Frontend/Backend/Database)
+
+* **Step 2 - Analyze Existing Code:**
+  * **Backend:** Read handlers, services, database models related to the feature
+  * **Frontend:** Read routes, components, API client calls, types/interfaces
+  * **Contracts:** Verify API request/response DTOs match on both ends
+
+* **Step 3 - Plan the Change:**
+  * Identify files that need modification
+  * Ensure consistency with existing patterns
+  * Consider impact on other features
+
+* **Step 4 - Implement & Verify:**
+  * Make changes following project rules
+  * Test both frontend and backend integration
+
+### Example: Adding a New Feature
+If adding "User Profile Edit" feature:
+1. **Backend Analysis:** Read `src/handlers/user.rs`, `src/models/user.rs`, existing update endpoints
+2. **Frontend Analysis:** Read `src/routes/profile/`, `src/lib/api.ts` (user API calls), `src/lib/types/user.ts`
+3. **Database:** Check migration files for `users` table schema
+4. **Plan:** List all files to modify, ensure DTO consistency between Rust and TypeScript
+5. **Implement:** Follow error handling rules, use proper types, test API integration
+
+## 1. General Principles
+* [cite_start]**Correctness & Clarity:** Prioritize code correctness and clarity over premature optimization[cite: 1].
+* **No Fluff:** Do not write comments that just summarize the code. [cite_start]Only explain "why" complex logic exists[cite: 2, 3].
+* **Modularization:** Prefer implementing functionality in existing files unless it is a new logical component. [cite_start]Avoid creating many tiny files[cite: 4].
+* [cite_start]**Naming:** Use full words for variable names (e.g., `queue` instead of `q`)[cite: 11].
+
+## 2. Backend: Rust (Axum)
+* **Error Handling (Strict):**
+  * **No Panics:** Avoid `unwrap()` and `expect()`. [cite_start]Use `?` to propagate errors[cite: 5].
+  * **Response:** Errors must implement `IntoResponse` to return proper HTTP status codes to the frontend.
+  * [cite_start]**Handling:** Never silently discard errors with `let _ =`[cite: 7]. Use `.map_err()` to add context before propagating.
+  * [cite_start]**Visibility:** Ensure errors that affect the UI propagate meaningful messages[cite: 8].
+
+* **Architecture (Axum):**
+  * **State:** Use `AppState` wrapped in `Arc` for sharing DB pools and config.
+  * **Handlers:** Keep handlers thin. Move business logic to `services/` or `logic/` modules.
+  * **DTOs:** Use `serde` structs for Request/Response bodies. Use `#[serde(rename_all = "camelCase")]` for JSON response compatibility with frontend.
+  * **Database:** Use `sqlx` for PostgreSQL interactions. Prefer compile-time checked queries (`sqlx::query_as!`) where possible.
+
+* **Project Structure (Rust):**
+  * **Modules:** Never create `mod.rs` files. [cite_start]Use `src/handlers.rs` instead of `src/handlers/mod.rs`[cite: 9].
+  * [cite_start]**Crate Root:** Specify lib path in `Cargo.toml` if creating libraries[cite: 10].
+
+## 3. Frontend: SvelteKit (TypeScript)
+* **Core Principles:**
+  * Use **TypeScript** for everything. Strict typing between API responses and UI components.
+  * Use `+page.server.ts` for data loading (Loaders) and Form Actions to keep secrets on the server.
+* **State Management:**
+  * Use Svelte **Stores** (`writable`, `readable`) for client-side global state (e.g., WebSocket connection, Toasts).
+  * Avoid complex state management libraries unless necessary; Svelte's native reactivity is usually enough.
+* **Components:**
+  * Props must be typed.
+  * Use **TailwindCSS** for styling. Utility classes first, extracted components second.
+* **API Integration:**
+  * Use the custom API client wrapper (e.g., `api.ts`) that handles `credentials: 'include'` for CORS/Cookies.
+  * Do not `fetch` directly in components if possible; use Loaders.
+
+## 4. Realtime & WebSocket (Project Specific)
+* **Connection:**
+  * Frontend connects to WebSocket via `ws://` (or `wss://`) directly to the Axum backend (bypassing Cloudflare caching issues where applicable).
+  * Implement **Heartbeat (Ping/Pong)** every 30s to keep the connection alive through proxies (Cloudflare/Traefik).
+* **State:**
+  * Handle "Reconnection" logic in the frontend store.
+  * Backend must manage `ConnectedClients` in `AppState` using `Arc<RwLock<HashMap<...>>>`.
+
+## 5. Security & Privacy (PDPA)
+* **National ID:**
+  * **NEVER** log or store National IDs in plain text.
+  * Use **Blind Indexing**: `hash` for search, `encrypted` for storage.
+  * Clear memory of sensitive variables as soon as they are used (where applicable in Rust).
+
+## 6. Deployment (Coolify/Docker)
+* **Configuration:** All secrets (Database URL, Salt, Keys) must come from Environment Variables (`std::env::var`).
+* **Ports:** Backend must listen on `0.0.0.0` (not `127.0.0.1`) inside Docker.
+
+
+You are able to use the Svelte MCP server, where you have access to comprehensive Svelte 5 and SvelteKit documentation. Here's how to use the available tools effectively:
+
+## Available MCP Tools:
+
+### 1. list-sections
+
+Use this FIRST to discover all available documentation sections. Returns a structured list with titles, use_cases, and paths.
+When asked about Svelte or SvelteKit topics, ALWAYS use this tool at the start of the chat to find relevant sections.
+
+### 2. get-documentation
+
+Retrieves full documentation content for specific sections. Accepts single or multiple sections.
+After calling the list-sections tool, you MUST analyze the returned documentation sections (especially the use_cases field) and then use the get-documentation tool to fetch ALL documentation sections that are relevant for the user's task.
+
+### 3. svelte-autofixer
+
+Analyzes Svelte code and returns issues and suggestions.
+You MUST use this tool whenever writing Svelte code before sending it to the user. Keep calling it until no issues or suggestions are returned.
+
+### 4. playground-link
+
+Generates a Svelte Playground link with the provided code.
+After completing the code, ask the user if they want a playground link. Only call this tool after user confirmation and NEVER if code was written to files in their project.

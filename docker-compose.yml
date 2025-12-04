@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: schoolorbit-postgres
+    environment:
+      POSTGRES_USER: admin_user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: schoolorbit_admin
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin_user -d schoolorbit_admin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - schoolorbit-network
+
+  backend-admin:
+    build:
+      context: .
+      dockerfile: backend-admin/Dockerfile
+    container_name: schoolorbit-backend-admin
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info
+      - ADMIN_DATABASE_URL=postgres://admin_user:password@postgres:5432/schoolorbit_admin
+      - SCHOOL_SERVICE_URL=http://backend-school:8081
+      - SCHOOL_DB_USER=school_user
+      - SCHOOL_DB_PASSWORD=school_password
+      - SCHOOL_DB_HOST=postgres
+      - JWT_SECRET=your-secret-key-change-this-in-production
+      - INTERNAL_API_SECRET=internal-secret-change-this
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - schoolorbit-network
+    restart: unless-stopped
+
+  backend-school:
+    build:
+      context: .
+      dockerfile: backend-school/Dockerfile
+    container_name: schoolorbit-backend-school
+    ports:
+      - "8081:8081"
+    environment:
+      - RUST_LOG=info
+      - ADMIN_DATABASE_URL=postgres://admin_user:password@postgres:5432/schoolorbit_admin
+      - SCHOOL_DB_USER=school_user
+      - SCHOOL_DB_PASSWORD=school_password
+      - SCHOOL_DB_HOST=postgres
+      - JWT_SECRET=your-secret-key-change-this-in-production
+      - INTERNAL_API_SECRET=internal-secret-change-this
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - schoolorbit-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  schoolorbit-network:
+    driver: bridge
