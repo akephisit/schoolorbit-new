@@ -1,4 +1,4 @@
-FROM rust:1.83-slim-bookworm
+FROM rustlang/rust:nightly-slim
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
