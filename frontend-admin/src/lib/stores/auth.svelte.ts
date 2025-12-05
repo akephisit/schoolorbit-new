@@ -49,54 +49,33 @@ class AuthStore {
 		return this.state.error;
 	}
 
-	// Initialize from backend (Cookie check)
+	// Initialize from backend (Cookie check only - no localStorage)
 	private async initialize() {
-		try {
-			// First check localStorage for immediate UI feedback (optimistic)
-			const userStr = localStorage.getItem('auth_user');
-			if (userStr) {
-				this.state.user = JSON.parse(userStr);
-				this.state.isAuthenticated = true;
-			}
+		this.state.isLoading = true;
 
-			// Verify with backend
+		try {
+			// Verify session with backend via HttpOnly cookie
 			const response = await apiClient.getCurrentUser();
 			if (response.success && response.data) {
 				const { user } = response.data;
 				this.state.user = user;
 				this.state.isAuthenticated = true;
-				this.saveToStorage(user);
 			} else {
 				// Cookie invalid or expired
 				this.state.user = null;
 				this.state.isAuthenticated = false;
-				this.clearStorage();
 			}
 		} catch (error) {
 			console.error('Failed to initialize auth:', error);
-			// Keep optimistic state from localStorage
+			this.state.user = null;
+			this.state.isAuthenticated = false;
 		} finally {
 			this.state.isLoading = false;
 		}
 	}
 
-	// Save to localStorage (User data only)
-	private saveToStorage(user: User) {
-		try {
-			localStorage.setItem('auth_user', JSON.stringify(user));
-		} catch (error) {
-			console.error('Failed to save auth to storage:', error);
-		}
-	}
-
-	// Clear localStorage
-	private clearStorage() {
-		try {
-			localStorage.removeItem('auth_user');
-		} catch (error) {
-			console.error('Failed to clear auth storage:', error);
-		}
-	}
+	// No longer saving to localStorage - security first!
+	// User data exists only in memory and HttpOnly cookie
 
 	// Login
 	async login(credentials: LoginRequest) {
@@ -111,10 +90,6 @@ class AuthStore {
 
 				this.state.user = user;
 				this.state.isAuthenticated = true;
-
-				if (browser) {
-					this.saveToStorage(user);
-				}
 
 				// Redirect to dashboard
 				await goto('/dashboard');
@@ -146,7 +121,6 @@ class AuthStore {
 		this.state.error = null;
 
 		if (browser) {
-			this.clearStorage();
 			goto('/login');
 		}
 	}
