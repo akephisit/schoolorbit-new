@@ -5,7 +5,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use cookie::{Cookie as CookieBuilder, SameSite};
 use serde::{Serialize, Deserialize};
 use shared::auth::validate_token;
 use shared::types::ApiResponse;
@@ -46,17 +45,15 @@ pub async fn login_handler(
 
     match auth_service.login(credentials).await {
         Ok((admin, token)) => {
-            // Create HttpOnly cookie
-            let cookie = CookieBuilder::build(("auth_token", token.clone()))
-                .http_only(true)
-                .secure(true)
-                .same_site(SameSite::Lax)
-                .path("/")
-                .max_age(cookie::time::Duration::days(1))
-                .build();
-
-            // Set cookie using tower-cookies
-            cookies.add(Cookie::new("auth_token", token));
+            // Set cookie using tower-cookies with proper configuration
+            let mut cookie = Cookie::new("auth_token", token.clone());
+            cookie.set_path("/");
+            cookie.set_http_only(true);
+            cookie.set_secure(true);
+            cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
+            cookie.set_max_age(tower_cookies::cookie::time::Duration::days(1));
+            
+            cookies.add(cookie);
 
             let response_data = ApiResponse::success(LoginResponse {
                 user: serde_json::json!({
