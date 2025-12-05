@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "backend-admin",
-    "backend-school",
     "shared"
 ]
 resolver = "2"
