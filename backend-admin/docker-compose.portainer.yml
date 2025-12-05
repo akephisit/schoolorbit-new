@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   backend-admin:
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/schoolorbit-backend-admin:latest
+    image: ghcr.io/akephisit/schoolorbit-backend-admin:latest
     container_name: schoolorbit-backend-admin
     restart: unless-stopped
     ports:
@@ -15,7 +15,7 @@ services:
     networks:
       - web_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
