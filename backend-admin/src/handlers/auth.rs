@@ -1,72 +1,63 @@
-use crate::services::AuthService;
 use crate::models::LoginRequest;
-use shared::types::ApiResponse;
-use std::sync::{Arc, OnceLock};
-use serde::Serialize;
-use sqlx::PgPool;
-use ohkami::prelude::*;
-use ohkami::claw::Json;
+use crate::services::AuthService;
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use cookie::{Cookie as CookieBuilder, SameSite};
-use ohkami::claw::header::Cookie as CookieHeader;
+use serde::{Serialize, Deserialize};
 use shared::auth::validate_token;
+use shared::types::ApiResponse;
+use sqlx::PgPool;
+use std::sync::OnceLock;
+use tower_cookies::{Cookie, Cookies};
 use uuid::Uuid;
 
 static DB_POOL: OnceLock<PgPool> = OnceLock::new();
 
-pub fn init_db_pool(pool: PgPool) {
+pub fn init_pool(pool: PgPool) {
     DB_POOL.set(pool).ok();
 }
 
-pub struct AuthHandler {
-    service: Arc<AuthService>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoginResponse {
+    pub user: serde_json::Value,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LoginResponse {
-    // Token is now sent via HttpOnly cookie, not in response body
-    user: serde_json::Value,
-}
-
-impl AuthHandler {
-    pub fn new(service: Arc<AuthService>) -> Self {
-        Self { service }
-    }
-
-    pub async fn login(&self, body: String) -> Result<String, String> {
-        let data: LoginRequest = serde_json::from_str(&body)
-            .map_err(|e| format!("Invalid request body: {}", e))?;
-
-        match self.service.login(data).await {
-            Ok((admin, _token)) => {
-                let response = ApiResponse::success(LoginResponse {
-                    user: serde_json::json!({
-                        "id": admin.id,
-                        "nationalId": admin.national_id,
-                        "name": admin.name,
-                        "role": admin.role,
-                    }),
-                });
-                Ok(serde_json::to_string(&response).unwrap())
-            }
-            Err(e) => Err(format!("{}", e)),
-        }
-    }
-}
-
-// Standalone handler function for Ohkami routing with HttpOnly cookie
-pub async fn login_handler(Json(req): Json<LoginRequest>) -> Response {
+pub async fn login_handler(
+    cookies: Cookies,
+    Json(credentials): Json<LoginRequest>,
+) -> Response {
     let pool = match DB_POOL.get() {
         Some(pool) => pool.clone(),
         None => {
-            return Response::InternalServerError()
-                .with_text(r#"{"error":"Database not initialized"}"#);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Database not initialized"
+                })),
+            )
+                .into_response();
         }
     };
 
     let auth_service = AuthService::new(pool);
-    match auth_service.login(req).await {
+
+    match auth_service.login(credentials).await {
         Ok((admin, token)) => {
+            // Create HttpOnly cookie
+            let cookie = CookieBuilder::build(("auth_token", token.clone()))
+                .http_only(true)
+                .secure(true)
+                .same_site(SameSite::Lax)
+                .path("/")
+                .max_age(cookie::time::Duration::days(1))
+                .build();
+
+            // Set cookie using tower-cookies
+            cookies.add(Cookie::new("auth_token", token));
+
             let response_data = ApiResponse::success(LoginResponse {
                 user: serde_json::json!({
                     "id": admin.id,
@@ -76,87 +67,86 @@ pub async fn login_handler(Json(req): Json<LoginRequest>) -> Response {
                 }),
             });
 
-            // Create secure HttpOnly cookie using cookie crate
-            let cookie = CookieBuilder::build(("auth_token", token))
-                .http_only(true)
-                .secure(true)  // HTTPS only
-                .same_site(SameSite::Lax)
-                .path("/")
-                .max_age(cookie::time::Duration::days(1))  // 24 hours
-                .build();
-
-            // Return response with Set-Cookie header
-            let cookie_str = cookie.to_string();
-            let mut res = Response::OK().with_json(&response_data);
-            
-            // Use .x() for custom headers (like Set-Cookie if typed method is missing)
-            res.headers.set().x("Set-Cookie", cookie_str);
-            
-            res
+            (StatusCode::OK, Json(response_data)).into_response()
         }
-        Err(e) => {
-            Response::Unauthorized()
-                .with_text(format!(r#"{{"error":"{}"}}"#, e))
-        }
+        Err(e) => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
     }
 }
 
-pub async fn logout_handler() -> Response {
-    // Create cookie with empty value and max-age 0 to clear it
-    let cookie = CookieBuilder::build(("auth_token", ""))
-        .http_only(true)
-        .secure(true)
-        .same_site(SameSite::Lax)
-        .path("/")
-        .max_age(cookie::time::Duration::seconds(0)) // Expire immediately
-        .expires(cookie::time::OffsetDateTime::now_utc() - cookie::time::Duration::days(1))
-        .build();
+pub async fn logout_handler(cookies: Cookies) -> Response {
+    // Remove cookie
+    cookies.remove(Cookie::from("auth_token"));
 
-    let cookie_str = cookie.to_string();
-    let mut res = Response::OK().with_text(r#"{"success":true}"#);
-    
-    // Set the clearing cookie
-    res.headers.set().x("Set-Cookie", cookie_str);
-    
-    res
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true
+        })),
+    )
+        .into_response()
 }
 
-pub async fn me_handler(cookie: CookieHeader<&str>) -> Response {
+pub async fn me_handler(cookies: Cookies) -> Response {
     let pool = match DB_POOL.get() {
         Some(pool) => pool.clone(),
-        None => return Response::InternalServerError().with_text(r#"{"error":"Database not initialized"}"#),
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Database not initialized"
+                })),
+            )
+                .into_response();
+        }
     };
 
-    // cookie.0 is the raw cookie string: "auth_token=xyz; other=abc"
-    let cookies_str = cookie.0;
-    
-    // Parse to find auth_token
-    let token = cookies_str.split(';')
-        .find_map(|s| {
-            let s = s.trim();
-            if s.starts_with("auth_token=") {
-                Some(&s[11..])
-            } else {
-                None
-            }
-        });
-
-    let token = match token {
-        Some(t) => t,
-        None => return Response::Unauthorized().with_text(r#"{"error":"No auth token in cookie"}"#),
+    // Get auth_token from cookies
+    let token = match cookies.get("auth_token") {
+        Some(cookie) => cookie.value().to_string(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "No auth token in cookie"
+                })),
+            )
+                .into_response();
+        }
     };
 
     // Validate token
-    let claims = match validate_token(token) {
+    let claims = match validate_token(&token) {
         Ok(c) => c,
-        Err(_) => return Response::Unauthorized().with_text(r#"{"error":"Invalid token"}"#),
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Invalid token"
+                })),
+            )
+                .into_response();
+        }
     };
 
     // Get user from database
     let auth_service = AuthService::new(pool);
     let user_id = match Uuid::parse_str(&claims.sub) {
         Ok(id) => id,
-        Err(_) => return Response::Unauthorized().with_text(r#"{"error":"Invalid user ID in token"}"#),
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Invalid user ID in token"
+                })),
+            )
+                .into_response();
+        }
     };
 
     match auth_service.get_admin_by_id(user_id).await {
@@ -169,8 +159,14 @@ pub async fn me_handler(cookie: CookieHeader<&str>) -> Response {
                     "role": admin.role,
                 }),
             });
-            Response::OK().with_json(&response)
+            (StatusCode::OK, Json(response)).into_response()
         }
-        Err(_) => Response::Unauthorized().with_text(r#"{"error":"User not found"}"#),
+        Err(_) => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": "User not found"
+            })),
+        )
+            .into_response(),
     }
 }

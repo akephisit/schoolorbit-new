@@ -1,5 +1,11 @@
-use ohkami::prelude::*;
+use axum::{http::StatusCode, response::IntoResponse, Json};
 
-pub async fn health_check() -> String {
-    "OK".to_string()
+pub async fn health_check() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "healthy",
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        })),
+    )
 }

@@ -1,3 +1,2 @@
-mod cors;
-
-pub use cors::MultiCors;
+// Middleware is now handled by tower-http and tower-cookies
+// No custom middleware needed
