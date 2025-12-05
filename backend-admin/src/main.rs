@@ -86,6 +86,8 @@ async fn main() {
 
             // Auth endpoints
             "/api/v1/auth/login".POST(handlers::auth::login_handler),
+            "/api/v1/auth/logout".POST(handlers::auth::logout_handler),
+            "/api/v1/auth/me".GET(handlers::auth::me_handler),
         ),
     );
 

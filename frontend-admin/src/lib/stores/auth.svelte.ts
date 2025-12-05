@@ -28,7 +28,7 @@ class AuthStore {
 
 	constructor() {
 		if (browser) {
-			this.initializeFromStorage();
+			this.initialize();
 		}
 	}
 
@@ -49,19 +49,34 @@ class AuthStore {
 		return this.state.error;
 	}
 
-	// Initialize from localStorage (User data only)
-	private initializeFromStorage() {
+	// Initialize from backend (Cookie check)
+	private async initialize() {
 		try {
+			// First check localStorage for immediate UI feedback (optimistic)
 			const userStr = localStorage.getItem('auth_user');
-
 			if (userStr) {
-				const user = JSON.parse(userStr);
-				this.state.user = user;
+				this.state.user = JSON.parse(userStr);
 				this.state.isAuthenticated = true;
 			}
+
+			// Verify with backend
+			const response = await apiClient.getCurrentUser();
+			if (response.success && response.data) {
+				const { user } = response.data;
+				this.state.user = user;
+				this.state.isAuthenticated = true;
+				this.saveToStorage(user);
+			} else {
+				// Cookie invalid or expired
+				this.state.user = null;
+				this.state.isAuthenticated = false;
+				this.clearStorage();
+			}
 		} catch (error) {
-			console.error('Failed to initialize auth from storage:', error);
-			this.clearStorage();
+			console.error('Failed to initialize auth:', error);
+			// Keep optimistic state from localStorage
+		} finally {
+			this.state.isLoading = false;
 		}
 	}
 
@@ -119,7 +134,13 @@ class AuthStore {
 	}
 
 	// Logout
-	logout() {
+	async logout() {
+		try {
+			await apiClient.logout();
+		} catch (error) {
+			console.error('Logout API call failed:', error);
+		}
+
 		this.state.user = null;
 		this.state.isAuthenticated = false;
 		this.state.error = null;

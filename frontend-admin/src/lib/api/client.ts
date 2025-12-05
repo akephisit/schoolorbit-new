@@ -72,6 +72,18 @@ class ApiClient {
 		});
 	}
 
+	async logout(): Promise<ApiResponse<void>> {
+		return this.request<void>('/api/v1/auth/logout', {
+			method: 'POST'
+		});
+	}
+
+	async getCurrentUser(): Promise<ApiResponse<LoginResponse>> {
+		return this.request<LoginResponse>('/api/v1/auth/me', {
+			method: 'GET'
+		});
+	}
+
 	async healthCheck(): Promise<boolean> {
 		try {
 			const response = await fetch(`${this.baseUrl}/health`);

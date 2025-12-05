@@ -71,17 +71,81 @@ impl MultiCors {
 
 impl FangAction for MultiCors {
     async fn fore<'a>(&'a self, req: &'a mut Request) -> Result<(), Response> {
-        // Get the Origin header from the request
-        if let Some(origin_header) = req.headers.get("Origin") {
-            let origin = origin_header.to_string();
-            
-            // Check if origin is allowed
-            if self.is_origin_allowed(&origin) {
-                // Store allowed origin in thread-local for use in back()
-                CORS_ORIGIN.with(|cell| {
-                    *cell.borrow_mut() = Some(origin);
-                });
+        println!("[CORS] Request: {} {}", req.method, req.path);
+        println!("[CORS] Headers: {:?}", req.headers);
+
+        // WORKAROUND: Parse Origin from Debug string because .get() is failing
+        let headers_str = format!("{:?}", req.headers);
+        let origin = if let Some(start) = headers_str.find("\"Origin\": \"") {
+            let rest = &headers_str[start + 11..];
+            if let Some(end) = rest.find("\"") {
+                let s = rest[..end].to_string();
+                println!("[CORS] Origin found (via debug parse): {}", s);
+                Some(s)
+            } else {
+                None
             }
+        } else {
+            // Try lowercase "origin"
+            if let Some(start) = headers_str.find("\"origin\": \"") {
+                let rest = &headers_str[start + 11..];
+                if let Some(end) = rest.find("\"") {
+                    let s = rest[..end].to_string();
+                    println!("[CORS] Origin found (via debug parse lowercase): {}", s);
+                    Some(s)
+                } else {
+                    None
+                }
+            } else {
+                println!("[CORS] No Origin header found in debug string");
+                None
+            }
+        };
+
+        let origin = match origin {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+
+        // Check if origin is allowed
+        if self.is_origin_allowed(&origin) {
+            println!("[CORS] Origin allowed");
+            
+            // Handle preflight OPTIONS request
+            if req.method == Method::OPTIONS {
+                println!("[CORS] Handling OPTIONS preflight");
+                let mut res = Response::NoContent();
+                
+                // Set CORS headers directly for OPTIONS
+                res.headers.set()
+                    .access_control_allow_origin(origin.clone());
+
+                if self.allow_credentials {
+                    res.headers.set()
+                        .access_control_allow_credentials("true");
+                }
+
+                res.headers.set()
+                    .access_control_allow_headers(self.allow_headers.join(", "));
+
+                res.headers.set()
+                    .access_control_allow_methods("GET, POST, PUT, PATCH, DELETE, OPTIONS");
+
+                if let Some(max_age) = self.max_age {
+                    res.headers.set()
+                        .access_control_max_age(max_age.to_string());
+                }
+                
+                println!("[CORS] Returning preflight response");
+                return Err(res);
+            }
+
+            // For other methods, store allowed origin in thread-local for use in back()
+            CORS_ORIGIN.with(|cell| {
+                *cell.borrow_mut() = Some(origin);
+            });
+        } else {
+            println!("[CORS] Origin NOT allowed: {}", origin);
         }
 
         Ok(())
