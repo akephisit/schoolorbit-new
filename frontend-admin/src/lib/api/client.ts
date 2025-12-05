@@ -49,8 +49,9 @@ class ApiClient {
 			const data = await response.json();
 
 			if (!response.ok) {
-				// Auto logout on 401 Unauthorized
-				if (response.status === 401 && typeof window !== 'undefined') {
+				// Auto logout on 401 Unauthorized (except for /me endpoint during initialization)
+				// /me is expected to return 401 when not logged in
+				if (response.status === 401 && typeof window !== 'undefined' && !url.includes('/auth/me')) {
 					console.warn('Session expired (401), logging out...');
 					// Import authStore dynamically to avoid circular dependency
 					import('$lib/stores/auth.svelte').then(({ authStore }) => {

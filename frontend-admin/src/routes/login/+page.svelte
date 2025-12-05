@@ -1,15 +1,14 @@
 <script lang="ts">
 	import { authStore } from '$lib/stores/auth.svelte';
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 
 	let nationalId = $state('');
 	let password = $state('');
 	let validationError = $state('');
 
-	// Redirect if already authenticated
-	onMount(() => {
-		if (authStore.isAuthenticated) {
+	// Redirect if already authenticated (after initialization)
+	$effect(() => {
+		if (!authStore.isLoading && authStore.isAuthenticated) {
 			goto('/dashboard');
 		}
 	});
@@ -77,9 +76,7 @@
 
 			<!-- Password Input -->
 			<div>
-				<label for="password" class="block text-sm font-medium text-gray-700">
-					รหัสผ่าน
-				</label>
+				<label for="password" class="block text-sm font-medium text-gray-700"> รหัสผ่าน </label>
 				<input
 					id="password"
 					type="password"
