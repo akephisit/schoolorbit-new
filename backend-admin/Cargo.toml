@@ -7,7 +7,6 @@ edition = "2021"
 axum = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
-tower-http = { workspace = true }
 tower-cookies = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

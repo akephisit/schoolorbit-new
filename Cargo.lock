@@ -107,13 +107,8 @@ dependencies = [
  "tokio",
  "tower",
  "tower-cookies",
- "tower-http",
  "uuid",
 ]
-
-[[package]]
-name = "backend-school"
-version = "0.1.0"
 
 [[package]]
 name = "base64"
@@ -2257,7 +2252,6 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
- "tracing",
 ]
 
 [[package]]

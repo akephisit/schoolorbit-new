@@ -1,12 +1,10 @@
 use axum::{
-    http::header,
     routing::{get, post},
     Router,
 };
 use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use std::env;
-use tower_http::cors::CorsLayer;
 use tower_cookies::CookieManagerLayer;
 
 mod db;
@@ -46,35 +44,7 @@ async fn main() {
     handlers::auth::init_pool(pool.clone());
 
     println!("✅ Services initialized");
-
-    // CORS configuration
-    let allowed_origins = env::var("ALLOWED_ORIGINS")
-        .unwrap_or_else(|_| "http://localhost:5173".to_string());
-    
-    println!("🔐 CORS allowed origins: {}", allowed_origins);
-
-    let origins: Vec<_> = allowed_origins
-        .split(',')
-        .filter_map(|s| s.trim().parse().ok())
-        .collect();
-
-    let cors = CorsLayer::new()
-        .allow_origin(origins)
-        .allow_methods([
-            axum::http::Method::GET,
-            axum::http::Method::POST,
-            axum::http::Method::PUT,
-            axum::http::Method::PATCH,
-            axum::http::Method::DELETE,
-            axum::http::Method::OPTIONS,
-        ])
-        .allow_headers([
-            header::AUTHORIZATION,
-            header::CONTENT_TYPE,
-            header::ACCEPT,
-            header::COOKIE,
-        ])
-        .allow_credentials(true);
+    println!("🔐 CORS handling delegated to nginx reverse proxy");
 
     // Build application 
     let app = Router::new()
@@ -93,8 +63,7 @@ async fn main() {
         .route("/api/v1/auth/logout", post(handlers::auth::logout_handler))
         .route("/api/v1/auth/me", get(handlers::auth::me_handler))
         // Layers (order matters: last added = first executed)
-        .layer(CookieManagerLayer::new())
-        .layer(cors);
+        .layer(CookieManagerLayer::new());
 
     println!("🌐 Server starting on http://0.0.0.0:8080");
     println!("\nAvailable endpoints:");
