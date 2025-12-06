@@ -106,6 +106,7 @@ async fn main() {
     println!("\n📝 Test credentials:");
     println!("  National ID: 1234567890123");
     println!("  Password: test123");
+    println!("  Test EIEIEI");
 
     // Run server
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
