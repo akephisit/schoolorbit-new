@@ -76,7 +76,7 @@ async fn main() {
         ])
         .allow_credentials(true);
 
-    // Build application
+    // Build application 
     let app = Router::new()
         // API info
         .route("/", get(|| async {
