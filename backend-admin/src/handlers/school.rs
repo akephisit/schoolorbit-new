@@ -7,7 +7,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use shared::types::ApiResponse;
+use crate::types::ApiResponse;
 use sqlx::PgPool;
 use std::sync::OnceLock;
 use uuid::Uuid;

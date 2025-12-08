@@ -1,6 +1,6 @@
 use crate::models::{AdminUser, CreateAdminUser, LoginRequest};
-use shared::auth::{generate_token, hash_password, verify_password, Claims, UserRole};
-use shared::error::AppError;
+use crate::auth::{generate_token, hash_password, verify_password, Claims, UserRole};
+use crate::error::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -66,18 +66,8 @@ impl AuthService {
             return Err(AppError::Unauthorized("Invalid national ID or password".to_string()));
         }
 
-        // Generate JWT
-        let claims = Claims {
-            sub: admin.id.to_string(),
-            email: admin.national_id.clone(), // Use national_id in email field for compatibility
-            role: UserRole::SuperAdmin,
-            school_id: None,
-            subdomain: None,
-            exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
-            iat: chrono::Utc::now().timestamp() as usize,
-        };
-
-        let token = generate_token(claims)?;
+        // Generate JWT using the helper function
+        let token = generate_token(&admin.id.to_string(), "super_admin")?;
 
         Ok((admin, token))
     }

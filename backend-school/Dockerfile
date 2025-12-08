@@ -11,17 +11,17 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy Cargo files
-COPY backend-admin/Cargo.toml ./
+COPY backend-school/Cargo.toml ./
 
-# Build dependencies (cache layer)  
+# Build dependencies (cache layer)
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
     cargo build --release && \
     rm -rf src
 
-# Copy source code
-COPY backend-admin/src ./src
-COPY backend-admin/migrations ./migrations
+# Copy source code and migrations
+COPY backend-school/src ./src
+COPY backend-school/migrations ./migrations
 
 # Build the application
 RUN cargo build --release
@@ -32,6 +32,6 @@ RUN useradd -m -u 1000 appuser && \
 
 USER appuser
 
-EXPOSE 8080
+EXPOSE 8081
 
-CMD ["/app/target/release/backend-admin"]
+CMD ["/app/target/release/backend-school"]

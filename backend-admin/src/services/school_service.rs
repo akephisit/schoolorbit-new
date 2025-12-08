@@ -1,5 +1,5 @@
 use crate::models::{School, CreateSchool, UpdateSchool};
-use shared::error::AppError;
+use crate::error::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 

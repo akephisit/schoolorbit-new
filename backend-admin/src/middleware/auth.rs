@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use shared::auth::validate_token;
+use crate::auth::validate_token;
 use tower_cookies::Cookies;
 
 pub async fn require_auth(cookies: Cookies, request: Request, next: Next) -> Response {

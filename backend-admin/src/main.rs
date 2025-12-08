@@ -7,6 +7,9 @@ use sqlx::postgres::PgPoolOptions;
 use std::env;
 use tower_cookies::CookieManagerLayer;
 
+mod auth;
+mod error;
+mod types;
 mod db;
 mod handlers;
 mod middleware;
