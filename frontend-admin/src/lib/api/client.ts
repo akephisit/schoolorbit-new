@@ -102,6 +102,73 @@ class ApiClient {
 			return false;
 		}
 	}
+
+	// School Management
+	async createSchool(data: CreateSchool): Promise<ApiResponse<School>> {
+		return this.request<School>('/api/v1/schools', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async listSchools(page = 1, limit = 10): Promise<ApiResponse<SchoolListResponse>> {
+		return this.request<SchoolListResponse>(`/api/v1/schools?page=${page}&limit=${limit}`, {
+			method: 'GET'
+		});
+	}
+
+	async getSchool(id: string): Promise<ApiResponse<School>> {
+		return this.request<School>(`/api/v1/schools/${id}`, {
+			method: 'GET'
+		});
+	}
+
+	async updateSchool(id: string, data: UpdateSchool): Promise<ApiResponse<School>> {
+		return this.request<School>(`/api/v1/schools/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async deleteSchool(id: string): Promise<ApiResponse<void>> {
+		return this.request<void>(`/api/v1/schools/${id}`, {
+			method: 'DELETE'
+		});
+	}
 }
 
 export const apiClient = new ApiClient();
+
+// Types
+export interface CreateSchool {
+	name: string;
+	subdomain: string;
+	adminNationalId: string;
+	adminPassword: string;
+}
+
+export interface UpdateSchool {
+	name?: string;
+	status?: string;
+	config?: Record<string, any>;
+}
+
+export interface School {
+	id: string;
+	name: string;
+	subdomain: string;
+	dbName: string;
+	dbConnectionString: string | null;
+	status: string;
+	config: Record<string, any>;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface SchoolListResponse {
+	schools: School[];
+	total: number;
+	page: number;
+	limit: number;
+	totalPages: number;
+}

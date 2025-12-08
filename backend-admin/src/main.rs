@@ -49,7 +49,7 @@ async fn main() {
 
     // Build application 
     let app = Router::new()
-        // API info
+        // Public routes
         .route("/", get(|| async {
             serde_json::json!({
                 "service": "SchoolOrbit Backend Admin",
@@ -57,19 +57,20 @@ async fn main() {
                 "status": "running"
             }).to_string()
         }))
-        // Health check
         .route("/health", get(handlers::health::health_check))
-        // Auth endpoints
         .route("/api/v1/auth/login", post(handlers::auth::login_handler))
         .route("/api/v1/auth/logout", post(handlers::auth::logout_handler))
         .route("/api/v1/auth/me", get(handlers::auth::me_handler))
-        // School endpoints
-        .route("/api/v1/schools", post(handlers::school::create_school))
-        .route("/api/v1/schools", get(handlers::school::list_schools))
-        .route("/api/v1/schools/:id", get(handlers::school::get_school))
-        .route("/api/v1/schools/:id", axum::routing::put(handlers::school::update_school))
-        .route("/api/v1/schools/:id", axum::routing::delete(handlers::school::delete_school))
-        // Layers (order matters: last added = first executed)
+        // Protected routes (require authentication)
+        .nest("/api/v1/schools", Router::new()
+            .route("/", post(handlers::school::create_school))
+            .route("/", get(handlers::school::list_schools))
+            .route("/:id", get(handlers::school::get_school))
+            .route("/:id", axum::routing::put(handlers::school::update_school))
+            .route("/:id", axum::routing::delete(handlers::school::delete_school))
+            .layer(axum::middleware::from_fn(middleware::auth::require_auth))
+        )
+        // Global layers
         .layer(CookieManagerLayer::new());
 
     println!("🌐 Server starting on http://0.0.0.0:8080");
