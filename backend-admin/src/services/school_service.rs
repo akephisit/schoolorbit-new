@@ -13,6 +13,13 @@ impl SchoolService {
     }
 
     pub async fn create_school(&self, data: CreateSchool) -> Result<School, AppError> {
+        // Validate Thai national ID (13 digits)
+        if !data.admin_national_id.chars().all(|c| c.is_ascii_digit()) || data.admin_national_id.len() != 13 {
+            return Err(AppError::ValidationError(
+                "Admin national ID must be exactly 13 digits".to_string()
+            ));
+        }
+
         // Validate subdomain format (lowercase, alphanumeric, hyphens)
         if !data.subdomain.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return Err(AppError::ValidationError(

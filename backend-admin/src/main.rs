@@ -42,6 +42,7 @@ async fn main() {
 
     // Initialize handlers with database pool
     handlers::auth::init_pool(pool.clone());
+    handlers::school::init_pool(pool.clone());
 
     println!("✅ Services initialized");
     println!("🔐 CORS handling delegated to nginx reverse proxy");
@@ -62,6 +63,12 @@ async fn main() {
         .route("/api/v1/auth/login", post(handlers::auth::login_handler))
         .route("/api/v1/auth/logout", post(handlers::auth::logout_handler))
         .route("/api/v1/auth/me", get(handlers::auth::me_handler))
+        // School endpoints
+        .route("/api/v1/schools", post(handlers::school::create_school))
+        .route("/api/v1/schools", get(handlers::school::list_schools))
+        .route("/api/v1/schools/:id", get(handlers::school::get_school))
+        .route("/api/v1/schools/:id", axum::routing::put(handlers::school::update_school))
+        .route("/api/v1/schools/:id", axum::routing::delete(handlers::school::delete_school))
         // Layers (order matters: last added = first executed)
         .layer(CookieManagerLayer::new());
 
@@ -72,6 +79,12 @@ async fn main() {
     println!("  POST /api/v1/auth/login - Login with national ID");
     println!("  POST /api/v1/auth/logout - Logout");
     println!("  GET  /api/v1/auth/me - Get current user");
+    println!("\n  School Management:");
+    println!("  POST   /api/v1/schools     - Create school");
+    println!("  GET    /api/v1/schools     - List schools (paginated)");
+    println!("  GET    /api/v1/schools/:id - Get school by ID");
+    println!("  PUT    /api/v1/schools/:id - Update school");
+    println!("  DELETE /api/v1/schools/:id - Delete school");
     println!("\n📝 Test credentials:");
     println!("  National ID: 1234567890123");
     println!("  Password: test123");
