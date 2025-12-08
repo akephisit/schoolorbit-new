@@ -1,5 +1,6 @@
 // API Client for backend-admin
 import { PUBLIC_API_URL } from '$env/static/public';
+import { authStore } from '$lib/stores/auth.svelte';
 
 const API_BASE_URL = PUBLIC_API_URL;
 
@@ -54,10 +55,7 @@ class ApiClient {
 				// /me is expected to return 401 when not logged in
 				if (response.status === 401 && typeof window !== 'undefined' && !url.includes('/auth/me')) {
 					console.warn('Session expired (401), logging out...');
-					// Import authStore dynamically to avoid circular dependency
-					import('$lib/stores/auth.svelte').then(({ authStore }) => {
-						authStore.logout();
-					});
+					authStore.logout();
 				}
 
 				return {
