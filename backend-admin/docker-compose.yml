@@ -4,14 +4,18 @@ services:
   backend-admin:
     image: ghcr.io/akephisit/schoolorbit-backend-admin:latest
     container_name: schoolorbit-backend-admin
-    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET=${JWT_SECRET}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
-      - RUST_LOG=${RUST_LOG:-info}
+      - PORT=8080
+      - RUST_LOG=info
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+      - CLOUDFLARE_ZONE_ID=${CLOUDFLARE_ZONE_ID}
+      - BACKEND_SCHOOL_URL=http://backend-school:8081
+    restart: unless-stopped
     networks:
       - web_network
     healthcheck:
@@ -20,8 +24,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
 
 networks:
   web_network:

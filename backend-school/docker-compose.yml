@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  backend-school:
+    image: ghcr.io/akephisit/schoolorbit-backend-school:latest
+    container_name: schoolorbit-backend-school
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=8081
+      - RUST_LOG=info
+      - NEON_API_KEY=${NEON_API_KEY}
+      - NEON_PROJECT_ID=${NEON_PROJECT_ID}
+      - NEON_HOST=${NEON_HOST}
+      - NEON_USER=${NEON_USER}
+      - NEON_PASSWORD=${NEON_PASSWORD}
+    restart: unless-stopped
+    networks:
+      - web_network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  web_network:
+    external: true
+    name: stack_web
