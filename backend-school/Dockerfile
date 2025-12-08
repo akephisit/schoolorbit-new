@@ -24,7 +24,8 @@ COPY backend-school/src ./src
 COPY backend-school/migrations ./migrations
 
 # Build the application
-RUN cargo build --release
+RUN cargo build --release --bin backend-school
+
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \

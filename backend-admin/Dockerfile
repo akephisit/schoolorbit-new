@@ -23,8 +23,9 @@ RUN mkdir src && \
 COPY backend-admin/src ./src
 COPY backend-admin/migrations ./migrations
 
-# Build the application
-RUN cargo build --release
+# Build the application (only main binary, skip create_admin)
+RUN cargo build --release --bin backend-admin
+
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \
