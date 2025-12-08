@@ -77,8 +77,14 @@ pub async fn login_handler(
 }
 
 pub async fn logout_handler(cookies: Cookies) -> Response {
-    // Remove cookie
-    cookies.remove(Cookie::from("auth_token"));
+    // Remove cookie by setting Max-Age to 0
+    // Must match the same path/domain as when cookie was created
+    let mut cookie = Cookie::new("auth_token", "");
+    cookie.set_path("/");
+    cookie.set_http_only(true);
+    cookie.set_max_age(tower_cookies::cookie::time::Duration::seconds(0));
+    
+    cookies.add(cookie);
 
     (
         StatusCode::OK,
