@@ -56,10 +56,31 @@ pub async fn create_school(Json(data): Json<CreateSchool>) -> Response {
         }
     };
 
-    let service = SchoolService::new(pool);
+    let service = SchoolService::new(pool.clone());
 
     match service.create_school(data).await {
         Ok(school) => {
+            // Trigger auto-deployment in background
+            let school_clone = school.clone();
+            let pool_clone = pool.clone();
+            
+            tokio::spawn(async move {
+                use crate::services::DeploymentService;
+                
+                match DeploymentService::new(pool_clone) {
+                    Ok(deployment_service) => {
+                        if let Err(e) = deployment_service.deploy_school(&school_clone).await {
+                            eprintln!("⚠️  Auto-deployment failed for {}: {}", school_clone.name, e);
+                            eprintln!("   You may need to deploy manually");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️  Deployment service initialization failed: {}", e);
+                        eprintln!("   Auto-deployment disabled. Deploy manually.");
+                    }
+                }
+            });
+
             let response = ApiResponse::success(school);
             (StatusCode::CREATED, Json(response)).into_response()
         }
