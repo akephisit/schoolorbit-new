@@ -111,6 +111,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "backend-school"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "dotenv",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tower",
+ "uuid",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

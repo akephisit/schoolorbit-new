@@ -1,23 +1,19 @@
 use crate::models::School;
 use crate::services::cloudflare::CloudflareClient;
-use crate::services::neon::NeonClient;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 pub struct DeploymentService {
     cloudflare: CloudflareClient,
-    neon: NeonClient,
     pool: PgPool,
 }
 
 impl DeploymentService {
     pub fn new(pool: PgPool) -> Result<Self, String> {
         let cloudflare = CloudflareClient::new()?;
-        let neon = NeonClient::new()?;
 
         Ok(Self {
             cloudflare,
-            neon,
             pool,
         })
     }
@@ -26,20 +22,12 @@ impl DeploymentService {
     pub async fn deploy_school(&self, school: &School) -> Result<(), String> {
         println!("🚀 Starting deployment for school: {}", school.name);
 
-        // Step 1: Create database
-        println!("  📊 Creating database...");
+        // Step 1: Delegate database creation to backend-school
+        println!("  📊 Requesting backend-school to create database...");
         let connection_string = self
-            .neon
-            .create_database(&school.db_name)
+            .create_school_database(school)
             .await
             .map_err(|e| format!("Database creation failed: {}", e))?;
-
-        // Step 2: Run migrations
-        println!("  🔧 Running migrations...");
-        self.neon
-            .run_migrations(&connection_string)
-            .await
-            .map_err(|e| format!("Migration failed: {}", e))?;
 
         // Step 3: Update school record with connection string
         println!("  💾 Updating school record...");
@@ -80,15 +68,11 @@ impl DeploymentService {
     }
 
     /// Undeploy school (delete all resources)
+    /// Note: Database cleanup should be done via backend-school
     pub async fn undeploy_school(&self, school: &School) -> Result<(), String> {
         println!("🗑️  Undeploying school: {}", school.name);
 
-        // Delete database
-        if let Err(e) = self.neon.delete_database(&school.db_name).await {
-            eprintln!("Warning: Failed to delete database: {}", e);
-        }
-
-        // Note: Cloudflare Workers and DNS cleanup would go here
+        // TODO: Call backend-school to delete database
         // For now, manual cleanup may be needed
 
         Ok(())
@@ -134,5 +118,55 @@ export default {{
             "#,
             school.name, school.subdomain, school.name
         )
+    }
+
+    async fn create_school_database(&self, school: &School) -> Result<String, String> {
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize)]
+        struct CreateDatabaseRequest {
+            #[serde(rename = "schoolName")]
+            school_name: String,
+            subdomain: String,
+        }
+
+        #[derive(Deserialize)]
+        struct CreateDatabaseResponse {
+            success: bool,
+            message: String,
+            database_name: String,
+            connection_string: String,
+            tables_created: Vec<String>,
+        }
+
+        let backend_school_url = std::env::var("BACKEND_SCHOOL_URL")
+            .unwrap_or_else(|_| "http://localhost:8081".to_string());
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/api/v1/create-school-database", backend_school_url))
+            .json(&CreateDatabaseRequest {
+                school_name: school.name.clone(),
+                subdomain: school.subdomain.clone(),
+            })
+            .send()
+            .await
+            .map_err(|e| format!("Failed to call backend-school: {}", e))?;
+
+        if response.status().is_success() {
+            let db_response: CreateDatabaseResponse = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+            println!("  ✅ {}", db_response.message);
+            println!("  📊 Database: {}", db_response.database_name);
+            println!("  📋 Tables: {}", db_response.tables_created.join(", "));
+            
+            Ok(db_response.connection_string)
+        } else {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            Err(format!("Backend-school returned error: {}", error_text))
+        }
     }
 }

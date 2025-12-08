@@ -1,7 +1,6 @@
 pub mod school_service;
 pub mod auth_service;
 pub mod cloudflare;
-pub mod neon;
 pub mod deployment;
 
 pub use school_service::SchoolService;

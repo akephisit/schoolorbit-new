@@ -5,11 +5,13 @@
 ## 🎯 Features
 
 เมื่อสร้างโรงเรียนใหม่จะทำอัตโนมัติ:
-1. ✅ **Create Database** - สร้าง database ใน Neon
-2. ✅ **Run Migrations** - สร้าง tables (students, teachers, classes)
+1. ✅ **Create Database** - สร้าง database ใน Neon (minimal setup)
+2. ✅ **Setup Extensions** - UUID extension + migration table
 3. ✅ **Deploy Workers** - Deploy Cloudflare Worker
 4. ✅ **Setup DNS** - สร้าง DNS record
 5. ✅ **Configure Routes** - เชื่อม subdomain กับ Worker
+
+**Note:** Full schema migrations จัดการโดย backend-school เมื่อ start ครั้งแรก
 
 ---
 
