@@ -65,9 +65,9 @@ async fn main() {
         .nest("/api/v1/schools", Router::new()
             .route("/", post(handlers::school::create_school))
             .route("/", get(handlers::school::list_schools))
-            .route("/:id", get(handlers::school::get_school))
-            .route("/:id", axum::routing::put(handlers::school::update_school))
-            .route("/:id", axum::routing::delete(handlers::school::delete_school))
+            .route("/{id}", get(handlers::school::get_school))
+            .route("/{id}", axum::routing::put(handlers::school::update_school))
+            .route("/{id}", axum::routing::delete(handlers::school::delete_school))
             .layer(axum::middleware::from_fn(middleware::auth::require_auth))
         )
         // Global layers
@@ -81,11 +81,11 @@ async fn main() {
     println!("  POST /api/v1/auth/logout - Logout");
     println!("  GET  /api/v1/auth/me - Get current user");
     println!("\n  School Management:");
-    println!("  POST   /api/v1/schools     - Create school");
-    println!("  GET    /api/v1/schools     - List schools (paginated)");
-    println!("  GET    /api/v1/schools/:id - Get school by ID");
-    println!("  PUT    /api/v1/schools/:id - Update school");
-    println!("  DELETE /api/v1/schools/:id - Delete school");
+    println!("  POST   /api/v1/schools       - Create school");
+    println!("  GET    /api/v1/schools       - List schools (paginated)");
+    println!("  GET    /api/v1/schools/{{id}}  - Get school by ID");
+    println!("  PUT    /api/v1/schools/{{id}}  - Update school");
+    println!("  DELETE /api/v1/schools/{{id}}  - Delete school");
     println!("\n📝 Test credentials:");
     println!("  National ID: 1234567890123");
     println!("  Password: test123");
