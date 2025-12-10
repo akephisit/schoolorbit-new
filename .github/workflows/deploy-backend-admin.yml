@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - temp
     paths:
       - 'backend-admin/**'
       - '.github/workflows/deploy-backend-admin.yml'
