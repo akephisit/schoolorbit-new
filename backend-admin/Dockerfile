@@ -13,12 +13,6 @@ WORKDIR /app
 # Copy Cargo files
 COPY backend-admin/Cargo.toml ./
 
-# Build dependencies (cache layer)  
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    cargo build --release && \
-    rm -rf src
-
 # Copy source code
 COPY backend-admin/src ./src
 COPY backend-admin/migrations ./migrations
