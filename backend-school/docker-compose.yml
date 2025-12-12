@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: schoolorbit-school-postgres
+    environment:
+      POSTGRES_USER: school_user
+      POSTGRES_PASSWORD: school_password
+      POSTGRES_DB: school_db
+    volumes:
+      - postgres_school_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432" # ใช้ port 5433 ภายนอกเพื่อไม่ชนกับ admin
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U school_user -d school_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - school-network
+
+  backend-school:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: schoolorbit-backend-school
+    ports:
+      - "8081:8081"
+    environment:
+      - RUST_LOG=info
+      - HOST=0.0.0.0
+      - PORT=8081
+      - DATABASE_URL=postgres://school_user:school_password@postgres:5432/school_db
+      - JWT_SECRET=your-secret-key-change-this-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - school-network
+    restart: unless-stopped
+
+volumes:
+  postgres_school_data:
+    driver: local
+
+networks:
+  school-network:
+    driver: bridge
