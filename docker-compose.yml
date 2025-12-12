@@ -52,12 +52,10 @@ services:
       - "8081:8081"
     environment:
       - RUST_LOG=info
-      - ADMIN_DATABASE_URL=postgres://admin_user:password@postgres:5432/schoolorbit_admin
-      - SCHOOL_DB_USER=school_user
-      - SCHOOL_DB_PASSWORD=school_password
-      - SCHOOL_DB_HOST=postgres
+      - HOST=0.0.0.0
+      - PORT=8081
+      - DATABASE_URL=postgres://school_user:school_password@postgres:5432/school_db
       - JWT_SECRET=your-secret-key-change-this-in-production
-      - INTERNAL_API_SECRET=internal-secret-change-this
     depends_on:
       postgres:
         condition: service_healthy
