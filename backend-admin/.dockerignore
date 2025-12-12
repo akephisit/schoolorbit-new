@@ -15,7 +15,7 @@ docs/
 
 # Rust
 target/
-Cargo.lock
+# Cargo.lock - We NEED this for reproducible builds!
 
 # IDE
 .vscode/
