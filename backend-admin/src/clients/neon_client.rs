@@ -1,0 +1,147 @@
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::env;
+
+#[derive(Debug, Serialize)]
+struct CreateDatabaseRequest {
+    database: DatabaseConfig,
+}
+
+#[derive(Debug, Serialize)]
+struct DatabaseConfig {
+    name: String,
+    owner_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateDatabaseResponse {
+    database: DatabaseInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct DatabaseInfo {
+    id: String,
+    name: String,
+    owner_name: String,
+}
+
+pub struct NeonClient {
+    client: Client,
+    api_key: String,
+    project_id: String,
+    branch_id: String,
+}
+
+impl NeonClient {
+    pub fn new() -> Result<Self, String> {
+        let api_key = env::var("NEON_API_KEY")
+            .map_err(|_| "NEON_API_KEY not set".to_string())?;
+        let project_id = env::var("NEON_PROJECT_ID")
+            .map_err(|_| "NEON_PROJECT_ID not set".to_string())?;
+        let branch_id = env::var("NEON_BRANCH_ID")
+            .unwrap_or_else(|_| "main".to_string());
+
+        Ok(Self {
+            client: Client::new(),
+            api_key,
+            project_id,
+            branch_id,
+        })
+    }
+
+    /// Create a new database in Neon
+    pub async fn create_database(
+        &self,
+        db_name: &str,
+        owner_name: &str,
+    ) -> Result<String, String> {
+        let url = format!(
+            "https://console.neon.tech/api/v2/projects/{}/branches/{}/databases",
+            self.project_id, self.branch_id
+        );
+
+        let request_body = CreateDatabaseRequest {
+            database: DatabaseConfig {
+                name: db_name.to_string(),
+                owner_name: owner_name.to_string(),
+            },
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Accept", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to send request: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!(
+                "Neon API error ({}): {}",
+                status, error_text
+            ));
+        }
+
+        let response_data: CreateDatabaseResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        Ok(response_data.database.id)
+    }
+
+    /// Get connection string for a database
+    pub fn get_connection_string(
+        &self,
+        db_name: &str,
+        db_user: &str,
+        db_password: &str,
+    ) -> String {
+        // Neon connection string format
+        // postgres://user:password@host/dbname?sslmode=require
+        let host = env::var("NEON_HOST")
+            .unwrap_or_else(|_| format!("{}.neon.tech", self.project_id));
+
+        format!(
+            "postgresql://{}:{}@{}/{}?sslmode=require",
+            db_user, db_password, host, db_name
+        )
+    }
+
+    /// Delete a database (for rollback)
+    pub async fn delete_database(&self, db_id: &str) -> Result<(), String> {
+        let url = format!(
+            "https://console.neon.tech/api/v2/projects/{}/branches/{}/databases/{}",
+            self.project_id, self.branch_id, db_id
+        );
+
+        let response = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to delete database: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!(
+                "Failed to delete database ({}): {}",
+                status, error_text
+            ));
+        }
+
+        Ok(())
+    }
+}

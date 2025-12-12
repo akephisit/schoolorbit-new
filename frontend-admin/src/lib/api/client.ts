@@ -162,6 +162,9 @@ export interface School {
 	config: Record<string, any>;
 	createdAt: string;
 	updatedAt: string;
+	// Deployment tracking
+	deploymentStatus?: 'provisioning' | 'active' | 'deployment_failed' | 'failed';
+	subdomainUrl?: string;
 }
 
 export interface SchoolListResponse {
