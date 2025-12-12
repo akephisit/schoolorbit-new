@@ -13,6 +13,7 @@ WORKDIR /app
 # Copy backend-school files (standalone, no workspace)
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY migrations ./migrations
 
 # Build the application
 RUN cargo build --release --bin backend-school
