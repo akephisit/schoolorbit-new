@@ -1,49 +1,31 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: schoolorbit-school-postgres
-    environment:
-      POSTGRES_USER: school_user
-      POSTGRES_PASSWORD: school_password
-      POSTGRES_DB: school_db
-    volumes:
-      - postgres_school_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432" # ใช้ port 5433 ภายนอกเพื่อไม่ชนกับ admin
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U school_user -d school_db" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - school-network
-
   backend-school:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/akephisit/schoolorbit-backend-school:latest
     container_name: schoolorbit-backend-school
+    restart: unless-stopped
     ports:
       - "8081:8081"
     environment:
-      - RUST_LOG=info
-      - HOST=0.0.0.0
-      - PORT=8081
-      - DATABASE_URL=postgres://school_user:school_password@postgres:5432/school_db
-      - JWT_SECRET=your-secret-key-change-this-in-production
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - RUST_LOG=${RUST_LOG:-info}
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-8081}
     networks:
-      - school-network
-    restart: unless-stopped
-
-volumes:
-  postgres_school_data:
-    driver: local
+      - web_network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
 networks:
-  school-network:
-    driver: bridge
+  web_network:
+    external: true
+    name: stack_web
