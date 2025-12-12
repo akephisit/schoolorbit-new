@@ -1,0 +1,12 @@
+# Admin User Credentials
+
+For testing and initial login:
+
+**National ID:** 1234567890123
+**Password:** admin123
+**Name:** System Administrator
+**Role:** admin
+
+⚠️ **IMPORTANT:** Change this password immediately after first login in production!
+
+The password is hashed using bcrypt with cost 10.
