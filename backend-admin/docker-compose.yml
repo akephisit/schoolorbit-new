@@ -30,6 +30,8 @@ services:
 
       # Deployment
       - API_URL=${API_URL}
+      - DEPLOY_SCRIPT_PATH=${DEPLOY_SCRIPT_PATH:-./scripts/deploy_tenant.sh}
+      - FRONTEND_SCHOOL_BUILD_PATH=${FRONTEND_SCHOOL_BUILD_PATH:-../frontend-school}
 
       # General
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
