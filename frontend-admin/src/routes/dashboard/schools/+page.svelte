@@ -102,15 +102,15 @@
 <div class="schools-page">
 	<div class="header">
 		<h1>จัดการโรงเรียน</h1>
-		<button class="btn-primary" onclick={() => showCreateForm = !showCreateForm}>
+		<button class="btn-primary" onclick={() => (showCreateForm = !showCreateForm)}>
 			{showCreateForm ? 'ยกเลิก' : '+ เพิ่มโรงเรียน'}
 		</button>
 	</div>
-	
+
 	{#if error}
 		<div class="alert alert-error">{error}</div>
 	{/if}
-	
+
 	{#if showCreateForm}
 		<div class="create-form-card">
 			<h2>สร้างโรงเรียนใหม่</h2>
@@ -125,7 +125,7 @@
 						placeholder="โรงเรียนตัวอย่าง"
 					/>
 				</div>
-				
+
 				<div class="form-group">
 					<label for="subdomain">Subdomain</label>
 					<input
@@ -138,7 +138,7 @@
 					/>
 					<small>ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น</small>
 				</div>
-				
+
 				<div class="form-group">
 					<label for="nationalId">เลขบัตรประชาชนผู้ดูแล</label>
 					<input
@@ -152,7 +152,7 @@
 					/>
 					<small>13 หลัก</small>
 				</div>
-				
+
 				<div class="form-group">
 					<label for="password">รหัสผ่านผู้ดูแล</label>
 					<input
@@ -164,14 +164,14 @@
 						placeholder="••••••••"
 					/>
 				</div>
-				
+
 				<button type="submit" class="btn-primary full-width" disabled={creating}>
 					{creating ? 'กำลังสร้าง...' : 'สร้างโรงเรียน'}
 				</button>
 			</form>
 		</div>
 	{/if}
-	
+
 	{#if loading}
 		<div class="loading">กำลังโหลด...</div>
 	{:else if schools.length === 0}
@@ -184,30 +184,69 @@
 				<div class="school-card">
 					<div class="school-header">
 						<h3>{school.name}</h3>
-						<span class="status" class:active={school.status === 'active'}>
-							{school.status}
-						</span>
+						<div class="status-badges">
+							{#if school.status === 'provisioning'}
+								<span class="status provisioning">
+									<span class="spinner"></span>
+									กำลังสร้าง
+								</span>
+							{:else if school.status === 'deployment_failed'}
+								<span class="status failed"> ❌ ล้มเหลว </span>
+							{:else if school.status === 'active'}
+								<span class="status active"> ✅ พร้อมใช้งาน </span>
+							{:else}
+								<span class="status">
+									{school.status}
+								</span>
+							{/if}
+						</div>
 					</div>
+
 					<div class="school-info">
 						<p><strong>Subdomain:</strong> {school.subdomain}</p>
+
+						{#if school.subdomainUrl || (school.config && school.config.deployment_url)}
+							<p class="subdomain-url">
+								<strong>URL:</strong>
+								<a
+									href={school.subdomainUrl || school.config.deployment_url}
+									target="_blank"
+									rel="noopener noreferrer"
+								>
+									{school.subdomainUrl || school.config.deployment_url}
+									<span class="external-link">↗</span>
+								</a>
+							</p>
+						{/if}
+
 						<p><strong>Database:</strong> {school.dbName}</p>
-						<p><strong>Created:</strong> {new Date(school.createdAt).toLocaleDateString('th-TH')}</p>
+						<p>
+							<strong>Created:</strong>
+							{new Date(school.createdAt).toLocaleDateString('th-TH')}
+						</p>
+
+						{#if school.status === 'deployment_failed' && school.config && school.config.error}
+							<div class="error-message">
+								<strong>ข้อผิดพลาด:</strong>
+								{school.config.error}
+							</div>
+						{/if}
 					</div>
+
 					<div class="school-actions">
-						<a href="/dashboard/schools/{school.id}" class="btn-secondary btn-sm">
-							ดูรายละเอียด
-						</a>
+						<a href="/dashboard/schools/{school.id}" class="btn-secondary btn-sm"> ดูรายละเอียด </a>
 						<button
 							class="btn-danger btn-sm"
 							onclick={() => deleteSchool(school.id, school.name)}
+							disabled={school.status === 'provisioning'}
 						>
-							ลบ
+							{school.status === 'provisioning' ? 'รอสักครู่...' : 'ลบ'}
 						</button>
 					</div>
 				</div>
 			{/each}
 		</div>
-		
+
 		<div class="pagination">
 			<button onclick={prevPage} disabled={page === 1}>← ก่อนหน้า</button>
 			<span>หน้า {page} จาก {totalPages} (ทั้งหมด {total} โรงเรียน)</span>
@@ -382,6 +421,13 @@
 		font-size: 1.25rem;
 		color: #2d3748;
 		margin: 0;
+		flex: 1;
+	}
+	
+	.status-badges {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
 	}
 	
 	.status {
@@ -392,11 +438,50 @@
 		text-transform: uppercase;
 		background: #e2e8f0;
 		color: #4a5568;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
 	}
 	
 	.status.active {
 		background: #c6f6d5;
 		color: #22543d;
+	}
+	
+	.status.provisioning {
+		background: #bee3f8;
+		color: #2c5282;
+		animation: pulse 2s ease-in-out infinite;
+	}
+	
+	.status.failed {
+		background: #fed7d7;
+		color: #c53030;
+	}
+	
+	@keyframes pulse {
+		0%, 100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.7;
+		}
+	}
+	
+	.spinner {
+		width: 12px;
+		height: 12px;
+		border: 2px solid #2c5282;
+		border-top-color: transparent;
+		border-radius: 50%;
+		display: inline-block;
+		animation: spin 0.8s linear infinite;
+	}
+	
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 	
 	.school-info {
@@ -407,6 +492,35 @@
 		margin: 0.5rem 0;
 		color: #4a5568;
 		font-size: 0.875rem;
+	}
+	
+	.subdomain-url a {
+		color: #667eea;
+		text-decoration: none;
+		font-weight: 600;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		transition: color 0.2s;
+	}
+	
+	.subdomain-url a:hover {
+		color: #764ba2;
+		text-decoration: underline;
+	}
+	
+	.external-link {
+		font-size: 0.75rem;
+	}
+	
+	.error-message {
+		margin-top: 0.75rem;
+		padding: 0.75rem;
+		background: #fed7d7;
+		color: #c53030;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		border-left: 3px solid #e53e3e;
 	}
 	
 	.school-actions {
