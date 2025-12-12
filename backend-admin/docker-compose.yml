@@ -8,8 +8,30 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # Database
       - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET=${JWT_SECRET}
+
+      # Neon API (for tenant database provisioning)
+      - NEON_API_KEY=${NEON_API_KEY}
+      - NEON_PROJECT_ID=${NEON_PROJECT_ID}
+      - NEON_BRANCH_ID=${NEON_BRANCH_ID:-main}
+      - NEON_HOST=${NEON_HOST}
+
+      # Cloudflare (for Workers deployment & DNS)
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CLOUDFLARE_ZONE_ID=${CLOUDFLARE_ZONE_ID}
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+      - BASE_DOMAIN=${BASE_DOMAIN:-schoolorbit.app}
+
+      # Backend-School Communication
+      - BACKEND_SCHOOL_URL=${BACKEND_SCHOOL_URL:-http://backend-school:8081}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+
+      # Deployment
+      - API_URL=${API_URL}
+
+      # General
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - RUST_LOG=${RUST_LOG:-info}
     networks:
