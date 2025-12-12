@@ -84,6 +84,29 @@
 		}
 	}
 	
+	// Deploy functionality
+	let deploying = $state<string | null>(null);
+	
+	async function handleDeploy(schoolId: string, schoolName: string) {
+		deploying = schoolId;
+		error = '';
+		
+		try {
+			const response = await apiClient.deploySchool(schoolId);
+			if (response.success && response.data) {
+				const githubUrl = response.data.githubActionsUrl || 'GitHub Actions';
+				alert(`✅ Deployment triggered for ${schoolName}!\n\n${response.data.message}\n\nCheck progress: ${githubUrl}`);
+				await loadSchools();
+			} else {
+				error = response.error || 'Deployment failed';
+			}
+		} catch (e: any) {
+			error = e.message || 'Deployment failed';
+		} finally {
+			deploying = null;
+		}
+	}
+	
 	function nextPage() {
 		if (page < totalPages) {
 			page++;
@@ -236,11 +259,21 @@
 					<div class="school-actions">
 						<a href="/dashboard/schools/{school.id}" class="btn-secondary btn-sm"> ดูรายละเอียด </a>
 						<button
+							class="btn-primary btn-sm"
+							onclick={() => handleDeploy(school.id, school.name)}
+							disabled={deploying === school.id ||
+								school.status !== 'active' ||
+								school.deploymentStatus === 'provisioning'}
+						>
+							{deploying === school.id ? '🔄 Deploying...' : '🚀 Deploy'}
+						</button>
+
+						<button
 							class="btn-danger btn-sm"
 							onclick={() => deleteSchool(school.id, school.name)}
-							disabled={school.status === 'provisioning'}
+							disabled={deploying === school.id || school.deploymentStatus === 'provisioning'}
 						>
-							{school.status === 'provisioning' ? 'รอสักครู่...' : 'ลบ'}
+							🗑️ ลบ
 						</button>
 					</div>
 				</div>
@@ -254,6 +287,7 @@
 		</div>
 	{/if}
 </div>
+```
 
 <style>
 	.schools-page {
@@ -561,6 +595,47 @@
 	.pagination button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+	
+	.btn-delete {
+		padding: 0.5rem 1rem;
+		background: #ef4444;
+		color: white;
+		border: none;
+		border-radius: 6px;
+		cursor: pointer;
+		transition: background 0.2s;
+	}
+	
+	.btn-delete:hover:not(:disabled) {
+		background: #dc2626;
+	}
+	
+	.btn-delete:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	
+	.btn-deploy {
+		padding: 0.5rem 1rem;
+		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		color: white;
+		border: none;
+		border-radius: 6px;
+		cursor: pointer;
+		font-weight: 600;
+		transition: transform 0.2s, box-shadow 0.2s;
+	}
+	
+	.btn-deploy:hover:not(:disabled) {
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+	}
+	
+	.btn-deploy:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
 	}
 	
 	.pagination span {
