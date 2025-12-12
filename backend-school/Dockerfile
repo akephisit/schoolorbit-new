@@ -10,13 +10,12 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy backend-admin files (standalone, no workspace)
+# Copy backend-school files (standalone, no workspace)
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY migrations ./migrations
 
 # Build the application
-RUN cargo build --release --bin backend-admin
+RUN cargo build --release --bin backend-school
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \
@@ -24,6 +23,6 @@ RUN useradd -m -u 1000 appuser && \
 
 USER appuser
 
-EXPOSE 8080
+EXPOSE 8081
 
-CMD ["/app/target/release/backend-admin"]
+CMD ["/app/target/release/backend-school"]

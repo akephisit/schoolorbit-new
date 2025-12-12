@@ -13,7 +13,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin_user -d schoolorbit_admin"]
+      test: [ "CMD-SHELL", "pg_isready -U admin_user -d schoolorbit_admin" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,8 +22,8 @@ services:
 
   backend-admin:
     build:
-      context: .
-      dockerfile: backend-admin/Dockerfile
+      context: ./backend-admin
+      dockerfile: Dockerfile
     container_name: schoolorbit-backend-admin
     ports:
       - "8080:8080"
@@ -45,8 +45,8 @@ services:
 
   backend-school:
     build:
-      context: .
-      dockerfile: backend-school/Dockerfile
+      context: ./backend-school
+      dockerfile: Dockerfile
     container_name: schoolorbit-backend-school
     ports:
       - "8081:8081"
