@@ -60,13 +60,13 @@ async fn main() {
         .nest("/api/v1/schools", Router::new()
             .route("/", post(handlers::school::create_school))
             .route("/", get(handlers::school::list_schools))
-            .route("/:id", get(handlers::school::get_school))
-            .route("/:id", axum::routing::put(handlers::school::update_school))
-            .route("/:id", axum::routing::delete(handlers::school::delete_school))
+            .route("/{id}", get(handlers::school::get_school))
+            .route("/{id}", axum::routing::put(handlers::school::update_school))
+            .route("/{id}", axum::routing::delete(handlers::school::delete_school))
             // Deployment endpoints
-            .route("/:id/deploy", post(handlers::school::deploy_school))
+            .route("/{id}/deploy", post(handlers::school::deploy_school))
             .route("/deploy/bulk", post(handlers::school::bulk_deploy_schools))
-            .route("/:id/deployments", get(handlers::school::get_deployment_history))
+            .route("/{id}/deployments", get(handlers::school::get_deployment_history))
             .layer(axum::middleware::from_fn(middleware::auth::require_auth))
         )
         // Global layers
