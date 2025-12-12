@@ -8,7 +8,9 @@ pub enum AppError {
     DatabaseError(String),
     InternalServerError(String),
     BadRequest(String),
+    ExternalServiceError(String),
 }
+
 
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -19,9 +21,11 @@ impl std::fmt::Display for AppError {
             AppError::DatabaseError(msg) => write!(f, "Database Error: {}", msg),
             AppError::InternalServerError(msg) => write!(f, "Internal Server Error: {}", msg),
             AppError::BadRequest(msg) => write!(f, "Bad Request: {}", msg),
+            AppError::ExternalServiceError(msg) => write!(f, "External Service Error: {}", msg),
         }
     }
 }
+
 
 impl std::error::Error for AppError {}
 
@@ -46,6 +50,7 @@ impl AppError {
             AppError::DatabaseError(msg) => ("DATABASE_ERROR", msg),
             AppError::InternalServerError(msg) => ("INTERNAL_SERVER_ERROR", msg),
             AppError::BadRequest(msg) => ("BAD_REQUEST", msg),
+            AppError::ExternalServiceError(msg) => ("EXTERNAL_SERVICE_ERROR", msg),
         };
 
         ErrorResponse {
@@ -57,3 +62,4 @@ impl AppError {
         }
     }
 }
+
