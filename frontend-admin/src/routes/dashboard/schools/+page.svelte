@@ -641,5 +641,3 @@
 	.pagination span {
 		color: #4a5568;
 		font-weight: 500;
-	}
-</style>
