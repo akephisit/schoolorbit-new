@@ -1,0 +1,82 @@
+name: Deploy School Tenant
+
+on:
+  workflow_dispatch:
+    inputs:
+      subdomain:
+        description: 'School subdomain (e.g., test-school)'
+        required: true
+        type: string
+      school_id:
+        description: 'School UUID from database'
+        required: true
+        type: string
+      api_url:
+        description: 'Backend API URL for this tenant'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout frontend-school repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/schoolorbit-frontend-school
+          # Or use the same repo with path
+          # path: frontend-school
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Create Wrangler configuration
+        run: |
+          cat > wrangler.json <<EOF
+          {
+            "name": "schoolorbit-school-${{ inputs.subdomain }}",
+            "account_id": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
+            "main": "build/index.js",
+            "build": {
+              "command": "npm run build"
+            },
+            "compatibility_date": "2025-09-15",
+            "compatibility_flags": ["nodejs_compat"],
+            "assets": {
+              "directory": "build/client",
+              "binding": "ASSETS"
+            },
+            "vars": {
+              "PUBLIC_API_URL": "${{ inputs.api_url }}",
+              "SCHOOL_ID": "${{ inputs.school_id }}",
+              "SUBDOMAIN": "${{ inputs.subdomain }}"
+            }
+          }
+          EOF
+      
+      - name: Build frontend
+        run: npm run build
+      
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: deploy
+      
+      - name: Report deployment status
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ Successfully deployed ${{ inputs.subdomain }}"
+            echo "URL: https://${{ inputs.subdomain }}.schoolorbit.app"
+          else
+            echo "❌ Deployment failed for ${{ inputs.subdomain }}"
+            exit 1
+          fi
