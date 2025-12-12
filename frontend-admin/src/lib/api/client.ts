@@ -134,6 +134,24 @@ class ApiClient {
 			method: 'DELETE'
 		});
 	}
+
+	// Deployment methods
+	async deploySchool(id: string): Promise<ApiResponse<DeployResponse>> {
+		return this.request<DeployResponse>(`/api/v1/schools/${id}/deploy`, {
+			method: 'POST'
+		});
+	}
+
+	async bulkDeploySchools(schoolIds: string[]): Promise<ApiResponse<BulkDeployResult>> {
+		return this.request<BulkDeployResult>('/api/v1/schools/deploy/bulk', {
+			method: 'POST',
+			body: JSON.stringify({ school_ids: schoolIds })
+		});
+	}
+
+	async getDeploymentHistory(id: string): Promise<ApiResponse<DeploymentHistory[]>> {
+		return this.request<DeploymentHistory[]>(`/api/v1/schools/${id}/deployments`);
+	}
 }
 
 export const apiClient = new ApiClient();
@@ -165,6 +183,39 @@ export interface School {
 	// Deployment tracking
 	deploymentStatus?: 'provisioning' | 'active' | 'deployment_failed' | 'failed';
 	subdomainUrl?: string;
+	deploymentErrorMessage?: string | null;
+}
+
+export interface DeployResponse {
+	success: boolean;
+	message: string;
+	deploymentUrl?: string;
+	githubActionsUrl?: string;
+}
+
+export interface DeployResult {
+	schoolId: string;
+	schoolName: string;
+	success: boolean;
+	message: string;
+	deploymentUrl?: string;
+}
+
+export interface BulkDeployResult {
+	total: number;
+	successful: DeployResult[];
+	failed: DeployResult[];
+}
+
+export interface DeploymentHistory {
+	id: string;
+	schoolId: string;
+	status: string;
+	message?: string;
+	githubRunId?: string;
+	githubRunUrl?: string;
+	createdAt: string;
+	completedAt?: string;
 }
 
 export interface SchoolListResponse {

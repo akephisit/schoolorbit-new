@@ -289,4 +289,125 @@ impl SchoolService {
 
         Ok(())
     }
+
+    /// Deploy or redeploy frontend for a school
+    pub async fn deploy_school(&self, school_id: Uuid) -> Result<crate::models::DeployResponse, AppError> {
+        use crate::clients::cloudflare_client::CloudflareClient;
+        
+        let school = self.get_school(school_id).await?;
+        
+        if school.status != "active" {
+            return Err(AppError::ValidationError(
+                "Cannot deploy: School is not active".to_string()
+            ));
+        }
+        
+        let api_url = std::env::var("API_URL")
+            .unwrap_or_else(|_| "https://school-api.schoolorbit.app".to_string());
+        let github_repo = std::env::var("GITHUB_REPO")
+            .unwrap_or_else(|_| "akephisit/schoolorbit-new".to_string());
+        
+        let history_id = sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO deployment_history (school_id, status, message) 
+             VALUES ($1, 'pending', 'Deployment triggered') 
+             RETURNING id"
+        )
+        .bind(school_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        
+        let cloudflare_client = CloudflareClient::new()
+            .map_err(|e| AppError::ExternalServiceError(e))?;
+        
+        match cloudflare_client.deploy_worker(&school.subdomain, &school_id.to_string(), &api_url).await {
+            Ok(deployment_url) => {
+                let github_actions_url = format!("https://github.com/{}/actions", github_repo);
+                
+                sqlx::query(
+                    "UPDATE deployment_history 
+                     SET status = 'in_progress', github_run_url = $2
+                     WHERE id = $1"
+                )
+                .bind(history_id)
+                .bind(&github_actions_url)
+                .execute(&self.pool)
+                .await
+                .ok();
+                
+                Ok(crate::models::DeployResponse {
+                    success: true,
+                    message: "Deployment triggered successfully".to_string(),
+                    deployment_url: Some(deployment_url),
+                    github_actions_url: Some(github_actions_url),
+                })
+            }
+            Err(e) => {
+                sqlx::query(
+                    "UPDATE deployment_history 
+                     SET status = 'failed', message = $2, completed_at = NOW()
+                     WHERE id = $1"
+                )
+                .bind(history_id)
+                .bind(&e)
+                .execute(&self.pool)
+                .await
+                .ok();
+                
+                Err(AppError::ExternalServiceError(e))
+            }
+        }
+    }
+    
+    pub async fn bulk_deploy_schools(&self, school_ids: Vec<Uuid>) -> Result<crate::models::BulkDeployResult, AppError> {
+        let mut successful = Vec::new();
+        let mut failed = Vec::new();
+        
+        for school_id in &school_ids {
+            match self.deploy_school(*school_id).await {
+                Ok(response) => {
+                    let school = self.get_school(*school_id).await?;
+                    successful.push(crate::models::DeployResult {
+                        school_id: *school_id,
+                        school_name: school.name,
+                        success: true,
+                        message: response.message,
+                        deployment_url: response.deployment_url,
+                    });
+                }
+                Err(e) => {
+                    let school = self.get_school(*school_id).await.ok();
+                    failed.push(crate::models::DeployResult {
+                        school_id: *school_id,
+                        school_name: school.map(|s| s.name).unwrap_or_else(|| "Unknown".to_string()),
+                        success: false,
+                        message: e.to_string(),
+                        deployment_url: None,
+                    });
+                }
+            }
+        }
+        
+        Ok(crate::models::BulkDeployResult {
+            total: school_ids.len(),
+            successful,
+            failed,
+        })
+    }
+    
+    pub async fn get_deployment_history(&self, school_id: Uuid) -> Result<Vec<crate::models::DeploymentHistory>, AppError> {
+        let history = sqlx::query_as::<_, crate::models::DeploymentHistory>(
+            "SELECT id, school_id, status, message, github_run_id, github_run_url, created_at, completed_at
+             FROM deployment_history
+             WHERE school_id = $1
+             ORDER BY created_at DESC
+             LIMIT 50"
+        )
+        .bind(school_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        
+        Ok(history)
+    }
 }

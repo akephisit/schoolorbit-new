@@ -190,3 +190,92 @@ pub async fn delete_school(Path(id): Path<Uuid>) -> Response {
             .into_response(),
     }
 }
+
+// Deploy/Redeploy school frontend
+pub async fn deploy_school(Path(id): Path<Uuid>) -> Response {
+    let pool = match DB_POOL.get() {
+        Some(pool) => pool.clone(),
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database not initialized"})),
+            )
+                .into_response();
+        }
+    };
+
+    let service = SchoolService::new(pool);
+
+    match service.deploy_school(id).await {
+        Ok(result) => {
+            let response = ApiResponse::success(result);
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkDeployRequest {
+    pub school_ids: Vec<Uuid>,
+}
+
+// Bulk deploy multiple schools
+pub async fn bulk_deploy_schools(Json(data): Json<BulkDeployRequest>) -> Response {
+    let pool = match DB_POOL.get() {
+        Some(pool) => pool.clone(),
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database not initialized"})),
+            )
+                .into_response();
+        }
+    };
+
+    let service = SchoolService::new(pool);
+
+    match service.bulk_deploy_schools(data.school_ids).await {
+        Ok(results) => {
+            let response = ApiResponse::success(results);
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+// Get deployment history for a school
+pub async fn get_deployment_history(Path(id): Path<Uuid>) -> Response {
+    let pool = match DB_POOL.get() {
+        Some(pool) => pool.clone(),
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database not initialized"})),
+            )
+                .into_response();
+        }
+    };
+
+    let service = SchoolService::new(pool);
+
+    match service.get_deployment_history(id).await {
+        Ok(history) => {
+            let response = ApiResponse::success(history);
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
