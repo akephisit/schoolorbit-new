@@ -30,6 +30,7 @@ async fn main() {
     println!("\nAvailable endpoints:");
     println!("  GET  /        - API info");
     println!("  GET  /health  - Health check");
+    println!("  EIEI");
 
     // Run server
     let listener = tokio::net::TcpListener::bind(&addr)
