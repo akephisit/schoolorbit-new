@@ -13,8 +13,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let password = "test123";
     let name = "Test Admin";
 
-    // Hash password using shared library
-    let password_hash = shared::auth::hash_password(password)?;
+    // Hash password using auth library
+    let password_hash = backend_admin::auth::hash_password(password)?;
 
     // Insert admin user
     sqlx::query!(

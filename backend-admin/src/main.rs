@@ -1,3 +1,4 @@
+use backend_admin::{handlers, middleware};
 use axum::{
     routing::{get, post},
     Router,
@@ -6,12 +7,6 @@ use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use tower_cookies::CookieManagerLayer;
-
-mod db;
-mod handlers;
-mod middleware;
-mod models;
-mod services;
 
 #[tokio::main]
 async fn main() {

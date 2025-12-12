@@ -1,6 +1,6 @@
 use crate::models::{AdminUser, CreateAdminUser, LoginRequest};
-use shared::auth::{generate_token, hash_password, verify_password, Claims, UserRole};
-use shared::error::AppError;
+use crate::auth::{generate_token, hash_password, verify_password, Claims, UserRole};
+use crate::error::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 
