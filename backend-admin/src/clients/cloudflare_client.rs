@@ -1,7 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::process::Command;
 
 #[derive(Debug, Serialize)]
 struct CreateDnsRecordRequest {
@@ -128,36 +127,82 @@ impl CloudflareClient {
         Ok(())
     }
 
-    /// Deploy a Cloudflare Worker using wrangler CLI
-    /// This executes the deployment script
+
+    /// Deploy a Cloudflare Worker via GitHub Actions
+    /// Triggers the deploy-school-tenant workflow
     pub async fn deploy_worker(
         &self,
         subdomain: &str,
         school_id: &str,
         api_url: &str,
     ) -> Result<String, String> {
-        let script_path = env::var("DEPLOY_SCRIPT_PATH")
-            .unwrap_or_else(|_| "./scripts/deploy_tenant.sh".to_string());
-
-        println!("📦 Deploying Worker for subdomain: {}", subdomain);
-
-        // Execute the deployment script
-        let output = Command::new("bash")
-            .arg(&script_path)
-            .arg(subdomain)
-            .arg(school_id)
-            .arg(api_url)
-            .output()
-            .map_err(|e| format!("Failed to execute deployment script: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Worker deployment failed: {}", stderr));
+        println!("📦 Triggering GitHub Actions deployment for: {}", subdomain);
+        
+        // Get GitHub configuration
+        let github_token = env::var("GITHUB_TOKEN")
+            .map_err(|_| "GITHUB_TOKEN not set".to_string())?;
+        let github_repo = env::var("GITHUB_REPO")
+            .unwrap_or_else(|_| "akephisit/schoolorbit-new".to_string());
+        
+        // Trigger workflow via GitHub API
+        let url = format!(
+            "https://api.github.com/repos/{}/actions/workflows/deploy-school-tenant.yml/dispatches",
+            github_repo
+        );
+        
+        #[derive(Debug, Serialize)]
+        struct WorkflowDispatch {
+            #[serde(rename = "ref")]
+            git_ref: String,
+            inputs: WorkflowInputs,
         }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        println!("✅ Worker deployed: {}", stdout);
-
+        
+        #[derive(Debug, Serialize)]
+        struct WorkflowInputs {
+            subdomain: String,
+            school_id: String,
+            api_url: String,
+        }
+        
+        let dispatch = WorkflowDispatch {
+            git_ref: "main".to_string(),
+            inputs: WorkflowInputs {
+                subdomain: subdomain.to_string(),
+                school_id: school_id.to_string(),
+                api_url: api_url.to_string(),
+            },
+        };
+        
+        let response = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", github_token))
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("User-Agent", "SchoolOrbit-Backend")
+            .json(&dispatch)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to trigger GitHub Actions: {}", e))?;
+        
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!(
+                "GitHub Actions trigger failed ({}): {}",
+                status, error_text
+            ));
+        }
+        
+        println!("✅ GitHub Actions workflow triggered successfully");
+        println!("   Deployment will be processed by GitHub Actions");
+        println!("   Check: https://github.com/{}/actions", github_repo);
+        
+        // Return the expected URL
+        // Note: Actual deployment happens asynchronously in GitHub Actions
         Ok(format!("https://{}.{}", subdomain, self.base_domain))
     }
 }

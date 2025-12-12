@@ -28,10 +28,10 @@ services:
       - BACKEND_SCHOOL_URL=${BACKEND_SCHOOL_URL:-http://backend-school:8081}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
 
-      # Deployment
+      # Deployment (GitHub Actions)
       - API_URL=${API_URL}
-      - DEPLOY_SCRIPT_PATH=${DEPLOY_SCRIPT_PATH:-./scripts/deploy_tenant.sh}
-      - FRONTEND_SCHOOL_BUILD_PATH=${FRONTEND_SCHOOL_BUILD_PATH:-../frontend-school}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO:-akephisit/schoolorbit-new}
 
       # General
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
