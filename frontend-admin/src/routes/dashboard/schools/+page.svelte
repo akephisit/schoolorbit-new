@@ -156,7 +156,7 @@
 						id="subdomain"
 						bind:value={createData.subdomain}
 						required
-						pattern="[a-z0-9-]+"
+						pattern="[a-z0-9\-]+"
 						placeholder="example-school"
 					/>
 					<small>ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น</small>
@@ -169,7 +169,7 @@
 						id="nationalId"
 						bind:value={createData.adminNationalId}
 						required
-						pattern="(G[0-9]{12}|[0-9]{13})"
+						pattern="G[0-9]{12}|[0-9]{13}"
 						minlength="13"
 						maxlength="13"
 						placeholder="1234567890123 หรือ G123456789012"
