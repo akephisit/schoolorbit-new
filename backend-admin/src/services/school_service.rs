@@ -54,7 +54,7 @@ impl SchoolService {
             .map_err(|e| AppError::ExternalServiceError(format!("Neon client error: {}", e)))?;
 
         let db_id = neon_client
-            .create_database(&db_name, "school_owner")
+            .create_database(&db_name, "neondb_owner")
             .await
             .map_err(|e| AppError::ExternalServiceError(format!("Failed to create database: {}", e)))?;
 
@@ -64,7 +64,7 @@ impl SchoolService {
         let db_password = uuid::Uuid::new_v4().to_string(); // Generate secure password
         let db_connection_string = neon_client.get_connection_string(
             &db_name,
-            "school_owner",
+            "neondb_owner",
             &db_password,
         );
 
