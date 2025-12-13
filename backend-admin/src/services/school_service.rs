@@ -60,8 +60,13 @@ impl SchoolService {
 
         println!("✅ Database created with ID: {}", db_id);
 
-        // Get connection string (in production, you'd retrieve actual credentials from Neon)
-        let db_password = uuid::Uuid::new_v4().to_string(); // Generate secure password
+        // Get Neon database password from environment
+        // This is the password for neondb_owner role in your Neon project
+        let db_password = std::env::var("NEON_DB_PASSWORD")
+            .map_err(|_| AppError::ExternalServiceError(
+                "NEON_DB_PASSWORD not set. Get this from Neon console.".to_string()
+            ))?;
+        
         let db_connection_string = neon_client.get_connection_string(
             &db_name,
             "neondb_owner",
