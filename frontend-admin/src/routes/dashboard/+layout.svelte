@@ -80,10 +80,10 @@
 					<div class="flex items-center space-x-4">
 						<!-- User Info -->
 						<div
-							class="hidden md:flex items-center space-x-3 px-4 py-2 bg-white bg-opacity-10 rounded-lg"
+							class="hidden md:flex items-center space-x-3 px-4 py-2 bg-white bg-opacity-90 rounded-lg shadow-md"
 						>
 							<div
-								class="h-8 w-8 rounded-full bg-white bg-opacity-20 flex items-center justify-center"
+								class="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center"
 							>
 								<svg class="h-5 w-5 text-white" fill="currentColor" viewBox="0 0 20 20">
 									<path
@@ -94,8 +94,8 @@
 								</svg>
 							</div>
 							<div class="text-left">
-								<div class="text-sm font-medium text-white">{authStore.user.name}</div>
-								<div class="text-xs text-purple-100">{authStore.user.role}</div>
+								<div class="text-sm font-medium text-gray-800">{authStore.user.name}</div>
+								<div class="text-xs text-gray-600">{authStore.user.role}</div>
 							</div>
 						</div>
 
