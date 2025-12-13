@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { apiClient, type School, type CreateSchool } from '$lib/api/client';
 	import { onMount } from 'svelte';
+	import { z } from 'zod';
 	
 	let schools = $state<School[]>([]);
 	let total = $state(0);
@@ -18,6 +19,22 @@
 		adminPassword: ''
 	});
 	let creating = $state(false);
+	let validationErrors = $state<Record<string, string>>({});
+	
+	// Zod Schema
+	const createSchoolSchema = z.object({
+		name: z.string().min(1, 'กรุณากรอกชื่อโรงเรียน'),
+		subdomain: z.string()
+			.min(1, 'กรุณากรอก subdomain')
+			.regex(/^[a-z0-9\-]+$/, 'ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น'),
+		adminNationalId: z.string()
+			.length(13, 'ต้องมี 13 หลัก')
+			.refine(
+				(val) => /^(G[0-9]{12}|[0-9]{13})$/.test(val),
+				'กรุณากรอกเลขบัตรประชาชน 13 หลัก หรือ รหัส G + 12 ตัวเลข'
+			),
+		adminPassword: z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร')
+	});
 	
 	onMount(async () => {
 		await loadSchools();
@@ -47,9 +64,13 @@
 		e.preventDefault();
 		creating = true;
 		error = '';
+		validationErrors = {};
 		
 		try {
-			const response = await apiClient.createSchool(createData);
+			// Validate with Zod
+			const validated = createSchoolSchema.parse(createData);
+			
+			const response = await apiClient.createSchool(validated);
 			if (response.success) {
 				showCreateForm = false;
 				createData = {
@@ -63,7 +84,17 @@
 				error = response.error || 'Failed to create school';
 			}
 		} catch (e: any) {
-			error = e.message || 'Failed to create school';
+			if (e instanceof z.ZodError) {
+				// Handle Zod validation errors
+				e.issues.forEach((err: z.ZodIssue) => {
+					if (err.path[0]) {
+						validationErrors[err.path[0] as string] = err.message;
+					}
+				});
+				error = 'กรุณาตรวจสอบข้อมูลที่กรอก';
+			} else {
+				error = e.message || 'Failed to create school';
+			}
 		} finally {
 			creating = false;
 		}
@@ -144,9 +175,11 @@
 						type="text"
 						id="name"
 						bind:value={createData.name}
-						required
 						placeholder="โรงเรียนตัวอย่าง"
 					/>
+					{#if validationErrors.name}
+						<span class="error-text">{validationErrors.name}</span>
+					{/if}
 				</div>
 
 				<div class="form-group">
@@ -155,11 +188,13 @@
 						type="text"
 						id="subdomain"
 						bind:value={createData.subdomain}
-						required
-						pattern="[a-z0-9\-]+"
 						placeholder="example-school"
 					/>
-					<small>ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น</small>
+					{#if validationErrors.subdomain}
+						<span class="error-text">{validationErrors.subdomain}</span>
+					{:else}
+						<small>ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น</small>
+					{/if}
 				</div>
 
 				<div class="form-group">
@@ -168,13 +203,14 @@
 						type="text"
 						id="nationalId"
 						bind:value={createData.adminNationalId}
-						required
-						pattern="G[0-9]{12}|[0-9]{13}"
-						minlength="13"
 						maxlength="13"
 						placeholder="1234567890123 หรือ G123456789012"
 					/>
-					<small>13 หลัก (ตัวเลข หรือ G + 12 ตัวเลข สำหรับชาวต่างชาติ)</small>
+					{#if validationErrors.adminNationalId}
+						<span class="error-text">{validationErrors.adminNationalId}</span>
+					{:else}
+						<small>13 หลัก (ตัว เลข หรือ G + 12 ตัวเลข สำหรับชาวต่างชาติ)</small>
+					{/if}
 				</div>
 
 				<div class="form-group">
@@ -417,6 +453,14 @@
 		text-align: center;
 		padding: 4rem;
 		color: #718096;
+	}
+	
+	.error-text {
+		display: block;
+		margin-top: 0.25rem;
+		color: #e53e3e;
+		font-size: 0.875rem;
+		font-weight: 500;
 	}
 	
 	.empty-state {
