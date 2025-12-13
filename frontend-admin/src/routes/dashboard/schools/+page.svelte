@@ -163,19 +163,18 @@
 				</div>
 
 				<div class="form-group">
-					<label for="nationalId">เลขบัตรประชาชนผู้ดูแล</label>
+					<label for="nationalId">เลขบัตรประชาชน/รหัสผู้ดูแล</label>
 					<input
 						type="text"
 						id="nationalId"
 						bind:value={createData.adminNationalId}
 						required
-						inputmode="numeric"
-						pattern="\d{13}"
+						pattern="^(G\d{12}|\d{13})$"
 						minlength="13"
 						maxlength="13"
-						placeholder="1234567890123"
+						placeholder="1234567890123 หรือ G123456789012"
 					/>
-					<small>13 หลัก (ตัวเลขเท่านั้น)</small>
+					<small>13 หลัก)</small>
 				</div>
 
 				<div class="form-group">

@@ -95,21 +95,24 @@ impl AuthService {
         Ok(admin)
     }
 
-    // Validate Thai National ID (13 digits)
+    // Validate National ID
+    // Supports:
+    // 1. Thai National ID: 13 digits (e.g., 1234567890123)
+    // 2. Foreign ID with G prefix: G + 12 digits (e.g., G123456789012)
     fn validate_national_id(national_id: &str) -> bool {
-        // Must be exactly 13 digits
+        // Must be exactly 13 characters
         if national_id.len() != 13 {
             return false;
         }
 
-        // All characters must be digits
-        if !national_id.chars().all(|c| c.is_ascii_digit()) {
-            return false;
+        // Check if it's a G-prefixed ID (for foreigners)
+        if national_id.starts_with('G') || national_id.starts_with('g') {
+            // G followed by 12 digits
+            let digits_part = &national_id[1..];
+            return digits_part.len() == 12 && digits_part.chars().all(|c| c.is_ascii_digit());
         }
 
-        // Optional: Add checksum validation for Thai National ID
-        // (Not implemented here for simplicity)
-
-        true
+        // Regular Thai National ID: all 13 characters must be digits
+        national_id.chars().all(|c| c.is_ascii_digit())
     }
 }
