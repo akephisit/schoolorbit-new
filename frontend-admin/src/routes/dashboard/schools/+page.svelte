@@ -169,11 +169,13 @@
 						id="nationalId"
 						bind:value={createData.adminNationalId}
 						required
-						pattern="[0-9]{13}"
+						inputmode="numeric"
+						pattern="\d{13}"
+						minlength="13"
 						maxlength="13"
 						placeholder="1234567890123"
 					/>
-					<small>13 หลัก</small>
+					<small>13 หลัก (ตัวเลขเท่านั้น)</small>
 				</div>
 
 				<div class="form-group">
