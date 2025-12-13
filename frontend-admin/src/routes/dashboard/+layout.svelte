@@ -53,7 +53,8 @@
 								/>
 							</svg>
 							<span class="ml-3 text-xl font-bold text-white">SchoolOrbit</span>
-							<span class="ml-2 px-2 py-0.5 bg-white bg-opacity-20 rounded text-xs text-white"
+							<span
+								class="ml-2 px-2 py-0.5 bg-yellow-400 rounded text-xs text-gray-900 font-semibold shadow-sm"
 								>Admin</span
 							>
 						</div>
@@ -80,10 +81,10 @@
 					<div class="flex items-center space-x-4">
 						<!-- User Info -->
 						<div
-							class="hidden md:flex items-center space-x-3 px-4 py-2 bg-white bg-opacity-10 rounded-lg"
+							class="hidden md:flex items-center space-x-3 px-4 py-2 bg-white bg-opacity-90 rounded-lg shadow-md"
 						>
 							<div
-								class="h-8 w-8 rounded-full bg-white bg-opacity-20 flex items-center justify-center"
+								class="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center"
 							>
 								<svg class="h-5 w-5 text-white" fill="currentColor" viewBox="0 0 20 20">
 									<path
@@ -94,15 +95,15 @@
 								</svg>
 							</div>
 							<div class="text-left">
-								<div class="text-sm font-medium text-white">{authStore.user.name}</div>
-								<div class="text-xs text-purple-100">{authStore.user.role}</div>
+								<div class="text-sm font-medium text-gray-800">{authStore.user.name}</div>
+								<div class="text-xs text-gray-600">{authStore.user.role}</div>
 							</div>
 						</div>
 
 						<!-- Logout Button -->
 						<button
 							onclick={handleLogout}
-							class="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-lg transition-all flex items-center space-x-2"
+							class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all flex items-center space-x-2 shadow-md"
 						>
 							<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path

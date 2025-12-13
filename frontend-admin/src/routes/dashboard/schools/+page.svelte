@@ -163,17 +163,18 @@
 				</div>
 
 				<div class="form-group">
-					<label for="nationalId">เลขบัตรประชาชนผู้ดูแล</label>
+					<label for="nationalId">เลขบัตรประชาชน/รหัสผู้ดูแล</label>
 					<input
 						type="text"
 						id="nationalId"
 						bind:value={createData.adminNationalId}
 						required
-						pattern="[0-9]{13}"
+						pattern="^(G\d{12}|\d{13})$"
+						minlength="13"
 						maxlength="13"
-						placeholder="1234567890123"
+						placeholder="1234567890123 หรือ G123456789012"
 					/>
-					<small>13 หลัก</small>
+					<small>13 หลัก)</small>
 				</div>
 
 				<div class="form-group">
@@ -595,47 +596,6 @@
 	.pagination button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
-	}
-	
-	.btn-delete {
-		padding: 0.5rem 1rem;
-		background: #ef4444;
-		color: white;
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-		transition: background 0.2s;
-	}
-	
-	.btn-delete:hover:not(:disabled) {
-		background: #dc2626;
-	}
-	
-	.btn-delete:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-	
-	.btn-deploy {
-		padding: 0.5rem 1rem;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		color: white;
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-		font-weight: 600;
-		transition: transform 0.2s, box-shadow 0.2s;
-	}
-	
-	.btn-deploy:hover:not(:disabled) {
-		transform: translateY(-2px);
-		box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-	}
-	
-	.btn-deploy:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-		transform: none;
 	}
 	
 	.pagination span {
