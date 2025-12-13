@@ -89,10 +89,17 @@ impl NeonClient {
             ));
         }
 
-        let response_data: CreateDatabaseResponse = response
-            .json()
+        // Get response text first for debugging
+        let response_text = response
+            .text()
             .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
+            .map_err(|e| format!("Failed to read response: {}", e))?;
+        
+        println!("Neon API Response: {}", response_text);
+
+        // Try to parse the response
+        let response_data: CreateDatabaseResponse = serde_json::from_str(&response_text)
+            .map_err(|e| format!("Failed to parse response: {}. Response was: {}", e, response_text))?;
 
         Ok(response_data.database.id)
     }
