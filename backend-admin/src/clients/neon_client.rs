@@ -20,7 +20,7 @@ struct CreateDatabaseResponse {
 
 #[derive(Debug, Deserialize)]
 struct DatabaseInfo {
-    id: String,
+    id: i64,  // Changed from String to i64 to match Neon API
     name: String,
     owner_name: String,
 }
@@ -54,7 +54,7 @@ impl NeonClient {
         &self,
         db_name: &str,
         owner_name: &str,
-    ) -> Result<String, String> {
+    ) -> Result<i64, String> {  // Changed from String to i64
         let url = format!(
             "https://console.neon.tech/api/v2/projects/{}/branches/{}/databases",
             self.project_id, self.branch_id
@@ -123,7 +123,7 @@ impl NeonClient {
     }
 
     /// Delete a database (for rollback)
-    pub async fn delete_database(&self, db_id: &str) -> Result<(), String> {
+    pub async fn delete_database(&self, db_id: i64) -> Result<(), String> {  // Changed from &str to i64
         let url = format!(
             "https://console.neon.tech/api/v2/projects/{}/branches/{}/databases/{}",
             self.project_id, self.branch_id, db_id

@@ -102,7 +102,7 @@ impl SchoolService {
             Err(e) => {
                 eprintln!("❌ Failed to provision tenant: {}", e);
                 // Rollback: Delete database
-                let _ = neon_client.delete_database(&db_id).await;
+                let _ = neon_client.delete_database(db_id).await;
                 return Err(AppError::ExternalServiceError(format!("Tenant provisioning failed: {}", e)));
             }
         }
