@@ -169,12 +169,12 @@
 						id="nationalId"
 						bind:value={createData.adminNationalId}
 						required
-						pattern="^(G\d{12}|\d{13})$"
+						pattern="(G[0-9]{12}|[0-9]{13})"
 						minlength="13"
 						maxlength="13"
 						placeholder="1234567890123 หรือ G123456789012"
 					/>
-					<small>13 หลัก)</small>
+					<small>13 หลัก (ตัวเลข หรือ G + 12 ตัวเลข สำหรับชาวต่างชาติ)</small>
 				</div>
 
 				<div class="form-group">
