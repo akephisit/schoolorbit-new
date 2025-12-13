@@ -598,47 +598,6 @@
 		cursor: not-allowed;
 	}
 	
-	.btn-delete {
-		padding: 0.5rem 1rem;
-		background: #ef4444;
-		color: white;
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-		transition: background 0.2s;
-	}
-	
-	.btn-delete:hover:not(:disabled) {
-		background: #dc2626;
-	}
-	
-	.btn-delete:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-	
-	.btn-deploy {
-		padding: 0.5rem 1rem;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		color: white;
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-		font-weight: 600;
-		transition: transform 0.2s, box-shadow 0.2s;
-	}
-	
-	.btn-deploy:hover:not(:disabled) {
-		transform: translateY(-2px);
-		box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-	}
-	
-	.btn-deploy:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-		transform: none;
-	}
-	
 	.pagination span {
 		color: #4a5568;
 		font-weight: 500;
