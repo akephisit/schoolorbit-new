@@ -17,6 +17,7 @@ services:
       - NEON_PROJECT_ID=${NEON_PROJECT_ID}
       - NEON_BRANCH_ID=${NEON_BRANCH_ID:-main}
       - NEON_HOST=${NEON_HOST}
+      - NEON_DB_PASSWORD=${NEON_DB_PASSWORD}
 
       # Cloudflare (for Workers deployment & DNS)
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
