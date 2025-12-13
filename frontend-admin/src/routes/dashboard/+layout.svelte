@@ -53,7 +53,8 @@
 								/>
 							</svg>
 							<span class="ml-3 text-xl font-bold text-white">SchoolOrbit</span>
-							<span class="ml-2 px-2 py-0.5 bg-white bg-opacity-20 rounded text-xs text-white"
+							<span
+								class="ml-2 px-2 py-0.5 bg-yellow-400 rounded text-xs text-gray-900 font-semibold shadow-sm"
 								>Admin</span
 							>
 						</div>
@@ -102,7 +103,7 @@
 						<!-- Logout Button -->
 						<button
 							onclick={handleLogout}
-							class="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-lg transition-all flex items-center space-x-2"
+							class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all flex items-center space-x-2 shadow-md"
 						>
 							<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path
