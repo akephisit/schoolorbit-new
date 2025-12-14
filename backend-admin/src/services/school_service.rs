@@ -125,6 +125,12 @@ impl SchoolService {
         }
 
         // Step 3: Create DNS record in Cloudflare
+        // NOTE: Skipped! Wrangler (GitHub Actions) will create and manage DNS automatically
+        // when deploying with custom_domain configuration
+        println!("📦 Step 3/4: Skipping DNS creation (Wrangler will handle this)...");
+        let dns_record_id = "".to_string(); // Managed by Wrangler
+        
+        /* Commented out - DNS is now managed by Wrangler
         println!("📦 Step 3/4: Creating DNS record...");
         use crate::clients::cloudflare_client::CloudflareClient;
         let cloudflare_client = CloudflareClient::new()
@@ -141,6 +147,8 @@ impl SchoolService {
                 "".to_string()
             }
         };
+        */
+
 
         // Step 4: Deploy Cloudflare Worker
         println!("📦 Step 4/4: Deploying Cloudflare Worker...");
