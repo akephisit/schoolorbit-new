@@ -60,6 +60,18 @@ impl SchoolService {
 
         println!("✅ Database created with ID: {}", db_id);
 
+        // Wait for database to be ready
+        neon_client
+            .wait_for_database_ready(&db_name)
+            .await
+            .map_err(|e| {
+                // Rollback: Delete database if wait fails
+                let _ = async {
+                    neon_client.delete_database(db_id).await
+                };
+                AppError::ExternalServiceError(format!("Database not ready: {}", e))
+            })?;
+
         // Get Neon database password from environment
         // This is the password for neondb_owner role in your Neon project
         let db_password = std::env::var("NEON_DB_PASSWORD")

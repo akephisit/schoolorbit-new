@@ -122,8 +122,9 @@ impl NeonClient {
         )
     }
 
+
     /// Delete a database (for rollback)
-    pub async fn delete_database(&self, db_id: i64) -> Result<(), String> {  // Changed from &str to i64
+    pub async fn delete_database(&self, db_id: i64) -> Result<(), String> {
         let url = format!(
             "https://console.neon.tech/api/v2/projects/{}/branches/{}/databases/{}",
             self.project_id, self.branch_id, db_id
@@ -150,5 +151,52 @@ impl NeonClient {
         }
 
         Ok(())
+    }
+
+    /// Wait for database to be ready
+    /// Neon creates databases asynchronously, so we need to wait for it to be ready
+    pub async fn wait_for_database_ready(&self, db_name: &str) -> Result<(), String> {
+        println!("⏳ Waiting for database to be ready...");
+        
+        let max_attempts = 30; // 30 seconds max
+        let mut attempts = 0;
+        
+        while attempts < max_attempts {
+            attempts += 1;
+            
+            // Check if database exists and is ready
+            let url = format!(
+                "https://console.neon.tech/api/v2/projects/{}/branches/{}/databases",
+                self.project_id, self.branch_id
+            );
+            
+            let response = self
+                .client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .send()
+                .await
+                .map_err(|e| format!("Failed to check database status: {}", e))?;
+            
+            if response.status().is_success() {
+                let text = response.text().await
+                    .map_err(|e| format!("Failed to read response: {}", e))?;
+                
+                // Check if our database is in the list
+                if text.contains(db_name) {
+                    println!("✅ Database is ready!");
+                    return Ok(());
+                }
+            }
+            
+            // Wait 1 second before retry
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            
+            if attempts % 5 == 0 {
+                println!("   Still waiting... ({}/{})", attempts, max_attempts);
+            }
+        }
+        
+        Err(format!("Timeout waiting for database '{}' to be ready", db_name))
     }
 }
