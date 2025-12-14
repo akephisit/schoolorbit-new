@@ -1,5 +1,5 @@
 {
-	"name": "schoolorbit-admin",
+	"name": "schoolorbit-frontend-admin",
 	"account_id": "4b8287e143531729dec988559f6721ef",
 	"main": "build/index.js",
 	"build": {
