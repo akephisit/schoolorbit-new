@@ -104,27 +104,27 @@
 				validated,
 				{
 					onLog: (level, message) => {
-						if (tempSchool.logs) {
-							tempSchool.logs = [
-								...tempSchool.logs,
-								{ level: level as any, message, timestamp: new Date() }
-							];
-							schools = [...schools];
-						}
+						schools = schools.map(s => 
+							s.id === tempSchool.id
+								? { ...s, logs: [...(s.logs || []), { level: level as any, message, timestamp: new Date() }] }
+								: s
+						);
 					},
 					
 					onProgress: (step, total, message) => {
-						tempSchool.progress = { step, total, message };
-						schools = [...schools];
+						schools = schools.map(s =>
+							s.id === tempSchool.id
+								? { ...s, progress: { step, total, message } }
+								: s
+						);
 					},
 					
 					onComplete: (data) => {
-						// Replace temp school with real data
-						const index = schools.findIndex(s => s.id === tempSchool.id);
-						if (index !== -1) {
-							schools[index] = { ...data, logs: undefined, isDeploying: false };
-							schools = [...schools];
-						}
+						schools = schools.map(s =>
+							s.id === tempSchool.id
+								? { ...data, logs: undefined, isDeploying: false }
+								: s
+						);
 						
 						// Reset form
 						showCreateForm = false;
@@ -137,14 +137,11 @@
 					},
 					
 					onError: (errorMsg) => {
-						if (tempSchool.logs) {
-							tempSchool.logs = [
-								...tempSchool.logs,
-								{ level: 'error', message: errorMsg, timestamp: new Date() }
-							];
-						}
-						tempSchool.isDeploying = false;
-						schools = [...schools];
+						schools = schools.map(s =>
+							s.id === tempSchool.id
+								? { ...s, logs: [...(s.logs || []), { level: 'error', message: errorMsg, timestamp: new Date() }], isDeploying: false }
+								: s
+						);
 						error = errorMsg;
 					}
 				}
@@ -171,12 +168,12 @@
 		
 		const school = schools.find(s => s.id === id);
 		if (!school) return;
-		
-		school.isDeleting = true;
-		school.logs = [];
-		schools = [...schools];
-		
-
+		// Update school state to show it's deleting
+		schools = schools.map(s =>
+			s.id === id
+				? { ...s, isDeleting: true, logs: [] }
+				: s
+		);
 		
 		try {
 			await deleteSchoolSSE(
@@ -184,18 +181,19 @@
 				id,
 				{
 					onLog: (level, message) => {
-						if (school.logs) {
-							school.logs = [
-								...school.logs,
-								{ level: level as any, message, timestamp: new Date() }
-							];
-							schools = [...schools];
-						}
+						schools = schools.map(s =>
+							s.id === id
+								? { ...s, logs: [...(s.logs || []), { level: level as any, message, timestamp: new Date() }] }
+								: s
+						);
 					},
 					
 					onProgress: (step, total, message) => {
-						school.progress = { step, total, message };
-						schools = [...schools];
+						schools = schools.map(s =>
+							s.id === id
+								? { ...s, progress: { step, total, message } }
+								: s
+						);
 					},
 					
 					onComplete: () => {
@@ -204,22 +202,21 @@
 					},
 					
 					onError: (errorMsg) => {
-						if (school.logs) {
-							school.logs = [
-								...school.logs,
-								{ level: 'error', message: errorMsg, timestamp: new Date() }
-							];
-						}
-						school.isDeleting = false;
-						schools = [...schools];
+						schools = schools.map(s =>
+							s.id === id
+								? { ...s, logs: [...(s.logs || []), { level: 'error', message: errorMsg, timestamp: new Date() }], isDeleting: false }
+								: s
+						);
 						error = errorMsg;
 					}
 				}
 			);
 		} catch (e: any) {
-			school.isDeleting = false;
-			school.logs = undefined;
-			schools = [...schools];
+			schools = schools.map(s =>
+				s.id === id
+					? { ...s, isDeleting: false, logs: undefined }
+					: s
+			);
 			error = e.message || 'Failed to delete school';
 		}
 	}
