@@ -52,6 +52,12 @@ jobs:
               "directory": "build/client",
               "binding": "ASSETS"
             },
+            "routes": [
+              {
+                "pattern": "${{ inputs.subdomain }}.schoolorbit.app/*",
+                "custom_domain": true
+              }
+            ],
             "vars": {
               "PUBLIC_API_URL": "${{ inputs.api_url }}",
               "SCHOOL_ID": "${{ inputs.school_id }}",
