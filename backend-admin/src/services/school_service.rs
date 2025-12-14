@@ -613,9 +613,9 @@ impl SchoolService {
             .post(format!("{}/internal/provision", backend_school_url))
             .header("X-Internal-Secret", internal_api_secret)
             .json(&serde_json::json!({
-                "database_url": connection_string,
-                "admin_national_id": data.admin_national_id,
-                "admin_password": data.admin_password,
+                "schoolId": Uuid::new_v4().to_string(),
+                "dbConnectionString": connection_string,
+                "subdomain": data.subdomain,
             }))
             .send()
             .await
