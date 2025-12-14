@@ -39,6 +39,7 @@ async fn main() {
     handlers::auth::init_pool(pool.clone());
     handlers::school::init_pool(pool.clone());
     handlers::school_sse::init_pool(pool.clone());
+    handlers::internal::init_pool(pool.clone());
 
     println!("✅ Services initialized");
     println!("🔐 CORS handling delegated to nginx reverse proxy");
@@ -57,6 +58,8 @@ async fn main() {
         .route("/api/v1/auth/login", post(handlers::auth::login_handler))
         .route("/api/v1/auth/logout", post(handlers::auth::logout_handler))
         .route("/api/v1/auth/me", get(handlers::auth::me_handler))
+        // Internal routes (protected by INTERNAL_API_SECRET header)
+        .route("/internal/schools", get(handlers::internal::list_schools_internal))
         // Protected routes (require authentication)
         .nest("/api/v1/schools", Router::new()
             .route("/", post(handlers::school::create_school))

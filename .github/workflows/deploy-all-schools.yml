@@ -2,15 +2,14 @@ name: Deploy Frontend School to All Tenants
 
 on:
   # Trigger เมื่อ push ไป main และมีการแก้ไข frontend-school
-  # ⚠️ DISABLED: Enable this when you have active schools and proper API auth
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - 'frontend-school/**'
-  #     - '.github/workflows/deploy-all-schools.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend-school/**'
+      - '.github/workflows/deploy-all-schools.yml'
   
-  # Manual trigger only for now
+  # หรือ trigger manual
   workflow_dispatch:
     inputs:
       force_deploy:
@@ -30,10 +29,10 @@ jobs:
         run: |
           echo "Fetching schools from API..."
           
-          # Call API to get list of schools
+          # Call internal API endpoint to get list of active schools
           RESPONSE=$(curl -s -X GET \
-            "${{ secrets.BACKEND_ADMIN_URL }}/api/v1/schools?status=active" \
-            -H "Authorization: Bearer ${{ secrets.INTERNAL_API_SECRET }}" \
+            "${{ secrets.BACKEND_ADMIN_URL }}/internal/schools?status=active" \
+            -H "X-Internal-Secret: ${{ secrets.INTERNAL_API_SECRET }}" \
             -w "\n%{http_code}")
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
@@ -49,7 +48,7 @@ jobs:
           fi
           
           # Parse response and extract schools
-          SCHOOLS=$(echo "$BODY" | jq -c '.data.schools // [] | map({subdomain: .subdomain, school_id: .id})')
+          SCHOOLS=$(echo "$BODY" | jq -c '.schools // [] | map({subdomain: .subdomain, school_id: .id})')
           
           if [ -z "$SCHOOLS" ] || [ "$SCHOOLS" = "null" ]; then
             echo "⚠️  No schools found or invalid response"
@@ -58,6 +57,7 @@ jobs:
             echo "schools=$SCHOOLS" >> $GITHUB_OUTPUT
             echo "✅ Found schools to deploy:"
             echo "$SCHOOLS" | jq '.'
+          fi
 
   deploy:
     needs: get-schools
