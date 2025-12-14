@@ -246,4 +246,3 @@ impl CloudflareClient {
         Ok(())
     }
 }
-```

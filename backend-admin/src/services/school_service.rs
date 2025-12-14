@@ -183,7 +183,7 @@ impl SchoolService {
         };
 
         // Update school record with deployment info
-        let mut config = serde_json::json!({
+        let config = serde_json::json!({
             "db_id": db_id,
             "dns_record_id": dns_record_id,
             "deployment_url": subdomain_url,
