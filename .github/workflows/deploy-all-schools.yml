@@ -125,5 +125,7 @@ jobs:
     steps:
       - name: Deployment summary
         run: |
+          SCHOOLS='${{ needs.get-schools.outputs.schools }}'
+          SCHOOL_COUNT=$(echo "$SCHOOLS" | jq '. | length')
           echo "🎉 Deployment completed!"
-          echo "Schools processed: ${{ fromJson(needs.get-schools.outputs.schools) | length }}"
+          echo "Schools processed: $SCHOOL_COUNT"
