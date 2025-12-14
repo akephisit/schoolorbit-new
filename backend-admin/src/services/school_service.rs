@@ -646,22 +646,21 @@ impl SchoolService {
             .map_err(|e| AppError::ExternalServiceError(format!("Worker deployment failed: {}", e)))?;
 
         logger.info("GitHub Actions workflow triggered").await;
-        logger.info("Waiting for deployment to complete (may take 3-5 minutes)...").await;
+        logger.info("⏳ Waiting for deployment to complete (3-5 minutes)...").await;
 
         // Wait for GitHub Actions workflow to complete
         match cloudflare_client.wait_for_workflow_completion(&data.subdomain, 10).await {
             Ok(_) => {
-                logger.success("GitHub Actions workflow completed successfully!").await;
+                logger.success("✅ GitHub Actions deployment completed!").await;
             }
             Err(e) => {
-                logger.error(&format!("⚠️ Warning: Could not verify workflow completion: {}", e)).await;
-                logger.info("Worker may still be deploying in background").await;
-                logger.info("Check GitHub Actions manually if needed").await;
-                // Don't fail the entire process, just log warning
+                logger.error(&format!("⚠️ Warning: Could not verify deployment: {}", e)).await;
+                logger.info("Workflow may still be processing in background").await;
+                logger.info("Check: https://github.com/akephisit/schoolorbit-new/actions").await;
             }
         }
 
-        logger.success(&format!("✅ Worker deployed: {}", subdomain_url)).await;
+        logger.success(&format!("✅ Worker deployment initiated")).await;
 
         // Step 4: Save school record
         logger.progress(4, 4, "Saving school record...").await;
