@@ -54,9 +54,8 @@ jobs:
             },
             "routes": [
               {
-                "pattern": "${{ inputs.subdomain }}.schoolorbit.app",
-                "custom_domain": true,
-                "override_existing_origin": true
+                "pattern": "${{ inputs.subdomain }}.schoolorbit.app/*",
+                "zone_name": "schoolorbit.app"
               }
             ],
             "vars": {
