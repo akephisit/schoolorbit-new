@@ -17,6 +17,12 @@
 		loading = true;
 		error = '';
 		
+		if (!schoolId) {
+			error = 'Invalid school ID';
+			loading = false;
+			return;
+		}
+		
 		try {
 			const response = await apiClient.getSchool(schoolId);
 			if (response.success && response.data) {
