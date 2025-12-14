@@ -645,6 +645,15 @@ impl SchoolService {
             .await
             .map_err(|e| AppError::ExternalServiceError(format!("Worker deployment failed: {}", e)))?;
 
+        logger.info("GitHub Actions workflow triggered").await;
+        logger.info("Waiting for deployment to complete (may take 3-5 minutes)...").await;
+
+        // Wait for GitHub Actions workflow to complete
+        cloudflare_client
+            .wait_for_workflow_completion(&data.subdomain, 10) // 10 minutes timeout
+            .await
+            .map_err(|e| AppError::ExternalServiceError(format!("Workflow failed: {}", e)))?;
+
         logger.success(&format!("✅ Worker deployed: {}", subdomain_url)).await;
 
         // Step 4: Save school record

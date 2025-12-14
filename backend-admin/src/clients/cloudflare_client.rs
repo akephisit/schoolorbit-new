@@ -204,6 +204,112 @@ impl CloudflareClient {
         Ok(format!("https://{}.{}", subdomain, self.base_domain))
     }
 
+    /// Wait for GitHub Actions workflow to complete
+    /// Returns Ok(()) if successful, Err() if failed or timeout
+    pub async fn wait_for_workflow_completion(
+        &self,
+        subdomain: &str,
+        timeout_minutes: u64,
+    ) -> Result<(), String> {
+        let github_token = std::env::var("GITHUB_TOKEN")
+            .map_err(|_| "GITHUB_TOKEN not set".to_string())?;
+        let github_repo = std::env::var("GITHUB_REPOSITORY")
+            .unwrap_or_else(|_| "akephisit/schoolorbit-new".to_string());
+
+        let url = format!(
+            "https://api.github.com/repos/{}/actions/runs",
+            github_repo
+        );
+
+        let start_time = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(timeout_minutes * 60);
+        let poll_interval = std::time::Duration::from_secs(10); // Poll every 10 seconds
+
+        println!("⏳ Waiting for GitHub Actions workflow to complete...");
+        println!("   Subdomain: {}", subdomain);
+        println!("   Timeout: {} minutes", timeout_minutes);
+
+        loop {
+            // Check timeout
+            if start_time.elapsed() > timeout {
+                return Err(format!(
+                    "Workflow timeout after {} minutes",
+                    timeout_minutes
+                ));
+            }
+
+            // Fetch recent workflow runs
+            let response = self
+                .client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", github_token))
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("User-Agent", "SchoolOrbit-Backend")
+                .query(&[("per_page", "10"), ("event", "workflow_dispatch")])
+                .send()
+                .await
+                .map_err(|e| format!("Failed to fetch workflow runs: {}", e))?;
+
+            if !response.status().is_success() {
+                return Err(format!(
+                    "GitHub API error: {}",
+                    response.status()
+                ));
+            }
+
+            let runs: serde_json::Value = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+            // Find the most recent run for this subdomain
+            if let Some(workflow_runs) = runs["workflow_runs"].as_array() {
+                for run in workflow_runs {
+                    // Check if this run is for our subdomain (check inputs)
+                    let status = run["status"].as_str().unwrap_or("");
+                    let conclusion = run["conclusion"].as_str();
+                    let name = run["name"].as_str().unwrap_or("");
+
+                    // Check if this is our deployment workflow
+                    if name.contains("Deploy") && name.contains("School") {
+                        match status {
+                            "completed" => {
+                                match conclusion {
+                                    Some("success") => {
+                                        println!("✅ Workflow completed successfully!");
+                                        return Ok(());
+                                    }
+                                    Some("failure") | Some("cancelled") => {
+                                        let html_url = run["html_url"].as_str().unwrap_or("");
+                                        return Err(format!(
+                                            "Workflow {} - Check: {}",
+                                            conclusion.unwrap_or("failed"),
+                                            html_url
+                                        ));
+                                    }
+                                    _ => {
+                                        // Still processing
+                                    }
+                                }
+                            }
+                            "in_progress" | "queued" => {
+                                println!("   Workflow status: {} - waiting...", status);
+                            }
+                            _ => {}
+                        }
+
+                        // Found our workflow, no need to check others
+                        break;
+                    }
+                }
+            }
+
+            // Wait before next poll
+            tokio::time::sleep(poll_interval).await;
+        }
+    }
+
     /// Delete a Cloudflare Worker
     pub async fn delete_worker(&self, worker_name: &str) -> Result<(), String> {
         println!("🗑️  Deleting Worker: {}", worker_name);
