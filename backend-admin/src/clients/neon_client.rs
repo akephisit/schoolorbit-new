@@ -130,6 +130,8 @@ impl NeonClient {
             self.project_id, self.branch_id, db_id
         );
 
+        println!("      Neon API: DELETE {}", url);
+
         let response = self
             .client
             .delete(&url)
@@ -138,17 +140,30 @@ impl NeonClient {
             .await
             .map_err(|e| format!("Failed to delete database: {}", e))?;
 
-        if !response.status().is_success() {
-            let status = response.status();
+        let status = response.status();
+        println!("      Neon API Response: {}", status);
+
+        if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
+            
+            println!("      Neon API Error: {}", error_text);
+            
             return Err(format!(
                 "Failed to delete database ({}): {}",
                 status, error_text
             ));
         }
+
+        // Get response body for verification
+        let response_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "{}".to_string());
+        
+        println!("      Neon API Success: {}", response_text);
 
         Ok(())
     }
