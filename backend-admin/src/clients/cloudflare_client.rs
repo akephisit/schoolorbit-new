@@ -263,15 +263,24 @@ impl CloudflareClient {
                 .await
                 .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-            // Find the most recent run for this subdomain
+            // Find the most recent run for deployment workflow
             if let Some(workflow_runs) = runs["workflow_runs"].as_array() {
-                for run in workflow_runs {
-                    // Check if this run is for our subdomain (check inputs)
+                if workflow_runs.is_empty() {
+                    println!("   No workflow runs found yet - waiting...");
+                    tokio::time::sleep(poll_interval).await;
+                    continue;
+                }
+
+                // Get the most recent run (first in array)
+                if let Some(run) = workflow_runs.first() {
                     let status = run["status"].as_str().unwrap_or("");
                     let conclusion = run["conclusion"].as_str();
                     let name = run["name"].as_str().unwrap_or("");
+                    let html_url = run["html_url"].as_str().unwrap_or("");
 
-                    // Check if this is our deployment workflow
+                    println!("   Latest workflow: {} - status: {}", name, status);
+
+                    // Check if this is deployment workflow
                     if name.contains("Deploy") && name.contains("School") {
                         match status {
                             "completed" => {
@@ -281,7 +290,6 @@ impl CloudflareClient {
                                         return Ok(());
                                     }
                                     Some("failure") | Some("cancelled") => {
-                                        let html_url = run["html_url"].as_str().unwrap_or("");
                                         return Err(format!(
                                             "Workflow {} - Check: {}",
                                             conclusion.unwrap_or("failed"),
@@ -289,20 +297,23 @@ impl CloudflareClient {
                                         ));
                                     }
                                     _ => {
-                                        // Still processing
+                                        println!("   Workflow completed with unknown conclusion");
                                     }
                                 }
                             }
-                            "in_progress" | "queued" => {
-                                println!("   Workflow status: {} - waiting...", status);
+                            "in_progress" | "queued" | "waiting" => {
+                                println!("   Workflow {} - continuing to wait...", status);
                             }
-                            _ => {}
+                            _ => {
+                                println!("   Unknown status: {}", status);
+                            }
                         }
-
-                        // Found our workflow, no need to check others
-                        break;
+                    } else {
+                        println!("   Workflow '{}' doesn't match deployment pattern", name);
                     }
                 }
+            } else {
+                println!("   No workflow_runs array in response");
             }
 
             // Wait before next poll
