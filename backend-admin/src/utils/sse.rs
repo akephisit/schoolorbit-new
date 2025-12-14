@@ -23,6 +23,7 @@ pub enum SseMessage {
     },
 }
 
+#[derive(Clone)]
 pub struct SseLogger {
     sender: mpsc::Sender<Result<Event, Infallible>>,
 }

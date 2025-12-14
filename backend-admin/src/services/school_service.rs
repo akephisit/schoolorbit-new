@@ -691,7 +691,7 @@ impl SchoolService {
         logger.info(&format!("School: {}", school.name)).await;
         logger.info(&format!("Subdomain: {}", school.subdomain)).await;
 
-        let config = school.config.as_object();
+        let _config = school.config.as_object();
         
         // Step 1: Delete Cloudflare Worker
         logger.progress(1, 4, "Deleting Cloudflare Worker...").await;

@@ -38,6 +38,7 @@ async fn main() {
     // Initialize handlers with database pool
     handlers::auth::init_pool(pool.clone());
     handlers::school::init_pool(pool.clone());
+    handlers::school_sse::init_pool(pool.clone());
 
     println!("✅ Services initialized");
     println!("🔐 CORS handling delegated to nginx reverse proxy");

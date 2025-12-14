@@ -13,12 +13,14 @@ struct CreateDnsRecordRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct CreateDnsRecordResponse {
     result: DnsRecord,
     success: bool,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct DnsRecord {
     id: String,
     name: String,

@@ -1,3 +1,18 @@
+use crate::models::CreateSchool;
+use crate::services::SchoolService;
+use axum::{
+    extract::Path,
+    response::Json,
+};
+use uuid::Uuid;
+use sqlx::PgPool;
+use std::sync::OnceLock;
+
+static DB_POOL: OnceLock<PgPool> = OnceLock::new();
+
+pub fn init_pool(pool: PgPool) {
+    DB_POOL.set(pool).ok();
+}
 
 // SSE endpoint for creating school with real-time logs
 pub async fn create_school_sse(

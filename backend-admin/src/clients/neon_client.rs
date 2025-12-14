@@ -19,6 +19,7 @@ struct CreateDatabaseResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct DatabaseInfo {
     id: i64,  // Changed from String to i64 to match Neon API
     name: String,
