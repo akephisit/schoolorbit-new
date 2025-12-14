@@ -2,14 +2,15 @@ name: Deploy Frontend School to All Tenants
 
 on:
   # Trigger เมื่อ push ไป main และมีการแก้ไข frontend-school
-  push:
-    branches:
-      - main
-    paths:
-      - 'frontend-school/**'
-      - '.github/workflows/deploy-all-schools.yml'
+  # ⚠️ DISABLED: Enable this when you have active schools and proper API auth
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'frontend-school/**'
+  #     - '.github/workflows/deploy-all-schools.yml'
   
-  # หรือ trigger manual
+  # Manual trigger only for now
   workflow_dispatch:
     inputs:
       force_deploy:

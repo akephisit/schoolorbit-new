@@ -89,7 +89,9 @@
 					/>
 					<span class="text-gray-600">จดจำฉันไว้</span>
 				</label>
-				<a href="#" class="text-indigo-600 hover:text-indigo-700 font-medium"> ลืมรหัสผ่าน? </a>
+				<button type="button" class="text-indigo-600 hover:text-indigo-700 font-medium">
+					ลืมรหัสผ่าน?
+				</button>
 			</div>
 
 			<!-- Submit Button -->
@@ -116,7 +118,9 @@
 		<div class="text-center">
 			<p class="text-gray-600">
 				ยังไม่มีบัญชี?
-				<a href="#" class="text-indigo-600 hover:text-indigo-700 font-semibold"> ลงทะเบียน </a>
+				<button type="button" class="text-indigo-600 hover:text-indigo-700 font-semibold">
+					ลงทะเบียน
+				</button>
 			</p>
 		</div>
 	</div>
