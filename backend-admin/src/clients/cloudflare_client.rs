@@ -205,4 +205,45 @@ impl CloudflareClient {
         // Note: Actual deployment happens asynchronously in GitHub Actions
         Ok(format!("https://{}.{}", subdomain, self.base_domain))
     }
+
+    /// Delete a Cloudflare Worker
+    pub async fn delete_worker(&self, worker_name: &str) -> Result<(), String> {
+        println!("🗑️  Deleting Worker: {}", worker_name);
+        
+        let url = format!(
+            "https://api.cloudflare.com/client/v4/accounts/{}/workers/scripts/{}",
+            self.account_id, worker_name
+        );
+        
+        let response = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", self.api_token))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to delete worker: {}", e))?;
+        
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            
+            // 404 is OK - worker already deleted
+            if status == 404 {
+                println!("   ℹ️  Worker not found (already deleted)");
+                return Ok(());
+            }
+            
+            return Err(format!(
+                "Failed to delete worker ({}): {}",
+                status, error_text
+            ));
+        }
+        
+        println!("   ✅ Worker deleted successfully");
+        Ok(())
+    }
 }
+```

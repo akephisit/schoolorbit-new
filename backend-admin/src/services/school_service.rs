@@ -307,6 +307,77 @@ impl SchoolService {
     }
 
     pub async fn delete_school(&self, id: Uuid) -> Result<(), AppError> {
+        println!("🗑️  Starting school deletion for ID: {}", id);
+        
+        // Get school info first
+        let school = self.get_school(id).await?;
+        
+        println!("   School: {}", school.name);
+        println!("   Subdomain: {}", school.subdomain);
+        
+        // Parse config to get resource IDs
+        let config = school.config.as_object();
+        let db_id = config.and_then(|c| c.get("db_id")).and_then(|v| v.as_i64());
+        let dns_record_id = config.and_then(|c| c.get("dns_record_id")).and_then(|v| v.as_str());
+        
+        // Step 1: Delete Cloudflare Worker
+        println!("📦 Step 1/4: Deleting Cloudflare Worker...");
+        use crate::clients::cloudflare_client::CloudflareClient;
+        
+        if let Ok(cf_client) = CloudflareClient::new() {
+            let worker_name = format!("schoolorbit-school-{}", school.subdomain);
+            match cf_client.delete_worker(&worker_name).await {
+                Ok(_) => println!("   ✅ Worker deleted: {}", worker_name),
+                Err(e) => {
+                    eprintln!("   ⚠️  Failed to delete Worker: {}", e);
+                    eprintln!("   Continuing with deletion...");
+                }
+            }
+        } else {
+            eprintln!("   ⚠️  Cloudflare client not available");
+        }
+        
+        // Step 2: Delete DNS record (if exists)
+        println!("📦 Step 2/4: Deleting DNS record...");
+        if let Some(dns_id) = dns_record_id {
+            if !dns_id.is_empty() {
+                if let Ok(cf_client) = CloudflareClient::new() {
+                    match cf_client.delete_dns_record(dns_id).await {
+                        Ok(_) => println!("   ✅ DNS record deleted: {}", dns_id),
+                        Err(e) => {
+                            eprintln!("   ⚠️  Failed to delete DNS: {}", e);
+                        }
+                    }
+                }
+            } else {
+                println!("   ⏭️  No DNS record ID (managed by Wrangler)");
+            }
+        } else {
+            println!("   ⏭️  No DNS record to delete");
+        }
+        
+        // Step 3: Delete Neon database
+        println!("📦 Step 3/4: Deleting Neon database...");
+        if let Some(neon_db_id) = db_id {
+            use crate::clients::neon_client::NeonClient;
+            
+            if let Ok(neon_client) = NeonClient::new() {
+                match neon_client.delete_database(neon_db_id).await {
+                    Ok(_) => println!("   ✅ Database deleted: {}", neon_db_id),
+                    Err(e) => {
+                        eprintln!("   ⚠️  Failed to delete database: {}", e);
+                        eprintln!("   You may need to delete manually from Neon console");
+                    }
+                }
+            } else {
+                eprintln!("   ⚠️  Neon client not available");
+            }
+        } else {
+            println!("   ⏭️  No database ID found");
+        }
+        
+        // Step 4: Delete school record from database
+        println!("📦 Step 4/4: Deleting school record...");
         let result = sqlx::query("DELETE FROM schools WHERE id = $1")
             .bind(id)
             .execute(&self.pool)
@@ -316,6 +387,9 @@ impl SchoolService {
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound("School not found".to_string()));
         }
+        
+        println!("   ✅ School record deleted from database");
+        println!("🎉 School deletion completed!");
 
         Ok(())
     }
