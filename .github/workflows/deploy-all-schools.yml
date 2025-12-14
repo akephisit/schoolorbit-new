@@ -27,22 +27,41 @@ jobs:
       - name: Fetch school list from API
         id: fetch-schools
         run: |
-          # เรียก API เพื่อดึงรายชื่อโรงเรียนทั้งหมด
-          # ต้องมี API endpoint ที่ return JSON array ของโรงเรียน
+          echo "Fetching schools from API..."
           
-          SCHOOLS=$(curl -s -X GET \
-            "${{ secrets.BACKEND_ADMIN_URL }}/api/schools?status=active" \
+          # Call API to get list of schools
+          RESPONSE=$(curl -s -X GET \
+            "${{ secrets.BACKEND_ADMIN_URL }}/api/v1/schools?status=active" \
             -H "Authorization: Bearer ${{ secrets.INTERNAL_API_SECRET }}" \
-            | jq -c '[.schools[] | {subdomain: .subdomain, school_id: .id}]')
+            -w "\n%{http_code}")
           
-          echo "schools=$SCHOOLS" >> $GITHUB_OUTPUT
-          echo "Found schools to deploy:"
-          echo "$SCHOOLS" | jq '.'
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ API request failed with status $HTTP_CODE"
+            echo "Response: $BODY"
+            echo "schools=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Parse response and extract schools
+          SCHOOLS=$(echo "$BODY" | jq -c '.data.schools // [] | map({subdomain: .subdomain, school_id: .id})')
+          
+          if [ -z "$SCHOOLS" ] || [ "$SCHOOLS" = "null" ]; then
+            echo "⚠️  No schools found or invalid response"
+            echo "schools=[]" >> $GITHUB_OUTPUT
+          else
+            echo "schools=$SCHOOLS" >> $GITHUB_OUTPUT
+            echo "✅ Found schools to deploy:"
+            echo "$SCHOOLS" | jq '.'
 
   deploy:
     needs: get-schools
     runs-on: ubuntu-latest
-    if: needs.get-schools.outputs.schools != '[]'
+    if: needs.get-schools.outputs.schools != '[]' && needs.get-schools.outputs.schools != ''
     strategy:
       matrix:
         school: ${{ fromJson(needs.get-schools.outputs.schools) }}
