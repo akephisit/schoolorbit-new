@@ -81,8 +81,9 @@
 			const validated = createSchoolSchema.parse(createData);
 			
 			// Create temporary school entry with loading state
+			const tempSchoolId = crypto.randomUUID();
 			const tempSchool: SchoolWithLogs = {
-				id: crypto.randomUUID(),
+				id: tempSchoolId,
 				name: validated.name,
 				subdomain: validated.subdomain,
 				status: 'provisioning',
@@ -105,7 +106,7 @@
 				{
 					onLog: (level, message) => {
 						schools = schools.map(s => 
-							s.id === tempSchool.id
+							s.id === tempSchoolId
 								? { ...s, logs: [...(s.logs || []), { level: level as any, message, timestamp: new Date() }] }
 								: s
 						);
@@ -113,7 +114,7 @@
 					
 					onProgress: (step, total, message) => {
 						schools = schools.map(s =>
-							s.id === tempSchool.id
+							s.id === tempSchoolId
 								? { ...s, progress: { step, total, message } }
 								: s
 						);
@@ -121,7 +122,7 @@
 					
 					onComplete: (data) => {
 						schools = schools.map(s =>
-							s.id === tempSchool.id
+							s.id === tempSchoolId
 								? { ...data, logs: undefined, isDeploying: false }
 								: s
 						);
@@ -138,7 +139,7 @@
 					
 					onError: (errorMsg) => {
 						schools = schools.map(s =>
-							s.id === tempSchool.id
+							s.id === tempSchoolId
 								? { ...s, logs: [...(s.logs || []), { level: 'error', message: errorMsg, timestamp: new Date() }], isDeploying: false }
 								: s
 						);
