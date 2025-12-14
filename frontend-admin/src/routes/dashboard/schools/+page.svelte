@@ -445,7 +445,6 @@
 		</div>
 	{/if}
 </div>
-``` ```
 
 <style>
 	.schools-page {
