@@ -4,6 +4,7 @@
 	import { z } from 'zod';
 	import { createSchoolSSE, deleteSchoolSSE, type LogMessage, type Progress } from '$lib/utils/sse';
 	import InlineConsole from '$lib/components/InlineConsole.svelte';
+	import { PUBLIC_API_URL } from '$env/static/public';
 	
 	interface SchoolWithLogs extends School {
 		logs?: LogMessage[];
@@ -97,10 +98,9 @@
 			schools = [tempSchool, ...schools];
 			
 			// Use SSE to stream logs
-			const API_URL = 'https://admin-api.schoolorbit.app';
 			
 			await createSchoolSSE(
-				API_URL,
+				PUBLIC_API_URL,
 				validated,
 				{
 					onLog: (level, message) => {
@@ -176,11 +176,11 @@
 		school.logs = [];
 		schools = [...schools];
 		
-		const API_URL = 'https://admin-api.schoolorbit.app';
+
 		
 		try {
 			await deleteSchoolSSE(
-				API_URL,
+				PUBLIC_API_URL,
 				id,
 				{
 					onLog: (level, message) => {
