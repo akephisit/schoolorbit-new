@@ -37,34 +37,31 @@
 </script>
 
 <div class="inline-console">
-  {#if progress}
-    <div class="progress-bar">
-      <div 
-        class="progress-fill" 
-        style="width: {(progress.step / progress.total) * 100}%"
-      ></div>
-      <span class="progress-text">
-        Step {progress.step}/{progress.total}: {progress.message}
-      </span>
-    </div>
-  {/if}
-  
-  <div class="console-output" bind:this={consoleEl}>
-    {#each logs as log (log.timestamp.getTime())}
-      <div class="log-line {log.level}">
-        <span class="time">{formatTime(log.timestamp)}</span>
-        <span class="icon">{getLevelIcon(log.level)}</span>
-        <span class="message">{log.message}</span>
-      </div>
-    {/each}
-    
-    {#if isLoading && logs.length === 0}
-      <div class="log-line loading">
-        <span class="spinner">⏳</span>
-        <span class="message">Initializing...</span>
-      </div>
-    {/if}
-  </div>
+	{#if progress}
+		<div class="progress-bar">
+			<div class="progress-fill" style="width: {(progress.step / progress.total) * 100}%"></div>
+			<span class="progress-text">
+				Step {progress.step}/{progress.total}: {progress.message}
+			</span>
+		</div>
+	{/if}
+
+	<div class="console-output" bind:this={consoleEl}>
+		{#each logs as log, i (i)}
+			<div class="log-line {log.level}">
+				<span class="time">{formatTime(log.timestamp)}</span>
+				<span class="icon">{getLevelIcon(log.level)}</span>
+				<span class="message">{log.message}</span>
+			</div>
+		{/each}
+
+		{#if isLoading && logs.length === 0}
+			<div class="log-line loading">
+				<span class="spinner">⏳</span>
+				<span class="message">Initializing...</span>
+			</div>
+		{/if}
+	</div>
 </div>
 
 <style>
