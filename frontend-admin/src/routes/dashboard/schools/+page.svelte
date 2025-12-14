@@ -2,8 +2,17 @@
 	import { apiClient, type School, type CreateSchool } from '$lib/api/client';
 	import { onMount } from 'svelte';
 	import { z } from 'zod';
+	import { createSchoolSSE, deleteSchoolSSE, type LogMessage, type Progress } from '$lib/utils/sse';
+	import InlineConsole from '$lib/components/InlineConsole.svelte';
 	
-	let schools = $state<School[]>([]);
+	interface SchoolWithLogs extends School {
+		logs?: LogMessage[];
+		progress?: Progress;
+		isDeploying?: boolean;
+		isDeleting?: boolean;
+	}
+	
+	let schools = $state<SchoolWithLogs[]>([]);
 	let total = $state(0);
 	let page = $state(1);
 	let totalPages = $state(0);
@@ -70,19 +79,76 @@
 			// Validate with Zod
 			const validated = createSchoolSchema.parse(createData);
 			
-			const response = await apiClient.createSchool(validated);
-			if (response.success) {
-				showCreateForm = false;
-				createData = {
-					name: '',
-					subdomain: '',
-					adminNationalId: '',
-					adminPassword: ''
-				};
-				await loadSchools();
-			} else {
-				error = response.error || 'Failed to create school';
-			}
+			// Create temporary school entry with loading state
+			const tempSchool: SchoolWithLogs = {
+				id: crypto.randomUUID(),
+				name: validated.name,
+				subdomain: validated.subdomain,
+				status: 'provisioning',
+				config: {},
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+				dbName: `schoolorbit_${validated.subdomain}`,
+				dbConnectionString: '',
+				logs: [],
+				isDeploying: true,
+			};
+			
+			schools = [tempSchool, ...schools];
+			
+			// Use SSE to stream logs
+			const API_URL = 'http://localhost:8080';
+			
+			await createSchoolSSE(
+				API_URL,
+				validated,
+				{
+					onLog: (level, message) => {
+						if (tempSchool.logs) {
+							tempSchool.logs = [
+								...tempSchool.logs,
+								{ level: level as any, message, timestamp: new Date() }
+							];
+							schools = [...schools];
+						}
+					},
+					
+					onProgress: (step, total, message) => {
+						tempSchool.progress = { step, total, message };
+						schools = [...schools];
+					},
+					
+					onComplete: (data) => {
+						// Replace temp school with real data
+						const index = schools.findIndex(s => s.id === tempSchool.id);
+						if (index !== -1) {
+							schools[index] = { ...data, logs: undefined, isDeploying: false };
+							schools = [...schools];
+						}
+						
+						// Reset form
+						showCreateForm = false;
+						createData = {
+							name: '',
+							subdomain: '',
+							adminNationalId: '',
+							adminPassword: ''
+						};
+					},
+					
+					onError: (errorMsg) => {
+						if (tempSchool.logs) {
+							tempSchool.logs = [
+								...tempSchool.logs,
+								{ level: 'error', message: errorMsg, timestamp: new Date() }
+							];
+						}
+						tempSchool.isDeploying = false;
+						schools = [...schools];
+						error = errorMsg;
+					}
+				}
+			);
 		} catch (e: any) {
 			if (e instanceof z.ZodError) {
 				// Handle Zod validation errors
@@ -103,14 +169,57 @@
 	async function deleteSchool(id: string, name: string) {
 		if (!confirm(`คุณแน่ใจหรือไม่ที่จะลบโรงเรียน "${name}"?`)) return;
 		
+		const school = schools.find(s => s.id === id);
+		if (!school) return;
+		
+		school.isDeleting = true;
+		school.logs = [];
+		schools = [...schools];
+		
+		const API_URL = 'http://localhost:8080';
+		
 		try {
-			const response = await apiClient.deleteSchool(id);
-			if (response.success) {
-				await loadSchools();
-			} else {
-				error = response.error || 'Failed to delete school';
-			}
+			await deleteSchoolSSE(
+				API_URL,
+				id,
+				{
+					onLog: (level, message) => {
+						if (school.logs) {
+							school.logs = [
+								...school.logs,
+								{ level: level as any, message, timestamp: new Date() }
+							];
+							schools = [...schools];
+						}
+					},
+					
+					onProgress: (step, total, message) => {
+						school.progress = { step, total, message };
+						schools = [...schools];
+					},
+					
+					onComplete: () => {
+						// Remove school from list
+						schools = schools.filter(s => s.id !== id);
+					},
+					
+					onError: (errorMsg) => {
+						if (school.logs) {
+							school.logs = [
+								...school.logs,
+								{ level: 'error', message: errorMsg, timestamp: new Date() }
+							];
+						}
+						school.isDeleting = false;
+						schools = [...schools];
+						error = errorMsg;
+					}
+				}
+			);
 		} catch (e: any) {
+			school.isDeleting = false;
+			school.logs = undefined;
+			schools = [...schools];
 			error = e.message || 'Failed to delete school';
 		}
 	}
@@ -245,7 +354,17 @@
 					<div class="school-header">
 						<h3>{school.name}</h3>
 						<div class="status-badges">
-							{#if school.status === 'provisioning'}
+							{#if school.isDeploying}
+								<span class="status deploying">
+									<span class="spinner">⏳</span>
+									กำลังสร้าง...
+								</span>
+							{:else if school.isDeleting}
+								<span class="status deleting">
+									<span class="spinner">🗑️</span>
+									กำลังลบ...
+								</span>
+							{:else if school.status === 'provisioning'}
 								<span class="status provisioning">
 									<span class="spinner"></span>
 									กำลังสร้าง
@@ -313,6 +432,11 @@
 							🗑️ ลบ
 						</button>
 					</div>
+
+					<!-- Inline Console for real-time logs -->
+					{#if school.isDeploying || school.isDeleting}
+						<InlineConsole logs={school.logs || []} progress={school.progress} isLoading={true} />
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -324,7 +448,7 @@
 		</div>
 	{/if}
 </div>
-```
+``` ```
 
 <style>
 	.schools-page {
@@ -645,5 +769,33 @@
 	.pagination span {
 		color: #4a5568;
 		font-weight: 500;
+	}
+
+	/* Status badges animations */
+	.status.deploying,
+	.status.deleting {
+		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		color: white;
+		animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+	}
+
+	.status .spinner {
+		display: inline-block;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@keyframes pulse {
+		0%, 100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.7;
+		}
 	}
 </style>
