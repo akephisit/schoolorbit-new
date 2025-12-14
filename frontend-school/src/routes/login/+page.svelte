@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Label } from 'bits-ui';
-	import * as Button from 'bits-ui';
-	import * as Checkbox from 'bits-ui';
+	import { Button } from 'bits-ui';
+	import { Checkbox } from 'bits-ui';
 
 	let email = $state('');
 	let password = $state('');
