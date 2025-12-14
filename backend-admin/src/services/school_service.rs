@@ -155,6 +155,11 @@ impl SchoolService {
         let api_url = std::env::var("API_URL")
             .unwrap_or_else(|_| "https://school-api.schoolorbit.app".to_string());
 
+        // Create Cloudflare client for deployment
+        use crate::clients::cloudflare_client::CloudflareClient;
+        let cloudflare_client = CloudflareClient::new()
+            .map_err(|e| AppError::ExternalServiceError(format!("Cloudflare client error: {}", e)))?;
+
         let subdomain_url = match cloudflare_client
             .deploy_worker(&data.subdomain, &school_id.to_string(), &api_url)
             .await
