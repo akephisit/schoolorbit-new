@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import * as Button from 'bits-ui';
 
 	let mounted = $state(false);
 

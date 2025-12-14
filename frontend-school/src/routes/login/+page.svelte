@@ -1,6 +1,11 @@
 <script lang="ts">
+	import { Label } from 'bits-ui';
+	import * as Button from 'bits-ui';
+	import * as Checkbox from 'bits-ui';
+
 	let email = $state('');
 	let password = $state('');
+	let rememberMe = $state(false);
 	let isLoading = $state(false);
 
 	async function handleSubmit(e: Event) {
@@ -9,7 +14,7 @@
 
 		// Simulate login - implement your actual login logic here
 		setTimeout(() => {
-			console.log('Logging in with:', { email, password });
+			console.log('Logging in with:', { email, password, rememberMe });
 			alert('Login functionality will be implemented here');
 			isLoading = false;
 		}, 1000);
@@ -32,12 +37,12 @@
 		class="bg-white/95 backdrop-blur-lg rounded-3xl shadow-2xl p-8 md:p-12 w-full max-w-md transform transition hover:scale-[1.02]"
 	>
 		<!-- Back Button -->
-		<button
+		<Button.Root
 			onclick={goBack}
-			class="mb-6 text-indigo-600 hover:text-indigo-700 flex items-center gap-2 font-medium transition"
+			class="mb-6 text-indigo-600 hover:text-indigo-700 flex items-center gap-2 font-medium transition bg-transparent border-0 cursor-pointer"
 		>
 			← กลับหน้าหลัก
-		</button>
+		</Button.Root>
 
 		<!-- Logo & Title -->
 		<div class="text-center mb-8">
@@ -54,7 +59,9 @@
 		<form onsubmit={handleSubmit} class="space-y-6">
 			<!-- Email Input -->
 			<div>
-				<label for="email" class="block text-sm font-medium text-gray-700 mb-2"> อีเมล </label>
+				<Label.Root for="email" class="block text-sm font-medium text-gray-700 mb-2 cursor-pointer">
+					อีเมล
+				</Label.Root>
 				<input
 					type="email"
 					id="email"
@@ -67,9 +74,12 @@
 
 			<!-- Password Input -->
 			<div>
-				<label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+				<Label.Root
+					for="password"
+					class="block text-sm font-medium text-gray-700 mb-2 cursor-pointer"
+				>
 					รหัสผ่าน
-				</label>
+				</Label.Root>
 				<input
 					type="password"
 					id="password"
@@ -82,26 +92,49 @@
 
 			<!-- Remember & Forgot -->
 			<div class="flex items-center justify-between text-sm">
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input
-						type="checkbox"
-						class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-					/>
-					<span class="text-gray-600">จดจำฉันไว้</span>
-				</label>
-				<button type="button" class="text-indigo-600 hover:text-indigo-700 font-medium">
+				<Checkbox.Root bind:checked={rememberMe} class="flex items-center gap-2 cursor-pointer">
+					<div class="flex items-center gap-2">
+						<div
+							class="w-4 h-4 rounded border-2 border-gray-300 flex items-center justify-center {rememberMe
+								? 'bg-indigo-600 border-indigo-600'
+								: 'bg-white'}"
+						>
+							{#if rememberMe}
+								<svg
+									class="w-3 h-3 text-white"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="3"
+										d="M5 13l4 4L19 7"
+									/>
+								</svg>
+							{/if}
+						</div>
+						<Label.Root class="text-gray-600 cursor-pointer">จดจำฉันไว้</Label.Root>
+					</div>
+				</Checkbox.Root>
+
+				<Button.Root
+					type="button"
+					class="text-indigo-600 hover:text-indigo-700 font-medium bg-transparent border-0 cursor-pointer"
+				>
 					ลืมรหัสผ่าน?
-				</button>
+				</Button.Root>
 			</div>
 
 			<!-- Submit Button -->
-			<button
+			<Button.Root
 				type="submit"
 				disabled={isLoading}
-				class="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white py-3.5 rounded-xl font-semibold hover:from-indigo-600 hover:to-purple-600 transition shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+				class="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white py-3.5 rounded-xl font-semibold hover:from-indigo-600 hover:to-purple-600 transition shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed border-0"
 			>
 				{isLoading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
-			</button>
+			</Button.Root>
 		</form>
 
 		<!-- Divider -->
@@ -118,9 +151,12 @@
 		<div class="text-center">
 			<p class="text-gray-600">
 				ยังไม่มีบัญชี?
-				<button type="button" class="text-indigo-600 hover:text-indigo-700 font-semibold">
+				<Button.Root
+					type="button"
+					class="text-indigo-600 hover:text-indigo-700 font-semibold bg-transparent border-0 cursor-pointer inline"
+				>
 					ลงทะเบียน
-				</button>
+				</Button.Root>
 			</p>
 		</div>
 	</div>
