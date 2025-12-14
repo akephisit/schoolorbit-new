@@ -1,0 +1,129 @@
+name: Deploy Frontend School to All Tenants
+
+on:
+  # Trigger เมื่อ push ไป main และมีการแก้ไข frontend-school
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend-school/**'
+      - '.github/workflows/deploy-all-schools.yml'
+  
+  # หรือ trigger manual
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deploy to all schools'
+        required: false
+        default: 'false'
+
+jobs:
+  get-schools:
+    runs-on: ubuntu-latest
+    outputs:
+      schools: ${{ steps.fetch-schools.outputs.schools }}
+    
+    steps:
+      - name: Fetch school list from API
+        id: fetch-schools
+        run: |
+          # เรียก API เพื่อดึงรายชื่อโรงเรียนทั้งหมด
+          # ต้องมี API endpoint ที่ return JSON array ของโรงเรียน
+          
+          SCHOOLS=$(curl -s -X GET \
+            "${{ secrets.BACKEND_ADMIN_URL }}/api/schools?status=active" \
+            -H "Authorization: Bearer ${{ secrets.INTERNAL_API_SECRET }}" \
+            | jq -c '[.schools[] | {subdomain: .subdomain, school_id: .id}]')
+          
+          echo "schools=$SCHOOLS" >> $GITHUB_OUTPUT
+          echo "Found schools to deploy:"
+          echo "$SCHOOLS" | jq '.'
+
+  deploy:
+    needs: get-schools
+    runs-on: ubuntu-latest
+    if: needs.get-schools.outputs.schools != '[]'
+    strategy:
+      matrix:
+        school: ${{ fromJson(needs.get-schools.outputs.schools) }}
+      max-parallel: 3  # Deploy สูงสุด 3 โรงเรียนพร้อมกัน
+      fail-fast: false  # ถ้า deploy โรงเรียนใดล้มเหลว ให้ deploy โรงเรียนอื่นต่อ
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-school/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: frontend-school
+        run: npm ci
+      
+      - name: Create Wrangler configuration
+        working-directory: frontend-school
+        run: |
+          cat > wrangler.json <<EOF
+          {
+            "name": "schoolorbit-school-${{ matrix.school.subdomain }}",
+            "account_id": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
+            "main": "build/index.js",
+            "build": {
+              "command": "npm run build"
+            },
+            "compatibility_date": "2025-09-15",
+            "compatibility_flags": ["nodejs_compat"],
+            "assets": {
+              "directory": "build/client",
+              "binding": "ASSETS"
+            },
+            "routes": [
+              {
+                "pattern": "${{ matrix.school.subdomain }}.schoolorbit.app/*",
+                "zone_name": "schoolorbit.app"
+              }
+            ],
+            "vars": {
+              "PUBLIC_API_URL": "${{ secrets.API_URL }}",
+              "SCHOOL_ID": "${{ matrix.school.school_id }}",
+              "SUBDOMAIN": "${{ matrix.school.subdomain }}"
+            }
+          }
+          EOF
+      
+      - name: Build frontend
+        working-directory: frontend-school
+        run: npm run build
+      
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: frontend-school
+          command: deploy
+      
+      - name: Report deployment status
+        if: success()
+        run: |
+          echo "✅ Successfully deployed ${{ matrix.school.subdomain }}"
+          echo "URL: https://${{ matrix.school.subdomain }}.schoolorbit.app"
+      
+      - name: Report deployment failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed for ${{ matrix.school.subdomain }}"
+
+  summary:
+    needs: [get-schools, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Deployment summary
+        run: |
+          echo "🎉 Deployment completed!"
+          echo "Schools processed: ${{ fromJson(needs.get-schools.outputs.schools) | length }}"
