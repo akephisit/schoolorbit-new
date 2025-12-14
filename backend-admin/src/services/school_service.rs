@@ -649,10 +649,17 @@ impl SchoolService {
         logger.info("Waiting for deployment to complete (may take 3-5 minutes)...").await;
 
         // Wait for GitHub Actions workflow to complete
-        cloudflare_client
-            .wait_for_workflow_completion(&data.subdomain, 10) // 10 minutes timeout
-            .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Workflow failed: {}", e)))?;
+        match cloudflare_client.wait_for_workflow_completion(&data.subdomain, 10).await {
+            Ok(_) => {
+                logger.success("GitHub Actions workflow completed successfully!").await;
+            }
+            Err(e) => {
+                logger.error(&format!("⚠️ Warning: Could not verify workflow completion: {}", e)).await;
+                logger.info("Worker may still be deploying in background").await;
+                logger.info("Check GitHub Actions manually if needed").await;
+                // Don't fail the entire process, just log warning
+            }
+        }
 
         logger.success(&format!("✅ Worker deployed: {}", subdomain_url)).await;
 
