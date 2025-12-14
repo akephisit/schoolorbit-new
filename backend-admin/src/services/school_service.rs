@@ -358,8 +358,13 @@ impl SchoolService {
         
         // Step 3: Delete Neon database
         println!("📦 Step 3/4: Deleting Neon database...");
+        println!("   Debug: config = {:?}", config);
+        println!("   Debug: db_id = {:?}", db_id);
+        
         if let Some(neon_db_id) = db_id {
             use crate::clients::neon_client::NeonClient;
+            
+            println!("   Found db_id: {}", neon_db_id);
             
             if let Ok(neon_client) = NeonClient::new() {
                 match neon_client.delete_database(neon_db_id).await {
