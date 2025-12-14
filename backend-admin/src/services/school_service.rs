@@ -518,4 +518,228 @@ impl SchoolService {
         
         Ok(history)
     }
+
+    /// Create school with SSE logging for real-time progress
+    pub async fn create_school_stream(
+        &self,
+        data: CreateSchool,
+        logger: crate::utils::sse::SseLogger,
+    ) -> Result<School, AppError> {
+        logger.info("🚀 Starting school provisioning").await;
+        logger.progress(0, 4, "Validating input...").await;
+
+        // Validation (same as create_school)
+        if !data.admin_national_id.chars().all(|c| c.is_ascii_digit()) || data.admin_national_id.len() != 13 {
+            return Err(AppError::ValidationError(
+                "Admin national ID must be exactly 13 digits".to_string()
+            ));
+        }
+
+        if !data.subdomain.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Err(AppError::ValidationError(
+                "Subdomain must contain only lowercase letters, numbers, and hyphens".to_string()
+            ));
+        }
+
+        let exists = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM schools WHERE subdomain = $1)"
+        )
+        .bind(&data.subdomain)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        if exists {
+            return Err(AppError::ValidationError(
+                "Subdomain already exists".to_string()
+            ));
+        }
+
+        logger.success("✅ Validation passed").await;
+
+        // Step 1: Create database in Neon
+        logger.progress(1, 4, "Creating database in Neon...").await;
+        let db_name = format!("schoolorbit_{}", data.subdomain);
+        
+        use crate::clients::neon_client::NeonClient;
+        let neon_client = NeonClient::new()
+            .map_err(|e| AppError::ExternalServiceError(format!("Neon client error: {}", e)))?;
+
+        let db_id = neon_client
+            .create_database(&db_name, "neondb_owner")
+            .await
+            .map_err(|e| AppError::ExternalServiceError(format!("Failed to create database: {}", e)))?;
+
+        logger.success(&format!("✅ Database created with ID: {}", db_id)).await;
+
+        // Wait for database to be ready
+        logger.info("⏳ Waiting for database to be ready...").await;
+        neon_client
+            .wait_for_database_ready(&db_name)
+            .await
+            .map_err(|e| {
+                let _ = async {
+                    neon_client.delete_database_by_name(&db_name).await
+                };
+                AppError::ExternalServiceError(format!("Database not ready: {}", e))
+            })?;
+
+        logger.success("✅ Database is ready").await;
+
+        // Get database password
+        let db_password = std::env::var("NEON_DB_PASSWORD")
+            .map_err(|_| AppError::ExternalServiceError(
+                "NEON_DB_PASSWORD not set".to_string()
+            ))?;
+
+        let neon_host = std::env::var("NEON_HOST")
+            .unwrap_or_else(|_| "ep-xyz.us-east-1.aws.neon.tech".to_string());
+
+        let connection_string = format!(
+            "postgresql://neondb_owner:{}@{}/{}?sslmode=require",
+            db_password, neon_host, db_name
+        );
+
+        // Step 2: Provision tenant database
+        logger.progress(2, 4, "Provisioning tenant database...").await;
+        
+        let backend_school_url = std::env::var("BACKEND_SCHOOL_URL")
+            .unwrap_or_else(|_| "https://school-api.schoolorbit.app".to_string());
+        let internal_api_secret = std::env::var("INTERNAL_API_SECRET")
+            .unwrap_or_else(|_| "default-secret".to_string());
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/internal/provision", backend_school_url))
+            .header("X-Internal-Secret", internal_api_secret)
+            .json(&serde_json::json!({
+                "database_url": connection_string,
+                "admin_national_id": data.admin_national_id,
+                "admin_password": data.admin_password,
+            }))
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalServiceError(format!("Provision request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            let _ = neon_client.delete_database_by_name(&db_name).await;
+            return Err(AppError::ExternalServiceError(
+                format!("Tenant provisioning failed: {}", response.status())
+            ));
+        }
+
+        logger.success("✅ Tenant database provisioned").await;
+
+        // Step 3: Deploy Cloudflare Worker
+        logger.progress(3, 4, "Deploying Cloudflare Worker...").await;
+        
+        let api_url = std::env::var("API_URL")
+            .unwrap_or_else(|_| "https://school-api.schoolorbit.app".to_string());
+
+        use crate::clients::cloudflare_client::CloudflareClient;
+        let cloudflare_client = CloudflareClient::new()
+            .map_err(|e| AppError::ExternalServiceError(format!("Cloudflare client error: {}", e)))?;
+
+        let subdomain_url = cloudflare_client
+            .deploy_worker(&data.subdomain, &Uuid::new_v4().to_string(), &api_url)
+            .await
+            .map_err(|e| AppError::ExternalServiceError(format!("Worker deployment failed: {}", e)))?;
+
+        logger.success(&format!("✅ Worker deployed: {}", subdomain_url)).await;
+
+        // Step 4: Save school record
+        logger.progress(4, 4, "Saving school record...").await;
+
+        let config = serde_json::json!({
+            "db_id": db_id,
+            "dns_record_id": "",
+            "deployment_url": subdomain_url,
+        });
+
+        let school = sqlx::query_as::<_, School>(
+            r#"
+            INSERT INTO schools (name, subdomain, status, config)
+            VALUES ($1, $2, $3, $4)
+            RETURNING *
+            "#
+        )
+        .bind(&data.name)
+        .bind(&data.subdomain)
+        .bind("active")
+        .bind(&config)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        logger.success("✅ School created successfully").await;
+        logger.complete(serde_json::to_value(&school).unwrap()).await;
+
+        Ok(school)
+    }
+
+    /// Delete school with SSE logging for real-time progress  
+    pub async fn delete_school_stream(
+        &self,
+        id: Uuid,
+        logger: crate::utils::sse::SseLogger,
+    ) -> Result<(), AppError> {
+        logger.info(&format!("🗑️  Starting deletion for ID: {}", id)).await;
+        logger.progress(0, 4, "Getting school info...").await;
+        
+        let school = self.get_school(id).await?;
+        
+        logger.info(&format!("School: {}", school.name)).await;
+        logger.info(&format!("Subdomain: {}", school.subdomain)).await;
+
+        let config = school.config.as_object();
+        
+        // Step 1: Delete Cloudflare Worker
+        logger.progress(1, 4, "Deleting Cloudflare Worker...").await;
+        
+        use crate::clients::cloudflare_client::CloudflareClient;
+        if let Ok(cf_client) = CloudflareClient::new() {
+            let worker_name = format!("schoolorbit-school-{}", school.subdomain);
+            match cf_client.delete_worker(&worker_name).await {
+                Ok(_) => logger.success(&format!("✅ Worker deleted: {}", worker_name)).await,
+                Err(e) => logger.warning(&format!("⚠️  Worker deletion failed: {}", e)).await,
+            }
+        }
+
+        // Step 2: Skip DNS (managed by Wrangler)
+        logger.progress(2, 4, "Skipping DNS cleanup...").await;
+        logger.info("⏭️  DNS managed by Wrangler").await;
+
+        // Step 3: Delete Neon database
+        logger.progress(3, 4, "Deleting Neon database...").await;
+        
+        let db_name = format!("schoolorbit_{}", school.subdomain);
+        logger.info(&format!("Database name: {}", db_name)).await;
+
+        use crate::clients::neon_client::NeonClient;
+        if let Ok(neon_client) = NeonClient::new() {
+            match neon_client.delete_database_by_name(&db_name).await {
+                Ok(_) => logger.success(&format!("✅ Database deleted: {}", db_name)).await,
+                Err(e) => logger.warning(&format!("⚠️  Database deletion failed: {}", e)).await,
+            }
+        }
+
+        // Step 4: Delete school record
+        logger.progress(4, 4, "Deleting school record...").await;
+        
+        let result = sqlx::query("DELETE FROM schools WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("School not found".to_string()));
+        }
+
+        logger.success("✅ School record deleted").await;
+        logger.success("🎉 Deletion completed!").await;
+        logger.complete(serde_json::json!({"deleted": true})).await;
+
+        Ok(())
+    }
 }
