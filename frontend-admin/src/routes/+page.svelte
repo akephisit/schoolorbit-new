@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth.svelte';
 
-	// Redirect to dashboard if already authenticated
+	// Redirect to dashboard if already authenticated.
 	onMount(() => {
 		if (authStore.isAuthenticated) {
 			goto('/dashboard');
