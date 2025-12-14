@@ -358,27 +358,26 @@ impl SchoolService {
         
         // Step 3: Delete Neon database
         println!("📦 Step 3/4: Deleting Neon database...");
-        println!("   Debug: config = {:?}", config);
-        println!("   Debug: db_id = {:?}", db_id);
         
-        if let Some(neon_db_id) = db_id {
-            use crate::clients::neon_client::NeonClient;
-            
-            println!("   Found db_id: {}", neon_db_id);
-            
-            if let Ok(neon_client) = NeonClient::new() {
-                match neon_client.delete_database(neon_db_id).await {
-                    Ok(_) => println!("   ✅ Database deleted: {}", neon_db_id),
-                    Err(e) => {
-                        eprintln!("   ⚠️  Failed to delete database: {}", e);
-                        eprintln!("   You may need to delete manually from Neon console");
-                    }
+        // Construct database name from subdomain (same as creation)
+        let db_name = format!("schoolorbit_{}", school.subdomain);
+        
+        println!("   Database name: {}", db_name);
+        println!("   Debug: config = {:?}", config);
+        println!("   Debug: db_id (for reference only) = {:?}", db_id);
+        
+        use crate::clients::neon_client::NeonClient;
+        
+        if let Ok(neon_client) = NeonClient::new() {
+            match neon_client.delete_database_by_name(&db_name).await {
+                Ok(_) => println!("   ✅ Database deleted: {}", db_name),
+                Err(e) => {
+                    eprintln!("   ⚠️  Failed to delete database: {}", e);
+                    eprintln!("   You may need to delete manually from Neon console");
                 }
-            } else {
-                eprintln!("   ⚠️  Neon client not available");
             }
         } else {
-            println!("   ⏭️  No database ID found");
+            eprintln!("   ⚠️  Neon client not available");
         }
         
         // Step 4: Delete school record from database

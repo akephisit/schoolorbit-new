@@ -123,8 +123,56 @@ impl NeonClient {
     }
 
 
-    /// Delete a database (for rollback)
+    /// Delete a database by name (not ID!)
+    /// Neon API requires database name, not ID
+    pub async fn delete_database_by_name(&self, db_name: &str) -> Result<(), String> {
+        let url = format!(
+            "https://console.neon.tech/api/v2/projects/{}/branches/{}/databases/{}",
+            self.project_id, self.branch_id, db_name
+        );
+
+        println!("      Neon API: DELETE {}", url);
+
+        let response = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to delete database: {}", e))?;
+
+        let status = response.status();
+        println!("      Neon API Response: {}", status);
+
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            
+            println!("      Neon API Error: {}", error_text);
+            
+            return Err(format!(
+                "Failed to delete database ({}): {}",
+                status, error_text
+            ));
+        }
+
+        // Get response body for verification
+        let response_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "{}".to_string());
+        
+        println!("      Neon API Success: {}", response_text);
+
+        Ok(())
+    }
+
+    /// Delete a database by ID (deprecated - use delete_database_by_name)
+    /// Kept for backward compatibility
     pub async fn delete_database(&self, db_id: i64) -> Result<(), String> {
+
         let url = format!(
             "https://console.neon.tech/api/v2/projects/{}/branches/{}/databases/{}",
             self.project_id, self.branch_id, db_id
