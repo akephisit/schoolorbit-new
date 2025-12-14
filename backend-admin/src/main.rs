@@ -63,6 +63,9 @@ async fn main() {
             .route("/{id}", get(handlers::school::get_school))
             .route("/{id}", axum::routing::put(handlers::school::update_school))
             .route("/{id}", axum::routing::delete(handlers::school::delete_school))
+            // SSE endpoints for real-time logs
+            .route("/stream", post(handlers::school_sse::create_school_sse))
+            .route("/{id}/stream", axum::routing::delete(handlers::school_sse::delete_school_sse))
             // Deployment endpoints
             .route("/{id}/deploy", post(handlers::school::deploy_school))
             .route("/deploy/bulk", post(handlers::school::bulk_deploy_schools))
