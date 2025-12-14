@@ -658,8 +658,8 @@ impl SchoolService {
 
         let school = sqlx::query_as::<_, School>(
             r#"
-            INSERT INTO schools (name, subdomain, status, config)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO schools (name, subdomain, status, config, db_name, db_connection_string)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING *
             "#
         )
@@ -667,6 +667,8 @@ impl SchoolService {
         .bind(&data.subdomain)
         .bind("active")
         .bind(&config)
+        .bind(&db_name)
+        .bind(&connection_string)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
