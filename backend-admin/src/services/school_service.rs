@@ -164,7 +164,7 @@ impl SchoolService {
             .deploy_worker(&data.subdomain, &school_id.to_string(), &api_url)
             .await
         {
-            Ok(url) => {
+            Ok((url, _trigger_time)) => {
                 println!("✅ Worker deployed successfully: {}", url);
                 url
             }
@@ -429,7 +429,7 @@ impl SchoolService {
             .map_err(|e| AppError::ExternalServiceError(e))?;
         
         match cloudflare_client.deploy_worker(&school.subdomain, &school_id.to_string(), &api_url).await {
-            Ok(deployment_url) => {
+            Ok((deployment_url, _trigger_time)) => {
                 let github_actions_url = format!("https://github.com/{}/actions", github_repo);
                 
                 sqlx::query(
@@ -640,7 +640,7 @@ impl SchoolService {
         let cloudflare_client = CloudflareClient::new()
             .map_err(|e| AppError::ExternalServiceError(format!("Cloudflare client error: {}", e)))?;
 
-        let subdomain_url = cloudflare_client
+        let (subdomain_url, trigger_time) = cloudflare_client
             .deploy_worker(&data.subdomain, &Uuid::new_v4().to_string(), &api_url)
             .await
             .map_err(|e| AppError::ExternalServiceError(format!("Worker deployment failed: {}", e)))?;
@@ -649,7 +649,7 @@ impl SchoolService {
         logger.info("⏳ Waiting for deployment to complete (3-5 minutes)...").await;
 
         // Wait for GitHub Actions workflow to complete
-        match cloudflare_client.wait_for_workflow_completion(&data.subdomain, 10).await {
+        match cloudflare_client.wait_for_workflow_completion(&data.subdomain, trigger_time, 10).await {
             Ok(_) => {
                 logger.success("✅ GitHub Actions deployment completed!").await;
             }

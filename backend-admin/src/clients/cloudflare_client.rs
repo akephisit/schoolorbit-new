@@ -128,13 +128,17 @@ impl CloudflareClient {
 
     /// Deploy a Cloudflare Worker via GitHub Actions
     /// Triggers the deploy-school-tenant workflow
+    /// Returns (deployment_url, trigger_timestamp)
     pub async fn deploy_worker(
         &self,
         subdomain: &str,
         school_id: &str,
         api_url: &str,
-    ) -> Result<String, String> {
+    ) -> Result<(String, chrono::DateTime<chrono::Utc>), String> {
         println!("📦 Triggering GitHub Actions deployment for: {}", subdomain);
+        
+        // Record the time before triggering (to account for any delays)
+        let trigger_time = chrono::Utc::now();
         
         // Get GitHub configuration
         let github_token = env::var("GITHUB_TOKEN")
@@ -196,12 +200,14 @@ impl CloudflareClient {
         }
         
         println!("✅ GitHub Actions workflow triggered successfully");
+        println!("   Triggered at: {}", trigger_time);
         println!("   Deployment will be processed by GitHub Actions");
         println!("   Check: https://github.com/{}/actions", github_repo);
         
-        // Return the expected URL
+        // Return the expected URL and trigger time
         // Note: Actual deployment happens asynchronously in GitHub Actions
-        Ok(format!("https://{}.{}", subdomain, self.base_domain))
+        let deployment_url = format!("https://{}.{}", subdomain, self.base_domain);
+        Ok((deployment_url, trigger_time))
     }
 
     /// Wait for GitHub Actions workflow to complete
@@ -209,6 +215,7 @@ impl CloudflareClient {
     pub async fn wait_for_workflow_completion(
         &self,
         subdomain: &str,
+        trigger_time: chrono::DateTime<chrono::Utc>,
         timeout_minutes: u64,
     ) -> Result<(), String> {
         let github_token = std::env::var("GITHUB_TOKEN")
@@ -227,6 +234,7 @@ impl CloudflareClient {
 
         println!("⏳ Waiting for GitHub Actions workflow to complete...");
         println!("   Subdomain: {}", subdomain);
+        println!("   Triggered at: {}", trigger_time);
         println!("   Timeout: {} minutes", timeout_minutes);
 
         loop {
@@ -246,7 +254,7 @@ impl CloudflareClient {
                 .header("Accept", "application/vnd.github+json")
                 .header("X-GitHub-Api-Version", "2022-11-28")
                 .header("User-Agent", "SchoolOrbit-Backend")
-                .query(&[("per_page", "10"), ("event", "workflow_dispatch")])
+                .query(&[("per_page", "20"), ("event", "workflow_dispatch")])
                 .send()
                 .await
                 .map_err(|e| format!("Failed to fetch workflow runs: {}", e))?;
@@ -263,7 +271,7 @@ impl CloudflareClient {
                 .await
                 .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-            // Find the most recent run for deployment workflow
+            // Find the most recent run for deployment workflow that was created after our trigger
             if let Some(workflow_runs) = runs["workflow_runs"].as_array() {
                 if workflow_runs.is_empty() {
                     println!("   No workflow runs found yet - waiting...");
@@ -271,46 +279,80 @@ impl CloudflareClient {
                     continue;
                 }
 
-                // Get the most recent run (first in array)
-                if let Some(run) = workflow_runs.first() {
-                    let status = run["status"].as_str().unwrap_or("");
-                    let conclusion = run["conclusion"].as_str();
+                // Search for matching workflow run
+                let mut found_matching_run = false;
+                for run in workflow_runs {
                     let name = run["name"].as_str().unwrap_or("");
-                    let html_url = run["html_url"].as_str().unwrap_or("");
+                    let created_at_str = run["created_at"].as_str().unwrap_or("");
+                    
+                    // Parse created_at timestamp
+                    let created_at = match chrono::DateTime::parse_from_rfc3339(created_at_str) {
+                        Ok(dt) => dt.with_timezone(&chrono::Utc),
+                        Err(_) => {
+                            println!("   Warning: Could not parse created_at: {}", created_at_str);
+                            continue;
+                        }
+                    };
 
-                    println!("   Latest workflow: {} - status: {}", name, status);
+                    // Check if this workflow was created after we triggered
+                    // Allow 5 seconds buffer for clock differences
+                    let trigger_with_buffer = trigger_time - chrono::Duration::seconds(5);
+                    if created_at < trigger_with_buffer {
+                        println!("   Skipping old workflow: {} (created before trigger)", name);
+                        continue;
+                    }
 
                     // Check if this is deployment workflow
-                    if name.contains("Deploy") && name.contains("School") {
-                        match status {
-                            "completed" => {
-                                match conclusion {
-                                    Some("success") => {
-                                        println!("✅ Workflow completed successfully!");
-                                        return Ok(());
-                                    }
-                                    Some("failure") | Some("cancelled") => {
-                                        return Err(format!(
-                                            "Workflow {} - Check: {}",
-                                            conclusion.unwrap_or("failed"),
-                                            html_url
-                                        ));
-                                    }
-                                    _ => {
-                                        println!("   Workflow completed with unknown conclusion");
-                                    }
+                    if !name.contains("Deploy") || !name.contains("School") {
+                        println!("   Skipping non-deployment workflow: {}", name);
+                        continue;
+                    }
+
+                    // Found a matching workflow!
+                    found_matching_run = true;
+                    let status = run["status"].as_str().unwrap_or("");
+                    let conclusion = run["conclusion"].as_str();
+                    let html_url = run["html_url"].as_str().unwrap_or("");
+
+                    println!("   Found matching workflow: {} - status: {}", name, status);
+                    println!("   Created at: {} (trigger: {})", created_at, trigger_time);
+
+                    match status {
+                        "completed" => {
+                            match conclusion {
+                                Some("success") => {
+                                    println!("✅ Workflow completed successfully!");
+                                    println!("   URL: {}", html_url);
+                                    return Ok(());
+                                }
+                                Some("failure") | Some("cancelled") => {
+                                    return Err(format!(
+                                        "Workflow {} - Check: {}",
+                                        conclusion.unwrap_or("failed"),
+                                        html_url
+                                    ));
+                                }
+                                _ => {
+                                    println!("   Workflow completed with unknown conclusion: {:?}", conclusion);
                                 }
                             }
-                            "in_progress" | "queued" | "waiting" => {
-                                println!("   Workflow {} - continuing to wait...", status);
-                            }
-                            _ => {
-                                println!("   Unknown status: {}", status);
-                            }
                         }
-                    } else {
-                        println!("   Workflow '{}' doesn't match deployment pattern", name);
+                        "in_progress" | "queued" | "waiting" => {
+                            println!("   Workflow {} - continuing to wait...", status);
+                            // Don't break - continue waiting
+                            break; // Break inner loop to wait and poll again
+                        }
+                        _ => {
+                            println!("   Unknown status: {}", status);
+                        }
                     }
+
+                    // If we found a matching run, don't check older ones
+                    break;
+                }
+
+                if !found_matching_run {
+                    println!("   No matching workflow run found yet (checked {} runs)", workflow_runs.len());
                 }
             } else {
                 println!("   No workflow_runs array in response");
