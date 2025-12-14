@@ -97,7 +97,7 @@
 			schools = [tempSchool, ...schools];
 			
 			// Use SSE to stream logs
-			const API_URL = 'http://localhost:8080';
+			const API_URL = 'https://admin-api.schoolorbit.app';
 			
 			await createSchoolSSE(
 				API_URL,
@@ -176,7 +176,7 @@
 		school.logs = [];
 		schools = [...schools];
 		
-		const API_URL = 'http://localhost:8080';
+		const API_URL = 'https://admin-api.schoolorbit.app';
 		
 		try {
 			await deleteSchoolSSE(
