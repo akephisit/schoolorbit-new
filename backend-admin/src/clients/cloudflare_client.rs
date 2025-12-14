@@ -13,17 +13,13 @@ struct CreateDnsRecordRequest {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct CreateDnsRecordResponse {
-    result: DnsRecord,
-    success: bool,
+    result: DnsRecord,  // Only field we use
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct DnsRecord {
-    id: String,
-    name: String,
+    id: String,  // Only field we use
 }
 
 pub struct CloudflareClient {
