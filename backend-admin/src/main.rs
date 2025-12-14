@@ -35,7 +35,7 @@ async fn main() {
 
     println!("✅ Database migrations completed");
 
-    // Initialize handlers with database pool
+    // Initialize handlers with database pool.
     handlers::auth::init_pool(pool.clone());
     handlers::school::init_pool(pool.clone());
     handlers::school_sse::init_pool(pool.clone());
