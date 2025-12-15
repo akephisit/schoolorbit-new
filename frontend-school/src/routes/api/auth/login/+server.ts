@@ -8,17 +8,12 @@ export async function POST({ request, cookies }) {
     try {
         const body = await request.json();
 
-        // Extract subdomain from request hostname
-        const host = request.headers.get('host') || '';
-        const subdomain = host.split('.')[0]; // e.g., "school1" from "school1.schoolorbit.app"
-
-        console.log('Login request for subdomain:', subdomain);
-
+        // No need to send X-School-Subdomain header
+        // Backend extracts subdomain from Origin header (secure)
         const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'X-School-Subdomain': subdomain // Forward subdomain to backend
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify(body)
         });

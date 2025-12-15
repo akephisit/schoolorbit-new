@@ -1,6 +1,7 @@
 use crate::db::school_mapping::get_school_database_url;
 use crate::models::auth::{Claims, LoginRequest, LoginResponse, User, UserResponse};
 use crate::utils::jwt::JwtService;
+use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 use axum::{
     extract::{Request, State},
@@ -10,23 +11,6 @@ use axum::{
 };
 use tower_cookies::{Cookie, Cookies};
 
-/// Extract subdomain from headers
-fn get_subdomain(headers: &HeaderMap) -> Result<String, Response> {
-    headers
-        .get("X-School-Subdomain")
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "Missing X-School-Subdomain header"
-                })),
-            )
-                .into_response()
-        })
-}
-
 /// Login handler
 pub async fn login(
     State(state): State<AppState>,
@@ -34,7 +18,8 @@ pub async fn login(
     cookies: Cookies,
     Json(payload): Json<LoginRequest>,
 ) -> Response {
-    let subdomain = match get_subdomain(&headers) {
+    // Extract subdomain from Origin header (secure, cannot be spoofed)
+    let subdomain = match extract_subdomain_from_request(&headers) {
         Ok(s) => s,
         Err(response) => return response,
     };
@@ -208,7 +193,8 @@ pub async fn me(
     headers: HeaderMap,
     req: Request,
 ) -> Response {
-    let subdomain = match get_subdomain(&headers) {
+    // Extract subdomain from Origin header (secure)
+    let subdomain = match extract_subdomain_from_request(&headers) {
         Ok(s) => s,
         Err(response) => return response,
     };
