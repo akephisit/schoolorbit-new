@@ -1,12 +1,8 @@
 import { authStore, type User } from '$lib/stores/auth';
 import { toast } from 'svelte-sonner';
-import { browser } from '$app/environment';
+import { PUBLIC_BACKEND_URL } from '$env/static/public';
 
-// Get backend URL from environment (Cloudflare Workers will inject this)
-// or use production URL as fallback
-const BACKEND_URL =
-    (browser && (window as any).PUBLIC_BACKEND_URL) ||
-    'https://school-api.schoolorbit.app';
+const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 
 export interface LoginRequest {
     nationalId: string;
