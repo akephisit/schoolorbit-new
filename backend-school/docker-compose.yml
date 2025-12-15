@@ -8,13 +8,17 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      # Admin database for school mapping (required!)
+      - ADMIN_DATABASE_URL=${ADMIN_DATABASE_URL}
+      # Secrets
       - JWT_SECRET=${JWT_SECRET}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      # Server config
       - RUST_LOG=${RUST_LOG:-info}
       - HOST=${HOST:-0.0.0.0}
       - PORT=${PORT:-8081}
+      # Note: DATABASE_URL is no longer needed (multi-tenant architecture)
+      # Note: ALLOWED_ORIGINS is only for backend-admin
     networks:
       - web_network
     healthcheck:
