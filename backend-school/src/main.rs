@@ -95,6 +95,20 @@ async fn main() {
                     middleware::internal_auth::validate_internal_secret,
                 )),
         )
+        .route(
+            "/internal/migrate-all",
+            post(handlers::migration::migrate_all_schools)
+                .layer(axum_middleware::from_fn(
+                    middleware::internal_auth::validate_internal_secret,
+                )),
+        )
+        .route(
+            "/internal/migration-status",
+            get(handlers::migration::migration_status)
+                .layer(axum_middleware::from_fn(
+                    middleware::internal_auth::validate_internal_secret,
+                )),
+        )
         // Add cookie middleware
         .layer(CookieManagerLayer::new())
         // Add state
@@ -105,10 +119,12 @@ async fn main() {
     println!("\nAvailable endpoints:");
     println!("  GET  /                    - API info");
     println!("  GET  /health              - Health check");
-    println!("  POST /api/auth/login      - Login (requires X-School-Subdomain header)");
+    println!("  POST /api/auth/login      - Login");
     println!("  POST /api/auth/logout     - Logout");
     println!("  GET  /api/auth/me         - Get current user (protected)");
     println!("  POST /internal/provision  - Provision tenant database (internal only)");
+    println!("  POST /internal/migrate-all - Migrate all school databases (internal only)");
+    println!("  GET  /internal/migration-status - Get migration status (internal only)");
 
     // Run server
     let listener = tokio::net::TcpListener::bind(&addr)

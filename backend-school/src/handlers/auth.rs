@@ -55,7 +55,7 @@ pub async fn login(
     };
 
     // Get or create connection pool for this school
-    let pool = match state.pool_manager.get_pool(&db_url).await {
+    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
         Ok(p) => p,
         Err(e) => {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -229,7 +229,7 @@ pub async fn me(
     };
 
     // Get pool
-    let pool = match state.pool_manager.get_pool(&db_url).await {
+    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
         Ok(p) => p,
         Err(e) => {
             eprintln!("❌ Failed to get database pool: {}", e);
