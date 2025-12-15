@@ -44,6 +44,7 @@
 	},
 	"dependencies": {
 		"bits-ui": "^2.14.4",
-		"lucide-svelte": "^0.561.0"
+		"lucide-svelte": "^0.561.0",
+		"svelte-sonner": "^1.0.7"
 	}
 }

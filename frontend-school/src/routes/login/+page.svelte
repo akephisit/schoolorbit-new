@@ -3,6 +3,8 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { GraduationCap, ArrowLeft } from 'lucide-svelte';
+	import { authAPI } from '$lib/api/auth';
+	import { goto } from '$app/navigation';
 
 	let nationalId = $state('');
 	let password = $state('');
@@ -22,12 +24,21 @@
 			return;
 		}
 
-		// Simulate login API call
-		setTimeout(() => {
-			console.log('Logging in with:', { nationalId, password, rememberMe });
-			alert('Login functionality will be implemented here');
+		try {
+			await authAPI.login({
+				nationalId,
+				password,
+				rememberMe
+			});
+
+			// Redirect to dashboard on success
+			goto('/dashboard');
+		} catch (error) {
+			// Error already shown via toast in authAPI
+			errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+		} finally {
 			isLoading = false;
-		}, 1000);
+		}
 	}
 
 	function goBack() {
