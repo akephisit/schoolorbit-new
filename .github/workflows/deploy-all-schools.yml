@@ -108,7 +108,7 @@ jobs:
               }
             ],
             "vars": {
-              "PUBLIC_API_URL": "${{ secrets.API_URL }}",
+              "BACKEND_SCHOOL_URL": "https://school-api.schoolorbit.app",
               "SCHOOL_ID": "${{ matrix.school.school_id }}",
               "SUBDOMAIN": "${{ matrix.school.subdomain }}"
             }
