@@ -95,7 +95,7 @@ async fn main() {
                     middleware::internal_auth::validate_internal_secret,
                 )),
         )
-        // Add cookie middleware 
+        // Add cookie middleware
         .layer(CookieManagerLayer::new())
         // Add state
         .with_state(state);
