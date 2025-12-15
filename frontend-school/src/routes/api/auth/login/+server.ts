@@ -1,6 +1,7 @@
 import { env } from '$env/dynamic/private';
 
-const BACKEND_URL = env.BACKEND_SCHOOL_URL || 'http://localhost:8081';
+const BACKEND_URL = env.BACKEND_SCHOOL_URL || 'https://school-api.schoolorbit.app';
+
 
 /** @type {import('./$types').RequestHandler} */
 export async function POST({ request, cookies }) {
