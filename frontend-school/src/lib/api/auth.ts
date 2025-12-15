@@ -1,7 +1,7 @@
 import { authStore, type User } from '$lib/stores/auth';
 import { toast } from 'svelte-sonner';
 
-const API_BASE_URL = '/api'; // Proxy ผ่าน SvelteKit
+const BACKEND_URL = 'https://school-api.schoolorbit.app';
 
 export interface LoginRequest {
     nationalId: string;
@@ -9,112 +9,94 @@ export interface LoginRequest {
     rememberMe?: boolean;
 }
 
-export interface LoginResponse {
-    success: boolean;
-    message: string;
-    user: User;
-}
-
-export interface ApiError {
-    error: string;
-    success?: boolean;
-}
-
 class AuthAPI {
     /**
-     * Login user
+     * Login - Direct to backend (client-side)
      */
     async login(data: LoginRequest): Promise<User> {
+        authStore.setLoading(true);
+
         try {
-            const response = await fetch(`${API_BASE_URL}/auth/login`, {
+            const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
                 method: 'POST',
+                credentials: 'include', // Send/receive cookies
                 headers: {
                     'Content-Type': 'application/json'
+                    // No X-School-Subdomain needed - backend extracts from Origin
                 },
-                credentials: 'include', // Important: include cookies
-                body: JSON.stringify({
-                    nationalId: data.nationalId,
-                    password: data.password,
-                    rememberMe: data.rememberMe
-                })
+                body: JSON.stringify(data)
             });
 
             const result = await response.json();
 
             if (!response.ok) {
-                const error = result as ApiError;
-                throw new Error(error.error || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+                throw new Error(result.error || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
             }
 
-            const loginResponse = result as LoginResponse;
-            authStore.setUser(loginResponse.user);
-            toast.success(loginResponse.message || 'เข้าสู่ระบบสำเร็จ');
+            // Update store
+            authStore.setUser(result.user);
+            toast.success(result.message || 'เข้าสู่ระบบสำเร็จ');
 
-            return loginResponse.user;
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+            return result.user;
+        } catch (error: any) {
+            const message = error.message || 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
             toast.error(message);
             throw error;
+        } finally {
+            authStore.setLoading(false);
         }
     }
 
     /**
-     * Logout user
+     * Logout - Direct to backend (client-side)
      */
     async logout(): Promise<void> {
         try {
-            const response = await fetch(`${API_BASE_URL}/auth/logout`, {
+            const response = await fetch(`${BACKEND_URL}/api/auth/logout`, {
                 method: 'POST',
                 credentials: 'include'
             });
 
-            if (!response.ok) {
-                throw new Error('ออกจากระบบไม่สำเร็จ');
+            if (response.ok) {
+                authStore.clearUser();
+                toast.success('ออกจากระบบสำเร็จ');
             }
-
-            authStore.clearUser();
-            toast.success('ออกจากระบบสำเร็จ');
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
-            toast.error(message);
-            throw error;
+            console.error('Logout error:', error);
+            // Clear store anyway
+            authStore.clearUser();
         }
     }
 
     /**
-     * Get current authenticated user
+     * Check authentication status - Direct to backend (client-side)
      */
-    async me(): Promise<User | null> {
+    async checkAuth(): Promise<boolean> {
+        authStore.setLoading(true);
+
         try {
-            const response = await fetch(`${API_BASE_URL}/auth/me`, {
+            const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
                 credentials: 'include'
             });
 
             if (!response.ok) {
                 if (response.status === 401) {
                     authStore.clearUser();
-                    return null;
+                    return false;
                 }
-                throw new Error('ไม่สามารถดึงข้อมูลผู้ใช้ได้');
+                throw new Error('Failed to check auth');
             }
 
-            const user = (await response.json()) as User;
+            const user = await response.json();
             authStore.setUser(user);
-            return user;
+            return true;
         } catch (error) {
+            console.error('Auth check error:', error);
             authStore.clearUser();
-            return null;
+            return false;
+        } finally {
+            authStore.setLoading(false);
         }
-    }
-
-    /**
-     * Check if user is authenticated (called on app init)
-     */
-    async checkAuth(): Promise<boolean> {
-        authStore.setLoading(true);
-        const user = await this.me();
-        authStore.setLoading(false);
-        return user !== null;
     }
 }
 
