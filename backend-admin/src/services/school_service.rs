@@ -110,11 +110,18 @@ impl SchoolService {
             .map_err(|e| AppError::ExternalServiceError(format!("Backend-school client error: {}", e)))?;
 
         match backend_school_client
-            .provision_tenant(&school_id.to_string(), &db_connection_string, &data.subdomain)
+            .provision_tenant(
+                &school_id.to_string(),
+                &db_connection_string,
+                &data.subdomain,
+                &data.admin_national_id,
+                &data.admin_password,
+            )
             .await
         {
             Ok(_) => {
                 println!("✅ Tenant database provisioned successfully");
+                println!("✅ Admin user created with national ID: {}", data.admin_national_id);
             }
             Err(e) => {
                 eprintln!("❌ Failed to provision tenant: {}", e);
@@ -616,6 +623,8 @@ impl SchoolService {
                 "schoolId": Uuid::new_v4().to_string(),
                 "dbConnectionString": connection_string,
                 "subdomain": data.subdomain,
+                "adminNationalId": data.admin_national_id,
+                "adminPassword": data.admin_password,
             }))
             .send()
             .await

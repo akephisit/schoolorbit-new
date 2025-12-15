@@ -4,18 +4,27 @@
 	import { Label } from '$lib/components/ui/label';
 	import { GraduationCap, ArrowLeft } from 'lucide-svelte';
 
-	let email = $state('');
+	let nationalId = $state('');
 	let password = $state('');
 	let rememberMe = $state(false);
 	let isLoading = $state(false);
+	let errorMessage = $state('');
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		isLoading = true;
+		errorMessage = '';
 
-		// Simulate login
+		// Validate Thai national ID (13 digits)
+		if (!/^\d{13}$/.test(nationalId)) {
+			errorMessage = 'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลักเท่านั้น';
+			isLoading = false;
+			return;
+		}
+
+		// Simulate login API call
 		setTimeout(() => {
-			console.log('Logging in with:', { email, password, rememberMe });
+			console.log('Logging in with:', { nationalId, password, rememberMe });
 			alert('Login functionality will be implemented here');
 			isLoading = false;
 		}, 1000);
@@ -23,6 +32,18 @@
 
 	function goBack() {
 		window.location.href = '/';
+	}
+
+	function formatNationalId(value: string) {
+		// Remove non-digits
+		const digits = value.replace(/\D/g, '');
+		// Limit to 13 digits
+		return digits.slice(0, 13);
+	}
+
+	function handleNationalIdInput(e: Event) {
+		const target = e.target as HTMLInputElement;
+		nationalId = formatNationalId(target.value);
 	}
 </script>
 
@@ -49,18 +70,29 @@
 				<p class="text-sm text-muted-foreground">SchoolOrbit - ระบบบริหารจัดการโรงเรียน</p>
 			</div>
 
+			<!-- Error Message -->
+			{#if errorMessage}
+				<div class="mb-6 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+					<p class="text-sm text-destructive text-center">{errorMessage}</p>
+				</div>
+			{/if}
+
 			<!-- Login Form -->
 			<form onsubmit={handleSubmit} class="space-y-6">
-				<!-- Email Input -->
+				<!-- National ID Input -->
 				<div class="space-y-2">
-					<Label for="email">อีเมล</Label>
+					<Label for="nationalId">เลขบัตรประชาชน</Label>
 					<Input
-						type="email"
-						id="email"
-						bind:value={email}
-						placeholder="example@school.ac.th"
+						type="text"
+						id="nationalId"
+						bind:value={nationalId}
+						oninput={handleNationalIdInput}
+						placeholder="1234567890123"
+						maxlength={13}
+						autocomplete="off"
 						required
 					/>
+					<p class="text-xs text-muted-foreground">กรอกเลขบัตรประชาชน 13 หลัก</p>
 				</div>
 
 				<!-- Password Input -->
@@ -71,6 +103,7 @@
 						id="password"
 						bind:value={password}
 						placeholder="••••••••"
+						autocomplete="current-password"
 						required
 					/>
 				</div>
@@ -81,7 +114,7 @@
 						<input type="checkbox" bind:checked={rememberMe} class="w-4 h-4 rounded border-input" />
 						<span class="text-muted-foreground">จดจำฉันไว้</span>
 					</label>
-					<Button variant="link" class="p-0 h-auto text-sm">ลืมรหัสผ่าน?</Button>
+					<Button type="button" variant="link" class="p-0 h-auto text-sm">ติดต่อผู้ดูแลระบบ</Button>
 				</div>
 
 				<!-- Submit Button -->
@@ -90,20 +123,12 @@
 				</Button>
 			</form>
 
-			<!-- Divider -->
-			<div class="relative my-6">
-				<div class="absolute inset-0 flex items-center">
-					<div class="w-full border-t"></div>
+			<!-- Info Section -->
+			<div class="mt-6 pt-6 border-t border-border">
+				<div class="text-center space-y-2">
+					<p class="text-sm text-muted-foreground">ไม่มีการลงทะเบียนด้วยตนเอง</p>
+					<p class="text-xs text-muted-foreground">บัญชีผู้ใช้จะถูกสร้างโดยผู้ดูแลระบบเท่านั้น</p>
 				</div>
-				<div class="relative flex justify-center text-sm">
-					<span class="px-2 bg-card text-muted-foreground">หรือ</span>
-				</div>
-			</div>
-
-			<!-- Register Link -->
-			<div class="text-center text-sm">
-				<span class="text-muted-foreground">ยังไม่มีบัญชี?</span>
-				<Button variant="link" class="p-0 h-auto ml-1">ลงทะเบียน</Button>
 			</div>
 		</div>
 	</div>

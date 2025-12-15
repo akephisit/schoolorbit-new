@@ -6,6 +6,8 @@ pub struct ProvisionRequest {
     pub school_id: String,
     pub db_connection_string: String,
     pub subdomain: String,
+    pub admin_national_id: String,
+    pub admin_password: String,
 }
 
 #[derive(Debug, Serialize)]

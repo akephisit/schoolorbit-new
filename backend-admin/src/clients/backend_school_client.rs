@@ -8,6 +8,8 @@ pub struct ProvisionRequest {
     pub school_id: String,
     pub db_connection_string: String,
     pub subdomain: String,
+    pub admin_national_id: String,
+    pub admin_password: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,6 +45,8 @@ impl BackendSchoolClient {
         school_id: &str,
         db_connection_string: &str,
         subdomain: &str,
+        admin_national_id: &str,
+        admin_password: &str,
     ) -> Result<ProvisionResponse, String> {
         let url = format!("{}/internal/provision", self.base_url);
 
@@ -50,6 +54,8 @@ impl BackendSchoolClient {
             school_id: school_id.to_string(),
             db_connection_string: db_connection_string.to_string(),
             subdomain: subdomain.to_string(),
+            admin_national_id: admin_national_id.to_string(),
+            admin_password: admin_password.to_string(),
         };
 
         let response = self

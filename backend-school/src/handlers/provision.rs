@@ -11,13 +11,14 @@ use sqlx::postgres::PgPoolOptions;
 /// This endpoint:
 /// 1. Connects to the provided database URL
 /// 2. Runs all migrations
-/// 3. Creates initial tenant data
+/// 3. Creates initial admin user with provided credentials
 /// 4. Returns success/failure
 pub async fn provision_tenant(
     Json(payload): Json<ProvisionRequest>,
 ) -> Response {
     println!("📦 Provisioning tenant for school: {}", payload.school_id);
     println!("   Subdomain: {}", payload.subdomain);
+    println!("   Admin National ID: {}", payload.admin_national_id);
 
     // Connect to the tenant database
     let pool = match PgPoolOptions::new()
@@ -40,6 +41,7 @@ pub async fn provision_tenant(
     println!("✅ Connected to tenant database");
 
     // Run migrations
+    println!("📦 Running migrations...");
     match sqlx::migrate!("./migrations")
         .run(&pool)
         .await
@@ -57,15 +59,58 @@ pub async fn provision_tenant(
         }
     }
 
-    // Optional: Create initial tenant data here
-    // For example, create a default admin user for the school
-    // This can be done later based on requirements
+    // Create admin user
+    println!("👤 Creating admin user...");
+    
+    // Hash the password using bcrypt
+    let password_hash = match bcrypt::hash(&payload.admin_password, bcrypt::DEFAULT_COST) {
+        Ok(hash) => hash,
+        Err(e) => {
+            eprintln!("❌ Password hashing failed: {}", e);
+            let error = serde_json::json!({
+                "success": false,
+                "error": "Password hashing failed"
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+        }
+    };
+
+    // Insert admin user into the database
+    match sqlx::query(
+        r#"
+        INSERT INTO users (national_id, password_hash, first_name, last_name, role, status)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (national_id) DO NOTHING
+        "#
+    )
+    .bind(&payload.admin_national_id)
+    .bind(&password_hash)
+    .bind("ผู้ดูแลระบบ") // Default first name
+    .bind(&payload.subdomain) // Use subdomain as last name initially
+    .bind("admin")
+    .bind("active")
+    .execute(&pool)
+    .await
+    {
+        Ok(_) => {
+            println!("✅ Admin user created successfully");
+            println!("   National ID: {}", payload.admin_national_id);
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to create admin user: {}", e);
+            let error = serde_json::json!({
+                "success": false,
+                "error": format!("Failed to create admin user: {}", e)
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+        }
+    }
 
     println!("🎉 Tenant provisioning completed for school: {}", payload.school_id);
 
     let response = ProvisionResponse {
         success: true,
-        message: "Tenant database provisioned successfully".to_string(),
+        message: "Tenant database provisioned successfully with admin user".to_string(),
         school_id: payload.school_id,
     };
 
