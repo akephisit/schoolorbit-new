@@ -68,6 +68,8 @@ jobs:
       
       - name: Build frontend
         working-directory: frontend-school
+        env:
+          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
         run: npm run build
       
       - name: Deploy to Cloudflare Workers
