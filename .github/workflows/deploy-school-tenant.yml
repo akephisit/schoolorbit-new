@@ -59,7 +59,7 @@ jobs:
               }
             ],
             "vars": {
-              "BACKEND_SCHOOL_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
+              "PUBLIC_BACKEND_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
               "SCHOOL_ID": "${{ inputs.school_id }}",
               "SUBDOMAIN": "${{ inputs.subdomain }}"
             }

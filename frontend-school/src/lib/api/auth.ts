@@ -1,7 +1,8 @@
 import { authStore, type User } from '$lib/stores/auth';
 import { toast } from 'svelte-sonner';
+import { PUBLIC_BACKEND_URL } from '$env/static/public';
 
-const BACKEND_URL = 'https://school-api.schoolorbit.app';
+const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 
 export interface LoginRequest {
     nationalId: string;
