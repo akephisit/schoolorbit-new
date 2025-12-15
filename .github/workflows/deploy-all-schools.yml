@@ -123,6 +123,8 @@ jobs:
       
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
+        env:
+          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: frontend-school
