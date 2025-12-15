@@ -65,13 +65,102 @@ jobs:
           curl -X POST "$PORTAINER_WEBHOOK_URL"
           echo "Deployment webhook triggered successfully!"
 
+      - name: Wait for backend to be ready
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "⏳ Waiting for backend to start..."
+          sleep 20
+          
+          # Health check with retries
+          for i in {1..12}; do
+            if curl -f https://school-api.schoolorbit.app/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy"
+              break
+            fi
+            if [ $i -eq 12 ]; then
+              echo "❌ Backend health check failed after 60s"
+              exit 1
+            fi
+            echo "Retry $i/12..."
+            sleep 5
+          done
+
+      - name: Run database migrations
+        if: github.ref == 'refs/heads/main'
+        id: migrate
+        run: |
+          echo "🔄 Running database migrations for all schools..."
+          
+          RESPONSE=$(curl -X POST https://school-api.schoolorbit.app/internal/migrate-all \
+            -H "X-Internal-Secret: ${{ secrets.INTERNAL_API_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            -s)
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Migration API failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          
+          # Parse results
+          TOTAL=$(echo "$BODY" | jq -r '.total // 0')
+          SUCCESS=$(echo "$BODY" | jq -r '.success // 0')
+          FAILED=$(echo "$BODY" | jq -r '.failed // 0')
+          VERSION=$(echo "$BODY" | jq -r '.latest_version // 0')
+          
+          echo "📊 Migration Results:"
+          echo "   Total: $TOTAL | Success: $SUCCESS | Failed: $FAILED | Version: v$VERSION"
+          
+          # Store for summary
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "response=$BODY" >> $GITHUB_OUTPUT
+          
+          # Warn if failures
+          if [ "$FAILED" -gt 0 ]; then
+            echo "⚠️ $FAILED school(s) failed to migrate"
+            echo "$BODY" | jq -r '.results[] | select(.status == "failed") | "  ❌ \(.subdomain): \(.error)"'
+            echo "::warning::$FAILED schools failed to migrate"
+          fi
+          
+          if [ "$SUCCESS" -eq "$TOTAL" ]; then
+            echo "✅ All schools migrated successfully!"
+          fi
+
       - name: Deployment Summary
+        if: always() && github.ref == 'refs/heads/main'
         run: |
           echo "## Deployment Summary 🚀" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Docker Image" >> $GITHUB_STEP_SUMMARY
           echo "- **Image**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Triggered by**: @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Portainer webhook triggered successfully!" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.migrate.outcome }}" == "success" ]; then
+            echo "### 📊 Migration Results" >> $GITHUB_STEP_SUMMARY
+            echo "- **Total Schools**: ${{ steps.migrate.outputs.total }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **✅ Successful**: ${{ steps.migrate.outputs.success }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **❌ Failed**: ${{ steps.migrate.outputs.failed }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **📌 Version**: v${{ steps.migrate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "${{ steps.migrate.outputs.failed }}" != "0" ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### ⚠️ Failed Schools" >> $GITHUB_STEP_SUMMARY
+              echo '```json' >> $GITHUB_STEP_SUMMARY
+              echo '${{ steps.migrate.outputs.response }}' | jq '.results[] | select(.status == "failed")' >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ℹ️ Migration Status" >> $GITHUB_STEP_SUMMARY
+            echo "Migration step was skipped or failed. Check workflow logs." >> $GITHUB_STEP_SUMMARY
+          fi
