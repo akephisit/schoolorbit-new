@@ -3,7 +3,7 @@ import { env } from '$env/dynamic/private';
 const BACKEND_URL = env.BACKEND_SCHOOL_URL || 'http://localhost:8081';
 
 /** @type {import('./$types').RequestHandler} */
-export async function GET({ cookies }) {
+export async function GET({ cookies, request }) {
     try {
         const authToken = cookies.get('auth_token');
 
@@ -21,9 +21,14 @@ export async function GET({ cookies }) {
             );
         }
 
+        // Extract subdomain
+        const host = request.headers.get('host') || '';
+        const subdomain = host.split('.')[0];
+
         const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
             headers: {
-                Cookie: `auth_token=${authToken}`
+                Cookie: `auth_token=${authToken}`,
+                'X-School-Subdomain': subdomain
             }
         });
 
@@ -36,6 +41,7 @@ export async function GET({ cookies }) {
             }
         });
     } catch (error) {
+        console.error('Me proxy error:', error);
         return new Response(
             JSON.stringify({
                 error: 'เกิดข้อผิดพลาด'

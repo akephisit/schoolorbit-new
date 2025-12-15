@@ -1,21 +1,45 @@
+use crate::db::school_mapping::get_school_database_url;
 use crate::models::auth::{Claims, LoginRequest, LoginResponse, User, UserResponse};
 use crate::utils::jwt::JwtService;
+use crate::AppState;
 use axum::{
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use sqlx::PgPool;
 use tower_cookies::{Cookie, Cookies};
+
+/// Extract subdomain from headers
+fn get_subdomain(headers: &HeaderMap) -> Result<String, Response> {
+    headers
+        .get("X-School-Subdomain")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "Missing X-School-Subdomain header"
+                })),
+            )
+                .into_response()
+        })
+}
 
 /// Login handler
 pub async fn login(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
     cookies: Cookies,
     Json(payload): Json<LoginRequest>,
 ) -> Response {
-    println!("🔐 Login attempt for national ID: {}", payload.national_id);
+    let subdomain = match get_subdomain(&headers) {
+        Ok(s) => s,
+        Err(response) => return response,
+    };
+
+    println!("🔐 Login attempt for school: {}, national ID: {}", subdomain, payload.national_id);
 
     // Validate national ID format
     if payload.national_id.len() != 13 || !payload.national_id.chars().all(|c| c.is_ascii_digit()) {
@@ -28,6 +52,38 @@ pub async fn login(
         )
             .into_response();
     }
+
+    // Get school database URL from mapping
+    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("❌ Failed to get school database: {}", e);
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "success": false,
+                    "error": "ไม่พบโรงเรียนหรือโรงเรียนไม่ได้เปิดใช้งาน"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Get or create connection pool for this school
+    let pool = match state.pool_manager.get_pool(&db_url).await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("❌ Failed to get database pool: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
+                })),
+            )
+                .into_response();
+        }
+    };
 
     // Find user by national_id
     let user = match sqlx::query_as::<_, User>(
@@ -113,7 +169,7 @@ pub async fn login(
     
     cookies.add(cookie);
 
-    println!("✅ Login successful: {} ({})", user.first_name, user.role);
+    println!("✅ Login successful: {} ({}) [School: {}]", user.first_name, user.role, subdomain);
 
     let response = LoginResponse {
         success: true,
@@ -148,9 +204,15 @@ pub async fn logout(cookies: Cookies) -> Response {
 
 /// Get current user handler (protected)
 pub async fn me(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
     req: Request,
 ) -> Response {
+    let subdomain = match get_subdomain(&headers) {
+        Ok(s) => s,
+        Err(response) => return response,
+    };
+
     // Extract claims from middleware
     let claims = match req.extensions().get::<Claims>() {
         Some(c) => c.clone(),
@@ -159,6 +221,36 @@ pub async fn me(
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({
                     "error": "ไม่พบข้อมูลผู้ใช้"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Get school database URL
+    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("❌ Failed to get school database: {}", e);
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "ไม่พบโรงเรียน"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Get pool
+    let pool = match state.pool_manager.get_pool(&db_url).await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("❌ Failed to get database pool: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "เกิดข้อผิดพลาด"
                 })),
             )
                 .into_response();
