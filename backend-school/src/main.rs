@@ -99,6 +99,26 @@ async fn main() {
         .route("/api/staff/:id", axum::routing::delete(handlers::staff::delete_staff)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
+        // Role Management routes (protected)
+        .route("/api/roles", get(handlers::roles::list_roles)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/roles/:id", get(handlers::roles::get_role)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/roles", post(handlers::roles::create_role)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/roles/:id", axum::routing::put(handlers::roles::update_role)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
+        // Department Management routes (protected)
+        .route("/api/departments", get(handlers::roles::list_departments)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/departments/:id", get(handlers::roles::get_department)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/departments", post(handlers::roles::create_department)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/departments/:id", axum::routing::put(handlers::roles::update_department)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
         // Internal routes (protected by internal auth middleware)
         .route(
             "/internal/provision",

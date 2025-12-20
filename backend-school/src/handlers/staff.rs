@@ -1,35 +1,88 @@
 use crate::db::school_mapping::get_school_database_url;
-use crate::models::auth::Claims;
 use crate::models::staff::*;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 use axum::{
-    extract::{Path, Query, Request, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use chrono::Utc;
 use serde_json::json;
+use sqlx::FromRow;
 use uuid::Uuid;
+
+// Helper structs for query results
+#[derive(Debug, FromRow)]
+struct UserBasicRow {
+    id: Uuid,
+    national_id: Option<String>,
+    email: Option<String>,
+    title: Option<String>,
+    first_name: String,
+    last_name: String,
+    nickname: Option<String>,
+    phone: Option<String>,
+    user_type: String,
+    status: String,
+}
+
+#[derive(Debug, FromRow)]
+struct StaffInfoRow {
+    employee_id: Option<String>,
+    employment_type: Option<String>,
+    education_level: Option<String>,
+    major: Option<String>,
+    university: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct RoleRow {
+    id: Uuid,
+    code: String,
+    name: String,
+    name_en: Option<String>,
+    category: String,
+    level: i32,
+    is_primary: bool,
+}
+
+#[derive(Debug, FromRow)]
+struct DepartmentRow {
+    id: Uuid,
+    code: String,
+    name: String,
+    position: String,
+    is_primary_department: bool,
+}
+
+#[derive(Debug, FromRow)]
+struct TeachingRow {
+    id: Uuid,
+    subject: String,
+    grade_level: Option<String>,
+    hours_per_week: Option<f64>,
+    is_homeroom_teacher: bool,
+    academic_year: String,
+    semester: String,
+    class_code: Option<String>,
+    class_name: Option<String>,
+}
 
 // ===================================================================
 // List Staff
 // ===================================================================
 
-/// List all staff members with filters
 pub async fn list_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(filter): Query<StaffListFilter>,
 ) -> Response {
-    // Extract subdomain
     let subdomain = match extract_subdomain_from_request(&headers) {
         Ok(s) => s,
         Err(response) => return response,
     };
 
-    // Get school database
     let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
@@ -45,7 +98,6 @@ pub async fn list_staff(
         }
     };
 
-    // Get pool
     let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
         Ok(p) => p,
         Err(e) => {
@@ -61,25 +113,17 @@ pub async fn list_staff(
         }
     };
 
-    // Pagination
     let page = filter.page.unwrap_or(1);
     let page_size = filter.page_size.unwrap_or(20);
     let offset = (page - 1) * page_size;
 
-    // Build query
-    let mut query = String::from("
-        SELECT DISTINCT
-            u.id,
-            si.employee_id,
-            u.first_name,
-            u.last_name,
-            u.status
-        FROM users u
-        LEFT JOIN staff_info si ON u.id = si.user_id
-        WHERE u.user_type = 'staff'
-    ");
+    let mut query = String::from(
+        "SELECT DISTINCT u.id, si.employee_id, u.first_name, u.last_name, u.status
+         FROM users u
+         LEFT JOIN staff_info si ON u.id = si.user_id
+         WHERE u.user_type = 'staff'",
+    );
 
-    // Apply filters
     if let Some(status) = &filter.status {
         query.push_str(&format!(" AND u.status = '{}'", status));
     }
@@ -91,9 +135,11 @@ pub async fn list_staff(
         ));
     }
 
-    query.push_str(&format!(" ORDER BY u.first_name LIMIT {} OFFSET {}", page_size, offset));
+    query.push_str(&format!(
+        " ORDER BY u.first_name LIMIT {} OFFSET {}",
+        page_size, offset
+    ));
 
-    // Execute query
     let staff_rows = match sqlx::query_as::<_, (Uuid, Option<String>, String, String, String)>(&query)
         .fetch_all(&pool)
         .await
@@ -112,7 +158,6 @@ pub async fn list_staff(
         }
     };
 
-    // Get total count
     let count_query = "SELECT COUNT(DISTINCT u.id) FROM users u WHERE u.user_type = 'staff'";
     let total: i64 = match sqlx::query_scalar(count_query).fetch_one(&pool).await {
         Ok(count) => count,
@@ -121,7 +166,6 @@ pub async fn list_staff(
 
     let total_pages = (total as f64 / page_size as f64).ceil() as i64;
 
-    // Build response (simplified for now)
     let items: Vec<StaffListItem> = staff_rows
         .into_iter()
         .map(|(id, employee_id, first_name, last_name, status)| StaffListItem {
@@ -151,19 +195,16 @@ pub async fn list_staff(
 // Get Staff Profile
 // ===================================================================
 
-/// Get detailed staff profile by ID
 pub async fn get_staff_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(staff_id): Path<Uuid>,
 ) -> Response {
-    // Extract subdomain
     let subdomain = match extract_subdomain_from_request(&headers) {
         Ok(s) => s,
         Err(response) => return response,
     };
 
-    // Get school database
     let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
@@ -179,7 +220,6 @@ pub async fn get_staff_profile(
         }
     };
 
-    // Get pool
     let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
         Ok(p) => p,
         Err(e) => {
@@ -196,13 +236,13 @@ pub async fn get_staff_profile(
     };
 
     // Get user basic info
-    let user = match sqlx::query!(
+    let user = match sqlx::query_as::<_, UserBasicRow>(
         "SELECT id, national_id, email, title, first_name, last_name, nickname, phone, 
                 user_type, status
          FROM users 
          WHERE id = $1 AND user_type = 'staff'",
-        staff_id
     )
+    .bind(staff_id)
     .fetch_optional(&pool)
     .await
     {
@@ -231,26 +271,26 @@ pub async fn get_staff_profile(
     };
 
     // Get staff info
-    let staff_info = sqlx::query!(
+    let staff_info = sqlx::query_as::<_, StaffInfoRow>(
         "SELECT employee_id, employment_type, education_level, major, university
          FROM staff_info 
          WHERE user_id = $1",
-        staff_id
     )
+    .bind(staff_id)
     .fetch_optional(&pool)
     .await
     .ok()
     .flatten();
 
     // Get roles
-    let roles = sqlx::query!(
+    let roles = sqlx::query_as::<_, RoleRow>(
         "SELECT r.id, r.code, r.name, r.name_en, r.category, r.level, ur.is_primary
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
          WHERE ur.user_id = $1 AND ur.ended_at IS NULL
          ORDER BY ur.is_primary DESC, r.level DESC",
-        staff_id
     )
+    .bind(staff_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default()
@@ -267,14 +307,14 @@ pub async fn get_staff_profile(
     .collect();
 
     // Get departments
-    let departments = sqlx::query!(
+    let departments = sqlx::query_as::<_, DepartmentRow>(
         "SELECT d.id, d.code, d.name, dm.position, dm.is_primary_department
          FROM department_members dm
          JOIN departments d ON dm.department_id = d.id
          WHERE dm.user_id = $1 AND dm.ended_at IS NULL
          ORDER BY dm.is_primary_department DESC",
-        staff_id
     )
+    .bind(staff_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default()
@@ -289,15 +329,15 @@ pub async fn get_staff_profile(
     .collect();
 
     // Get teaching assignments
-    let teaching_assignments = sqlx::query!(
+    let teaching_assignments = sqlx::query_as::<_, TeachingRow>(
         "SELECT ta.id, ta.subject, ta.grade_level, ta.hours_per_week, ta.is_homeroom_teacher,
                 ta.academic_year, ta.semester, c.code as class_code, c.name as class_name
          FROM teaching_assignments ta
          LEFT JOIN classes c ON ta.class_id = c.id
          WHERE ta.teacher_id = $1 AND ta.ended_at IS NULL
          ORDER BY ta.grade_level, ta.subject",
-        staff_id
     )
+    .bind(staff_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default()
@@ -309,13 +349,12 @@ pub async fn get_staff_profile(
         class_code: row.class_code,
         class_name: row.class_name,
         is_homeroom_teacher: row.is_homeroom_teacher,
-        hours_per_week: row.hours_per_week.map(|h| h as f64),
+        hours_per_week: row.hours_per_week,
         academic_year: row.academic_year,
         semester: row.semester,
     })
     .collect();
 
-    // Build profile response
     let profile = StaffProfileResponse {
         id: user.id,
         national_id: user.national_id,
@@ -337,7 +376,7 @@ pub async fn get_staff_profile(
         roles,
         departments,
         teaching_assignments,
-        permissions: vec![], // TODO: Collect from roles
+        permissions: vec![],
     };
 
     (
@@ -354,19 +393,16 @@ pub async fn get_staff_profile(
 // Create Staff
 // ===================================================================
 
-/// Create new staff member
 pub async fn create_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<CreateStaffRequest>,
 ) -> Response {
-    // Extract subdomain
     let subdomain = match extract_subdomain_from_request(&headers) {
         Ok(s) => s,
         Err(response) => return response,
     };
 
-    // Get school database
     let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
@@ -382,7 +418,6 @@ pub async fn create_staff(
         }
     };
 
-    // Get pool
     let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
         Ok(p) => p,
         Err(e) => {
@@ -398,7 +433,6 @@ pub async fn create_staff(
         }
     };
 
-    // Hash password
     let password_hash = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
         Ok(hash) => hash,
         Err(e) => {
@@ -414,7 +448,6 @@ pub async fn create_staff(
         }
     };
 
-    // Start transaction
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
         Err(e) => {
@@ -431,28 +464,28 @@ pub async fn create_staff(
     };
 
     // Create user
-    let user_id = match sqlx::query_scalar!(
+    let user_id: Uuid = match sqlx::query_scalar(
         "INSERT INTO users (
             national_id, email, password_hash, title, first_name, last_name, nickname,
             phone, emergency_contact, line_id, date_of_birth, gender, address,
             user_type, hired_date, status
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'staff', $14, 'active')
         RETURNING id",
-        payload.national_id,
-        payload.email,
-        password_hash,
-        payload.title,
-        payload.first_name,
-        payload.last_name,
-        payload.nickname,
-        payload.phone,
-        payload.emergency_contact,
-        payload.line_id,
-        payload.date_of_birth,
-        payload.gender,
-        payload.address,
-        payload.hired_date
     )
+    .bind(&payload.national_id)
+    .bind(&payload.email)
+    .bind(&password_hash)
+    .bind(&payload.title)
+    .bind(&payload.first_name)
+    .bind(&payload.last_name)
+    .bind(&payload.nickname)
+    .bind(&payload.phone)
+    .bind(&payload.emergency_contact)
+    .bind(&payload.line_id)
+    .bind(&payload.date_of_birth)
+    .bind(&payload.gender)
+    .bind(&payload.address)
+    .bind(&payload.hired_date)
     .fetch_one(&mut *tx)
     .await
     {
@@ -475,21 +508,21 @@ pub async fn create_staff(
     let work_days_json = serde_json::to_value(payload.staff_info.work_days.unwrap_or_default())
         .unwrap_or(serde_json::Value::Null);
 
-    match sqlx::query!(
+    match sqlx::query(
         "INSERT INTO staff_info (
             user_id, employee_id, employment_type, education_level, major, university,
             teaching_license_number, teaching_license_expiry, work_days, metadata
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}'::jsonb)",
-        user_id,
-        payload.staff_info.employee_id,
-        payload.staff_info.employment_type,
-        payload.staff_info.education_level,
-        payload.staff_info.major,
-        payload.staff_info.university,
-        payload.staff_info.teaching_license_number,
-        payload.staff_info.teaching_license_expiry,
-        work_days_json
     )
+    .bind(user_id)
+    .bind(&payload.staff_info.employee_id)
+    .bind(&payload.staff_info.employment_type)
+    .bind(&payload.staff_info.education_level)
+    .bind(&payload.staff_info.major)
+    .bind(&payload.staff_info.university)
+    .bind(&payload.staff_info.teaching_license_number)
+    .bind(&payload.staff_info.teaching_license_expiry)
+    .bind(&work_days_json)
     .execute(&mut *tx)
     .await
     {
@@ -511,52 +544,37 @@ pub async fn create_staff(
     // Assign roles
     for role_id in &payload.role_ids {
         let is_primary = payload.primary_role_id.as_ref() == Some(role_id);
-        
-        match sqlx::query!(
+
+        let _ = sqlx::query(
             "INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
              VALUES ($1, $2, $3, CURRENT_DATE)",
-            user_id,
-            role_id,
-            is_primary
         )
+        .bind(user_id)
+        .bind(role_id)
+        .bind(is_primary)
         .execute(&mut *tx)
-        .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("❌ Failed to assign role: {}", e);
-                // Continue anyway
-            }
-        }
+        .await;
     }
 
     // Assign departments
     if let Some(dept_assignments) = &payload.department_assignments {
         for assignment in dept_assignments {
-            match sqlx::query!(
+            let _ = sqlx::query(
                 "INSERT INTO department_members (
                     user_id, department_id, position, is_primary_department, 
                     responsibilities, started_at
                 ) VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)",
-                user_id,
-                assignment.department_id,
-                assignment.position,
-                assignment.is_primary.unwrap_or(false),
-                assignment.responsibilities
             )
+            .bind(user_id)
+            .bind(assignment.department_id)
+            .bind(&assignment.position)
+            .bind(assignment.is_primary.unwrap_or(false))
+            .bind(&assignment.responsibilities)
             .execute(&mut *tx)
-            .await
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("❌ Failed to assign department: {}", e);
-                    // Continue anyway
-                }
-            }
+            .await;
         }
     }
 
-    // Commit transaction
     match tx.commit().await {
         Ok(_) => {
             println!("✅ Staff created successfully: {}", user_id);
@@ -590,20 +608,17 @@ pub async fn create_staff(
 // Update Staff
 // ===================================================================
 
-/// Update staff member
 pub async fn update_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(staff_id): Path<Uuid>,
     Json(payload): Json<UpdateStaffRequest>,
 ) -> Response {
-    // Extract subdomain
     let subdomain = match extract_subdomain_from_request(&headers) {
         Ok(s) => s,
         Err(response) => return response,
     };
 
-    // Get school database
     let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
@@ -619,7 +634,6 @@ pub async fn update_staff(
         }
     };
 
-    // Get pool
     let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
         Ok(p) => p,
         Err(e) => {
@@ -635,8 +649,7 @@ pub async fn update_staff(
         }
     };
 
-    // Build dynamic update query (simplified version)
-    let result = sqlx::query!(
+    let result = sqlx::query(
         "UPDATE users 
          SET 
             title = COALESCE($2, title),
@@ -646,27 +659,25 @@ pub async fn update_staff(
             phone = COALESCE($6, phone),
             updated_at = NOW()
          WHERE id = $1 AND user_type = 'staff'",
-        staff_id,
-        payload.title,
-        payload.first_name,
-        payload.last_name,
-        payload.nickname,
-        payload.phone
     )
+    .bind(staff_id)
+    .bind(&payload.title)
+    .bind(&payload.first_name)
+    .bind(&payload.last_name)
+    .bind(&payload.nickname)
+    .bind(&payload.phone)
     .execute(&pool)
     .await;
 
     match result {
-        Ok(result) if result.rows_affected() > 0 => {
-            (
-                StatusCode::OK,
-                Json(json!({
-                    "success": true,
-                    "message": "อัปเดตข้อมูลสำเร็จ"
-                })),
-            )
-                .into_response()
-        }
+        Ok(result) if result.rows_affected() > 0 => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "อัปเดตข้อมูลสำเร็จ"
+            })),
+        )
+            .into_response(),
         Ok(_) => (
             StatusCode::NOT_FOUND,
             Json(json!({
@@ -693,19 +704,16 @@ pub async fn update_staff(
 // Delete Staff (Soft Delete)
 // ===================================================================
 
-/// Delete (deactivate) staff member
 pub async fn delete_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(staff_id): Path<Uuid>,
 ) -> Response {
-    // Extract subdomain
     let subdomain = match extract_subdomain_from_request(&headers) {
         Ok(s) => s,
         Err(response) => return response,
     };
 
-    // Get school database
     let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
@@ -721,7 +729,6 @@ pub async fn delete_staff(
         }
     };
 
-    // Get pool
     let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
         Ok(p) => p,
         Err(e) => {
@@ -737,27 +744,24 @@ pub async fn delete_staff(
         }
     };
 
-    // Soft delete (set status to inactive)
-    let result = sqlx::query!(
+    let result = sqlx::query(
         "UPDATE users 
          SET status = 'inactive', updated_at = NOW()
          WHERE id = $1 AND user_type = 'staff'",
-        staff_id
     )
+    .bind(staff_id)
     .execute(&pool)
     .await;
 
     match result {
-        Ok(result) if result.rows_affected() > 0 => {
-            (
-                StatusCode::OK,
-                Json(json!({
-                    "success": true,
-                    "message": "ลบบุคลากรสำเร็จ"
-                })),
-            )
-                .into_response()
-        }
+        Ok(result) if result.rows_affected() > 0 => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "ลบบุคลากรสำเร็จ"
+            })),
+        )
+            .into_response(),
         Ok(_) => (
             StatusCode::NOT_FOUND,
             Json(json!({
