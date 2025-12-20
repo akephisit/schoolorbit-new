@@ -97,6 +97,7 @@
 	// Submit form
 	async function handleSubmit() {
 		if (!validate()) return;
+		if (!staffId) return;
 
 		saving = true;
 		errors = {};
