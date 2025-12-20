@@ -87,6 +87,18 @@ async fn main() {
         .route("/api/auth/me", get(handlers::auth::me)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
+        // Staff Management routes (protected)
+        .route("/api/staff", get(handlers::staff::list_staff)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/staff/:id", get(handlers::staff::get_staff_profile)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/staff", post(handlers::staff::create_staff)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/staff/:id", axum::routing::put(handlers::staff::update_staff)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/staff/:id", axum::routing::delete(handlers::staff::delete_staff)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
         // Internal routes (protected by internal auth middleware)
         .route(
             "/internal/provision",
@@ -122,6 +134,13 @@ async fn main() {
     println!("  POST /api/auth/login      - Login");
     println!("  POST /api/auth/logout     - Logout");
     println!("  GET  /api/auth/me         - Get current user (protected)");
+    println!("\n  Staff Management:");
+    println!("  GET    /api/staff         - List all staff (protected)");
+    println!("  GET    /api/staff/{{id}}    - Get staff profile (protected)");
+    println!("  POST   /api/staff         - Create staff (protected)");
+    println!("  PUT    /api/staff/{{id}}    - Update staff (protected)");
+    println!("  DELETE /api/staff/{{id}}    - Delete staff (protected)");
+    println!("\n  Internal APIs:");
     println!("  POST /internal/provision  - Provision tenant database (internal only)");
     println!("  POST /internal/migrate-all - Migrate all school databases (internal only)");
     println!("  GET  /internal/migration-status - Get migration status (internal only)");
