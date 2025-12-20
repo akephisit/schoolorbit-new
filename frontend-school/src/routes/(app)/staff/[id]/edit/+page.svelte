@@ -49,7 +49,7 @@
 
 				// Populate form
 				formData = {
-					title: staff.title || '',
+					title: staff.title || 'นาย',
 					first_name: staff.first_name,
 					last_name: staff.last_name,
 					nickname: staff.nickname || '',
@@ -108,6 +108,31 @@
 			saving = false;
 		}
 	}
+
+	// Get display label for value
+	function getTitleLabel(value: string): string {
+		const labels: Record<string, string> = {
+			นาย: 'นาย',
+			นาง: 'นาง',
+			นางสาว: 'นางสาว',
+			'ดร.': 'ดร.',
+			'ศ.': 'ศ.',
+			'รศ.': 'รศ.',
+			'ผศ.': 'ผศ.'
+		};
+		return labels[value] || value;
+	}
+
+	function getStatusLabel(value: string): string {
+		const labels: Record<string, string> = {
+			active: 'ใช้งาน',
+			inactive: 'ไม่ใช้งาน',
+			suspended: 'ระงับ',
+			resigned: 'ลาออก',
+			retired: 'เกษียณ'
+		};
+		return labels[value] || value;
+	}
 </script>
 
 <svelte:head>
@@ -162,9 +187,9 @@
 						<div class="grid grid-cols-2 gap-4">
 							<div class="space-y-2">
 								<Label for="title">คำนำหน้า <span class="text-destructive">*</span></Label>
-								<Select.Root bind:value={formData.title}>
+								<Select.Root type="single" bind:value={formData.title}>
 									<Select.Trigger id="title">
-										<Select.Value placeholder="เลือกคำนำหน้า" />
+										{getTitleLabel(formData.title)}
 									</Select.Trigger>
 									<Select.Content>
 										<Select.Item value="นาย">นาย</Select.Item>
@@ -180,9 +205,9 @@
 
 							<div class="space-y-2">
 								<Label for="status">สถานะ</Label>
-								<Select.Root bind:value={formData.status}>
+								<Select.Root type="single" bind:value={formData.status}>
 									<Select.Trigger id="status">
-										<Select.Value />
+										{getStatusLabel(formData.status)}
 									</Select.Trigger>
 									<Select.Content>
 										<Select.Item value="active">ใช้งาน</Select.Item>
