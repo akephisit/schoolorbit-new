@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { listDepartments, type Department } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import { Building2, Plus, Pencil, Search, Phone, Mail, MapPin } from 'lucide-svelte';
 
 	let departments: Department[] = $state([]);
@@ -66,12 +67,7 @@
 	<div class="bg-card border border-border rounded-lg p-4">
 		<div class="relative">
 			<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-			<input
-				type="text"
-				bind:value={searchQuery}
-				placeholder="ค้นหาฝ่าย..."
-				class="w-full pl-10 pr-4 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-			/>
+			<Input type="text" bind:value={searchQuery} placeholder="ค้นหาฝ่าย..." class="pl-10" />
 		</div>
 	</div>
 
