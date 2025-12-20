@@ -4,20 +4,18 @@
 	import {
 		getStaffProfile,
 		updateStaff,
-		listRoles,
-		listDepartments,
-		type Role,
-		type Department,
 		type StaffProfileResponse
 	} from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
-	import { User, ArrowLeft, Loader2, Save } from 'lucide-svelte';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
+	import { ArrowLeft, Loader2, Save } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	const staffId = $derived($page.params.id);
 
 	// Loading states
-	let loading = $state(false);
 	let loadingProfile = $state(true);
 	let saving = $state(false);
 
@@ -31,11 +29,6 @@
 		last_name: '',
 		nickname: '',
 		phone: '',
-		emergency_contact: '',
-		line_id: '',
-		date_of_birth: '',
-		gender: 'male',
-		address: '',
 		status: 'active'
 	});
 
@@ -61,11 +54,6 @@
 					last_name: staff.last_name,
 					nickname: staff.nickname || '',
 					phone: staff.phone || '',
-					emergency_contact: '',
-					line_id: '',
-					date_of_birth: '',
-					gender: 'male',
-					address: '',
 					status: staff.status
 				};
 			}
@@ -172,94 +160,92 @@
 
 					<div class="space-y-4">
 						<div class="grid grid-cols-2 gap-4">
-							<div>
-								<label class="block text-sm font-medium mb-2">
-									คำนำหน้า <span class="text-destructive">*</span>
-								</label>
-								<select
-									bind:value={formData.title}
-									class="w-full px-3 py-2 border border-border rounded-md"
-								>
-									<option value="นาย">นาย</option>
-									<option value="นาง">นาง</option>
-									<option value="นางสาว">นางสาว</option>
-									<option value="ดร.">ดร.</option>
-									<option value="ศ.">ศ.</option>
-									<option value="รศ.">รศ.</option>
-									<option value="ผศ.">ผศ.</option>
-								</select>
+							<div class="space-y-2">
+								<Label for="title">คำนำหน้า <span class="text-destructive">*</span></Label>
+								<Select.Root bind:value={formData.title}>
+									<Select.Trigger id="title">
+										<Select.Value placeholder="เลือกคำนำหน้า" />
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="นาย">นาย</Select.Item>
+										<Select.Item value="นาง">นาง</Select.Item>
+										<Select.Item value="นางสาว">นางสาว</Select.Item>
+										<Select.Item value="ดร.">ดร.</Select.Item>
+										<Select.Item value="ศ.">ศ.</Select.Item>
+										<Select.Item value="รศ.">รศ.</Select.Item>
+										<Select.Item value="ผศ.">ผศ.</Select.Item>
+									</Select.Content>
+								</Select.Root>
 							</div>
 
-							<div>
-								<label class="block text-sm font-medium mb-2">สถานะ</label>
-								<select
-									bind:value={formData.status}
-									class="w-full px-3 py-2 border border-border rounded-md"
-								>
-									<option value="active">ใช้งาน</option>
-									<option value="inactive">ไม่ใช้งาน</option>
-									<option value="suspended">ระงับ</option>
-									<option value="resigned">ลาออก</option>
-									<option value="retired">เกษียณ</option>
-								</select>
+							<div class="space-y-2">
+								<Label for="status">สถานะ</Label>
+								<Select.Root bind:value={formData.status}>
+									<Select.Trigger id="status">
+										<Select.Value />
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="active">ใช้งาน</Select.Item>
+										<Select.Item value="inactive">ไม่ใช้งาน</Select.Item>
+										<Select.Item value="suspended">ระงับ</Select.Item>
+										<Select.Item value="resigned">ลาออก</Select.Item>
+										<Select.Item value="retired">เกษียณ</Select.Item>
+									</Select.Content>
+								</Select.Root>
 							</div>
 						</div>
 
 						<div class="grid grid-cols-2 gap-4">
-							<div>
-								<label class="block text-sm font-medium mb-2">
-									ชื่อ <span class="text-destructive">*</span>
-								</label>
-								<input
+							<div class="space-y-2">
+								<Label for="first_name">ชื่อ <span class="text-destructive">*</span></Label>
+								<Input
+									id="first_name"
 									type="text"
 									bind:value={formData.first_name}
 									placeholder="ชื่อ"
-									class="w-full px-3 py-2 border border-border rounded-md
-									{errors.first_name ? 'border-destructive' : ''}"
+									class={errors.first_name ? 'border-destructive' : ''}
 								/>
 								{#if errors.first_name}
-									<p class="text-xs text-destructive mt-1">{errors.first_name}</p>
+									<p class="text-xs text-destructive">{errors.first_name}</p>
 								{/if}
 							</div>
 
-							<div>
-								<label class="block text-sm font-medium mb-2">
-									นามสกุล <span class="text-destructive">*</span>
-								</label>
-								<input
+							<div class="space-y-2">
+								<Label for="last_name">นามสกุล <span class="text-destructive">*</span></Label>
+								<Input
+									id="last_name"
 									type="text"
 									bind:value={formData.last_name}
 									placeholder="นามสกุล"
-									class="w-full px-3 py-2 border border-border rounded-md
-									{errors.last_name ? 'border-destructive' : ''}"
+									class={errors.last_name ? 'border-destructive' : ''}
 								/>
 								{#if errors.last_name}
-									<p class="text-xs text-destructive mt-1">{errors.last_name}</p>
+									<p class="text-xs text-destructive">{errors.last_name}</p>
 								{/if}
 							</div>
 						</div>
 
-						<div>
-							<label class="block text-sm font-medium mb-2">ชื่อเล่น</label>
-							<input
+						<div class="space-y-2">
+							<Label for="nickname">ชื่อเล่น</Label>
+							<Input
+								id="nickname"
 								type="text"
 								bind:value={formData.nickname}
 								placeholder="ชื่อเล่น"
-								class="w-full px-3 py-2 border border-border rounded-md"
 							/>
 						</div>
 
-						<div>
-							<label class="block text-sm font-medium mb-2">หมายเลขโทรศัพท์</label>
-							<input
+						<div class="space-y-2">
+							<Label for="phone">หมายเลขโทรศัพท์</Label>
+							<Input
+								id="phone"
 								type="tel"
 								bind:value={formData.phone}
 								placeholder="081-234-5678"
-								class="w-full px-3 py-2 border border-border rounded-md
-								{errors.phone ? 'border-destructive' : ''}"
+								class={errors.phone ? 'border-destructive' : ''}
 							/>
 							{#if errors.phone}
-								<p class="text-xs text-destructive mt-1">{errors.phone}</p>
+								<p class="text-xs text-destructive">{errors.phone}</p>
 							{/if}
 						</div>
 
