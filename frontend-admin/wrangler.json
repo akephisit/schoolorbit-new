@@ -14,6 +14,8 @@
 		"binding": "ASSETS"
 	},
 	"vars": {
-		"PUBLIC_API_URL": "https://admin-api.schoolorbit.app"
+		"PUBLIC_API_URL": "https://admin-api.schoolorbit.app",
+		"BACKEND_SCHOOL_URL": "https://school-api.schoolorbit.app",
+		"INTERNAL_API_SECRET": "your-internal-secret-change-this-in-production"
 	}
 }
