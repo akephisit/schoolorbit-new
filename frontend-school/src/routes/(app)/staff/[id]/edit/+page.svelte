@@ -160,7 +160,12 @@
 				<Button onclick={loadStaffProfile} variant="outline" class="mt-4">ลองอีกครั้ง</Button>
 			</div>
 		{:else if staff}
-			<form onsubmit|preventDefault={handleSubmit}>
+			<form
+				onsubmit={(e) => {
+					e.preventDefault();
+					handleSubmit();
+				}}
+			>
 				<div class="bg-card border border-border rounded-lg p-6">
 					<h2 class="text-xl font-semibold mb-6">ข้อมูลส่วนตัว</h2>
 
