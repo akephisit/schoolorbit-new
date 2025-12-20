@@ -19,7 +19,7 @@
 	const navigation = [
 		{ name: 'แดชบอร์ด', icon: LayoutDashboard, href: '/dashboard', active: true },
 		{ name: 'นักเรียน', icon: Users, href: '/students', active: false },
-		{ name: 'ครู', icon: GraduationCap, href: '/teachers', active: false },
+		{ name: 'บุคลากร', icon: GraduationCap, href: '/staff', active: false },
 		{ name: 'รายวิชา', icon: BookOpen, href: '/subjects', active: false },
 		{ name: 'ห้องเรียน', icon: School, href: '/classes', active: false },
 		{ name: 'ปฏิทิน', icon: Calendar, href: '/calendar', active: false }
