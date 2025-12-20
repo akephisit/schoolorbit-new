@@ -1,7 +1,9 @@
 // API Client for Staff Management
 // ติดต่อกับ backend-school service
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081';
+import { PUBLIC_BACKEND_URL } from '$env/static/public';
+
+const API_BASE_URL = PUBLIC_BACKEND_URL || 'http://localhost:8081';
 
 export interface StaffListItem {
     id: string;
