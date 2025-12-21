@@ -15,18 +15,22 @@
 </script>
 
 <div class="h-screen flex flex-col bg-background overflow-hidden">
-	<Sidebar bind:this={sidebarRef} />
+	<Sidebar bind:this={sidebarRef} bind:isCollapsed={isSidebarCollapsed} />
 
-	<!-- Fixed Header - ไม่ scroll -->
-	<Header onMenuClick={handleMenuClick} sidebarCollapsed={isSidebarCollapsed} />
-
-	<!-- Main Content - scroll อยู่ที่นี่ -->
-	<main
-		class="flex-1 overflow-y-auto transition-all duration-300
-		{isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-72'}"
+	<!-- Wrapper for Header and Main with sidebar offset -->
+	<div
+		class="flex flex-col flex-1 transition-all duration-300 {isSidebarCollapsed
+			? 'lg:ml-20'
+			: 'lg:ml-72'}"
 	>
-		<div class="p-4 lg:p-6">
-			{@render children()}
-		</div>
-	</main>
+		<!-- Fixed Header - ไม่ scroll -->
+		<Header onMenuClick={handleMenuClick} sidebarCollapsed={isSidebarCollapsed} />
+
+		<!-- Main Content - scroll อยู่ที่นี่ -->
+		<main class="flex-1 overflow-y-auto">
+			<div class="p-4 lg:p-6">
+				{@render children()}
+			</div>
+		</main>
+	</div>
 </div>

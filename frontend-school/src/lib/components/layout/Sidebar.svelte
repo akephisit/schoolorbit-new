@@ -12,7 +12,7 @@
 	} from 'lucide-svelte';
 	import { resolve } from '$app/paths';
 
-	let isCollapsed = $state(false);
+	let { isCollapsed = $bindable(false) }: { isCollapsed?: boolean } = $props();
 	let isMobileOpen = $state(false);
 
 	const navigation = [
