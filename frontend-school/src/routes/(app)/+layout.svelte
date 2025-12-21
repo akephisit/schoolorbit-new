@@ -19,7 +19,7 @@
 
 	<!-- Wrapper for Header and Main with sidebar offset -->
 	<div
-		class="flex flex-col flex-1 transition-all duration-300 {isSidebarCollapsed
+		class="flex flex-col flex-1 min-h-0 transition-all duration-300 {isSidebarCollapsed
 			? 'lg:ml-20'
 			: 'lg:ml-72'}"
 	>
@@ -27,7 +27,7 @@
 		<Header onMenuClick={handleMenuClick} sidebarCollapsed={isSidebarCollapsed} />
 
 		<!-- Main Content - scroll อยู่ที่นี่ -->
-		<main class="flex-1 overflow-y-auto">
+		<main class="flex-1 min-h-0 overflow-y-auto">
 			<div class="p-4 lg:p-6">
 				{@render children()}
 			</div>
