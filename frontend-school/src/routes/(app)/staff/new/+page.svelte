@@ -341,7 +341,6 @@
 		<!-- Progress Steps -->
 		<div class="mb-8">
 			<div class="flex items-center justify-between">
-				\u003c!-- eslint-disable-next-line @typescript-eslint/no-unused-vars --\u003e
 				{#each Array(totalSteps) as _, i (i)}
 					<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
 					{@const step = i + 1}
