@@ -487,11 +487,27 @@ pub async fn create_staff(
         Err(e) => {
             eprintln!("❌ Failed to create user: {}", e);
             let _ = tx.rollback().await;
+            
+            // More detailed error message
+            let error_msg = if e.to_string().contains("unique constraint") {
+                if e.to_string().contains("national_id") {
+                    "เลขบัตรประชาชนนี้มีในระบบแล้ว"
+                } else if e.to_string().contains("email") {
+                    "อีเมลนี้มีในระบบแล้ว"
+                } else {
+                    "ข้อมูลซ้ำในระบบ กรุณาตรวจสอบเลขบัตรประชาชนหรืออีเมล"
+                }
+            } else if e.to_string().contains("null value") {
+                &format!("ข้อมูลบังคับกรอกไม่ครบ: {}", e)
+            } else {
+                &format!("ไม่สามารถสร้างผู้ใช้งานได้: {}", e)
+            };
+            
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
                     "success": false,
-                    "error": "ไม่สามารถสร้างผู้ใช้งานได้"
+                    "error": error_msg
                 })),
             )
                 .into_response();
