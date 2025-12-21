@@ -1,4 +1,5 @@
-use crate::models::auth::Claims;
+use crate::models::auth::{Claims, User};
+use crate::models::staff::UserPermissions;
 use axum::{
     body::Body,
     extract::Request,
@@ -10,6 +11,8 @@ use axum::{
 use serde_json::json;
 
 /// Permission middleware - check if user has required permission
+/// NOTE: This is the OLD hardcoded version - kept for backward compatibility
+/// Use check_user_permission_db() for database-driven checks
 pub async fn require_permission(
     permission: &'static str,
 ) -> impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response<Body>> + Send>> + Clone {
@@ -99,4 +102,15 @@ pub async fn has_permission(
 ) -> Result<bool, sqlx::Error> {
     let permissions = check_user_permissions(pool, user_id).await?;
     Ok(permissions.contains(&permission.to_string()))
+}
+
+/// NEW: Database-driven permission check using UserPermissions trait
+/// This is the RECOMMENDED way to check permissions
+pub async fn check_user_permission_db(
+    user: &User,
+    pool: &sqlx::PgPool,
+    permission: &str,
+) -> Result<bool, sqlx::Error> {
+    // Use the UserPermissions trait
+    user.has_permission(pool, permission).await
 }

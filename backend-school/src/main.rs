@@ -119,6 +119,23 @@ async fn main() {
         .route("/api/departments/{id}", axum::routing::put(handlers::roles::update_department)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
+        // User Role Assignment routes (protected)
+        .route("/api/users/{id}/roles", get(handlers::user_roles::get_user_roles)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/users/{id}/roles", post(handlers::user_roles::assign_user_role)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/users/{id}/roles/{role_id}", axum::routing::delete(handlers::user_roles::remove_user_role)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/users/{id}/permissions", get(handlers::user_roles::get_user_permissions)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
+        // Permissions Master Data routes (protected)
+        .route("/api/permissions", get(handlers::permissions::list_permissions)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/permissions/modules", get(handlers::permissions::list_permissions_by_module)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
+        
         // Internal routes (protected by internal auth middleware)
         .route(
             "/internal/provision",
