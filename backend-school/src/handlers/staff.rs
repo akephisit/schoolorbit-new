@@ -205,6 +205,12 @@ pub async fn list_staff(
                 .into_response();
         }
     };
+    
+    // Check permission
+    let _user = match check_user_permission(&headers, &pool, "users.view").await {
+        Ok(u) => u,
+        Err(response) => return response,
+    };
 
     let page = filter.page.unwrap_or(1);
     let page_size = filter.page_size.unwrap_or(20);
@@ -324,6 +330,12 @@ pub async fn get_staff_profile(
             )
                 .into_response();
         }
+    };
+    
+    // Check permission
+    let _user = match check_user_permission(&headers, &pool, "users.view").await {
+        Ok(u) => u,
+        Err(response) => return response,
     };
 
     // Get user basic info
@@ -760,6 +772,12 @@ pub async fn update_staff(
                 .into_response();
         }
     };
+    
+    // Check permission
+    let _user = match check_user_permission(&headers, &pool, "users.edit").await {
+        Ok(u) => u,
+        Err(response) => return response,
+    };
 
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
@@ -934,6 +952,12 @@ pub async fn delete_staff(
             )
                 .into_response();
         }
+    };
+    
+    // Check permission
+    let _user = match check_user_permission(&headers, &pool, "users.delete").await {
+        Ok(u) => u,
+        Err(response) => return response,
     };
 
     let result = sqlx::query(

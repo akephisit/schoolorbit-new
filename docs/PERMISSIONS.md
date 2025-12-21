@@ -358,3 +358,44 @@ For questions or issues with permissions:
 
 **Document Version:** 1.0  
 **Last Reviewed:** 2025-12-22
+
+---
+
+## ✅ Implementation Status (Updated 2025-12-22)
+
+### Staff Management Handlers
+All 5 staff management handlers now have permission checks implemented:
+
+- ✅ `list_staff` → requires `users.view`
+- ✅ `get_staff_profile` → requires `users.view`
+- ✅ `create_staff` → requires `users.create`
+- ✅ `update_staff` → requires `users.edit`
+- ✅ `delete_staff` → requires `users.delete`
+
+**Implementation:** Uses `check_user_permission()` helper function  
+**Status:** Production ready  
+**Test Coverage:** Manual testing completed
+
+### Helper Function Used
+```rust
+async fn check_user_permission(
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    required_permission: &str,
+) -> Result<User, Response>
+```
+
+This function:
+1. Extracts JWT from cookie
+2. Verifies token validity  
+3. Fetches user from database
+4. Checks permission using UserPermissions trait
+5. Returns user if authorized, or error response if not
+
+**Benefits:**
+- Reusable across all handlers
+- Consistent error messages
+- Clean code separation
+- Easy to maintain
+
+---
