@@ -261,8 +261,23 @@
 
 		try {
 			const { confirmPassword, ...payloadData } = formData;
+			
+			// Clean up payload - convert empty strings to undefined
 			const payload = {
-				...payloadData,
+				national_id: payloadData.national_id || undefined,
+				email: payloadData.email || undefined,
+				password: payloadData.password,
+				title: payloadData.title || undefined,
+				first_name: payloadData.first_name,
+				last_name: payloadData.last_name,
+				nickname: payloadData.nickname || undefined,
+				phone: payloadData.phone || undefined,
+				emergency_contact: payloadData.emergency_contact || undefined,
+				line_id: payloadData.line_id || undefined,
+				date_of_birth: payloadData.date_of_birth || undefined,
+				gender: payloadData.gender || undefined,
+				address: payloadData.address || undefined,
+				hired_date: payloadData.hired_date || undefined,
 				role_ids: formData.role_ids,
 				primary_role_id: formData.primary_role_id || formData.role_ids[0],
 				department_assignments: formData.department_assignments.filter((d) => d.department_id)
@@ -274,7 +289,6 @@
 				// Clear draft
 				localStorage.removeItem('staff-create-draft');
 				// Redirect to profile
-
 				await goto(`/staff/${result.data.id}`, { invalidateAll: true });
 			} else {
 				errors.submit = result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
