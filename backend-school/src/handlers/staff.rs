@@ -1,13 +1,16 @@
 use crate::db::school_mapping::get_school_database_url;
 use crate::models::staff::*;
+use crate::models::auth::User;
+
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+
 use serde_json::json;
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -66,6 +69,98 @@ struct TeachingRow {
     class_code: Option<String>,
     class_name: Option<String>,
 }
+
+// ===================================================================
+// Helper Functions
+// ===================================================================
+
+/// Extract user from request and check permission
+async fn check_user_permission(
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    required_permission: &str,
+) -> Result<User, Response> {
+    use crate::models::staff::UserPermissions;
+    
+    // Get token from cookie
+    let cookie_header = headers
+        .get(header::COOKIE)
+        .and_then(|h| h.to_str().ok());
+    
+    let token = match crate::utils::jwt::JwtService::extract_token_from_cookie(cookie_header) {
+        Some(t) => t,
+        None => {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "error": "กรุณาเข้าสู่ระบบ"
+                })),
+            ).into_response());
+        }
+    };
+    
+    // Verify token
+    let claims = match crate::utils::jwt::JwtService::verify_token(&token) {
+        Ok(c) => c,
+        Err(_) => {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "error": "Token ไม่ถูกต้อง"
+                })),
+            ).into_response());
+        }
+    };
+    
+    // Get user from database
+    let user: User = match sqlx::query_as("SELECT * FROM users WHERE id = $1")
+        .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
+        .fetch_one(pool)
+        .await
+    {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("❌ Failed to get user: {}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่สามารถดึงข้อมูลผู้ใช้ได้"
+                })),
+            ).into_response());
+        }
+    };
+    
+    // Check permission
+    match user.has_permission(pool, required_permission).await {
+        Ok(true) => Ok(user),
+        Ok(false) => {
+            Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "success": false,
+                    "error": format!("คุณไม่มีสิทธิ์ (ต้องการ {} permission)", required_permission)
+                })),
+            ).into_response())
+        },
+        Err(e) => {
+            eprintln!("❌ Permission check error: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์"
+                })),
+            ).into_response())
+        }
+    }
+}
+
+// ===================================================================
+// Handlers
+// ===================================================================
 
 // ===================================================================
 // List Staff
@@ -425,6 +520,12 @@ pub async fn create_staff(
             )
                 .into_response();
         }
+    };
+    
+    // Check permission
+    let _user = match check_user_permission(&headers, &pool, "users.create").await {
+        Ok(u) => u,
+        Err(response) => return response,
     };
 
     let password_hash = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
