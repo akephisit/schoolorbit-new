@@ -128,13 +128,23 @@
 	function validateStep1(): boolean {
 		errors = {};
 
+		// Required: National ID (for login)
+		if (!formData.national_id) {
+			errors.national_id = 'กรุณากรอกเลขบัตรประชาชน';
+		} else if (!/^\d{13}$/.test(formData.national_id)) {
+			errors.national_id = 'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก';
+		}
+
+		// Required: Basic info
 		if (!formData.first_name) errors.first_name = 'กรุณากรอกชื่อ';
 		if (!formData.last_name) errors.last_name = 'กรุณากรอกนามสกุล';
-		if (!formData.email) {
-			errors.email = 'กรุณากรอกอีเมล';
-		} else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+
+		// Optional: Email
+		if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
 			errors.email = 'รูปแบบอีเมลไม่ถูกต้อง';
 		}
+
+		// Required: Password
 		if (!formData.password) {
 			errors.password = 'กรุณากรอกรหัสผ่าน';
 		} else if (formData.password.length < 6) {
@@ -143,6 +153,8 @@
 		if (formData.password !== formData.confirmPassword) {
 			errors.confirmPassword = 'รหัสผ่านไม่ตรงกัน';
 		}
+
+		// Optional: Phone
 		if (formData.phone && !/^[0-9-]+$/.test(formData.phone)) {
 			errors.phone = 'หมายเลขโทรศัพท์ไม่ถูกต้อง';
 		}
@@ -398,6 +410,86 @@
 				<h2 class="text-xl font-semibold mb-6">ข้อมูลส่วนตัว</h2>
 
 				<div class="space-y-4">
+					<!-- Login Credentials Section -->
+					<div class="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-6">
+						<h3 class="text-sm font-semibold text-primary mb-3 flex items-center gap-2">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path
+									d="M7 11V7a5 5 0 0 1 10 0v4"
+								></path></svg
+							>
+							ข้อมูลสำหรับเข้าสู่ระบบ
+						</h3>
+						<p class="text-xs text-muted-foreground mb-4">ข้อมูลนี้จะใช้สำหรับเข้าสู่ระบบ</p>
+
+						<div class="space-y-4">
+							<div>
+								<Label class="mb-2">
+									เลขบัตรประชาชน <span class="text-destructive">*</span>
+								</Label>
+								<Input
+									type="text"
+									bind:value={formData.national_id}
+									placeholder="1234567890123"
+									maxlength={13}
+									class="w-full px-3 py-2 border border-border rounded-md
+								{errors.national_id ? 'border-destructive' : ''}"
+								/>
+								{#if errors.national_id}
+									<p class="text-xs text-destructive mt-1">{errors.national_id}</p>
+								{:else}
+									<p class="text-xs text-muted-foreground mt-1">
+										ใช้เลขบัตรประชาชนนี้ในการเข้าสู่ระบบ
+									</p>
+								{/if}
+							</div>
+
+							<div class="grid grid-cols-2 gap-4">
+								<div>
+									<Label class="mb-2">
+										รหัสผ่าน <span class="text-destructive">*</span>
+									</Label>
+									<Input
+										type="password"
+										bind:value={formData.password}
+										placeholder="••••••••"
+										class="w-full px-3 py-2 border border-border rounded-md
+									{errors.password ? 'border-destructive' : ''}"
+									/>
+									{#if errors.password}
+										<p class="text-xs text-destructive mt-1">{errors.password}</p>
+									{/if}
+								</div>
+
+								<div>
+									<Label class="mb-2">
+										ยืนยันรหัสผ่าน <span class="text-destructive">*</span>
+									</Label>
+									<Input
+										type="password"
+										bind:value={formData.confirmPassword}
+										placeholder="••••••••"
+										class="w-full px-3 py-2 border border-border rounded-md
+									{errors.confirmPassword ? 'border-destructive' : ''}"
+									/>
+									{#if errors.confirmPassword}
+										<p class="text-xs text-destructive mt-1">{errors.confirmPassword}</p>
+									{/if}
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Personal Information Section -->
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<Label class="mb-2">
@@ -450,7 +542,7 @@
 								bind:value={formData.first_name}
 								placeholder="ชื่อ"
 								class="w-full px-3 py-2 border border-border rounded-md
-								{errors.first_name ? 'border-destructive' : ''}"
+							{errors.first_name ? 'border-destructive' : ''}"
 							/>
 							{#if errors.first_name}
 								<p class="text-xs text-destructive mt-1">{errors.first_name}</p>
@@ -466,7 +558,7 @@
 								bind:value={formData.last_name}
 								placeholder="นามสกุล"
 								class="w-full px-3 py-2 border border-border rounded-md
-								{errors.last_name ? 'border-destructive' : ''}"
+							{errors.last_name ? 'border-destructive' : ''}"
 							/>
 							{#if errors.last_name}
 								<p class="text-xs text-destructive mt-1">{errors.last_name}</p>
@@ -481,15 +573,13 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label class="mb-2">
-								อีเมล <span class="text-destructive">*</span>
-							</Label>
+							<Label class="mb-2">อีเมล</Label>
 							<Input
 								type="email"
 								bind:value={formData.email}
-								placeholder="email@school.ac.th"
+								placeholder="email@school.ac.th (ไม่บังคับ)"
 								class="w-full px-3 py-2 border border-border rounded-md
-								{errors.email ? 'border-destructive' : ''}"
+							{errors.email ? 'border-destructive' : ''}"
 							/>
 							{#if errors.email}
 								<p class="text-xs text-destructive mt-1">{errors.email}</p>
@@ -503,7 +593,7 @@
 								bind:value={formData.phone}
 								placeholder="081-234-5678"
 								class="w-full px-3 py-2 border border-border rounded-md
-								{errors.phone ? 'border-destructive' : ''}"
+							{errors.phone ? 'border-destructive' : ''}"
 							/>
 							{#if errors.phone}
 								<p class="text-xs text-destructive mt-1">{errors.phone}</p>
@@ -513,52 +603,13 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label class="mb-2">
-								รหัสผ่าน <span class="text-destructive">*</span>
-							</Label>
-							<Input
-								type="password"
-								bind:value={formData.password}
-								placeholder="••••••••"
-								class="w-full px-3 py-2 border border-border rounded-md
-								{errors.password ? 'border-destructive' : ''}"
-							/>
-							{#if errors.password}
-								<p class="text-xs text-destructive mt-1">{errors.password}</p>
-							{/if}
-						</div>
-
-						<div>
-							<Label class="mb-2">
-								ยืนยันรหัสผ่าน <span class="text-destructive">*</span>
-							</Label>
-							<Input
-								type="password"
-								bind:value={formData.confirmPassword}
-								placeholder="••••••••"
-								class="w-full px-3 py-2 border border-border rounded-md
-								{errors.confirmPassword ? 'border-destructive' : ''}"
-							/>
-							{#if errors.confirmPassword}
-								<p class="text-xs text-destructive mt-1">{errors.confirmPassword}</p>
-							{/if}
-						</div>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label class="mb-2">เลขบัตรประชาชน</Label>
-							<Input
-								type="text"
-								bind:value={formData.national_id}
-								placeholder="1234567890123"
-								maxlength={13}
-							/>
-						</div>
-
-						<div>
 							<Label class="mb-2">วันเกิด</Label>
 							<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
+						</div>
+
+						<div>
+							<Label class="mb-2">วันที่เริ่มงาน</Label>
+							<DatePicker bind:value={formData.hired_date} placeholder="เลือกวันที่เริ่มงาน" />
 						</div>
 					</div>
 
@@ -575,11 +626,6 @@
 					<div>
 						<Label class="mb-2">ที่อยู่</Label>
 						<Textarea bind:value={formData.address} placeholder="ที่อยู่ปัจจุบัน" rows={3} />
-					</div>
-
-					<div>
-						<Label class="mb-2">วันที่เริ่มงาน</Label>
-						<DatePicker bind:value={formData.hired_date} placeholder="เลือกวันที่เริ่มงาน" />
 					</div>
 				</div>
 			{:else if currentStep === 2}
