@@ -403,8 +403,8 @@ pub struct CreateStaffRequest {
     pub address: Option<String>,
     pub hired_date: Option<NaiveDate>,
     
-    // Staff Info
-    pub staff_info: CreateStaffInfoRequest,
+    // Staff Info (Optional - can be added later)
+    pub staff_info: Option<CreateStaffInfoRequest>,
     
     // Roles
     pub role_ids: Vec<Uuid>,

@@ -504,42 +504,45 @@ pub async fn create_staff(
         }
     };
 
-    // Create staff info
-    let work_days_json = serde_json::to_value(payload.staff_info.work_days.unwrap_or_default())
-        .unwrap_or(serde_json::Value::Null);
+    // Create staff info (if provided)
+    if let Some(staff_info) = &payload.staff_info {
+        let work_days_json = serde_json::to_value(staff_info.work_days.clone().unwrap_or_default())
+            .unwrap_or(serde_json::Value::Null);
 
-    match sqlx::query(
-        "INSERT INTO staff_info (
-            user_id, employee_id, employment_type, education_level, major, university,
-            teaching_license_number, teaching_license_expiry, work_days, metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}'::jsonb)",
-    )
-    .bind(user_id)
-    .bind(&payload.staff_info.employee_id)
-    .bind(&payload.staff_info.employment_type)
-    .bind(&payload.staff_info.education_level)
-    .bind(&payload.staff_info.major)
-    .bind(&payload.staff_info.university)
-    .bind(&payload.staff_info.teaching_license_number)
-    .bind(&payload.staff_info.teaching_license_expiry)
-    .bind(&work_days_json)
-    .execute(&mut *tx)
-    .await
-    {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("❌ Failed to create staff info: {}", e);
-            let _ = tx.rollback().await;
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถสร้างข้อมูลบุคลากรได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+        match sqlx::query(
+            "INSERT INTO staff_info (
+                user_id, employee_id, employment_type, education_level, major, university,
+                teaching_license_number, teaching_license_expiry, work_days, metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}'::jsonb)",
+        )
+        .bind(user_id)
+        .bind(&staff_info.employee_id)
+        .bind(&staff_info.employment_type)
+        .bind(&staff_info.education_level)
+        .bind(&staff_info.major)
+        .bind(&staff_info.university)
+        .bind(&staff_info.teaching_license_number)
+        .bind(&staff_info.teaching_license_expiry)
+        .bind(&work_days_json)
+        .execute(&mut *tx)
+        .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("❌ Failed to create staff info: {}", e);
+                let _ = tx.rollback().await;
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "success": false,
+                        "error": "ไม่สามารถสร้างข้อมูลบุคลากรได้"
+                    })),
+                )
+                    .into_response();
+            }
+        };
+    }
+
 
     // Assign roles
     for role_id in &payload.role_ids {
