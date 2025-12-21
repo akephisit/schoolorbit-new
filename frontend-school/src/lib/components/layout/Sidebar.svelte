@@ -12,19 +12,33 @@
 	} from 'lucide-svelte';
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { authAPI } from '$lib/api/auth';
 
 	let { isCollapsed = $bindable(false) }: { isCollapsed?: boolean } = $props();
 	let isMobileOpen = $state(false);
 
 	const navigation = [
-		{ name: 'แดชบอร์ด', icon: LayoutDashboard, href: '/dashboard', active: true },
-		{ name: 'นักเรียน', icon: Users, href: '/students', active: false },
-		{ name: 'บุคลากร', icon: GraduationCap, href: '/staff', active: false },
-		{ name: 'รายวิชา', icon: BookOpen, href: '/subjects', active: false },
-		{ name: 'ห้องเรียน', icon: School, href: '/classes', active: false },
-		{ name: 'ปฏิทิน', icon: Calendar, href: '/calendar', active: false }
+		{ name: 'แดชบอร์ด', icon: LayoutDashboard, href: '/dashboard' },
+		{ name: 'นักเรียน', icon: Users, href: '/students' },
+		{ name: 'บุคลากร', icon: GraduationCap, href: '/staff' },
+		{ name: 'รายวิชา', icon: BookOpen, href: '/subjects' },
+		{ name: 'ห้องเรียน', icon: School, href: '/classes' },
+		{ name: 'ปฏิทิน', icon: Calendar, href: '/calendar' }
 	];
+
+	// Check if a route is active
+	function isActive(href: string): boolean {
+		return page.url.pathname.startsWith(href);
+	}
+
+	// Handle navigation click on mobile
+	function handleNavClick() {
+		// Close mobile sidebar when navigation is clicked
+		if (isMobileOpen) {
+			isMobileOpen = false;
+		}
+	}
 
 	const bottomNavigation = [
 		{ name: 'ตั้งค่า', icon: Settings, href: '/settings' }
@@ -100,13 +114,14 @@
 				{@const Icon = item.icon}
 				<a
 					href={resolve(item.href as any)}
+				onclick={handleNavClick}
 					class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group
-						{item.active
+						{isActive(item.href)
 						? 'bg-primary text-primary-foreground'
 						: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 				>
 					<Icon
-						class="w-5 h-5 flex-shrink-0 {item.active
+						class="w-5 h-5 flex-shrink-0 {isActive(item.href)
 							? 'text-primary-foreground'
 							: 'text-muted-foreground group-hover:text-accent-foreground'}"
 					/>
@@ -134,16 +149,14 @@
 					{/if}
 				</a>
 			{/each}
-			
+
 			<!-- Logout Button -->
 			<button
 				onclick={handleLogout}
 				class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
 					text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
 			>
-				<LogOut
-					class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-destructive"
-				/>
+				<LogOut class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-destructive" />
 				{#if !isCollapsed}
 					<span class="font-medium">ออกจากระบบ</span>
 				{/if}
