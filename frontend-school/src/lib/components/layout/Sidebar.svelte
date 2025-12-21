@@ -114,7 +114,7 @@
 				{@const Icon = item.icon}
 				<a
 					href={resolve(item.href as any)}
-				onclick={handleNavClick}
+					onclick={handleNavClick}
 					class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group
 						{isActive(item.href)
 						? 'bg-primary text-primary-foreground'
@@ -126,7 +126,10 @@
 							: 'text-muted-foreground group-hover:text-accent-foreground'}"
 					/>
 					{#if !isCollapsed}
-						<span class="font-medium">{item.name}</span>
+						<span
+							class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300
+							{isCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto'}">{item.name}</span
+						>
 					{/if}
 				</a>
 			{/each}
@@ -145,7 +148,10 @@
 						class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-accent-foreground"
 					/>
 					{#if !isCollapsed}
-						<span class="font-medium">{item.name}</span>
+						<span
+							class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300
+							{isCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto'}">{item.name}</span
+						>
 					{/if}
 				</a>
 			{/each}
@@ -158,7 +164,10 @@
 			>
 				<LogOut class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-destructive" />
 				{#if !isCollapsed}
-					<span class="font-medium">ออกจากระบบ</span>
+					<span
+						class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300
+						{isCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto'}">ออกจากระบบ</span
+					>
 				{/if}
 			</button>
 		</div>
