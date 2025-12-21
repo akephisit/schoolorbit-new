@@ -127,8 +127,8 @@
 					/>
 					<span
 						class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
-						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span
-						>
+						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span>
+				</a>
 			{/each}
 		</nav>
 
@@ -146,7 +146,7 @@
 					/>
 					<span
 						class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
-						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span
+						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span>
 				</a>
 			{/each}
 
