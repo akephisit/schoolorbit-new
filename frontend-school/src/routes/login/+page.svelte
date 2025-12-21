@@ -2,6 +2,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { GraduationCap, ArrowLeft } from 'lucide-svelte';
 	import { authAPI } from '$lib/api/auth';
 	import { goto } from '$app/navigation';
@@ -122,7 +123,10 @@
 				<!-- Remember & Forgot -->
 				<div class="flex items-center justify-between text-sm">
 					<label class="flex items-center gap-2 cursor-pointer">
-						<input type="checkbox" bind:checked={rememberMe} class="w-4 h-4 rounded border-input" />
+						<Checkbox
+							checked={rememberMe}
+							onCheckedChange={(checked) => (rememberMe = checked ?? false)}
+						/>
 						<span class="text-muted-foreground">จดจำฉันไว้</span>
 					</label>
 					<Button type="button" variant="link" class="p-0 h-auto text-sm">ติดต่อผู้ดูแลระบบ</Button>
