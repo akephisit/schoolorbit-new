@@ -1,6 +1,11 @@
 <script lang="ts">
 	import CalendarIcon from 'lucide-svelte/icons/calendar';
-	import { type DateValue, DateFormatter, getLocalTimeZone, parseDate } from '@internationalized/date';
+	import {
+		type DateValue,
+		DateFormatter,
+		getLocalTimeZone,
+		parseDate
+	} from '@internationalized/date';
 	import { cn } from '$lib/utils.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Calendar } from '$lib/components/ui/calendar/index.js';
@@ -13,8 +18,8 @@
 		onValueChange?: (value: string | undefined) => void;
 	}
 
-	let { 
-		value = $bindable(), 
+	let {
+		value = $bindable(),
 		placeholder = 'เลือกวันที่',
 		class: className = '',
 		onValueChange
@@ -25,9 +30,7 @@
 	});
 
 	// Convert string to DateValue
-	let dateValue = $derived<DateValue | undefined>(
-		value ? parseDate(value) : undefined
-	);
+	let dateValue = $derived<DateValue | undefined>(value ? parseDate(value) : undefined);
 
 	// Handle calendar value change
 	function handleValueChange(newValue: DateValue | undefined) {

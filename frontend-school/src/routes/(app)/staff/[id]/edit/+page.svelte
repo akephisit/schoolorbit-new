@@ -1,11 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import {
-		getStaffProfile,
-		updateStaff,
-		type StaffProfileResponse
-	} from '$lib/api/staff';
+	import { getStaffProfile, updateStaff, type StaffProfileResponse } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';

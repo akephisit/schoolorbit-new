@@ -5,6 +5,7 @@ All notable changes to frontend-school will be documented in this file.
 ## [Unreleased]
 
 ### 2025-12-14
+
 - Test auto-deployment to all schools
 - Trigger workflow: deploy-all-schools.yml
 
@@ -13,6 +14,7 @@ All notable changes to frontend-school will be documented in this file.
 ## How Auto-Deployment Works
 
 When you commit changes to `frontend-school/`:
+
 1. GitHub Actions detects the change
 2. Fetches all active schools from backend-admin API
 3. Deploys the updated frontend to each school's Worker

@@ -22,7 +22,7 @@
 				page: currentPage,
 				page_size: 20
 			});
-			
+
 			staffList = response.data;
 			total = response.total;
 			totalPages = response.total_pages;

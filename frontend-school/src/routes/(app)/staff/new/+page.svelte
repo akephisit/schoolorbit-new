@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { createStaff, listRoles, listDepartments, type Role, type Department } from '$lib/api/staff';
+	import {
+		createStaff,
+		listRoles,
+		listDepartments,
+		type Role,
+		type Department
+	} from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -9,7 +15,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import * as RadioGroup from '$lib/components/ui/radio-group';
-	
+
 	import {
 		User,
 		Briefcase,
