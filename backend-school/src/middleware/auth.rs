@@ -49,7 +49,3 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
-/// Extract claims from request extensions (use in handlers)
-pub fn extract_claims(req: &Request) -> Option<Claims> {
-    req.extensions().get::<Claims>().cloned()
-}
