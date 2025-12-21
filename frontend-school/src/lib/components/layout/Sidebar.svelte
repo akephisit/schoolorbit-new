@@ -11,6 +11,8 @@
 		ChevronLeft
 	} from 'lucide-svelte';
 	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
+	import { authAPI } from '$lib/api/auth';
 
 	let { isCollapsed = $bindable(false) }: { isCollapsed?: boolean } = $props();
 	let isMobileOpen = $state(false);
@@ -25,8 +27,7 @@
 	];
 
 	const bottomNavigation = [
-		{ name: 'ตั้งค่า', icon: Settings, href: '/settings' },
-		{ name: 'ออกจากระบบ', icon: LogOut, href: '/logout' }
+		{ name: 'ตั้งค่า', icon: Settings, href: '/settings' }
 	];
 
 	function toggleSidebar() {
@@ -35,6 +36,11 @@
 
 	export function toggleMobileSidebar() {
 		isMobileOpen = !isMobileOpen;
+	}
+
+	async function handleLogout() {
+		await authAPI.logout();
+		await goto('/login', { invalidateAll: true });
 	}
 </script>
 
@@ -128,6 +134,20 @@
 					{/if}
 				</a>
 			{/each}
+			
+			<!-- Logout Button -->
+			<button
+				onclick={handleLogout}
+				class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
+					text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
+			>
+				<LogOut
+					class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-destructive"
+				/>
+				{#if !isCollapsed}
+					<span class="font-medium">ออกจากระบบ</span>
+				{/if}
+			</button>
 		</div>
 	</div>
 </aside>
