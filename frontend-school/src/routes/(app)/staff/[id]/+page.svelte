@@ -105,11 +105,6 @@
 						{#if staff.nickname}
 							<p class="text-muted-foreground mt-1">({staff.nickname})</p>
 						{/if}
-						{#if staff.staff_info?.employee_id}
-							<p class="text-sm text-muted-foreground mt-2">
-								รหัสพนักงาน: {staff.staff_info.employee_id}
-							</p>
-						{/if}
 
 						<!-- Status Badge -->
 						<div class="mt-4">
@@ -161,12 +156,6 @@
 							ข้อมูลการทำงาน
 						</h3>
 						<div class="space-y-3 text-sm">
-							{#if staff.staff_info.employment_type}
-								<div>
-									<p class="text-muted-foreground">ประเภทการจ้าง</p>
-									<p class="text-foreground font-medium">{staff.staff_info.employment_type}</p>
-								</div>
-							{/if}
 							{#if staff.staff_info.education_level}
 								<div>
 									<p class="text-muted-foreground">วุฒิการศึกษา</p>

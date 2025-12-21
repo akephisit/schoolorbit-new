@@ -84,7 +84,7 @@
 					type="text"
 					bind:value={searchQuery}
 					onkeypress={(e) => e.key === 'Enter' && handleSearch()}
-					placeholder="ค้นหาชื่อ, นามสกุล, รหัสพนักงาน..."
+					placeholder="ค้นหาชื่อ, นามสกุล..."
 					class="pl-10"
 				/>
 			</div>
@@ -120,9 +120,8 @@
 			<!-- Table Header -->
 			<div class="bg-muted/50 px-6 py-3 border-b border-border">
 				<div class="grid grid-cols-12 gap-4 text-sm font-medium text-muted-foreground">
-					<div class="col-span-3">ชื่อ-นามสกุล</div>
-					<div class="col-span-2">รหัสพนักงาน</div>
-					<div class="col-span-3">บทบาท</div>
+					<div class="col-span-4">ชื่อ-นามสกุล</div>
+					<div class="col-span-4">บทบาท</div>
 					<div class="col-span-2">สถานะ</div>
 					<div class="col-span-2 text-right">จัดการ</div>
 				</div>
@@ -134,22 +133,15 @@
 					<div class="px-6 py-4 hover:bg-accent/50 transition-colors">
 						<div class="grid grid-cols-12 gap-4 items-center">
 							<!-- Name -->
-							<div class="col-span-3">
+							<div class="col-span-4">
 								<p class="font-medium text-foreground">
 									{staff.first_name}
 									{staff.last_name}
 								</p>
 							</div>
 
-							<!-- Employee ID -->
-							<div class="col-span-2">
-								<p class="text-sm text-muted-foreground">
-									{staff.employee_id || '-'}
-								</p>
-							</div>
-
 							<!-- Roles -->
-							<div class="col-span-3">
+							<div class="col-span-4">
 								<div class="flex flex-wrap gap-1">
 									{#if staff.roles && staff.roles.length > 0}
 										{#each staff.roles.slice(0, 2) as role (role)}

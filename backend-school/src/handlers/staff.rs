@@ -29,8 +29,6 @@ struct UserBasicRow {
 
 #[derive(Debug, FromRow)]
 struct StaffInfoRow {
-    employee_id: Option<String>,
-    employment_type: Option<String>,
     education_level: Option<String>,
     major: Option<String>,
     university: Option<String>,
@@ -118,9 +116,8 @@ pub async fn list_staff(
     let offset = (page - 1) * page_size;
 
     let mut query = String::from(
-        "SELECT DISTINCT u.id, si.employee_id, u.first_name, u.last_name, u.status
+        "SELECT DISTINCT u.id, u.first_name, u.last_name, u.status
          FROM users u
-         LEFT JOIN staff_info si ON u.id = si.user_id
          WHERE u.user_type = 'staff'",
     );
 
@@ -130,8 +127,8 @@ pub async fn list_staff(
 
     if let Some(search) = &filter.search {
         query.push_str(&format!(
-            " AND (u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%' OR si.employee_id ILIKE '%{}%')",
-            search, search, search
+            " AND (u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%')",
+            search, search
         ));
     }
 
@@ -140,7 +137,7 @@ pub async fn list_staff(
         page_size, offset
     ));
 
-    let staff_rows = match sqlx::query_as::<_, (Uuid, Option<String>, String, String, String)>(&query)
+    let staff_rows = match sqlx::query_as::<_, (Uuid, String, String, String)>(&query)
         .fetch_all(&pool)
         .await
     {
@@ -168,9 +165,8 @@ pub async fn list_staff(
 
     let items: Vec<StaffListItem> = staff_rows
         .into_iter()
-        .map(|(id, employee_id, first_name, last_name, status)| StaffListItem {
+        .map(|(id, first_name, last_name, status)| StaffListItem {
             id,
-            employee_id,
             first_name,
             last_name,
             roles: vec![],
@@ -272,7 +268,7 @@ pub async fn get_staff_profile(
 
     // Get staff info
     let staff_info = sqlx::query_as::<_, StaffInfoRow>(
-        "SELECT employee_id, employment_type, education_level, major, university
+        "SELECT education_level, major, university
          FROM staff_info 
          WHERE user_id = $1",
     )
@@ -367,8 +363,6 @@ pub async fn get_staff_profile(
         user_type: user.user_type,
         status: user.status,
         staff_info: staff_info.map(|si| StaffInfoResponse {
-            employee_id: si.employee_id,
-            employment_type: si.employment_type,
             education_level: si.education_level,
             major: si.major,
             university: si.university,
@@ -511,13 +505,11 @@ pub async fn create_staff(
 
         match sqlx::query(
             "INSERT INTO staff_info (
-                user_id, employee_id, employment_type, education_level, major, university,
+                user_id, education_level, major, university,
                 teaching_license_number, teaching_license_expiry, work_days, metadata
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}'::jsonb)",
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, '{}'::jsonb)",
         )
         .bind(user_id)
-        .bind(&staff_info.employee_id)
-        .bind(&staff_info.employment_type)
         .bind(&staff_info.education_level)
         .bind(&staff_info.major)
         .bind(&staff_info.university)
@@ -652,6 +644,22 @@ pub async fn update_staff(
         }
     };
 
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            eprintln!("❌ Failed to start transaction: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "เกิดข้อผิดพลาด"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Update user table
     let result = sqlx::query(
         "UPDATE users 
          SET 
@@ -660,6 +668,7 @@ pub async fn update_staff(
             last_name = COALESCE($4, last_name),
             nickname = COALESCE($5, nickname),
             phone = COALESCE($6, phone),
+            status = COALESCE($7, status),
             updated_at = NOW()
          WHERE id = $1 AND user_type = 'staff'",
     )
@@ -669,28 +678,91 @@ pub async fn update_staff(
     .bind(&payload.last_name)
     .bind(&payload.nickname)
     .bind(&payload.phone)
-    .execute(&pool)
+    .bind(&payload.status)
+    .execute(&mut *tx)
     .await;
 
     match result {
-        Ok(result) if result.rows_affected() > 0 => (
-            StatusCode::OK,
-            Json(json!({
-                "success": true,
-                "message": "อัปเดตข้อมูลสำเร็จ"
-            })),
-        )
-            .into_response(),
-        Ok(_) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({
-                "success": false,
-                "error": "ไม่พบบุคลากร"
-            })),
-        )
-            .into_response(),
+        Ok(result) if result.rows_affected() > 0 => {
+            // Update staff_info if provided
+            if let Some(staff_info) = &payload.staff_info {
+                // Check if staff_info exists
+                let exists: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM staff_info WHERE user_id = $1)"
+                )
+                .bind(staff_id)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap_or(false);
+
+                if exists {
+                    // Update existing record
+                    let _ = sqlx::query(
+                        "UPDATE staff_info 
+                         SET 
+                            education_level = COALESCE($2, education_level),
+                            major = COALESCE($3, major),
+                            university = COALESCE($4, university),
+                            updated_at = NOW()
+                         WHERE user_id = $1",
+                    )
+                    .bind(staff_id)
+                    .bind(&staff_info.education_level)
+                    .bind(&staff_info.major)
+                    .bind(&staff_info.university)
+                    .execute(&mut *tx)
+                    .await;
+                } else {
+                    // Create new record
+                    let _ = sqlx::query(
+                        "INSERT INTO staff_info (user_id, education_level, major, university, work_days, metadata)
+                         VALUES ($1, $2, $3, $4, '[]'::jsonb, '{}'::jsonb)",
+                    )
+                    .bind(staff_id)
+                    .bind(&staff_info.education_level)
+                    .bind(&staff_info.major)
+                    .bind(&staff_info.university)
+                    .execute(&mut *tx)
+                    .await;
+                }
+            }
+
+            match tx.commit().await {
+                Ok(_) => (
+                    StatusCode::OK,
+                    Json(json!({
+                        "success": true,
+                        "message": "อัปเดตข้อมูลสำเร็จ"
+                    })),
+                )
+                    .into_response(),
+                Err(e) => {
+                    eprintln!("❌ Failed to commit transaction: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "success": false,
+                            "error": "เกิดข้อผิดพลาดในการบันทึกข้อมูล"
+                        })),
+                    )
+                        .into_response()
+                }
+            }
+        }
+        Ok(_) => {
+            let _ = tx.rollback().await;
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่พบบุคลากร"
+                })),
+            )
+                .into_response()
+        }
         Err(e) => {
             eprintln!("❌ Database error: {}", e);
+            let _ = tx.rollback().await;
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({

@@ -26,7 +26,11 @@
 		last_name: '',
 		nickname: '',
 		phone: '',
-		status: 'active'
+		status: 'active',
+		// Staff Info
+		education_level: '',
+		major: '',
+		university: ''
 	});
 
 	// Validation errors
@@ -51,7 +55,11 @@
 					last_name: staff.last_name,
 					nickname: staff.nickname || '',
 					phone: staff.phone || '',
-					status: staff.status
+					status: staff.status,
+					// Staff Info
+					education_level: staff.staff_info?.education_level || '',
+					major: staff.staff_info?.major || '',
+					university: staff.staff_info?.university || ''
 				};
 			}
 		} catch (e) {
@@ -89,7 +97,21 @@
 		successMessage = '';
 
 		try {
-			const result = await updateStaff(staffId, formData);
+			const payload = {
+				title: formData.title,
+				first_name: formData.first_name,
+				last_name: formData.last_name,
+				nickname: formData.nickname || undefined,
+				phone: formData.phone || undefined,
+				status: formData.status,
+				staff_info: {
+					education_level: formData.education_level || undefined,
+					major: formData.major || undefined,
+					university: formData.university || undefined
+				}
+			};
+
+			const result = await updateStaff(staffId, payload);
 
 			if (result.success) {
 				successMessage = 'บันทึกข้อมูลสำเร็จ';
@@ -271,12 +293,48 @@
 								<p class="text-xs text-destructive">{errors.phone}</p>
 							{/if}
 						</div>
+					</div>
+				</div>
 
-						<div class="bg-muted/50 p-4 rounded-lg">
-							<p class="text-sm text-muted-foreground">
-								<strong>หมายเหตุ:</strong> การแก้ไขบทบาท, ฝ่าย และวิชาที่สอน กรุณาติดต่อผู้ดูแลระบบ
-							</p>
+				<h2 class="text-xl font-semibold mb-6 mt-8 pt-6 border-t border-border">ข้อมูลการทำงาน</h2>
+
+				<div class="space-y-4">
+					<div class="space-y-2">
+						<Label for="education_level">วุฒิการศึกษา</Label>
+						<Input
+							id="education_level"
+							type="text"
+							bind:value={formData.education_level}
+							placeholder="เช่น ปริญญาตรี, ปริญญาโท"
+						/>
+					</div>
+
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label for="major">สาขา</Label>
+							<Input
+								id="major"
+								type="text"
+								bind:value={formData.major}
+								placeholder="เช่น การศึกษา, คณิตศาสตร์"
+							/>
 						</div>
+
+						<div class="space-y-2">
+							<Label for="university">สถาบัน</Label>
+							<Input
+								id="university"
+								type="text"
+								bind:value={formData.university}
+								placeholder="เช่น มหาวิทยาลัยธรรมศาสตร์"
+							/>
+						</div>
+					</div>
+
+					<div class="bg-muted/50 p-4 rounded-lg">
+						<p class="text-sm text-muted-foreground">
+							<strong>หมายเหตุ:</strong> การแก้ไขบทบาท, ฝ่าย และวิชาที่สอน กรุณาติดต่อผู้ดูแลระบบ
+						</p>
 					</div>
 				</div>
 

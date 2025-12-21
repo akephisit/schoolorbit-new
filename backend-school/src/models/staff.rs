@@ -249,8 +249,6 @@ pub struct CreateTeachingAssignmentRequest {
 pub struct StaffInfo {
     pub id: Uuid,
     pub user_id: Uuid,
-    pub employee_id: Option<String>,
-    pub employment_type: Option<String>,
     pub education_level: Option<String>,
     pub major: Option<String>,
     pub university: Option<String>,
@@ -271,8 +269,6 @@ pub struct StaffInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateStaffInfoRequest {
-    pub employee_id: Option<String>,
-    pub employment_type: Option<String>,
     pub education_level: Option<String>,
     pub major: Option<String>,
     pub university: Option<String>,
@@ -374,8 +370,6 @@ pub struct StaffProfileResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaffInfoResponse {
-    pub employee_id: Option<String>,
-    pub employment_type: Option<String>,
     pub education_level: Option<String>,
     pub major: Option<String>,
     pub university: Option<String>,
@@ -439,6 +433,7 @@ pub struct UpdateStaffRequest {
     pub gender: Option<String>,
     pub address: Option<String>,
     pub status: Option<String>,
+    pub staff_info: Option<CreateStaffInfoRequest>,
 }
 
 // ===================================================================
@@ -469,7 +464,6 @@ pub struct StaffListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaffListItem {
     pub id: Uuid,
-    pub employee_id: Option<String>,
     pub first_name: String,
     pub last_name: String,
     pub roles: Vec<String>,
