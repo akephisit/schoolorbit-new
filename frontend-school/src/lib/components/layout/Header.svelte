@@ -23,8 +23,8 @@
 </script>
 
 <header
-	class="fixed top-0 right-0 h-16 bg-card border-b border-border z-30 transition-all duration-300
-	{sidebarCollapsed ? 'left-20' : 'left-0 lg:left-72'}"
+	class="sticky top-0 h-16 bg-card border-b border-border z-30 transition-all duration-300
+	{sidebarCollapsed ? 'lg:ml-0' : 'lg:ml-0'}"
 >
 	<div class="h-full px-4 lg:px-6 flex items-center justify-between gap-4">
 		<!-- Left Section -->

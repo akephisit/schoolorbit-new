@@ -14,13 +14,15 @@
 	}
 </script>
 
-<div class="min-h-screen bg-background">
+<div class="h-screen flex flex-col bg-background overflow-hidden">
 	<Sidebar bind:this={sidebarRef} />
+
+	<!-- Fixed Header - ไม่ scroll -->
 	<Header onMenuClick={handleMenuClick} sidebarCollapsed={isSidebarCollapsed} />
 
-	<!-- Main Content -->
+	<!-- Main Content - scroll อยู่ที่นี่ -->
 	<main
-		class="transition-all duration-300 pt-16
+		class="flex-1 overflow-y-auto transition-all duration-300
 		{isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-72'}"
 	>
 		<div class="p-4 lg:p-6">
