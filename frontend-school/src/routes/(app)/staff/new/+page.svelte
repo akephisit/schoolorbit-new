@@ -395,32 +395,40 @@
 							<Label>
 								คำนำหน้า <span class="text-destructive">*</span>
 							</Label>
-							<select
-								bind:value={formData.title}
-								
-							>
-								<option value="นาย">นาย</option>
-								<option value="นาง">นาง</option>
-								<option value="นางสาว">นางสาว</option>
-								<option value="ดร.">ดร.</option>
-								<option value="ศ.">ศ.</option>
-								<option value="รศ.">รศ.</option>
-								<option value="ผศ.">ผศ.</option>
-							</select>
+							<Select.Root type="single" bind:value={formData.title}>
+								<Select.Trigger>{formData.title || 'เลือกคำนำหน้า'}</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="นาย">นาย</Select.Item>
+									<Select.Item value="นาง">นาง</Select.Item>
+									<Select.Item value="นางสาว">นางสาว</Select.Item>
+									<Select.Item value="ดร.">ดร.</Select.Item>
+									<Select.Item value="ศ.">ศ.</Select.Item>
+									<Select.Item value="รศ.">รศ.</Select.Item>
+									<Select.Item value="ผศ.">ผศ.</Select.Item>
+								</Select.Content>
+							</Select.Root>
 						</div>
 
 						<div>
 							<Label>
 								เพศ <span class="text-destructive">*</span>
 							</Label>
-							<select
-								bind:value={formData.gender}
-								
-							>
-								<option value="male">ชาย</option>
-								<option value="female">หญิง</option>
-								<option value="other">อื่นๆ</option>
-							</select>
+							<Select.Root type="single" bind:value={formData.gender}>
+								<Select.Trigger>
+									{formData.gender === 'male'
+										? 'ชาย'
+										: formData.gender === 'female'
+											? 'หญิง'
+											: formData.gender === 'other'
+												? 'อื่นๆ'
+												: 'เลือกเพศ'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="male">ชาย</Select.Item>
+									<Select.Item value="female">หญิง</Select.Item>
+									<Select.Item value="other">อื่นๆ</Select.Item>
+								</Select.Content>
+							</Select.Root>
 						</div>
 					</div>
 
@@ -429,7 +437,9 @@
 							<Label>
 								ชื่อ <span class="text-destructive">*</span>
 							</Label>
-							<Input type="text" bind:value={formData.first_name}
+							<Input
+								type="text"
+								bind:value={formData.first_name}
 								placeholder="ชื่อ"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.first_name ? 'border-destructive' : ''}"
@@ -443,7 +453,9 @@
 							<Label>
 								นามสกุล <span class="text-destructive">*</span>
 							</Label>
-							<Input type="text" bind:value={formData.last_name}
+							<Input
+								type="text"
+								bind:value={formData.last_name}
 								placeholder="นามสกุล"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.last_name ? 'border-destructive' : ''}"
@@ -456,10 +468,7 @@
 
 					<div>
 						<Label>ชื่อเล่น</Label>
-						<Input type="text" bind:value={formData.nickname}
-							placeholder="ชื่อเล่น"
-							
-						/>
+						<Input type="text" bind:value={formData.nickname} placeholder="ชื่อเล่น" />
 					</div>
 
 					<div class="grid grid-cols-2 gap-4">
@@ -467,7 +476,9 @@
 							<Label>
 								อีเมล <span class="text-destructive">*</span>
 							</Label>
-							<Input type="email" bind:value={formData.email}
+							<Input
+								type="email"
+								bind:value={formData.email}
 								placeholder="email@school.ac.th"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.email ? 'border-destructive' : ''}"
@@ -479,7 +490,9 @@
 
 						<div>
 							<Label>หมายเลขโทรศัพท์</Label>
-							<Input type="tel" bind:value={formData.phone}
+							<Input
+								type="tel"
+								bind:value={formData.phone}
 								placeholder="081-234-5678"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.phone ? 'border-destructive' : ''}"
@@ -495,7 +508,9 @@
 							<Label>
 								รหัสผ่าน <span class="text-destructive">*</span>
 							</Label>
-							<Input type="password" bind:value={formData.password}
+							<Input
+								type="password"
+								bind:value={formData.password}
 								placeholder="••••••••"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.password ? 'border-destructive' : ''}"
@@ -509,7 +524,9 @@
 							<Label>
 								ยืนยันรหัสผ่าน <span class="text-destructive">*</span>
 							</Label>
-							<Input type="password" bind:value={formData.confirmPassword}
+							<Input
+								type="password"
+								bind:value={formData.confirmPassword}
 								placeholder="••••••••"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.confirmPassword ? 'border-destructive' : ''}"
@@ -523,51 +540,38 @@
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<Label>เลขบัตรประชาชน</Label>
-							<Input type="text" bind:value={formData.national_id}
+							<Input
+								type="text"
+								bind:value={formData.national_id}
 								placeholder="1234567890123"
 								maxlength={13}
-								
 							/>
 						</div>
 
 						<div>
 							<Label>วันเกิด</Label>
-							<Input type="date" bind:value={formData.date_of_birth}
-								
-							/>
+							<Input type="date" bind:value={formData.date_of_birth} />
 						</div>
 					</div>
 
 					<div>
 						<Label>Line ID</Label>
-						<Input type="text" bind:value={formData.line_id}
-							placeholder="@lineid"
-							
-						/>
+						<Input type="text" bind:value={formData.line_id} placeholder="@lineid" />
 					</div>
 
 					<div>
 						<Label>เบอร์ติดต่อฉุกเฉิน</Label>
-						<Input type="tel" bind:value={formData.emergency_contact}
-							placeholder="081-234-5678"
-							
-						/>
+						<Input type="tel" bind:value={formData.emergency_contact} placeholder="081-234-5678" />
 					</div>
 
 					<div>
 						<Label>ที่อยู่</Label>
-						<Textarea bind:value={formData.address}
-							placeholder="ที่อยู่ปัจจุบัน"
-							rows={3}
-							
-						/>
+						<Textarea bind:value={formData.address} placeholder="ที่อยู่ปัจจุบัน" rows={3} />
 					</div>
 
 					<div>
 						<Label>วันที่เริ่มงาน</Label>
-						<Input type="date" bind:value={formData.hired_date}
-							
-						/>
+						<Input type="date" bind:value={formData.hired_date} />
 					</div>
 				</div>
 			{:else if currentStep === 2}
@@ -578,48 +582,62 @@
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<Label>รหัสพนักงาน</Label>
-							<Input type="text" bind:value={formData.staff_info.employee_id}
+							<Input
+								type="text"
+								bind:value={formData.staff_info.employee_id}
 								placeholder="EMP001"
-								
 							/>
 						</div>
 
 						<div>
 							<Label>ประเภทการจ้าง</Label>
-							<select
-								bind:value={formData.staff_info.employment_type}
-								
-							>
-								<option value="permanent">พนักงานประจำ</option>
-								<option value="contract">พนักงานสัญญาจ้าง</option>
-								<option value="temporary">พนักงานชั่วคราว</option>
-								<option value="part_time">พนักงานพาร์ทไทม์</option>
-							</select>
+							<Select.Root type="single" bind:value={formData.staff_info.employment_type}>
+								<Select.Trigger>
+									{formData.staff_info.employment_type === 'permanent'
+										? 'พนักงานประจำ'
+										: formData.staff_info.employment_type === 'contract'
+											? 'พนักงานสัญญาจ้าง'
+											: formData.staff_info.employment_type === 'temporary'
+												? 'พนักงานชั่วคราว'
+												: formData.staff_info.employment_type === 'part_time'
+													? 'พนักงานพาร์ทไทม์'
+													: 'เลือกประเภท'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="permanent">พนักงานประจำ</Select.Item>
+									<Select.Item value="contract">พนักงานสัญญาจ้าง</Select.Item>
+									<Select.Item value="temporary">พนักงานชั่วคราว</Select.Item>
+									<Select.Item value="part_time">พนักงานพาร์ทไทม์</Select.Item>
+								</Select.Content>
+							</Select.Root>
 						</div>
 					</div>
 
 					<div>
 						<Label>วุฒิการศึกษา</Label>
-						<Input type="text" bind:value={formData.staff_info.education_level}
+						<Input
+							type="text"
+							bind:value={formData.staff_info.education_level}
 							placeholder="ปริญญาตรี / ปริญญาโท / ปริญญาเอก"
-							
 						/>
 					</div>
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<Label>สาขาวิชา</Label>
-							<Input type="text" bind:value={formData.staff_info.major}
+							<Input
+								type="text"
+								bind:value={formData.staff_info.major}
 								placeholder="เช่น การศึกษา, วิศวกรรม"
-								
 							/>
 						</div>
 
 						<div>
 							<Label>สถาบันการศึกษา</Label>
-							<Input type="text" bind:value={formData.staff_info.university}
+							<Input
+								type="text"
+								bind:value={formData.staff_info.university}
 								placeholder="มหาวิทยาลัย..."
-								
 							/>
 						</div>
 					</div>
@@ -627,17 +645,16 @@
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<Label>เลขใบประกอบวิชาชีพครู</Label>
-							<Input type="text" bind:value={formData.staff_info.teaching_license_number}
+							<Input
+								type="text"
+								bind:value={formData.staff_info.teaching_license_number}
 								placeholder="TL123456"
-								
 							/>
 						</div>
 
 						<div>
 							<Label>วันหมดอายุใบประกอบวิชาชีพ</Label>
-							<Input type="date" bind:value={formData.staff_info.teaching_license_expiry}
-								
-							/>
+							<Input type="date" bind:value={formData.staff_info.teaching_license_expiry} />
 						</div>
 					</div>
 
@@ -739,18 +756,25 @@
 								{#if errors.primary_role}
 									<p class="text-sm text-destructive mb-2">{errors.primary_role}</p>
 								{/if}
-								<select
-									bind:value={formData.primary_role_id}
-									
-								>
-									<option value="">เลือกบทบาทหลัก</option>
-									{#each formData.role_ids as roleId}
-										{@const role = roles.find((r) => r.id === roleId)}
-										{#if role}
-											<option value={role.id}>{role.name}</option>
+								<Select.Root type="single" bind:value={formData.primary_role_id}>
+									<Select.Trigger>
+										{#if formData.primary_role_id}
+											{roles.find((r) => r.id === formData.primary_role_id)?.name ||
+												'เลือกบทบาทหลัก'}
+										{:else}
+											เลือกบทบาทหลัก
 										{/if}
-									{/each}
-								</select>
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="">เลือกบทบาทหลัก</Select.Item>
+										{#each formData.role_ids as roleId}
+											{@const role = roles.find((r) => r.id === roleId)}
+											{#if role}
+												<Select.Item value={role.id}>{role.name}</Select.Item>
+											{/if}
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 						{/if}
 					</div>
@@ -789,36 +813,53 @@
 								<div class="space-y-3">
 									<div>
 										<Label>ชื่อฝ่าย</Label>
-										<select
-											bind:value={dept.department_id}
-											
-										>
-											<option value="">เลือกฝ่าย</option>
-											{#each departments as department}
-												<option value={department.id}>{department.name}</option>
-											{/each}
-										</select>
+										<Select.Root type="single" bind:value={dept.department_id}>
+											<Select.Trigger>
+												{#if dept.department_id}
+													{departments.find((d) => d.id === dept.department_id)?.name ||
+														'เลือกฝ่าย'}
+												{:else}
+													เลือกฝ่าย
+												{/if}
+											</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="">เลือกฝ่าย</Select.Item>
+												{#each departments as department}
+													<Select.Item value={department.id}>{department.name}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
 									</div>
 
 									<div>
 										<Label>ตำแหน่งในฝ่าย</Label>
-										<select
-											bind:value={dept.position}
-											
-										>
-											<option value="member">สมาชิก</option>
-											<option value="coordinator">ผู้ประสานงาน</option>
-											<option value="deputy_head">รองหัวหน้าฝ่าย</option>
-											<option value="head">หัวหน้าฝ่าย</option>
-										</select>
+										<Select.Root type="single" bind:value={dept.position}>
+											<Select.Trigger>
+												{dept.position === 'member'
+													? 'สมาชิก'
+													: dept.position === 'coordinator'
+														? 'ผู้ประสานงาน'
+														: dept.position === 'deputy_head'
+															? 'รองหัวหน้าฝ่าย'
+															: dept.position === 'head'
+																? 'หัวหน้าฝ่าย'
+																: 'เลือกตำแหน่ง'}
+											</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="member">สมาชิก</Select.Item>
+												<Select.Item value="coordinator">ผู้ประสานงาน</Select.Item>
+												<Select.Item value="deputy_head">รองหัวหน้าฝ่าย</Select.Item>
+												<Select.Item value="head">หัวหน้าฝ่าย</Select.Item>
+											</Select.Content>
+										</Select.Root>
 									</div>
 
 									<div>
 										<Label>หน้าที่รับผิดชอบ</Label>
-										<Textarea bind:value={dept.responsibilities}
+										<Textarea
+											bind:value={dept.responsibilities}
 											placeholder="ระบุหน้าที่รับผิดชอบ..."
 											rows={2}
-											
 										/>
 									</div>
 
