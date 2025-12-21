@@ -95,7 +95,7 @@ export interface CreateStaffRequest {
 	gender?: string;
 	address?: string;
 	hired_date?: string;
-	staff_info: {
+	staff_info?: {
 		employee_id?: string;
 		employment_type?: string;
 		education_level?: string;

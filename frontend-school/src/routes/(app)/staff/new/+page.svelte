@@ -58,23 +58,11 @@
 		address: '',
 		hired_date: new Date().toISOString().split('T')[0],
 
-		// Step 2: Staff Information
-		staff_info: {
-			employee_id: '',
-			employment_type: 'permanent',
-			education_level: '',
-			major: '',
-			university: '',
-			teaching_license_number: '',
-			teaching_license_expiry: '',
-			work_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-		},
-
-		// Step 3: Roles
+		// Roles
 		role_ids: [] as string[],
 		primary_role_id: '',
 
-		// Step 4: Departments
+		// Departments
 		department_assignments: [] as Array<{
 			department_id: string;
 			position: string;
@@ -161,11 +149,6 @@
 		return Object.keys(errors).length === 0;
 	}
 
-	function validateStep2(): boolean {
-		errors = {};
-		// Optional fields, no strict validation needed
-		return true;
-	}
 
 	function validateStep3(): boolean {
 		errors = {};
