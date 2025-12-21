@@ -400,7 +400,7 @@
 				<div class="space-y-4">
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label>
+							<Label class="mb-2">
 								คำนำหน้า <span class="text-destructive">*</span>
 							</Label>
 							<Select.Root type="single" bind:value={formData.title}>
@@ -418,7 +418,7 @@
 						</div>
 
 						<div>
-							<Label>
+							<Label class="mb-2">
 								เพศ <span class="text-destructive">*</span>
 							</Label>
 							<Select.Root type="single" bind:value={formData.gender}>
@@ -442,7 +442,7 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label>
+							<Label class="mb-2">
 								ชื่อ <span class="text-destructive">*</span>
 							</Label>
 							<Input
@@ -458,7 +458,7 @@
 						</div>
 
 						<div>
-							<Label>
+							<Label class="mb-2">
 								นามสกุล <span class="text-destructive">*</span>
 							</Label>
 							<Input
@@ -475,13 +475,13 @@
 					</div>
 
 					<div>
-						<Label>ชื่อเล่น</Label>
+						<Label class="mb-2">ชื่อเล่น</Label>
 						<Input type="text" bind:value={formData.nickname} placeholder="ชื่อเล่น" />
 					</div>
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label>
+							<Label class="mb-2">
 								อีเมล <span class="text-destructive">*</span>
 							</Label>
 							<Input
@@ -497,7 +497,7 @@
 						</div>
 
 						<div>
-							<Label>หมายเลขโทรศัพท์</Label>
+							<Label class="mb-2">หมายเลขโทรศัพท์</Label>
 							<Input
 								type="tel"
 								bind:value={formData.phone}
@@ -513,7 +513,7 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label>
+							<Label class="mb-2">
 								รหัสผ่าน <span class="text-destructive">*</span>
 							</Label>
 							<Input
@@ -529,7 +529,7 @@
 						</div>
 
 						<div>
-							<Label>
+							<Label class="mb-2">
 								ยืนยันรหัสผ่าน <span class="text-destructive">*</span>
 							</Label>
 							<Input
@@ -547,7 +547,7 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label>เลขบัตรประชาชน</Label>
+							<Label class="mb-2">เลขบัตรประชาชน</Label>
 							<Input
 								type="text"
 								bind:value={formData.national_id}
@@ -557,28 +557,28 @@
 						</div>
 
 						<div>
-							<Label>วันเกิด</Label>
+							<Label class="mb-2">วันเกิด</Label>
 							<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
 						</div>
 					</div>
 
 					<div>
-						<Label>Line ID</Label>
+						<Label class="mb-2">Line ID</Label>
 						<Input type="text" bind:value={formData.line_id} placeholder="@lineid" />
 					</div>
 
 					<div>
-						<Label>เบอร์ติดต่อฉุกเฉิน</Label>
+						<Label class="mb-2">เบอร์ติดต่อฉุกเฉิน</Label>
 						<Input type="tel" bind:value={formData.emergency_contact} placeholder="081-234-5678" />
 					</div>
 
 					<div>
-						<Label>ที่อยู่</Label>
+						<Label class="mb-2">ที่อยู่</Label>
 						<Textarea bind:value={formData.address} placeholder="ที่อยู่ปัจจุบัน" rows={3} />
 					</div>
 
 					<div>
-						<Label>วันที่เริ่มงาน</Label>
+						<Label class="mb-2">วันที่เริ่มงาน</Label>
 						<DatePicker bind:value={formData.hired_date} placeholder="เลือกวันที่เริ่มงาน" />
 					</div>
 				</div>
@@ -589,7 +589,7 @@
 				<div class="space-y-4">
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label>รหัสพนักงาน</Label>
+							<Label class="mb-2">รหัสพนักงาน</Label>
 							<Input
 								type="text"
 								bind:value={formData.staff_info.employee_id}
@@ -598,7 +598,7 @@
 						</div>
 
 						<div>
-							<Label>ประเภทการจ้าง</Label>
+							<Label class="mb-2">ประเภทการจ้าง</Label>
 							<Select.Root type="single" bind:value={formData.staff_info.employment_type}>
 								<Select.Trigger>
 									{formData.staff_info.employment_type === 'permanent'
@@ -622,7 +622,7 @@
 					</div>
 
 					<div>
-						<Label>วุฒิการศึกษา</Label>
+						<Label class="mb-2">วุฒิการศึกษา</Label>
 						<Input
 							type="text"
 							bind:value={formData.staff_info.education_level}
@@ -632,7 +632,7 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label>สาขาวิชา</Label>
+							<Label class="mb-2">สาขาวิชา</Label>
 							<Input
 								type="text"
 								bind:value={formData.staff_info.major}
@@ -641,7 +641,7 @@
 						</div>
 
 						<div>
-							<Label>สถาบันการศึกษา</Label>
+							<Label class="mb-2">สถาบันการศึกษา</Label>
 							<Input
 								type="text"
 								bind:value={formData.staff_info.university}
@@ -652,7 +652,7 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<Label>เลขใบประกอบวิชาชีพครู</Label>
+							<Label class="mb-2">เลขใบประกอบวิชาชีพครู</Label>
 							<Input
 								type="text"
 								bind:value={formData.staff_info.teaching_license_number}
@@ -661,7 +661,7 @@
 						</div>
 
 						<div>
-							<Label>วันหมดอายุใบประกอบวิชาชีพ</Label>
+							<Label class="mb-2">วันหมดอายุใบประกอบวิชาชีพ</Label>
 							<DatePicker
 								bind:value={formData.staff_info.teaching_license_expiry}
 								placeholder="เลือกวันหมดอายุ"
@@ -670,7 +670,7 @@
 					</div>
 
 					<div>
-						<Label>วันทำงาน</Label>
+						<Label class="mb-2">วันทำงาน</Label>
 						<div class="grid grid-cols-3 gap-2">
 							{#each ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as day (day)}
 								{@const dayLabel =
@@ -758,7 +758,7 @@
 
 						{#if formData.role_ids.length > 0}
 							<div class="mt-6">
-								<Label>
+								<Label class="mb-2">
 									บทบาทหลัก <span class="text-destructive">*</span>
 								</Label>
 								{#if errors.primary_role}
@@ -822,7 +822,7 @@
 
 								<div class="space-y-3">
 									<div>
-										<Label>ชื่อฝ่าย</Label>
+										<Label class="mb-2">ชื่อฝ่าย</Label>
 										<Select.Root type="single" bind:value={dept.department_id}>
 											<Select.Trigger>
 												{#if dept.department_id}
@@ -842,7 +842,7 @@
 									</div>
 
 									<div>
-										<Label>ตำแหน่งในฝ่าย</Label>
+										<Label class="mb-2">ตำแหน่งในฝ่าย</Label>
 										<Select.Root type="single" bind:value={dept.position}>
 											<Select.Trigger>
 												{dept.position === 'member'
@@ -865,7 +865,7 @@
 									</div>
 
 									<div>
-										<Label>หน้าที่รับผิดชอบ</Label>
+										<Label class="mb-2">หน้าที่รับผิดชอบ</Label>
 										<Textarea
 											bind:value={dept.responsibilities}
 											placeholder="ระบุหน้าที่รับผิดชอบ..."

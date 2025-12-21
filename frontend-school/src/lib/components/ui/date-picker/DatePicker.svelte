@@ -64,6 +64,7 @@
 			type="single"
 			initialFocus
 			captionLayout="dropdown"
+			locale="th-TH"
 		/>
 	</Popover.Content>
 </Popover.Root>
