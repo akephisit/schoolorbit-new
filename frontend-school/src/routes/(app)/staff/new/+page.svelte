@@ -721,7 +721,8 @@
 
 						<div class="grid grid-cols-2 gap-3">
 							{#each roles as role}
-								<button
+								<Button
+									variant="outline"
 									type="button"
 									onclick={() => toggleRole(role.id)}
 									class="p-4 border-2 rounded-lg text-left transition-all
@@ -746,7 +747,7 @@
 										<span class="px-2 py-0.5 bg-muted rounded">{role.category}</span>
 										<span class="text-muted-foreground">ระดับ {role.level}</span>
 									</div>
-								</button>
+								</Button>
 							{/each}
 						</div>
 
@@ -802,13 +803,15 @@
 								<div class="flex items-start justify-between mb-4">
 									<h3 class="font-medium">ฝ่ายที่ {i + 1}</h3>
 									{#if formData.department_assignments.length > 1}
-										<button
+										<Button
+											variant="ghost"
+											size="sm"
 											type="button"
 											onclick={() => removeDepartment(i)}
 											class="text-destructive hover:text-destructive/80 text-sm"
 										>
 											ลบ
-										</button>
+										</Button>
 									{/if}
 								</div>
 
