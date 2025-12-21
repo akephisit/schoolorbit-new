@@ -17,7 +17,6 @@
 
 	import {
 		User,
-		Briefcase,
 		Building2,
 		BookOpen,
 		ArrowLeft,
@@ -29,7 +28,7 @@
 
 	// Form state
 	let currentStep = $state(1);
-	const totalSteps = 4;
+	const totalSteps = 3;
 
 	// Loading states
 	let loading = $state(false);
@@ -210,13 +209,10 @@
 				isValid = validateStep1();
 				break;
 			case 2:
-				isValid = validateStep2();
+				isValid = validateStep3(); // Roles
 				break;
 			case 3:
-				isValid = validateStep3();
-				break;
-			case 4:
-				isValid = validateStep4();
+				isValid = validateStep4(); // Departments
 				break;
 		}
 
@@ -313,11 +309,9 @@
 			case 1:
 				return User;
 			case 2:
-				return Briefcase;
+				return Building2; // Roles
 			case 3:
-				return Building2;
-			case 4:
-				return BookOpen;
+				return BookOpen; // Departments
 			default:
 				return User;
 		}
@@ -391,8 +385,6 @@
 							{#if step === 1}
 								ข้อมูลส่วนตัว
 							{:else if step === 2}
-								ข้อมูลการทำงาน
-							{:else if step === 3}
 								บทบาท
 							{:else}
 								สังกัดฝ่าย
@@ -629,131 +621,7 @@
 					</div>
 				</div>
 			{:else if currentStep === 2}
-				<!-- Step 2: Staff Information -->
-				<h2 class="text-xl font-semibold mb-6">ข้อมูลการทำงาน</h2>
-
-				<div class="space-y-4">
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label class="mb-2">รหัสพนักงาน</Label>
-							<Input
-								type="text"
-								bind:value={formData.staff_info.employee_id}
-								placeholder="EMP001"
-							/>
-						</div>
-
-						<div>
-							<Label class="mb-2">ประเภทการจ้าง</Label>
-							<Select.Root type="single" bind:value={formData.staff_info.employment_type}>
-								<Select.Trigger>
-									{formData.staff_info.employment_type === 'permanent'
-										? 'พนักงานประจำ'
-										: formData.staff_info.employment_type === 'contract'
-											? 'พนักงานสัญญาจ้าง'
-											: formData.staff_info.employment_type === 'temporary'
-												? 'พนักงานชั่วคราว'
-												: formData.staff_info.employment_type === 'part_time'
-													? 'พนักงานพาร์ทไทม์'
-													: 'เลือกประเภท'}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="permanent">พนักงานประจำ</Select.Item>
-									<Select.Item value="contract">พนักงานสัญญาจ้าง</Select.Item>
-									<Select.Item value="temporary">พนักงานชั่วคราว</Select.Item>
-									<Select.Item value="part_time">พนักงานพาร์ทไทม์</Select.Item>
-								</Select.Content>
-							</Select.Root>
-						</div>
-					</div>
-
-					<div>
-						<Label class="mb-2">วุฒิการศึกษา</Label>
-						<Input
-							type="text"
-							bind:value={formData.staff_info.education_level}
-							placeholder="ปริญญาตรี / ปริญญาโท / ปริญญาเอก"
-						/>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label class="mb-2">สาขาวิชา</Label>
-							<Input
-								type="text"
-								bind:value={formData.staff_info.major}
-								placeholder="เช่น การศึกษา, วิศวกรรม"
-							/>
-						</div>
-
-						<div>
-							<Label class="mb-2">สถาบันการศึกษา</Label>
-							<Input
-								type="text"
-								bind:value={formData.staff_info.university}
-								placeholder="มหาวิทยาลัย..."
-							/>
-						</div>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label class="mb-2">เลขใบประกอบวิชาชีพครู</Label>
-							<Input
-								type="text"
-								bind:value={formData.staff_info.teaching_license_number}
-								placeholder="TL123456"
-							/>
-						</div>
-
-						<div>
-							<Label class="mb-2">วันหมดอายุใบประกอบวิชาชีพ</Label>
-							<DatePicker
-								bind:value={formData.staff_info.teaching_license_expiry}
-								placeholder="เลือกวันหมดอายุ"
-							/>
-						</div>
-					</div>
-
-					<div>
-						<Label class="mb-2">วันทำงาน</Label>
-						<div class="grid grid-cols-3 gap-2">
-							{#each ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as day (day)}
-								{@const dayLabel =
-									day === 'monday'
-										? 'จันทร์'
-										: day === 'tuesday'
-											? 'อังคาร'
-											: day === 'wednesday'
-												? 'พุธ'
-												: day === 'thursday'
-													? 'พฤหัสบดี'
-													: day === 'friday'
-														? 'ศุกร์'
-														: day === 'saturday'
-															? 'เสาร์'
-															: 'อาทิตย์'}
-								<div class="flex items-center gap-2">
-									<Checkbox
-										checked={formData.staff_info.work_days.includes(day)}
-										onCheckedChange={(checked) => {
-											if (checked) {
-												formData.staff_info.work_days = [...formData.staff_info.work_days, day];
-											} else {
-												formData.staff_info.work_days = formData.staff_info.work_days.filter(
-													(d) => d !== day
-												);
-											}
-										}}
-									/>
-									<span class="text-sm">{dayLabel}</span>
-								</div>
-							{/each}
-						</div>
-					</div>
-				</div>
-			{:else if currentStep === 3}
-				<!-- Step 3: Roles -->
+				<!-- Step 2: Roles -->
 				<h2 class="text-xl font-semibold mb-6">บทบาทและตำแหน่ง</h2>
 
 				{#if loadingRoles}
@@ -833,8 +701,8 @@
 						{/if}
 					</div>
 				{/if}
-			{:else if currentStep === 4}
-				<!-- Step 4: Departments -->
+			{:else if currentStep === 3}
+				<!-- Step 3: Departments -->
 				<h2 class="text-xl font-semibold mb-6">สังกัดฝ่าย</h2>
 
 				{#if loadingDepartments}
