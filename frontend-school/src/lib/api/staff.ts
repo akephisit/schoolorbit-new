@@ -7,7 +7,6 @@ const API_BASE_URL = PUBLIC_BACKEND_URL || 'http://localhost:8081';
 
 export interface StaffListItem {
 	id: string;
-	employee_id?: string;
 	first_name: string;
 	last_name: string;
 	roles: string[];
@@ -55,8 +54,6 @@ export interface TeachingAssignmentResponse {
 }
 
 export interface StaffInfoResponse {
-	employee_id?: string;
-	employment_type?: string;
 	education_level?: string;
 	major?: string;
 	university?: string;
@@ -96,8 +93,6 @@ export interface CreateStaffRequest {
 	address?: string;
 	hired_date?: string;
 	staff_info?: {
-		employee_id?: string;
-		employment_type?: string;
 		education_level?: string;
 		major?: string;
 		university?: string;
@@ -128,8 +123,6 @@ export interface UpdateStaffRequest {
 	address?: string;
 	status?: string;
 	staff_info?: {
-		employee_id?: string;
-		employment_type?: string;
 		education_level?: string;
 		major?: string;
 		university?: string;
