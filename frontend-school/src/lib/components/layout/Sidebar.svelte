@@ -159,7 +159,7 @@
 				<LogOut class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-destructive" />
 				<span
 					class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
-					{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">ออกจากระบบ</span
+					{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">ออกจากระบบ</span>
 			</button>
 		</div>
 	</div>
