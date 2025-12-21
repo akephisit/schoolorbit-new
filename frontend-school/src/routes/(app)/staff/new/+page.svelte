@@ -392,9 +392,9 @@
 				<div class="space-y-4">
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium mb-2">
+							<Label>
 								คำนำหน้า <span class="text-destructive">*</span>
-							</label>
+							</Label>
 							<select
 								bind:value={formData.title}
 								
@@ -410,9 +410,9 @@
 						</div>
 
 						<div>
-							<label class="block text-sm font-medium mb-2">
+							<Label>
 								เพศ <span class="text-destructive">*</span>
-							</label>
+							</Label>
 							<select
 								bind:value={formData.gender}
 								
@@ -426,9 +426,9 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium mb-2">
+							<Label>
 								ชื่อ <span class="text-destructive">*</span>
-							</label>
+							</Label>
 							<Input type="text" bind:value={formData.first_name}
 								placeholder="ชื่อ"
 								class="w-full px-3 py-2 border border-border rounded-md
@@ -440,9 +440,9 @@
 						</div>
 
 						<div>
-							<label class="block text-sm font-medium mb-2">
+							<Label>
 								นามสกุล <span class="text-destructive">*</span>
-							</label>
+							</Label>
 							<Input type="text" bind:value={formData.last_name}
 								placeholder="นามสกุล"
 								class="w-full px-3 py-2 border border-border rounded-md
@@ -455,7 +455,7 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium mb-2">ชื่อเล่น</label>
+						<Label>ชื่อเล่น</Label>
 						<Input type="text" bind:value={formData.nickname}
 							placeholder="ชื่อเล่น"
 							
@@ -464,9 +464,9 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium mb-2">
+							<Label>
 								อีเมล <span class="text-destructive">*</span>
-							</label>
+							</Label>
 							<Input type="email" bind:value={formData.email}
 								placeholder="email@school.ac.th"
 								class="w-full px-3 py-2 border border-border rounded-md
@@ -478,7 +478,7 @@
 						</div>
 
 						<div>
-							<label class="block text-sm font-medium mb-2">หมายเลขโทรศัพท์</label>
+							<Label>หมายเลขโทรศัพท์</Label>
 							<Input type="tel" bind:value={formData.phone}
 								placeholder="081-234-5678"
 								class="w-full px-3 py-2 border border-border rounded-md
@@ -492,9 +492,9 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium mb-2">
+							<Label>
 								รหัสผ่าน <span class="text-destructive">*</span>
-							</label>
+							</Label>
 							<Input type="password" bind:value={formData.password}
 								placeholder="••••••••"
 								class="w-full px-3 py-2 border border-border rounded-md
@@ -506,9 +506,9 @@
 						</div>
 
 						<div>
-							<label class="block text-sm font-medium mb-2">
+							<Label>
 								ยืนยันรหัสผ่าน <span class="text-destructive">*</span>
-							</label>
+							</Label>
 							<Input type="password" bind:value={formData.confirmPassword}
 								placeholder="••••••••"
 								class="w-full px-3 py-2 border border-border rounded-md
@@ -522,7 +522,7 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium mb-2">เลขบัตรประชาชน</label>
+							<Label>เลขบัตรประชาชน</Label>
 							<Input type="text" bind:value={formData.national_id}
 								placeholder="1234567890123"
 								maxlength={13}
@@ -531,7 +531,7 @@
 						</div>
 
 						<div>
-							<label class="block text-sm font-medium mb-2">วันเกิด</label>
+							<Label>วันเกิด</Label>
 							<Input type="date" bind:value={formData.date_of_birth}
 								
 							/>
@@ -539,7 +539,7 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium mb-2">Line ID</label>
+						<Label>Line ID</Label>
 						<Input type="text" bind:value={formData.line_id}
 							placeholder="@lineid"
 							
@@ -547,7 +547,7 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium mb-2">เบอร์ติดต่อฉุกเฉิน</label>
+						<Label>เบอร์ติดต่อฉุกเฉิน</Label>
 						<Input type="tel" bind:value={formData.emergency_contact}
 							placeholder="081-234-5678"
 							
@@ -555,7 +555,7 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium mb-2">ที่อยู่</label>
+						<Label>ที่อยู่</Label>
 						<Textarea bind:value={formData.address}
 							placeholder="ที่อยู่ปัจจุบัน"
 							rows={3}
@@ -564,7 +564,7 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium mb-2">วันที่เริ่มงาน</label>
+						<Label>วันที่เริ่มงาน</Label>
 						<Input type="date" bind:value={formData.hired_date}
 							
 						/>
@@ -577,7 +577,7 @@
 				<div class="space-y-4">
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium mb-2">รหัสพนักงาน</label>
+							<Label>รหัสพนักงาน</Label>
 							<Input type="text" bind:value={formData.staff_info.employee_id}
 								placeholder="EMP001"
 								
@@ -585,7 +585,7 @@
 						</div>
 
 						<div>
-							<label class="block text-sm font-medium mb-2">ประเภทการจ้าง</label>
+							<Label>ประเภทการจ้าง</Label>
 							<select
 								bind:value={formData.staff_info.employment_type}
 								
@@ -599,7 +599,7 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium mb-2">วุฒิการศึกษา</label>
+						<Label>วุฒิการศึกษา</Label>
 						<Input type="text" bind:value={formData.staff_info.education_level}
 							placeholder="ปริญญาตรี / ปริญญาโท / ปริญญาเอก"
 							
@@ -608,7 +608,7 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium mb-2">สาขาวิชา</label>
+							<Label>สาขาวิชา</Label>
 							<Input type="text" bind:value={formData.staff_info.major}
 								placeholder="เช่น การศึกษา, วิศวกรรม"
 								
@@ -616,7 +616,7 @@
 						</div>
 
 						<div>
-							<label class="block text-sm font-medium mb-2">สถาบันการศึกษา</label>
+							<Label>สถาบันการศึกษา</Label>
 							<Input type="text" bind:value={formData.staff_info.university}
 								placeholder="มหาวิทยาลัย..."
 								
@@ -626,7 +626,7 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium mb-2">เลขใบประกอบวิชาชีพครู</label>
+							<Label>เลขใบประกอบวิชาชีพครู</Label>
 							<Input type="text" bind:value={formData.staff_info.teaching_license_number}
 								placeholder="TL123456"
 								
@@ -634,7 +634,7 @@
 						</div>
 
 						<div>
-							<label class="block text-sm font-medium mb-2">วันหมดอายุใบประกอบวิชาชีพ</label>
+							<Label>วันหมดอายุใบประกอบวิชาชีพ</Label>
 							<Input type="date" bind:value={formData.staff_info.teaching_license_expiry}
 								
 							/>
@@ -642,7 +642,7 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium mb-2">วันทำงาน</label>
+						<Label>วันทำงาน</Label>
 						<div class="grid grid-cols-3 gap-2">
 							{#each ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as day}
 								<label class="flex items-center gap-2">
@@ -733,9 +733,9 @@
 
 						{#if formData.role_ids.length > 0}
 							<div class="mt-6">
-								<label class="block text-sm font-medium mb-2">
+								<Label>
 									บทบาทหลัก <span class="text-destructive">*</span>
-								</label>
+								</Label>
 								{#if errors.primary_role}
 									<p class="text-sm text-destructive mb-2">{errors.primary_role}</p>
 								{/if}
@@ -788,7 +788,7 @@
 
 								<div class="space-y-3">
 									<div>
-										<label class="block text-sm font-medium mb-2">ชื่อฝ่าย</label>
+										<Label>ชื่อฝ่าย</Label>
 										<select
 											bind:value={dept.department_id}
 											
@@ -801,7 +801,7 @@
 									</div>
 
 									<div>
-										<label class="block text-sm font-medium mb-2">ตำแหน่งในฝ่าย</label>
+										<Label>ตำแหน่งในฝ่าย</Label>
 										<select
 											bind:value={dept.position}
 											
@@ -814,7 +814,7 @@
 									</div>
 
 									<div>
-										<label class="block text-sm font-medium mb-2">หน้าที่รับผิดชอบ</label>
+										<Label>หน้าที่รับผิดชอบ</Label>
 										<Textarea bind:value={dept.responsibilities}
 											placeholder="ระบุหน้าที่รับผิดชอบ..."
 											rows={2}
