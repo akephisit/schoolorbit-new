@@ -2,6 +2,11 @@
 	import { goto } from '$app/navigation';
 	import { createStaff, listRoles, listDepartments, type Role, type Department } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import * as Select from '$lib/components/ui/select';
+	
 	import {
 		User,
 		Briefcase,
@@ -392,7 +397,7 @@
 							</label>
 							<select
 								bind:value={formData.title}
-								class="w-full px-3 py-2 border border-border rounded-md"
+								
 							>
 								<option value="นาย">นาย</option>
 								<option value="นาง">นาง</option>
@@ -410,7 +415,7 @@
 							</label>
 							<select
 								bind:value={formData.gender}
-								class="w-full px-3 py-2 border border-border rounded-md"
+								
 							>
 								<option value="male">ชาย</option>
 								<option value="female">หญิง</option>
@@ -424,9 +429,7 @@
 							<label class="block text-sm font-medium mb-2">
 								ชื่อ <span class="text-destructive">*</span>
 							</label>
-							<input
-								type="text"
-								bind:value={formData.first_name}
+							<Input type="text" bind:value={formData.first_name}
 								placeholder="ชื่อ"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.first_name ? 'border-destructive' : ''}"
@@ -440,9 +443,7 @@
 							<label class="block text-sm font-medium mb-2">
 								นามสกุล <span class="text-destructive">*</span>
 							</label>
-							<input
-								type="text"
-								bind:value={formData.last_name}
+							<Input type="text" bind:value={formData.last_name}
 								placeholder="นามสกุล"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.last_name ? 'border-destructive' : ''}"
@@ -455,11 +456,9 @@
 
 					<div>
 						<label class="block text-sm font-medium mb-2">ชื่อเล่น</label>
-						<input
-							type="text"
-							bind:value={formData.nickname}
+						<Input type="text" bind:value={formData.nickname}
 							placeholder="ชื่อเล่น"
-							class="w-full px-3 py-2 border border-border rounded-md"
+							
 						/>
 					</div>
 
@@ -468,9 +467,7 @@
 							<label class="block text-sm font-medium mb-2">
 								อีเมล <span class="text-destructive">*</span>
 							</label>
-							<input
-								type="email"
-								bind:value={formData.email}
+							<Input type="email" bind:value={formData.email}
 								placeholder="email@school.ac.th"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.email ? 'border-destructive' : ''}"
@@ -482,9 +479,7 @@
 
 						<div>
 							<label class="block text-sm font-medium mb-2">หมายเลขโทรศัพท์</label>
-							<input
-								type="tel"
-								bind:value={formData.phone}
+							<Input type="tel" bind:value={formData.phone}
 								placeholder="081-234-5678"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.phone ? 'border-destructive' : ''}"
@@ -500,9 +495,7 @@
 							<label class="block text-sm font-medium mb-2">
 								รหัสผ่าน <span class="text-destructive">*</span>
 							</label>
-							<input
-								type="password"
-								bind:value={formData.password}
+							<Input type="password" bind:value={formData.password}
 								placeholder="••••••••"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.password ? 'border-destructive' : ''}"
@@ -516,9 +509,7 @@
 							<label class="block text-sm font-medium mb-2">
 								ยืนยันรหัสผ่าน <span class="text-destructive">*</span>
 							</label>
-							<input
-								type="password"
-								bind:value={formData.confirmPassword}
+							<Input type="password" bind:value={formData.confirmPassword}
 								placeholder="••••••••"
 								class="w-full px-3 py-2 border border-border rounded-md
 								{errors.confirmPassword ? 'border-destructive' : ''}"
@@ -532,61 +523,50 @@
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<label class="block text-sm font-medium mb-2">เลขบัตรประชาชน</label>
-							<input
-								type="text"
-								bind:value={formData.national_id}
+							<Input type="text" bind:value={formData.national_id}
 								placeholder="1234567890123"
-								maxlength="13"
-								class="w-full px-3 py-2 border border-border rounded-md"
+								maxlength={13}
+								
 							/>
 						</div>
 
 						<div>
 							<label class="block text-sm font-medium mb-2">วันเกิด</label>
-							<input
-								type="date"
-								bind:value={formData.date_of_birth}
-								class="w-full px-3 py-2 border border-border rounded-md"
+							<Input type="date" bind:value={formData.date_of_birth}
+								
 							/>
 						</div>
 					</div>
 
 					<div>
 						<label class="block text-sm font-medium mb-2">Line ID</label>
-						<input
-							type="text"
-							bind:value={formData.line_id}
+						<Input type="text" bind:value={formData.line_id}
 							placeholder="@lineid"
-							class="w-full px-3 py-2 border border-border rounded-md"
+							
 						/>
 					</div>
 
 					<div>
 						<label class="block text-sm font-medium mb-2">เบอร์ติดต่อฉุกเฉิน</label>
-						<input
-							type="tel"
-							bind:value={formData.emergency_contact}
+						<Input type="tel" bind:value={formData.emergency_contact}
 							placeholder="081-234-5678"
-							class="w-full px-3 py-2 border border-border rounded-md"
+							
 						/>
 					</div>
 
 					<div>
 						<label class="block text-sm font-medium mb-2">ที่อยู่</label>
-						<textarea
-							bind:value={formData.address}
+						<Textarea bind:value={formData.address}
 							placeholder="ที่อยู่ปัจจุบัน"
-							rows="3"
-							class="w-full px-3 py-2 border border-border rounded-md"
-						></textarea>
+							rows={3}
+							
+						/>
 					</div>
 
 					<div>
 						<label class="block text-sm font-medium mb-2">วันที่เริ่มงาน</label>
-						<input
-							type="date"
-							bind:value={formData.hired_date}
-							class="w-full px-3 py-2 border border-border rounded-md"
+						<Input type="date" bind:value={formData.hired_date}
+							
 						/>
 					</div>
 				</div>
@@ -598,11 +578,9 @@
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<label class="block text-sm font-medium mb-2">รหัสพนักงาน</label>
-							<input
-								type="text"
-								bind:value={formData.staff_info.employee_id}
+							<Input type="text" bind:value={formData.staff_info.employee_id}
 								placeholder="EMP001"
-								class="w-full px-3 py-2 border border-border rounded-md"
+								
 							/>
 						</div>
 
@@ -610,7 +588,7 @@
 							<label class="block text-sm font-medium mb-2">ประเภทการจ้าง</label>
 							<select
 								bind:value={formData.staff_info.employment_type}
-								class="w-full px-3 py-2 border border-border rounded-md"
+								
 							>
 								<option value="permanent">พนักงานประจำ</option>
 								<option value="contract">พนักงานสัญญาจ้าง</option>
@@ -622,32 +600,26 @@
 
 					<div>
 						<label class="block text-sm font-medium mb-2">วุฒิการศึกษา</label>
-						<input
-							type="text"
-							bind:value={formData.staff_info.education_level}
+						<Input type="text" bind:value={formData.staff_info.education_level}
 							placeholder="ปริญญาตรี / ปริญญาโท / ปริญญาเอก"
-							class="w-full px-3 py-2 border border-border rounded-md"
+							
 						/>
 					</div>
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<label class="block text-sm font-medium mb-2">สาขาวิชา</label>
-							<input
-								type="text"
-								bind:value={formData.staff_info.major}
+							<Input type="text" bind:value={formData.staff_info.major}
 								placeholder="เช่น การศึกษา, วิศวกรรม"
-								class="w-full px-3 py-2 border border-border rounded-md"
+								
 							/>
 						</div>
 
 						<div>
 							<label class="block text-sm font-medium mb-2">สถาบันการศึกษา</label>
-							<input
-								type="text"
-								bind:value={formData.staff_info.university}
+							<Input type="text" bind:value={formData.staff_info.university}
 								placeholder="มหาวิทยาลัย..."
-								class="w-full px-3 py-2 border border-border rounded-md"
+								
 							/>
 						</div>
 					</div>
@@ -655,20 +627,16 @@
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<label class="block text-sm font-medium mb-2">เลขใบประกอบวิชาชีพครู</label>
-							<input
-								type="text"
-								bind:value={formData.staff_info.teaching_license_number}
+							<Input type="text" bind:value={formData.staff_info.teaching_license_number}
 								placeholder="TL123456"
-								class="w-full px-3 py-2 border border-border rounded-md"
+								
 							/>
 						</div>
 
 						<div>
 							<label class="block text-sm font-medium mb-2">วันหมดอายุใบประกอบวิชาชีพ</label>
-							<input
-								type="date"
-								bind:value={formData.staff_info.teaching_license_expiry}
-								class="w-full px-3 py-2 border border-border rounded-md"
+							<Input type="date" bind:value={formData.staff_info.teaching_license_expiry}
+								
 							/>
 						</div>
 					</div>
@@ -773,7 +741,7 @@
 								{/if}
 								<select
 									bind:value={formData.primary_role_id}
-									class="w-full px-3 py-2 border border-border rounded-md"
+									
 								>
 									<option value="">เลือกบทบาทหลัก</option>
 									{#each formData.role_ids as roleId}
@@ -823,7 +791,7 @@
 										<label class="block text-sm font-medium mb-2">ชื่อฝ่าย</label>
 										<select
 											bind:value={dept.department_id}
-											class="w-full px-3 py-2 border border-border rounded-md"
+											
 										>
 											<option value="">เลือกฝ่าย</option>
 											{#each departments as department}
@@ -836,7 +804,7 @@
 										<label class="block text-sm font-medium mb-2">ตำแหน่งในฝ่าย</label>
 										<select
 											bind:value={dept.position}
-											class="w-full px-3 py-2 border border-border rounded-md"
+											
 										>
 											<option value="member">สมาชิก</option>
 											<option value="coordinator">ผู้ประสานงาน</option>
@@ -847,12 +815,11 @@
 
 									<div>
 										<label class="block text-sm font-medium mb-2">หน้าที่รับผิดชอบ</label>
-										<textarea
-											bind:value={dept.responsibilities}
+										<Textarea bind:value={dept.responsibilities}
 											placeholder="ระบุหน้าที่รับผิดชอบ..."
-											rows="2"
-											class="w-full px-3 py-2 border border-border rounded-md"
-										></textarea>
+											rows={2}
+											
+										/>
 									</div>
 
 									<div>
