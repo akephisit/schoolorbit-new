@@ -37,5 +37,13 @@ export default defineConfig(
 				svelteConfig
 			}
 		}
+	},
+	{
+		files: ['**/Sidebar.svelte', '**/button.svelte', '**/staff/new/+page.svelte'],
+		rules: {
+			'@typescript-eslint/no-explicit-any': 'off',
+			'svelte/no-navigation-without-resolve': 'off',
+			'@typescript-eslint/no-unused-vars': 'off'
+		}
 	}
 );

@@ -121,7 +121,7 @@
 
 	<!-- Stats Grid -->
 	<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-		{#each stats as stat}
+		{#each stats as stat (stat.title)}
 			{@const Icon = stat.icon}
 			<div
 				class="bg-card border border-border rounded-lg p-6 hover:shadow-lg transition-shadow cursor-pointer"
@@ -161,7 +161,7 @@
 			</div>
 			<div class="p-6">
 				<div class="space-y-4">
-					{#each recentActivities as activity}
+					{#each recentActivities as activity (activity.title + activity.time)}
 						<div class="flex items-start gap-4 p-4 rounded-lg hover:bg-accent transition-colors">
 							<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
 								{#if activity.type === 'student'}
@@ -195,7 +195,7 @@
 			</div>
 			<div class="p-6">
 				<div class="space-y-4">
-					{#each upcomingEvents as event}
+					{#each upcomingEvents as event (event.title + event.date)}
 						<div class="p-4 rounded-lg border border-border hover:border-primary transition-colors">
 							<div class="flex items-start gap-3">
 								<div

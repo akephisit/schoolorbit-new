@@ -200,7 +200,7 @@
 					</h3>
 					{#if staff.roles.length > 0}
 						<div class="flex flex-wrap gap-2">
-							{#each staff.roles as role (role.role_id)}
+							{#each staff.roles as role (role.id)}
 								<div
 									class="px-4 py-2 rounded-lg border border-border {role.is_primary
 										? 'bg-primary/10 border-primary'
@@ -235,7 +235,7 @@
 					</h3>
 					{#if staff.departments.length > 0}
 						<div class="space-y-3">
-							{#each staff.departments as dept (dept.department_id)}
+							{#each staff.departments as dept (dept.id)}
 								<div
 									class="px-4 py-3 rounded-lg border border-border {dept.is_primary_department
 										? 'bg-primary/5 border-primary/30'

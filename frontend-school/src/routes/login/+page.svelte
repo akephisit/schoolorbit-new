@@ -6,6 +6,7 @@
 	import { GraduationCap, ArrowLeft } from 'lucide-svelte';
 	import { authAPI } from '$lib/api/auth';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	let nationalId = $state('');
 	let password = $state('');
@@ -33,7 +34,7 @@
 			});
 
 			// Redirect to dashboard on success
-			await goto('/dashboard', { invalidateAll: true });
+			await goto(resolve('/dashboard'), { invalidateAll: true });
 		} catch (error) {
 			// Error already shown via toast in authAPI
 			errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';

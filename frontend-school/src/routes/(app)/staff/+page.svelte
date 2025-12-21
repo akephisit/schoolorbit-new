@@ -130,7 +130,7 @@
 
 			<!-- Table Body -->
 			<div class="divide-y divide-border">
-				{#each staffList as staff}
+				{#each staffList as staff (staff.id)}
 					<div class="px-6 py-4 hover:bg-accent/50 transition-colors">
 						<div class="grid grid-cols-12 gap-4 items-center">
 							<!-- Name -->
@@ -152,7 +152,7 @@
 							<div class="col-span-3">
 								<div class="flex flex-wrap gap-1">
 									{#if staff.roles && staff.roles.length > 0}
-										{#each staff.roles.slice(0, 2) as role}
+										{#each staff.roles.slice(0, 2) as role (role)}
 											<span class="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
 												{role}
 											</span>

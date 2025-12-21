@@ -8,10 +8,9 @@
 		Calendar,
 		Settings,
 		LogOut,
-		ChevronLeft,
-		Menu
+		ChevronLeft
 	} from 'lucide-svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { resolve } from '$app/paths';
 
 	let isCollapsed = $state(false);
 	let isMobileOpen = $state(false);
@@ -91,10 +90,10 @@
 
 		<!-- Navigation -->
 		<nav class="flex-1 overflow-y-auto p-4 space-y-1">
-			{#each navigation as item}
+			{#each navigation as item (item.href)}
 				{@const Icon = item.icon}
 				<a
-					href={item.href}
+					href={resolve(item.href as any)}
 					class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group
 						{item.active
 						? 'bg-primary text-primary-foreground'
@@ -114,10 +113,10 @@
 
 		<!-- Bottom Navigation -->
 		<div class="border-t border-border p-4 space-y-1">
-			{#each bottomNavigation as item}
+			{#each bottomNavigation as item (item.href)}
 				{@const Icon = item.icon}
 				<a
-					href={item.href}
+					href={resolve(item.href as any)}
 					class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
 						text-muted-foreground hover:bg-accent hover:text-accent-foreground group"
 				>

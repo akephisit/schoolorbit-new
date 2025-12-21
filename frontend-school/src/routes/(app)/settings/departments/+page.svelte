@@ -92,7 +92,7 @@
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-			{#each filteredDepartments as dept}
+			{#each filteredDepartments as dept (dept.id)}
 				<div class="bg-card border border-border rounded-lg p-6 hover:shadow-md transition-shadow">
 					<div class="flex items-start justify-between mb-4">
 						<div class="flex-1">

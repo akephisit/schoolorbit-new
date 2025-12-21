@@ -39,8 +39,9 @@ class AuthAPI {
 			toast.success(result.message || 'เข้าสู่ระบบสำเร็จ');
 
 			return result.user;
-		} catch (error: any) {
-			const message = error.message || 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
+		} catch (error: unknown) {
+			const message =
+				error instanceof Error ? error.message : 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
 			toast.error(message);
 			throw error;
 		} finally {

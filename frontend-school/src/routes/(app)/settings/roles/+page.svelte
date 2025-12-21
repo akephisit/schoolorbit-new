@@ -112,7 +112,7 @@
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-			{#each filteredRoles as role}
+			{#each filteredRoles as role (role.id)}
 				<div class="bg-card border border-border rounded-lg p-6 hover:shadow-md transition-shadow">
 					<div class="flex items-start justify-between mb-4">
 						<div class="flex-1">
@@ -155,9 +155,9 @@
 							<p class="text-xs text-muted-foreground mb-2">สิทธิ์ที่มี:</p>
 							<div class="flex flex-wrap gap-1">
 								{#if Array.isArray(role.permissions) && role.permissions.length > 0}
-									{#each role.permissions.slice(0, 3) as permission}
+									{#each Object.keys(role.permissions).slice(0, 3) as permKey (permKey)}
 										<span class="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded">
-											{permission}
+											{permKey}
 										</span>
 									{/each}
 									{#if role.permissions.length > 3}

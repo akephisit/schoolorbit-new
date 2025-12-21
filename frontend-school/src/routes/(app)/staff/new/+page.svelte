@@ -269,7 +269,6 @@
 		errors = {};
 
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
 			const { confirmPassword, ...payloadData } = formData;
 			const payload = {
 				...payloadData,
@@ -284,6 +283,7 @@
 				// Clear draft
 				localStorage.removeItem('staff-create-draft');
 				// Redirect to profile
+
 				await goto(`/staff/${result.data.id}`, { invalidateAll: true });
 			} else {
 				errors.submit = result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
@@ -341,7 +341,9 @@
 		<!-- Progress Steps -->
 		<div class="mb-8">
 			<div class="flex items-center justify-between">
-				{#each Array(totalSteps) as _step, i (i)}
+				\u003c!-- eslint-disable-next-line @typescript-eslint/no-unused-vars --\u003e
+				{#each Array(totalSteps) as _, i (i)}
+					<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
 					{@const step = i + 1}
 					{@const Icon = getStepIcon(step)}
 					<div class="flex flex-col items-center flex-1">

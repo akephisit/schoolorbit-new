@@ -4,7 +4,7 @@
 
 	let { children } = $props();
 
-	let sidebarRef: any;
+	let sidebarRef: { toggleMobileSidebar?: () => void } | undefined;
 	let isSidebarCollapsed = $state(false);
 
 	function handleMenuClick() {

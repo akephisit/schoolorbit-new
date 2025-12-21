@@ -137,7 +137,7 @@ export interface Role {
 	description?: string;
 	category: string;
 	level: number;
-	permissions: any;
+	permissions: Record<string, unknown>;
 	is_active: boolean;
 	created_at: string;
 	updated_at: string;

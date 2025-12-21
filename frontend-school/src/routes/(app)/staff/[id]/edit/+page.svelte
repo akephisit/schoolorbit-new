@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { getStaffProfile, updateStaff, type StaffProfileResponse } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
@@ -93,7 +94,8 @@
 			if (result.success) {
 				successMessage = 'บันทึกข้อมูลสำเร็จ';
 				setTimeout(async () => {
-					await goto(`/staff/${staffId}`, { invalidateAll: true });
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					await goto(resolve(`/staff/${staffId}` as any), { invalidateAll: true });
 				}, 1500);
 			} else {
 				errors.submit = result.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล';
