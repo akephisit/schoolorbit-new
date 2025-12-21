@@ -125,13 +125,10 @@
 							? 'text-primary-foreground'
 							: 'text-muted-foreground group-hover:text-accent-foreground'}"
 					/>
-					{#if !isCollapsed}
-						<span
-							class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300
-							{isCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto'}">{item.name}</span
+					<span
+						class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
+						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span
 						>
-					{/if}
-				</a>
 			{/each}
 		</nav>
 
@@ -147,12 +144,9 @@
 					<Icon
 						class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-accent-foreground"
 					/>
-					{#if !isCollapsed}
-						<span
-							class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300
-							{isCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto'}">{item.name}</span
-						>
-					{/if}
+					<span
+						class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
+						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span
 				</a>
 			{/each}
 
@@ -163,12 +157,9 @@
 					text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
 			>
 				<LogOut class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-destructive" />
-				{#if !isCollapsed}
-					<span
-						class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300
-						{isCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto'}">ออกจากระบบ</span
-					>
-				{/if}
+				<span
+					class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
+					{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">ออกจากระบบ</span
 			</button>
 		</div>
 	</div>
