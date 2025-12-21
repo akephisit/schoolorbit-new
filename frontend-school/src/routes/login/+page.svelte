@@ -122,13 +122,13 @@
 
 				<!-- Remember & Forgot -->
 				<div class="flex items-center justify-between text-sm">
-					<label class="flex items-center gap-2 cursor-pointer">
+					<div class="flex items-center gap-2 cursor-pointer">
 						<Checkbox
 							checked={rememberMe}
 							onCheckedChange={(checked) => (rememberMe = checked ?? false)}
 						/>
 						<span class="text-muted-foreground">จดจำฉันไว้</span>
-					</label>
+					</div>
 					<Button type="button" variant="link" class="p-0 h-auto text-sm">ติดต่อผู้ดูแลระบบ</Button>
 				</div>
 

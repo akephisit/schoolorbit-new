@@ -682,7 +682,7 @@
 														: day === 'saturday'
 															? 'เสาร์'
 															: 'อาทิตย์'}
-								<label class="flex items-center gap-2">
+								<div class="flex items-center gap-2">
 									<Checkbox
 										checked={formData.staff_info.work_days.includes(day)}
 										onCheckedChange={(checked) => {
@@ -696,7 +696,7 @@
 										}}
 									/>
 									<span class="text-sm">{dayLabel}</span>
-								</label>
+								</div>
 							{/each}
 						</div>
 					</div>
@@ -866,15 +866,13 @@
 									</div>
 
 									<div>
-										<label class="flex items-center gap-2 cursor-pointer">
-											<input
-												type="checkbox"
+										<div class="flex items-center gap-2 cursor-pointer">
+											<Checkbox
 												checked={dept.is_primary}
-												onchange={() => setPrimaryDepartment(i)}
-												class="w-4 h-4 accent-primary cursor-pointer"
+												onCheckedChange={() => setPrimaryDepartment(i)}
 											/>
 											<span class="text-sm">ฝ่ายหลัก</span>
-										</label>
+										</div>
 									</div>
 								</div>
 							</div>
