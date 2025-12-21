@@ -6,6 +6,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { DatePicker } from '$lib/components/ui/date-picker';
+	import * as RadioGroup from '$lib/components/ui/radio-group';
 	
 	import {
 		User,
@@ -550,7 +553,7 @@
 
 						<div>
 							<Label>วันเกิด</Label>
-							<Input type="date" bind:value={formData.date_of_birth} />
+							<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
 						</div>
 					</div>
 
@@ -571,7 +574,7 @@
 
 					<div>
 						<Label>วันที่เริ่มงาน</Label>
-						<Input type="date" bind:value={formData.hired_date} />
+						<DatePicker bind:value={formData.hired_date} placeholder="เลือกวันที่เริ่มงาน" />
 					</div>
 				</div>
 			{:else if currentStep === 2}
@@ -654,7 +657,10 @@
 
 						<div>
 							<Label>วันหมดอายุใบประกอบวิชาชีพ</Label>
-							<Input type="date" bind:value={formData.staff_info.teaching_license_expiry} />
+							<DatePicker
+								bind:value={formData.staff_info.teaching_license_expiry}
+								placeholder="เลือกวันหมดอายุ"
+							/>
 						</div>
 					</div>
 
@@ -662,12 +668,25 @@
 						<Label>วันทำงาน</Label>
 						<div class="grid grid-cols-3 gap-2">
 							{#each ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as day}
+								{@const dayLabel =
+									day === 'monday'
+										? 'จันทร์'
+										: day === 'tuesday'
+											? 'อังคาร'
+											: day === 'wednesday'
+												? 'พุธ'
+												: day === 'thursday'
+													? 'พฤหัสบดี'
+													: day === 'friday'
+														? 'ศุกร์'
+														: day === 'saturday'
+															? 'เสาร์'
+															: 'อาทิตย์'}
 								<label class="flex items-center gap-2">
-									<input
-										type="checkbox"
+									<Checkbox
 										checked={formData.staff_info.work_days.includes(day)}
-										onchange={(e) => {
-											if (e.currentTarget.checked) {
+										onCheckedChange={(checked) => {
+											if (checked) {
 												formData.staff_info.work_days = [...formData.staff_info.work_days, day];
 											} else {
 												formData.staff_info.work_days = formData.staff_info.work_days.filter(
@@ -675,25 +694,8 @@
 												);
 											}
 										}}
-										class="w-4 h-4"
 									/>
-									<span class="text-sm">
-										{#if day === 'monday'}
-											จันทร์
-										{:else if day === 'tuesday'}
-											อังคาร
-										{:else if day === 'wednesday'}
-											พุธ
-										{:else if day === 'thursday'}
-											พฤหัสบดี
-										{:else if day === 'friday'}
-											ศุกร์
-										{:else if day === 'saturday'}
-											เสาร์
-										{:else}
-											อาทิตย์
-										{/if}
-									</span>
+									<span class="text-sm">{dayLabel}</span>
 								</label>
 							{/each}
 						</div>
@@ -864,13 +866,12 @@
 									</div>
 
 									<div>
-										<label class="flex items-center gap-2">
+										<label class="flex items-center gap-2 cursor-pointer">
 											<input
-												type="radio"
-												name="primary_dept"
+												type="checkbox"
 												checked={dept.is_primary}
 												onchange={() => setPrimaryDepartment(i)}
-												class="w-4 h-4"
+												class="w-4 h-4 accent-primary cursor-pointer"
 											/>
 											<span class="text-sm">ฝ่ายหลัก</span>
 										</label>
@@ -925,12 +926,3 @@
 		{/if}
 	</div>
 </div>
-
-<style>
-	input[type='checkbox']:checked {
-		accent-color: hsl(var(--primary));
-	}
-	input[type='radio']:checked {
-		accent-color: hsl(var(--primary));
-	}
-</style>
