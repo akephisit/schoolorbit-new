@@ -127,6 +127,16 @@ export interface UpdateStaffRequest {
 	gender?: string;
 	address?: string;
 	status?: string;
+	staff_info?: {
+		employee_id?: string;
+		employment_type?: string;
+		education_level?: string;
+		major?: string;
+		university?: string;
+		teaching_license_number?: string;
+		teaching_license_expiry?: string;
+		work_days?: string[];
+	};
 }
 
 export interface Role {
