@@ -25,21 +25,21 @@ pub async fn require_permission(
                 
                 let has_permission = match permission {
                     // Admin has all permissions
-                    _ if claims.role.as_str() == "admin" => true,
+                    _ if claims.user_type.as_str() == "admin" => true,
                     
                     // Staff management permissions
-                    "staff.view" => ["admin", "director", "secretary"].contains(&claims.role.as_str()),
-                    "staff.create" => ["admin", "director"].contains(&claims.role.as_str()),
-                    "staff.edit" => ["admin", "director"].contains(&claims.role.as_str()),
-                    "staff.delete" => ["admin", "director"].contains(&claims.role.as_str()),
+                    "staff.view" => ["admin", "director", "secretary"].contains(&claims.user_type.as_str()),
+                    "staff.create" => ["admin", "director"].contains(&claims.user_type.as_str()),
+                    "staff.edit" => ["admin", "director"].contains(&claims.user_type.as_str()),
+                    "staff.delete" => ["admin", "director"].contains(&claims.user_type.as_str()),
                     
                     // Role management permissions
-                    "roles.view" => ["admin", "director"].contains(&claims.role.as_str()),
-                    "roles.manage" => ["admin"].contains(&claims.role.as_str()),
+                    "roles.view" => ["admin", "director"].contains(&claims.user_type.as_str()),
+                    "roles.manage" => ["admin"].contains(&claims.user_type.as_str()),
                     
                     // Department management permissions
-                    "departments.view" => ["admin", "director", "dept_head"].contains(&claims.role.as_str()),
-                    "departments.manage" => ["admin", "director"].contains(&claims.role.as_str()),
+                    "departments.view" => ["admin", "director", "dept_head"].contains(&claims.user_type.as_str()),
+                    "departments.manage" => ["admin", "director"].contains(&claims.user_type.as_str()),
                     
                     _ => false,
                 };
