@@ -269,15 +269,14 @@
 		errors = {};
 
 		try {
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			const { confirmPassword, ...payloadData } = formData;
 			const payload = {
-				...formData,
+				...payloadData,
 				role_ids: formData.role_ids,
 				primary_role_id: formData.primary_role_id || formData.role_ids[0],
 				department_assignments: formData.department_assignments.filter((d) => d.department_id)
 			};
-
-			// Remove confirmPassword
-			delete (payload as any).confirmPassword;
 
 			const result = await createStaff(payload);
 
@@ -342,7 +341,7 @@
 		<!-- Progress Steps -->
 		<div class="mb-8">
 			<div class="flex items-center justify-between">
-				{#each Array(totalSteps) as _, i}
+				{#each Array(totalSteps) as _step, i (i)}
 					{@const step = i + 1}
 					{@const Icon = getStepIcon(step)}
 					<div class="flex flex-col items-center flex-1">
@@ -672,7 +671,7 @@
 					<div>
 						<Label>วันทำงาน</Label>
 						<div class="grid grid-cols-3 gap-2">
-							{#each ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as day}
+							{#each ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as day (day)}
 								{@const dayLabel =
 									day === 'monday'
 										? 'จันทร์'
@@ -725,7 +724,7 @@
 						{/if}
 
 						<div class="grid grid-cols-2 gap-3">
-							{#each roles as role}
+							{#each roles as role (role.id)}
 								<Button
 									variant="outline"
 									type="button"
@@ -775,7 +774,7 @@
 									</Select.Trigger>
 									<Select.Content>
 										<Select.Item value="">เลือกบทบาทหลัก</Select.Item>
-										{#each formData.role_ids as roleId}
+										{#each formData.role_ids as roleId (roleId)}
 											{@const role = roles.find((r) => r.id === roleId)}
 											{#if role}
 												<Select.Item value={role.id}>{role.name}</Select.Item>
@@ -803,7 +802,7 @@
 							<p class="text-sm text-destructive">{errors.departments}</p>
 						{/if}
 
-						{#each formData.department_assignments as dept, i}
+						{#each formData.department_assignments as dept, i (i)}
 							<div class="p-4 border border-border rounded-lg">
 								<div class="flex items-start justify-between mb-4">
 									<h3 class="font-medium">ฝ่ายที่ {i + 1}</h3>
@@ -834,7 +833,7 @@
 											</Select.Trigger>
 											<Select.Content>
 												<Select.Item value="">เลือกฝ่าย</Select.Item>
-												{#each departments as department}
+												{#each departments as department (department.id)}
 													<Select.Item value={department.id}>{department.name}</Select.Item>
 												{/each}
 											</Select.Content>
