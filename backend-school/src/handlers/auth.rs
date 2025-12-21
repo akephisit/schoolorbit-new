@@ -123,7 +123,7 @@ pub async fn login(
     let token = match JwtService::generate_token(
         &user.id.to_string(),
         &payload.national_id,
-        &user.role,
+        &user.user_type,
     ) {
         Ok(t) => t,
         Err(e) => {
@@ -154,7 +154,7 @@ pub async fn login(
     
     cookies.add(cookie);
 
-    println!("✅ Login successful: {} ({}) [School: {}]", user.first_name, user.role, subdomain);
+    println!("✅ Login successful: {} ({}) [School: {}]", user.first_name, user.user_type, subdomain);
 
     let response = LoginResponse {
         success: true,

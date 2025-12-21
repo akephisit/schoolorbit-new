@@ -12,7 +12,7 @@ pub struct User {
     pub password_hash: String,
     pub first_name: String,
     pub last_name: String,
-    pub role: String,
+    pub user_type: String,
     pub phone: Option<String>,
     pub date_of_birth: Option<chrono::NaiveDate>,
     pub address: Option<String>,
@@ -40,7 +40,7 @@ pub struct UserResponse {
     pub email: Option<String>,
     pub first_name: String,
     pub last_name: String,
-    pub role: String,
+    pub user_type: String,
     pub phone: Option<String>,
     pub status: String,
     pub created_at: DateTime<Utc>,
@@ -54,7 +54,7 @@ impl From<User> for UserResponse {
             email: user.email,
             first_name: user.first_name,
             last_name: user.last_name,
-            role: user.role,
+            user_type: user.user_type,
             phone: user.phone,
             status: user.status,
             created_at: user.created_at,
@@ -76,7 +76,7 @@ pub struct LoginResponse {
 pub struct Claims {
     pub sub: String,           // user_id
     pub national_id: String,
-    pub role: String,
+    pub user_type: String,
     pub exp: i64,              // Expiry timestamp
     pub iat: i64,              // Issued at timestamp
 }
