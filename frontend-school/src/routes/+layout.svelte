@@ -18,6 +18,6 @@
 </svelte:head>
 
 <!-- Sonner Toaster for global notifications -->
-<Toaster position="top-right" richColors />
+<Toaster position="bottom-right" richColors />
 
 {@render children()}
