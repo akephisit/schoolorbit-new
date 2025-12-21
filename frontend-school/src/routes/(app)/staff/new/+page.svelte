@@ -14,7 +14,6 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { DatePicker } from '$lib/components/ui/date-picker';
-	import * as RadioGroup from '$lib/components/ui/radio-group';
 
 	import {
 		User,
@@ -286,7 +285,7 @@
 				// Clear draft
 				localStorage.removeItem('staff-create-draft');
 				// Redirect to profile
-				goto(`/staff/${result.data.id}`);
+				await goto(`/staff/${result.data.id}`, { invalidateAll: true });
 			} else {
 				errors.submit = result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
 			}
