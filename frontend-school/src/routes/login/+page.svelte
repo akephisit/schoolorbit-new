@@ -33,7 +33,7 @@
 			});
 
 			// Redirect to dashboard on success
-			goto('/dashboard');
+			await goto('/dashboard', { invalidateAll: true });
 		} catch (error) {
 			// Error already shown via toast in authAPI
 			errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';

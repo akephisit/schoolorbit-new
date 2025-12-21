@@ -92,8 +92,8 @@
 
 			if (result.success) {
 				successMessage = 'บันทึกข้อมูลสำเร็จ';
-				setTimeout(() => {
-					goto(`/staff/${staffId}`);
+				setTimeout(async () => {
+					await goto(`/staff/${staffId}`, { invalidateAll: true });
 				}, 1500);
 			} else {
 				errors.submit = result.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล';

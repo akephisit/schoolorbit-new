@@ -7,7 +7,6 @@
 		User,
 		Mail,
 		Phone,
-		Calendar,
 		Briefcase,
 		GraduationCap,
 		Building2,
@@ -201,7 +200,7 @@
 					</h3>
 					{#if staff.roles.length > 0}
 						<div class="flex flex-wrap gap-2">
-							{#each staff.roles as role}
+							{#each staff.roles as role (role.role_id)}
 								<div
 									class="px-4 py-2 rounded-lg border border-border {role.is_primary
 										? 'bg-primary/10 border-primary'
@@ -236,7 +235,7 @@
 					</h3>
 					{#if staff.departments.length > 0}
 						<div class="space-y-3">
-							{#each staff.departments as dept}
+							{#each staff.departments as dept (dept.department_id)}
 								<div
 									class="px-4 py-3 rounded-lg border border-border {dept.is_primary_department
 										? 'bg-primary/5 border-primary/30'
@@ -273,7 +272,7 @@
 					</h3>
 					{#if staff.teaching_assignments.length > 0}
 						<div class="space-y-3">
-							{#each staff.teaching_assignments as assignment}
+							{#each staff.teaching_assignments as assignment (assignment.id)}
 								<div class="px-4 py-3 rounded-lg bg-muted/50 border border-border">
 									<div class="flex items-start justify-between">
 										<div>
