@@ -18,7 +18,7 @@
 		ArrowLeft,
 		ArrowRight,
 		Check,
-		Loader2
+		LoaderCircle
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
@@ -707,7 +707,7 @@
 
 				{#if loadingRoles}
 					<div class="flex justify-center py-8">
-						<Loader2 class="w-8 h-8 animate-spin text-muted-foreground" />
+						<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
 					</div>
 				{:else}
 					<div class="space-y-4">
@@ -788,7 +788,7 @@
 
 				{#if loadingDepartments}
 					<div class="flex justify-center py-8">
-						<Loader2 class="w-8 h-8 animate-spin text-muted-foreground" />
+						<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
 					</div>
 				{:else}
 					<div class="space-y-4">
@@ -910,7 +910,7 @@
 			{:else}
 				<Button type="button" onclick={handleSubmit} disabled={loading} class="min-w-[120px]">
 					{#if loading}
-						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+						<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />
 						กำลังบันทึก...
 					{:else}
 						<Check class="w-4 h-4 mr-2" />

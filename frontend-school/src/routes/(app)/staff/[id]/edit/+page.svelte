@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import {
 		getStaffProfile,
 		updateStaff,
@@ -10,10 +10,10 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { ArrowLeft, Loader2, Save } from 'lucide-svelte';
+	import { ArrowLeft, LoaderCircle, Save } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
-	const staffId = $derived($page.params.id);
+	const staffId = $derived(page.params.id);
 
 	// Loading states
 	let loadingProfile = $state(true);
@@ -165,7 +165,7 @@
 	<div class="container max-w-4xl mx-auto px-4 py-8">
 		{#if loadingProfile}
 			<div class="bg-card border border-border rounded-lg p-12 text-center">
-				<Loader2 class="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
+				<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
 				<p class="text-muted-foreground">กำลังโหลดข้อมูล...</p>
 			</div>
 		{:else if errors.load}
@@ -305,7 +305,7 @@
 
 					<Button type="submit" disabled={saving}>
 						{#if saving}
-							<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+							<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />
 							กำลังบันทึก...
 						{:else}
 							<Save class="w-4 h-4 mr-2" />

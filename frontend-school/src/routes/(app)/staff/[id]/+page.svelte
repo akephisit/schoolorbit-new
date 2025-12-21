@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { getStaffProfile, type StaffProfileResponse } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -20,7 +20,7 @@
 	let loading = $state(true);
 	let error = $state('');
 
-	const staffId = $derived($page.params.id);
+	const staffId = $derived(page.params.id);
 
 	async function loadStaffProfile() {
 		if (!staffId) return;
