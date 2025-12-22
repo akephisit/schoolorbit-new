@@ -224,7 +224,7 @@
 						text-muted-foreground hover:bg-accent hover:text-accent-foreground group"
 				>
 					<Icon
-						class="absolute left-5 w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
+						class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
 					/>
 					<span
 						class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
@@ -241,7 +241,7 @@
 					text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
 			>
 				<LogOut
-					class="absolute left-5 w-5 h-5 text-muted-foreground group-hover:text-destructive"
+					class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-destructive"
 				/>
 				<span
 					class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
