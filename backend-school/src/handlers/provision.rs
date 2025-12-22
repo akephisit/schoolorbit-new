@@ -138,13 +138,14 @@ pub async fn provision_tenant(
     println!("🔑 Assigning admin role to user...");
     match sqlx::query(
         r#"
-        INSERT INTO user_roles (user_id, role_id)
-        VALUES ($1, $2)
-        ON CONFLICT (user_id, role_id) DO NOTHING
+        INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
+        VALUES ($1, $2, $3, CURRENT_DATE)
+        ON CONFLICT (user_id, role_id, started_at) DO NOTHING
         "#
     )
     .bind(user_id)
     .bind(admin_role_id)
+    .bind(true) // is_primary = true for admin role
     .execute(&pool)
     .await
     {
