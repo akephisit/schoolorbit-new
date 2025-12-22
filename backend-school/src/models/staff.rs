@@ -81,7 +81,7 @@ pub struct Role {
     pub description: Option<String>,
     pub category: String,
     pub level: i32,
-    pub permissions: serde_json::Value,
+    pub permissions: Vec<String>, // Changed from serde_json::Value to Vec<String>
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -562,8 +562,8 @@ impl UserPermissions for User {
     
     async fn get_permissions(&self, pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
         // Get all permissions from user's roles
-        let rows: Vec<(serde_json::Value,)> = sqlx::query_as(
-            "SELECT DISTINCT r.permissions
+        let rows: Vec<(Vec<String>,)> = sqlx::query_as(
+            "SELECT r.permissions
              FROM user_roles ur
              JOIN roles r ON ur.role_id = r.id
              WHERE ur.user_id = $1 
@@ -574,16 +574,12 @@ impl UserPermissions for User {
         .fetch_all(pool)
         .await?;
         
-        // Flatten permission arrays into single vec
+        // Flatten permission arrays into single vec (deduplicated)
         let mut permissions = Vec::new();
-        for (perms_json,) in rows {
-            if let Some(perms_array) = perms_json.as_array() {
-                for perm in perms_array {
-                    if let Some(perm_str) = perm.as_str() {
-                        if !permissions.contains(&perm_str.to_string()) {
-                            permissions.push(perm_str.to_string());
-                        }
-                    }
+        for (perms,) in rows {
+            for perm in perms {
+                if !permissions.contains(&perm) {
+                    permissions.push(perm);
                 }
             }
         }

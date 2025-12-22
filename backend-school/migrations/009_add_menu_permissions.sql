@@ -1,6 +1,7 @@
 -- Add new permissions for menu access
 -- Migration: Add dashboard, subjects, classes, calendar, settings permissions
 -- Date: 2025-12-22
+-- Note: This runs BEFORE migration 010 (still JSONB), so use JSONB functions
 
 -- Insert new permissions
 INSERT INTO permissions (code, name, module, action, description) VALUES
@@ -11,11 +12,8 @@ INSERT INTO permissions (code, name, module, action, description) VALUES
   ('settings.view', 'View Settings', 'settings', 'view', 'Access system settings')
 ON CONFLICT (code) DO NOTHING;
 
--- Update ADMIN role to include all new permissions (already has * wildcard, so skip)
--- Admin role permissions should already contain "*"
-
 -- Helper function to add permissions to JSONB array (if not exists)
-CREATE OR REPLACE FUNCTION add_permissions_to_role(
+CREATE OR REPLACE FUNCTION add_permissions_to_role_jsonb(
     role_code VARCHAR,
     new_perms TEXT[]
 ) RETURNS VOID AS $$
@@ -27,6 +25,11 @@ BEGIN
     -- Get current permissions
     SELECT permissions INTO current_perms
     FROM roles WHERE code = role_code;
+    
+    -- Skip if role not found
+    IF current_perms IS NULL THEN
+        RETURN;
+    END IF;
     
     -- Convert JSONB to text array
     SELECT ARRAY(SELECT jsonb_array_elements_text(current_perms))
@@ -46,8 +49,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Update DIRECTOR role - full access except some admin functions
-SELECT add_permissions_to_role('DIRECTOR', ARRAY[
+-- Update roles with new permissions
+SELECT add_permissions_to_role_jsonb('DIRECTOR', ARRAY[
     'dashboard.view',
     'subjects.view', 
     'classes.view',
@@ -55,31 +58,28 @@ SELECT add_permissions_to_role('DIRECTOR', ARRAY[
     'settings.view'
 ]);
 
--- Update DEPT_HEAD role - department level access
-SELECT add_permissions_to_role('DEPT_HEAD', ARRAY[
+SELECT add_permissions_to_role_jsonb('DEPT_HEAD', ARRAY[
     'dashboard.view',
     'subjects.view',
     'classes.view', 
     'calendar.view'
 ]);
 
--- Update TEACHER role - classroom level access  
-SELECT add_permissions_to_role('TEACHER', ARRAY[
+SELECT add_permissions_to_role_jsonb('TEACHER', ARRAY[
     'dashboard.view',
     'subjects.view',
     'classes.view',
     'calendar.view'
 ]);
 
--- Update SECRETARY role - administrative support
-SELECT add_permissions_to_role('SECRETARY', ARRAY[
+SELECT add_permissions_to_role_jsonb('SECRETARY', ARRAY[
     'dashboard.view',
     'calendar.view',
     'settings.view'
 ]);
 
 -- Drop helper function
-DROP FUNCTION IF EXISTS add_permissions_to_role(VARCHAR, TEXT[]);
+DROP FUNCTION IF EXISTS add_permissions_to_role_jsonb(VARCHAR, TEXT[]);
 
 -- Verify the changes
 SELECT 
