@@ -175,9 +175,18 @@
 
 				<!-- Admin Section -->
 				{#if adminMenus.length > 0}
-					<div class="pt-4">
+					<div class="pt-4 relative">
+						<!-- Divider - shown when collapsed -->
 						<div
-							class="px-3 py-2 overflow-hidden transition-opacity duration-300 {isCollapsed
+							class="px-3 py-2 transition-opacity duration-300 {isCollapsed
+								? 'opacity-100'
+								: 'opacity-0'}"
+						>
+							<div class="border-t border-border"></div>
+						</div>
+						<!-- Text - shown when expanded -->
+						<div
+							class="absolute inset-0 pt-4 px-3 py-2 overflow-hidden transition-opacity duration-300 {isCollapsed
 								? 'opacity-0'
 								: 'opacity-100'}"
 						>
@@ -187,6 +196,7 @@
 								ผู้ดูแลระบบ
 							</p>
 						</div>
+					</div>
 
 						{#each adminMenus as item (item.href)}
 							{@const { Icon } = renderMenuItem(item, isActive(item.href))}
@@ -210,7 +220,6 @@
 								>
 							</a>
 						{/each}
-					</div>
 				{/if}
 			{/if}
 		</nav>
