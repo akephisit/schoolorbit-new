@@ -156,6 +156,7 @@
 						href={resolve(item.href as any)}
 						onclick={handleNavClick}
 						class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group
+							{isCollapsed ? 'justify-center' : ''}
 							{isActive(item.href)
 							? 'bg-primary text-primary-foreground'
 							: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
@@ -191,6 +192,7 @@
 								href={resolve(item.href as any)}
 								onclick={handleNavClick}
 								class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group
+									{isCollapsed ? 'justify-center' : ''}
 									{isActive(item.href)
 									? 'bg-purple-500 text-white'
 									: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
@@ -219,6 +221,7 @@
 				<a
 					href={resolve(item.href as any)}
 					class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
+						{isCollapsed ? 'justify-center' : ''}
 						text-muted-foreground hover:bg-accent hover:text-accent-foreground group"
 				>
 					<Icon
