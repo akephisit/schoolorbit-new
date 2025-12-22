@@ -89,13 +89,11 @@
 			{#if !isCollapsed}
 				<!-- Expanded State - Icon box absolute positioned -->
 				<div
-					class="absolute w-10 h-10 bg-primary rounded-lg flex items-center justify-center transition-none {isCollapsed
-						? 'left-5'
-						: 'left-6'}"
+					class="absolute left-5 w-10 h-10 bg-primary rounded-lg flex items-center justify-center"
 				>
 					<GraduationCap class="w-6 h-6 text-primary-foreground" />
 				</div>
-				<div class="ml-16 min-w-0 flex-1">
+				<div class="ml-[60px] min-w-0 flex-1">
 					<h2 class="font-bold text-foreground text-lg whitespace-nowrap">SchoolOrbit</h2>
 					<p class="text-xs text-muted-foreground whitespace-nowrap">ระบบจัดการโรงเรียน</p>
 				</div>
@@ -112,9 +110,7 @@
 				<!-- Collapsed State - Icon box absolute positioned (same position) -->
 				<button
 					onclick={toggleSidebar}
-					class="hidden lg:block absolute w-10 h-10 bg-primary rounded-lg hover:bg-primary/90 p-0 border-0 transition-colors {isCollapsed
-						? 'left-5'
-						: 'left-6'}"
+					class="hidden lg:block absolute left-5 w-10 h-10 bg-primary rounded-lg hover:bg-primary/90 p-0 border-0 transition-colors"
 					aria-label="Expand Sidebar"
 				>
 					<div class="w-full h-full flex items-center justify-center relative group/icon">
