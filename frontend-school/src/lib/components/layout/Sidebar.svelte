@@ -93,7 +93,11 @@
 				>
 					<GraduationCap class="w-6 h-6 text-primary-foreground" />
 				</div>
-				<div class="ml-[60px] min-w-0 flex-1">
+				<div
+					class="ml-[60px] min-w-0 flex-1 transition-opacity duration-300 {isCollapsed
+						? 'opacity-0'
+						: 'opacity-100'}"
+				>
 					<h2 class="font-bold text-foreground text-lg whitespace-nowrap">SchoolOrbit</h2>
 					<p class="text-xs text-muted-foreground whitespace-nowrap">ระบบจัดการโรงเรียน</p>
 				</div>
