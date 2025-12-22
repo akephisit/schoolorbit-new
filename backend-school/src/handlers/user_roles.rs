@@ -307,8 +307,8 @@ pub async fn get_user_permissions(
     };
 
     // Get all permissions from user's roles
-    let rows: Vec<(serde_json::Value,)> = match sqlx::query_as(
-        "SELECT DISTINCT r.permissions
+    let rows: Vec<(Vec<String>,)> = match sqlx::query_as(
+        "SELECT r.permissions
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
          WHERE ur.user_id = $1 
@@ -333,16 +333,12 @@ pub async fn get_user_permissions(
         }
     };
 
-    // Flatten permission arrays
+    // Flatten permission arrays (deduplicated)
     let mut permissions = Vec::new();
-    for (perms_json,) in rows {
-        if let Some(perms_array) = perms_json.as_array() {
-            for perm in perms_array {
-                if let Some(perm_str) = perm.as_str() {
-                    if !permissions.contains(&perm_str.to_string()) {
-                        permissions.push(perm_str.to_string());
-                    }
-                }
+    for (perms,) in rows {
+        for perm in perms {
+            if !permissions.contains(&perm) {
+                permissions.push(perm);
             }
         }
     }
