@@ -5,14 +5,27 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { GraduationCap, ArrowLeft } from 'lucide-svelte';
 	import { authAPI } from '$lib/api/auth';
+	import { authStore } from '$lib/stores/auth';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { onMount } from 'svelte';
 
 	let nationalId = $state('');
 	let password = $state('');
 	let rememberMe = $state(false);
 	let isLoading = $state(false);
 	let errorMessage = $state('');
+	let isCheckingAuth = $state(true);
+
+	// Check if user is already authenticated
+	onMount(async () => {
+		const isAuthenticated = await authAPI.checkAuth();
+		if (isAuthenticated) {
+			// Already logged in, redirect to dashboard
+			await goto(resolve('/dashboard'), { replaceState: true });
+		}
+		isCheckingAuth = false;
+	});
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
@@ -65,87 +78,103 @@
 </svelte:head>
 
 <div class="min-h-screen bg-background flex items-center justify-center p-4">
-	<div class="w-full max-w-md">
-		<!-- Back Button -->
-		<Button variant="ghost" onclick={goBack} class="mb-6">
-			<ArrowLeft class="w-4 h-4 mr-2" />
-			กลับหน้าหลัก
-		</Button>
-
-		<!-- Card -->
-		<div class="bg-card border rounded-lg shadow-sm p-8">
-			<!-- Logo & Title -->
-			<div class="text-center mb-8">
-				<div class="w-16 h-16 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4">
-					<GraduationCap class="w-8 h-8 text-primary-foreground" />
-				</div>
-				<h1 class="text-2xl font-bold text-foreground mb-2">เข้าสู่ระบบ</h1>
-				<p class="text-sm text-muted-foreground">SchoolOrbit - ระบบบริหารจัดการโรงเรียน</p>
+	{#if isCheckingAuth}
+		<!-- Loading state while checking auth -->
+		<div class="text-center">
+			<div
+				class="w-16 h-16 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4 animate-pulse"
+			>
+				<GraduationCap class="w-8 h-8 text-primary-foreground" />
 			</div>
+			<p class="text-muted-foreground">กำลังตรวจสอบ...</p>
+		</div>
+	{:else}
+		<div class="w-full max-w-md">
+			<!-- Back Button -->
+			<Button variant="ghost" onclick={goBack} class="mb-6">
+				<ArrowLeft class="w-4 h-4 mr-2" />
+				กลับหน้าหลัก
+			</Button>
 
-			<!-- Error Message -->
-			{#if errorMessage}
-				<div class="mb-6 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-					<p class="text-sm text-destructive text-center">{errorMessage}</p>
-				</div>
-			{/if}
-
-			<!-- Login Form -->
-			<form onsubmit={handleSubmit} class="space-y-6">
-				<!-- National ID Input -->
-				<div class="space-y-2">
-					<Label for="nationalId">เลขบัตรประชาชน</Label>
-					<Input
-						type="text"
-						id="nationalId"
-						bind:value={nationalId}
-						oninput={handleNationalIdInput}
-						placeholder="1234567890123"
-						maxlength={13}
-						autocomplete="off"
-						required
-					/>
-					<p class="text-xs text-muted-foreground">กรอกเลขบัตรประชาชน 13 หลัก</p>
-				</div>
-
-				<!-- Password Input -->
-				<div class="space-y-2">
-					<Label for="password">รหัสผ่าน</Label>
-					<Input
-						type="password"
-						id="password"
-						bind:value={password}
-						placeholder="••••••••"
-						autocomplete="current-password"
-						required
-					/>
-				</div>
-
-				<!-- Remember & Forgot -->
-				<div class="flex items-center justify-between text-sm">
-					<div class="flex items-center gap-2 cursor-pointer">
-						<Checkbox
-							checked={rememberMe}
-							onCheckedChange={(checked) => (rememberMe = checked ?? false)}
-						/>
-						<span class="text-muted-foreground">จดจำฉันไว้</span>
+			<!-- Card -->
+			<div class="bg-card border rounded-lg shadow-sm p-8">
+				<!-- Logo & Title -->
+				<div class="text-center mb-8">
+					<div
+						class="w-16 h-16 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4"
+					>
+						<GraduationCap class="w-8 h-8 text-primary-foreground" />
 					</div>
-					<Button type="button" variant="link" class="p-0 h-auto text-sm">ติดต่อผู้ดูแลระบบ</Button>
+					<h1 class="text-2xl font-bold text-foreground mb-2">เข้าสู่ระบบ</h1>
+					<p class="text-sm text-muted-foreground">SchoolOrbit - ระบบบริหารจัดการโรงเรียน</p>
 				</div>
 
-				<!-- Submit Button -->
-				<Button type="submit" class="w-full" disabled={isLoading}>
-					{isLoading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
-				</Button>
-			</form>
+				<!-- Error Message -->
+				{#if errorMessage}
+					<div class="mb-6 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+						<p class="text-sm text-destructive text-center">{errorMessage}</p>
+					</div>
+				{/if}
 
-			<!-- Info Section -->
-			<div class="mt-6 pt-6 border-t border-border">
-				<div class="text-center space-y-2">
-					<p class="text-sm text-muted-foreground">ไม่มีการลงทะเบียนด้วยตนเอง</p>
-					<p class="text-xs text-muted-foreground">บัญชีผู้ใช้จะถูกสร้างโดยผู้ดูแลระบบเท่านั้น</p>
+				<!-- Login Form -->
+				<form onsubmit={handleSubmit} class="space-y-6">
+					<!-- National ID Input -->
+					<div class="space-y-2">
+						<Label for="nationalId">เลขบัตรประชาชน</Label>
+						<Input
+							type="text"
+							id="nationalId"
+							bind:value={nationalId}
+							oninput={handleNationalIdInput}
+							placeholder="1234567890123"
+							maxlength={13}
+							autocomplete="off"
+							required
+						/>
+						<p class="text-xs text-muted-foreground">กรอกเลขบัตรประชาชน 13 หลัก</p>
+					</div>
+
+					<!-- Password Input -->
+					<div class="space-y-2">
+						<Label for="password">รหัสผ่าน</Label>
+						<Input
+							type="password"
+							id="password"
+							bind:value={password}
+							placeholder="••••••••"
+							autocomplete="current-password"
+							required
+						/>
+					</div>
+
+					<!-- Remember & Forgot -->
+					<div class="flex items-center justify-between text-sm">
+						<div class="flex items-center gap-2 cursor-pointer">
+							<Checkbox
+								checked={rememberMe}
+								onCheckedChange={(checked) => (rememberMe = checked ?? false)}
+							/>
+							<span class="text-muted-foreground">จดจำฉันไว้</span>
+						</div>
+						<Button type="button" variant="link" class="p-0 h-auto text-sm"
+							>ติดต่อผู้ดูแลระบบ</Button
+						>
+					</div>
+
+					<!-- Submit Button -->
+					<Button type="submit" class="w-full" disabled={isLoading}>
+						{isLoading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
+					</Button>
+				</form>
+
+				<!-- Info Section -->
+				<div class="mt-6 pt-6 border-t border-border">
+					<div class="text-center space-y-2">
+						<p class="text-sm text-muted-foreground">ไม่มีการลงทะเบียนด้วยตนเอง</p>
+						<p class="text-xs text-muted-foreground">บัญชีผู้ใช้จะถูกสร้างโดยผู้ดูแลระบบเท่านั้น</p>
+					</div>
 				</div>
 			</div>
 		</div>
-	</div>
+	{/if}
 </div>
