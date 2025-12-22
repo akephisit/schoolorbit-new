@@ -85,44 +85,41 @@
 >
 	<div class="flex flex-col h-full">
 		<!-- Header -->
-		<div class="h-16 border-b border-border flex items-center px-6 relative group">
+		<div class="h-16 border-b border-border flex items-center px-6 relative">
 			{#if !isCollapsed}
 				<!-- Expanded State -->
-				<div class="flex items-center gap-3 flex-1">
-					<div
-						class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0"
-					>
-						<GraduationCap class="w-6 h-6 text-primary-foreground" />
-					</div>
-					<div class="min-w-0 flex-1">
-						<h2 class="font-bold text-foreground text-lg">SchoolOrbit</h2>
-						<p class="text-xs text-muted-foreground">ระบบจัดการโรงเรียน</p>
-					</div>
+				<!-- Expanded State - Icon stays in same position -->
+				<div class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+					<GraduationCap class="w-6 h-6 text-primary-foreground" />
+				</div>
+				<div class="ml-3 min-w-0 flex-1">
+					<h2 class="font-bold text-foreground text-lg whitespace-nowrap">SchoolOrbit</h2>
+					<p class="text-xs text-muted-foreground whitespace-nowrap">ระบบจัดการโรงเรียน</p>
 				</div>
 
 				<!-- Toggle Button - Always visible when expanded -->
 				<button
 					onclick={toggleSidebar}
-					class="hidden lg:flex w-6 h-6 items-center justify-center rounded hover:bg-accent transition-colors flex-shrink-0"
+					class="hidden lg:flex w-6 h-6 items-center justify-center rounded hover:bg-accent transition-colors flex-shrink-0 ml-auto"
 					aria-label="Toggle Sidebar"
 				>
 					<ChevronLeft class="w-4 h-4 text-muted-foreground" />
 				</button>
 			{:else}
-				<!-- Collapsed State -->
-				<div class="w-full flex items-center justify-center">
-					<div class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-						<GraduationCap class="w-6 h-6 text-primary-foreground" />
-					</div>
-				</div>
-
-				<!-- Toggle Button - Only visible on hover when collapsed -->
+				<!-- Collapsed State - Icon transforms to arrow on hover -->
 				<button
 					onclick={toggleSidebar}
-					class="hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 items-center justify-center rounded hover:bg-accent transition-all opacity-0 group-hover:opacity-100"
-					aria-label="Toggle Sidebar"
+					class="hidden lg:flex w-10 h-10 bg-primary rounded-lg items-center justify-center mx-auto hover:bg-primary/90 transition-colors group/icon relative"
+					aria-label="Expand Sidebar"
 				>
-					<ChevronLeft class="w-4 h-4 text-muted-foreground rotate-180" />
+					<!-- Icon - visible by default -->
+					<GraduationCap
+						class="w-6 h-6 text-primary-foreground absolute transition-all duration-200 group-hover/icon:opacity-0 group-hover/icon:scale-75"
+					/>
+					<!-- Arrow - visible on hover -->
+					<ChevronLeft
+						class="w-5 h-5 text-primary-foreground absolute transition-all duration-200 opacity-0 scale-75 rotate-180 group-hover/icon:opacity-100 group-hover/icon:scale-100"
+					/>
 				</button>
 			{/if}
 		</div>
