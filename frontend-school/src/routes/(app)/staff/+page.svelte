@@ -3,10 +3,21 @@
 	import { listStaff, deleteStaff, type StaffListItem } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import {
+		Dialog,
+		DialogContent,
+		DialogDescription,
+		DialogFooter,
+		DialogHeader,
+		DialogTitle
+	} from '$lib/components/ui/dialog';
 	import { Users, Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
 
 	let staffList: StaffListItem[] = $state([]);
 	let loading = $state(true);
+	let deleting = $state(false);
+	let showDeleteDialog = $state(false);
+	let staffToDelete: StaffListItem | null = $state(null);
 	let error = $state('');
 	let searchQuery = $state('');
 	let currentPage = $state(1);
@@ -34,14 +45,25 @@
 		}
 	}
 
-	async function handleDelete(id: string) {
-		if (!confirm('คุณแน่ใจหรือไม่ที่จะลบบุคลากรนี้?')) return;
+	function openDeleteDialog(staff: StaffListItem) {
+		staffToDelete = staff;
+		showDeleteDialog = true;
+	}
 
+	async function confirmDelete() {
+		if (!staffToDelete) return;
+
+		deleting = true;
 		try {
-			await deleteStaff(id);
+			await deleteStaff(staffToDelete.id);
+			showDeleteDialog = false;
+			staffToDelete = null;
 			await loadStaff();
 		} catch (e) {
 			alert('ไม่สามารถลบบุคลากรได้: ' + (e instanceof Error ? e.message : ''));
+			showDeleteDialog = false;
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -187,8 +209,8 @@
 								<Button href="/staff/{staff.id}/edit" variant="ghost" size="sm">
 									<Pencil class="w-4 h-4" />
 								</Button>
-								<Button onclick={() => handleDelete(staff.id)} variant="ghost" size="sm">
-									<Trash2 class="w-4 h-4 text-destructive" />
+								<Button onclick={() => openDeleteDialog(staff)} variant="ghost" size="sm">
+									<Trash2 class="h-4 w-4" />
 								</Button>
 							</div>
 						</div>
@@ -236,3 +258,30 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Delete Confirmation Dialog -->
+<Dialog bind:open={showDeleteDialog}>
+	<DialogContent>
+		<DialogHeader>
+			<DialogTitle>ยืนยันการลบบุคลากร</DialogTitle>
+			<DialogDescription>
+				คุณแน่ใจหรือไม่ว่าต้องการลบบุคลากร
+				{#if staffToDelete}
+					<strong>
+						{staffToDelete.first_name}
+						{staffToDelete.last_name}
+					</strong>
+				{/if}? การกระทำนี้จะทำให้บุคลากรถูกปิดการใช้งาน
+			</DialogDescription>
+		</DialogHeader>
+		<DialogFooter>
+			<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
+				ยกเลิก
+			</Button>
+			<Button variant="destructive" onclick={confirmDelete} disabled={deleting} class="gap-2">
+				<Trash2 class="h-4 w-4" />
+				{deleting ? 'กำลังลบ...' : 'ลบบุคลากร'}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
