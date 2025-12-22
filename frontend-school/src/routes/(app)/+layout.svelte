@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import Header from '$lib/components/layout/Header.svelte';
+	import { onMount } from 'svelte';
+	import { authAPI } from '$lib/api/auth';
 
 	let { children } = $props();
 
@@ -12,6 +14,11 @@
 			sidebarRef.toggleMobileSidebar();
 		}
 	}
+
+	// Check authentication for protected routes
+	onMount(async () => {
+		await authAPI.checkAuth();
+	});
 </script>
 
 <div class="h-screen flex flex-col bg-background overflow-hidden">
