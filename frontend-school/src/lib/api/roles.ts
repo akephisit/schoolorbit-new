@@ -46,7 +46,7 @@ export interface PermissionsByModule {
 export const roleAPI = {
 	// List all roles
 	async listRoles(): Promise<ApiResponse<Role[]>> {
-		return apiClient.get('/roles');
+		return apiClient.get('/api/roles');
 	},
 
 	// Get single role
@@ -64,7 +64,7 @@ export const roleAPI = {
 		level?: number;
 		permissions?: string[];
 	}): Promise<ApiResponse<{ id: string }>> {
-		return apiClient.post('/roles', data);
+		return apiClient.post('/api/roles', data);
 	},
 
 	// Update role
@@ -93,7 +93,7 @@ export const roleAPI = {
 export const permissionAPI = {
 	// List all permissions
 	async listPermissions(): Promise<ApiResponse<Permission[]>> {
-		return apiClient.get('/permissions');
+		return apiClient.get('/api/permissions');
 	},
 
 	// List permissions grouped by module
