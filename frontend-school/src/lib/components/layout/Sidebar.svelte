@@ -160,7 +160,7 @@
 							? 'bg-primary text-primary-foreground'
 							: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 					>
-						<Icon class="absolute left-[30px] w-5 h-5 {isActive(item.href)
+						<Icon class="absolute left-5 w-5 h-5 {isActive(item.href)
 								? 'text-primary-foreground'
 								: 'text-muted-foreground group-hover:text-accent-foreground'}"
 						/>
@@ -193,7 +193,7 @@
 									? 'bg-purple-500 text-white'
 									: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
 							>
-								<Icon class="absolute left-[30px] w-5 h-5 {isActive(item.href)
+								<Icon class="absolute left-5 w-5 h-5 {isActive(item.href)
 										? 'text-white'
 										: 'text-muted-foreground group-hover:text-purple-700'}"
 								/>
@@ -218,7 +218,7 @@
 						{isCollapsed ? 'justify-center' : ''}
 						text-muted-foreground hover:bg-accent hover:text-accent-foreground group"
 				>
-					<Icon class="absolute left-[30px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
+					<Icon class="absolute left-5 w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
 					/>
 					<span
 						class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed ? 'opacity-0' : 'opacity-100'}">{item.name}</span
