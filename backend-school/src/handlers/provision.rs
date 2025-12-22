@@ -59,32 +59,26 @@ pub async fn provision_tenant(
         }
     }
 
-    // Create admin role first
-    println!("👤 Creating admin role...");
+    // Get admin role (created by migration)
+    println!("🔍 Getting admin role...");
     
-    let admin_role_id = match sqlx::query_scalar::<_, i32>(
+    let admin_role_id = match sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
-        INSERT INTO roles (name, description, permissions)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-        RETURNING id
+        SELECT id FROM roles WHERE code = 'ADMIN'
         "#
     )
-    .bind("ผู้ดูแลระบบ")
-    .bind("ผู้ดูแลระบบมีสิทธิ์เข้าถึงทุกฟังก์ชัน")
-    .bind(Vec::<String>::new()) // Empty permissions array, will have full access
     .fetch_one(&pool)
     .await
     {
         Ok(id) => {
-            println!("✅ Admin role created with ID: {}", id);
+            println!("✅ Admin role found with ID: {}", id);
             id
         }
         Err(e) => {
-            eprintln!("❌ Failed to create admin role: {}", e);
+            eprintln!("❌ Failed to find admin role: {}", e);
             let error = serde_json::json!({
                 "success": false,
-                "error": format!("Failed to create admin role: {}", e)
+                "error": format!("Failed to find admin role (migrations may not have run): {}", e)
             });
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
         }
@@ -107,7 +101,7 @@ pub async fn provision_tenant(
     };
 
     // Insert admin user into the database using user_type instead of role
-    let user_id = match sqlx::query_scalar::<_, i32>(
+    let user_id = match sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
         INSERT INTO users (national_id, password_hash, first_name, last_name, user_type, status)
         VALUES ($1, $2, $3, $4, $5, $6)
