@@ -575,62 +575,129 @@ pub async fn create_staff(
         }
     };
 
-    // Create user
-    let user_id: Uuid = match sqlx::query_scalar(
-        "INSERT INTO users (
-            national_id, email, password_hash, title, first_name, last_name, nickname,
-            phone, emergency_contact, line_id, date_of_birth, gender, address,
-            user_type, hired_date, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'staff', $14, 'active')
-        RETURNING id",
+    // Check if user already exists (might be inactive)
+    let existing_user: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, status FROM users WHERE national_id = $1"
     )
     .bind(&payload.national_id)
-    .bind(&payload.email)
-    .bind(&password_hash)
-    .bind(&payload.title)
-    .bind(&payload.first_name)
-    .bind(&payload.last_name)
-    .bind(&payload.nickname)
-    .bind(&payload.phone)
-    .bind(&payload.emergency_contact)
-    .bind(&payload.line_id)
-    .bind(&payload.date_of_birth)
-    .bind(&payload.gender)
-    .bind(&payload.address)
-    .bind(&payload.hired_date)
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            eprintln!("❌ Failed to create user: {}", e);
-            let _ = tx.rollback().await;
+    .ok()
+    .flatten();
+
+    let user_id: Uuid = if let Some((existing_id, status)) = existing_user {
+        if status == "inactive" {
+            // Reactivate existing user
+            println!("♻️  Reactivating inactive user: {}", existing_id);
             
-            // More detailed error message
-            let error_msg = if e.to_string().contains("unique constraint") {
-                if e.to_string().contains("national_id") {
-                    "เลขบัตรประชาชนนี้มีในระบบแล้ว"
-                } else if e.to_string().contains("email") {
-                    "อีเมลนี้มีในระบบแล้ว"
-                } else {
-                    "ข้อมูลซ้ำในระบบ กรุณาตรวจสอบเลขบัตรประชาชนหรืออีเมล"
+            match sqlx::query(
+                "UPDATE users SET 
+                    email = $1, password_hash = $2, title = $3, first_name = $4, last_name = $5, 
+                    nickname = $6, phone = $7, emergency_contact = $8, line_id = $9, 
+                    date_of_birth = $10, gender = $11, address = $12, hired_date = $13,
+                    status = 'active', updated_at = NOW()
+                WHERE id = $14"
+            )
+            .bind(&payload.email)
+            .bind(&password_hash)
+            .bind(&payload.title)
+            .bind(&payload.first_name)
+            .bind(&payload.last_name)
+            .bind(&payload.nickname)
+            .bind(&payload.phone)
+            .bind(&payload.emergency_contact)
+            .bind(&payload.line_id)
+            .bind(&payload.date_of_birth)
+            .bind(&payload.gender)
+            .bind(&payload.address)
+            .bind(&payload.hired_date)
+            .bind(existing_id)
+            .execute(&mut *tx)
+            .await
+            {
+                Ok(_) => existing_id,
+                Err(e) => {
+                    eprintln!("❌ Failed to reactivate user: {}", e);
+                    let _ = tx.rollback().await;
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "success": false,
+                            "error": "ไม่สามารถเปิดใช้งานบุคลากรได้"
+                        })),
+                    )
+                        .into_response();
                 }
-            } else if e.to_string().contains("null value") {
-                &format!("ข้อมูลบังคับกรอกไม่ครบ: {}", e)
-            } else {
-                &format!("ไม่สามารถสร้างผู้ใช้งานได้: {}", e)
-            };
-            
+            }
+        } else {
+            // User exists and is active - duplicate!
+            let _ = tx.rollback().await;
             return (
-                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::CONFLICT,
                 Json(json!({
                     "success": false,
-                    "error": error_msg
+                    "error": "เลขบัตรประชาชนนี้มีในระบบแล้ว"
                 })),
             )
                 .into_response();
         }
+    } else {
+        // Create new user
+        match sqlx::query_scalar(
+            "INSERT INTO users (
+                national_id, email, password_hash, title, first_name, last_name, nickname,
+                phone, emergency_contact, line_id, date_of_birth, gender, address,
+                user_type, hired_date, status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'staff', $14, 'active')
+            RETURNING id",
+        )
+        .bind(&payload.national_id)
+        .bind(&payload.email)
+        .bind(&password_hash)
+        .bind(&payload.title)
+        .bind(&payload.first_name)
+        .bind(&payload.last_name)
+        .bind(&payload.nickname)
+        .bind(&payload.phone)
+        .bind(&payload.emergency_contact)
+        .bind(&payload.line_id)
+        .bind(&payload.date_of_birth)
+        .bind(&payload.gender)
+        .bind(&payload.address)
+        .bind(&payload.hired_date)
+        .fetch_one(&mut *tx)
+        .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("❌ Failed to create user: {}", e);
+                let _ = tx.rollback().await;
+                
+                // More detailed error message
+                let error_msg = if e.to_string().contains("unique constraint") {
+                    if e.to_string().contains("email") {
+                        "อีเมลนี้มีในระบบแล้ว"
+                    } else {
+                        "ข้อมูลซ้ำในระบบ กรุณาตรวจสอบข้อมูล"
+                    }
+                } else if e.to_string().contains("null value") {
+                    &format!("ข้อมูลบังคับกรอกไม่ครบ: {}", e)
+                } else {
+                    &format!("ไม่สามารถสร้างผู้ใช้งานได้: {}", e)
+                };
+                
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "success": false,
+                        "error": error_msg
+                    })),
+                )
+                    .into_response();
+            }
+        }
     };
+
 
     // Create staff info (if provided)
     if let Some(staff_info) = &payload.staff_info {
