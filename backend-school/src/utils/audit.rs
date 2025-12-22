@@ -1,3 +1,8 @@
+//! Audit logging system - prepared for future use
+//! TODO: Integrate audit logging into handlers (staff, roles, etc.)
+
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::PgPool;
