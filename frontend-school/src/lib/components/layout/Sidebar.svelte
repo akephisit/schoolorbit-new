@@ -40,9 +40,7 @@
 		}
 	}
 
-	const bottomNavigation = [
-		{ name: 'ตั้งค่า', icon: Settings, href: '/settings' }
-	];
+	const bottomNavigation = [{ name: 'ตั้งค่า', icon: Settings, href: '/settings' }];
 
 	function toggleSidebar() {
 		isCollapsed = !isCollapsed;
@@ -127,7 +125,8 @@
 					/>
 					<span
 						class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
-						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span>
+						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span
+					>
 				</a>
 			{/each}
 		</nav>
@@ -146,7 +145,8 @@
 					/>
 					<span
 						class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
-						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span>
+						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span
+					>
 				</a>
 			{/each}
 
@@ -159,7 +159,8 @@
 				<LogOut class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-destructive" />
 				<span
 					class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
-					{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">ออกจากระบบ</span>
+					{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">ออกจากระบบ</span
+				>
 			</button>
 		</div>
 	</div>

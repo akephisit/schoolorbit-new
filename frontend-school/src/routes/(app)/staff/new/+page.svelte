@@ -149,7 +149,6 @@
 		return Object.keys(errors).length === 0;
 	}
 
-
 	function validateStep3(): boolean {
 		errors = {};
 
@@ -261,7 +260,7 @@
 
 		try {
 			const { confirmPassword, ...payloadData } = formData;
-			
+
 			// Clean up payload - convert empty strings to undefined
 			const payload = {
 				national_id: payloadData.national_id || undefined,

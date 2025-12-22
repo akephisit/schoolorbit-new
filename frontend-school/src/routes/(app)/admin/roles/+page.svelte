@@ -4,7 +4,13 @@
 	import { roleAPI, type Role } from '$lib/api/roles';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Plus, Edit, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
