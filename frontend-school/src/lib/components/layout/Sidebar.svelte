@@ -89,7 +89,7 @@
 			{#if !isCollapsed}
 				<!-- Expanded State - Icon box absolute positioned -->
 				<div
-					class="absolute left-[14px] w-10 h-10 bg-primary rounded-lg flex items-center justify-center"
+					class="absolute left-5 w-10 h-10 bg-primary rounded-lg flex items-center justify-center"
 				>
 					<GraduationCap class="w-6 h-6 text-primary-foreground" />
 				</div>
@@ -114,7 +114,7 @@
 				<!-- Collapsed State - Icon box absolute positioned (same position) -->
 				<button
 					onclick={toggleSidebar}
-					class="hidden lg:block absolute left-[14px] w-10 h-10 bg-primary rounded-lg hover:bg-primary/90 p-0 border-0 transition-colors"
+					class="hidden lg:block absolute left-5 w-10 h-10 bg-primary rounded-lg hover:bg-primary/90 p-0 border-0 transition-colors"
 					aria-label="Expand Sidebar"
 				>
 					<div class="w-full h-full flex items-center justify-center relative group/icon">
@@ -160,12 +160,15 @@
 							? 'bg-primary text-primary-foreground'
 							: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 					>
-						<Icon class="absolute left-[14px] w-5 h-5 {isActive(item.href)
+						<Icon
+							class="absolute left-[14px] w-5 h-5 {isActive(item.href)
 								? 'text-primary-foreground'
 								: 'text-muted-foreground group-hover:text-accent-foreground'}"
 						/>
 						<span
-							class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed ? 'opacity-0' : 'opacity-100'}">{item.name}</span
+							class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+								? 'opacity-0'
+								: 'opacity-100'}">{item.name}</span
 						>
 					</a>
 				{/each}
@@ -193,12 +196,15 @@
 									? 'bg-purple-500 text-white'
 									: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
 							>
-								<Icon class="absolute left-[14px] w-5 h-5 {isActive(item.href)
+								<Icon
+									class="absolute left-[14px] w-5 h-5 {isActive(item.href)
 										? 'text-white'
 										: 'text-muted-foreground group-hover:text-purple-700'}"
 								/>
 								<span
-									class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed ? 'opacity-0' : 'opacity-100'}">{item.name}</span
+									class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+										? 'opacity-0'
+										: 'opacity-100'}">{item.name}</span
 								>
 							</a>
 						{/each}
@@ -218,10 +224,13 @@
 						{isCollapsed ? 'justify-center' : ''}
 						text-muted-foreground hover:bg-accent hover:text-accent-foreground group"
 				>
-					<Icon class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
+					<Icon
+						class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
 					/>
 					<span
-						class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed ? 'opacity-0' : 'opacity-100'}">{item.name}</span
+						class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+							? 'opacity-0'
+							: 'opacity-100'}">{item.name}</span
 					>
 				</a>
 			{/each}
@@ -234,7 +243,9 @@
 			>
 				<LogOut class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-destructive" />
 				<span
-					class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed ? 'opacity-0' : 'opacity-100'}">ออกจากระบบ</span
+					class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+						? 'opacity-0'
+						: 'opacity-100'}">ออกจากระบบ</span
 				>
 			</button>
 		</div>
