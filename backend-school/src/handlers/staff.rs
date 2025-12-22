@@ -222,9 +222,14 @@ pub async fn list_staff(
          WHERE u.user_type = 'staff'",
     );
 
+    // Default to active staff only (unless status filter is explicitly provided)
     if let Some(status) = &filter.status {
         query.push_str(&format!(" AND u.status = '{}'", status));
+    } else {
+        // Default: show only active staff
+        query.push_str(" AND u.status = 'active'");
     }
+
 
     if let Some(search) = &filter.search {
         query.push_str(&format!(
