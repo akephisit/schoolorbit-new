@@ -60,8 +60,8 @@ CREATE TABLE IF NOT EXISTS roles (
     -- Priority/Level for approvals
     level INTEGER DEFAULT 0,
     
-    -- Permissions (JSON array)
-    permissions JSONB DEFAULT '[]',
+    -- Permissions (text array for better performance)
+    permissions TEXT[] NOT NULL DEFAULT '{}',
     
     -- Status
     is_active BOOLEAN DEFAULT true,
@@ -74,6 +74,8 @@ CREATE INDEX IF NOT EXISTS idx_roles_code ON roles(code);
 CREATE INDEX IF NOT EXISTS idx_roles_category ON roles(category);
 CREATE INDEX IF NOT EXISTS idx_roles_is_active ON roles(is_active);
 CREATE INDEX IF NOT EXISTS idx_roles_level ON roles(level);
+CREATE INDEX IF NOT EXISTS idx_roles_permissions ON roles USING GIN(permissions);
+
 
 COMMENT ON TABLE roles IS 'บทบาท/ตำแหน่งในระบบ';
 COMMENT ON COLUMN roles.category IS 'หมวดหมู่: administrative, teaching, operational, support';
@@ -373,25 +375,25 @@ COMMENT ON TABLE permissions IS 'สิทธิ์การใช้งาน�
 -- ===================================================================
 INSERT INTO roles (code, name, name_en, description, category, level, permissions) VALUES
     ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'teaching', 10, 
-     '["users.view", "students.view", "grades.edit", "attendance.mark"]'::jsonb),
+     ARRAY['users.view', 'students.view', 'grades.edit', 'attendance.mark']),
     
     ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'administrative', 50, 
-     '["users.view", "users.edit", "documents.approve_dept", "grades.view"]'::jsonb),
+     ARRAY['users.view', 'users.edit', 'documents.approve_dept', 'grades.view']),
     
     ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'administrative', 80, 
-     '["users.view", "users.edit", "users.create", "documents.approve"]'::jsonb),
+     ARRAY['users.view', 'users.edit', 'users.create', 'documents.approve']),
     
     ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'administrative', 100, 
-     '["users.view", "users.edit", "users.create", "users.delete", "documents.approve", "finance.approve"]'::jsonb),
+     ARRAY['users.view', 'users.edit', 'users.create', 'users.delete', 'documents.approve', 'finance.approve']),
     
     ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'operational', 20, 
-     '["users.view", "documents.view", "documents.create"]'::jsonb),
+     ARRAY['users.view', 'documents.view', 'documents.create']),
     
     ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'operational', 15, 
-     '["library.manage", "users.view"]'::jsonb),
+     ARRAY['library.manage', 'users.view']),
     
     ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'ผู้ดูแลระบบทั้งหมด', 'administrative', 999, 
-     '["*"]'::jsonb)
+     ARRAY['*'])
 ON CONFLICT (code) DO NOTHING;
 
 -- ===================================================================
