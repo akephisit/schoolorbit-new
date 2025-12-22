@@ -59,6 +59,37 @@ pub async fn provision_tenant(
         }
     }
 
+    // Create admin role first
+    println!("👤 Creating admin role...");
+    
+    let admin_role_id = match sqlx::query_scalar::<_, i32>(
+        r#"
+        INSERT INTO roles (name, description, permissions)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+        RETURNING id
+        "#
+    )
+    .bind("ผู้ดูแลระบบ")
+    .bind("ผู้ดูแลระบบมีสิทธิ์เข้าถึงทุกฟังก์ชัน")
+    .bind(Vec::<String>::new()) // Empty permissions array, will have full access
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(id) => {
+            println!("✅ Admin role created with ID: {}", id);
+            id
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to create admin role: {}", e);
+            let error = serde_json::json!({
+                "success": false,
+                "error": format!("Failed to create admin role: {}", e)
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+        }
+    };
+
     // Create admin user
     println!("👤 Creating admin user...");
     
@@ -75,26 +106,29 @@ pub async fn provision_tenant(
         }
     };
 
-    // Insert admin user into the database
-    match sqlx::query(
+    // Insert admin user into the database using user_type instead of role
+    let user_id = match sqlx::query_scalar::<_, i32>(
         r#"
-        INSERT INTO users (national_id, password_hash, first_name, last_name, role, status)
+        INSERT INTO users (national_id, password_hash, first_name, last_name, user_type, status)
         VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (national_id) DO NOTHING
+        ON CONFLICT (national_id) DO UPDATE SET national_id = EXCLUDED.national_id
+        RETURNING id
         "#
     )
     .bind(&payload.admin_national_id)
     .bind(&password_hash)
     .bind("ผู้ดูแลระบบ") // Default first name
     .bind(&payload.subdomain) // Use subdomain as last name initially
-    .bind("admin")
+    .bind("staff") // user_type is 'staff' (admin is determined by role assignment)
     .bind("active")
-    .execute(&pool)
+    .fetch_one(&pool)
     .await
     {
-        Ok(_) => {
+        Ok(id) => {
             println!("✅ Admin user created successfully");
+            println!("   User ID: {}", id);
             println!("   National ID: {}", payload.admin_national_id);
+            id
         }
         Err(e) => {
             eprintln!("❌ Failed to create admin user: {}", e);
@@ -103,6 +137,29 @@ pub async fn provision_tenant(
                 "error": format!("Failed to create admin user: {}", e)
             });
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+        }
+    };
+
+    // Assign admin role to the user
+    println!("🔑 Assigning admin role to user...");
+    match sqlx::query(
+        r#"
+        INSERT INTO user_roles (user_id, role_id)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, role_id) DO NOTHING
+        "#
+    )
+    .bind(user_id)
+    .bind(admin_role_id)
+    .execute(&pool)
+    .await
+    {
+        Ok(_) => {
+            println!("✅ Admin role assigned successfully");
+        }
+        Err(e) => {
+            eprintln!("⚠️  Warning: Failed to assign admin role: {}", e);
+            // Continue anyway - user is created
         }
     }
 
