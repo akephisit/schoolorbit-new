@@ -5,11 +5,11 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Plus, Edit, Shield, Users } from 'lucide-svelte';
+	import { Plus, Edit, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
-	let roles: Role[] = [];
-	let loading = true;
+	let roles = $state<Role[]>([]);
+	let loading = $state(true);
 
 	onMount(async () => {
 		await loadRoles();
@@ -20,7 +20,7 @@
 		try {
 			const response = await roleAPI.listRoles();
 			if (response.success && response.data) {
-				roles = response.data.sort((a, b) => b.level - a.level);
+				roles = response.data.sort((a: Role, b: Role) => b.level - a.level);
 			} else {
 				toast.error('ไม่สามารถโหลดข้อมูล roles ได้');
 			}
@@ -65,7 +65,7 @@
 			<h1 class="text-3xl font-bold text-gray-900">จัดการบทบาท</h1>
 			<p class="text-gray-600 mt-1">กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน</p>
 		</div>
-		<Button on:click={() => goto('/admin/roles/new')} class="gap-2">
+		<Button onclick={() => goto('/admin/roles/new')} class="gap-2">
 			<Plus class="h-4 w-4" />
 			สร้างบทบาทใหม่
 		</Button>
@@ -94,7 +94,7 @@
 					<Shield class="h-12 w-12 text-gray-400 mx-auto mb-4" />
 					<h3 class="text-lg font-medium text-gray-900">ยังไม่มีบทบาท</h3>
 					<p class="text-gray-600 mt-1">เริ่มต้นสร้างบทบาทแรกของคุณ</p>
-					<Button on:click={() => goto('/admin/roles/new')} class="mt-4 gap-2">
+					<Button onclick={() => goto('/admin/roles/new')} class="mt-4 gap-2">
 						<Plus class="h-4 w-4" />
 						สร้างบทบาทใหม่
 					</Button>
@@ -107,7 +107,7 @@
 			{#each roles as role (role.id)}
 				<Card
 					class="hover:shadow-lg transition-shadow cursor-pointer"
-					on:click={() => goto(`/admin/roles/${role.id}`)}
+					onclick={() => goto(`/admin/roles/${role.id}`)}
 				>
 					<CardHeader>
 						<div class="flex items-start justify-between">
@@ -151,7 +151,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								on:click={(e) => {
+								onclick={(e: MouseEvent) => {
 									e.stopPropagation();
 									goto(`/admin/roles/${role.id}`);
 								}}

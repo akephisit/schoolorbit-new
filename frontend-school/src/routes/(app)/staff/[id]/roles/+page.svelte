@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
@@ -8,17 +7,8 @@
 	import { ArrowLeft, User, Shield } from 'lucide-svelte';
 	import UserRoleManager from '$lib/components/UserRoleManager.svelte';
 
-	let userId = $page.params.id || '';
-	let activeTab = 'roles';
-
-
-	// This would normally come from API
-	let userData = {
-		id: userId,
-		firstName: 'Loading...',
-		lastName: '',
-		userType: 'staff'
-	};
+	let userId = $derived($page.params.id ?? '');
+	let activeTab = $state('roles');
 </script>
 
 <svelte:head>
@@ -26,9 +16,8 @@
 </svelte:head>
 
 <div class="container mx-auto py-6 px-4 max-w-6xl">
-	<!-- Header -->
 	<div class="flex items-center gap-4 mb-6">
-		<Button variant="ghost" size="icon" on:click={() => goto('/staff')}>
+		<Button variant="ghost" size="icon" onclick={() => goto('/staff')}>
 			<ArrowLeft class="h-5 w-5" />
 		</Button>
 		<div class="flex-1">
@@ -37,7 +26,6 @@
 		</div>
 	</div>
 
-	<!-- Tabs -->
 	<Tabs bind:value={activeTab}>
 		<TabsList>
 			<TabsTrigger value="roles" class="gap-2">
