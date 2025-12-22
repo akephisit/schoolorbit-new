@@ -15,6 +15,14 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
+	import {
+		Dialog,
+		DialogContent,
+		DialogDescription,
+		DialogFooter,
+		DialogHeader,
+		DialogTitle
+	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Badge } from '$lib/components/ui/badge';
 	import { ArrowLeft, Save, Trash2, Shield } from 'lucide-svelte';
@@ -25,6 +33,8 @@
 
 	let loading = $state(true);
 	let saving = $state(false);
+	let deleting = $state(false);
+	let showDeleteDialog = $state(false);
 	let permissionsLoading = $state(true);
 
 	// Role data
@@ -165,21 +175,23 @@
 	}
 
 	async function handleDelete() {
-		if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบบทบาทนี้?')) {
-			return;
-		}
-
+		deleting = true;
 		try {
 			const response = await roleAPI.deleteRole(roleId);
 			if (response.success) {
 				toast.success('ลบบทบาทสำเร็จ');
+				showDeleteDialog = false;
 				goto('/admin/roles');
 			} else {
 				toast.error(response.error || 'ไม่สามารถลบบทบาทได้');
+				showDeleteDialog = false;
 			}
 		} catch (error) {
 			console.error('Failed to delete role:', error);
 			toast.error('เกิดข้อผิดพลาดในการลบข้อมูล');
+			showDeleteDialog = false;
+		} finally {
+			deleting = false;
 		}
 	}
 </script>
@@ -201,7 +213,7 @@
 		</div>
 		<div class="flex gap-2">
 			{#if !isNew}
-				<Button variant="destructive" onclick={handleDelete} class="gap-2">
+				<Button variant="destructive" onclick={() => (showDeleteDialog = true)} class="gap-2">
 					<Trash2 class="h-4 w-4" />
 					ลบ
 				</Button>
@@ -366,3 +378,25 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Delete Confirmation Dialog -->
+<Dialog bind:open={showDeleteDialog}>
+	<DialogContent>
+		<DialogHeader>
+			<DialogTitle>ยืนยันการลบบทบาท</DialogTitle>
+			<DialogDescription>
+				คุณแน่ใจหรือไม่ว่าต้องการลบบทบาท <strong>{role.name}</strong>?
+				การกระทำนี้ไม่สามารถย้อนกลับได้
+			</DialogDescription>
+		</DialogHeader>
+		<DialogFooter>
+			<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
+				ยกเลิก
+			</Button>
+			<Button variant="destructive" onclick={handleDelete} disabled={deleting} class="gap-2">
+				<Trash2 class="h-4 w-4" />
+				{deleting ? 'กำลังลบ...' : 'ลบบทบาท'}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
