@@ -220,12 +220,11 @@
 				{@const { Icon } = renderMenuItem(item, isActive(item.href))}
 				<a
 					href={resolve(item.href as any)}
-					class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
-						{isCollapsed ? 'justify-center' : ''}
+					class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors
 						text-muted-foreground hover:bg-accent hover:text-accent-foreground group"
 				>
 					<Icon
-						class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
+						class="absolute left-5 w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
 					/>
 					<span
 						class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
@@ -238,10 +237,12 @@
 			<!-- Logout Button -->
 			<button
 				onclick={handleLogout}
-				class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
+				class="relative w-full flex items-center px-3 py-2.5 rounded-lg transition-colors
 					text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
 			>
-				<LogOut class="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-destructive" />
+				<LogOut
+					class="absolute left-5 w-5 h-5 text-muted-foreground group-hover:text-destructive"
+				/>
 				<span
 					class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
 						? 'opacity-0'
