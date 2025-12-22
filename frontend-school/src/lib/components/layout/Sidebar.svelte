@@ -94,7 +94,7 @@
 					<GraduationCap class="w-6 h-6 text-primary-foreground" />
 				</div>
 				<div
-					class="ml-[60px] min-w-0 flex-1 transition-opacity duration-300 {isCollapsed
+					class="ml-[60px] min-w-0 flex-1 overflow-hidden transition-opacity duration-300 {isCollapsed
 						? 'opacity-0'
 						: 'opacity-100'}"
 				>
