@@ -1,31 +1,39 @@
 <script lang="ts">
-	import {
-		LayoutDashboard,
-		Users,
-		GraduationCap,
-		BookOpen,
-		School,
-		Calendar,
-		Settings,
-		LogOut,
-		ChevronLeft
-	} from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { LogOut, ChevronLeft, GraduationCap } from 'lucide-svelte';
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { authAPI } from '$lib/api/auth';
+	import { authStore } from '$lib/stores/auth';
+	import {
+		userPermissions,
+		permissionsLoading,
+		loadUserPermissions
+	} from '$lib/stores/permissions';
+	import {
+		menuItems,
+		filterMenusByPermission,
+		getMenusByGroup,
+		type MenuItem
+	} from '$lib/config/menu-permissions';
 
 	let { isCollapsed = $bindable(false) }: { isCollapsed?: boolean } = $props();
 	let isMobileOpen = $state(false);
 
-	const navigation = [
-		{ name: 'แดชบอร์ด', icon: LayoutDashboard, href: '/dashboard' },
-		{ name: 'นักเรียน', icon: Users, href: '/students' },
-		{ name: 'บุคลากร', icon: GraduationCap, href: '/staff' },
-		{ name: 'รายวิชา', icon: BookOpen, href: '/subjects' },
-		{ name: 'ห้องเรียน', icon: School, href: '/classes' },
-		{ name: 'ปฏิทิน', icon: Calendar, href: '/calendar' }
-	];
+	// Reactive filtered menus based on permissions
+	let filteredMenus = $derived(filterMenusByPermission(menuItems, $userPermissions));
+	let mainMenus = $derived(getMenusByGroup(filteredMenus, 'main'));
+	let adminMenus = $derived(getMenusByGroup(filteredMenus, 'admin'));
+	let settingsMenus = $derived(getMenusByGroup(filteredMenus, 'settings'));
+
+	// Load permissions on mount
+	onMount(async () => {
+		const user = $authStore.user;
+		if (user?.id) {
+			await loadUserPermissions(user.id);
+		}
+	});
 
 	// Check if a route is active
 	function isActive(href: string): boolean {
@@ -34,13 +42,10 @@
 
 	// Handle navigation click on mobile
 	function handleNavClick() {
-		// Close mobile sidebar when navigation is clicked
 		if (isMobileOpen) {
 			isMobileOpen = false;
 		}
 	}
-
-	const bottomNavigation = [{ name: 'ตั้งค่า', icon: Settings, href: '/settings' }];
 
 	function toggleSidebar() {
 		isCollapsed = !isCollapsed;
@@ -53,6 +58,11 @@
 	async function handleLogout() {
 		await authAPI.logout();
 		await goto('/login', { invalidateAll: true });
+	}
+
+	function renderMenuItem(item: MenuItem, isActiveMenu: boolean) {
+		const Icon = item.icon;
+		return { Icon, isActive: isActiveMenu };
 	}
 </script>
 
@@ -108,33 +118,89 @@
 
 		<!-- Navigation -->
 		<nav class="flex-1 overflow-y-auto p-4 space-y-1">
-			{#each navigation as item (item.href)}
-				{@const Icon = item.icon}
-				<a
-					href={resolve(item.href as any)}
-					onclick={handleNavClick}
-					class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group
-						{isActive(item.href)
-						? 'bg-primary text-primary-foreground'
-						: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
-				>
-					<Icon
-						class="w-5 h-5 flex-shrink-0 {isActive(item.href)
-							? 'text-primary-foreground'
-							: 'text-muted-foreground group-hover:text-accent-foreground'}"
-					/>
-					<span
-						class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
-						{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span
+			{#if $permissionsLoading}
+				<!-- Loading skeleton -->
+				<div class="space-y-2">
+					{#each Array(6) as _}
+						<div class="h-10 bg-muted rounded-lg animate-pulse"></div>
+					{/each}
+				</div>
+			{:else if filteredMenus.length === 0}
+				<!-- No permissions -->
+				{#if !isCollapsed}
+					<div class="p-4 text-center">
+						<p class="text-sm text-muted-foreground">ไม่มีเมนูที่สามารถเข้าถึงได้</p>
+						<p class="text-xs text-muted-foreground mt-1">กรุณาติดต่อผู้ดูแลระบบ</p>
+					</div>
+				{/if}
+			{:else}
+				<!-- Main Navigation -->
+				{#each mainMenus as item (item.href)}
+					{@const { Icon } = renderMenuItem(item, isActive(item.href))}
+					<a
+						href={resolve(item.href as any)}
+						onclick={handleNavClick}
+						class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group
+							{isActive(item.href)
+							? 'bg-primary text-primary-foreground'
+							: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 					>
-				</a>
-			{/each}
+						<Icon
+							class="w-5 h-5 flex-shrink-0 {isActive(item.href)
+								? 'text-primary-foreground'
+								: 'text-muted-foreground group-hover:text-accent-foreground'}"
+						/>
+						<span
+							class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
+							{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span
+						>
+					</a>
+				{/each}
+
+				<!-- Admin Section -->
+				{#if adminMenus.length > 0}
+					<div class="pt-4">
+						{#if !isCollapsed}
+							<div class="px-3 py-2">
+								<p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+									ผู้ดูแลระบบ
+								</p>
+							</div>
+						{:else}
+							<div class="border-t border-border my-2"></div>
+						{/if}
+
+						{#each adminMenus as item (item.href)}
+							{@const { Icon } = renderMenuItem(item, isActive(item.href))}
+							<a
+								href={resolve(item.href as any)}
+								onclick={handleNavClick}
+								class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group
+									{isActive(item.href)
+									? 'bg-purple-500 text-white'
+									: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
+							>
+								<Icon
+									class="w-5 h-5 flex-shrink-0 {isActive(item.href)
+										? 'text-white'
+										: 'text-muted-foreground group-hover:text-purple-700'}"
+								/>
+								<span
+									class="font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
+									{isCollapsed ? 'opacity-0 w-0 absolute' : 'opacity-100'}">{item.name}</span
+								>
+							</a>
+						{/each}
+					</div>
+				{/if}
+			{/if}
 		</nav>
 
 		<!-- Bottom Navigation -->
 		<div class="border-t border-border p-4 space-y-1">
-			{#each bottomNavigation as item (item.href)}
-				{@const Icon = item.icon}
+			<!-- Settings -->
+			{#each settingsMenus as item (item.href)}
+				{@const { Icon } = renderMenuItem(item, isActive(item.href))}
 				<a
 					href={resolve(item.href as any)}
 					class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
