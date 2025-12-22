@@ -211,8 +211,8 @@ pub async fn create_role(
         }
     };
 
-    let permissions_json = serde_json::to_value(payload.permissions.unwrap_or_default())
-        .unwrap_or(serde_json::Value::Array(vec![]));
+    // Use Vec<String> directly (no JSON conversion needed)
+    let permissions = payload.permissions.unwrap_or_default();
 
     let role_id: Uuid = match sqlx::query_scalar(
         "INSERT INTO roles (code, name, name_en, description, category, level, permissions)
@@ -225,7 +225,7 @@ pub async fn create_role(
     .bind(&payload.description)
     .bind(&payload.category)
     .bind(payload.level.unwrap_or(0))
-    .bind(&permissions_json)
+    .bind(&permissions)
     .fetch_one(&pool)
     .await
     {
@@ -301,10 +301,8 @@ pub async fn update_role(
         }
     };
 
-    let permissions_json = payload
-        .permissions
-        .map(|p| serde_json::to_value(p).ok())
-        .flatten();
+    // Use Vec<String> directly (no JSON conversion needed)
+    let permissions = payload.permissions.as_ref();
 
     let result = sqlx::query(
         "UPDATE roles 
@@ -325,7 +323,7 @@ pub async fn update_role(
     .bind(&payload.description)
     .bind(&payload.category)
     .bind(&payload.level)
-    .bind(&permissions_json)
+    .bind(&permissions)
     .bind(&payload.is_active)
     .execute(&pool)
     .await;
