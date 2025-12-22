@@ -109,7 +109,7 @@
 				<!-- Collapsed State - Icon transforms to arrow on hover -->
 				<button
 					onclick={toggleSidebar}
-					class="hidden lg:flex w-10 h-10 bg-primary rounded-lg items-center justify-center mx-auto hover:bg-primary/90 transition-colors group/icon relative"
+					class="hidden lg:flex w-10 h-10 bg-primary rounded-lg items-center justify-center hover:bg-primary/90 transition-colors group/icon relative"
 					aria-label="Expand Sidebar"
 				>
 					<!-- Icon - visible by default -->
