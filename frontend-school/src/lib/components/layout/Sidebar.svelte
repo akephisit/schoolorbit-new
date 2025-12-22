@@ -85,35 +85,46 @@
 >
 	<div class="flex flex-col h-full">
 		<!-- Header -->
-		<div class="h-16 border-b border-border flex items-center justify-between px-6">
+		<div class="h-16 border-b border-border flex items-center px-6 relative group">
 			{#if !isCollapsed}
-				<div class="flex items-center gap-3">
-					<div class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+				<!-- Expanded State -->
+				<div class="flex items-center gap-3 flex-1">
+					<div
+						class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0"
+					>
 						<GraduationCap class="w-6 h-6 text-primary-foreground" />
 					</div>
-					<div>
+					<div class="min-w-0 flex-1">
 						<h2 class="font-bold text-foreground text-lg">SchoolOrbit</h2>
 						<p class="text-xs text-muted-foreground">ระบบจัดการโรงเรียน</p>
 					</div>
 				</div>
-			{:else}
-				<div class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center mx-auto">
-					<GraduationCap class="w-6 h-6 text-primary-foreground" />
-				</div>
-			{/if}
 
-			<!-- Toggle Button - Desktop Only -->
-			<button
-				onclick={toggleSidebar}
-				class="hidden lg:flex w-6 h-6 items-center justify-center rounded hover:bg-accent transition-colors"
-				aria-label="Toggle Sidebar"
-			>
-				<ChevronLeft
-					class="w-4 h-4 text-muted-foreground transition-transform {isCollapsed
-						? 'rotate-180'
-						: ''}"
-				/>
-			</button>
+				<!-- Toggle Button - Always visible when expanded -->
+				<button
+					onclick={toggleSidebar}
+					class="hidden lg:flex w-6 h-6 items-center justify-center rounded hover:bg-accent transition-colors flex-shrink-0"
+					aria-label="Toggle Sidebar"
+				>
+					<ChevronLeft class="w-4 h-4 text-muted-foreground" />
+				</button>
+			{:else}
+				<!-- Collapsed State -->
+				<div class="w-full flex items-center justify-center">
+					<div class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+						<GraduationCap class="w-6 h-6 text-primary-foreground" />
+					</div>
+				</div>
+
+				<!-- Toggle Button - Only visible on hover when collapsed -->
+				<button
+					onclick={toggleSidebar}
+					class="hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 items-center justify-center rounded hover:bg-accent transition-all opacity-0 group-hover:opacity-100"
+					aria-label="Toggle Sidebar"
+				>
+					<ChevronLeft class="w-4 h-4 text-muted-foreground rotate-180" />
+				</button>
+			{/if}
 		</div>
 
 		<!-- Navigation -->
