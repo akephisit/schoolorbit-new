@@ -85,19 +85,15 @@
 >
 	<div class="flex flex-col h-full">
 		<!-- Header -->
-		<div
-			class="h-16 border-b border-border flex items-center relative {isCollapsed
-				? 'justify-center px-0'
-				: 'px-6'}"
-		>
+		<div class="h-16 border-b border-border flex items-center relative px-6">
 			{#if !isCollapsed}
-				<!-- Expanded State - Icon box same as collapsed -->
+				<!-- Expanded State - Icon box absolute positioned -->
 				<div
-					class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0 relative"
+					class="absolute left-6 w-10 h-10 bg-primary rounded-lg flex items-center justify-center"
 				>
 					<GraduationCap class="w-6 h-6 text-primary-foreground" />
 				</div>
-				<div class="ml-3 min-w-0 flex-1">
+				<div class="ml-16 min-w-0 flex-1">
 					<h2 class="font-bold text-foreground text-lg whitespace-nowrap">SchoolOrbit</h2>
 					<p class="text-xs text-muted-foreground whitespace-nowrap">ระบบจัดการโรงเรียน</p>
 				</div>
@@ -111,10 +107,10 @@
 					<ChevronLeft class="w-4 h-4 text-muted-foreground" />
 				</button>
 			{:else}
-				<!-- Collapsed State - Icon box same as expanded -->
+				<!-- Collapsed State - Icon box absolute positioned (same position) -->
 				<button
 					onclick={toggleSidebar}
-					class="hidden lg:block w-10 h-10 bg-primary rounded-lg hover:bg-primary/90 transition-colors p-0 border-0"
+					class="hidden lg:block absolute left-6 w-10 h-10 bg-primary rounded-lg hover:bg-primary/90 transition-colors p-0 border-0"
 					aria-label="Expand Sidebar"
 				>
 					<div class="w-full h-full flex items-center justify-center relative group/icon">
