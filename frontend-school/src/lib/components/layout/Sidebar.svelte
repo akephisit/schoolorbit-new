@@ -176,15 +176,17 @@
 				<!-- Admin Section -->
 				{#if adminMenus.length > 0}
 					<div class="pt-4">
-						{#if !isCollapsed}
-							<div class="px-3 py-2">
-								<p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-									ผู้ดูแลระบบ
-								</p>
-							</div>
-						{:else}
-							<div class="border-t border-border my-2"></div>
-						{/if}
+						<div
+							class="px-3 py-2 overflow-hidden transition-opacity duration-300 {isCollapsed
+								? 'opacity-0'
+								: 'opacity-100'}"
+						>
+							<p
+								class="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap"
+							>
+								ผู้ดูแลระบบ
+							</p>
+						</div>
 
 						{#each adminMenus as item (item.href)}
 							{@const { Icon } = renderMenuItem(item, isActive(item.href))}
