@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { LogOut, ChevronLeft, GraduationCap } from 'lucide-svelte';
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
@@ -27,13 +26,14 @@
 	let adminMenus = $derived(getMenusByGroup(filteredMenus, 'admin'));
 	let settingsMenus = $derived(getMenusByGroup(filteredMenus, 'settings'));
 
-	// Load permissions on mount
-	onMount(async () => {
+	// Load permissions reactively when user changes
+	$effect(() => {
 		const user = $authStore.user;
 		if (user?.id) {
-			await loadUserPermissions(user.id);
+			loadUserPermissions(user.id);
 		}
 	});
+
 
 	// Check if a route is active
 	function isActive(href: string): boolean {
