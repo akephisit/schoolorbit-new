@@ -87,9 +87,10 @@
 		<!-- Header -->
 		<div class="h-16 border-b border-border flex items-center px-6 relative">
 			{#if !isCollapsed}
-				<!-- Expanded State -->
-				<!-- Expanded State - Icon stays in same position -->
-				<div class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+				<!-- Expanded State - Icon box same as collapsed -->
+				<div
+					class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0 relative"
+				>
 					<GraduationCap class="w-6 h-6 text-primary-foreground" />
 				</div>
 				<div class="ml-3 min-w-0 flex-1">
@@ -106,20 +107,22 @@
 					<ChevronLeft class="w-4 h-4 text-muted-foreground" />
 				</button>
 			{:else}
-				<!-- Collapsed State - Icon transforms to arrow on hover -->
+				<!-- Collapsed State - Icon box same as expanded -->
 				<button
 					onclick={toggleSidebar}
-					class="hidden lg:flex w-10 h-10 bg-primary rounded-lg items-center justify-center hover:bg-primary/90 transition-colors group/icon relative"
+					class="hidden lg:block w-10 h-10 bg-primary rounded-lg hover:bg-primary/90 transition-colors p-0 border-0"
 					aria-label="Expand Sidebar"
 				>
-					<!-- Icon - visible by default -->
-					<GraduationCap
-						class="w-6 h-6 text-primary-foreground absolute transition-all duration-200 group-hover/icon:opacity-0 group-hover/icon:scale-75"
-					/>
-					<!-- Arrow - visible on hover -->
-					<ChevronLeft
-						class="w-5 h-5 text-primary-foreground absolute transition-all duration-200 opacity-0 scale-75 rotate-180 group-hover/icon:opacity-100 group-hover/icon:scale-100"
-					/>
+					<div class="w-full h-full flex items-center justify-center relative group/icon">
+						<!-- Icon - visible by default -->
+						<GraduationCap
+							class="w-6 h-6 text-primary-foreground absolute transition-all duration-200 group-hover/icon:opacity-0 group-hover/icon:scale-75"
+						/>
+						<!-- Arrow - visible on hover -->
+						<ChevronLeft
+							class="w-5 h-5 text-primary-foreground absolute transition-all duration-200 opacity-0 scale-75 rotate-180 group-hover/icon:opacity-100 group-hover/icon:scale-100"
+						/>
+					</div>
 				</button>
 			{/if}
 		</div>
