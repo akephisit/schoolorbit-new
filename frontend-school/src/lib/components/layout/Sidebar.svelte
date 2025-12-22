@@ -85,7 +85,11 @@
 >
 	<div class="flex flex-col h-full">
 		<!-- Header -->
-		<div class="h-16 border-b border-border flex items-center px-6 relative">
+		<div
+			class="h-16 border-b border-border flex items-center relative {isCollapsed
+				? 'justify-center px-0'
+				: 'px-6'}"
+		>
 			{#if !isCollapsed}
 				<!-- Expanded State - Icon box same as collapsed -->
 				<div
