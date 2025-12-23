@@ -4,10 +4,11 @@
 	import { onMount } from 'svelte';
 	import { authAPI } from '$lib/api/auth';
 
+import { uiPreferences } from '$lib/stores/ui-preferences';
 	let { children } = $props();
 
 	let sidebarRef: { toggleMobileSidebar?: () => void } | undefined;
-	let isSidebarCollapsed = $state(false);
+	let isSidebarCollapsed = $state($uiPreferences.sidebarCollapsed);
 
 	function handleMenuClick() {
 		if (sidebarRef?.toggleMobileSidebar) {
