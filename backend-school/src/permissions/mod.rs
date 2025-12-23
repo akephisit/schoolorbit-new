@@ -1,6 +1,9 @@
-/// Permission module for granular CRUD permission checking
+/// Permission module for granular CRUD permission checking with scope support
 /// 
-/// Supports both granular permissions (e.g., "staff.create") and wildcard permissions (e.g., "staff")
+/// Supports:
+/// - Granular permissions: "staff.create"
+/// - Wildcard permissions: "staff"
+/// - Scoped permissions: "attendance.update.own", "grades.read.all"
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
@@ -8,6 +11,13 @@ pub enum Action {
     Read,
     Update,
     Delete,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Scope {
+    Own,        // Only assigned/owned resources
+    Department, // Department-level access  
+    All,        // All resources (admin)
 }
 
 impl Action {
@@ -25,14 +35,16 @@ impl Action {
 pub struct Permission {
     pub resource: String,
     pub action: Option<Action>,
+    pub scope: Option<Scope>, // None = legacy (treat as All)
 }
 
 impl Permission {
     /// Parse permission string into Permission struct
     /// 
     /// Examples:
-    /// - "staff.create" -> Permission { resource: "staff", action: Some(Create) }
-    /// - "staff" -> Permission { resource: "staff", action: None }
+    /// - "staff.create" -> Permission { resource: "staff", action: Some(Create), scope: Some(All) }
+    /// - "staff" -> Permission { resource: "staff", action: None, scope: None }
+    /// - "attendance.update.own" -> Permission { resource: "attendance", action: Some(Update), scope: Some(Own) }
     pub fn parse(permission_str: &str) -> Self {
         let parts: Vec<&str> = permission_str.split('.').collect();
         
@@ -40,6 +52,7 @@ impl Permission {
             [resource] => Permission {
                 resource: resource.to_string(),
                 action: None, // Wildcard permission
+                scope: None,
             },
             [resource, action] => {
                 let action = match *action {
@@ -52,11 +65,33 @@ impl Permission {
                 Permission {
                     resource: resource.to_string(),
                     action,
+                    scope: Some(Scope::All), // Default to All for backward compatibility
+                }
+            },
+            [resource, action, scope] => {
+                let action = match *action {
+                    "create" => Some(Action::Create),
+                    "read" => Some(Action::Read),
+                    "update" => Some(Action::Update),
+                    "delete" => Some(Action::Delete),
+                    _ => None,
+                };
+                let scope = match *scope {
+                    "own" => Some(Scope::Own),
+                    "department" => Some(Scope::Department),
+                    "all" => Some(Scope::All),
+                    _ => Some(Scope::All), // Default to All if unrecognized
+                };
+                Permission {
+                    resource: resource.to_string(),
+                    action,
+                    scope,
                 }
             },
             _ => Permission {
                 resource: permission_str.to_string(),
                 action: None,
+                scope: None,
             },
         }
     }
@@ -120,6 +155,7 @@ mod tests {
         let perm = Permission::parse("staff.create");
         assert_eq!(perm.resource, "staff");
         assert_eq!(perm.action, Some(Action::Create));
+        assert_eq!(perm.scope, Some(Scope::All)); // Default to All
     }
 
     #[test]
@@ -127,6 +163,25 @@ mod tests {
         let perm = Permission::parse("staff");
         assert_eq!(perm.resource, "staff");
         assert_eq!(perm.action, None);
+        assert_eq!(perm.scope, None);
+    }
+    
+    #[test]
+    fn test_permission_parse_scoped() {
+        let perm = Permission::parse("attendance.update.own");
+        assert_eq!(perm.resource, "attendance");
+        assert_eq!(perm.action, Some(Action::Update));
+        assert_eq!(perm.scope, Some(Scope::Own));
+        
+        let perm2 = Permission::parse("grades.read.all");
+        assert_eq!(perm2.resource, "grades");
+        assert_eq!(perm2.action, Some(Action::Read));
+        assert_eq!(perm2.scope, Some(Scope::All));
+        
+        let perm3 = Permission::parse("grades.read.department");
+        assert_eq!(perm3.resource, "grades");
+        assert_eq!(perm3.action, Some(Action::Read));
+        assert_eq!(perm3.scope, Some(Scope::Department));
     }
 
     #[test]
@@ -134,12 +189,14 @@ mod tests {
         let perm1 = Permission {
             resource: "staff".to_string(),
             action: Some(Action::Create),
+            scope: Some(Scope::All),
         };
         assert_eq!(perm1.to_string(), "staff.create");
 
         let perm2 = Permission {
             resource: "staff".to_string(),
             action: None,
+            scope: None,
         };
         assert_eq!(perm2.to_string(), "staff");
     }
