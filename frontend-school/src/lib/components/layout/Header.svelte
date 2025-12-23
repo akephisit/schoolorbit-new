@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Bell, Search, Menu, Sun, Moon, User } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { uiPreferences } from '$lib/stores/ui-preferences';
+	import { onMount } from 'svelte';
 
 	interface Props {
 		onMenuClick?: () => void;
@@ -11,13 +13,34 @@
 
 	let isDarkMode = $state(false);
 
+	// Load theme from localStorage on mount
+	onMount(() => {
+		const theme = $uiPreferences.theme;
+		if (theme === 'dark') {
+			isDarkMode = true;
+			document.documentElement.classList.add('dark');
+		} else if (theme === 'light') {
+			isDarkMode = false;
+			document.documentElement.classList.remove('dark');
+		} else {
+			// system preference
+			const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+			isDarkMode = prefersDark;
+			if (prefersDark) {
+				document.documentElement.classList.add('dark');
+			}
+		}
+	});
+
 	function toggleDarkMode() {
 		isDarkMode = !isDarkMode;
 		// Toggle dark class on document
 		if (isDarkMode) {
 			document.documentElement.classList.add('dark');
+			uiPreferences.setTheme('dark');
 		} else {
 			document.documentElement.classList.remove('dark');
+			uiPreferences.setTheme('light');
 		}
 	}
 </script>
