@@ -279,10 +279,13 @@
 				<!-- Logout Button -->
 				<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
 					<Tooltip.Trigger class="w-full">
-						<button
+						<div
 							onclick={handleLogout}
-							class="relative w-full flex items-center px-3 py-2.5 rounded-lg transition-colors
-							text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
+							role="button"
+							tabindex="0"
+							onkeydown={(e) => e.key === 'Enter' && handleLogout()}
+							class="relative w-full flex items-center px-3 py-2.5 rounded-lg transition-colors cursor-pointer
+						text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
 						>
 							<LogOut
 								class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-destructive"
@@ -292,7 +295,7 @@
 									? 'opacity-0'
 									: 'opacity-100'}">ออกจากระบบ</span
 							>
-						</button>
+						</div>
 					</Tooltip.Trigger>
 					{#if isCollapsed}
 						<Tooltip.Content side="right" class="font-medium">ออกจากระบบ</Tooltip.Content>
