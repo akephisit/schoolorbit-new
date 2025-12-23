@@ -5,34 +5,37 @@
 	import { page } from '$app/state';
 	import { authAPI } from '$lib/api/auth';
 	import { authStore } from '$lib/stores/auth';
-	import {
-		userPermissions,
-		permissionsLoading,
-		loadUserPermissions
-	} from '$lib/stores/permissions';
-	import {
-		menuItems,
-		filterMenusByPermission,
-		getMenusByGroup,
-		type MenuItem
-	} from '$lib/config/menu-permissions';
+	import { getUserMenu, type MenuGroup, type MenuItem } from '$lib/api/menu';
+	import { getIconComponent } from '$lib/utils/icon-mapper';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { uiPreferences } from '$lib/stores/ui-preferences';
 
 	let { isCollapsed = $bindable($uiPreferences.sidebarCollapsed) }: { isCollapsed?: boolean } = $props();
 	let isMobileOpen = $state(false);
 
-	// Reactive filtered menus based on permissions
-	let filteredMenus = $derived(filterMenusByPermission(menuItems, $userPermissions));
-	let mainMenus = $derived(getMenusByGroup(filteredMenus, 'main'));
-	let adminMenus = $derived(getMenusByGroup(filteredMenus, 'admin'));
-	let settingsMenus = $derived(getMenusByGroup(filteredMenus, 'settings'));
+	// Dynamic menu state
+	let menuGroups = $state<MenuGroup[]>([]);
+	let menuLoading = $state(true);
 
-	// Load permissions reactively when user changes
+	// Load menu from API
+	async function loadMenu() {
+		try {
+			menuLoading = true;
+			const response = await getUserMenu();
+			menuGroups = response.groups;
+		} catch (error) {
+			console.error('Failed to load menu:', error);
+			menuGroups = [];
+		} finally {
+			menuLoading = false;
+		}
+	}
+
+	// Load menu when user is authenticated
 	$effect(() => {
 		const user = $authStore.user;
 		if (user?.id) {
-			loadUserPermissions(user.id);
+			loadMenu();
 		}
 	});
 
@@ -40,7 +43,6 @@
 	$effect(() => {
 		uiPreferences.setSidebarCollapsed(isCollapsed);
 	});
-
 
 	// Check if a route is active
 	function isActive(href: string): boolean {
@@ -66,11 +68,6 @@
 		await authAPI.logout();
 		await goto('/login', { invalidateAll: true });
 	}
-
-	function renderMenuItem(item: MenuItem, isActiveMenu: boolean) {
-		const Icon = item.icon;
-		return { Icon, isActive: isActiveMenu };
-	}
 </script>
 
 <!-- Mobile Overlay -->
@@ -80,98 +77,73 @@
 		onclick={toggleMobileSidebar}
 		role="button"
 		tabindex="0"
-		onkeydown={(e) => e.key === 'Enter' && toggleMobileSidebar()}
 	></div>
 {/if}
 
-<!-- Sidebar -->
+<!-- Sidebar Container -->
 <aside
 	class="fixed left-0 top-0 z-50 h-screen bg-card border-r border-border transition-all duration-300 ease-in-out
-		{isCollapsed ? 'w-20' : 'w-72'}
-		{isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}"
+  {isCollapsed ? 'w-[80px]' : 'w-64'}
+  {isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
+  lg:translate-x-0 flex flex-col"
 >
-	<div class="flex flex-col h-full">
-		<!-- Header -->
-		<div class="h-16 border-b border-border flex items-center relative px-6">
-			{#if !isCollapsed}
-				<!-- Expanded State - Icon box absolute positioned -->
-				<div
-					class="absolute left-5 w-10 h-10 bg-primary rounded-lg flex items-center justify-center"
-				>
-					<GraduationCap class="w-6 h-6 text-primary-foreground" />
-				</div>
-				<div
-					class="ml-[60px] min-w-0 flex-1 overflow-hidden transition-opacity duration-300 {isCollapsed
-						? 'opacity-0'
-						: 'opacity-100'}"
-				>
-					<h2 class="font-bold text-foreground text-lg whitespace-nowrap">SchoolOrbit</h2>
-					<p class="text-xs text-muted-foreground whitespace-nowrap">ระบบจัดการโรงเรียน</p>
-				</div>
+	<!-- Header -->
+	<div class="flex items-center justify-between p-4 border-b border-border h-16">
+		{#if !isCollapsed}
+			<div class="flex items-center gap-2 overflow-hidden">
+				<GraduationCap class="w-8 h-8 text-primary flex-shrink-0" />
+				<h1 class="text-lg font-bold text-foreground whitespace-nowrap">SchoolOrbit</h1>
+			</div>
+		{/if}
 
-				<!-- Toggle Button - Always visible when expanded -->
-				<button
-					onclick={toggleSidebar}
-					class="hidden lg:flex w-6 h-6 items-center justify-center rounded hover:bg-accent transition-colors flex-shrink-0 ml-auto"
-					aria-label="Toggle Sidebar"
-				>
-					<ChevronLeft class="w-4 h-4 text-muted-foreground" />
-				</button>
+		<!-- Toggle Button (Desktop) -->
+		<button
+			onclick={toggleSidebar}
+			class="hidden lg:flex p-2 rounded-lg hover:bg-accent transition-colors
+      {isCollapsed ? 'mx-auto' : ''}"
+			aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+		>
+			<div class="transition-transform duration-300 {isCollapsed ? 'rotate-180' : ''}">
+				<ChevronLeft class="w-5 h-5" />
+			</div>
+		</button>
+	</div>
+
+	<!-- Navigation -->
+	<Tooltip.Provider>
+		<nav class="flex-1 overflow-y-auto p-4 space-y-1">
+			{#if menuLoading}
+				<!-- Loading skeleton -->
+				<div class="space-y-2">
+					{#each Array(6) as _}
+						<div class="h-10 bg-muted rounded-lg animate-pulse"></div>
+					{/each}
+				</div>
+			{:else if menuGroups.length === 0}
+				<!-- No menus -->
+				{#if !isCollapsed}
+					<div class="p-4 text-center">
+						<p class="text-sm text-muted-foreground">ไม่มีเมนูที่สามารถเข้าถึงได้</p>
+						<p class="text-xs text-muted-foreground mt-1">กรุณาติดต่อผู้ดูแลระบบ</p>
+					</div>
+				{/if}
 			{:else}
-				<!-- Collapsed State - Icon box absolute positioned (same position) -->
-				<button
-					onclick={toggleSidebar}
-					class="hidden lg:block absolute left-5 w-10 h-10 bg-primary rounded-lg hover:bg-primary/90 p-0 border-0 transition-colors"
-					aria-label="Expand Sidebar"
-				>
-					<div class="w-full h-full flex items-center justify-center relative group/icon">
-						<!-- Icon - visible by default -->
-						<GraduationCap
-							class="w-6 h-6 text-primary-foreground absolute transition-all duration-200 group-hover/icon:opacity-0 group-hover/icon:scale-75"
-						/>
-						<!-- Arrow - visible on hover -->
-						<ChevronLeft
-							class="w-5 h-5 text-primary-foreground absolute transition-all duration-200 opacity-0 scale-75 rotate-180 group-hover/icon:opacity-100 group-hover/icon:scale-100"
-						/>
-					</div>
-				</button>
-			{/if}
-		</div>
-
-		<!-- Navigation -->
-		<Tooltip.Provider>
-			<nav class="flex-1 overflow-y-auto p-4 space-y-1">
-				{#if $permissionsLoading}
-					<!-- Loading skeleton -->
-					<div class="space-y-2">
-						{#each Array(6) as _}
-							<div class="h-10 bg-muted rounded-lg animate-pulse"></div>
-						{/each}
-					</div>
-				{:else if filteredMenus.length === 0}
-					<!-- No permissions -->
-					{#if !isCollapsed}
-						<div class="p-4 text-center">
-							<p class="text-sm text-muted-foreground">ไม่มีเมนูที่สามารถเข้าถึงได้</p>
-							<p class="text-xs text-muted-foreground mt-1">กรุณาติดต่อผู้ดูแลระบบ</p>
-						</div>
-					{/if}
-				{:else}
-					<!-- Main Navigation -->
-					{#each mainMenus as item (item.href)}
-						{@const { Icon } = renderMenuItem(item, isActive(item.href))}
+				<!-- Dynamic Menu Groups -->
+				{#each menuGroups as group (group.code)}
+					{#each group.items as item (item.id)}
+						{@const Icon = getIconComponent(item.icon)}
 						<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
 							<Tooltip.Trigger class="w-full">
 								<a
-									href={resolve(item.href as any)}
+									href={resolve(item.path as any)}
 									onclick={handleNavClick}
 									class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
-								{isActive(item.href)
+									{isActive(item.path)
 										? 'bg-primary text-primary-foreground'
 										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 								>
 									<Icon
-										class="absolute left-[14px] w-5 h-5 {isActive(item.href)
+										class="absolute left-[14px] w-5 h-5 {isActive(item.path)
 											? 'text-primary-foreground'
 											: 'text-muted-foreground group-hover:text-accent-foreground'}"
 									/>
@@ -189,125 +161,48 @@
 							{/if}
 						</Tooltip.Root>
 					{/each}
-
-					<!-- Admin Section -->
-					{#if adminMenus.length > 0}
-						<div class="pt-4 relative">
-							<!-- Divider - shown when collapsed -->
-							<div
-								class="px-3 py-2 transition-opacity duration-300 {isCollapsed
-									? 'opacity-100'
-									: 'opacity-0'}"
-							>
-								<div class="border-t border-border"></div>
-							</div>
-							<!-- Text - shown when expanded -->
-							<div
-								class="absolute inset-0 pt-4 px-3 py-2 overflow-hidden transition-opacity duration-300 {isCollapsed
-									? 'opacity-0'
-									: 'opacity-100'}"
-							>
-								<p
-									class="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap"
-								>
-									ผู้ดูแลระบบ
-								</p>
-							</div>
-						</div>
-
-						{#each adminMenus as item (item.href)}
-							{@const { Icon } = renderMenuItem(item, isActive(item.href))}
-							<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
-								<Tooltip.Trigger class="w-full">
-									<a
-										href={resolve(item.href as any)}
-										onclick={handleNavClick}
-										class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
-										{isActive(item.href)
-											? 'bg-purple-500 text-white'
-											: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
-									>
-										<Icon
-											class="absolute left-[14px] w-5 h-5 {isActive(item.href)
-												? 'text-white'
-												: 'text-muted-foreground group-hover:text-purple-700'}"
-										/>
-										<span
-											class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-												? 'opacity-0'
-												: 'opacity-100'}">{item.name}</span
-										>
-									</a>
-								</Tooltip.Trigger>
-								{#if isCollapsed}
-									<Tooltip.Content side="right" class="font-medium">
-										{item.name}
-									</Tooltip.Content>
-								{/if}
-							</Tooltip.Root>
-						{/each}
-					{/if}
-				{/if}
-			</nav>
-		</Tooltip.Provider>
-
-		<!-- Bottom Navigation -->
-		<Tooltip.Provider>
-			<div class="border-t border-border p-4 space-y-1">
-				<!-- Settings -->
-				{#each settingsMenus as item (item.href)}
-					{@const { Icon } = renderMenuItem(item, isActive(item.href))}
-					<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
-						<Tooltip.Trigger class="w-full">
-							<a
-								href={resolve(item.href as any)}
-								class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors
-								text-muted-foreground hover:bg-accent hover:text-accent-foreground group"
-							>
-								<Icon
-									class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
-								/>
-								<span
-									class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-										? 'opacity-0'
-										: 'opacity-100'}">{item.name}</span
-								>
-							</a>
-						</Tooltip.Trigger>
-						{#if isCollapsed}
-							<Tooltip.Content side="right" class="font-medium">
-								{item.name}
-							</Tooltip.Content>
-						{/if}
-					</Tooltip.Root>
 				{/each}
+			{/if}
+		</nav>
+	</Tooltip.Provider>
 
-				<!-- Logout Button -->
-				<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
-					<Tooltip.Trigger class="w-full">
-						<div
-							onclick={handleLogout}
-							role="button"
-							tabindex="0"
-							onkeydown={(e) => e.key === 'Enter' && handleLogout()}
-							class="relative w-full flex items-center px-3 py-2.5 rounded-lg transition-colors cursor-pointer
-						text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
+	<!-- Bottom Navigation -->
+	<Tooltip.Provider>
+		<div class="border-t border-border p-4 space-y-1">
+			<!-- Logout -->
+			<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
+				<Tooltip.Trigger class="w-full">
+					<div
+						role="button"
+						tabindex="0"
+						onclick={handleLogout}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') handleLogout();
+						}}
+						class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors
+              text-muted-foreground hover:bg-accent hover:text-accent-foreground group cursor-pointer"
+					>
+						<LogOut
+							class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
+						/>
+						<span
+							class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+								? 'opacity-0'
+								: 'opacity-100'}">ออกจากระบบ</span
 						>
-							<LogOut
-								class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-destructive"
-							/>
-							<span
-								class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-									? 'opacity-0'
-									: 'opacity-100'}">ออกจากระบบ</span
-							>
-						</div>
-					</Tooltip.Trigger>
-					{#if isCollapsed}
-						<Tooltip.Content side="right" class="font-medium">ออกจากระบบ</Tooltip.Content>
-					{/if}
-				</Tooltip.Root>
-			</div>
-		</Tooltip.Provider>
-	</div>
+					</div>
+				</Tooltip.Trigger>
+				{#if isCollapsed}
+					<Tooltip.Content side="right" class="font-medium">ออกจากระบบ</Tooltip.Content>
+				{/if}
+			</Tooltip.Root>
+		</div>
+	</Tooltip.Provider>
 </aside>
+
+<style>
+	/* Remove default button styles for logout div */
+	div[role='button'] {
+		-webkit-tap-highlight-color: transparent;
+	}
+</style>
