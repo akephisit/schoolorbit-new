@@ -3,12 +3,12 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { Toaster } from 'svelte-sonner';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
 
 	let { children } = $props();
 
 	// Force light theme for public pages (landing, login)
-	onMount(() => {
+	// Using $effect instead of onMount to handle SPA navigation
+	$effect(() => {
 		const isPublicPage = page.url.pathname === '/' || page.url.pathname.startsWith('/login');
 		
 		if (isPublicPage) {
