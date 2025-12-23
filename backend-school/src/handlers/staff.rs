@@ -590,6 +590,28 @@ pub async fn create_staff(
             // Reactivate existing user
             println!("♻️  Reactivating inactive user: {}", existing_id);
             
+            // Clean up old relationships first
+            println!("🧹 Cleaning up old user_roles and department_members...");
+            
+            // Delete old user_roles
+            let _ = sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
+                .bind(existing_id)
+                .execute(&mut *tx)
+                .await;
+            
+            // Delete old department_members
+            let _ = sqlx::query("DELETE FROM department_members WHERE user_id = $1")
+                .bind(existing_id)
+                .execute(&mut *tx)
+                .await;
+            
+            // Delete old teaching_assignments if exists
+            let _ = sqlx::query("DELETE FROM teaching_assignments WHERE teacher_id = $1")
+                .bind(existing_id)
+                .execute(&mut *tx)
+                .await;
+            
+            // Update user info
             match sqlx::query(
                 "UPDATE users SET 
                     email = $1, password_hash = $2, title = $3, first_name = $4, last_name = $5, 
@@ -615,7 +637,10 @@ pub async fn create_staff(
             .execute(&mut *tx)
             .await
             {
-                Ok(_) => existing_id,
+                Ok(_) => {
+                    println!("✅ User reactivated and cleaned up successfully");
+                    existing_id
+                },
                 Err(e) => {
                     eprintln!("❌ Failed to reactivate user: {}", e);
                     let _ = tx.rollback().await;
