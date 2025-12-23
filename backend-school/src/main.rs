@@ -136,6 +136,10 @@ async fn main() {
         .route("/api/permissions/modules", get(handlers::permissions::list_permissions_by_module)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
+        // Menu routes (protected)
+        .route("/api/menu/user", get(handlers::menu::get_user_menu)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
         
         // Internal routes (protected by internal auth middleware)
         .route(
