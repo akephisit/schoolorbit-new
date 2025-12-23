@@ -207,7 +207,7 @@ pub async fn list_staff(
     };
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.read").await {
+    let _user = match check_user_permission(&headers, &pool, "staff.read.all").await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -338,7 +338,7 @@ pub async fn get_staff_profile(
     };
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.read").await {
+    let _user = match check_user_permission(&headers, &pool, "staff.read.all").await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -540,7 +540,7 @@ pub async fn create_staff(
     };
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.create").await {
+    let _user = match check_user_permission(&headers, &pool, "staff.create.all").await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -871,7 +871,7 @@ pub async fn update_staff(
     };
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.update").await {
+    let _user = match check_user_permission(&headers, &pool, "staff.update.all").await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -1052,7 +1052,7 @@ pub async fn delete_staff(
     };
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.delete").await {
+    let _user = match check_user_permission(&headers, &pool, "staff.delete.all").await {
         Ok(u) => u,
         Err(response) => return response,
     };
