@@ -146,6 +146,86 @@ pub fn has_permission(user_permissions: &[String], required: &str) -> bool {
     }
 }
 
+/// Check if user has scoped permission for a specific resource
+/// 
+/// This checks both permission and scope-based authorization.
+/// 
+/// # Arguments
+/// * `user_permissions` - List of user's permissions
+/// * `required` - Required permission (e.g., "attendance.update.own")
+/// 
+/// # Note
+/// This is a simplified version. Full implementation requires:
+/// - teaching_assignments table for checking class ownership
+/// - department_members table for department checks
+/// 
+/// For now, scope checking is basic:
+/// - If user has permission with .all scope → granted
+/// - If user has permission with .own scope → granted (TODO: check ownership)
+/// - If user has permission with .department scope → granted (TODO: check department)
+/// 
+/// # Examples
+/// ```
+/// let user_perms = vec!["attendance.update.own".to_string()];
+/// 
+/// // Has the permission
+/// assert!(has_scoped_permission(&user_perms, "attendance.update.own"));
+/// 
+/// // Doesn't have this permission
+/// assert!(!has_scoped_permission(&user_perms, "grades.update.own"));
+/// ```
+pub fn has_scoped_permission(user_permissions: &[String], required: &str) -> bool {
+    // Parse required permission
+    let required_perm = Permission::parse(required);
+    
+    // Check if user has the permission (exact or wildcard)
+    if !has_permission(user_permissions, required) {
+        return false;
+    }
+    
+    // If user has exact match, they have the permission
+    if user_permissions.iter().any(|p| p == required) {
+        return true;
+    }
+    
+    // Check if user has broader scope
+    // e.g., user has "attendance.update.all" but requires "attendance.update.own"
+    if let (Some(action), Some(required_scope)) = (&required_perm.action, &required_perm.scope) {
+        for user_perm_str in user_permissions {
+            let user_perm = Permission::parse(user_perm_str);
+            
+            // Same resource and action
+            if user_perm.resource == required_perm.resource && user_perm.action == Some(action.clone()) {
+                if let Some(user_scope) = &user_perm.scope {
+                    match (user_scope, required_scope) {
+                        // User has .all, can access anything
+                        (Scope::All, _) => return true,
+                        // User has .department, can access own and department
+                        (Scope::Department, Scope::Own) => return true,
+                        (Scope::Department, Scope::Department) => return true,
+                        // User has .own, can only access own
+                        (Scope::Own, Scope::Own) => return true,
+                        _ => continue,
+                    }
+                }
+            }
+        }
+    }
+    
+    // Check wildcard with All scope
+    // User has "attendance" grants "attendance.update.own"
+    if required_perm.action.is_some() {
+        if user_permissions.iter().any(|p| {
+            let user_perm = Permission::parse(p);
+            user_perm.resource == required_perm.resource && user_perm.action.is_none()
+        }) {
+            return true;
+        }
+    }
+    
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
