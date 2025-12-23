@@ -1,6 +1,10 @@
 // Menu API Client
 // API for fetching user's dynamic menu based on permissions
 
+import { PUBLIC_BACKEND_URL } from '$env/static/public';
+
+const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+
 export interface MenuItem {
     id: string;
     code: string;
@@ -26,7 +30,7 @@ export interface UserMenuResponse {
  * Menu is dynamically generated from database
  */
 export async function getUserMenu(): Promise<UserMenuResponse> {
-    const response = await fetch('/api/menu/user', {
+    const response = await fetch(`${BACKEND_URL}/api/menu/user`, {
         method: 'GET',
         credentials: 'include',
         headers: {
