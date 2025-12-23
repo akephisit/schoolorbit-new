@@ -133,40 +133,96 @@
 		</div>
 
 		<!-- Navigation -->
-		<nav class="flex-1 overflow-y-auto p-4 space-y-1">
-			{#if $permissionsLoading}
-				<!-- Loading skeleton -->
-				<div class="space-y-2">
-					{#each Array(6) as _}
-						<div class="h-10 bg-muted rounded-lg animate-pulse"></div>
-					{/each}
-				</div>
-			{:else if filteredMenus.length === 0}
-				<!-- No permissions -->
-				{#if !isCollapsed}
-					<div class="p-4 text-center">
-						<p class="text-sm text-muted-foreground">ไม่มีเมนูที่สามารถเข้าถึงได้</p>
-						<p class="text-xs text-muted-foreground mt-1">กรุณาติดต่อผู้ดูแลระบบ</p>
+		<Tooltip.Provider>
+			<nav class="flex-1 overflow-y-auto p-4 space-y-1">
+				{#if $permissionsLoading}
+					<!-- Loading skeleton -->
+					<div class="space-y-2">
+						{#each Array(6) as _}
+							<div class="h-10 bg-muted rounded-lg animate-pulse"></div>
+						{/each}
 					</div>
-				{/if}
-			{:else}
-				<!-- Main Navigation -->
-				{#each mainMenus as item (item.href)}
-					{@const { Icon } = renderMenuItem(item, isActive(item.href))}
-					<Tooltip.Root delayDuration={0}>
-						<Tooltip.Trigger class="w-full">
+				{:else if filteredMenus.length === 0}
+					<!-- No permissions -->
+					{#if !isCollapsed}
+						<div class="p-4 text-center">
+							<p class="text-sm text-muted-foreground">ไม่มีเมนูที่สามารถเข้าถึงได้</p>
+							<p class="text-xs text-muted-foreground mt-1">กรุณาติดต่อผู้ดูแลระบบ</p>
+						</div>
+					{/if}
+				{:else}
+					<!-- Main Navigation -->
+					{#each mainMenus as item (item.href)}
+						{@const { Icon } = renderMenuItem(item, isActive(item.href))}
+						<Tooltip.Root delayDuration={0}>
+							<Tooltip.Trigger class="w-full">
+								<a
+									href={resolve(item.href as any)}
+									onclick={handleNavClick}
+									class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
+								{isActive(item.href)
+										? 'bg-primary text-primary-foreground'
+										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
+								>
+									<Icon
+										class="absolute left-[14px] w-5 h-5 {isActive(item.href)
+											? 'text-primary-foreground'
+											: 'text-muted-foreground group-hover:text-accent-foreground'}"
+									/>
+									<span
+										class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+											? 'opacity-0'
+											: 'opacity-100'}">{item.name}</span
+									>
+								</a>
+							</Tooltip.Trigger>
+							{#if isCollapsed}
+								<Tooltip.Content side="right" class="font-medium">
+									{item.name}
+								</Tooltip.Content>
+							{/if}
+						</Tooltip.Root>
+					{/each}
+
+					<!-- Admin Section -->
+					{#if adminMenus.length > 0}
+						<div class="pt-4 relative">
+							<!-- Divider - shown when collapsed -->
+							<div
+								class="px-3 py-2 transition-opacity duration-300 {isCollapsed
+									? 'opacity-100'
+									: 'opacity-0'}"
+							>
+								<div class="border-t border-border"></div>
+							</div>
+							<!-- Text - shown when expanded -->
+							<div
+								class="absolute inset-0 pt-4 px-3 py-2 overflow-hidden transition-opacity duration-300 {isCollapsed
+									? 'opacity-0'
+									: 'opacity-100'}"
+							>
+								<p
+									class="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap"
+								>
+									ผู้ดูแลระบบ
+								</p>
+							</div>
+						</div>
+
+						{#each adminMenus as item (item.href)}
+							{@const { Icon } = renderMenuItem(item, isActive(item.href))}
 							<a
 								href={resolve(item.href as any)}
 								onclick={handleNavClick}
 								class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
-								{isActive(item.href)
-									? 'bg-primary text-primary-foreground'
-									: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
+									{isActive(item.href)
+									? 'bg-purple-500 text-white'
+									: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
 							>
 								<Icon
 									class="absolute left-[14px] w-5 h-5 {isActive(item.href)
-										? 'text-primary-foreground'
-										: 'text-muted-foreground group-hover:text-accent-foreground'}"
+										? 'text-white'
+										: 'text-muted-foreground group-hover:text-purple-700'}"
 								/>
 								<span
 									class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
@@ -174,65 +230,11 @@
 										: 'opacity-100'}">{item.name}</span
 								>
 							</a>
-						</Tooltip.Trigger>
-						{#if isCollapsed}
-							<Tooltip.Content side="right" class="font-medium">
-								{item.name}
-							</Tooltip.Content>
-						{/if}
-					</Tooltip.Root>
-				{/each}
-
-				<!-- Admin Section -->
-				{#if adminMenus.length > 0}
-					<div class="pt-4 relative">
-						<!-- Divider - shown when collapsed -->
-						<div
-							class="px-3 py-2 transition-opacity duration-300 {isCollapsed
-								? 'opacity-100'
-								: 'opacity-0'}"
-						>
-							<div class="border-t border-border"></div>
-						</div>
-						<!-- Text - shown when expanded -->
-						<div
-							class="absolute inset-0 pt-4 px-3 py-2 overflow-hidden transition-opacity duration-300 {isCollapsed
-								? 'opacity-0'
-								: 'opacity-100'}"
-						>
-							<p
-								class="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap"
-							>
-								ผู้ดูแลระบบ
-							</p>
-						</div>
-					</div>
-
-					{#each adminMenus as item (item.href)}
-						{@const { Icon } = renderMenuItem(item, isActive(item.href))}
-						<a
-							href={resolve(item.href as any)}
-							onclick={handleNavClick}
-							class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
-									{isActive(item.href)
-								? 'bg-purple-500 text-white'
-								: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
-						>
-							<Icon
-								class="absolute left-[14px] w-5 h-5 {isActive(item.href)
-									? 'text-white'
-									: 'text-muted-foreground group-hover:text-purple-700'}"
-							/>
-							<span
-								class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-									? 'opacity-0'
-									: 'opacity-100'}">{item.name}</span
-							>
-						</a>
-					{/each}
+						{/each}
+					{/if}
 				{/if}
-			{/if}
-		</nav>
+			</nav>
+		</Tooltip.Provider>
 
 		<!-- Bottom Navigation -->
 		<div class="border-t border-border p-4 space-y-1">
