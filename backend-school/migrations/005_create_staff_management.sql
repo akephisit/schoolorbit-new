@@ -371,26 +371,26 @@ CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module);
 COMMENT ON TABLE permissions IS 'สิทธิ์การใช้งานระบบ';
 
 -- ===================================================================
--- 11. Insert Default Roles
+-- 11. Insert Default Roles with CRUD Permissions
 -- ===================================================================
 INSERT INTO roles (code, name, name_en, description, category, level, permissions) VALUES
     ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'teaching', 10, 
-     ARRAY['students.view', 'grades.edit', 'attendance.mark', 'dashboard.view']),
+     ARRAY['students.read', 'grades.read', 'grades.create', 'grades.update', 'attendance.create', 'dashboard.read']),
     
     ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'administrative', 50, 
-     ARRAY['users.view', 'users.edit', 'documents.approve_dept', 'grades.view']),
+     ARRAY['staff.read', 'staff.update', 'documents.approve_dept', 'grades.read']),
     
     ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'administrative', 80, 
-     ARRAY['users.view', 'users.edit', 'users.create', 'documents.approve']),
+     ARRAY['staff.read', 'staff.update', 'staff.create', 'documents.approve']),
     
     ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'administrative', 100, 
-     ARRAY['users.view', 'users.edit', 'users.create', 'users.delete', 'documents.approve', 'finance.approve']),
+     ARRAY['staff', 'documents.approve', 'finance.approve']),
     
     ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'operational', 20, 
-     ARRAY['users.view', 'documents.view', 'documents.create']),
+     ARRAY['staff.read', 'documents.read', 'documents.create']),
     
     ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'operational', 15, 
-     ARRAY['library.manage', 'users.view']),
+     ARRAY['library', 'staff.read']),
     
     ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'ผู้ดูแลระบบทั้งหมด', 'administrative', 999, 
      ARRAY['*'])
@@ -408,40 +408,51 @@ INSERT INTO departments (code, name, name_en, description, display_order) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- ===================================================================
--- 13. Insert Default Permissions
+-- 13. Insert Default Permissions (CRUD Format)
 -- ===================================================================
 INSERT INTO permissions (code, name, module, action, description) VALUES
-    -- User Management
-    ('users.view', 'ดูข้อมูลผู้ใช้', 'users', 'view', 'สามารถดูข้อมูลผู้ใช้งาน'),
-    ('users.create', 'สร้างผู้ใช้', 'users', 'create', 'สามารถสร้างผู้ใช้งานใหม่'),
-    ('users.edit', 'แก้ไขผู้ใช้', 'users', 'edit', 'สามารถแก้ไขข้อมูลผู้ใช้'),
-    ('users.delete', 'ลบผู้ใช้', 'users', 'delete', 'สามารถลบผู้ใช้งาน'),
+    -- Staff Management (renamed from users to staff for clarity)
+    ('staff.read', 'ดูข้อมูลบุคลากร', 'staff', 'read', 'สามารถดูข้อมูลบุคลากร'),
+    ('staff.create', 'สร้างบุคลากร', 'staff', 'create', 'สามารถสร้างบุคลากรใหม่'),
+    ('staff.update', 'แก้ไขบุคลากร', 'staff', 'update', 'สามารถแก้ไขข้อมูลบุคลากร'),
+    ('staff.delete', 'ลบบุคลากร', 'staff', 'delete', 'สามารถลบบุคลากร'),
     
     -- Student Management
-    ('students.view', 'ดูข้อมูลนักเรียน', 'students', 'view', 'สามารถดูข้อมูลนักเรียน'),
+    ('students.read', 'ดูข้อมูลนักเรียน', 'students', 'read', 'สามารถดูข้อมูลนักเรียน'),
     ('students.create', 'เพิ่มนักเรียน', 'students', 'create', 'สามารถเพิ่มนักเรียนใหม่'),
-    ('students.edit', 'แก้ไขนักเรียน', 'students', 'edit', 'สามารถแก้ไขข้อมูลนักเรียน'),
+    ('students.update', 'แก้ไขนักเรียน', 'students', 'update', 'สามารถแก้ไขข้อมูลนักเรียน'),
+    ('students.delete', 'ลบนักเรียน', 'students', 'delete', 'สามารถลบนักเรียน'),
     
     -- Grade Management
-    ('grades.view', 'ดูคะแนน', 'grades', 'view', 'สามารถดูคะแนนนักเรียน'),
-    ('grades.edit', 'แก้ไขคะแนน', 'grades', 'edit', 'สามารถแก้ไขคะแนนนักเรียน'),
+    ('grades.read', 'ดูคะแนน', 'grades', 'read', 'สามารถดูคะแนนนักเรียน'),
+    ('grades.create', 'เพิ่มคะแนน', 'grades', 'create', 'สามารถเพิ่มคะแนน'),
+    ('grades.update', 'แก้ไขคะแนน', 'grades', 'update', 'สามารถแก้ไขคะแนนนักเรียน'),
+    ('grades.delete', 'ลบคะแนน', 'grades', 'delete', 'สามารถลบคะแนน'),
     
     -- Attendance
-    ('attendance.view', 'ดูการเข้าเรียน', 'attendance', 'view', 'สามารถดูข้อมูลการเข้าเรียน'),
-    ('attendance.mark', 'เช็คชื่อ', 'attendance', 'create', 'สามารถเช็คชื่อนักเรียน'),
+    ('attendance.read', 'ดูการเข้าเรียน', 'attendance', 'read', 'สามารถดูข้อมูลการเข้าเรียน'),
+    ('attendance.create', 'เช็คชื่อ', 'attendance', 'create', 'สามารถเช็คชื่อนักเรียน'),
+    ('attendance.update', 'แก้ไขการเข้าเรียน', 'attendance', 'update', 'สามารถแก้ไขข้อมูลการเข้าเรียน'),
     
     -- Document Management
-    ('documents.view', 'ดูเอกสาร', 'documents', 'view', 'สามารถดูเอกสาร'),
+    ('documents.read', 'ดูเอกสาร', 'documents', 'read', 'สามารถดูเอกสาร'),
     ('documents.create', 'สร้างเอกสาร', 'documents', 'create', 'สามารถสร้างเอกสาร'),
+    ('documents.update', 'แก้ไขเอกสาร', 'documents', 'update', 'สามารถแก้ไขเอกสาร'),
+    ('documents.delete', 'ลบเอกสาร', 'documents', 'delete', 'สามารถลบเอกสาร'),
     ('documents.approve', 'อนุมัติเอกสาร', 'documents', 'approve', 'สามารถอนุมัติเอกสาร'),
     ('documents.approve_dept', 'อนุมัติเอกสารระดับฝ่าย', 'documents', 'approve', 'อนุมัติเอกสารในระดับฝ่าย'),
     
     -- Finance
-    ('finance.view', 'ดูข้อมูลการเงิน', 'finance', 'view', 'สามารถดูข้อมูลการเงิน'),
+    ('finance.read', 'ดูข้อมูลการเงิน', 'finance', 'read', 'สามารถดูข้อมูลการเงิน'),
+    ('finance.create', 'สร้างรายการการเงิน', 'finance', 'create', 'สามารถสร้างรายการทางการเงิน'),
+    ('finance.update', 'แก้ไขการเงิน', 'finance', 'update', 'สามารถแก้ไขรายการทางการเงิน'),
     ('finance.approve', 'อนุมัติการเงิน', 'finance', 'approve', 'สามารถอนุมัติรายการทางการเงิน'),
     
     -- Library
-    ('library.manage', 'จัดการห้องสมุด', 'library', 'manage', 'จัดการระบบห้องสมุด')
+    ('library.read', 'ดูข้อมูลห้องสมุด', 'library', 'read', 'สามารถดูข้อมูลห้องสมุด'),
+    ('library.create', 'เพิ่มหนังสือ', 'library', 'create', 'สามารถเพิ่มหนังสือ'),
+    ('library.update', 'แก้ไขห้องสมุด', 'library', 'update', 'จัดการระบบห้องสมุด'),
+    ('library.delete', 'ลบหนังสือ', 'library', 'delete', 'สามารถลบหนังสือ')
 ON CONFLICT (code) DO NOTHING;
 
 -- ===================================================================
