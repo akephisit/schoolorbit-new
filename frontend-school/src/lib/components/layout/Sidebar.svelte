@@ -154,7 +154,7 @@
 					<!-- Main Navigation -->
 					{#each mainMenus as item (item.href)}
 						{@const { Icon } = renderMenuItem(item, isActive(item.href))}
-						<Tooltip.Root delayDuration={0}>
+						<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
 							<Tooltip.Trigger class="w-full">
 								<a
 									href={resolve(item.href as any)}
