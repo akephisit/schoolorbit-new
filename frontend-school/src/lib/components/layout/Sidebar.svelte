@@ -211,25 +211,34 @@
 
 						{#each adminMenus as item (item.href)}
 							{@const { Icon } = renderMenuItem(item, isActive(item.href))}
-							<a
-								href={resolve(item.href as any)}
-								onclick={handleNavClick}
-								class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
-									{isActive(item.href)
-									? 'bg-purple-500 text-white'
-									: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
-							>
-								<Icon
-									class="absolute left-[14px] w-5 h-5 {isActive(item.href)
-										? 'text-white'
-										: 'text-muted-foreground group-hover:text-purple-700'}"
-								/>
-								<span
-									class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-										? 'opacity-0'
-										: 'opacity-100'}">{item.name}</span
-								>
-							</a>
+							<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
+								<Tooltip.Trigger class="w-full">
+									<a
+										href={resolve(item.href as any)}
+										onclick={handleNavClick}
+										class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
+										{isActive(item.href)
+											? 'bg-purple-500 text-white'
+											: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
+									>
+										<Icon
+											class="absolute left-[14px] w-5 h-5 {isActive(item.href)
+												? 'text-white'
+												: 'text-muted-foreground group-hover:text-purple-700'}"
+										/>
+										<span
+											class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+												? 'opacity-0'
+												: 'opacity-100'}">{item.name}</span
+										>
+									</a>
+								</Tooltip.Trigger>
+								{#if isCollapsed}
+									<Tooltip.Content side="right" class="font-medium">
+										{item.name}
+									</Tooltip.Content>
+								{/if}
+							</Tooltip.Root>
 						{/each}
 					{/if}
 				{/if}
@@ -237,41 +246,60 @@
 		</Tooltip.Provider>
 
 		<!-- Bottom Navigation -->
-		<div class="border-t border-border p-4 space-y-1">
-			<!-- Settings -->
-			{#each settingsMenus as item (item.href)}
-				{@const { Icon } = renderMenuItem(item, isActive(item.href))}
-				<a
-					href={resolve(item.href as any)}
-					class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors
-						text-muted-foreground hover:bg-accent hover:text-accent-foreground group"
-				>
-					<Icon
-						class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
-					/>
-					<span
-						class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-							? 'opacity-0'
-							: 'opacity-100'}">{item.name}</span
-					>
-				</a>
-			{/each}
+		<Tooltip.Provider>
+			<div class="border-t border-border p-4 space-y-1">
+				<!-- Settings -->
+				{#each settingsMenus as item (item.href)}
+					{@const { Icon } = renderMenuItem(item, isActive(item.href))}
+					<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
+						<Tooltip.Trigger class="w-full">
+							<a
+								href={resolve(item.href as any)}
+								class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors
+								text-muted-foreground hover:bg-accent hover:text-accent-foreground group"
+							>
+								<Icon
+									class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
+								/>
+								<span
+									class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+										? 'opacity-0'
+										: 'opacity-100'}">{item.name}</span
+								>
+							</a>
+						</Tooltip.Trigger>
+						{#if isCollapsed}
+							<Tooltip.Content side="right" class="font-medium">
+								{item.name}
+							</Tooltip.Content>
+						{/if}
+					</Tooltip.Root>
+				{/each}
 
-			<!-- Logout Button -->
-			<button
-				onclick={handleLogout}
-				class="relative w-full flex items-center px-3 py-2.5 rounded-lg transition-colors
-					text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
-			>
-				<LogOut
-					class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-destructive"
-				/>
-				<span
-					class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-						? 'opacity-0'
-						: 'opacity-100'}">ออกจากระบบ</span
-				>
-			</button>
-		</div>
+				<!-- Logout Button -->
+				<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
+					<Tooltip.Trigger class="w-full">
+						<button
+							onclick={handleLogout}
+							class="relative w-full flex items-center px-3 py-2.5 rounded-lg transition-colors
+							text-muted-foreground hover:bg-destructive/10 hover:text-destructive group"
+						>
+							<LogOut
+								class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-destructive"
+							/>
+							<span
+								class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+									? 'opacity-0'
+									: 'opacity-100'}">ออกจากระบบ</span
+							>
+						</button>
+					</Tooltip.Trigger>
+					{#if isCollapsed}
+						<Tooltip.Content side="right" class="font-medium">ออกจากระบบ</Tooltip.Content>
+					{/if}
+				</Tooltip.Root>
+			</div>
+		</Tooltip.Provider>
 	</div>
 </aside>
+```
