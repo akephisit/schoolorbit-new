@@ -16,6 +16,7 @@
 		getMenusByGroup,
 		type MenuItem
 	} from '$lib/config/menu-permissions';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	let { isCollapsed = $bindable(false) }: { isCollapsed?: boolean } = $props();
 	let isMobileOpen = $state(false);
@@ -152,25 +153,34 @@
 				<!-- Main Navigation -->
 				{#each mainMenus as item (item.href)}
 					{@const { Icon } = renderMenuItem(item, isActive(item.href))}
-					<a
-						href={resolve(item.href as any)}
-						onclick={handleNavClick}
-						class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
-							{isActive(item.href)
-							? 'bg-primary text-primary-foreground'
-							: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
-					>
-						<Icon
-							class="absolute left-[14px] w-5 h-5 {isActive(item.href)
-								? 'text-primary-foreground'
-								: 'text-muted-foreground group-hover:text-accent-foreground'}"
-						/>
-						<span
-							class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-								? 'opacity-0'
-								: 'opacity-100'}">{item.name}</span
-						>
-					</a>
+					<Tooltip.Root delayDuration={0}>
+						<Tooltip.Trigger class="w-full">
+							<a
+								href={resolve(item.href as any)}
+								onclick={handleNavClick}
+								class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
+								{isActive(item.href)
+									? 'bg-primary text-primary-foreground'
+									: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
+							>
+								<Icon
+									class="absolute left-[14px] w-5 h-5 {isActive(item.href)
+										? 'text-primary-foreground'
+										: 'text-muted-foreground group-hover:text-accent-foreground'}"
+								/>
+								<span
+									class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+										? 'opacity-0'
+										: 'opacity-100'}">{item.name}</span
+								>
+							</a>
+						</Tooltip.Trigger>
+						{#if isCollapsed}
+							<Tooltip.Content side="right" class="font-medium">
+								{item.name}
+							</Tooltip.Content>
+						{/if}
+					</Tooltip.Root>
 				{/each}
 
 				<!-- Admin Section -->
@@ -198,28 +208,28 @@
 						</div>
 					</div>
 
-						{#each adminMenus as item (item.href)}
-							{@const { Icon } = renderMenuItem(item, isActive(item.href))}
-							<a
-								href={resolve(item.href as any)}
-								onclick={handleNavClick}
-								class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
+					{#each adminMenus as item (item.href)}
+						{@const { Icon } = renderMenuItem(item, isActive(item.href))}
+						<a
+							href={resolve(item.href as any)}
+							onclick={handleNavClick}
+							class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
 									{isActive(item.href)
-									? 'bg-purple-500 text-white'
-									: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
+								? 'bg-purple-500 text-white'
+								: 'text-muted-foreground hover:bg-purple-50 hover:text-purple-700'}"
+						>
+							<Icon
+								class="absolute left-[14px] w-5 h-5 {isActive(item.href)
+									? 'text-white'
+									: 'text-muted-foreground group-hover:text-purple-700'}"
+							/>
+							<span
+								class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
+									? 'opacity-0'
+									: 'opacity-100'}">{item.name}</span
 							>
-								<Icon
-									class="absolute left-[14px] w-5 h-5 {isActive(item.href)
-										? 'text-white'
-										: 'text-muted-foreground group-hover:text-purple-700'}"
-								/>
-								<span
-									class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-										? 'opacity-0'
-										: 'opacity-100'}">{item.name}</span
-								>
-							</a>
-						{/each}
+						</a>
+					{/each}
 				{/if}
 			{/if}
 		</nav>
