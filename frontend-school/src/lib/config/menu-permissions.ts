@@ -39,7 +39,7 @@ export const menuItems: MenuItem[] = [
 		name: 'บุคลากร',
 		icon: GraduationCap,
 		href: '/staff',
-		permission: 'users.view',
+		permission: 'staff.manage', // Changed from users.view - only admin/dept_head can manage staff
 		group: 'main'
 	},
 	{

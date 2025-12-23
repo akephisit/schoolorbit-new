@@ -375,7 +375,7 @@ COMMENT ON TABLE permissions IS 'สิทธิ์การใช้งาน�
 -- ===================================================================
 INSERT INTO roles (code, name, name_en, description, category, level, permissions) VALUES
     ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'teaching', 10, 
-     ARRAY['users.view', 'students.view', 'grades.edit', 'attendance.mark']),
+     ARRAY['students.view', 'grades.edit', 'attendance.mark', 'dashboard.view']),
     
     ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'administrative', 50, 
      ARRAY['users.view', 'users.edit', 'documents.approve_dept', 'grades.view']),
