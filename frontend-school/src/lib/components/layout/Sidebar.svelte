@@ -17,8 +17,9 @@
 		type MenuItem
 	} from '$lib/config/menu-permissions';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { uiPreferences } from '$lib/stores/ui-preferences';
 
-	let { isCollapsed = $bindable(false) }: { isCollapsed?: boolean } = $props();
+	let { isCollapsed = $bindable($uiPreferences.sidebarCollapsed) }: { isCollapsed?: boolean } = $props();
 	let isMobileOpen = $state(false);
 
 	// Reactive filtered menus based on permissions
@@ -33,6 +34,11 @@
 		if (user?.id) {
 			loadUserPermissions(user.id);
 		}
+	});
+
+	// Sync isCollapsed changes to localStorage
+	$effect(() => {
+		uiPreferences.setSidebarCollapsed(isCollapsed);
 	});
 
 
