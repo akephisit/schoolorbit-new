@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { listFeatures, toggleFeature, type FeatureToggle } from '$lib/api/feature-toggles';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
@@ -8,12 +7,13 @@
 	import { LoaderCircle, Power, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
-	let features: FeatureToggle[] = [];
-	let loading = true;
-	let toggleLoading: Record<string, boolean> = {};
+	let features = $state<FeatureToggle[]>([]);
+	let loading = $state(true);
+	let toggleLoading = $state<Record<string, boolean>>({});
 
-	onMount(async () => {
-		await loadFeatures();
+	// Load features on mount
+	$effect(() => {
+		loadFeatures();
 	});
 
 	async function loadFeatures() {
@@ -46,17 +46,19 @@
 		}
 	}
 
-	// Group features by module
-	$: featuresByModule = features.reduce(
-		(acc, feature) => {
-			const module = feature.module || 'อื่นๆ';
-			if (!acc[module]) {
-				acc[module] = [];
-			}
-			acc[module].push(feature);
-			return acc;
-		},
-		{} as Record<string, FeatureToggle[]>
+	// Group features by module (derived state)
+	const featuresByModule = $derived(
+		features.reduce(
+			(acc, feature) => {
+				const module = feature.module || 'อื่นๆ';
+				if (!acc[module]) {
+					acc[module] = [];
+				}
+				acc[module].push(feature);
+				return acc;
+			},
+			{} as Record<string, FeatureToggle[]>
+		)
 	);
 </script>
 

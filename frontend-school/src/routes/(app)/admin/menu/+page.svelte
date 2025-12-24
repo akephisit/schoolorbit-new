@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import {
 		listMenuGroups,
 		listMenuItems,
@@ -20,18 +19,18 @@
 	import { LoaderCircle, Plus, Pencil, Trash2, Menu, Eye, EyeOff } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
-	let groups: MenuGroup[] = [];
-	let items: MenuItem[] = [];
-	let loading = true;
-	let selectedGroupId: string | null = null;
+	let groups = $state<MenuGroup[]>([]);
+	let items = $state<MenuItem[]>([]);
+	let loading = $state(true);
+	let selectedGroupId = $state<string | null>(null);
 
 	// Dialog states
-	let createDialogOpen = false;
-	let editDialogOpen = false;
-	let editingItem: MenuItem | null = null;
+	let createDialogOpen = $state(false);
+	let editDialogOpen = $state(false);
+	let editingItem = $state<MenuItem | null>(null);
 
 	// Form data
-	let formData: Partial<CreateMenuItemRequest> = {
+	let formData = $state<Partial<CreateMenuItemRequest>>({
 		code: '',
 		name: '',
 		name_en: '',
@@ -39,10 +38,11 @@
 		icon: '',
 		required_permission: '',
 		display_order: 0
-	};
+	});
 
-	onMount(async () => {
-		await loadData();
+	// Load data on mount
+	$effect(() => {
+		loadData();
 	});
 
 	async function loadData() {
@@ -146,21 +146,22 @@
 		};
 	}
 
-	// Filter items by selected group
-	$: filteredItems = selectedGroupId
-		? items.filter((item) => item.group_id === selectedGroupId)
-		: items;
+	// Derived states
+	const filteredItems = $derived(
+		selectedGroupId ? items.filter((item) => item.group_id === selectedGroupId) : items
+	);
 
-	// Group items by group
-	$: itemsByGroup = items.reduce(
-		(acc, item) => {
-			if (!acc[item.group_id]) {
-				acc[item.group_id] = [];
-			}
-			acc[item.group_id].push(item);
-			return acc;
-		},
-		{} as Record<string, MenuItem[]>
+	const itemsByGroup = $derived(
+		items.reduce(
+			(acc, item) => {
+				if (!acc[item.group_id]) {
+					acc[item.group_id] = [];
+				}
+				acc[item.group_id].push(item);
+				return acc;
+			},
+			{} as Record<string, MenuItem[]>
+		)
 	);
 </script>
 
