@@ -6,5 +6,5 @@ pub mod roles;
 pub mod user_roles;
 pub mod permissions;
 pub mod menu;
-
-
+pub mod feature_toggles;
+pub mod menu_admin;

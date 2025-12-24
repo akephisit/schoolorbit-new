@@ -140,6 +140,34 @@ async fn main() {
         .route("/api/menu/user", get(handlers::menu::get_user_menu)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
+        // Admin - Feature Toggles (protected)
+        .route("/api/admin/features", get(handlers::feature_toggles::list_features)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/admin/features/:id", get(handlers::feature_toggles::get_feature)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/admin/features/:id", axum::routing::put(handlers::feature_toggles::update_feature)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/admin/features/:id/toggle", post(handlers::feature_toggles::toggle_feature)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
+        
+        // Admin - Menu Management (protected, module-based permissions)
+        .route("/api/admin/menu/groups", get(handlers::menu_admin::list_menu_groups)
+            .post(handlers::menu_admin::create_menu_group)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/admin/menu/groups/:id", axum::routing::put(handlers::menu_admin::update_menu_group)
+            .delete(handlers::menu_admin::delete_menu_group)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/admin/menu/items", get(handlers::menu_admin::list_menu_items)
+            .post(handlers::menu_admin::create_menu_item)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/admin/menu/items/:id", axum::routing::put(handlers::menu_admin::update_menu_item)
+            .delete(handlers::menu_admin::delete_menu_item)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/admin/menu/items/reorder", post(handlers::menu_admin::reorder_menu_items)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+
+        
         
         // Internal routes (protected by internal auth middleware)
         .route(
