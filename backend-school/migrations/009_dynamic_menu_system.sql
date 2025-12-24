@@ -144,30 +144,30 @@ ON CONFLICT (code) DO NOTHING;
 -- ===================================================================
 INSERT INTO menu_items (code, name, name_en, path, icon, required_permission, group_id, display_order, description) VALUES
     -- Main Menu
-    ('dashboard', 'แดชบอร์ด', 'Dashboard', '/dashboard', 'layout-dashboard', 'dashboard.read.all',
+    ('dashboard', 'แดชบอร์ด', 'Dashboard', '/dashboard', 'layout-dashboard', 'dashboard',
      (SELECT id FROM menu_groups WHERE code = 'main'), 1, 'หน้าหลักแสดงภาพรวม'),
      
-    ('students', 'นักเรียน', 'Students', '/students', 'users', 'students.read.all',
+    ('students', 'นักเรียน', 'Students', '/students', 'users', 'students',
      (SELECT id FROM menu_groups WHERE code = 'main'), 2, 'จัดการข้อมูลนักเรียน'),
      
-    ('staff', 'บุคลากร', 'Staff', '/staff', 'graduation-cap', 'staff.read.all',
+    ('staff', 'บุคลากร', 'Staff', '/staff', 'graduation-cap', 'staff',
      (SELECT id FROM menu_groups WHERE code = 'main'), 3, 'จัดการข้อมูลบุคลากร'),
      
-    ('subjects', 'รายวิชา', 'Subjects', '/subjects', 'book-open', 'subjects.read.all',
+    ('subjects', 'รายวิชา', 'Subjects', '/subjects', 'book-open', 'subjects',
      (SELECT id FROM menu_groups WHERE code = 'main'), 4, 'จัดการรายวิชา'),
      
-    ('classes', 'ห้องเรียน', 'Classes', '/classes', 'school', 'classes.read.all',
+    ('classes', 'ห้องเรียน', 'Classes', '/classes', 'school', 'classes',
      (SELECT id FROM menu_groups WHERE code = 'main'), 5, 'จัดการห้องเรียน'),
      
-    ('calendar', 'ปฏิทิน', 'Calendar', '/calendar', 'calendar', 'calendar.read.all',
+    ('calendar', 'ปฏิทิน', 'Calendar', '/calendar', 'calendar', 'calendar',
      (SELECT id FROM menu_groups WHERE code = 'main'), 6, 'ปฏิทินกิจกรรม'),
      
     -- Admin Menu
-    ('roles', 'จัดการบทบาท', 'Role Management', '/admin/roles', 'shield', 'roles.read.all',
+    ('roles', 'จัดการบทบาท', 'Role Management', '/admin/roles', 'shield', 'roles',
      (SELECT id FROM menu_groups WHERE code = 'admin'), 1, 'จัดการบทบาทและสิทธิ์'),
      
     -- Settings Menu
-    ('settings_general', 'ตั้งค่าทั่วไป', 'General Settings', '/settings', 'settings', 'settings.read.all',
+    ('settings_general', 'ตั้งค่าทั่วไป', 'General Settings', '/settings', 'settings', 'settings',
      (SELECT id FROM menu_groups WHERE code = 'settings'), 1, 'ตั้งค่าระบบทั่วไป')
 ON CONFLICT (code) DO NOTHING;
 

@@ -2,7 +2,6 @@ use crate::db::school_mapping::get_school_database_url;
 use crate::models::menu::*;
 use crate::models::auth::User;
 use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::permissions::has_permission;
 use crate::AppState;
 
 use axum::{
@@ -171,6 +170,13 @@ pub async fn get_user_menu(
         .into_response()
 }
 
+/// Check if user has ANY permission in the specified module
+/// Example: user_has_module_permission(&["staff.update.all"], "staff") -> true
+fn user_has_module_permission(user_permissions: &[String], module: &str) -> bool {
+    let prefix = format!("{}.", module);
+    user_permissions.iter().any(|perm| perm.starts_with(&prefix))
+}
+
 /// Group menu items by group and filter by permissions
 fn group_and_filter_menu(
     rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, String, String, Option<String>, i32, i32)>,
@@ -179,10 +185,10 @@ fn group_and_filter_menu(
     let mut groups_map: HashMap<String, MenuGroupResponse> = HashMap::new();
 
     for (id, code, name, path, icon, required_permission, group_code, group_name, group_icon, _, _) in rows {
-        // Check permission
-        if let Some(perm) = &required_permission {
-            if !has_permission(user_permissions, perm) {
-                continue; // Skip if user doesn't have permission
+        // Check permission - module-based matching
+        if let Some(module) = &required_permission {
+            if !user_has_module_permission(user_permissions, module) {
+                continue; // Skip if user doesn't have any permission in this module
             }
         }
 
