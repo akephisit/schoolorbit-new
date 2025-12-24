@@ -3,6 +3,10 @@
  * Module-based permission control for managing menu structure
  */
 
+import { PUBLIC_BACKEND_URL } from '$env/static/public';
+
+const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+
 export interface MenuGroup {
     id: string;
     code: string;
@@ -101,7 +105,7 @@ export interface ReorderItem {
 // ==================== Menu Groups ====================
 
 export async function listMenuGroups(): Promise<MenuGroup[]> {
-    const response = await fetch('/api/admin/menu/groups', {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/groups`, {
         credentials: 'include'
     });
 
@@ -115,7 +119,7 @@ export async function listMenuGroups(): Promise<MenuGroup[]> {
 }
 
 export async function createMenuGroup(data: CreateMenuGroupRequest): Promise<MenuGroup> {
-    const response = await fetch('/api/admin/menu/groups', {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/groups`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -140,7 +144,7 @@ export async function updateMenuGroup(
     id: string,
     data: UpdateMenuGroupRequest
 ): Promise<MenuGroup> {
-    const response = await fetch(`/api/admin/menu/groups/${id}`, {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/groups/${id}`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
@@ -162,7 +166,7 @@ export async function updateMenuGroup(
 }
 
 export async function deleteMenuGroup(id: string): Promise<void> {
-    const response = await fetch(`/api/admin/menu/groups/${id}`, {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/groups/${id}`, {
         method: 'DELETE',
         credentials: 'include'
     });
@@ -176,7 +180,7 @@ export async function deleteMenuGroup(id: string): Promise<void> {
 // ==================== Menu Items ====================
 
 export async function listMenuItems(groupId?: string): Promise<MenuItem[]> {
-    const url = groupId ? `/api/admin/menu/items?group_id=${groupId}` : '/api/admin/menu/items';
+    const url = groupId ? `${BACKEND_URL}/api/admin/menu/items?group_id=${groupId}` : `${BACKEND_URL}/api/admin/menu/items`;
     const response = await fetch(url, {
         credentials: 'include'
     });
@@ -191,7 +195,7 @@ export async function listMenuItems(groupId?: string): Promise<MenuItem[]> {
 }
 
 export async function createMenuItem(data: CreateMenuItemRequest): Promise<MenuItem> {
-    const response = await fetch('/api/admin/menu/items', {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/items`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -213,7 +217,7 @@ export async function createMenuItem(data: CreateMenuItemRequest): Promise<MenuI
 }
 
 export async function updateMenuItem(id: string, data: UpdateMenuItemRequest): Promise<MenuItem> {
-    const response = await fetch(`/api/admin/menu/items/${id}`, {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/items/${id}`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
@@ -235,7 +239,7 @@ export async function updateMenuItem(id: string, data: UpdateMenuItemRequest): P
 }
 
 export async function deleteMenuItem(id: string): Promise<void> {
-    const response = await fetch(`/api/admin/menu/items/${id}`, {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/items/${id}`, {
         method: 'DELETE',
         credentials: 'include'
     });
@@ -247,7 +251,7 @@ export async function deleteMenuItem(id: string): Promise<void> {
 }
 
 export async function reorderMenuItems(items: ReorderItem[]): Promise<void> {
-    const response = await fetch('/api/admin/menu/items/reorder', {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/items/reorder`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'

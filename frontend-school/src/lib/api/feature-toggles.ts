@@ -3,6 +3,10 @@
  * Module-based permission control for managing feature flags
  */
 
+import { PUBLIC_BACKEND_URL } from '$env/static/public';
+
+const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+
 export interface FeatureToggle {
     id: string;
     code: string;
@@ -31,7 +35,7 @@ export interface UpdateFeatureRequest {
  * List all feature toggles (filtered by user's module permissions)
  */
 export async function listFeatures(): Promise<FeatureToggle[]> {
-    const response = await fetch('/api/admin/features', {
+    const response = await fetch(`${BACKEND_URL}/api/admin/features`, {
         credentials: 'include'
     });
 
@@ -48,7 +52,7 @@ export async function listFeatures(): Promise<FeatureToggle[]> {
  * Get single feature toggle
  */
 export async function getFeature(id: string): Promise<FeatureToggle> {
-    const response = await fetch(`/api/admin/features/${id}`, {
+    const response = await fetch(`${BACKEND_URL}/api/admin/features/${id}`, {
         credentials: 'include'
     });
 
@@ -71,7 +75,7 @@ export async function updateFeature(
     id: string,
     data: UpdateFeatureRequest
 ): Promise<FeatureToggle> {
-    const response = await fetch(`/api/admin/features/${id}`, {
+    const response = await fetch(`${BACKEND_URL}/api/admin/features/${id}`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
@@ -96,7 +100,7 @@ export async function updateFeature(
  * Quick toggle feature on/off
  */
 export async function toggleFeature(id: string): Promise<FeatureToggle> {
-    const response = await fetch(`/api/admin/features/${id}/toggle`, {
+    const response = await fetch(`${BACKEND_URL}/api/admin/features/${id}/toggle`, {
         method: 'POST',
         credentials: 'include'
     });
