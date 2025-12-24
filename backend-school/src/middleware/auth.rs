@@ -9,14 +9,32 @@ use axum::{
 };
 
 /// Middleware to verify JWT token and inject user claims
+/// Supports both Authorization header (Bearer token) and Cookie
 pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
-    // Extract token from cookie
-    let cookie_header = req
+    // Try to extract token from Authorization header first (for cross-origin requests)
+    let auth_header = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok());
+    
+    let token_from_header = auth_header
+        .and_then(|h| {
+            if h.starts_with("Bearer ") {
+                Some(h[7..].to_string())
+            } else {
+                None
+            }
+        });
+
+    // Fallback to cookie (for same-origin requests)
+    let token_from_cookie = req
         .headers()
         .get(header::COOKIE)
-        .and_then(|h| h.to_str().ok());
+        .and_then(|h| h.to_str().ok())
+        .and_then(|cookie| JwtService::extract_token_from_cookie(Some(cookie)));
 
-    let token = match JwtService::extract_token_from_cookie(cookie_header) {
+    // Use Authorization header first, then cookie
+    let token = match token_from_header.or(token_from_cookie) {
         Some(t) => t,
         None => {
             return (
