@@ -56,6 +56,7 @@ services:
       - PORT=8081
       - DATABASE_URL=postgres://school_user:school_password@postgres:5432/school_db
       - JWT_SECRET=your-secret-key-change-this-in-production
+      - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
     depends_on:
       postgres:
         condition: service_healthy
