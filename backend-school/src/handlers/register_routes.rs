@@ -121,6 +121,8 @@ pub async fn register_routes(
                 name = EXCLUDED.name,
                 path = EXCLUDED.path,
                 icon = EXCLUDED.icon,
+                required_permission = EXCLUDED.required_permission,
+                group_id = EXCLUDED.group_id,
                 display_order = EXCLUDED.display_order,
                 updated_at = NOW()
             "#,
