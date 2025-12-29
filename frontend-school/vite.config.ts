@@ -17,6 +17,14 @@ function menuRegistryPlugin() {
 				return;
 			}
 
+			// Require SUBDOMAIN for registration
+			const subdomain = process.env.SUBDOMAIN;
+			if (!subdomain) {
+				console.log('⏭️  Skipping menu registration (no SUBDOMAIN)');
+				console.log('   This is expected for non-deployment builds');
+				return;
+			}
+
 			try {
 				console.log('📋 Scanning routes for menu metadata...');
 
@@ -28,7 +36,8 @@ function menuRegistryPlugin() {
 				}
 
 				console.log(`✅ Found ${routes.length} menu items`);
-				console.log('📤 Registering to backend...');
+				console.log(`📍 Registering for school: ${subdomain}`);
+				console.log('📤 Sending to backend...');
 
 				// Get backend URL from env
 				const backendUrl = process.env.PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
@@ -39,10 +48,7 @@ function menuRegistryPlugin() {
 					headers: {
 						'Content-Type': 'application/json',
 						'X-Deploy-Key': deployKey,
-						// Include subdomain from build env if available
-						...(process.env.SUBDOMAIN && {
-							'X-School-Subdomain': process.env.SUBDOMAIN
-						})
+						'X-School-Subdomain': subdomain
 					},
 					body: JSON.stringify({
 						routes,
