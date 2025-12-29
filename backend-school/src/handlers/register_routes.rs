@@ -97,13 +97,14 @@ pub async fn register_routes(
     
     
     let mut registered_count = 0;
+    let total_routes = data.routes.len();
     
-    for route in data.routes {
+    for route in &data.routes {
         // Generate code from title (slugify)
         let code = slugify(&route.title);
         
-        // Upsert menu item
-        let result = sqlx::query!(
+        // Upsert menu item (using query instead of query! to avoid compile-time DB check)
+        let result = sqlx::query(
             r#"
             INSERT INTO menu_items (
                 id, code, name, path, icon, 
@@ -123,14 +124,14 @@ pub async fn register_routes(
                 display_order = EXCLUDED.display_order,
                 updated_at = NOW()
             "#,
-            code,
-            route.title,
-            route.path,
-            route.icon,
-            route.permission,
-            route.group,
-            route.order
         )
+        .bind(&code)
+        .bind(&route.title)
+        .bind(&route.path)
+        .bind(&route.icon)
+        .bind(&route.permission)
+        .bind(&route.group)
+        .bind(route.order)
         .execute(&pool)
         .await;
         
@@ -145,7 +146,7 @@ pub async fn register_routes(
         }
     }
     
-    println!("🎉 Successfully registered {}/{} routes", registered_count, data.routes.len());
+    println!("🎉 Successfully registered {}/{} routes", registered_count, total_routes);
     
     (
         StatusCode::OK,
