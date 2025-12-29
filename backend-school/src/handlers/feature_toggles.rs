@@ -429,35 +429,45 @@ async fn get_pool_and_check_module(
     Ok((pool, user))
 }
 
-/// Helper: Authenticate user and get permissions
+/// Helper: Authenticate user and get their permissions
 async fn authenticate_user(
     headers: &HeaderMap,
     pool: &PgPool,
 ) -> Result<(User, Vec<String>), Response> {
-    // Get token from Authorization header
-    let token = match headers.get("Authorization") {
-        Some(h) => match h.to_str() {
-            Ok(t) => t.trim_start_matches("Bearer ").to_string(),
-            Err(_) => {
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    JsonResponse(serde_json::json!({
-                        "success": false,
-                        "error": "Invalid authorization header"
-                    }))
-                ).into_response());
+    // Try to extract token from Authorization header first
+    let auth_header = headers
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok());
+    
+    let token_from_header = auth_header
+        .and_then(|h| {
+            if h.starts_with("Bearer ") {
+                Some(h[7..].to_string())
+            } else {
+                None
             }
-        },
+        });
+
+    // Fallback to cookie
+    let token_from_cookie = headers
+        .get("Cookie")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|cookie| JwtService::extract_token_from_cookie(Some(cookie)));
+
+    // Use Authorization header first, then cookie
+    let token = match token_from_header.or(token_from_cookie) {
+        Some(t) => t,
         None => {
             return Err((
                 StatusCode::UNAUTHORIZED,
                 JsonResponse(serde_json::json!({
                     "success": false,
-                    "error": "Missing authorization header"
+                    "error": "No authentication token found"
                 }))
             ).into_response());
         }
     };
+
 
     // Validate token and extract claims
     let claims = match JwtService::verify_token(&token) {

@@ -82,12 +82,28 @@ async fn check_user_permission(
 ) -> Result<User, Response> {
     use crate::models::staff::UserPermissions;
     
-    // Get token from cookie
-    let cookie_header = headers
-        .get(header::COOKIE)
+    // Try to extract token from Authorization header first
+    let auth_header = headers
+        .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
     
-    let token = match crate::utils::jwt::JwtService::extract_token_from_cookie(cookie_header) {
+    let token_from_header = auth_header
+        .and_then(|h| {
+            if h.starts_with("Bearer ") {
+                Some(h[7..].to_string())
+            } else {
+                None
+            }
+        });
+
+    // Fallback to cookie
+    let token_from_cookie = headers
+        .get(header::COOKIE)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
+
+    // Use Authorization header first, then cookie
+    let token = match token_from_header.or(token_from_cookie) {
         Some(t) => t,
         None => {
             return Err((
@@ -99,6 +115,7 @@ async fn check_user_permission(
             ).into_response());
         }
     };
+
     
     // Verify token
     let claims = match crate::utils::jwt::JwtService::verify_token(&token) {
