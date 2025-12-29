@@ -83,7 +83,8 @@ pub async fn get_user_menu(
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(json!({
-                    "error": "No authentication token found"
+                    "success": false,
+                    "error": "กรุณาเข้าสู่ระบบ"
                 })),
             ).into_response();
         }
