@@ -72,6 +72,7 @@ jobs:
         env:
           PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
           VITE_DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          SUBDOMAIN: ${{ inputs.subdomain }}
         run: npm run build
       
       - name: Deploy to Cloudflare Workers
