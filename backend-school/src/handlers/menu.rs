@@ -182,9 +182,18 @@ fn group_and_filter_menu(
     rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, String, String, Option<String>, i32, i32)>,
     user_permissions: &[String],
 ) -> Vec<MenuGroupResponse> {
-    let mut groups_map: HashMap<String, MenuGroupResponse> = HashMap::new();
+    // Intermediate struct to hold order information
+    struct GroupWithOrder {
+        order: i32,
+        code: String,
+        name: String,
+        icon: Option<String>,
+        items: Vec<(i32, MenuItemResponse)>, // (item_order, item)
+    }
+    
+    let mut groups_map: HashMap<String, GroupWithOrder> = HashMap::new();
 
-    for (id, code, name, path, icon, required_permission, group_code, group_name, group_icon, _, _) in rows {
+    for (id, code, name, path, icon, required_permission, group_code, group_name, group_icon, group_order, item_order) in rows {
         // Check permission - module-based matching
         if let Some(module) = &required_permission {
             if !user_has_module_permission(user_permissions, module) {
@@ -195,27 +204,47 @@ fn group_and_filter_menu(
         // Get or create group
         let group = groups_map
             .entry(group_code.clone())
-            .or_insert_with(|| MenuGroupResponse {
+            .or_insert_with(|| GroupWithOrder {
+                order: group_order,
                 code: group_code.clone(),
                 name: group_name.clone(),
                 icon: group_icon.clone(),
                 items: vec![],
             });
 
-        // Add item to group
-        group.items.push(MenuItemResponse {
+        // Add item to group with its order
+        group.items.push((item_order, MenuItemResponse {
             id,
             code,
             name,
             path,
             icon,
-        });
+        }));
     }
 
-    // Convert to vector and filter empty groups
-    groups_map
+    // Convert to vector and sort
+    let mut groups: Vec<GroupWithOrder> = groups_map
         .into_values()
         .filter(|g| !g.items.is_empty())
+        .collect();
+
+    // Sort groups by display_order
+    groups.sort_by_key(|g| g.order);
+
+    // Sort items within each group and convert to final format
+    groups
+        .into_iter()
+        .map(|mut g| {
+            // Sort items by display_order
+            g.items.sort_by_key(|(order, _)| *order);
+            
+            MenuGroupResponse {
+                code: g.code,
+                name: g.name,
+                icon: g.icon,
+                items: g.items.into_iter().map(|(_, item)| item).collect(),
+            }
+        })
         .collect()
 }
 
