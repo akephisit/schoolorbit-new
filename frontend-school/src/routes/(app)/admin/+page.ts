@@ -2,7 +2,7 @@
  * Admin Dashboard Page
  */
 
-export const meta = {
+export const _meta = {
     menu: {
         title: 'ระบบจัดการ',
         icon: 'Settings',

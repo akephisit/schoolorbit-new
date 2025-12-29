@@ -45,12 +45,12 @@ export async function scanRoutes(): Promise<RouteMetadata[]> {
 }
 
 /**
- * Extract meta.menu from file content
+ * Extract _meta.menu from file content
  */
 export function extractMeta(content: string): { menu?: any } | null {
     try {
-        // Match: export const meta = { ... }
-        const metaMatch = content.match(/export\s+const\s+meta\s*=\s*({[\s\S]*?});/);
+        // Match: export const _meta = { ... }
+        const metaMatch = content.match(/export\s+const\s+_meta\s*=\s*({[\s\S]*?});/);
         if (!metaMatch) return null;
 
         const metaCode = metaMatch[1];

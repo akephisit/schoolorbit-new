@@ -2,7 +2,7 @@
  * Feature Toggles Management Page
  */
 
-export const meta = {
+export const _meta = {
     menu: {
         title: 'จัดการระบบงาน',
         icon: 'Zap',

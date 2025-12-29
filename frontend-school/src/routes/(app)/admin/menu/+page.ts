@@ -2,7 +2,7 @@
  * Menu Administration Page
  */
 
-export const meta = {
+export const _meta = {
     menu: {
         title: 'จัดการเมนู',
         icon: 'Menu',
