@@ -3,10 +3,19 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
-/// Extract subdomain from Origin or Referer header
+/// Extract subdomain from X-School-Subdomain header (for deploy builds) or Origin/Referer (for runtime)
 /// Safe because these headers are set by the browser and cannot be spoofed via JavaScript
 pub fn extract_subdomain_from_request(headers: &HeaderMap) -> Result<String, Response> {
-    // Try Origin first (most reliable)
+    // First, try X-School-Subdomain header (used during deployment builds)
+    if let Some(subdomain_header) = headers.get("x-school-subdomain") {
+        if let Ok(subdomain) = subdomain_header.to_str() {
+            if !subdomain.is_empty() {
+                return Ok(subdomain.to_string());
+            }
+        }
+    }
+    
+    // Fallback: Try Origin/Referer (used during runtime requests)
     let url = headers
         .get("origin")
         .or_else(|| headers.get("referer"))
@@ -15,7 +24,7 @@ pub fn extract_subdomain_from_request(headers: &HeaderMap) -> Result<String, Res
             (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({
-                    "error": "Missing Origin header"
+                    "error": "No subdomain specified"
                 })),
             )
                 .into_response()
@@ -28,7 +37,7 @@ pub fn extract_subdomain_from_request(headers: &HeaderMap) -> Result<String, Res
         .trim_start_matches("http://")
         .split('/')
         .next()
-        .unwrap_or("");
+        .unwrap_or( "");
 
     let parts: Vec<&str> = host.split('.').collect();
     
