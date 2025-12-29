@@ -167,6 +167,8 @@ async fn main() {
         .route("/api/admin/menu/items/reorder", post(handlers::menu_admin::reorder_menu_items)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
+        // Route registration (no auth - uses deploy key)
+        .route("/api/admin/routes/register", post(handlers::register_routes::register_routes))
         
         
         // Internal routes (protected by internal auth middleware)

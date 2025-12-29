@@ -51,18 +51,9 @@ pub struct MenuItemWithGroup {
     pub icon: Option<String>,
     pub group_code: String,
     pub group_name: String,
-    pub group_icon: Option<String>,
 }
 
-/// Grouped Menu Response
-#[derive(Debug, Serialize)]
-pub struct MenuGroupResponse {
-    pub code: String,
-    pub name: String,
-    pub icon: Option<String>,
-    pub items: Vec<MenuItemResponse>,
-}
-
+/// Menu Item Response (for user menu API)
 #[derive(Debug, Serialize)]
 pub struct MenuItemResponse {
     pub id: Uuid,
@@ -72,9 +63,47 @@ pub struct MenuItemResponse {
     pub icon: Option<String>,
 }
 
+/// Menu Group Response (for user menu API)
+#[derive(Debug, Serialize)]
+pub struct MenuGroupResponse {
+    pub code: String,
+    pub name: String,
+    pub icon: Option<String>,
+    pub items: Vec<MenuItemResponse>,
+}
+
 /// User Menu API Response
 #[derive(Debug, Serialize)]
 pub struct UserMenuResponse {
     pub success: bool,
     pub groups: Vec<MenuGroupResponse>,
+}
+
+// ==================== Route Registration (Build-time) ====================
+
+/// Request payload for route registration from frontend build
+#[derive(Debug, Deserialize)]
+pub struct RouteRegistration {
+    pub routes: Vec<RouteItem>,
+    pub timestamp: Option<String>,
+    pub environment: Option<String>,
+}
+
+/// Single route item from frontend  
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RouteItem {
+    pub path: String,
+    pub title: String,
+    pub icon: Option<String>,
+    pub group: String,  // group code
+    pub order: i32,
+    pub permission: Option<String>,  // module name
+}
+
+/// Response for route registration
+#[derive(Debug, Serialize)]
+pub struct RouteRegistrationResponse {
+    pub success: bool,
+    pub registered: usize,
+    pub message: String,
 }

@@ -61,7 +61,8 @@ jobs:
             "vars": {
               "PUBLIC_BACKEND_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
               "SCHOOL_ID": "${{ inputs.school_id }}",
-              "SUBDOMAIN": "${{ inputs.subdomain }}"
+              "SUBDOMAIN": "${{ inputs.subdomain }}",
+              "VITE_DEPLOY_KEY": "${{ secrets.DEPLOY_KEY }}"
             }
           }
           EOF
@@ -70,6 +71,7 @@ jobs:
         working-directory: frontend-school
         env:
           PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
+          VITE_DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
         run: npm run build
       
       - name: Deploy to Cloudflare Workers
