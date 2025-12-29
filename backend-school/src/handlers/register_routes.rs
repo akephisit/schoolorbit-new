@@ -95,6 +95,23 @@ pub async fn register_routes(
         }
     };
     
+    // ⚠️ CLEAN SLATE: Delete all existing menu items before re-registering
+    // This ensures 100% sync with code, but will remove any manual modifications
+    println!("🗑️  Clearing existing menu items...");
+    let delete_result = sqlx::query("DELETE FROM menu_items")
+        .execute(&pool)
+        .await;
+    
+    match delete_result {
+        Ok(result) => {
+            let deleted_count = result.rows_affected();
+            println!("✅ Deleted {} existing menu items", deleted_count);
+        }
+        Err(e) => {
+            eprintln!("⚠️  Failed to delete existing items: {}", e);
+            // Continue anyway - might be first deployment
+        }
+    }
     
     let mut registered_count = 0;
     let total_routes = data.routes.len();
@@ -103,7 +120,7 @@ pub async fn register_routes(
         // Generate code from title (slugify)
         let code = slugify(&route.title);
         
-        // Upsert menu item (using query instead of query! to avoid compile-time DB check)
+        // Insert menu item (no ON CONFLICT needed since we deleted all)
         let result = sqlx::query(
             r#"
             INSERT INTO menu_items (
@@ -117,14 +134,6 @@ pub async fn register_routes(
                 $7,
                 true
             )
-            ON CONFLICT (code) DO UPDATE SET
-                name = EXCLUDED.name,
-                path = EXCLUDED.path,
-                icon = EXCLUDED.icon,
-                required_permission = EXCLUDED.required_permission,
-                group_id = EXCLUDED.group_id,
-                display_order = EXCLUDED.display_order,
-                updated_at = NOW()
             "#,
         )
         .bind(&code)
