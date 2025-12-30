@@ -381,10 +381,11 @@ INSERT INTO roles (code, name, name_en, description, category, level, permission
     ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'administrative', 80, ARRAY[]::TEXT[]),
     ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'administrative', 100, ARRAY[]::TEXT[]),
     ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'operational', 20, ARRAY[]::TEXT[]),
-    ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'operational', 15, ARRAY[]::TEXT[])
+    ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'operational', 15, ARRAY[]::TEXT[]),
+    ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'ผู้ดูแลระบบทั้งหมด', 'administrative', 999, ARRAY[]::TEXT[])
 ON CONFLICT (code) DO NOTHING;
 
--- Note: ADMIN role will be created during provisioning with essential permissions
+-- Note: ADMIN role will be updated by migration 015 to have wildcard (*) permission
 
 -- ===================================================================
 -- 12. Insert Default Departments
