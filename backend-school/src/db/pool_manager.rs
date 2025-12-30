@@ -35,23 +35,23 @@ impl PoolManager {
         let key = database_url.to_string();
 
         // Try to get existing pool
-        let pool = {
+        let (pool, is_new_pool) = {
             let pools = self.pools.read().await;
             if let Some(entry) = pools.get(&key) {
                 // Check if pool is still valid
                 if entry.last_used.elapsed() < self.pool_ttl {
                     println!("📦 Using cached pool for school: {}", subdomain);
-                    Some(entry.pool.clone())
+                    (Some(entry.pool.clone()), false)
                 } else {
-                    None
+                    (None, false)
                 }
             } else {
-                None
+                (None, false)
             }
         };
 
-        let pool = match pool {
-            Some(p) => p,
+        let (pool, is_new_pool) = match pool {
+            Some(p) => (p, is_new_pool),
             None => {
                 // Create new pool
                 println!("🔄 Creating new connection pool for: {}", subdomain);
@@ -72,7 +72,7 @@ impl PoolManager {
                 }
 
                 println!("✅ New pool created for: {}", subdomain);
-                pool
+                (pool, true)
             }
         };
 
@@ -81,12 +81,14 @@ impl PoolManager {
             .run_migrations_once(subdomain, &pool)
             .await?;
 
-        // Sync permissions to database after migrations
-        if let Err(e) = crate::utils::permission_sync::sync_permissions(&pool).await {
-            eprintln!("⚠️  Failed to sync permissions for {}: {}", subdomain, e);
-            // Don't fail the request, just log the error
-        } else {
-            println!("✅ Permissions synced for: {}", subdomain);
+        // Sync permissions after migrations (only for new pools)
+        if is_new_pool {
+            if let Err(e) = crate::utils::permission_sync::sync_permissions(&pool).await {
+                eprintln!("⚠️  Failed to sync permissions for {}: {}", subdomain, e);
+                // Don't fail the request, just log the error
+            } else {
+                println!("✅ Permissions synced for: {}", subdomain);
+            }
         }
 
         Ok(pool)
