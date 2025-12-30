@@ -408,52 +408,10 @@ INSERT INTO departments (code, name, name_en, description, display_order) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- ===================================================================
--- 13. Insert Default Permissions (CRUD Format)
+-- 13. Default Permissions
 -- ===================================================================
-INSERT INTO permissions (code, name, module, action, description) VALUES
-    -- Staff Management (renamed from users to staff for clarity)
-    ('staff.read', 'ดูข้อมูลบุคลากร', 'staff', 'read', 'สามารถดูข้อมูลบุคลากร'),
-    ('staff.create', 'สร้างบุคลากร', 'staff', 'create', 'สามารถสร้างบุคลากรใหม่'),
-    ('staff.update', 'แก้ไขบุคลากร', 'staff', 'update', 'สามารถแก้ไขข้อมูลบุคลากร'),
-    ('staff.delete', 'ลบบุคลากร', 'staff', 'delete', 'สามารถลบบุคลากร'),
-    
-    -- Student Management
-    ('students.read', 'ดูข้อมูลนักเรียน', 'students', 'read', 'สามารถดูข้อมูลนักเรียน'),
-    ('students.create', 'เพิ่มนักเรียน', 'students', 'create', 'สามารถเพิ่มนักเรียนใหม่'),
-    ('students.update', 'แก้ไขนักเรียน', 'students', 'update', 'สามารถแก้ไขข้อมูลนักเรียน'),
-    ('students.delete', 'ลบนักเรียน', 'students', 'delete', 'สามารถลบนักเรียน'),
-    
-    -- Grade Management
-    ('grades.read', 'ดูคะแนน', 'grades', 'read', 'สามารถดูคะแนนนักเรียน'),
-    ('grades.create', 'เพิ่มคะแนน', 'grades', 'create', 'สามารถเพิ่มคะแนน'),
-    ('grades.update', 'แก้ไขคะแนน', 'grades', 'update', 'สามารถแก้ไขคะแนนนักเรียน'),
-    ('grades.delete', 'ลบคะแนน', 'grades', 'delete', 'สามารถลบคะแนน'),
-    
-    -- Attendance
-    ('attendance.read', 'ดูการเข้าเรียน', 'attendance', 'read', 'สามารถดูข้อมูลการเข้าเรียน'),
-    ('attendance.create', 'เช็คชื่อ', 'attendance', 'create', 'สามารถเช็คชื่อนักเรียน'),
-    ('attendance.update', 'แก้ไขการเข้าเรียน', 'attendance', 'update', 'สามารถแก้ไขข้อมูลการเข้าเรียน'),
-    
-    -- Document Management
-    ('documents.read', 'ดูเอกสาร', 'documents', 'read', 'สามารถดูเอกสาร'),
-    ('documents.create', 'สร้างเอกสาร', 'documents', 'create', 'สามารถสร้างเอกสาร'),
-    ('documents.update', 'แก้ไขเอกสาร', 'documents', 'update', 'สามารถแก้ไขเอกสาร'),
-    ('documents.delete', 'ลบเอกสาร', 'documents', 'delete', 'สามารถลบเอกสาร'),
-    ('documents.approve', 'อนุมัติเอกสาร', 'documents', 'approve', 'สามารถอนุมัติเอกสาร'),
-    ('documents.approve_dept', 'อนุมัติเอกสารระดับฝ่าย', 'documents', 'approve', 'อนุมัติเอกสารในระดับฝ่าย'),
-    
-    -- Finance
-    ('finance.read', 'ดูข้อมูลการเงิน', 'finance', 'read', 'สามารถดูข้อมูลการเงิน'),
-    ('finance.create', 'สร้างรายการการเงิน', 'finance', 'create', 'สามารถสร้างรายการทางการเงิน'),
-    ('finance.update', 'แก้ไขการเงิน', 'finance', 'update', 'สามารถแก้ไขรายการทางการเงิน'),
-    ('finance.approve', 'อนุมัติการเงิน', 'finance', 'approve', 'สามารถอนุมัติรายการทางการเงิน'),
-    
-    -- Library
-    ('library.read', 'ดูข้อมูลห้องสมุด', 'library', 'read', 'สามารถดูข้อมูลห้องสมุด'),
-    ('library.create', 'เพิ่มหนังสือ', 'library', 'create', 'สามารถเพิ่มหนังสือ'),
-    ('library.update', 'แก้ไขห้องสมุด', 'library', 'update', 'จัดการระบบห้องสมุด'),
-    ('library.delete', 'ลบหนังสือ', 'library', 'delete', 'สามารถลบหนังสือ')
-ON CONFLICT (code) DO NOTHING;
+-- Permissions are now managed by the Rust permission registry 
+-- (src/permissions/registry.rs) and synced automatically.
 
 -- ===================================================================
 -- 14. Create Updated At Trigger Function (if not exists)
