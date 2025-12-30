@@ -6,7 +6,7 @@ export const _meta = {
     menu: {
         title: 'บุคลากร',
         icon: 'Users',
-        group: 'hr',
+        group: 'main',
         order: 10,
         permission: 'staff'
     }
