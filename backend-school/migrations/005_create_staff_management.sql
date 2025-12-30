@@ -371,10 +371,20 @@ CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module);
 COMMENT ON TABLE permissions IS 'สิทธิ์การใช้งานระบบ';
 
 -- ===================================================================
--- 11. Default Roles
+-- 11. Insert Default Role Templates
 -- ===================================================================
--- Note: Roles and permissions are now managed through the admin UI.
--- The ADMIN role will be created during provisioning with essential permissions.
+-- Create role templates without permissions
+-- Admin will assign permissions through the UI
+INSERT INTO roles (code, name, name_en, description, category, level, permissions) VALUES
+    ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'teaching', 10, ARRAY[]::TEXT[]),
+    ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'administrative', 50, ARRAY[]::TEXT[]),
+    ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'administrative', 80, ARRAY[]::TEXT[]),
+    ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'administrative', 100, ARRAY[]::TEXT[]),
+    ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'operational', 20, ARRAY[]::TEXT[]),
+    ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'operational', 15, ARRAY[]::TEXT[])
+ON CONFLICT (code) DO NOTHING;
+
+-- Note: ADMIN role will be created during provisioning with essential permissions
 
 -- ===================================================================
 -- 12. Insert Default Departments
