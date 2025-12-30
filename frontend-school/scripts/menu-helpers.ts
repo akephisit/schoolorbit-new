@@ -60,16 +60,31 @@ export function extractMeta(content: string): { menu?: any } | null {
         if (!menuMatch) return null;
 
         // Convert JavaScript object syntax to valid JSON
-        // Replace single quotes with double quotes and remove trailing commas
-        const menuStr = menuMatch[1]
-            .replace(/'/g, '"')  // Single quotes to double quotes
-            .replace(/(\w+):/g, '"$1":')  // Wrap keys in double quotes
-            .replace(/,(\s*[}\]])/g, '$1');  // Remove trailing commas
+        let menuStr = menuMatch[1];
 
-        // Parse as JSON instead of eval
-        const menuObj = JSON.parse(menuStr);
+        // Step 1: Replace single quotes with double quotes for string values
+        // But be careful with quotes inside strings
+        menuStr = menuStr.replace(/'([^']*)'/g, '"$1"');
 
-        return { menu: menuObj };
+        // Step 2: Wrap unquoted keys in double quotes
+        menuStr = menuStr.replace(/(\w+):/g, '"$1":');
+
+        // Step 3: Remove trailing commas before closing braces/brackets
+        menuStr = menuStr.replace(/,(\s*[}\]])/g, '$1');
+
+        // Try to parse as JSON
+        try {
+            const menuObj = JSON.parse(menuStr);
+            return { menu: menuObj };
+        } catch (parseError) {
+            // If JSON.parse fails, log detailed error for debugging
+            console.error(`Failed to parse menu metadata as JSON:`, {
+                error: parseError,
+                converted: menuStr,
+                original: menuMatch[1]
+            });
+            return null;
+        }
     } catch (error) {
         console.error(`Failed to extract meta from content:`, error);
         return null;
