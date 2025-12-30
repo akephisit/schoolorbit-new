@@ -38,6 +38,7 @@ pub async fn provision_tenant(
         }
     };
 
+
     println!("✅ Connected to tenant database");
 
     // Run migrations
@@ -56,6 +57,18 @@ pub async fn provision_tenant(
                 "error": format!("Migration failed: {}", e)
             });
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+        }
+    }
+
+    // Sync permissions immediately after migrations
+    println!("🔄 Syncing permissions...");
+    match crate::utils::permission_sync::sync_permissions(&pool).await {
+        Ok(_) => {
+            println!("✅ Permissions synced successfully");
+        }
+        Err(e) => {
+            eprintln!("⚠️  Failed to sync permissions: {}", e);
+            // Continue anyway - permissions will sync on first request
         }
     }
 
