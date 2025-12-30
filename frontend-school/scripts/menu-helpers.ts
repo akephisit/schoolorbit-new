@@ -62,6 +62,10 @@ export function extractMeta(content: string): { menu?: any } | null {
         // Convert JavaScript object syntax to valid JSON
         let menuStr = menuMatch[1];
 
+        // Step 0: Remove JavaScript comments (JSON doesn't support comments)
+        menuStr = menuStr.replace(/\/\/.*$/gm, '');  // Remove single-line comments
+        menuStr = menuStr.replace(/\/\*[\s\S]*?\*\//g, '');  // Remove multi-line comments
+
         // Step 1: Replace single quotes with double quotes for string values
         // But be careful with quotes inside strings
         menuStr = menuStr.replace(/'([^']*)'/g, '"$1"');
