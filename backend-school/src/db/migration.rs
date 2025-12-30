@@ -3,16 +3,18 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Track which schools have been migrated in this session
+/// Track which schools have been migrated and synced in this session
 #[derive(Clone)]
 pub struct MigrationTracker {
     migrated: Arc<RwLock<HashSet<String>>>,
+    permissions_synced: Arc<RwLock<HashSet<String>>>,
 }
 
 impl MigrationTracker {
     pub fn new() -> Self {
         Self {
             migrated: Arc::new(RwLock::new(HashSet::new())),
+            permissions_synced: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -26,6 +28,18 @@ impl MigrationTracker {
     async fn mark_migrated(&self, subdomain: &str) {
         let mut migrated = self.migrated.write().await;
         migrated.insert(subdomain.to_string());
+    }
+
+    /// Check if permissions have been synced
+    async fn is_permissions_synced(&self, subdomain: &str) -> bool {
+        let synced = self.permissions_synced.read().await;
+        synced.contains(subdomain)
+    }
+
+    /// Mark permissions as synced
+    async fn mark_permissions_synced(&self, subdomain: &str) {
+        let mut synced = self.permissions_synced.write().await;
+        synced.insert(subdomain.to_string());
     }
 
     /// Run migrations for a school (once per session)
@@ -52,6 +66,31 @@ impl MigrationTracker {
 
         println!("✅ Migrations completed for: {}", subdomain);
         Ok(true) // Newly migrated
+    }
+
+    /// Sync permissions for a school (once per session)
+    pub async fn sync_permissions_once(
+        &self,
+        subdomain: &str,
+        pool: &PgPool,
+    ) -> Result<bool, String> {
+        // Check if already synced
+        if self.is_permissions_synced(subdomain).await {
+            return Ok(false); // Already synced
+        }
+
+        println!("🔄 Syncing permissions for school: {}", subdomain);
+
+        // Sync permissions
+        crate::utils::permission_sync::sync_permissions(pool)
+            .await
+            .map_err(|e| format!("Permission sync failed for {}: {}", subdomain, e))?;
+
+        // Mark as synced
+        self.mark_permissions_synced(subdomain).await;
+
+        println!("✅ Permissions synced for: {}", subdomain);
+        Ok(true) // Newly synced
     }
 
     /// Get list of migrated schools

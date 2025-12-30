@@ -77,9 +77,16 @@ impl PoolManager {
         };
 
 
+
         // Run migrations (lazy - only once per school per session)
         self.migration_tracker
             .run_migrations_once(subdomain, &pool)
+            .await?;
+
+        // Sync permissions (lazy - only once per school per session)
+        // This ensures existing schools get updated permissions after backend deploy
+        self.migration_tracker
+            .sync_permissions_once(subdomain, &pool)
             .await?;
 
         Ok(pool)
