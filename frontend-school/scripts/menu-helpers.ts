@@ -59,9 +59,15 @@ export function extractMeta(content: string): { menu?: any } | null {
         const menuMatch = metaCode.match(/menu:\s*({[\s\S]*?})\s*(?:,|\})/);
         if (!menuMatch) return null;
 
-        // Evaluate the menu object
-        // SAFETY: This is build-time code scanning our own files
-        const menuObj = eval(`(${menuMatch[1]})`);
+        // Convert JavaScript object syntax to valid JSON
+        // Replace single quotes with double quotes and remove trailing commas
+        const menuStr = menuMatch[1]
+            .replace(/'/g, '"')  // Single quotes to double quotes
+            .replace(/(\w+):/g, '"$1":')  // Wrap keys in double quotes
+            .replace(/,(\s*[}\]])/g, '$1');  // Remove trailing commas
+
+        // Parse as JSON instead of eval
+        const menuObj = JSON.parse(menuStr);
 
         return { menu: menuObj };
     } catch (error) {
