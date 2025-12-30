@@ -35,32 +35,32 @@ impl PoolManager {
         let key = database_url.to_string();
 
         // Try to get existing pool
-        let (pool, is_new_pool) = {
+        let pool = {
             let pools = self.pools.read().await;
             if let Some(entry) = pools.get(&key) {
                 // Check if pool is still valid
                 if entry.last_used.elapsed() < self.pool_ttl {
                     println!("📦 Using cached pool for school: {}", subdomain);
-                    (Some(entry.pool.clone()), false)
+                    Some(entry.pool.clone())
                 } else {
-                    (None, false)
+                    None
                 }
             } else {
-                (None, false)
+                None
             }
         };
 
-        let (pool, is_new_pool) = match pool {
-            Some(p) => (p, is_new_pool),
+        let pool = match pool {
+            Some(p) => p,
             None => {
-                // Create new pool
+                // Create new connection pool
                 println!("🔄 Creating new connection pool for: {}", subdomain);
                 let pool = PgPoolOptions::new()
                     .max_connections(self.max_connections_per_school)
                     .acquire_timeout(Duration::from_secs(10))
                     .connect(&database_url)
                     .await
-                    .map_err(|e| format!("Failed to connect to database: {}", e))?;
+                    .map_err(|e| format!("Failed to connect to database for {}: {}", subdomain, e))?;
 
                 // Store in cache
                 {
@@ -72,24 +72,15 @@ impl PoolManager {
                 }
 
                 println!("✅ New pool created for: {}", subdomain);
-                (pool, true)
+                pool
             }
         };
+
 
         // Run migrations (lazy - only once per school per session)
         self.migration_tracker
             .run_migrations_once(subdomain, &pool)
             .await?;
-
-        // Sync permissions after migrations (only for new pools)
-        if is_new_pool {
-            if let Err(e) = crate::utils::permission_sync::sync_permissions(&pool).await {
-                eprintln!("⚠️  Failed to sync permissions for {}: {}", subdomain, e);
-                // Don't fail the request, just log the error
-            } else {
-                println!("✅ Permissions synced for: {}", subdomain);
-            }
-        }
 
         Ok(pool)
     }
