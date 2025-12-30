@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionDef {
     pub code: &'static str,
+    pub name: &'static str,      // Thai display name
     pub module: &'static str,
     pub action: &'static str,
     pub scope: &'static str,
@@ -48,6 +49,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     // Staff permissions
     PermissionDef {
         code: codes::STAFF_READ_ALL,
+        name: "ดูบุคลากรทั้งหมด",
         module: "staff",
         action: "read",
         scope: "all",
@@ -55,6 +57,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::STAFF_CREATE_ALL,
+        name: "เพิ่มบุคลากร",
         module: "staff",
         action: "create",
         scope: "all",
@@ -62,6 +65,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::STAFF_UPDATE_ALL,
+        name: "แก้ไขบุคลากร",
         module: "staff",
         action: "update",
         scope: "all",
@@ -69,6 +73,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::STAFF_DELETE_ALL,
+        name: "ลบบุคลากร",
         module: "staff",
         action: "delete",
         scope: "all",
@@ -77,6 +82,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     // Role permissions
     PermissionDef {
         code: codes::ROLES_READ_ALL,
+        name: "ดูบทบาท",
         module: "roles",
         action: "read",
         scope: "all",
@@ -84,6 +90,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::ROLES_CREATE_ALL,
+        name: "สร้างบทบาท",
         module: "roles",
         action: "create",
         scope: "all",
@@ -91,6 +98,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::ROLES_UPDATE_ALL,
+        name: "แก้ไขบทบาท",
         module: "roles",
         action: "update",
         scope: "all",
@@ -98,6 +106,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::ROLES_DELETE_ALL,
+        name: "ลบบทบาท",
         module: "roles",
         action: "delete",
         scope: "all",
@@ -105,6 +114,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::ROLES_ASSIGN_ALL,
+        name: "มอบหมายบทบาท",
         module: "roles",
         action: "assign",
         scope: "all",
@@ -112,6 +122,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::ROLES_REMOVE_ALL,
+        name: "ถอนบทบาท",
         module: "roles",
         action: "remove",
         scope: "all",
@@ -120,6 +131,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     // Menu permissions
     PermissionDef {
         code: codes::MENU_READ_ALL,
+        name: "ดูเมนู",
         module: "menu",
         action: "read",
         scope: "all",
@@ -127,6 +139,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::MENU_CREATE_ALL,
+        name: "สร้างเมนู",
         module: "menu",
         action: "create",
         scope: "all",
@@ -134,6 +147,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::MENU_UPDATE_ALL,
+        name: "แก้ไขเมนู",
         module: "menu",
         action: "update",
         scope: "all",
@@ -141,6 +155,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::MENU_DELETE_ALL,
+        name: "ลบเมนู",
         module: "menu",
         action: "delete",
         scope: "all",
@@ -149,6 +164,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     // Settings permissions
     PermissionDef {
         code: codes::SETTINGS_READ,
+        name: "ดูการตั้งค่า",
         module: "settings",
         action: "read",
         scope: "all",
@@ -156,6 +172,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::SETTINGS_UPDATE,
+        name: "แก้ไขการตั้งค่า",
         module: "settings",
         action: "update",
         scope: "all",
@@ -164,6 +181,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     // Feature toggles permissions
     PermissionDef {
         code: codes::FEATURES_READ_ALL,
+        name: "ดูฟีเจอร์",
         module: "features",
         action: "read",
         scope: "all",
@@ -171,6 +189,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     PermissionDef {
         code: codes::FEATURES_UPDATE_ALL,
+        name: "แก้ไขฟีเจอร์",
         module: "features",
         action: "update",
         scope: "all",

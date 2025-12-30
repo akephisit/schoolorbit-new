@@ -8,10 +8,11 @@ pub async fn sync_permissions(pool: &PgPool) -> Result<(), sqlx::Error> {
     for perm in ALL_PERMISSIONS {
         sqlx::query(
             r#"
-            INSERT INTO permissions (code, module, action, scope, description)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO permissions (code, name, module, action, scope, description)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (code) DO UPDATE 
             SET 
+                name = EXCLUDED.name,
                 module = EXCLUDED.module,
                 action = EXCLUDED.action,
                 scope = EXCLUDED.scope,
@@ -19,6 +20,7 @@ pub async fn sync_permissions(pool: &PgPool) -> Result<(), sqlx::Error> {
             "#
         )
         .bind(perm.code)
+        .bind(perm.name)
         .bind(perm.module)
         .bind(perm.action)
         .bind(perm.scope)
