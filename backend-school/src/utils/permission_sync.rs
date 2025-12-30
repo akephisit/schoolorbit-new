@@ -15,8 +15,7 @@ pub async fn sync_permissions(pool: &PgPool) -> Result<(), sqlx::Error> {
                 module = EXCLUDED.module,
                 action = EXCLUDED.action,
                 scope = EXCLUDED.scope,
-                description = EXCLUDED.description,
-                updated_at = NOW()
+                description = EXCLUDED.description
             "#
         )
         .bind(perm.code)
