@@ -371,30 +371,10 @@ CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module);
 COMMENT ON TABLE permissions IS 'สิทธิ์การใช้งานระบบ';
 
 -- ===================================================================
--- 11. Insert Default Roles with CRUD Permissions
+-- 11. Default Roles
 -- ===================================================================
-INSERT INTO roles (code, name, name_en, description, category, level, permissions) VALUES
-    ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'teaching', 10, 
-     ARRAY['students.read', 'grades.read', 'grades.create', 'grades.update', 'attendance.create', 'dashboard.read']),
-    
-    ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'administrative', 50, 
-     ARRAY['staff.read', 'staff.update', 'documents.approve_dept', 'grades.read']),
-    
-    ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'administrative', 80, 
-     ARRAY['staff.read', 'staff.update', 'staff.create', 'documents.approve']),
-    
-    ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'administrative', 100, 
-     ARRAY['staff', 'documents.approve', 'finance.approve']),
-    
-    ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'operational', 20, 
-     ARRAY['staff.read', 'documents.read', 'documents.create']),
-    
-    ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'operational', 15, 
-     ARRAY['library', 'staff.read']),
-    
-    ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'ผู้ดูแลระบบทั้งหมด', 'administrative', 999, 
-     ARRAY['*'])
-ON CONFLICT (code) DO NOTHING;
+-- Note: Roles and permissions are now managed through the admin UI.
+-- The ADMIN role will be created during provisioning with essential permissions.
 
 -- ===================================================================
 -- 12. Insert Default Departments
