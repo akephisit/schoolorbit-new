@@ -189,7 +189,14 @@ pub async fn get_user_menu(
 
 /// Check if user has ANY permission in the specified module
 /// Example: user_has_module_permission(&["staff.update.all"], "staff") -> true
+/// Also checks for wildcard permission (*)
 fn user_has_module_permission(user_permissions: &[String], module: &str) -> bool {
+    // Check for wildcard permission first
+    if user_permissions.contains(&"*".to_string()) {
+        return true;
+    }
+    
+    // Check for module-specific permissions
     let prefix = format!("{}.", module);
     user_permissions.iter().any(|perm| perm.starts_with(&prefix))
 }
