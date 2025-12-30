@@ -564,9 +564,45 @@ impl SchoolService {
 
         logger.success("✅ Validation passed").await;
 
-        // Step 1: Create database in Neon
-        logger.progress(1, 4, "Creating database in Neon...").await;
+        // Step 0: Create school record first (status='provisioning')
+        logger.progress(0, 5, "Creating school record...").await;
+
+        // Get database credentials early
+        let db_password = std::env::var("NEON_DB_PASSWORD")
+            .map_err(|_| AppError::ExternalServiceError(
+                "NEON_DB_PASSWORD not set".to_string()
+            ))?;
+
+        let neon_host = std::env::var("NEON_HOST")
+            .unwrap_or_else(|_| "ep-xyz.us-east-1.aws.neon.tech".to_string());
+
         let db_name = format!("schoolorbit_{}", data.subdomain);
+        let connection_string = format!(
+            "postgresql://neondb_owner:{}@{}/{}?sslmode=require",
+            db_password, neon_host, db_name
+        );
+
+        // Create school record with status='provisioning'
+        let school = sqlx::query_as::<_, School>(
+            r#"
+            INSERT INTO schools (name, subdomain, status, db_name, db_connection_string, config)
+            VALUES ($1, $2, 'provisioning', $3, $4, '{}')
+            RETURNING *
+            "#
+        )
+        .bind(&data.name)
+        .bind(&data.subdomain)
+        .bind(&db_name)
+        .bind(&connection_string)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        let school_id = school.id;
+        logger.success("✅ School record created (provisioning)").await;
+
+        // Step 1: Create database in Neon
+        logger.progress(1, 5, "Creating database in Neon...").await;
         
         use crate::clients::neon_client::NeonClient;
         let neon_client = NeonClient::new()
@@ -593,22 +629,8 @@ impl SchoolService {
 
         logger.success("✅ Database is ready").await;
 
-        // Get database password
-        let db_password = std::env::var("NEON_DB_PASSWORD")
-            .map_err(|_| AppError::ExternalServiceError(
-                "NEON_DB_PASSWORD not set".to_string()
-            ))?;
-
-        let neon_host = std::env::var("NEON_HOST")
-            .unwrap_or_else(|_| "ep-xyz.us-east-1.aws.neon.tech".to_string());
-
-        let connection_string = format!(
-            "postgresql://neondb_owner:{}@{}/{}?sslmode=require",
-            db_password, neon_host, db_name
-        );
-
         // Step 2: Provision tenant database
-        logger.progress(2, 4, "Provisioning tenant database...").await;
+        logger.progress(2, 5, "Provisioning tenant database...").await;
         
         let backend_school_url = std::env::var("BACKEND_SCHOOL_URL")
             .unwrap_or_else(|_| "https://school-api.schoolorbit.app".to_string());
@@ -620,7 +642,7 @@ impl SchoolService {
             .post(format!("{}/internal/provision", backend_school_url))
             .header("X-Internal-Secret", internal_api_secret)
             .json(&serde_json::json!({
-                "schoolId": Uuid::new_v4().to_string(),
+                "schoolId": school_id.to_string(),
                 "dbConnectionString": connection_string,
                 "subdomain": data.subdomain,
                 "adminNationalId": data.admin_national_id,
@@ -640,7 +662,7 @@ impl SchoolService {
         logger.success("✅ Tenant database provisioned").await;
 
         // Step 3: Deploy Cloudflare Worker
-        logger.progress(3, 4, "Deploying Cloudflare Worker...").await;
+        logger.progress(3, 5, "Deploying Cloudflare Worker...").await;
         
         let api_url = std::env::var("API_URL")
             .unwrap_or_else(|_| "https://school-api.schoolorbit.app".to_string());
@@ -650,7 +672,7 @@ impl SchoolService {
             .map_err(|e| AppError::ExternalServiceError(format!("Cloudflare client error: {}", e)))?;
 
         let (subdomain_url, trigger_time) = cloudflare_client
-            .deploy_worker(&data.subdomain, &Uuid::new_v4().to_string(), &api_url)
+            .deploy_worker(&data.subdomain, &school_id.to_string(), &api_url)
             .await
             .map_err(|e| AppError::ExternalServiceError(format!("Worker deployment failed: {}", e)))?;
 
@@ -671,8 +693,8 @@ impl SchoolService {
 
         logger.success(&format!("✅ Worker deployment initiated")).await;
 
-        // Step 4: Save school record
-        logger.progress(4, 4, "Saving school record...").await;
+        // Step 4: Update school status to active
+        logger.progress(4, 5, "Finalizing school setup...").await;
 
         let config = serde_json::json!({
             "db_id": db_id,
@@ -682,22 +704,19 @@ impl SchoolService {
 
         let school = sqlx::query_as::<_, School>(
             r#"
-            INSERT INTO schools (name, subdomain, status, config, db_name, db_connection_string)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            UPDATE schools 
+            SET status = 'active', config = $1, updated_at = NOW()
+            WHERE id = $2
             RETURNING *
             "#
         )
-        .bind(&data.name)
-        .bind(&data.subdomain)
-        .bind("active")
         .bind(&config)
-        .bind(&db_name)
-        .bind(&connection_string)
+        .bind(school_id)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-        logger.success("✅ School created successfully").await;
+        logger.success("✅ School activated").await;
         logger.complete(serde_json::to_value(&school).unwrap()).await;
 
         Ok(school)
