@@ -81,6 +81,14 @@ impl PoolManager {
             .run_migrations_once(subdomain, &pool)
             .await?;
 
+        // Sync permissions to database after migrations
+        if let Err(e) = crate::utils::permission_sync::sync_permissions(&pool).await {
+            eprintln!("⚠️  Failed to sync permissions for {}: {}", subdomain, e);
+            // Don't fail the request, just log the error
+        } else {
+            println!("✅ Permissions synced for: {}", subdomain);
+        }
+
         Ok(pool)
     }
 

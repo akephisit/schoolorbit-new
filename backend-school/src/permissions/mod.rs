@@ -5,6 +5,8 @@
 /// - Wildcard permissions: "staff"
 /// - Scoped permissions: "attendance.update.own", "grades.read.all"
 
+pub mod registry;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     Create,
