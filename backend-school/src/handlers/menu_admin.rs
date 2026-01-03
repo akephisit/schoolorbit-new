@@ -976,3 +976,48 @@ pub async fn reorder_menu_groups(
         Err(e) => internal_error_response(&format!("Failed to commit: {}", e)),
     }
 }
+
+/// Move menu item to different group
+pub async fn move_item_to_group(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    JsonResponse(data): JsonResponse<serde_json::Value>,
+) -> Response {
+    let (pool, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    let group_id = match data.get("group_id").and_then(|v| v.as_str()) {
+        Some(id_str) => match Uuid::parse_str(id_str) {
+            Ok(uuid) => uuid,
+            Err(_) => return (StatusCode::BAD_REQUEST, JsonResponse(serde_json::json!({
+                "success": false, "error": "Invalid group_id format"
+            }))).into_response(),
+        },
+        None => return (StatusCode::BAD_REQUEST, JsonResponse(serde_json::json!({
+            "success": false, "error": "group_id required"
+        }))).into_response(),
+    };
+
+    let result = sqlx::query_as::<_, MenuItem>(
+        r#"UPDATE menu_items 
+           SET group_id = $1 
+           WHERE id = $2 
+           RETURNING id, code, name, name_en, description, path, icon, 
+                     group_id, parent_id, required_permission, display_order, is_active"#
+    )
+    .bind(group_id)
+    .bind(id)
+    .fetch_one(&pool)
+    .await;
+
+    match result {
+        Ok(item) => (StatusCode::OK, JsonResponse(serde_json::json!({
+            "success": true,
+            "data": item
+        }))).into_response(),
+        Err(e) => internal_error_response(&format!("Failed to move item: {}", e)),
+    }
+}
