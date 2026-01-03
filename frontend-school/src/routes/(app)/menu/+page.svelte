@@ -356,7 +356,9 @@
 		<Dialog.Header>
 			<Dialog.Title>เพิ่มเมนูใหม่</Dialog.Title>
 			<Dialog.Description>สร้างเมนูใหม่ในระบบ</Dialog.Description>
+		</Dialog.Header>
 		<div class="space-y-4">
+t	</Dialog.Header>
 			<div>
 				<Label for="code">รหัสเมนู *</Label>
 				<Input id="code" bind:value={formData.code} placeholder="staff" />
