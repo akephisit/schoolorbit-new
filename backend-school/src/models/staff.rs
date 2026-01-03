@@ -349,6 +349,12 @@ pub struct StaffProfileResponse {
     pub last_name: String,
     pub nickname: Option<String>,
     pub phone: Option<String>,
+    pub emergency_contact: Option<String>,
+    pub line_id: Option<String>,
+    pub date_of_birth: Option<String>,
+    pub gender: Option<String>,
+    pub address: Option<String>,
+    pub hired_date: Option<String>,
     pub user_type: String,
     pub status: String,
     

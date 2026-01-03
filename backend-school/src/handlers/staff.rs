@@ -26,6 +26,12 @@ struct UserBasicRow {
     last_name: String,
     nickname: Option<String>,
     phone: Option<String>,
+    emergency_contact: Option<String>,
+    line_id: Option<String>,
+    date_of_birth: Option<String>,
+    gender: Option<String>,
+    address: Option<String>,
+    hired_date: Option<String>,
     user_type: String,
     status: String,
 }
@@ -363,6 +369,7 @@ pub async fn get_staff_profile(
     // Get user basic info
     let user = match sqlx::query_as::<_, UserBasicRow>(
         "SELECT id, national_id, email, title, first_name, last_name, nickname, phone, 
+                emergency_contact, line_id, date_of_birth, gender, address, hired_date,
                 user_type, status
          FROM users 
          WHERE id = $1 AND user_type = 'staff'",
@@ -489,6 +496,12 @@ pub async fn get_staff_profile(
         last_name: user.last_name,
         nickname: user.nickname,
         phone: user.phone,
+        emergency_contact: user.emergency_contact,
+        line_id: user.line_id,
+        date_of_birth: user.date_of_birth,
+        gender: user.gender,
+        address: user.address,
+        hired_date: user.hired_date,
         user_type: user.user_type,
         status: user.status,
         staff_info: staff_info.map(|si| StaffInfoResponse {
