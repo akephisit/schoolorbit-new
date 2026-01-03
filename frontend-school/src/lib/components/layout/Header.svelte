@@ -101,11 +101,7 @@
 			</div>
 
 			<!-- User Menu -->
-			<div class="flex items-center gap-3 pl-3 border-l border-border">
-				<div class="hidden sm:block text-right">
-					<p class="text-sm font-medium text-foreground">ผู้ดูแลระบบ</p>
-					<p class="text-xs text-muted-foreground">admin@school.ac.th</p>
-				</div>
+			<div class="flex items-center pl-3 border-l border-border">
 				<button
 					class="w-10 h-10 rounded-full bg-primary flex items-center justify-center hover:opacity-90 transition-opacity"
 					aria-label="User Profile"
