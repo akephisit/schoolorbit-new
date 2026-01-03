@@ -275,6 +275,7 @@
 			</div>
 		{/if}
 	{/if}
+</div>
 
 <!-- Create Dialog -->
 <Dialog.Root bind:open={createDialogOpen}>
