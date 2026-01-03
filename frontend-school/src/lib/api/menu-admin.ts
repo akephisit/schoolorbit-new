@@ -281,3 +281,25 @@ export async function reorderMenuItems(items: ReorderItem[]): Promise<void> {
         throw new Error(error.error || 'Failed to reorder menu items');
     }
 }
+
+export async function moveItemToGroup(itemId: string, groupId: string): Promise<MenuItem> {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/items/${itemId}/group`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({ group_id: groupId })
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Failed to move menu item' }));
+        throw new Error(error.error || 'Failed to move menu item');
+    }
+
+    const result = await response.json();
+    if (!result.data) {
+        throw new Error('Failed to move menu item');
+    }
+    return result.data;
+}
