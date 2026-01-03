@@ -207,10 +207,10 @@
 			<ArrowLeft class="h-5 w-5" />
 		</Button>
 		<div class="flex-1">
-			<h1 class="text-3xl font-bold text-gray-900">
+			<h1 class="text-3xl font-bold text-foreground">
 				{isNew ? 'สร้างบทบาทใหม่' : 'แก้ไขบทบาท'}
 			</h1>
-			<p class="text-gray-600 mt-1">กำหนดข้อมูลและสิทธิ์การเข้าถึง</p>
+			<p class="text-muted-foreground mt-1">กำหนดข้อมูลและสิทธิ์การเข้าถึง</p>
 		</div>
 		<div class="flex gap-2">
 			{#if !isNew}
@@ -321,7 +321,7 @@
 				<CardContent>
 					{#if permissionsLoading}
 						<div class="py-8 text-center">
-							<p class="text-gray-500">กำลังโหลดรายการสิทธิ์...</p>
+							<p class="text-muted-foreground">กำลังโหลดรายการสิทธิ์...</p>
 						</div>
 					{:else}
 						<div class="space-y-4">
@@ -335,10 +335,10 @@
 										/>
 										<button
 											onclick={() => toggleModule(module)}
-											class="flex-1 text-left font-medium text-gray-900 hover:text-gray-700"
+											class="flex-1 text-left font-medium text-foreground hover:text-foreground/80"
 										>
 											{module}
-											<span class="text-sm text-gray-500 font-normal ml-2">
+											<span class="text-sm text-muted-foreground font-normal ml-2">
 												({permissions.length} สิทธิ์)
 											</span>
 										</button>
@@ -354,10 +354,10 @@
 													onCheckedChange={() => togglePermission(permission.code)}
 												/>
 												<div class="flex-1 min-w-0">
-													<p class="text-sm font-medium text-gray-900 truncate">
+													<p class="text-sm font-medium text-foreground truncate">
 														{permission.name}
 													</p>
-													<p class="text-xs text-gray-500 truncate">{permission.code}</p>
+													<p class="text-xs text-muted-foreground truncate">{permission.code}</p>
 												</div>
 											</label>
 										{/each}

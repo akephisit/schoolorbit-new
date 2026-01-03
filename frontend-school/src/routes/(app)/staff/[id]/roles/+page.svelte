@@ -21,8 +21,8 @@
 			<ArrowLeft class="h-5 w-5" />
 		</Button>
 		<div class="flex-1">
-			<h1 class="text-3xl font-bold text-gray-900">จัดการสิทธิ์ผู้ใช้งาน</h1>
-			<p class="text-gray-600 mt-1">บทบาทและสิทธิ์การเข้าถึง</p>
+			<h1 class="text-3xl font-bold text-foreground">จัดการสิทธิ์ผู้ใช้งาน</h1>
+			<p class="text-muted-foreground mt-1">บทบาทและสิทธิ์การเข้าถึง</p>
 		</div>
 	</div>
 
@@ -48,7 +48,7 @@
 					<CardTitle>ข้อมูลส่วนตัว</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<p class="text-gray-600">ข้อมูลโปรไฟล์ผู้ใช้งาน...</p>
+					<p class="text-muted-foreground">ข้อมูลโปรไฟล์ผู้ใช้งาน...</p>
 				</CardContent>
 			</Card>
 		</TabsContent>

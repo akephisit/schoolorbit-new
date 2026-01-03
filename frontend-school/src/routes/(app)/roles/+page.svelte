@@ -129,14 +129,14 @@
 					<CardContent class="space-y-3">
 						<!-- Description -->
 						{#if role.description}
-							<p class="text-sm text-gray-600 line-clamp-2">
+							<p class="text-sm text-muted-foreground line-clamp-2">
 								{role.description}
 							</p>
 						{/if}
 
 						<!-- Stats -->
 						<div class="flex items-center gap-4 text-sm">
-							<div class="flex items-center gap-1 text-gray-600">
+							<div class="flex items-center gap-1 text-muted-foreground">
 								<Shield class="h-4 w-4" />
 								<span>
 									{role.permissions.includes('*') ? 'All' : role.permissions.length} สิทธิ์
