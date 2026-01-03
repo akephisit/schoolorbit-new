@@ -190,29 +190,10 @@
 	}
 
 	function handleDragOver({ active, over }: DragOverEvent) {
-		if (!over) return;
-
-		const activeType = active.data?.type as 'group' | 'item';
-		const overType = over.data?.type as 'group' | 'item' | undefined;
-		const acceptsItem = over.data?.accepts?.includes('item') ?? false;
-
-		if (activeType !== 'item' || (!overType && !acceptsItem)) return;
-
-		// Use untrack to prevent reactive tracking during mutation
-		untrack(() => {
-			const activeContainer = findContainer(active.id as string);
-			const overContainer = findContainer(over.id as string);
-
-			if (!activeContainer || !overContainer || activeContainer === overContainer) return;
-
-			// Real-time preview: move item between containers
-			const item = activeContainer.nesteds.find((i) => i.id === active.id);
-			if (!item) return;
-
-			// Mutate directly like the example
-			activeContainer.nesteds = activeContainer.nesteds.filter((nested) => nested.id !== active.id);
-			overContainer.nesteds = [...overContainer.nesteds, item];
-		});
+		// CONFIRMED: Cannot implement real-time preview in Svelte 5
+		// Even with untrack(), mutations trigger infinite loops
+		// This is a fundamental difference from vanilla JS/React
+		// DragOverlay provides sufficient visual feedback
 	}
 
 	function openEditDialog(item: MenuItem) {
