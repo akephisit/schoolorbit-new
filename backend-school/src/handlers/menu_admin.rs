@@ -667,10 +667,14 @@ fn has_module_permission(user_permissions: &[String], module: &str) -> bool {
         return true; // No permission required
     }
     
+    // Check for wildcard permission first
+    if user_permissions.contains(&"*".to_string()) {
+        return true;
+    }
+    
+    // Check for module-specific permissions
     let prefix = format!("{}.", module);
-    user_permissions.iter().any(|perm| {
-        perm.starts_with(&prefix) || perm.starts_with("*.")
-    })
+    user_permissions.iter().any(|perm| perm.starts_with(&prefix))
 }
 
 /// Helper: Get pool and check module permission
