@@ -929,8 +929,15 @@ pub async fn update_staff(
             first_name = COALESCE($3, first_name),
             last_name = COALESCE($4, last_name),
             nickname = COALESCE($5, nickname),
-            phone = COALESCE($6, phone),
-            status = COALESCE($7, status),
+            email = COALESCE($6, email),
+            phone = COALESCE($7, phone),
+            emergency_contact = COALESCE($8, emergency_contact),
+            line_id = COALESCE($9, line_id),
+            date_of_birth = COALESCE($10, date_of_birth),
+            gender = COALESCE($11, gender),
+            address = COALESCE($12, address),
+            hired_date = COALESCE($13, hired_date),
+            status = COALESCE($14, status),
             updated_at = NOW()
          WHERE id = $1 AND user_type = 'staff'",
     )
@@ -939,7 +946,14 @@ pub async fn update_staff(
     .bind(&payload.first_name)
     .bind(&payload.last_name)
     .bind(&payload.nickname)
+    .bind(&payload.email)
     .bind(&payload.phone)
+    .bind(&payload.emergency_contact)
+    .bind(&payload.line_id)
+    .bind(&payload.date_of_birth)
+    .bind(&payload.gender)
+    .bind(&payload.address)
+    .bind(&payload.hired_date)
     .bind(&payload.status)
     .execute(&mut *tx)
     .await;
