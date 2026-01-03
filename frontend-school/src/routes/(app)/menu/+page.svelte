@@ -155,7 +155,7 @@
 				display_order: item.display_order
 			}));
 
-			await reorderMenuItems({ items: reorderData });
+			await reorderMenuItems(reorderData);
 			toast.success('เรียงลำดับเมนูสำเร็จ');
 			await loadData(); // Reload to sync
 		} catch (error) {
@@ -243,81 +243,38 @@
 			</div>
 		</Card>
 	{:else}
-		<!-- Menu Items Table -->
-		<Card>
-			<div class="overflow-x-auto">
-				<table class="w-full">
-					<thead class="border-b">
-						<tr class="text-left">
-							<th class="p-4 font-semibold">ชื่อเมนู</th>
-							<th class="p-4 font-semibold">Path</th>
-							<th class="p-4 font-semibold">Module</th>
-							<th class="p-4 font-semibold">Group</th>
-							<th class="p-4 font-semibold">ลำดับ</th>
-							<th class="p-4 font-semibold">สถานะ</th>
-							<th class="p-4 font-semibold text-right">จัดการ</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each filteredItems as item (item.id)}
-							<tr class="border-b hover:bg-muted/50">
-								<td class="p-4">
-									<div>
-										<p class="font-medium">{item.name}</p>
-										{#if item.name_en}
-											<p class="text-sm text-muted-foreground">{item.name_en}</p>
-										{/if}
-									</div>
-								</td>
-								<td class="p-4">
-									<code class="text-sm bg-muted px-2 py-1 rounded">{item.path}</code>
-								</td>
-								<td class="p-4">
-									{#if item.required_permission}
-										<Badge variant="secondary">{item.required_permission}</Badge>
-									{:else}
-										<span class="text-muted-foreground text-sm">-</span>
-									{/if}
-								</td>
-								<td class="p-4">
-									<span class="text-sm">
-										{groups.find((g) => g.id === item.group_id)?.name || '-'}
-									</span>
-								</td>
-								<td class="p-4">
-									<span class="text-sm text-muted-foreground">{item.display_order}</span>
-								</td>
-								<td class="p-4">
-									{#if item.is_active}
-										<Badge variant="default">
-											<Eye class="h-3 w-3 mr-1" />
-											แสดง
-										</Badge>
-									{:else}
-										<Badge variant="secondary">
-											<EyeOff class="h-3 w-3 mr-1" />
-											ซ่อน
-										</Badge>
-									{/if}
-								</td>
-								<td class="p-4">
-									<div class="flex justify-end gap-2">
-										<Button size="sm" variant="outline" onclick={() => openEditDialog(item)}>
-											<Pencil class="h-4 w-4" />
-										</Button>
-										<Button size="sm" variant="destructive" onclick={() => handleDelete(item)}>
-											<Trash2 class="h-4 w-4" />
-										</Button>
-									</div>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+	{:else}
+		<!-- Menu Items Sortable Lists by Group -->
+		{#if selectedGroupId}
+			<!-- Single group view -->
+			{@const group = groups.find((g) => g.id === selectedGroupId)}
+			{#if group}
+				<SortableMenuItems
+					items={filteredItems}
+					groupName={group.name}
+					onReorder={handleReorder}
+					onEdit={openEditDialog}
+					onDelete={handleDelete}
+				/>
+			{/if}
+		{:else}
+			<!-- All groups view -->
+			<div class="space-y-6">
+				{#each groups as group (group.id)}
+					{@const groupItems = itemsByGroup[group.id] || []}
+					{#if groupItems.length > 0}
+						<SortableMenuItems
+							items={groupItems}
+							groupName={group.name}
+							onReorder={handleReorder}
+							onEdit={openEditDialog}
+							onDelete={handleDelete}
+						/>
+					{/if}
+				{/each}
 			</div>
-		</Card>
+		{/if}
 	{/if}
-</div>
 
 <!-- Create Dialog -->
 <Dialog.Root bind:open={createDialogOpen}>
