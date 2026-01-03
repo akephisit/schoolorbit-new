@@ -51,6 +51,7 @@
 	// Drag state
 	let activeItem = $state<MenuItem | GroupContainer | null>(null);
 	let activeType = $state<'group' | 'item' | null>(null);
+	let originalGroupId = $state<string | null>(null); // Track original group before onDragOver
 
 	// Dialog states
 	let groupDialogOpen = $state(false);
@@ -107,9 +108,12 @@
 
 		if (type === 'group') {
 			activeItem = containers.find((c) => c.data.id === active.id) || null;
+			originalGroupId = null;
 		} else {
 			const container = findContainer(active.id as string);
 			activeItem = container?.nesteds.find((item) => item.id === active.id) || null;
+			// Store original group_id BEFORE onDragOver changes it
+			originalGroupId = container?.data.id || null;
 		}
 	}
 
@@ -143,12 +147,11 @@
 
 		// Case 2: Move/reorder items  
 		if (activeType === 'item' && (overType === 'item' || acceptsItem)) {
-			const activeContainer = findContainer(active.id as string);
 			const overContainer = findContainer(over.id as string);
+			if (!overContainer) return;
 
-			if (!activeContainer || !overContainer) return;
-
-			if (activeContainer !== overContainer) {
+			// Check if moved to different group using originalGroupId
+			if (originalGroupId && originalGroupId !== overContainer.data.id) {
 				// Cross-group move
 				try {
 					await moveItemToGroup(active.id as string, overContainer.data.id);
@@ -160,11 +163,12 @@
 				}
 			} else {
 				// Same-group reorder
-				const oldIndex = activeContainer.nesteds.findIndex((item) => item.id === active.id);
-				const newIndex = activeContainer.nesteds.findIndex((item) => item.id === over.id);
+				const groupItems = overContainer.nesteds;
+				const oldIndex = groupItems.findIndex((item) => item.id === active.id);
+				const newIndex = groupItems.findIndex((item) => item.id === over.id);
 
-				if (oldIndex !== newIndex) {
-					const reordered = arrayMove(activeContainer.nesteds, oldIndex, newIndex);
+				if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+					const reordered = arrayMove(groupItems, oldIndex, newIndex);
 					const withOrder = reordered.map((item, index) => ({
 						...item,
 						display_order: index + 1
