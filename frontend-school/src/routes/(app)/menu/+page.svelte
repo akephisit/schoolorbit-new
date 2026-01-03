@@ -188,29 +188,9 @@
 	}
 
 	function handleDragOver({ active, over }: DragOverEvent) {
-		if (!over) return;
-
-		const activeType = active.data?.type as 'group' | 'item';
-		const overType = over.data?.type as 'group' | 'item' | undefined;
-		const acceptsItem = over.data?.accepts?.includes('item') ?? false;
-
-		if (activeType !== 'item' || (!overType && !acceptsItem)) return;
-
-		const activeContainer = findContainer(active.id as string);
-		const overContainer = findContainer(over.id as string);
-
-		if (!activeContainer || !overContainer || activeContainer === overContainer) return;
-
-		// Real-time preview: move item between containers
-		const activeIndex = items.findIndex((i) => i.id === active.id);
-		const activeItem = items[activeIndex];
-
-		if (!activeItem) return;
-
-		// Remove from old group and add to new group
-		items = items.map((item) =>
-			item.id === activeItem.id ? { ...item, group_id: overContainer.data.id } : item
-		);
+		// Removed state mutation here to prevent infinite reactive loop
+		// Visual preview is handled by DragOverlay component instead
+		// State only updates on handleDragEnd for persistence
 	}
 
 	function openEditDialog(item: MenuItem) {
