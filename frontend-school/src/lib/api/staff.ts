@@ -39,6 +39,8 @@ export interface DepartmentResponse {
 	name: string;
 	position?: string;
 	is_primary_department?: boolean;
+	is_primary?: boolean;
+	responsibilities?: string;
 }
 
 export interface TeachingAssignmentResponse {
@@ -68,10 +70,17 @@ export interface StaffProfileResponse {
 	last_name: string;
 	nickname?: string;
 	phone?: string;
+	emergency_contact?: string;
+	line_id?: string;
+	date_of_birth?: string;
+	gender?: string;
+	address?: string;
+	hired_date?: string;
 	user_type: string;
 	status: string;
 	staff_info?: StaffInfoResponse;
 	roles: RoleResponse[];
+	primary_role?: RoleResponse;
 	departments: DepartmentResponse[];
 	teaching_assignments: TeachingAssignmentResponse[];
 	permissions: string[];
@@ -115,12 +124,14 @@ export interface UpdateStaffRequest {
 	first_name?: string;
 	last_name?: string;
 	nickname?: string;
+	email?: string;
 	phone?: string;
 	emergency_contact?: string;
 	line_id?: string;
 	date_of_birth?: string;
 	gender?: string;
 	address?: string;
+	hired_date?: string;
 	status?: string;
 	staff_info?: {
 		education_level?: string;
@@ -130,6 +141,14 @@ export interface UpdateStaffRequest {
 		teaching_license_expiry?: string;
 		work_days?: string[];
 	};
+	role_ids?: string[];
+	primary_role_id?: string;
+	department_assignments?: Array<{
+		department_id: string;
+		position: string;
+		is_primary?: boolean;
+		responsibilities?: string;
+	}>;
 }
 
 export interface Role {
