@@ -113,7 +113,7 @@
 			{#each roles as role (role.id)}
 				<Card
 					class="hover:shadow-lg transition-shadow cursor-pointer"
-					onclick={() => goto(`/admin/roles/${role.id}`)}
+					onclick={() => goto(`/roles/${role.id}`)}
 				>
 					<CardHeader>
 						<div class="flex items-start justify-between">
@@ -159,7 +159,7 @@
 								size="sm"
 								onclick={(e: MouseEvent) => {
 									e.stopPropagation();
-									goto(`/admin/roles/${role.id}`);
+									goto(`/roles/${role.id}`);
 								}}
 								class="gap-1"
 							>
