@@ -15,9 +15,10 @@
 
 	let { item, onEdit, onDelete }: Props = $props();
 
+	// Use sortable hook with type data
 	const sortable = useSortable({
 		id: item.id,
-		data: () => item
+		data: { type: 'item' }  // Add type for drag detection
 	});
 
 	// Generate style string for smooth transform animations
