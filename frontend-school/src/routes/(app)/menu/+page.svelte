@@ -6,6 +6,7 @@
 		updateMenuItem,
 		deleteMenuItem,
 		reorderMenuItems,
+		moveItemToGroup,
 		type MenuGroup,
 		type MenuItem,
 		type CreateMenuItemRequest,
@@ -18,9 +19,11 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { LoaderCircle, Plus, Pencil, Trash2, Menu, Eye, EyeOff, FolderOpen, AlertCircle } from 'lucide-svelte';
+	import { LoaderCircle, Plus, Pencil, Trash2, Menu, Eye, EyeOff, FolderOpen, AlertCircle, GripVertical } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
-	import SortableMenuItems from '$lib/components/menu/SortableMenuItems.svelte';
+	import { DndContext, PointerSensor, KeyboardSensor, closestCenter } from '@dnd-kit-svelte/core';
+	import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit-svelte/sortable';
+	import SortableItem from '$lib/components/menu/SortableItem.svelte';
 	import GroupManagementDialog from '$lib/components/menu/GroupManagementDialog.svelte';
 
 	let groups = $state<MenuGroup[]>([]);
@@ -131,10 +134,10 @@
 		formData = {
 			code: item.code,
 			name: item.name,
-			name_en: item.name_en || '',
+			name_en: item.name_en,
 			path: item.path,
-			icon: item.icon || '',
-			required_permission: item.required_permission || '',
+			icon: item.icon,
+			required_permission: item.required_permission,
 			display_order: item.display_order,
 			group_id: item.group_id
 		};
@@ -153,7 +156,8 @@
 		};
 	}
 
-	async function handleReorder(groupItems: MenuItem[]) {
+	async function handleReorder(reorderedItems: MenuItem[]) {
+		const groupItems = reorderedItems;
 		try {
 			const reorderData = groupItems.map((item) => ({
 				id: item.id,
@@ -170,22 +174,93 @@
 	}
 
 	// Derived states
-	const filteredItems = $derived(
-		selectedGroupId ? items.filter((item) => item.group_id === selectedGroupId) : items
-	);
+	let filteredItems = $state<MenuItem[]>([]);
+	let itemsByGroup = $state<Record<string, MenuItem[]>>({});
 
-	const itemsByGroup = $derived(
-		items.reduce(
-			(acc, item) => {
-				if (!acc[item.group_id]) {
-					acc[item.group_id] = [];
-				}
-				acc[item.group_id].push(item);
-				return acc;
-			},
-			{} as Record<string, MenuItem[]>
-		)
-	);
+	$effect(() => {
+		itemsByGroup = items.reduce((acc, item) => {
+			const groupId = item.group_id || '';
+			if (!acc[groupId]) acc[groupId] = [];
+			acc[groupId].push(item);
+			return acc;
+		}, {} as Record<string, MenuItem[]>);
+
+		filteredItems = selectedGroupId
+			? items.filter((item) => item.group_id === selectedGroupId)
+			: items;
+	});
+
+	// DnD sensors
+	const sensors = [
+		{ sensor: PointerSensor, options: {} },
+		{ sensor: KeyboardSensor, options: {} }
+	];
+
+	// Helper to find which group an item belongs to
+	function findItemGroup(itemId: string): string | null {
+		const item = items.find((i) => i.id === itemId);
+		return item?.group_id || null;
+	}
+
+	// Helper to move array elements
+	function arrayMove<T>(array: T[], from: number, to: number): T[] {
+		const newArray = [...array];
+		const [movedItem] = newArray.splice(from, 1);
+		newArray.splice(to, 0, movedItem);
+		return newArray;
+	}
+
+	// Cross-group drag handler  
+	async function handleDragEnd(event: any) {
+		const { active, over } = event;
+
+		if (!over || active.id === over.id) return;
+
+		const sourceGroupId = findItemGroup(active.id);
+		const destGroupId = findItemGroup(over.id);
+
+		if (!sourceGroupId) {
+			toast.error('ไม่พบกลุ่มต้นทาง');
+			return;
+		}
+
+		// Case 1: Cross-group move
+		if (destGroupId && sourceGroupId !== destGroupId) {
+			try {
+				await moveItemToGroup(active.id, destGroupId);
+				toast.success('ย้ายเมนูสำเร็จ');
+				await loadData();
+			} catch (error) {
+				const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+				toast.error(message);
+			}
+			return;
+		}
+
+		// Case 2: Same-group reorder
+		const groupItems = itemsByGroup[sourceGroupId] || [];
+		const oldIndex = groupItems.findIndex((item) => item.id === active.id);
+		const newIndex = groupItems.findIndex((item) => item.id === over.id);
+
+		if (oldIndex === -1 || newIndex === -1) return;
+
+		const reordered = arrayMove(groupItems, oldIndex, newIndex);
+		const withOrder = reordered.map((item, index) => ({
+			...item,
+			display_order: index + 1
+		}));
+
+		// Update local state
+		items = items.map((item) => withOrder.find((i) => i.id === item.id) || item);
+
+		try {
+			await handleReorder(withOrder);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			toast.error(message);
+			await loadData(); // Revert on error
+		}
+	}
 </script>
 
 <svelte:head>
@@ -263,13 +338,13 @@
 					<div class="space-y-6">
 						{#each groups as group (group.id)}
 							{@const groupItems = itemsByGroup[group.id] || []}
-								<SortableMenuItems
-									items={groupItems}
-									groupName={group.name}
-									onReorder={handleReorder}
-									onEdit={openEditDialog}
-									onDelete={handleDelete}
-								/>
+							<SortableMenuItems
+								items={groupItems}
+								groupName={group.name}
+								onReorder={handleReorder}
+								onEdit={openEditDialog}
+								onDelete={handleDelete}
+							/>
 						{/each}
 					</div>
 				{/if}
