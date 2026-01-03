@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
     description TEXT,
     
     -- Grouping & Hierarchy
-    group_id UUID REFERENCES menu_groups(id) ON DELETE CASCADE,
+    group_id UUID REFERENCES menu_groups(id) ON DELETE SET NULL,
     parent_id UUID REFERENCES menu_items(id) ON DELETE CASCADE,
     
     -- Navigation
@@ -135,8 +135,7 @@ COMMENT ON TABLE menu_item_features IS 'เชื่อม menu items กับ 
 -- ===================================================================
 INSERT INTO menu_groups (code, name, name_en, icon, display_order) VALUES
     ('main', 'เมนูหลัก', 'Main Menu', 'layout-dashboard', 1),
-    ('admin', 'ผู้ดูแลระบบ', 'Administration', 'shield', 2),
-    ('settings', 'ตั้งค่า', 'Settings', 'settings', 3),
+    ('settings', 'ตั้งค่า', 'Settings', 'settings', 2),
     ('other', 'อื่นๆ', 'Other', 'folder-open', 999)
 ON CONFLICT (code) DO NOTHING;
 
