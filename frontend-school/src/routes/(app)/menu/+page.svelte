@@ -57,13 +57,8 @@
 	let groupDialogOpen = $state(false);
 	let editingGroup = $state<MenuGroup | null>(null);
 
-	// Nested container structure
-	const containers = $derived<GroupContainer[]>(
-		groups.map((group) => ({
-			data: group,
-			nesteds: items.filter((item) => item.group_id === group.id)
-		}))
-	);
+	// Use state instead of derived to allow direct mutation in onDragOver
+	let containers = $state<GroupContainer[]>([]);
 
 	// Load data on mount
 	$effect(() => {
@@ -74,6 +69,12 @@
 		try {
 			loading = true;
 			[groups, items] = await Promise.all([listMenuGroups(), listMenuItems()]);
+			
+			// Rebuild containers from loaded data
+			containers = groups.map((group) => ({
+				data: group,
+				nesteds: items.filter((item) => item.group_id === group.id)
+			}));
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลได้';
 			toast.error(message);
@@ -188,9 +189,27 @@
 	}
 
 	function handleDragOver({ active, over }: DragOverEvent) {
-		// Removed state mutation here to prevent infinite reactive loop
-		// Visual preview is handled by DragOverlay component instead
-		// State only updates on handleDragEnd for persistence
+		if (!over) return;
+
+		const activeType = active.data?.type as 'group' | 'item';
+		const overType = over.data?.type as 'group' | 'item' | undefined;
+		const acceptsItem = over.data?.accepts?.includes('item') ?? false;
+
+		if (activeType !== 'item' || (!overType && !acceptsItem)) return;
+
+		const activeContainer = findContainer(active.id as string);
+		const overContainer = findContainer(over.id as string);
+
+		if (!activeContainer || !overContainer || activeContainer === overContainer) return;
+
+		// Real-time preview: move item between containers (like example)
+		const item = activeContainer.nesteds.find((item) => item.id === active.id);
+		if (!item) return;
+
+		// Remove from old container
+		activeContainer.nesteds = activeContainer.nesteds.filter((nested) => nested.id !== active.id);
+		// Add to new container
+		overContainer.nesteds.push(item);
 	}
 
 	function openEditDialog(item: MenuItem) {
