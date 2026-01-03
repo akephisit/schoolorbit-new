@@ -5,6 +5,7 @@
 		createMenuItem,
 		updateMenuItem,
 		deleteMenuItem,
+		reorderMenuItems,
 		type MenuGroup,
 		type MenuItem,
 		type CreateMenuItemRequest,
@@ -18,6 +19,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { LoaderCircle, Plus, Pencil, Trash2, Menu, Eye, EyeOff } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
+	import SortableMenuItems from '$lib/components/menu/SortableMenuItems.svelte';
 
 	let groups = $state<MenuGroup[]>([]);
 	let items = $state<MenuItem[]>([]);
@@ -144,6 +146,22 @@
 			required_permission: '',
 			display_order: 0
 		};
+	}
+
+	async function handleReorder(groupItems: MenuItem[]) {
+		try {
+			const reorderData = groupItems.map((item) => ({
+				id: item.id,
+				display_order: item.display_order
+			}));
+
+			await reorderMenuItems({ items: reorderData });
+			toast.success('เรียงลำดับเมนูสำเร็จ');
+			await loadData(); // Reload to sync
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'ไม่สามารถเรียงลำดับเมนูได้';
+			toast.error(message);
+		}
 	}
 
 	// Derived states
