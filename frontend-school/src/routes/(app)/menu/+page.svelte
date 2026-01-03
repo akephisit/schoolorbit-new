@@ -189,27 +189,9 @@
 	}
 
 	function handleDragOver({ active, over }: DragOverEvent) {
-		if (!over) return;
-
-		const activeType = active.data?.type as 'group' | 'item';
-		const overType = over.data?.type as 'group' | 'item' | undefined;
-		const acceptsItem = over.data?.accepts?.includes('item') ?? false;
-
-		if (activeType !== 'item' || (!overType && !acceptsItem)) return;
-
-		const activeContainer = findContainer(active.id as string);
-		const overContainer = findContainer(over.id as string);
-
-		if (!activeContainer || !overContainer || activeContainer === overContainer) return;
-
-		// Real-time preview: move item between containers (like example)
-		const item = activeContainer.nesteds.find((item) => item.id === active.id);
-		if (!item) return;
-
-		// Remove from old container
-		activeContainer.nesteds = activeContainer.nesteds.filter((nested) => nested.id !== active.id);
-		// Add to new container
-		overContainer.nesteds.push(item);
+		// NOTE: Removed mutations - Svelte 5 $state is too reactive
+		// Even nested mutations trigger infinite loops
+		// Use DragOverlay for visual preview instead
 	}
 
 	function openEditDialog(item: MenuItem) {
