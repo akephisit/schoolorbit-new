@@ -442,6 +442,13 @@ pub struct UpdateStaffRequest {
     pub hired_date: Option<NaiveDate>,
     pub status: Option<String>,
     pub staff_info: Option<CreateStaffInfoRequest>,
+    
+    // Roles
+    pub role_ids: Option<Vec<Uuid>>,
+    pub primary_role_id: Option<Uuid>,
+    
+    // Departments
+    pub department_assignments: Option<Vec<DepartmentAssignment>>,
 }
 
 // ===================================================================

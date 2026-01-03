@@ -1003,6 +1003,56 @@ pub async fn update_staff(
                 }
             }
 
+            // Update roles if provided
+            if let Some(role_ids) = &payload.role_ids {
+                // Delete existing roles
+                let _ = sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
+                    .bind(staff_id)
+                    .execute(&mut *tx)
+                    .await;
+
+                // Insert new roles
+                for role_id in role_ids {
+                    let is_primary = payload.primary_role_id.as_ref() == Some(role_id);
+
+                    let _ = sqlx::query(
+                        "INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
+                         VALUES ($1, $2, $3, CURRENT_DATE)",
+                    )
+                    .bind(staff_id)
+                    .bind(role_id)
+                    .bind(is_primary)
+                    .execute(&mut *tx)
+                    .await;
+                }
+            }
+
+            // Update departments if provided
+            if let Some(dept_assignments) = &payload.department_assignments {
+                // Delete existing department assignments
+                let _ = sqlx::query("DELETE FROM department_members WHERE user_id = $1")
+                    .bind(staff_id)
+                    .execute(&mut *tx)
+                    .await;
+
+                // Insert new department assignments
+                for assignment in dept_assignments {
+                    let _ = sqlx::query(
+                        "INSERT INTO department_members (
+                            user_id, department_id, position, is_primary_department, 
+                            responsibilities, started_at
+                        ) VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)",
+                    )
+                    .bind(staff_id)
+                    .bind(assignment.department_id)
+                    .bind(&assignment.position)
+                    .bind(assignment.is_primary.unwrap_or(false))
+                    .bind(&assignment.responsibilities)
+                    .execute(&mut *tx)
+                    .await;
+                }
+            }
+
             match tx.commit().await {
                 Ok(_) => (
                     StatusCode::OK,
