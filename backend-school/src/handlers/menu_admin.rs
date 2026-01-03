@@ -792,13 +792,14 @@ async fn authenticate_user(
         Err(e) => return Err(internal_error_response(&format!("Database error: {}", e))),
     };
 
-    // Get user permissions
+    // Get user permissions (use unnest to handle wildcard and all permissions)
     let permissions: Vec<String> = match sqlx::query_scalar(
-        "SELECT DISTINCT p.code 
+        "SELECT DISTINCT unnest(r.permissions) as permission
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
-         JOIN permissions p ON p.code = ANY(r.permissions)
-         WHERE ur.user_id = $1 AND ur.ended_at IS NULL"
+         WHERE ur.user_id = $1 
+           AND ur.ended_at IS NULL
+           AND r.is_active = true"
     )
     .bind(user.id)
     .fetch_all(pool)
