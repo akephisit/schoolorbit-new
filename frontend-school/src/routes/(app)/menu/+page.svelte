@@ -181,9 +181,6 @@
 				}
 			}
 		}
-
-		activeItem = null;
-		activeType = null;
 	}
 
 	function handleDragOver({ active, over }: DragOverEvent) {
@@ -291,9 +288,9 @@
 					</SortableContext>
 
 					<DragOverlay>
-						{#if activeType === 'item' && !isContainerItem(activeItem)}
+						{#if activeType === 'item' && activeItem && !isContainerItem(activeItem)}
 							<SortableItem item={activeItem} onEdit={openEditDialog} onDelete={handleDelete} />
-						{:else if activeType === 'group' && isContainerItem(activeItem)}
+						{:else if activeType === 'group' && activeItem && isContainerItem(activeItem)}
 							<MenuGroupContainer
 								data={activeItem.data}
 								type="group"
