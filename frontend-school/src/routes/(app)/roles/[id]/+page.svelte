@@ -331,7 +331,7 @@
 										<Checkbox
 											checked={isModuleFullySelected(module)}
 											indeterminate={isModulePartiallySelected(module)}
-											onclick={() => toggleModule(module)}
+											onCheckedChange={() => toggleModule(module)}
 										/>
 										<button
 											onclick={() => toggleModule(module)}
@@ -351,7 +351,7 @@
 											>
 												<Checkbox
 													checked={selectedPermissions.has(permission.code)}
-													onclick={() => togglePermission(permission.code)}
+													onCheckedChange={() => togglePermission(permission.code)}
 												/>
 												<div class="flex-1 min-w-0">
 													<p class="text-sm font-medium text-gray-900 truncate">
