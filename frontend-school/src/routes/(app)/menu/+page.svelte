@@ -17,19 +17,24 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { LoaderCircle, Plus, Pencil, Trash2, Menu, Eye, EyeOff } from 'lucide-svelte';
+	import * as Tabs from '$lib/components/ui/tabs';
+	import { LoaderCircle, Plus, Pencil, Trash2, Menu, Eye, EyeOff, FolderOpen, AlertCircle } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import SortableMenuItems from '$lib/components/menu/SortableMenuItems.svelte';
+	import GroupManagementDialog from '$lib/components/menu/GroupManagementDialog.svelte';
 
 	let groups = $state<MenuGroup[]>([]);
 	let items = $state<MenuItem[]>([]);
 	let loading = $state(true);
 	let selectedGroupId = $state<string | null>(null);
+	let activeTab = $state('items'); // 'items' or 'groups'
 
 	// Dialog states
 	let createDialogOpen = $state(false);
 	let editDialogOpen = $state(false);
 	let editingItem = $state<MenuItem | null>(null);
+	let groupDialogOpen = $state(false);
+	let editingGroup = $state<MenuGroup | null>(null);
 
 	// Form data
 	let formData = $state<Partial<CreateMenuItemRequest>>({
@@ -192,29 +197,33 @@
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-3xl font-bold">จัดการเมนู</h1>
-			<p class="text-muted-foreground mt-1">จัดการโครงสร้างเมนูและการเข้าถึง</p>
-		</div>
-		<div class="flex gap-2">
-			<Button onclick={loadData} variant="outline" disabled={loading}>
-				{#if loading}
-					<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-				{/if}
-				รีเฟรช
-			</Button>
-			<Button onclick={openCreateDialog}>
-				<Plus class="mr-2 h-4 w-4" />
-				เพิ่มเมนู
-			</Button>
+			<p class="text-muted-foreground mt-1">จัดการโครงสร้างเมนูและกลุ่มเมนู</p>
 		</div>
 	</div>
 
-	<!-- Group Filter -->
-	{#if groups.length > 0}
-		<div class="flex gap-2">
-			<Button
-				variant={selectedGroupId === null ? 'default' : 'outline'}
-				onclick={() => (selectedGroupId = null)}
-			>
+	<!-- Tabs -->
+	<Tabs.Root bind:value={activeTab}>
+		<Tabs.List class="grid w-full grid-cols-2 max-w-md">
+			<Tabs.Trigger value="items">รายการเมนู</Tabs.Trigger>
+			<Tabs.Trigger value="groups">กลุ่มเมนู</Tabs.Trigger>
+		</Tabs.List>
+
+		<!-- ITEMS TAB -->
+		<Tabs.Content value="items" class="space-y-4">
+			<div class="flex justify-end">
+				<Button onclick={() => (createDialogOpen = true)}>
+					<Plus class="h-4 w-4 mr-2" />
+					เพิ่มเมนู
+				</Button>
+			</div>
+
+			<!-- Group Filter -->
+			{#if groups.length > 0}
+				<div class="flex gap-2">
+					<Button
+						variant={selectedGroupId === null ? 'default' : 'outline'}
+						onclick={() => (selectedGroupId = null)}
+					>
 				ทั้งหมด ({items.length})
 			</Button>
 			{#each groups as group}
@@ -274,15 +283,79 @@
 			</div>
 		{/if}
 	{/if}
+</Tabs.Content>
+
+		<!-- GROUPS TAB -->
+		<Tabs.Content value="groups" class="space-y-4">
+			<div class="flex justify-end">
+				<Button onclick={() => { editingGroup = null; groupDialogOpen = true; }}>
+					<Plus class="h-4 w-4 mr-2" />
+					สร้างกลุ่มใหม่
+				</Button>
+			</div>
+
+			{#if loading}
+				<div class="flex justify-center py-12">
+					<LoaderCircle class="h-8 w-8 animate-spin" />
+				</div>
+			{:else if groups.length === 0}
+				<Card class="p-12 text-center">
+					<FolderOpen class="h-16 w-16 mx-auto mb-4 opacity-20" />
+					<p class="text-lg">ไม่พบกลุ่มเมนู</p>
+				</Card>
+			{:else}
+				<div class="grid gap-3">
+					{#each groups as group (group.id)}
+						{@const itemCount = itemsByGroup[group.id]?.length || 0}
+						<Card class="p-4">
+							<div class="flex items-center gap-3">
+								<div class="flex-1">
+									<div class="flex items-center gap-2">
+										<h3 class="font-semibold">{group.name}</h3>
+										{#if group.name_en}
+											<span class="text-sm text-muted-foreground">({group.name_en})</span>
+										{/if}
+										{#if group.code === 'other' && itemCount > 0}
+											<Badge variant="destructive" class="gap-1">
+												<AlertCircle class="h-3 w-3" />
+												ต้องจัดกลุ่ม
+											</Badge>
+										{/if}
+									</div>
+									<div class="flex items-center gap-2 mt-1">
+										<code class="text-xs bg-muted px-2 py-0.5 rounded">{group.code}</code>
+										<span class="text-sm text-muted-foreground">{itemCount} รายการ</span>
+									</div>
+								</div>
+								<div class="flex gap-2">
+									<Button size="sm" variant="outline" onclick={() => { editingGroup = group; groupDialogOpen = true; }}>
+										<Pencil class="h-4 w-4" />
+									</Button>
+								</div>
+							</div>
+						</Card>
+					{/each}
+				</div>
+			{/if}
+		</Tabs.Content>
+	</Tabs.Root>
 </div>
 
+<!-- Group Management Dialog -->
+<GroupManagementDialog
+	bind:open={groupDialogOpen}
+	group={editingGroup}
+	onSuccess={loadData}
+	onOpenChange={(open) => groupDialogOpen = open}
+/>
+
 <!-- Create Dialog -->
+
 <Dialog.Root bind:open={createDialogOpen}>
 	<Dialog.Content class="max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>เพิ่มเมนูใหม่</Dialog.Title>
 			<Dialog.Description>สร้างเมนูใหม่ในระบบ</Dialog.Description>
-		</Dialog.Header>
 		<div class="space-y-4">
 			<div>
 				<Label for="code">รหัสเมนู *</Label>
