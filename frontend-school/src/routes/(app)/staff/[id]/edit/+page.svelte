@@ -115,16 +115,12 @@
 					major: staff.staff_info?.major || '',
 					university: staff.staff_info?.university || '',
 					role_ids: staff.roles?.map((r) => r.id) || [],
-					primary_role_id:
-						staff.primary_role?.id ||
-						staff.roles?.find((r) => r.is_primary)?.id ||
-						staff.roles?.[0]?.id ||
-						'',
+					primary_role_id: staff.roles?.find((r) => r.is_primary)?.id || '',
 					department_assignments:
 						staff.departments?.map((d) => ({
 							department_id: d.id,
 							position: d.position || 'member',
-							is_primary: d.is_primary || d.is_primary_department || false,
+							is_primary: d.is_primary_department || false,
 							responsibilities: d.responsibilities || ''
 						})) || []
 				};
