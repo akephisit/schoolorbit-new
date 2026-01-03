@@ -16,11 +16,6 @@
 	});
 </script>
 
-<div
-	use:droppable.setNodeRef
-	class:border-primary={droppable.isOver}
-	class:border-2={droppable.isOver}
-	class="transition-colors"
->
+<div use:droppable.setNodeRef>
 	{@render children()}
 </div>
