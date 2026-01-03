@@ -257,37 +257,104 @@ pub async fn update_menu_group(
         .into_response()
 }
 
-/// Delete menu group
+/// Delete menu group (moves items to "other" group)
 pub async fn delete_menu_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Response {
-    let (pool, _) = match get_pool_and_authenticate(&state, &headers).await {
+    let (pool, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
         Ok(result) => result,
         Err(response) => return response,
     };
 
-    match sqlx::query("DELETE FROM menu_groups WHERE id = $1")
-        .bind(id)
-        .execute(&pool)
-        .await
+    // Get the group being deleted
+    let group = match sqlx::query_as::<_, MenuGroup>(
+        "SELECT id, code, name, name_en, description, icon, display_order, is_active FROM menu_groups WHERE id = $1"
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
     {
-        Ok(result) if result.rows_affected() == 0 => {
-            return not_found_response("Menu group not found");
-        }
-        Ok(_) => {}
-        Err(e) => return internal_error_response(&format!("Failed to delete menu group: {}", e)),
+        Ok(g) => g,
+        Err(_) => return not_found_response("Group not found"),
+    };
+
+    // Prevent deletion of "other" group
+    if group.code == "other" {
+        return (
+            StatusCode::BAD_REQUEST,
+            JsonResponse(serde_json::json!({
+                "success": false,
+                "error": "Cannot delete 'other' group - it serves as fallback for orphaned items"
+            }))
+        ).into_response();
     }
 
-    (
-        StatusCode::OK,
-        JsonResponse(serde_json::json!({
-            "success": true,
-            "message": "Menu group deleted successfully"
-        }))
+    // Get "other" group ID
+    let other_group = match sqlx::query_as::<_, MenuGroup>(
+        "SELECT id, code, name, name_en, description, icon, display_order, is_active FROM menu_groups WHERE code = 'other'"
     )
-        .into_response()
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(g) => g,
+        Err(_) => {
+            return internal_error_response("'other' group not found in database");
+        }
+    };
+
+    // Begin transaction
+    let mut tx = match pool.begin().await {
+        Ok(t) => t,
+        Err(e) => return internal_error_response(&format!("Transaction failed: {}", e)),
+    };
+
+    // Move all menu items to "other" group
+    let move_result = sqlx::query(
+        "UPDATE menu_items SET group_id = $1 WHERE group_id = $2"
+    )
+    .bind(other_group.id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await;
+
+    let moved_count = match move_result {
+        Ok(result) => result.rows_affected(),
+        Err(e) => {
+            let _ = tx.rollback().await;
+            return internal_error_response(&format!("Failed to move items: {}", e));
+        }
+    };
+
+    // Delete the group
+    let delete_result = sqlx::query(
+        "DELETE FROM menu_groups WHERE id = $1"
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await;
+
+    match delete_result {
+        Ok(_) => {
+            if let Err(e) = tx.commit().await {
+                return internal_error_response(&format!("Failed to commit: {}", e));
+            }
+
+            (
+                StatusCode::OK,
+                JsonResponse(serde_json::json!({
+                    "success": true,
+                    "message": format!("Deleted group and moved {} items to 'other'", moved_count),
+                    "moved_count": moved_count
+                }))
+            ).into_response()
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            internal_error_response(&format!("Failed to delete group: {}", e))
+        }
+    }
 }
 
 // ==================== Menu Items ====================
