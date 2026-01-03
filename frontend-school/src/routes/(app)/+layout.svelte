@@ -28,8 +28,8 @@ import { uiPreferences } from '$lib/stores/ui-preferences';
 	<!-- Wrapper for Header and Main with sidebar offset -->
 	<div
 		class="flex flex-col flex-1 min-h-0 transition-all duration-300 {isSidebarCollapsed
-			? 'lg:ml-20'
-			: 'lg:ml-72'}"
+			? 'lg:ml-[80px]'
+			: 'lg:ml-64'}"
 	>
 		<!-- Fixed Header - ไม่ scroll -->
 		<Header onMenuClick={handleMenuClick} sidebarCollapsed={isSidebarCollapsed} />
