@@ -318,28 +318,23 @@
 	<title>เพิ่มบุคลากร - SchoolOrbit</title>
 </svelte:head>
 
-<div class="min-h-screen bg-background pb-12">
+<div class="space-y-6">
 	<!-- Header -->
-	<div class="bg-card border-b border-border sticky top-0 z-10">
-		<div class="container max-w-4xl mx-auto px-4 py-4">
-			<div class="flex items-center justify-between">
-				<div class="flex items-center gap-4">
-					<Button href="/staff" variant="ghost" size="sm">
-						<ArrowLeft class="w-4 h-4" />
-					</Button>
-					<div>
-						<h1 class="text-2xl font-bold text-foreground">เพิ่มบุคลากรใหม่</h1>
-						<p class="text-sm text-muted-foreground">กรอกข้อมูลบุคลากรให้ครบถ้วน</p>
-					</div>
-				</div>
-				<div class="text-sm text-muted-foreground">
-					ขั้นตอน {currentStep} / {totalSteps}
-				</div>
+	<div class="flex items-center justify-between">
+		<div class="flex items-center gap-4">
+			<Button href="/staff" variant="ghost" size="sm">
+				<ArrowLeft class="w-4 h-4" />
+			</Button>
+			<div>
+				<h1 class="text-2xl font-bold text-foreground">เพิ่มบุคลากรใหม่</h1>
+				<p class="text-sm text-muted-foreground">
+					กรอกข้อมูลบุคลากรให้ครบถ้วน • ขั้นตอน {currentStep} / {totalSteps}
+				</p>
 			</div>
 		</div>
 	</div>
 
-	<div class="container max-w-4xl mx-auto px-4 py-8">
+	<div class="space-y-6">
 		<!-- Progress Steps -->
 		<div class="mb-8">
 			<div class="flex items-center justify-between">

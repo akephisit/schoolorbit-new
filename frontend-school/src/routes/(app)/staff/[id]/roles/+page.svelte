@@ -15,8 +15,8 @@
 	<title>จัดการสิทธิ์ - SchoolOrbit</title>
 </svelte:head>
 
-<div class="container mx-auto py-6 px-4 max-w-6xl">
-	<div class="flex items-center gap-4 mb-6">
+<div class="space-y-6">
+	<div class="flex items-center gap-4">
 		<Button variant="ghost" size="icon" onclick={() => goto('/staff')}>
 			<ArrowLeft class="h-5 w-5" />
 		</Button>

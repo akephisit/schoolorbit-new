@@ -64,9 +64,9 @@
 	<title>จัดการบทบาท - SchoolOrbit</title>
 </svelte:head>
 
-<div class="container mx-auto py-6 px-4 max-w-7xl">
+<div class="space-y-6">
 	<!-- Header -->
-	<div class="flex items-center justify-between mb-6">
+	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-3xl font-bold text-gray-900">จัดการบทบาท</h1>
 			<p class="text-gray-600 mt-1">กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน</p>

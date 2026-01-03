@@ -200,8 +200,8 @@
 	<title>{isNew ? 'สร้างบทบาทใหม่' : 'แก้ไขบทบาท'} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="container mx-auto py-6 px-4 max-w-4xl">
-	<div class="flex items-center gap-4 mb-6">
+<div class="space-y-6">
+	<div class="flex items-center gap-4">
 		<Button variant="ghost" size="icon" onclick={() => goto('/roles')}>
 			<ArrowLeft class="h-5 w-5" />
 		</Button>

@@ -161,28 +161,24 @@
 	</title>
 </svelte:head>
 
-<div class="min-h-screen bg-background pb-12">
+<div class="space-y-6">
 	<!-- Header -->
-	<div class="bg-card border-b border-border sticky top-0 z-10">
-		<div class="container max-w-4xl mx-auto px-4 py-4">
-			<div class="flex items-center gap-4">
-				<Button href="/staff/{staffId}" variant="ghost" size="sm">
-					<ArrowLeft class="w-4 h-4" />
-				</Button>
-				<div>
-					<h1 class="text-2xl font-bold text-foreground">แก้ไขข้อมูลบุคลากร</h1>
-					{#if staff}
-						<p class="text-sm text-muted-foreground">
-							{staff.first_name}
-							{staff.last_name}
-						</p>
-					{/if}
-				</div>
-			</div>
+	<div class="flex items-center gap-4">
+		<Button href="/staff/{staffId}" variant="ghost" size="sm">
+			<ArrowLeft class="w-4 h-4" />
+		</Button>
+		<div>
+			<h1 class="text-2xl font-bold text-foreground">แก้ไขข้อมูลบุคลากร</h1>
+			{#if staff}
+				<p class="text-sm text-muted-foreground">
+					{staff.first_name}
+					{staff.last_name}
+				</p>
+			{/if}
 		</div>
 	</div>
 
-	<div class="container max-w-4xl mx-auto px-4 py-8">
+	<div class="space-y-6">
 		{#if loadingProfile}
 			<div class="bg-card border border-border rounded-lg p-12 text-center">
 				<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
