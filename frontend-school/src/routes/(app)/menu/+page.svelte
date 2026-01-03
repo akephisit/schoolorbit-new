@@ -210,13 +210,6 @@
 
 		<!-- ITEMS TAB -->
 		<Tabs.Content value="items" class="space-y-4">
-			<div class="flex justify-end">
-				<Button onclick={() => (createDialogOpen = true)}>
-					<Plus class="h-4 w-4 mr-2" />
-					เพิ่มเมนู
-				</Button>
-			</div>
-
 			<!-- Group Filter -->
 			{#if groups.length > 0}
 				<div class="flex gap-2">
