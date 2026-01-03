@@ -101,6 +101,7 @@
 			newSet.add(code);
 		}
 		selectedPermissions = newSet;
+		// Note: Parent module state is automatically reflected via isModuleFullySelected and isModulePartiallySelected
 	}
 
 	function toggleModule(module: string) {
