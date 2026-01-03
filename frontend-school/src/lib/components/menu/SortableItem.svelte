@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { MenuItem } from '$lib/api/menu-admin';
 	import { useSortable } from '@dnd-kit-svelte/sortable';
+	import { CSS } from '@dnd-kit-svelte/utilities';
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -18,13 +19,26 @@
 		id: item.id,
 		data: () => item
 	});
+
+	// Generate style string for smooth transform animations
+	const style = $derived(
+		[
+			sortable.transform.current
+				? `transform: ${CSS.Transform.toString(sortable.transform.current)}`
+				: '',
+			sortable.transition.current ? `transition: ${sortable.transition.current}` : '',
+			sortable.isDragging.current ? 'z-index: 1' : ''
+		]
+			.filter(Boolean)
+			.join('; ')
+	);
 </script>
 
 <!-- use:sortable.setNodeRef is a Svelte action -->
-<div use:sortable.setNodeRef>
+<div use:sortable.setNodeRef {style}>
 	<Card
 		class="p-4 transition-all {sortable.isDragging.current
-			? 'opacity-50 shadow-lg ring-2 ring-primary'
+			? 'opacity-50 shadow-lg ring-2 ring-primary scale-105'
 			: 'hover:shadow-md'}"
 	>
 		<div class="flex items-center gap-3">
