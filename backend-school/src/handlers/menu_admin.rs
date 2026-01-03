@@ -870,3 +870,42 @@ fn internal_error_response(message: &str) -> Response {
         .into_response()
 }
 
+
+// ==================== Group Reordering ====================
+
+/// Reorder menu groups
+#[derive(Debug, Deserialize)]
+pub struct ReorderGroupsRequest {
+    pub groups: Vec<ReorderItem>,
+}
+
+pub async fn reorder_menu_groups(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonResponse(data): JsonResponse<ReorderGroupsRequest>,
+) -> Response {
+    let (pool, _, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    let mut tx = match pool.begin().await {
+        Ok(t) => t,
+        Err(e) => return internal_error_response(&format!("Transaction failed: {}", e)),
+    };
+
+    for item in &data.groups {
+        if let Err(e) = sqlx::query("UPDATE menu_groups SET display_order = $1 WHERE id = $2")
+            .bind(item.display_order).bind(item.id).execute(&mut *tx).await {
+            let _ = tx.rollback().await;
+            return internal_error_response(&format!("Failed to reorder: {}", e));
+        }
+    }
+
+    match tx.commit().await {
+        Ok(_) => (StatusCode::OK, JsonResponse(serde_json::json!({
+            "success": true, "message": format!("Reordered {} groups", data.groups.len())
+        }))).into_response(),
+        Err(e) => internal_error_response(&format!("Failed to commit: {}", e)),
+    }
+}
