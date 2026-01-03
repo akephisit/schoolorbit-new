@@ -21,29 +21,20 @@
 		id: group.id,
 		data: { type, accepts }
 	});
-
-	const transform = $derived(sortable.transform);
-	const transition = $derived(sortable.transition);
-	const isDragging = $derived(sortable.isDragging);
 </script>
 
 <div
 	use:sortable.setNodeRef
 	class="relative {className || ''}"
-	style:transform={transform
-		? `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0)`
+	style:transform={sortable.transform.current
+		? `translate3d(${Math.round(sortable.transform.current.x)}px, ${Math.round(sortable.transform.current.y)}px, 0)`
 		: undefined}
-	style:transition
-	style:opacity={isDragging ? 0.5 : 1}
+	style:transition={sortable.transition.current}
+	style:opacity={sortable.isDragging.current ? 0.5 : 1}
 >
 	<Card class="p-4">
 		<div class="flex items-center gap-2 mb-3">
-			<button
-				use:sortable.setDraggableNodeRef
-				{...sortable.attributes}
-				{...sortable.listeners}
-				class="cursor-grab active:cursor-grabbing"
-			>
+			<button use:sortable.setDraggableNodeRef class="cursor-grab active:cursor-grabbing">
 				<GripVertical class="h-5 w-5 text-muted-foreground" />
 			</button>
 
