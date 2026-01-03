@@ -95,45 +95,46 @@ pub async fn register_routes(
         }
     };
     
-    // ⚠️ CLEAN SLATE: Delete all existing menu items before re-registering
-    // This ensures 100% sync with code, but will remove any manual modifications
-    println!("🗑️  Clearing existing menu items...");
-    let delete_result = sqlx::query("DELETE FROM menu_items")
-        .execute(&pool)
-        .await;
     
-    match delete_result {
-        Ok(result) => {
-            let deleted_count = result.rows_affected();
-            println!("✅ Deleted {} existing menu items", deleted_count);
-        }
-        Err(e) => {
-            eprintln!("⚠️  Failed to delete existing items: {}", e);
-            // Continue anyway - might be first deployment
-        }
-    }
+    // Smart sync: UPSERT to preserve user customizations (display_order, is_active)
+    // while updating code-controlled fields (name, path, icon, permission, group)
+    println!("🔄 Syncing menu items (preserving user customizations)...");
     
     let mut registered_count = 0;
+    let mut updated_count = 0;
     let total_routes = data.routes.len();
+    
+    // Collect all active codes for cleanup phase
+    let mut active_codes: Vec<String> = Vec::new();
     
     for route in &data.routes {
         // Generate code from title (slugify)
         let code = slugify(&route.title);
+        active_codes.push(code.clone());
         
-        // Insert menu item (no ON CONFLICT needed since we deleted all)
+        // UPSERT: Insert new or update existing, preserving display_order and is_active
         let result = sqlx::query(
             r#"
             INSERT INTO menu_items (
-                id, code, name, path, icon, 
+                id, code, name, name_en, path, icon, 
                 required_permission, group_id, display_order, is_active
             )
             VALUES (
                 gen_random_uuid(),
-                $1, $2, $3, $4, $5,
+                $1, $2, NULL, $3, $4, $5,
                 (SELECT id FROM menu_groups WHERE code = $6),
                 $7,
                 true
             )
+            ON CONFLICT (code) DO UPDATE SET
+                name = EXCLUDED.name,
+                path = EXCLUDED.path,
+                icon = EXCLUDED.icon,
+                required_permission = EXCLUDED.required_permission,
+                group_id = EXCLUDED.group_id,
+                -- Preserve user customizations:
+                display_order = COALESCE(menu_items.display_order, EXCLUDED.display_order),
+                is_active = menu_items.is_active
             "#,
         )
         .bind(&code)
@@ -147,24 +148,60 @@ pub async fn register_routes(
         .await;
         
         match result {
-            Ok(_) => {
-                println!("✅ Registered: {} -> {}", route.title, route.path);
-                registered_count += 1;
+            Ok(res) => {
+                if res.rows_affected() > 0 {
+                    println!("✅ Synced: {} -> {}", route.title, route.path);
+                    registered_count += 1;
+                    // Note: rows_affected() for ON CONFLICT UPDATE is always 1, can't distinguish insert vs update reliably
+                }
             }
             Err(e) => {
-                eprintln!("❌ Failed to register {}: {}", route.title, e);
+                eprintln!("❌ Failed to sync {}: {}", route.title, e);
             }
         }
     }
     
-    println!("🎉 Successfully registered {}/{} routes", registered_count, total_routes);
+    // Cleanup: Remove menu items that no longer exist in code (orphaned items)
+    if !active_codes.is_empty() {
+        println!("🧹 Cleaning up orphaned menu items...");
+        
+        // Build placeholders for IN clause
+        let placeholders: Vec<String> = (1..=active_codes.len())
+            .map(|i| format!("${}", i))
+            .collect();
+        let in_clause = placeholders.join(", ");
+        
+        let delete_query = format!(
+            "DELETE FROM menu_items WHERE code NOT IN ({})",
+            in_clause
+        );
+        
+        let mut query = sqlx::query(&delete_query);
+        for code in &active_codes {
+            query = query.bind(code);
+        }
+        
+        match query.execute(&pool).await {
+            Ok(result) => {
+                let deleted = result.rows_affected();
+                if deleted > 0 {
+                    println!("🗑️  Removed {} orphaned menu items", deleted);
+                }
+            }
+            Err(e) => {
+                eprintln!("⚠️  Failed to clean orphaned items: {}", e);
+            }
+        }
+    }
+    
+    println!("🎉 Successfully synced {}/{} routes", registered_count, total_routes);
     
     (
         StatusCode::OK,
         JsonResponse(RouteRegistrationResponse {
             success: true,
             registered: registered_count,
-            message: format!("Registered {} routes", registered_count),
+            message: format!("Synced {} routes (preserved user customizations)", registered_count),
         })
     ).into_response()
 }
