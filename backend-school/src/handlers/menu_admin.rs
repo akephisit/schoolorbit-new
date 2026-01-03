@@ -869,3 +869,149 @@ fn internal_error_response(message: &str) -> Response {
     )
         .into_response()
 }
+
+// ==================== Menu Group CRUD Handlers ====================
+
+/// Create a new menu group
+pub async fn create_menu_group(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonResponse(data): JsonResponse<CreateMenuGroupRequest>,
+) -> Response {
+    let (pool, _, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
+       Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    let result = sqlx::query_as::<_, MenuGroup>(
+        r#"INSERT INTO menu_groups (code, name, name_en, description, icon, display_order)
+        VALUES ($1, $2, $3, $4, $5, COALESCE($6, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM menu_groups)))
+        RETURNING id, code, name, name_en, description, icon, display_order, is_active"#
+    )
+    .bind(&data.code).bind(&data.name).bind(&data.name_en).bind(&data.description).bind(&data.icon).bind(data.display_order)
+    .fetch_one(&pool).await;
+
+    match result {
+        Ok(group) => (StatusCode::CREATED, JsonResponse(serde_json::json!({"success": true, "data": group}))).into_response(),
+        Err(e) => internal_error_response(&format!("Failed to create menu group: {}", e)),
+    }
+}
+
+/// Update a menu group
+pub async fn update_menu_group(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    JsonResponse(data): JsonResponse<UpdateMenuGroupRequest>,
+) -> Response {
+    let (pool, _, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    let result = sqlx::query_as::<_, MenuGroup>(
+        r#"UPDATE menu_groups SET name = COALESCE($1, name), name_en = COALESCE($2, name_en),
+        description = COALESCE($3, description), icon = COALESCE($4, icon),
+        display_order = COALESCE($5, display_order), is_active = COALESCE($6, is_active)
+        WHERE id = $7 RETURNING id, code, name, name_en, description, icon, display_order, is_active"#
+    )
+    .bind(&data.name).bind(&data.name_en).bind(&data.description).bind(&data.icon).bind(data.display_order).bind(data.is_active).bind(id)
+    .fetch_one(&pool).await;
+
+    match result {
+        Ok(group) => (StatusCode::OK, JsonResponse(serde_json::json!({"success": true, "data": group}))).into_response(),
+        Err(e) => internal_error_response(&format!("Failed to update menu group: {}", e)),
+    }
+}
+
+/// Delete a menu group (moves items to "other" group)
+pub async fn delete_menu_group(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let (pool, _, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    let group = match sqlx::query_as::<_, MenuGroup>(
+        "SELECT id, code, name, name_en, description, icon, display_order, is_active FROM menu_groups WHERE id = $1"
+    ).bind(id).fetch_one(&pool).await {
+        Ok(g) => g,
+        Err(_) => return not_found_response("Group not found"),
+    };
+
+    if group.code == "other" {
+        return (StatusCode::BAD_REQUEST, JsonResponse(serde_json::json!({
+            "success": false, "error": "Cannot delete 'other' group - it serves as fallback for orphaned items"
+        }))).into_response();
+    }
+
+    let other_group = match sqlx::query_as::<_, MenuGroup>(
+        "SELECT id, code, name, name_en, description, icon, display_order, is_active FROM menu_groups WHERE code = 'other'"
+    ).fetch_one(&pool).await {
+        Ok(g) => g,
+        Err(_) => return internal_error_response("'other' group not found in database"),
+    };
+
+    let mut tx = match pool.begin().await {
+        Ok(t) => t,
+        Err(e) => return internal_error_response(&format!("Transaction failed: {}", e)),
+    };
+
+    let move_result = sqlx::query("UPDATE menu_items SET group_id = $1 WHERE group_id = $2")
+        .bind(other_group.id).bind(id).execute(&mut *tx).await;
+
+    let moved_count = match move_result {
+        Ok(result) => result.rows_affected(),
+        Err(e) => { let _ = tx.rollback().await; return internal_error_response(&format!("Failed to move items: {}", e)); }
+    };
+
+    match sqlx::query("DELETE FROM menu_groups WHERE id = $1").bind(id).execute(&mut *tx).await {
+        Ok(_) => {
+            if let Err(e) = tx.commit().await { return internal_error_response(&format!("Failed to commit: {}", e)); }
+            (StatusCode::OK, JsonResponse(serde_json::json!({
+                "success": true, "message": format!("Deleted group and moved {} items to 'other'", moved_count), "moved_count": moved_count
+            }))).into_response()
+        }
+        Err(e) => { let _ = tx.rollback().await; internal_error_response(&format!("Failed to delete group: {}", e)) }
+    }
+}
+
+/// Reorder menu groups
+#[derive(Debug, Deserialize)]
+pub struct ReorderGroupsRequest {
+    pub groups: Vec<ReorderItem>,
+}
+
+pub async fn reorder_menu_groups(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonResponse(data): JsonResponse<ReorderGroupsRequest>,
+) -> Response {
+    let (pool, _, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    let mut tx = match pool.begin().await {
+        Ok(t) => t,
+        Err(e) => return internal_error_response(&format!("Transaction failed: {}", e)),
+    };
+
+    for item in &data.groups {
+        if let Err(e) = sqlx::query("UPDATE menu_groups SET display_order = $1 WHERE id = $2")
+            .bind(item.display_order).bind(item.id).execute(&mut *tx).await {
+            let _ = tx.rollback().await;
+            return internal_error_response(&format!("Failed to reorder: {}", e));
+        }
+    }
+
+    match tx.commit().await {
+        Ok(_) => (StatusCode::OK, JsonResponse(serde_json::json!({
+            "success": true, "message": format!("Reordered {} groups", data.groups.len())
+        }))).into_response(),
+        Err(e) => internal_error_response(&format!("Failed to commit: {}", e)),
+    }
+}
