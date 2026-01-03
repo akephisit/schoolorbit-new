@@ -243,7 +243,6 @@
 			</div>
 		</Card>
 	{:else}
-	{:else}
 		<!-- Menu Items Sortable Lists by Group -->
 		{#if selectedGroupId}
 			<!-- Single group view -->
