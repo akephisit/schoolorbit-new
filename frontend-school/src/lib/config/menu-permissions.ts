@@ -69,7 +69,7 @@ export const menuItems: MenuItem[] = [
     {
         name: 'จัดการบทบาท',
         icon: Shield,
-        href: '/admin/roles',
+        href: '/settings/roles',
         permission: 'roles.read',
         group: 'admin'
     },

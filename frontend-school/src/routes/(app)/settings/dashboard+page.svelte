@@ -8,14 +8,14 @@
 			title: 'จัดการระบบงาน',
 			description: 'เปิด/ปิดการทำงานของระบบย่อยต่างๆ',
 			icon: Power,
-			href: '/admin/features',
+			href: '/settings/features',
 			color: 'text-blue-500'
 		},
 		{
 			title: 'จัดการเมนู',
 			description: 'จัดการโครงสร้างเมนูและการเข้าถึง',
 			icon: Menu,
-			href: '/admin/menu',
+			href: '/settings/menu',
 			color: 'text-green-500'
 		}
 	];

@@ -1,10 +1,10 @@
 /**
- * Admin Dashboard Page
+ * Settings Dashboard Page
  */
 
 export const _meta = {
     menu: {
-        title: 'ระบบจัดการ',
+        title: 'ตั้งค่าระบบ',
         icon: 'Settings',
         group: 'settings',
         order: 999,
@@ -14,6 +14,6 @@ export const _meta = {
 
 export const load = async () => {
     return {
-        title: 'ระบบจัดการ'
+        title: 'ตั้งค่าระบบ'
     };
 };

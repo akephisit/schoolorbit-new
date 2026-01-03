@@ -71,7 +71,7 @@
 			<h1 class="text-3xl font-bold text-gray-900">จัดการบทบาท</h1>
 			<p class="text-gray-600 mt-1">กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน</p>
 		</div>
-		<Button onclick={() => goto('/admin/roles/new')} class="gap-2">
+		<Button onclick={() => goto('/settings/roles/new')} class="gap-2">
 			<Plus class="h-4 w-4" />
 			สร้างบทบาทใหม่
 		</Button>
@@ -100,7 +100,7 @@
 					<Shield class="h-12 w-12 text-gray-400 mx-auto mb-4" />
 					<h3 class="text-lg font-medium text-gray-900">ยังไม่มีบทบาท</h3>
 					<p class="text-gray-600 mt-1">เริ่มต้นสร้างบทบาทแรกของคุณ</p>
-					<Button onclick={() => goto('/admin/roles/new')} class="mt-4 gap-2">
+					<Button onclick={() => goto('/settings/roles/new')} class="mt-4 gap-2">
 						<Plus class="h-4 w-4" />
 						สร้างบทบาทใหม่
 					</Button>

@@ -69,12 +69,12 @@
 				selectedPermissions = new Set(role.permissions || []);
 			} else {
 				toast.error('ไม่สามารถโหลดข้อมูล role ได้');
-				goto('/admin/roles');
+				goto('/settings/roles');
 			}
 		} catch (error) {
 			console.error('Failed to load role:', error);
 			toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
-			goto('/admin/roles');
+			goto('/settings/roles');
 		}
 	}
 
@@ -153,7 +153,7 @@
 				const response = await roleAPI.createRole(data);
 				if (response.success) {
 					toast.success('สร้างบทบาทสำเร็จ');
-					goto('/admin/roles');
+					goto('/settings/roles');
 				} else {
 					toast.error(response.error || 'ไม่สามารถสร้างบทบาทได้');
 				}
@@ -161,7 +161,7 @@
 				const response = await roleAPI.updateRole(roleId, data);
 				if (response.success) {
 					toast.success('บันทึกข้อมูลสำเร็จ');
-					goto('/admin/roles');
+					goto('/settings/roles');
 				} else {
 					toast.error(response.error || 'ไม่สามารถบันทึกข้อมูลได้');
 				}
@@ -181,7 +181,7 @@
 			if (response.success) {
 				toast.success('ลบบทบาทสำเร็จ');
 				showDeleteDialog = false;
-				goto('/admin/roles');
+				goto('/settings/roles');
 			} else {
 				toast.error(response.error || 'ไม่สามารถลบบทบาทได้');
 				showDeleteDialog = false;
@@ -202,7 +202,7 @@
 
 <div class="container mx-auto py-6 px-4 max-w-4xl">
 	<div class="flex items-center gap-4 mb-6">
-		<Button variant="ghost" size="icon" onclick={() => goto('/admin/roles')}>
+		<Button variant="ghost" size="icon" onclick={() => goto('/settings/roles')}>
 			<ArrowLeft class="h-5 w-5" />
 		</Button>
 		<div class="flex-1">
@@ -369,7 +369,7 @@
 			</Card>
 
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => goto('/admin/roles')}>ยกเลิก</Button>
+				<Button variant="outline" onclick={() => goto('/settings/roles')}>ยกเลิก</Button>
 				<Button onclick={handleSave} disabled={saving} class="gap-2">
 					<Save class="h-4 w-4" />
 					{saving ? 'กำลังบันทึก...' : 'บันทึก'}
