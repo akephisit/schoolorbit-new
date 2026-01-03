@@ -158,6 +158,8 @@ async fn main() {
         .route("/api/admin/menu/groups/{id}", axum::routing::put(handlers::menu_admin::update_menu_group)
             .delete(handlers::menu_admin::delete_menu_group)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/admin/menu/groups/reorder", post(handlers::menu_admin::reorder_menu_groups)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/admin/menu/items", get(handlers::menu_admin::list_menu_items)
             .post(handlers::menu_admin::create_menu_item)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
