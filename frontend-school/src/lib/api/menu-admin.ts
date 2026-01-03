@@ -177,6 +177,22 @@ export async function deleteMenuGroup(id: string): Promise<void> {
     }
 }
 
+export async function reorderMenuGroups(groups: ReorderItem[]): Promise<void> {
+    const response = await fetch(`${BACKEND_URL}/api/admin/menu/groups/reorder`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({ groups })
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Failed to reorder menu groups' }));
+        throw new Error(error.error || 'Failed to reorder menu groups');
+    }
+}
+
 // ==================== Menu Items ====================
 
 export async function listMenuItems(groupId?: string): Promise<MenuItem[]> {
