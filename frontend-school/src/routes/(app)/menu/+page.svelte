@@ -134,10 +134,10 @@
 		formData = {
 			code: item.code,
 			name: item.name,
-			name_en: item.name_en,
+			name_en: item.name_en || undefined,
 			path: item.path,
-			icon: item.icon,
-			required_permission: item.required_permission,
+			icon: item.icon || undefined,
+			required_permission: item.required_permission || undefined,
 			display_order: item.display_order,
 			group_id: item.group_id
 		};
