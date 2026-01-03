@@ -34,7 +34,12 @@
 >
 	<Card class="p-4">
 		<div class="flex items-center gap-2 mb-3">
-			<button use:sortable.setDraggableNodeRef class="cursor-grab active:cursor-grabbing">
+			<button
+				use:sortable.setDraggableNodeRef
+				class="cursor-grab active:cursor-grabbing touch-none"
+				{...sortable.attributes.current}
+				{...sortable.listeners.current}
+			>
 				<GripVertical class="h-5 w-5 text-muted-foreground" />
 			</button>
 

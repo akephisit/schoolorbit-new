@@ -197,12 +197,16 @@
 
 		if (!activeContainer || !overContainer || activeContainer === overContainer) return;
 
-		// Real-time preview: move item to new container
-		const item = activeContainer.nesteds.find((item) => item.id === active.id);
-		if (!item) return;
+		// Real-time preview: move item between containers
+		const activeIndex = items.findIndex((i) => i.id === active.id);
+		const activeItem = items[activeIndex];
 
-		activeContainer.nesteds = activeContainer.nesteds.filter((nested) => nested.id !== active.id);
-		overContainer.nesteds.push(item);
+		if (!activeItem) return;
+
+		// Remove from old group and add to new group
+		items = items.map((item) =>
+			item.id === activeItem.id ? { ...item, group_id: overContainer.data.id } : item
+		);
 	}
 
 	function openEditDialog(item: MenuItem) {
