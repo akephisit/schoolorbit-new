@@ -263,7 +263,6 @@
 					<div class="space-y-6">
 						{#each groups as group (group.id)}
 							{@const groupItems = itemsByGroup[group.id] || []}
-							{#if groupItems.length > 0}
 								<SortableMenuItems
 									items={groupItems}
 									groupName={group.name}
@@ -271,7 +270,6 @@
 									onEdit={openEditDialog}
 									onDelete={handleDelete}
 								/>
-							{/if}
 						{/each}
 					</div>
 				{/if}
