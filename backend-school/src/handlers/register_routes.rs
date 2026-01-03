@@ -131,7 +131,8 @@ pub async fn register_routes(
                 path = EXCLUDED.path,
                 icon = EXCLUDED.icon,
                 required_permission = EXCLUDED.required_permission,
-                group_id = EXCLUDED.group_id,
+                -- Preserve existing group_id (user may have moved items manually):
+                group_id = COALESCE(menu_items.group_id, EXCLUDED.group_id),
                 -- Preserve user customizations:
                 display_order = COALESCE(menu_items.display_order, EXCLUDED.display_order),
                 is_active = menu_items.is_active
