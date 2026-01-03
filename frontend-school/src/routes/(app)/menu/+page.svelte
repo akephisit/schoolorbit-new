@@ -224,71 +224,76 @@
 						variant={selectedGroupId === null ? 'default' : 'outline'}
 						onclick={() => (selectedGroupId = null)}
 					>
-				ทั้งหมด ({items.length})
-			</Button>
-			{#each groups as group}
-				<Button
-					variant={selectedGroupId === group.id ? 'default' : 'outline'}
-					onclick={() => (selectedGroupId = group.id)}
-				>
-					{group.name} ({itemsByGroup[group.id]?.length || 0})
-				</Button>
-			{/each}
-		</div>
-	{/if}
-
-	<!-- Loading State -->
-	{#if loading}
-		<div class="flex justify-center items-center py-20">
-			<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
-		</div>
-	{:else if filteredItems.length === 0}
-		<!-- Empty State -->
-		<Card class="p-12">
-			<div class="text-center text-muted-foreground">
-				<Menu class="h-16 w-16 mx-auto mb-4 opacity-20" />
-				<p class="text-lg">ไม่พบเมนูที่คุณสามารถจัดการได้</p>
-				<p class="text-sm mt-2">คุณสามารถจัดการได้เฉพาะเมนูที่มีสิทธิ์ในโมดูลนั้นๆ</p>
-			</div>
-		</Card>
-	{:else}
-		<!-- Menu Items Sortable Lists by Group -->
-		{#if selectedGroupId}
-			<!-- Single group view -->
-			{@const group = groups.find((g) => g.id === selectedGroupId)}
-			{#if group}
-				<SortableMenuItems
-					items={filteredItems}
-					groupName={group.name}
-					onReorder={handleReorder}
-					onEdit={openEditDialog}
-					onDelete={handleDelete}
-				/>
+						ทั้งหมด ({items.length})
+					</Button>
+					{#each groups as group}
+						<Button
+							variant={selectedGroupId === group.id ? 'default' : 'outline'}
+							onclick={() => (selectedGroupId = group.id)}
+						>
+							{group.name} ({itemsByGroup[group.id]?.length || 0})
+						</Button>
+					{/each}
+				</div>
 			{/if}
-		{:else}
-			<!-- All groups view -->
-			<div class="space-y-6">
-				{#each groups as group (group.id)}
-					{@const groupItems = itemsByGroup[group.id] || []}
-					{#if groupItems.length > 0}
+
+			<!-- Loading State -->
+			{#if loading}
+				<div class="flex justify-center items-center py-20">
+					<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
+				</div>
+			{:else if filteredItems.length === 0}
+				<!-- Empty State -->
+				<Card class="p-12">
+					<div class="text-center text-muted-foreground">
+						<Menu class="h-16 w-16 mx-auto mb-4 opacity-20" />
+						<p class="text-lg">ไม่พบเมนูที่คุณสามารถจัดการได้</p>
+						<p class="text-sm mt-2">คุณสามารถจัดการได้เฉพาะเมนูที่มีสิทธิ์ในโมดูลนั้นๆ</p>
+					</div>
+				</Card>
+			{:else}
+				<!-- Menu Items Sortable Lists by Group -->
+				{#if selectedGroupId}
+					<!-- Single group view -->
+					{@const group = groups.find((g) => g.id === selectedGroupId)}
+					{#if group}
 						<SortableMenuItems
-							items={groupItems}
+							items={filteredItems}
 							groupName={group.name}
 							onReorder={handleReorder}
 							onEdit={openEditDialog}
 							onDelete={handleDelete}
 						/>
 					{/if}
-				{/each}
-			</div>
-		{/if}
-	{/if}
-</Tabs.Content>
+				{:else}
+					<!-- All groups view -->
+					<div class="space-y-6">
+						{#each groups as group (group.id)}
+							{@const groupItems = itemsByGroup[group.id] || []}
+							{#if groupItems.length > 0}
+								<SortableMenuItems
+									items={groupItems}
+									groupName={group.name}
+									onReorder={handleReorder}
+									onEdit={openEditDialog}
+									onDelete={handleDelete}
+								/>
+							{/if}
+						{/each}
+					</div>
+				{/if}
+			{/if}
+		</Tabs.Content>
 
 		<!-- GROUPS TAB -->
 		<Tabs.Content value="groups" class="space-y-4">
 			<div class="flex justify-end">
-				<Button onclick={() => { editingGroup = null; groupDialogOpen = true; }}>
+				<Button
+					onclick={() => {
+						editingGroup = null;
+						groupDialogOpen = true;
+					}}
+				>
 					<Plus class="h-4 w-4 mr-2" />
 					สร้างกลุ่มใหม่
 				</Button>
@@ -328,7 +333,14 @@
 									</div>
 								</div>
 								<div class="flex gap-2">
-									<Button size="sm" variant="outline" onclick={() => { editingGroup = group; groupDialogOpen = true; }}>
+									<Button
+										size="sm"
+										variant="outline"
+										onclick={() => {
+											editingGroup = group;
+											groupDialogOpen = true;
+										}}
+									>
 										<Pencil class="h-4 w-4" />
 									</Button>
 								</div>
@@ -346,7 +358,7 @@
 	bind:open={groupDialogOpen}
 	group={editingGroup}
 	onSuccess={loadData}
-	onOpenChange={(open) => groupDialogOpen = open}
+	onOpenChange={(open) => (groupDialogOpen = open)}
 />
 
 <!-- Create Dialog -->
@@ -358,7 +370,6 @@
 			<Dialog.Description>สร้างเมนูใหม่ในระบบ</Dialog.Description>
 		</Dialog.Header>
 		<div class="space-y-4">
-t	</Dialog.Header>
 			<div>
 				<Label for="code">รหัสเมนู *</Label>
 				<Input id="code" bind:value={formData.code} placeholder="staff" />
