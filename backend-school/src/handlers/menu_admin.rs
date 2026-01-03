@@ -884,7 +884,7 @@ pub async fn reorder_menu_groups(
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<ReorderGroupsRequest>,
 ) -> Response {
-    let (pool, _, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
+    let (pool, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
         Ok(result) => result,
         Err(response) => return response,
     };
