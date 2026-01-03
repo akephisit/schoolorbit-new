@@ -94,7 +94,7 @@
   lg:translate-x-0 flex flex-col"
 >
 	<!-- Header -->
-	<div class="flex items-center justify-between p-4 h-16">
+	<div class="flex items-center justify-between p-4 border-b border-border h-16">
 		{#if !isCollapsed}
 			<div class="flex items-center gap-2 overflow-hidden">
 				<GraduationCap class="w-8 h-8 text-primary flex-shrink-0" />
