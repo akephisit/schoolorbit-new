@@ -43,10 +43,10 @@
 	let formData = $state<Partial<CreateMenuItemRequest>>({
 		code: '',
 		name: '',
-		name_en: '',
+		name_en: undefined,
 		path: '',
-		icon: '',
-		required_permission: '',
+		icon: undefined,
+		required_permission: undefined,
 		display_order: 0
 	});
 
@@ -321,33 +321,47 @@
 				</Card>
 			{:else}
 				<!-- Menu Items Sortable Lists by Group -->
-				{#if selectedGroupId}
-					<!-- Single group view -->
-					{@const group = groups.find((g) => g.id === selectedGroupId)}
-					{#if group}
-						<SortableMenuItems
-							items={filteredItems}
-							groupName={group.name}
-							onReorder={handleReorder}
-							onEdit={openEditDialog}
-							onDelete={handleDelete}
-						/>
+				<DndContext {sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+					{#if selectedGroupId}
+						<!-- Single group view -->
+						{@const group = groups.find((g) => g.id === selectedGroupId)}
+						{#if group}
+							<div class="space-y-2">
+								<h3 class="text-lg font-semibold text-foreground mb-3">{group.name}</h3>
+								<SortableContext
+									items={filteredItems.map((i) => i.id)}
+									strategy={verticalListSortingStrategy}
+								>
+									<div class="space-y-2">
+										{#each filteredItems as item (item.id)}
+											<SortableItem {item} onEdit={openEditDialog} onDelete={handleDelete} />
+										{/each}
+									</div>
+								</SortableContext>
+							</div>
+						{/if}
+					{:else}
+						<!-- All groups view -->
+						<div class="space-y-6">
+							{#each groups as group (group.id)}
+								{@const groupItems = itemsByGroup[group.id] || []}
+								<div class="space-y-2">
+									<h3 class="text-lg font-semibold text-foreground mb-3">{group.name}</h3>
+									<SortableContext
+										items={groupItems.map((i) => i.id)}
+										strategy={verticalListSortingStrategy}
+									>
+										<div class="space-y-2">
+											{#each groupItems as item (item.id)}
+												<SortableItem {item} onEdit={openEditDialog} onDelete={handleDelete} />
+											{/each}
+										</div>
+									</SortableContext>
+								</div>
+							{/each}
+						</div>
 					{/if}
-				{:else}
-					<!-- All groups view -->
-					<div class="space-y-6">
-						{#each groups as group (group.id)}
-							{@const groupItems = itemsByGroup[group.id] || []}
-							<SortableMenuItems
-								items={groupItems}
-								groupName={group.name}
-								onReorder={handleReorder}
-								onEdit={openEditDialog}
-								onDelete={handleDelete}
-							/>
-						{/each}
-					</div>
-				{/if}
+				</DndContext>
 			{/if}
 		</Tabs.Content>
 
