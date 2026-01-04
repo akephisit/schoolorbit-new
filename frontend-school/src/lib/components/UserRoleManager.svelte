@@ -153,7 +153,7 @@
 		<CardContent>
 			{#if loading}
 				<div class="space-y-2">
-					{#each Array(2) as _}
+					{#each Array(2) as _, idx (idx)}
 						<div class="h-16 bg-gray-100 rounded animate-pulse"></div>
 					{/each}
 				</div>
@@ -173,7 +173,7 @@
 				</div>
 			{:else}
 				<div class="space-y-2">
-					{#each userRoles as userRole}
+					{#each userRoles as userRole (userRole.id)}
 						{@const role = getRoleById(userRole.role_id)}
 						{#if role}
 							<div class="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
@@ -232,7 +232,7 @@
 				</div>
 			{:else}
 				<div class="flex flex-wrap gap-2">
-					{#each permissions as permission}
+					{#each permissions as permission (permission)}
 						<Badge variant="secondary">{permission}</Badge>
 					{/each}
 				</div>
@@ -257,7 +257,7 @@
 					class="w-full px-3 py-2 border rounded-md bg-white"
 				>
 					<option value={undefined}>เลือกบทบาท...</option>
-					{#each getUnassignedRoles() as role}
+					{#each getUnassignedRoles() as role (role.id)}
 						<option value={role.id}>{role.name} ({role.code})</option>
 					{/each}
 				</select>

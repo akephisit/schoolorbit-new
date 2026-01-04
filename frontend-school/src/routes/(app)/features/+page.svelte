@@ -98,7 +98,7 @@
 	{:else}
 		<!-- Features by Module -->
 		<div class="space-y-6">
-			{#each Object.entries(featuresByModule) as [moduleName, moduleFeatures]}
+			{#each Object.entries(featuresByModule) as [moduleName, moduleFeatures] (moduleName)}
 				<div class="space-y-3">
 					<!-- Module Header -->
 					<div class="flex items-center gap-2">

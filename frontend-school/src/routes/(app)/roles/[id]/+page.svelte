@@ -53,7 +53,7 @@
 
 	// Permissions
 	let permissionsByModule = $state<PermissionsByModule>({});
-	let selectedPermissions = $state(new SvelteSet<string>());
+	let selectedPermissions = new SvelteSet<string>();
 
 	onMount(async () => {
 		await loadPermissions();
