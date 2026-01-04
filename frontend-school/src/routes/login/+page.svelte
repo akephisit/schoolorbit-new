@@ -5,7 +5,6 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { GraduationCap, ArrowLeft } from 'lucide-svelte';
 	import { authAPI } from '$lib/api/auth';
-	import { authStore } from '$lib/stores/auth';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';

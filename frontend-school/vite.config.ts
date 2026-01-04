@@ -65,7 +65,6 @@ function menuRegistryPlugin() {
 				const result = await response.json();
 				console.log(`✅ ${result.message}`);
 				console.log('🎉 Menu registration complete!');
-
 			} catch (error) {
 				console.error('❌ Failed to register menu items:', error);
 				console.error('⚠️  Build will continue, but menu items were not registered');

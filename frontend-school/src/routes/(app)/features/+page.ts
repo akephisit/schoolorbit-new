@@ -3,17 +3,17 @@
  */
 
 export const _meta = {
-    menu: {
-        title: 'จัดการระบบงาน',
-        icon: 'Zap',
-        group: 'settings',
-        order: 1000,
-        permission: 'settings'
-    }
+	menu: {
+		title: 'จัดการระบบงาน',
+		icon: 'Zap',
+		group: 'settings',
+		order: 1000,
+		permission: 'settings'
+	}
 };
 
 export const load = async () => {
-    return {
-        title: 'จัดการระบบงาน'
-    };
+	return {
+		title: 'จัดการระบบงาน'
+	};
 };

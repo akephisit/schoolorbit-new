@@ -4,12 +4,13 @@
 	import { authStore } from '$lib/stores/auth';
 	import { authAPI } from '$lib/api/auth';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	const user = $derived($authStore.user);
 
 	async function handleLogout() {
 		await authAPI.logout();
-		await goto('/login', { invalidateAll: true });
+		await goto(resolve('/login'), { invalidateAll: true });
 	}
 
 	// Get initials from first and last name
@@ -21,7 +22,7 @@
 	// Get display role from database
 	function getDisplayRole(): string {
 		if (!user) return 'ผู้ใช้งาน';
-		
+
 		// Use primaryRoleName from backend (from roles table)
 		return user.primaryRoleName || 'ผู้ใช้งาน';
 	}

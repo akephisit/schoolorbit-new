@@ -32,10 +32,10 @@
 		try {
 			toggleLoading[feature.id] = true;
 			const updated = await toggleFeature(feature.id);
-			
+
 			// Update local state
 			features = features.map((f) => (f.id === feature.id ? updated : f));
-			
+
 			const status = updated.is_enabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน';
 			toast.success(`${status} ${feature.name} สำเร็จ`);
 		} catch (error) {

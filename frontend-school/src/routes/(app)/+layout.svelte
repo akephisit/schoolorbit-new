@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { authAPI } from '$lib/api/auth';
 
-import { uiPreferences } from '$lib/stores/ui-preferences';
+	import { uiPreferences } from '$lib/stores/ui-preferences';
 	let { children } = $props();
 
 	let sidebarRef: { toggleMobileSidebar?: () => void } | undefined;

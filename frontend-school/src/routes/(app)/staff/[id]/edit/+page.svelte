@@ -18,15 +18,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { DatePicker } from '$lib/components/ui/date-picker';
-	import {
-		ArrowLeft,
-		LoaderCircle,
-		Save,
-		User,
-		Building2,
-		BookOpen,
-		Check
-	} from 'lucide-svelte';
+	import { ArrowLeft, LoaderCircle, Save, User, Building2, BookOpen, Check } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	const staffId = $derived(page.params.id);

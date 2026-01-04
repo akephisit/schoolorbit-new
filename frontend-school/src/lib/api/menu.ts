@@ -6,23 +6,23 @@ import { PUBLIC_BACKEND_URL } from '$env/static/public';
 const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 
 export interface MenuItem {
-    id: string;
-    code: string;
-    name: string;
-    path: string;
-    icon?: string;
+	id: string;
+	code: string;
+	name: string;
+	path: string;
+	icon?: string;
 }
 
 export interface MenuGroup {
-    code: string;
-    name: string;
-    icon?: string;
-    items: MenuItem[];
+	code: string;
+	name: string;
+	icon?: string;
+	items: MenuItem[];
 }
 
 export interface UserMenuResponse {
-    success: boolean;
-    groups: MenuGroup[];
+	success: boolean;
+	groups: MenuGroup[];
 }
 
 /**
@@ -30,17 +30,17 @@ export interface UserMenuResponse {
  * Menu is dynamically generated from database
  */
 export async function getUserMenu(): Promise<UserMenuResponse> {
-    const response = await fetch(`${BACKEND_URL}/api/menu/user`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    });
+	const response = await fetch(`${BACKEND_URL}/api/menu/user`, {
+		method: 'GET',
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json'
+		}
+	});
 
-    if (!response.ok) {
-        throw new Error(`Failed to fetch menu: ${response.statusText}`);
-    }
+	if (!response.ok) {
+		throw new Error(`Failed to fetch menu: ${response.statusText}`);
+	}
 
-    return response.json();
+	return response.json();
 }

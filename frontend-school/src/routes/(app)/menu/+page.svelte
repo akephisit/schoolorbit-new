@@ -70,7 +70,7 @@
 		try {
 			loading = true;
 			[groups, items] = await Promise.all([listMenuGroups(), listMenuItems()]);
-			
+
 			// Rebuild containers from loaded data
 			containers = groups.map((group) => ({
 				data: group,
@@ -135,9 +135,7 @@
 				groups = arrayMove(groups, oldIndex, newIndex);
 
 				try {
-					await reorderMenuGroups(
-						groups.map((g, i) => ({ id: g.id, display_order: i + 1 }))
-					);
+					await reorderMenuGroups(groups.map((g, i) => ({ id: g.id, display_order: i + 1 })));
 					toast.success('เรียงกลุ่มสำเร็จ');
 				} catch (error) {
 					toast.error('ไม่สามารถเรียงกลุ่มได้');
@@ -147,7 +145,7 @@
 			return;
 		}
 
-		// Case 2: Move/reorder items  
+		// Case 2: Move/reorder items
 		if (activeType === 'item' && (overType === 'item' || acceptsItem)) {
 			const overContainer = findContainer(over.id as string);
 			if (!overContainer) return;
@@ -177,7 +175,9 @@
 					}));
 
 					try {
-						await reorderMenuItems(withOrder.map((i) => ({ id: i.id, display_order: i.display_order })));
+						await reorderMenuItems(
+							withOrder.map((i) => ({ id: i.id, display_order: i.display_order }))
+						);
 						toast.success('เรียงลำดับสำเร็จ');
 						await loadData();
 					} catch (error) {

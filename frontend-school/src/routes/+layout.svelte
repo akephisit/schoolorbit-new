@@ -10,7 +10,7 @@
 	// Using $effect instead of onMount to handle SPA navigation
 	$effect(() => {
 		const isPublicPage = page.url.pathname === '/' || page.url.pathname.startsWith('/login');
-		
+
 		if (isPublicPage) {
 			// Remove dark class for public pages
 			document.documentElement.classList.remove('dark');
