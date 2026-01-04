@@ -87,6 +87,8 @@ async fn main() {
         // Protected auth routes
         .route("/api/auth/me", get(handlers::auth::me)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/auth/me/profile", get(handlers::auth::get_profile)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
         // Staff Management routes (protected)
         .route("/api/staff", get(handlers::staff::list_staff)
