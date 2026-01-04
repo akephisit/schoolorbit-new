@@ -4,6 +4,7 @@
 	import { Toaster } from 'svelte-sonner';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import InstallPrompt from '$lib/components/pwa/InstallPrompt.svelte';
 
 	let { children } = $props();
 
@@ -25,5 +26,8 @@
 
 <!-- Sonner Toaster for global notifications -->
 <Toaster position="bottom-right" richColors />
+
+<!-- PWA Install Prompt -->
+<InstallPrompt />
 
 {@render children()}
