@@ -153,7 +153,7 @@
 		<CardContent>
 			{#if loading}
 				<div class="space-y-2">
-					{#each Array(2) as _unused, idx (idx)}
+					{#each Array.from({ length: 2 }, (_, i) => i) as idx (idx)}
 						<div class="h-16 bg-gray-100 rounded animate-pulse"></div>
 					{/each}
 				</div>

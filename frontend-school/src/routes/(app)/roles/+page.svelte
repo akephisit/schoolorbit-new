@@ -81,7 +81,7 @@
 	{#if loading}
 		<!-- Loading State -->
 		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-			{#each Array(6) as _unused, i (i)}
+			{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
 				<Card>
 					<CardHeader>
 						<div class="h-6 bg-gray-200 rounded animate-pulse w-3/4"></div>
