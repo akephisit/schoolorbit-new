@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { authAPI } from '$lib/api/auth';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
-	import { ArrowLeft, Lock, Save, Eye, EyeOff } from 'lucide-svelte';
+	import { ArrowLeft, Lock, Save, Eye, EyeOff, Download, Smartphone, CheckCircle2 } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -17,6 +18,62 @@
 	let showNewPassword = $state(false);
 	let showConfirmPassword = $state(false);
 	let saving = $state(false);
+
+	// PWA Install state
+	interface BeforeInstallPromptEvent extends Event {
+		prompt: () => Promise<void>;
+		userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+	}
+
+	let deferredPrompt = $state<BeforeInstallPromptEvent | null>(null);
+	let isPWAInstalled = $state(false);
+	let isInstalling = $state(false);
+
+	onMount(() => {
+		// Check if already installed
+		if (window.matchMedia('(display-mode: standalone)').matches) {
+			isPWAInstalled = true;
+		}
+
+		// Listen for install prompt
+		const handleBeforeInstallPrompt = (e: Event) => {
+			e.preventDefault();
+			deferredPrompt = e as BeforeInstallPromptEvent;
+		};
+
+		const handleAppInstalled = () => {
+			isPWAInstalled = true;
+			deferredPrompt = null;
+		};
+
+		window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+		window.addEventListener('appinstalled', handleAppInstalled);
+
+		return () => {
+			window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+			window.removeEventListener('appinstalled', handleAppInstalled);
+		};
+	});
+
+	async function handleInstallPWA() {
+		if (!deferredPrompt) return;
+
+		isInstalling = true;
+
+		try {
+			await deferredPrompt.prompt();
+			const choiceResult = await deferredPrompt.userChoice;
+
+			if (choiceResult.outcome === 'accepted') {
+				toast.success('ติดตั้งแอปสำเร็จ');
+			}
+		} catch (error) {
+			toast.error('ไม่สามารถติดตั้งแอปได้');
+		} finally {
+			deferredPrompt = null;
+			isInstalling = false;
+		}
+	}
 
 	async function handleChangePassword(e: Event) {
 		e.preventDefault();
@@ -252,6 +309,68 @@
 							<p class="text-sm text-muted-foreground">ผสมผสานตัวอักษร ตัวเลข และอักขระพิเศษ</p>
 						</div>
 					</div>
+				</CardContent>
+			</Card>
+
+			<!-- PWA Installation -->
+			<Card>
+				<CardHeader>
+					<CardTitle>ติดตั้งแอป</CardTitle>
+					<CardDescription>
+						ติดตั้ง SchoolOrbit เป็นแอปบนอุปกรณ์ของคุณเพื่อการเข้าถึงที่รวดเร็วยิ่งขึ้น
+					</CardDescription>
+				</CardHeader>
+				<CardContent class="space-y-4">
+					{#if isPWAInstalled}
+						<!-- Already Installed -->
+						<div class="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+							<div class="bg-green-500/20 p-2 rounded-lg">
+								<CheckCircle2 class="w-5 h-5 text-green-600 dark:text-green-400" />
+							</div>
+							<div class="flex-1">
+								<p class="font-medium text-sm text-green-900 dark:text-green-100">
+									แอปถูกติดตั้งแล้ว
+								</p>
+								<p class="text-xs text-green-700 dark:text-green-300 mt-0.5">
+									คุณกำลังใช้งาน SchoolOrbit ในโหมดแอป
+								</p>
+							</div>
+						</div>
+					{:else if deferredPrompt}
+						<!-- Can Install -->
+						<div class="space-y-3">
+							<div class="flex items-start gap-3">
+								<div class="bg-primary/10 p-2 rounded-lg flex-shrink-0 mt-0.5">
+									<Smartphone class="w-5 h-5 text-primary" />
+								</div>
+								<div class="flex-1">
+									<p class="text-sm text-muted-foreground">
+										ติดตั้งแอป SchoolOrbit บนอุปกรณ์ของคุณเพื่อ:
+									</p>
+									<ul class="text-sm text-muted-foreground list-disc list-inside mt-2 space-y-1">
+										<li>เข้าถึงได้เร็วขึ้นจากหน้าจอโฮม</li>
+										<li>ทำงานแบบ full screen</li>
+										<li>ประสบการณ์การใช้งานแบบ native app</li>
+									</ul>
+								</div>
+							</div>
+							<Button
+								onclick={handleInstallPWA}
+								disabled={isInstalling}
+								class="w-full gap-2"
+							>
+								<Download class="w-4 h-4" />
+								{isInstalling ? 'กำลังติดตั้ง...' : 'ติดตั้งแอป'}
+							</Button>
+						</div>
+					{:else}
+						<!-- Not Available -->
+						<div class="p-4 bg-muted rounded-lg">
+							<p class="text-sm text-muted-foreground text-center">
+								ตัวเลือกการติดตั้งจะปรากฏเมื่อเปิดเว็บไซต์ในเบราว์เซอร์ที่รองรับ
+							</p>
+						</div>
+					{/if}
 				</CardContent>
 			</Card>
 		</div>
