@@ -100,24 +100,25 @@
 		saving = true;
 
 		try {
-			// TODO: Implement API call to update profile
-			// Only send editable fields
-			const payload = {
+			// Update profile via API
+			const updatedProfile = await authAPI.updateProfile({
 				title: formData.title || undefined,
 				nickname: formData.nickname || undefined,
 				email: formData.email || undefined,
 				phone: formData.phone || undefined,
-				emergency_contact: formData.emergency_contact || undefined,
-				line_id: formData.line_id || undefined,
-				date_of_birth: formData.date_of_birth || undefined,
+				emergencyContact: formData.emergency_contact || undefined,
+				lineId: formData.line_id || undefined,
+				dateOfBirth: formData.date_of_birth || undefined,
 				gender: formData.gender || undefined,
 				address: formData.address || undefined
-			};
+			});
 
-			await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulated API call
+			// Update local profile state
+			profile = updatedProfile;
 			toast.success('บันทึกข้อมูลสำเร็จ');
 		} catch (error) {
-			toast.error('ไม่สามารถบันทึกข้อมูลได้');
+			const errorMessage = error instanceof Error ? error.message : 'ไม่สามารถบันทึกข้อมูลได้';
+			toast.error(errorMessage);
 			console.error('Failed to update profile:', error);
 		} finally {
 			saving = false;

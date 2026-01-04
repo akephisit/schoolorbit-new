@@ -145,6 +145,41 @@ class AuthAPI {
 
 		return await response.json();
 	}
+
+	/**
+	 * Update user profile
+	 */
+	async updateProfile(data: {
+		title?: string;
+		nickname?: string;
+		email?: string;
+		phone?: string;
+		emergencyContact?: string;
+		lineId?: string;
+		dateOfBirth?: string;
+		gender?: string;
+		address?: string;
+	}): Promise<ProfileResponse> {
+		const response = await fetch(`${BACKEND_URL}/api/auth/me/profile`, {
+			method: 'PUT',
+			credentials: 'include',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(data)
+		});
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				authStore.clearUser();
+				throw new Error('กรุณาเข้าสู่ระบบอีกครั้ง');
+			}
+			const error = await response.json();
+			throw new Error(error.error || 'ไม่สามารถบันทึกข้อมูลได้');
+		}
+
+		return await response.json();
+	}
 }
 
 export const authAPI = new AuthAPI();
