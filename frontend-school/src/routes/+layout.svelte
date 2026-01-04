@@ -1,6 +1,5 @@
 <script lang="ts">
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { Toaster } from 'svelte-sonner';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
@@ -25,10 +24,6 @@
 		}
 	});
 </script>
-
-<svelte:head>
-	<link rel="icon" href={favicon} />
-</svelte:head>
 
 <!-- Sonner Toaster for global notifications -->
 <Toaster position="bottom-right" richColors />
