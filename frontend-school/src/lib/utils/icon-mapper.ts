@@ -1,10 +1,8 @@
-import type { ComponentType } from 'svelte';
-import type { ComponentType } from 'svelte';
 // Icon Mapper Utility
 // Maps icon name strings to Lucide Svelte components
 
 import * as Icons from 'lucide-svelte';
-import type { ComponentType } from 'svelte';
+import type { Component } from 'svelte';
 
 /**
  * Map icon name string to Lucide Svelte component
@@ -15,9 +13,9 @@ import type { ComponentType } from 'svelte';
  * @param iconName - Icon name in kebab-case (e.g., 'layout-dashboard', 'users', 'shield')
  * @returns Lucide Svelte icon component
  */
-export function getIconComponent(iconName?: string): ComponentType {
+export function getIconComponent(iconName?: string): Component {
 	if (!iconName) {
-		return Icons.Circle;
+		return Icons.Circle as unknown as Component;
 	}
 
 	// Convert 'layout-dashboard' to 'LayoutDashboard'
@@ -26,9 +24,9 @@ export function getIconComponent(iconName?: string): ComponentType {
 		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
 		.join('');
 
-	// Get component from Icons (use any to bypass type checking)
-	const IconComponent = (Icons as any)[componentName];
+	// Get component from Icons
+	const IconComponent = (Icons as unknown as Record<string, Component>)[componentName];
 
 	// Fallback to Circle if not found
-	return (IconComponent as ComponentType) || Icons.Circle;
+	return IconComponent || (Icons.Circle as unknown as Component);
 }

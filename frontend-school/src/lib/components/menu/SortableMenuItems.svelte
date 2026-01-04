@@ -1,6 +1,12 @@
 <script lang="ts">
 	import type { MenuItem } from '$lib/api/menu-admin';
-	import { DndContext, PointerSensor, KeyboardSensor, closestCenter } from '@dnd-kit-svelte/core';
+	import {
+		DndContext,
+		PointerSensor,
+		KeyboardSensor,
+		closestCenter,
+		type DragEndEvent
+	} from '@dnd-kit-svelte/core';
 	import { SortableContext, verticalListSortingStrategy } from '@dnd-kit-svelte/sortable';
 	import SortableItem from './SortableItem.svelte';
 
@@ -28,7 +34,7 @@
 		return newArray;
 	}
 
-	async function handleDragEnd(event: ComponentType) {
+	async function handleDragEnd(event: DragEndEvent) {
 		const { active, over } = event;
 
 		if (!over || active.id === over.id) return;
@@ -51,8 +57,6 @@
 		await onReorder(reorderedItems);
 	}
 </script>
-
-import type {ComponentType} from "svelte";
 
 <div class="space-y-2">
 	{#if groupName}
