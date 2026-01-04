@@ -180,6 +180,34 @@ class AuthAPI {
 
 		return await response.json();
 	}
+
+	/**
+	 * Change password
+	 */
+	async changePassword(data: {
+		currentPassword: string;
+		newPassword: string;
+	}): Promise<{ success: boolean; message: string }> {
+		const response = await fetch(`${BACKEND_URL}/api/auth/me/change-password`, {
+			method: 'POST',
+			credentials: 'include',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(data)
+		});
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				const error = await response.json();
+				throw new Error(error.error || 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
+			}
+			const error = await response.json();
+			throw new Error(error.error || 'ไม่สามารถเปลี่ยนรหัสผ่านได้');
+		}
+
+		return await response.json();
+	}
 }
 
 export const authAPI = new AuthAPI();

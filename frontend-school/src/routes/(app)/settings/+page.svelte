@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { authAPI } from '$lib/api/auth';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -39,8 +40,11 @@
 		saving = true;
 
 		try {
-			// TODO: Implement API call to change password
-			await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulated API call
+			await authAPI.changePassword({
+				currentPassword,
+				newPassword
+			});
+
 			toast.success('เปลี่ยนรหัสผ่านสำเร็จ');
 
 			// Clear form
@@ -48,7 +52,8 @@
 			newPassword = '';
 			confirmPassword = '';
 		} catch (error) {
-			toast.error('ไม่สามารถเปลี่ยนรหัสผ่านได้');
+			const errorMessage = error instanceof Error ? error.message : 'ไม่สามารถเปลี่ยนรหัสผ่านได้';
+			toast.error(errorMessage);
 			console.error('Failed to change password:', error);
 		} finally {
 			saving = false;
