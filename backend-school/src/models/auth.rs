@@ -20,6 +20,16 @@ pub struct User {
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    
+    // Additional fields from migration 005
+    pub title: Option<String>,
+    pub nickname: Option<String>,
+    pub emergency_contact: Option<String>,
+    pub line_id: Option<String>,
+    pub gender: Option<String>,
+    pub profile_image_url: Option<String>,
+    pub hired_date: Option<chrono::NaiveDate>,
+    pub resigned_date: Option<chrono::NaiveDate>,
 }
 
 // Login request
@@ -63,6 +73,65 @@ impl From<User> for UserResponse {
             status: user.status,
             created_at: user.created_at,
             primary_role_name: None, // Will be populated separately
+        }
+    }
+}
+
+// Full profile response (for /me/profile endpoint)
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileResponse {
+    // Basic info (read-only)
+    pub id: Uuid,
+    pub national_id: Option<String>,
+    pub first_name: String,
+    pub last_name: String,
+    pub user_type: String,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    
+    // Primary role (read-only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_role_name: Option<String>,
+    
+    // Editable fields
+    pub title: Option<String>,
+    pub nickname: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub emergency_contact: Option<String>,
+    pub line_id: Option<String>,
+    pub date_of_birth: Option<chrono::NaiveDate>,
+    pub gender: Option<String>,
+    pub address: Option<String>,
+    pub profile_image_url: Option<String>,
+    pub hired_date: Option<chrono::NaiveDate>,
+}
+
+impl From<User> for ProfileResponse {
+    fn from(user: User) -> Self {
+        Self {
+            id: user.id,
+            national_id: user.national_id.clone(),
+            first_name: user.first_name.clone(),
+            last_name: user.last_name.clone(),
+            user_type: user.user_type.clone(),
+            status: user.status.clone(),
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+            primary_role_name: None, // Will be populated separately in handler
+            title: user.title,
+            nickname: user.nickname,
+            email: user.email,
+            phone: user.phone,
+            emergency_contact: user.emergency_contact,
+            line_id: user.line_id,
+            date_of_birth: user.date_of_birth,
+            gender: user.gender,
+            address: user.address,
+            profile_image_url: user.profile_image_url,
+            hired_date: user.hired_date,
         }
     }
 }
