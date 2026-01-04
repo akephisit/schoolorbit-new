@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth';
+	import { authAPI, type ProfileResponse } from '$lib/api/auth';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -26,6 +27,9 @@
 
 	const user = $derived($authStore.user);
 
+	// Full profile data from API
+	let profile = $state<ProfileResponse | null>(null);
+
 	// Form data - สำหรับฟิลด์ที่แก้ไขได้
 	let formData = $state({
 		// Editable fields
@@ -43,14 +47,15 @@
 
 	// Read-only data - ข้อมูลที่แสดงผลเฉยๆ แก้ไม่ได้
 	let readOnlyData = $derived({
-		id: user?.id || '',
-		national_id: user?.nationalId || '',
-		first_name: user?.firstName || '',
-		last_name: user?.lastName || '',
-		user_type: user?.role || '',
-		status: user?.status || '',
-		created_at: user?.createdAt || '',
-		primary_role_name: user?.primaryRoleName || ''
+		id: profile?.id || user?.id || '',
+		national_id: profile?.nationalId || user?.nationalId || '',
+		first_name: profile?.firstName || user?.firstName || '',
+		last_name: profile?.lastName || user?.lastName || '',
+		user_type: profile?.userType || user?.role || '',
+		status: profile?.status || user?.status || '',
+		created_at: profile?.createdAt || user?.createdAt || '',
+		updated_at: profile?.updatedAt || '',
+		primary_role_name: profile?.primaryRoleName || user?.primaryRoleName || ''
 	});
 
 	let saving = $state(false);
@@ -58,28 +63,26 @@
 
 	onMount(async () => {
 		// Load full user profile from API
-		// TODO: Implement API call to get complete profile
 		loading = true;
 		try {
-			// Simulated API call
-			await new Promise((resolve) => setTimeout(resolve, 500));
+			profile = await authAPI.getFullProfile();
 
-			if (user) {
-				formData = {
-					title: '', // TODO: Get from API
-					nickname: '',
-					email: user.email || '',
-					phone: user.phone || '',
-					emergency_contact: '',
-					line_id: '',
-					date_of_birth: '',
-					gender: 'male',
-					address: '',
-					profile_image_url: ''
-				};
-			}
+			// Populate form with profile data
+			formData = {
+				title: profile.title || '',
+				nickname: profile.nickname || '',
+				email: profile.email || '',
+				phone: profile.phone || '',
+				emergency_contact: profile.emergencyContact || '',
+				line_id: profile.lineId || '',
+				date_of_birth: profile.dateOfBirth || '',
+				gender: profile.gender || 'male',
+				address: profile.address || '',
+				profile_image_url: profile.profileImageUrl || ''
+			};
 		} catch (error) {
 			toast.error('ไม่สามารถโหลดข้อมูลได้');
+			console.error('Failed to load profile:', error);
 		} finally {
 			loading = false;
 		}
