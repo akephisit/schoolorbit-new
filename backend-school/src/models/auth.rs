@@ -56,6 +56,14 @@ pub struct UpdateProfileRequest {
     pub address: Option<String>,
 }
 
+// Change password request
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
 // User response (without sensitive data)
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

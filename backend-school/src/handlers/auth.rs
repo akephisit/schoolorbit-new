@@ -1,5 +1,5 @@
 use crate::db::school_mapping::get_school_database_url;
-use crate::models::auth::{Claims, LoginRequest, LoginResponse, User, UserResponse, ProfileResponse, UpdateProfileRequest};
+use crate::models::auth::{Claims, LoginRequest, LoginResponse, User, UserResponse, ProfileResponse, UpdateProfileRequest, ChangePasswordRequest};
 use crate::utils::jwt::JwtService;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
@@ -608,6 +608,199 @@ pub async fn update_profile(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
                     "error": "ไม่สามารถอัพเดทข้อมูลได้"
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Change password handler (POST /me/change-password)
+/// Changes user's password after verifying current password
+pub async fn change_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<ChangePasswordRequest>,
+) -> Response {
+    // Extract subdomain from Origin header (secure)
+    let subdomain = match extract_subdomain_from_request(&headers) {
+        Ok(s) => s,
+        Err(response) => return response,
+    };
+
+    // Extract token from Authorization header or cookie
+    let token = headers
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .or_else(|| {
+            // Try cookie as fallback
+            headers
+                .get("cookie")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|cookies| {
+                    cookies
+                        .split(';')
+                        .find_map(|c| c.trim().strip_prefix("auth_token="))
+                })
+        });
+
+    let token = match token {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Missing authentication token"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Validate JWT
+    let claims = match JwtService::verify_token(token) {
+        Ok(claims) => claims,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Invalid or expired token"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Get school database URL
+    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("❌ Failed to get school database: {}", e);
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "ไม่พบโรงเรียน"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Get pool
+    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("❌ Failed to get database pool: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "เกิดข้อผิดพลาด"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let user_id = match uuid::Uuid::parse_str(&claims.sub) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("❌ Invalid user ID: {}", e);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "Invalid user ID"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Fetch user from database
+    let user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "ไม่พบผู้ใช้"
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            eprintln!("❌ Database error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "เกิดข้อผิดพลาด"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Verify current password
+    let is_valid = bcrypt::verify(&payload.current_password, &user.password_hash).unwrap_or(false);
+
+    if !is_valid {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": "รหัสผ่านปัจจุบันไม่ถูกต้อง"
+            })),
+        )
+            .into_response();
+    }
+
+    // Hash new password
+    let new_password_hash = match bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST) {
+        Ok(hash) => hash,
+        Err(e) => {
+            eprintln!("❌ Failed to hash password: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "ไม่สามารถเข้ารหัสรหัสผ่านได้"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Update password in database
+    let result = sqlx::query(
+        "UPDATE users 
+         SET password_hash = $1,
+             updated_at = NOW()
+         WHERE id = $2"
+    )
+    .bind(&new_password_hash)
+    .bind(user_id)
+    .execute(&pool)
+    .await;
+
+    match result {
+        Ok(_) => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "success": true,
+                    "message": "เปลี่ยนรหัสผ่านสำเร็จ"
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to update password: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "ไม่สามารถเปลี่ยนรหัสผ่านได้"
                 })),
             )
                 .into_response()

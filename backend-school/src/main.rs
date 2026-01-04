@@ -90,6 +90,8 @@ async fn main() {
         .route("/api/auth/me/profile", get(handlers::auth::get_profile)
             .put(handlers::auth::update_profile)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/auth/me/change-password", post(handlers::auth::change_password)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
         // Staff Management routes (protected)
         .route("/api/staff", get(handlers::staff::list_staff)
