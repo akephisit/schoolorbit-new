@@ -7,6 +7,7 @@
 	import { resolve } from '$app/paths';
 
 	const user = $derived($authStore.user);
+	const isLoading = $derived($authStore.isLoading);
 
 	async function handleLogout() {
 		await authAPI.logout();
@@ -28,7 +29,16 @@
 	}
 </script>
 
-{#if user}
+{#if isLoading}
+	<!-- Loading Skeleton -->
+	<div class="flex items-center gap-3 px-2 py-2">
+		<div
+			class="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0 animate-pulse ring-2 ring-background"
+		>
+			<UserCircle class="w-6 h-6 text-muted-foreground/50" />
+		</div>
+	</div>
+{:else if user}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger
 			class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-accent transition-colors outline-none"
