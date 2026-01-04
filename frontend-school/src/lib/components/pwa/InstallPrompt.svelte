@@ -7,11 +7,11 @@
 	let showInstallPrompt = $state(false);
 	let isInstalling = $state(false);
 
-	// Subscribe to PWA store
-	let pwaState = $state($pwaStore);
+	// Use $derived instead of $effect to avoid infinite loop
+	let pwaState = $derived($pwaStore);
+
+	// Watch for changes and update visibility
 	$effect(() => {
-		pwaState = $pwaStore;
-		
 		// Show prompt when deferredPrompt is available
 		if (pwaState.deferredPrompt && !pwaState.isInstalled) {
 			// Check if user has dismissed this before

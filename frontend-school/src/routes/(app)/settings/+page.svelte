@@ -23,14 +23,9 @@
 	// Active tab
 	let activeTab = $state<'security' | 'app'>('security');
 
-	// PWA state from store
-	let pwaState = $state($pwaStore);
+	// PWA state from store - use $derived to avoid infinite loop
+	let pwaState = $derived($pwaStore);
 	let isInstalling = $state(false);
-
-	// Subscribe to store changes
-	$effect(() => {
-		pwaState = $pwaStore;
-	});
 
 	async function handleInstallPWA() {
 		if (!pwaState.deferredPrompt) return;
@@ -120,31 +115,31 @@
 			<CardHeader>
 				<CardTitle class="text-base">หมวดหมู่</CardTitle>
 			</CardHeader>
-<CardContent class="space-y-1">
-<Button 
-variant={activeTab === 'security' ? 'secondary' : 'ghost'} 
-class="w-full justify-start"
-onclick={() => activeTab = 'security'}
->
-<Lock class="w-4 h-4 mr-2" />
-ความปลอดภัย
-</Button>
-<Button 
-variant={activeTab === 'app' ? 'secondary' : 'ghost'} 
-class="w-full justify-start"
-onclick={() => activeTab = 'app'}
->
-<Smartphone class="w-4 h-4 mr-2" />
-แอพพลิเคชัน
-</Button>
-<!-- Future categories -->
-<Button variant="ghost" class="w-full justify-start" disabled>
-<span class="text-muted-foreground">การแจ้งเตือน (เร็วๆ นี้)</span>
-</Button>
-<Button variant="ghost" class="w-full justify-start" disabled>
-<span class="text-muted-foreground">ความเป็นส่วนตัว (เร็วๆ นี้)</span>
-</Button>
-</CardContent>
+			<CardContent class="space-y-1">
+				<Button
+					variant={activeTab === 'security' ? 'secondary' : 'ghost'}
+					class="w-full justify-start"
+					onclick={() => (activeTab = 'security')}
+				>
+					<Lock class="w-4 h-4 mr-2" />
+					ความปลอดภัย
+				</Button>
+				<Button
+					variant={activeTab === 'app' ? 'secondary' : 'ghost'}
+					class="w-full justify-start"
+					onclick={() => (activeTab = 'app')}
+				>
+					<Smartphone class="w-4 h-4 mr-2" />
+					แอพพลิเคชัน
+				</Button>
+				<!-- Future categories -->
+				<Button variant="ghost" class="w-full justify-start" disabled>
+					<span class="text-muted-foreground">การแจ้งเตือน (เร็วๆ นี้)</span>
+				</Button>
+				<Button variant="ghost" class="w-full justify-start" disabled>
+					<span class="text-muted-foreground">ความเป็นส่วนตัว (เร็วๆ นี้)</span>
+				</Button>
+			</CardContent>
 		</Card>
 
 		<!-- Main Content -->
