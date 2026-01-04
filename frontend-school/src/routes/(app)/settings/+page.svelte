@@ -20,6 +20,9 @@
 	let showConfirmPassword = $state(false);
 	let saving = $state(false);
 
+	// Active tab
+	let activeTab = $state<'security' | 'app'>('security');
+
 	// PWA state from store
 	let pwaState = $state($pwaStore);
 	let isInstalling = $state(false);
@@ -117,234 +120,248 @@
 			<CardHeader>
 				<CardTitle class="text-base">หมวดหมู่</CardTitle>
 			</CardHeader>
-			<CardContent class="space-y-1">
-				<Button variant="secondary" class="w-full justify-start">
-					<Lock class="w-4 h-4 mr-2" />
-					ความปลอดภัย
-				</Button>
-				<!-- Future categories can be added here -->
-				<Button variant="ghost" class="w-full justify-start" disabled>
-					<span class="text-muted-foreground">การแจ้งเตือน (เร็วๆ นี้)</span>
-				</Button>
-				<Button variant="ghost" class="w-full justify-start" disabled>
-					<span class="text-muted-foreground">ความเป็นส่วนตัว (เร็วๆ นี้)</span>
-				</Button>
-			</CardContent>
+<CardContent class="space-y-1">
+<Button 
+variant={activeTab === 'security' ? 'secondary' : 'ghost'} 
+class="w-full justify-start"
+onclick={() => activeTab = 'security'}
+>
+<Lock class="w-4 h-4 mr-2" />
+ความปลอดภัย
+</Button>
+<Button 
+variant={activeTab === 'app' ? 'secondary' : 'ghost'} 
+class="w-full justify-start"
+onclick={() => activeTab = 'app'}
+>
+<Smartphone class="w-4 h-4 mr-2" />
+แอพพลิเคชัน
+</Button>
+<!-- Future categories -->
+<Button variant="ghost" class="w-full justify-start" disabled>
+<span class="text-muted-foreground">การแจ้งเตือน (เร็วๆ นี้)</span>
+</Button>
+<Button variant="ghost" class="w-full justify-start" disabled>
+<span class="text-muted-foreground">ความเป็นส่วนตัว (เร็วๆ นี้)</span>
+</Button>
+</CardContent>
 		</Card>
 
 		<!-- Main Content -->
 		<div class="lg:col-span-3 space-y-6">
-			<!-- Change Password Section -->
-			<Card>
-				<CardHeader>
-					<CardTitle>เปลี่ยนรหัสผ่าน</CardTitle>
-					<CardDescription>อัพเดทรหัสผ่านของคุณเพื่อความปลอดภัยที่ดีขึ้น</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<form onsubmit={handleChangePassword} class="space-y-4">
-						<!-- Current Password -->
-						<div class="space-y-2">
-							<Label for="currentPassword">รหัสผ่านปัจจุบัน *</Label>
-							<div class="relative">
-								<Input
-									id="currentPassword"
-									type={showCurrentPassword ? 'text' : 'password'}
-									bind:value={currentPassword}
-									placeholder="รหัสผ่านปัจจุบัน"
-									required
-									class="pr-10"
-								/>
-								<button
-									type="button"
-									onclick={() => (showCurrentPassword = !showCurrentPassword)}
-									class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-								>
-									{#if showCurrentPassword}
-										<EyeOff class="w-4 h-4" />
-									{:else}
-										<Eye class="w-4 h-4" />
-									{/if}
-								</button>
+			{#if activeTab === 'security'}
+				<!-- Change Password Section -->
+				<Card>
+					<CardHeader>
+						<CardTitle>เปลี่ยนรหัสผ่าน</CardTitle>
+						<CardDescription>อัพเดทรหัสผ่านของคุณเพื่อความปลอดภัยที่ดีขึ้น</CardDescription>
+					</CardHeader>
+					<CardContent>
+						<form onsubmit={handleChangePassword} class="space-y-4">
+							<!-- Current Password -->
+							<div class="space-y-2">
+								<Label for="currentPassword">รหัสผ่านปัจจุบัน *</Label>
+								<div class="relative">
+									<Input
+										id="currentPassword"
+										type={showCurrentPassword ? 'text' : 'password'}
+										bind:value={currentPassword}
+										placeholder="รหัสผ่านปัจจุบัน"
+										required
+										class="pr-10"
+									/>
+									<button
+										type="button"
+										onclick={() => (showCurrentPassword = !showCurrentPassword)}
+										class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+									>
+										{#if showCurrentPassword}
+											<EyeOff class="w-4 h-4" />
+										{:else}
+											<Eye class="w-4 h-4" />
+										{/if}
+									</button>
+								</div>
 							</div>
-						</div>
 
-						<!-- New Password -->
-						<div class="space-y-2">
-							<Label for="newPassword">รหัสผ่านใหม่ *</Label>
-							<div class="relative">
-								<Input
-									id="newPassword"
-									type={showNewPassword ? 'text' : 'password'}
-									bind:value={newPassword}
-									placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"
-									required
-									minlength={8}
-									class="pr-10"
-								/>
-								<button
-									type="button"
-									onclick={() => (showNewPassword = !showNewPassword)}
-									class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-								>
-									{#if showNewPassword}
-										<EyeOff class="w-4 h-4" />
-									{:else}
-										<Eye class="w-4 h-4" />
-									{/if}
-								</button>
+							<!-- New Password -->
+							<div class="space-y-2">
+								<Label for="newPassword">รหัสผ่านใหม่ *</Label>
+								<div class="relative">
+									<Input
+										id="newPassword"
+										type={showNewPassword ? 'text' : 'password'}
+										bind:value={newPassword}
+										placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"
+										required
+										minlength={8}
+										class="pr-10"
+									/>
+									<button
+										type="button"
+										onclick={() => (showNewPassword = !showNewPassword)}
+										class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+									>
+										{#if showNewPassword}
+											<EyeOff class="w-4 h-4" />
+										{:else}
+											<Eye class="w-4 h-4" />
+										{/if}
+									</button>
+								</div>
 							</div>
-						</div>
 
-						<!-- Confirm Password -->
-						<div class="space-y-2">
-							<Label for="confirmPassword">ยืนยันรหัสผ่านใหม่ *</Label>
-							<div class="relative">
-								<Input
-									id="confirmPassword"
-									type={showConfirmPassword ? 'text' : 'password'}
-									bind:value={confirmPassword}
-									placeholder="ยืนยันรหัสผ่านใหม่"
-									required
-									class="pr-10"
-								/>
-								<button
-									type="button"
-									onclick={() => (showConfirmPassword = !showConfirmPassword)}
-									class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-								>
-									{#if showConfirmPassword}
-										<EyeOff class="w-4 h-4" />
-									{:else}
-										<Eye class="w-4 h-4" />
-									{/if}
-								</button>
+							<!-- Confirm Password -->
+							<div class="space-y-2">
+								<Label for="confirmPassword">ยืนยันรหัสผ่านใหม่ *</Label>
+								<div class="relative">
+									<Input
+										id="confirmPassword"
+										type={showConfirmPassword ? 'text' : 'password'}
+										bind:value={confirmPassword}
+										placeholder="ยืนยันรหัสผ่านใหม่"
+										required
+										class="pr-10"
+									/>
+									<button
+										type="button"
+										onclick={() => (showConfirmPassword = !showConfirmPassword)}
+										class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+									>
+										{#if showConfirmPassword}
+											<EyeOff class="w-4 h-4" />
+										{:else}
+											<Eye class="w-4 h-4" />
+										{/if}
+									</button>
+								</div>
 							</div>
-						</div>
 
-						<!-- Password Requirements -->
-						<div class="bg-muted p-4 rounded-lg">
-							<p class="text-sm font-medium mb-2">ข้อกำหนดรหัสผ่าน:</p>
-							<ul class="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-								<li>มีความยาวอย่างน้อย 8 ตัวอักษร</li>
-								<li>ควรประกอบด้วยตัวอักษรพิมพ์ใหญ่และพิมพ์เล็ก</li>
-								<li>ควรมีตัวเลขและอักขระพิเศษ</li>
-							</ul>
-						</div>
+							<!-- Password Requirements -->
+							<div class="bg-muted p-4 rounded-lg">
+								<p class="text-sm font-medium mb-2">ข้อกำหนดรหัสผ่าน:</p>
+								<ul class="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+									<li>มีความยาวอย่างน้อย 8 ตัวอักษร</li>
+									<li>ควรประกอบด้วยตัวอักษรพิมพ์ใหญ่และพิมพ์เล็ก</li>
+									<li>ควรมีตัวเลขและอักขระพิเศษ</li>
+								</ul>
+							</div>
 
-						<!-- Submit Button -->
-						<div class="flex justify-end">
-							<Button type="submit" disabled={saving} class="gap-2">
-								<Save class="h-4 w-4" />
-								{saving ? 'กำลังบันทึก...' : 'เปลี่ยนรหัสผ่าน'}
-							</Button>
-						</div>
-					</form>
-				</CardContent>
-			</Card>
+							<!-- Submit Button -->
+							<div class="flex justify-end">
+								<Button type="submit" disabled={saving} class="gap-2">
+									<Save class="h-4 w-4" />
+									{saving ? 'กำลังบันทึก...' : 'เปลี่ยนรหัสผ่าน'}
+								</Button>
+							</div>
+						</form>
+					</CardContent>
+				</Card>
 
-			<!-- Security Tips -->
-			<Card>
-				<CardHeader>
-					<CardTitle>เคล็ดลับความปลอดภัย</CardTitle>
-				</CardHeader>
-				<CardContent class="space-y-3">
-					<div class="flex gap-3">
-						<div class="flex-shrink-0">
-							<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-								<Lock class="w-4 h-4 text-primary" />
+				<!-- Security Tips -->
+				<Card>
+					<CardHeader>
+						<CardTitle>เคล็ดลับความปลอดภัย</CardTitle>
+					</CardHeader>
+					<CardContent class="space-y-3">
+						<div class="flex gap-3">
+							<div class="flex-shrink-0">
+								<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+									<Lock class="w-4 h-4 text-primary" />
+								</div>
+							</div>
+							<div>
+								<p class="font-medium text-sm">เปลี่ยนรหัสผ่านเป็นประจำ</p>
+								<p class="text-sm text-muted-foreground">แนะนำให้เปลี่ยนรหัสผ่านทุก 3-6 เดือน</p>
 							</div>
 						</div>
-						<div>
-							<p class="font-medium text-sm">เปลี่ยนรหัสผ่านเป็นประจำ</p>
-							<p class="text-sm text-muted-foreground">แนะนำให้เปลี่ยนรหัสผ่านทุก 3-6 เดือน</p>
-						</div>
-					</div>
-					<div class="flex gap-3">
-						<div class="flex-shrink-0">
-							<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-								<Lock class="w-4 h-4 text-primary" />
+						<div class="flex gap-3">
+							<div class="flex-shrink-0">
+								<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+									<Lock class="w-4 h-4 text-primary" />
+								</div>
 							</div>
-						</div>
-						<div>
-							<p class="font-medium text-sm">อย่าแชร์รหัสผ่าน</p>
-							<p class="text-sm text-muted-foreground">
-								อย่าให้รหัสผ่านของคุณกับใครก็ตาม รวมถึงผู้ดูแลระบบ
-							</p>
-						</div>
-					</div>
-					<div class="flex gap-3">
-						<div class="flex-shrink-0">
-							<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-								<Lock class="w-4 h-4 text-primary" />
-							</div>
-						</div>
-						<div>
-							<p class="font-medium text-sm">ใช้รหัสผ่านที่แข็งแรง</p>
-							<p class="text-sm text-muted-foreground">ผสมผสานตัวอักษร ตัวเลข และอักขระพิเศษ</p>
-						</div>
-					</div>
-				</CardContent>
-			</Card>
-
-			<!-- PWA Installation -->
-			<Card>
-				<CardHeader>
-					<CardTitle>ติดตั้งแอป</CardTitle>
-					<CardDescription>
-						ติดตั้ง SchoolOrbit เป็นแอปบนอุปกรณ์ของคุณเพื่อการเข้าถึงที่รวดเร็วยิ่งขึ้น
-					</CardDescription>
-				</CardHeader>
-				<CardContent class="space-y-4">
-					{#if pwaState.isInstalled}
-						<!-- Already Installed -->
-						<div
-							class="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-lg"
-						>
-							<div class="bg-green-500/20 p-2 rounded-lg">
-								<CheckCircle2 class="w-5 h-5 text-green-600 dark:text-green-400" />
-							</div>
-							<div class="flex-1">
-								<p class="font-medium text-sm text-green-900 dark:text-green-100">
-									แอปถูกติดตั้งแล้ว
-								</p>
-								<p class="text-xs text-green-700 dark:text-green-300 mt-0.5">
-									คุณกำลังใช้งาน SchoolOrbit ในโหมดแอป
+							<div>
+								<p class="font-medium text-sm">อย่าแชร์รหัสผ่าน</p>
+								<p class="text-sm text-muted-foreground">
+									อย่าให้รหัสผ่านของคุณกับใครก็ตาม รวมถึงผู้ดูแลระบบ
 								</p>
 							</div>
 						</div>
-					{:else if pwaState.deferredPrompt}
-						<!-- Can Install -->
-						<div class="space-y-3">
-							<div class="flex items-start gap-3">
-								<div class="bg-primary/10 p-2 rounded-lg flex-shrink-0 mt-0.5">
-									<Smartphone class="w-5 h-5 text-primary" />
+						<div class="flex gap-3">
+							<div class="flex-shrink-0">
+								<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+									<Lock class="w-4 h-4 text-primary" />
+								</div>
+							</div>
+							<div>
+								<p class="font-medium text-sm">ใช้รหัสผ่านที่แข็งแรง</p>
+								<p class="text-sm text-muted-foreground">ผสมผสานตัวอักษร ตัวเลข และอักขระพิเศษ</p>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+			{:else if activeTab === 'app'}
+				<!-- PWA Installation -->
+				<Card>
+					<CardHeader>
+						<CardTitle>ติดตั้งแอป</CardTitle>
+						<CardDescription>
+							ติดตั้ง SchoolOrbit เป็นแอปบนอุปกรณ์ของคุณเพื่อการเข้าถึงที่รวดเร็วยิ่งขึ้น
+						</CardDescription>
+					</CardHeader>
+					<CardContent class="space-y-4">
+						{#if pwaState.isInstalled}
+							<!-- Already Installed -->
+							<div
+								class="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-lg"
+							>
+								<div class="bg-green-500/20 p-2 rounded-lg">
+									<CheckCircle2 class="w-5 h-5 text-green-600 dark:text-green-400" />
 								</div>
 								<div class="flex-1">
-									<p class="text-sm text-muted-foreground">
-										ติดตั้งแอป SchoolOrbit บนอุปกรณ์ของคุณเพื่อ:
+									<p class="font-medium text-sm text-green-900 dark:text-green-100">
+										แอปถูกติดตั้งแล้ว
 									</p>
-									<ul class="text-sm text-muted-foreground list-disc list-inside mt-2 space-y-1">
-										<li>เข้าถึงได้เร็วขึ้นจากหน้าจอโฮม</li>
-										<li>ทำงานแบบ full screen</li>
-										<li>ประสบการณ์การใช้งานแบบ native app</li>
-									</ul>
+									<p class="text-xs text-green-700 dark:text-green-300 mt-0.5">
+										คุณกำลังใช้งาน SchoolOrbit ในโหมดแอป
+									</p>
 								</div>
 							</div>
-							<Button onclick={handleInstallPWA} disabled={isInstalling} class="w-full gap-2">
-								<Download class="w-4 h-4" />
-								{isInstalling ? 'กำลังติดตั้ง...' : 'ติดตั้งแอป'}
-							</Button>
-						</div>
-					{:else}
-						<!-- Not Available -->
-						<div class="p-4 bg-muted rounded-lg">
-							<p class="text-sm text-muted-foreground text-center">
-								ตัวเลือกการติดตั้งจะปรากฏเมื่อเปิดเว็บไซต์ในเบราว์เซอร์ที่รองรับ
-							</p>
-						</div>
-					{/if}
-				</CardContent>
-			</Card>
+						{:else if pwaState.deferredPrompt}
+							<!-- Can Install -->
+							<div class="space-y-3">
+								<div class="flex items-start gap-3">
+									<div class="bg-primary/10 p-2 rounded-lg flex-shrink-0 mt-0.5">
+										<Smartphone class="w-5 h-5 text-primary" />
+									</div>
+									<div class="flex-1">
+										<p class="text-sm text-muted-foreground">
+											ติดตั้งแอป SchoolOrbit บนอุปกรณ์ของคุณเพื่อ:
+										</p>
+										<ul class="text-sm text-muted-foreground list-disc list-inside mt-2 space-y-1">
+											<li>เข้าถึงได้เร็วขึ้นจากหน้าจอโฮม</li>
+											<li>ทำงานแบบ full screen</li>
+											<li>ประสบการณ์การใช้งานแบบ native app</li>
+										</ul>
+									</div>
+								</div>
+								<Button onclick={handleInstallPWA} disabled={isInstalling} class="w-full gap-2">
+									<Download class="w-4 h-4" />
+									{isInstalling ? 'กำลังติดตั้ง...' : 'ติดตั้งแอป'}
+								</Button>
+							</div>
+						{:else}
+							<!-- Not Available -->
+							<div class="p-4 bg-muted rounded-lg">
+								<p class="text-sm text-muted-foreground text-center">
+									ตัวเลือกการติดตั้งจะปรากฏเมื่อเปิดเว็บไซต์ในเบราว์เซอร์ที่รองรับ
+								</p>
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+			{/if}
 		</div>
 	</div>
 </div>
