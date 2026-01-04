@@ -7,7 +7,6 @@
 	import { getIconComponent } from '$lib/utils/icon-mapper';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { uiPreferences } from '$lib/stores/ui-preferences';
-	import ProfileMenu from './ProfileMenu.svelte';
 
 	let { isCollapsed = $bindable($uiPreferences.sidebarCollapsed) }: { isCollapsed?: boolean } = $props();
 	let isMobileOpen = $state(false);
@@ -165,9 +164,4 @@
 			{/if}
 		</nav>
 	</Tooltip.Provider>
-
-	<!-- Bottom Navigation -->
-	<div class="border-t border-border p-4">
-		<ProfileMenu collapsed={isCollapsed} />
-	</div>
 </aside>

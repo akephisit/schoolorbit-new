@@ -1,15 +1,9 @@
 <script lang="ts">
-	import { Settings, LogOut, ChevronDown, UserCircle } from 'lucide-svelte';
+	import { Settings, LogOut, UserCircle } from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { authStore } from '$lib/stores/auth';
 	import { authAPI } from '$lib/api/auth';
 	import { goto } from '$app/navigation';
-
-	interface Props {
-		collapsed?: boolean;
-	}
-
-	let { collapsed = false }: Props = $props();
 
 	const user = $derived($authStore.user);
 
@@ -42,11 +36,9 @@
 {#if user}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger
-			class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-accent transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 w-full {collapsed
-				? 'justify-center'
-				: ''}"
+			class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-accent transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
 		>
-			<!-- Avatar -->
+			<!-- Avatar Only -->
 			<div
 				class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center flex-shrink-0 shadow-sm ring-2 ring-background"
 			>
@@ -54,29 +46,9 @@
 					{getInitials(user.firstName, user.lastName)}
 				</span>
 			</div>
-
-			{#if !collapsed}
-				<!-- User Info -->
-				<div class="flex-1 text-left min-w-0">
-					<p class="text-sm font-semibold text-foreground truncate">
-						{user.firstName}
-						{user.lastName}
-					</p>
-					<p class="text-xs text-muted-foreground truncate">
-						{getDisplayRole(user.role)}
-					</p>
-				</div>
-
-				<!-- Chevron Icon -->
-				<ChevronDown class="w-4 h-4 text-muted-foreground flex-shrink-0" />
-			{/if}
 		</DropdownMenu.Trigger>
 
-		<DropdownMenu.Content
-			align={collapsed ? 'start' : 'end'}
-			side={collapsed ? 'right' : 'bottom'}
-			class="w-56"
-		>
+		<DropdownMenu.Content align="end" side="bottom" class="w-56">
 			<!-- User Info Section -->
 			<div class="px-2 py-2 border-b border-border">
 				<p class="text-sm font-semibold text-foreground">
