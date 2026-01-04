@@ -25,7 +25,9 @@
 	}
 
 	// Get display role (primary role)
-	function getDisplayRole(role: string): string {
+	function getDisplayRole(role?: string): string {
+		if (!role) return 'ผู้ใช้งาน';
+		
 		// Map role to Thai display name
 		const roleMap: Record<string, string> = {
 			admin: 'ผู้ดูแลระบบ',
