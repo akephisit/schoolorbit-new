@@ -1,5 +1,5 @@
 use crate::db::school_mapping::get_school_database_url;
-use crate::models::auth::{Claims, LoginRequest, LoginResponse, User, UserResponse, ProfileResponse};
+use crate::models::auth::{Claims, LoginRequest, LoginResponse, User, UserResponse, ProfileResponse, UpdateProfileRequest};
 use crate::utils::jwt::JwtService;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
@@ -414,4 +414,203 @@ pub async fn get_profile(
     profile_response.primary_role_name = primary_role_name;
 
     (StatusCode::OK, Json(profile_response)).into_response()
+}
+
+/// Update profile handler (PUT /me/profile)
+/// Updates user's editable fields only
+pub async fn update_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateProfileRequest>,
+) -> Response {
+    // Extract subdomain from Origin header (secure)
+    let subdomain = match extract_subdomain_from_request(&headers) {
+        Ok(s) => s,
+        Err(response) => return response,
+    };
+
+    // Extract token from Authorization header or cookie
+    let token = headers
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .or_else(|| {
+            // Try cookie as fallback
+            headers
+                .get("cookie")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|cookies| {
+                    cookies
+                        .split(';')
+                        .find_map(|c| c.trim().strip_prefix("auth_token="))
+                })
+        });
+
+    let token = match token {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Missing authentication token"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Validate JWT
+    let claims = match JwtService::verify_token(token) {
+        Ok(claims) => claims,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Invalid or expired token"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Get school database URL
+    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("❌ Failed to get school database: {}", e);
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "ไม่พบโรงเรียน"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Get pool
+    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("❌ Failed to get database pool: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "เกิดข้อผิดพลาด"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let user_id = match uuid::Uuid::parse_str(&claims.sub) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("❌ Invalid user ID: {}", e);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "Invalid user ID"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Parse date_of_birth if provided
+    let date_of_birth = payload.date_of_birth.as_ref().and_then(|dob| {
+        chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok()
+    });
+
+    // Update user profile
+    let result = sqlx::query(
+        "UPDATE users 
+         SET title = COALESCE($1, title),
+             nickname = COALESCE($2, nickname),
+             email = COALESCE($3, email),
+             phone = COALESCE($4, phone),
+             emergency_contact = COALESCE($5, emergency_contact),
+             line_id = COALESCE($6, line_id),
+             date_of_birth = COALESCE($7, date_of_birth),
+             gender = COALESCE($8, gender),
+             address = COALESCE($9, address),
+             updated_at = NOW()
+         WHERE id = $10"
+    )
+    .bind(&payload.title)
+    .bind(&payload.nickname)
+    .bind(&payload.email)
+    .bind(&payload.phone)
+    .bind(&payload.emergency_contact)
+    .bind(&payload.line_id)
+    .bind(date_of_birth)
+    .bind(&payload.gender)
+    .bind(&payload.address)
+    .bind(user_id)
+    .execute(&pool)
+    .await;
+
+    match result {
+        Ok(_) => {
+            // Fetch updated user
+            let user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_optional(&pool)
+                .await
+            {
+                Ok(Some(user)) => user,
+                Ok(None) => {
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(serde_json::json!({
+                            "error": "ไม่พบผู้ใช้"
+                        })),
+                    )
+                        .into_response();
+                }
+                Err(e) => {
+                    eprintln!("❌ Database error: {}", e);
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "error": "เกิดข้อผิดพลาด"
+                        })),
+                    )
+                        .into_response();
+                }
+            };
+
+            // Fetch primary role name
+            let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
+                "SELECT r.name 
+                 FROM user_roles ur
+                 JOIN roles r ON ur.role_id = r.id
+                 WHERE ur.user_id = $1 
+                   AND ur.is_primary = true 
+                   AND ur.ended_at IS NULL
+                 LIMIT 1"
+            )
+            .bind(&user.id)
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten();
+
+            // Return updated profile
+            let mut profile_response = ProfileResponse::from(user);
+            profile_response.primary_role_name = primary_role_name;
+
+            (StatusCode::OK, Json(profile_response)).into_response()
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to update profile: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "ไม่สามารถอัพเดทข้อมูลได้"
+                })),
+            )
+                .into_response()
+        }
+    }
 }

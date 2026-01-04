@@ -41,6 +41,21 @@ pub struct LoginRequest {
     pub remember_me: Option<bool>,
 }
 
+// Update profile request (editable fields only)
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProfileRequest {
+    pub title: Option<String>,
+    pub nickname: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub emergency_contact: Option<String>,
+    pub line_id: Option<String>,
+    pub date_of_birth: Option<String>, // Will be parsed to NaiveDate
+    pub gender: Option<String>,
+    pub address: Option<String>,
+}
+
 // User response (without sensitive data)
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
