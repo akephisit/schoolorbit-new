@@ -4,7 +4,6 @@
 	import { Toaster } from 'svelte-sonner';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import '$lib/utils/pwa'; // Register service worker
 
 	let { children } = $props();
 
