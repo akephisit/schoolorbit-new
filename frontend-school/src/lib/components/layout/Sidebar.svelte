@@ -1,14 +1,13 @@
 <script lang="ts">
-	import { LogOut, ChevronLeft, GraduationCap } from 'lucide-svelte';
+	import { ChevronLeft, GraduationCap } from 'lucide-svelte';
 	import { resolve } from '$app/paths';
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { authAPI } from '$lib/api/auth';
 	import { authStore } from '$lib/stores/auth';
 	import { getUserMenu, type MenuGroup, type MenuItem } from '$lib/api/menu';
 	import { getIconComponent } from '$lib/utils/icon-mapper';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { uiPreferences } from '$lib/stores/ui-preferences';
+	import ProfileMenu from './ProfileMenu.svelte';
 
 	let { isCollapsed = $bindable($uiPreferences.sidebarCollapsed) }: { isCollapsed?: boolean } = $props();
 	let isMobileOpen = $state(false);
@@ -62,11 +61,6 @@
 
 	export function toggleMobileSidebar() {
 		isMobileOpen = !isMobileOpen;
-	}
-
-	async function handleLogout() {
-		await authAPI.logout();
-		await goto('/login', { invalidateAll: true });
 	}
 </script>
 
@@ -173,42 +167,7 @@
 	</Tooltip.Provider>
 
 	<!-- Bottom Navigation -->
-	<Tooltip.Provider>
-		<div class="border-t border-border p-4 space-y-1">
-			<!-- Logout -->
-			<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
-				<Tooltip.Trigger class="w-full">
-					<div
-						role="button"
-						tabindex="0"
-						onclick={handleLogout}
-						onkeydown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ') handleLogout();
-						}}
-						class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors
-              text-muted-foreground hover:bg-accent hover:text-accent-foreground group cursor-pointer"
-					>
-						<LogOut
-							class="absolute left-[14px] w-5 h-5 text-muted-foreground group-hover:text-accent-foreground"
-						/>
-						<span
-							class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-								? 'opacity-0'
-								: 'opacity-100'}">ออกจากระบบ</span
-						>
-					</div>
-				</Tooltip.Trigger>
-				{#if isCollapsed}
-					<Tooltip.Content side="right" class="font-medium">ออกจากระบบ</Tooltip.Content>
-				{/if}
-			</Tooltip.Root>
-		</div>
-	</Tooltip.Provider>
+	<div class="border-t border-border p-4">
+		<ProfileMenu collapsed={isCollapsed} />
+	</div>
 </aside>
-
-<style>
-	/* Remove default button styles for logout div */
-	div[role='button'] {
-		-webkit-tap-highlight-color: transparent;
-	}
-</style>

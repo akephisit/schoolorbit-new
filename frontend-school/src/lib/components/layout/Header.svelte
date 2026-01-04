@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { Bell, Search, Menu, Sun, Moon, User } from 'lucide-svelte';
+	import { Bell, Search, Menu, Sun, Moon } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import ProfileMenu from './ProfileMenu.svelte';
 	import { uiPreferences } from '$lib/stores/ui-preferences';
 	import { onMount } from 'svelte';
 
@@ -102,12 +103,7 @@
 
 			<!-- User Menu -->
 			<div class="flex items-center pl-3 border-l border-border">
-				<button
-					class="w-10 h-10 rounded-full bg-primary flex items-center justify-center hover:opacity-90 transition-opacity"
-					aria-label="User Profile"
-				>
-					<User class="w-5 h-5 text-primary-foreground" />
-				</button>
+				<ProfileMenu />
 			</div>
 		</div>
 	</div>
