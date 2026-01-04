@@ -31,11 +31,11 @@ export async function scanRoutes(): Promise<RouteMetadata[]> {
 		if (meta?.menu) {
 			routes.push({
 				path: fileToPath(file),
-				title: meta.menu.title,
-				icon: meta.menu.icon,
-				group: meta.menu.group,
-				order: meta.menu.order ?? 999,
-				permission: meta.menu.permission
+				title: (meta.menu as any).title,
+				icon: (meta.menu as any).icon,
+				group: (meta.menu as any).group,
+				order: (meta.menu as any).order ?? 999,
+				permission: (meta.menu as any).permission
 			});
 		}
 	}
