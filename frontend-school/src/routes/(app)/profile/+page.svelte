@@ -8,18 +8,28 @@
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import * as Select from '$lib/components/ui/select';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { ArrowLeft, Save, User, LoaderCircle, Calendar, Mail, Phone, MapPin } from 'lucide-svelte';
+	import {
+		ArrowLeft,
+		Save,
+		User,
+		LoaderCircle,
+		Calendar,
+		Mail,
+		Phone,
+		MapPin,
+		Shield,
+		Lock
+	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
 	const user = $derived($authStore.user);
 
-	// Form data
+	// Form data - สำหรับฟิลด์ที่แก้ไขได้
 	let formData = $state({
+		// Editable fields
 		title: '',
-		first_name: '',
-		last_name: '',
 		nickname: '',
 		email: '',
 		phone: '',
@@ -27,28 +37,51 @@
 		line_id: '',
 		date_of_birth: '',
 		gender: 'male',
-		address: ''
+		address: '',
+		profile_image_url: ''
+	});
+
+	// Read-only data - ข้อมูลที่แสดงผลเฉยๆ แก้ไม่ได้
+	let readOnlyData = $derived({
+		id: user?.id || '',
+		national_id: user?.nationalId || '',
+		first_name: user?.firstName || '',
+		last_name: user?.lastName || '',
+		user_type: user?.role || '',
+		status: user?.status || '',
+		created_at: user?.createdAt || '',
+		primary_role_name: user?.primaryRoleName || ''
 	});
 
 	let saving = $state(false);
 	let loading = $state(false);
 
-	onMount(() => {
-		if (user) {
-			// Populate form with user data
-			formData = {
-				title: 'นาย', // TODO: Get from API
-				first_name: user.firstName || '',
-				last_name: user.lastName || '',
-				nickname: '',
-				email: user.email || '',
-				phone: user.phone || '',
-				emergency_contact: '',
-				line_id: '',
-				date_of_birth: '',
-				gender: 'male',
-				address: ''
-			};
+	onMount(async () => {
+		// Load full user profile from API
+		// TODO: Implement API call to get complete profile
+		loading = true;
+		try {
+			// Simulated API call
+			await new Promise((resolve) => setTimeout(resolve, 500));
+
+			if (user) {
+				formData = {
+					title: '', // TODO: Get from API
+					nickname: '',
+					email: user.email || '',
+					phone: user.phone || '',
+					emergency_contact: '',
+					line_id: '',
+					date_of_birth: '',
+					gender: 'male',
+					address: '',
+					profile_image_url: ''
+				};
+			}
+		} catch (error) {
+			toast.error('ไม่สามารถโหลดข้อมูลได้');
+		} finally {
+			loading = false;
 		}
 	});
 
@@ -56,11 +89,6 @@
 		e.preventDefault();
 
 		// Validation
-		if (!formData.first_name || !formData.last_name) {
-			toast.error('กรุณากรอกชื่อและนามสกุล');
-			return;
-		}
-
 		if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
 			toast.error('รูปแบบอีเมลไม่ถูกต้อง');
 			return;
@@ -70,6 +98,19 @@
 
 		try {
 			// TODO: Implement API call to update profile
+			// Only send editable fields
+			const payload = {
+				title: formData.title || undefined,
+				nickname: formData.nickname || undefined,
+				email: formData.email || undefined,
+				phone: formData.phone || undefined,
+				emergency_contact: formData.emergency_contact || undefined,
+				line_id: formData.line_id || undefined,
+				date_of_birth: formData.date_of_birth || undefined,
+				gender: formData.gender || undefined,
+				address: formData.address || undefined
+			};
+
 			await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulated API call
 			toast.success('บันทึกข้อมูลสำเร็จ');
 		} catch (error) {
@@ -89,7 +130,10 @@
 			'ดร.': 'ดร.',
 			'ศ.': 'ศ.',
 			'รศ.': 'รศ.',
-			'ผศ.': 'ผศ.'
+			'ผศ.': 'ผศ.',
+			'ศ.ดร.': 'ศ.ดร.',
+			'รศ.ดร.': 'รศ.ดร.',
+			'ผศ.ดร.': 'ผศ.ดร.'
 		};
 		return labels[value] || 'เลือกคำนำหน้า';
 	}
@@ -101,6 +145,17 @@
 			other: 'อื่นๆ'
 		};
 		return labels[value] || 'เลือกเพศ';
+	}
+
+	function getStatusLabel(status: string): string {
+		const labels: Record<string, string> = {
+			active: 'ใช้งาน',
+			inactive: 'ไม่ใช้งาน',
+			suspended: 'ระงับ',
+			resigned: 'ลาออก',
+			retired: 'เกษียณ'
+		};
+		return labels[status] || status;
 	}
 </script>
 
@@ -120,7 +175,7 @@
 				<p class="text-muted-foreground mt-1">จัดการข้อมูลส่วนตัวของคุณ</p>
 			</div>
 		</div>
-		<Button onclick={handleSubmit} disabled={saving} class="gap-2">
+		<Button onclick={handleSubmit} disabled={saving || loading} class="gap-2">
 			<Save class="h-4 w-4" />
 			{saving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
 		</Button>
@@ -142,16 +197,26 @@
 					<div
 						class="w-24 h-24 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg ring-4 ring-background flex-shrink-0"
 					>
-						<span class="text-3xl font-bold text-primary-foreground">
-							{user?.firstName?.charAt(0) || 'U'}{user?.lastName?.charAt(0) || ''}
-						</span>
+						{#if formData.profile_image_url}
+							<img
+								src={formData.profile_image_url}
+								alt="Profile"
+								class="w-full h-full rounded-full object-cover"
+							/>
+						{:else}
+							<span class="text-3xl font-bold text-primary-foreground">
+								{readOnlyData.first_name?.charAt(0) || 'U'}{readOnlyData.last_name?.charAt(0) || ''}
+							</span>
+						{/if}
 					</div>
 					<div class="flex-1">
 						<p class="font-semibold text-lg text-foreground mb-1">
-							{user?.firstName || ''}
-							{user?.lastName || ''}
+							{readOnlyData.first_name}
+							{readOnlyData.last_name}
 						</p>
-						<p class="text-sm text-muted-foreground mb-3">{user?.primaryRoleName || 'ผู้ใช้งาน'}</p>
+						<p class="text-sm text-muted-foreground mb-3">
+							{readOnlyData.primary_role_name || 'ผู้ใช้งาน'}
+						</p>
 						<Button variant="outline" size="sm" type="button">
 							<User class="h-4 w-4 mr-2" />
 							เปลี่ยนรูปโปรไฟล์
@@ -160,23 +225,100 @@
 				</CardContent>
 			</Card>
 
-			<!-- Personal Information -->
+			<!-- Read-Only Information -->
+			<Card>
+				<CardHeader>
+					<CardTitle class="flex items-center gap-2">
+						<Lock class="w-5 h-5" />
+						ข้อมูลระบบ (ไม่สามารถแก้ไขได้)
+					</CardTitle>
+					<CardDescription>ข้อมูลเหล่านี้ไม่สามารถแก้ไขได้ กรุณาติดต่อผู้ดูแลระบบ</CardDescription>
+				</CardHeader>
+				<CardContent class="space-y-4">
+					<div class="grid gap-4 md:grid-cols-2">
+						<!-- National ID -->
+						<div class="space-y-2">
+							<Label>เลขบัตรประชาชน</Label>
+							<Input value={readOnlyData.national_id || 'ไม่ระบุ'} disabled class="bg-muted" />
+						</div>
+
+						<!-- User ID -->
+						<div class="space-y-2">
+							<Label>User ID</Label>
+							<Input value={readOnlyData.id} disabled class="bg-muted font-mono text-xs" />
+						</div>
+					</div>
+
+					<div class="grid gap-4 md:grid-cols-2">
+						<!-- First Name -->
+						<div class="space-y-2">
+							<Label>ชื่อ</Label>
+							<Input value={readOnlyData.first_name} disabled class="bg-muted" />
+						</div>
+
+						<!-- Last Name -->
+						<div class="space-y-2">
+							<Label>นามสกุล</Label>
+							<Input value={readOnlyData.last_name} disabled class="bg-muted" />
+						</div>
+					</div>
+
+					<div class="grid gap-4 md:grid-cols-3">
+						<!-- User Type -->
+						<div class="space-y-2">
+							<Label>ประเภทผู้ใช้</Label>
+							<Input value={readOnlyData.user_type} disabled class="bg-muted capitalize" />
+						</div>
+
+						<!-- Status -->
+						<div class="space-y-2">
+							<Label>สถานะ</Label>
+							<Input value={getStatusLabel(readOnlyData.status)} disabled class="bg-muted" />
+						</div>
+
+						<!-- Created At -->
+						<div class="space-y-2">
+							<Label>วันที่สร้างบัญชี</Label>
+							<Input
+								value={readOnlyData.created_at
+									? new Date(readOnlyData.created_at).toLocaleDateString('th-TH')
+									: 'ไม่ระบุ'}
+								disabled
+								class="bg-muted"
+							/>
+						</div>
+					</div>
+
+					<!-- Primary Role -->
+					<div class="space-y-2">
+						<Label class="flex items-center gap-2">
+							<Shield class="w-4 h-4" />
+							บทบาทหลัก
+						</Label>
+						<Input value={readOnlyData.primary_role_name || 'ไม่ระบุ'} disabled class="bg-muted" />
+						<p class="text-xs text-muted-foreground">ต้องการเปลี่ยนบทบาท กรุณาติดต่อผู้ดูแลระบบ</p>
+					</div>
+				</CardContent>
+			</Card>
+
+			<!-- Editable Personal Information -->
 			<Card>
 				<CardHeader>
 					<CardTitle class="flex items-center gap-2">
 						<User class="w-5 h-5" />
 						ข้อมูลส่วนตัว
 					</CardTitle>
-					<CardDescription>อัพเดทข้อมูลประวัติส่วนตัวของคุณ</CardDescription>
+					<CardDescription>อัพเดทข้อมูลส่วนตัวของคุณ</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4">
 					<!-- Title and Gender -->
 					<div class="grid grid-cols-2 gap-4">
 						<div class="space-y-2">
-							<Label for="title">คำนำหน้า *</Label>
+							<Label for="title">คำนำหน้า</Label>
 							<Select.Root type="single" bind:value={formData.title}>
 								<Select.Trigger>{getTitleLabel(formData.title)}</Select.Trigger>
 								<Select.Content>
+									<Select.Item value="">ไม่ระบุ</Select.Item>
 									<Select.Item value="นาย">นาย</Select.Item>
 									<Select.Item value="นาง">นาง</Select.Item>
 									<Select.Item value="นางสาว">นางสาว</Select.Item>
@@ -184,12 +326,15 @@
 									<Select.Item value="ศ.">ศ.</Select.Item>
 									<Select.Item value="รศ.">รศ.</Select.Item>
 									<Select.Item value="ผศ.">ผศ.</Select.Item>
+									<Select.Item value="ศ.ดร.">ศ.ดร.</Select.Item>
+									<Select.Item value="รศ.ดร.">รศ.ดร.</Select.Item>
+									<Select.Item value="ผศ.ดร.">ผศ.ดร.</Select.Item>
 								</Select.Content>
 							</Select.Root>
 						</div>
 
 						<div class="space-y-2">
-							<Label for="gender">เพศ *</Label>
+							<Label for="gender">เพศ</Label>
 							<Select.Root type="single" bind:value={formData.gender}>
 								<Select.Trigger>{getGenderLabel(formData.gender)}</Select.Trigger>
 								<Select.Content>
@@ -198,19 +343,6 @@
 									<Select.Item value="other">อื่นๆ</Select.Item>
 								</Select.Content>
 							</Select.Root>
-						</div>
-					</div>
-
-					<!-- Name -->
-					<div class="grid grid-cols-2 gap-4">
-						<div class="space-y-2">
-							<Label for="firstName">ชื่อ *</Label>
-							<Input id="firstName" bind:value={formData.first_name} placeholder="ชื่อ" required />
-						</div>
-
-						<div class="space-y-2">
-							<Label for="lastName">นามสกุล *</Label>
-							<Input id="lastName" bind:value={formData.last_name} placeholder="นามสกุล" required />
 						</div>
 					</div>
 
@@ -297,40 +429,6 @@
 							placeholder="ที่อยู่ปัจจุบัน"
 							rows={3}
 						/>
-					</div>
-				</CardContent>
-			</Card>
-
-			<!-- Account Information -->
-			<Card>
-				<CardHeader>
-					<CardTitle>ข้อมูลบัญชี</CardTitle>
-					<CardDescription>ข้อมูลบัญชีและสถานะการใช้งาน</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div class="grid gap-4 md:grid-cols-3">
-						<div class="space-y-1">
-							<p class="text-sm font-medium text-muted-foreground">บทบาท</p>
-							<p class="text-base text-foreground">{user?.primaryRoleName || 'ไม่ระบุ'}</p>
-						</div>
-						<div class="space-y-1">
-							<p class="text-sm font-medium text-muted-foreground">สถานะ</p>
-							<p class="text-base text-foreground">
-								{user?.status === 'active' ? 'ใช้งาน' : 'ไม่ใช้งาน'}
-							</p>
-						</div>
-						<div class="space-y-1">
-							<p class="text-sm font-medium text-muted-foreground">วันที่สร้างบัญชี</p>
-							<p class="text-base text-foreground">
-								{user?.createdAt
-									? new Date(user.createdAt).toLocaleDateString('th-TH', {
-											year: 'numeric',
-											month: 'long',
-											day: 'numeric'
-										})
-									: 'ไม่ระบุ'}
-							</p>
-						</div>
 					</div>
 				</CardContent>
 			</Card>
