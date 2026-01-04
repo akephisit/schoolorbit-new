@@ -10,6 +10,32 @@ export interface LoginRequest {
 	rememberMe?: boolean;
 }
 
+export interface ProfileResponse {
+	// Read-only fields
+	id: string;
+	nationalId?: string;
+	firstName: string;
+	lastName: string;
+	userType: string;
+	status: string;
+	createdAt: string;
+	updatedAt: string;
+	primaryRoleName?: string;
+
+	// Editable fields
+	title?: string;
+	nickname?: string;
+	email?: string;
+	phone?: string;
+	emergencyContact?: string;
+	lineId?: string;
+	dateOfBirth?: string;
+	gender?: string;
+	address?: string;
+	profileImageUrl?: string;
+	hiredDate?: string;
+}
+
 class AuthAPI {
 	/**
 	 * Login - Direct to backend (client-side)
@@ -99,6 +125,25 @@ class AuthAPI {
 		} finally {
 			authStore.setLoading(false);
 		}
+	}
+
+	/**
+	 * Get full user profile with all fields
+	 */
+	async getFullProfile(): Promise<ProfileResponse> {
+		const response = await fetch(`${BACKEND_URL}/api/auth/me/profile`, {
+			credentials: 'include'
+		});
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				authStore.clearUser();
+				throw new Error('กรุณาเข้าสู่ระบบอีกครั้ง');
+			}
+			throw new Error('ไม่สามารถโหลดข้อมูลได้');
+		}
+
+		return await response.json();
 	}
 }
 
