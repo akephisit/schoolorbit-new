@@ -21,8 +21,7 @@
 		KeyboardSensor,
 		closestCenter,
 		type DragStartEvent,
-		type DragEndEvent,
-		type DragOverEvent
+		type DragEndEvent
 	} from '@dnd-kit-svelte/core';
 	import { SortableContext, arrayMove } from '@dnd-kit-svelte/sortable';
 	import SortableItem from '$lib/components/menu/SortableItem.svelte';
@@ -129,7 +128,7 @@
 				try {
 					await reorderMenuGroups(groups.map((g, i) => ({ id: g.id, display_order: i + 1 })));
 					toast.success('เรียงกลุ่มสำเร็จ');
-				} catch (_error) {
+				} catch {
 					toast.error('ไม่สามารถเรียงกลุ่มได้');
 					await loadData();
 				}
@@ -149,7 +148,7 @@
 					await moveItemToGroup(active.id as string, overContainer.data.id);
 					toast.success('ย้ายเมนูสำเร็จ');
 					await loadData();
-				} catch (_error) {
+				} catch {
 					toast.error('ไม่สามารถย้ายเมนูได้');
 					await loadData();
 				}
@@ -172,7 +171,7 @@
 						);
 						toast.success('เรียงลำดับสำเร็จ');
 						await loadData();
-					} catch (_error) {
+					} catch {
 						toast.error('ไม่สามารถเรียงลำดับได้');
 						await loadData();
 					}
@@ -181,7 +180,7 @@
 		}
 	}
 
-	function handleDragOver(_event: DragOverEvent) {
+	function handleDragOver() {
 		// CONFIRMED: Cannot implement real-time preview in Svelte 5
 		// Even with untrack(), mutations trigger infinite loops
 		// This is a fundamental difference from vanilla JS/React
@@ -200,7 +199,7 @@
 			await deleteMenuItem(item.id);
 			toast.success('ลบเมนูสำเร็จ');
 			await loadData();
-		} catch (_error) {
+		} catch {
 			toast.error('ไม่สามารถลบเมนูได้');
 		}
 	}

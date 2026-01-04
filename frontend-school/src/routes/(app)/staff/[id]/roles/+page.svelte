@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
@@ -17,7 +18,7 @@
 
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
-		<Button variant="ghost" size="icon" onclick={() => goto('/staff')}>
+		<Button variant="ghost" size="icon" onclick={() => goto(resolve('/staff'))}>
 			<ArrowLeft class="h-5 w-5" />
 		</Button>
 		<div class="flex-1">

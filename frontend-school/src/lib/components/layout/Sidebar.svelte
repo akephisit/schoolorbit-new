@@ -115,7 +115,7 @@
 			{#if menuLoading}
 				<!-- Loading skeleton -->
 				<div class="space-y-2">
-					{#each Array(6) as _}
+					{#each Array(6) as _, idx (idx)}
 						<div class="h-10 bg-muted rounded-lg animate-pulse"></div>
 					{/each}
 				</div>

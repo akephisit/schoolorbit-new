@@ -2,7 +2,7 @@
 	import type { MenuGroup } from '$lib/api/menu-admin';
 	import { useSortable } from '@dnd-kit-svelte/sortable';
 	import { Card } from '$lib/components/ui/card';
-	import { Badge, badgeVariants } from '$lib/components/ui/badge';
+	import { Badge } from '$lib/components/ui/badge';
 	import { GripVertical, AlertCircle } from 'lucide-svelte';
 	import type { Snippet } from 'svelte';
 

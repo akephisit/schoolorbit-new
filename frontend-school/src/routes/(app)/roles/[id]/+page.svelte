@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { roleAPI, permissionAPI, type Role, type PermissionsByModule } from '$lib/api/roles';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -51,7 +53,7 @@
 
 	// Permissions
 	let permissionsByModule = $state<PermissionsByModule>({});
-	let selectedPermissions = $state(new Set<string>());
+	let selectedPermissions = new SvelteSet<string>();
 
 	onMount(async () => {
 		await loadPermissions();
@@ -66,15 +68,15 @@
 			const response = await roleAPI.getRole(roleId);
 			if (response.success && response.data) {
 				role = response.data;
-				selectedPermissions = new Set(role.permissions || []);
+				selectedPermissions = new SvelteSet(role.permissions || []);
 			} else {
 				toast.error('ไม่สามารถโหลดข้อมูล role ได้');
-				goto('/roles');
+				goto(resolve('/roles'));
 			}
 		} catch (error) {
 			console.error('Failed to load role:', error);
 			toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
-			goto('/roles');
+			goto(resolve('/roles'));
 		}
 	}
 
@@ -94,7 +96,7 @@
 	}
 
 	function togglePermission(code: string) {
-		const newSet = new Set(selectedPermissions);
+		const newSet = new SvelteSet(selectedPermissions);
 		if (newSet.has(code)) {
 			newSet.delete(code);
 		} else {
@@ -106,7 +108,7 @@
 
 	function toggleModule(module: string) {
 		const modulePermissions = permissionsByModule[module] || [];
-		const newSet = new Set(selectedPermissions);
+		const newSet = new SvelteSet(selectedPermissions);
 		const allSelected = modulePermissions.every((p) => newSet.has(p.code));
 
 		if (allSelected) {
@@ -154,7 +156,7 @@
 				const response = await roleAPI.createRole(data);
 				if (response.success) {
 					toast.success('สร้างบทบาทสำเร็จ');
-					goto('/roles');
+					goto(resolve('/roles'));
 				} else {
 					toast.error(response.error || 'ไม่สามารถสร้างบทบาทได้');
 				}
@@ -162,7 +164,7 @@
 				const response = await roleAPI.updateRole(roleId, data);
 				if (response.success) {
 					toast.success('บันทึกข้อมูลสำเร็จ');
-					goto('/roles');
+					goto(resolve('/roles'));
 				} else {
 					toast.error(response.error || 'ไม่สามารถบันทึกข้อมูลได้');
 				}
@@ -182,7 +184,7 @@
 			if (response.success) {
 				toast.success('ลบบทบาทสำเร็จ');
 				showDeleteDialog = false;
-				goto('/roles');
+				goto(resolve('/roles'));
 			} else {
 				toast.error(response.error || 'ไม่สามารถลบบทบาทได้');
 				showDeleteDialog = false;
@@ -203,7 +205,7 @@
 
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
-		<Button variant="ghost" size="icon" onclick={() => goto('/roles')}>
+		<Button variant="ghost" size="icon" onclick={() => goto(resolve('/roles'))}>
 			<ArrowLeft class="h-5 w-5" />
 		</Button>
 		<div class="flex-1">
@@ -325,7 +327,7 @@
 						</div>
 					{:else}
 						<div class="space-y-4">
-							{#each Object.entries(permissionsByModule) as [module, permissions]}
+							{#each Object.entries(permissionsByModule) as [module, permissions] (module)}
 								<div class="border rounded-lg p-4">
 									<div class="flex items-center gap-2 mb-3">
 										<Checkbox
@@ -345,7 +347,7 @@
 									</div>
 
 									<div class="grid grid-cols-2 gap-2 ml-6">
-										{#each permissions as permission}
+										{#each permissions as permission (permission.code)}
 											<label
 												class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer"
 											>
@@ -370,7 +372,7 @@
 			</Card>
 
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => goto('/roles')}>ยกเลิก</Button>
+				<Button variant="outline" onclick={() => goto(resolve('/roles'))}>ยกเลิก</Button>
 				<Button onclick={handleSave} disabled={saving} class="gap-2">
 					<Save class="h-4 w-4" />
 					{saving ? 'กำลังบันทึก...' : 'บันทึก'}

@@ -28,7 +28,7 @@
 		return newArray;
 	}
 
-	async function handleDragEnd(event: any) {
+	async function handleDragEnd(event: ComponentType) {
 		const { active, over } = event;
 
 		if (!over || active.id === over.id) return;
@@ -51,6 +51,8 @@
 		await onReorder(reorderedItems);
 	}
 </script>
+
+import type {ComponentType} from "svelte";
 
 <div class="space-y-2">
 	{#if groupName}
