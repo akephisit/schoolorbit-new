@@ -18,26 +18,12 @@
 		return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 	}
 
-	// Get display role - prefer database value
+	// Get display role from database
 	function getDisplayRole(): string {
 		if (!user) return 'ผู้ใช้งาน';
 		
-		// Use primaryRoleName from backend (from roles table) if available
-		if (user.primaryRoleName) {
-			return user.primaryRoleName;
-		}
-		
-		// Fallback to user_type mapping (legacy support)
-		const role = user.role;
-		if (!role) return 'ผู้ใช้งาน';
-		
-		const roleMap: Record<string, string> = {
-			admin: 'ผู้ดูแลระบบ',
-			teacher: 'ครู',
-			staff: 'เจ้าหน้าที่',
-			student: 'นักเรียน'
-		};
-		return roleMap[role.toLowerCase()] || role;
+		// Use primaryRoleName from backend (from roles table)
+		return user.primaryRoleName || 'ผู้ใช้งาน';
 	}
 </script>
 
