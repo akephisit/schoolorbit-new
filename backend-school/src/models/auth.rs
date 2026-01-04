@@ -44,6 +44,10 @@ pub struct UserResponse {
     pub phone: Option<String>,
     pub status: String,
     pub created_at: DateTime<Utc>,
+    
+    // Primary role name from roles table (if exists)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_role_name: Option<String>,
 }
 
 impl From<User> for UserResponse {
@@ -58,6 +62,7 @@ impl From<User> for UserResponse {
             phone: user.phone,
             status: user.status,
             created_at: user.created_at,
+            primary_role_name: None, // Will be populated separately
         }
     }
 }

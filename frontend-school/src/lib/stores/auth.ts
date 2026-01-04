@@ -10,6 +10,7 @@ export interface User {
 	phone?: string;
 	status: string;
 	createdAt: string;
+	primaryRoleName?: string; // ชื่อบทบาทหลักจากฐานข้อมูล
 }
 
 export interface AuthState {

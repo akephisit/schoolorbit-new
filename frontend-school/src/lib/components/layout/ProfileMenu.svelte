@@ -18,11 +18,19 @@
 		return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 	}
 
-	// Get display role (primary role)
-	function getDisplayRole(role?: string): string {
+	// Get display role - prefer database value
+	function getDisplayRole(): string {
+		if (!user) return 'ผู้ใช้งาน';
+		
+		// Use primaryRoleName from backend (from roles table) if available
+		if (user.primaryRoleName) {
+			return user.primaryRoleName;
+		}
+		
+		// Fallback to user_type mapping (legacy support)
+		const role = user.role;
 		if (!role) return 'ผู้ใช้งาน';
 		
-		// Map role to Thai display name
 		const roleMap: Record<string, string> = {
 			admin: 'ผู้ดูแลระบบ',
 			teacher: 'ครู',
@@ -56,7 +64,7 @@
 					{user.lastName}
 				</p>
 				<p class="text-xs text-muted-foreground mt-0.5">
-					{getDisplayRole(user.role)}
+					{getDisplayRole()}
 				</p>
 				{#if user.email}
 					<p class="text-xs text-muted-foreground mt-0.5 truncate">

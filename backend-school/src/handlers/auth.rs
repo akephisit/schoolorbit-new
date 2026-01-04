@@ -271,5 +271,25 @@ pub async fn me(
         }
     };
 
-    (StatusCode::OK, Json(UserResponse::from(user))).into_response()
+    // Fetch primary role name
+    let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
+        "SELECT r.name 
+         FROM user_roles ur
+         JOIN roles r ON ur.role_id = r.id
+         WHERE ur.user_id = $1 
+           AND ur.is_primary = true 
+           AND ur.ended_at IS NULL
+         LIMIT 1"
+    )
+    .bind(&user.id)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten();
+
+    // Create response with primary role name
+    let mut user_response = UserResponse::from(user);
+    user_response.primary_role_name = primary_role_name;
+
+    (StatusCode::OK, Json(user_response)).into_response()
 }
