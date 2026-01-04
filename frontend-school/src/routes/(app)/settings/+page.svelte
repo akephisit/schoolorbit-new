@@ -10,6 +10,7 @@
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { pwaStore } from '$lib/stores/pwa';
 
 	let currentPassword = $state('');
 	let newPassword = $state('');
@@ -19,50 +20,23 @@
 	let showConfirmPassword = $state(false);
 	let saving = $state(false);
 
-	// PWA Install state
-	interface BeforeInstallPromptEvent extends Event {
-		prompt: () => Promise<void>;
-		userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-	}
-
-	let deferredPrompt = $state<BeforeInstallPromptEvent | null>(null);
-	let isPWAInstalled = $state(false);
+	// PWA state from store
+	let pwaState = $state($pwaStore);
 	let isInstalling = $state(false);
 
-	onMount(() => {
-		// Check if already installed
-		if (window.matchMedia('(display-mode: standalone)').matches) {
-			isPWAInstalled = true;
-		}
-
-		// Listen for install prompt
-		const handleBeforeInstallPrompt = (e: Event) => {
-			e.preventDefault();
-			deferredPrompt = e as BeforeInstallPromptEvent;
-		};
-
-		const handleAppInstalled = () => {
-			isPWAInstalled = true;
-			deferredPrompt = null;
-		};
-
-		window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-		window.addEventListener('appinstalled', handleAppInstalled);
-
-		return () => {
-			window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-			window.removeEventListener('appinstalled', handleAppInstalled);
-		};
+	// Subscribe to store changes
+	$effect(() => {
+		pwaState = $pwaStore;
 	});
 
 	async function handleInstallPWA() {
-		if (!deferredPrompt) return;
+		if (!pwaState.deferredPrompt) return;
 
 		isInstalling = true;
 
 		try {
-			await deferredPrompt.prompt();
-			const choiceResult = await deferredPrompt.userChoice;
+			await pwaState.deferredPrompt.prompt();
+			const choiceResult = await pwaState.deferredPrompt.userChoice;
 
 			if (choiceResult.outcome === 'accepted') {
 				toast.success('ติดตั้งแอปสำเร็จ');
@@ -70,7 +44,7 @@
 		} catch (error) {
 			toast.error('ไม่สามารถติดตั้งแอปได้');
 		} finally {
-			deferredPrompt = null;
+			pwaStore.setPrompt(null);
 			isInstalling = false;
 		}
 	}
@@ -321,9 +295,11 @@
 					</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4">
-					{#if isPWAInstalled}
+					{#if pwaState.isInstalled}
 						<!-- Already Installed -->
-						<div class="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+						<div
+							class="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-lg"
+						>
 							<div class="bg-green-500/20 p-2 rounded-lg">
 								<CheckCircle2 class="w-5 h-5 text-green-600 dark:text-green-400" />
 							</div>
@@ -336,7 +312,7 @@
 								</p>
 							</div>
 						</div>
-					{:else if deferredPrompt}
+					{:else if pwaState.deferredPrompt}
 						<!-- Can Install -->
 						<div class="space-y-3">
 							<div class="flex items-start gap-3">
@@ -354,11 +330,7 @@
 									</ul>
 								</div>
 							</div>
-							<Button
-								onclick={handleInstallPWA}
-								disabled={isInstalling}
-								class="w-full gap-2"
-							>
+							<Button onclick={handleInstallPWA} disabled={isInstalling} class="w-full gap-2">
 								<Download class="w-4 h-4" />
 								{isInstalling ? 'กำลังติดตั้ง...' : 'ติดตั้งแอป'}
 							</Button>

@@ -5,8 +5,14 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import InstallPrompt from '$lib/components/pwa/InstallPrompt.svelte';
+	import { initPWA } from '$lib/stores/pwa';
 
 	let { children } = $props();
+
+	// Initialize PWA listeners once
+	onMount(() => {
+		initPWA();
+	});
 
 	// Force light theme for public pages (landing, login)
 	// Using $effect instead of onMount to handle SPA navigation

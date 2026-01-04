@@ -1,27 +1,19 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { X, Download } from 'lucide-svelte';
 	import { fade, slide } from 'svelte/transition';
+	import { pwaStore, type BeforeInstallPromptEvent } from '$lib/stores/pwa';
 
-	// BeforeInstallPrompt event type
-	interface BeforeInstallPromptEvent extends Event {
-		prompt: () => Promise<void>;
-		userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-	}
-
-	let deferredPrompt = $state<BeforeInstallPromptEvent | null>(null);
 	let showInstallPrompt = $state(false);
 	let isInstalling = $state(false);
 
-	onMount(() => {
-		// Listen for the beforeinstallprompt event
-		const handleBeforeInstallPrompt = (e: Event) => {
-			// Prevent the default prompt
-			e.preventDefault();
-			// Store the event
-			deferredPrompt = e as BeforeInstallPromptEvent;
-			
+	// Subscribe to PWA store
+	let pwaState = $state($pwaStore);
+	$effect(() => {
+		pwaState = $pwaStore;
+		
+		// Show prompt when deferredPrompt is available
+		if (pwaState.deferredPrompt && !pwaState.isInstalled) {
 			// Check if user has dismissed this before
 			const dismissed = localStorage.getItem('pwa-install-dismissed');
 			const dismissedTime = dismissed ? parseInt(dismissed) : 0;
@@ -31,38 +23,22 @@
 			if (!dismissed || now - dismissedTime > 7 * 24 * 60 * 60 * 1000) {
 				showInstallPrompt = true;
 			}
-			
-			console.log('💾 PWA install prompt available');
-		};
-
-		// Listen for successful installation
-		const handleAppInstalled = () => {
-			console.log('✅ PWA installed successfully!');
+		} else {
 			showInstallPrompt = false;
-			deferredPrompt = null;
-			localStorage.removeItem('pwa-install-dismissed');
-		};
-
-		window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-		window.addEventListener('appinstalled', handleAppInstalled);
-
-		return () => {
-			window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-			window.removeEventListener('appinstalled', handleAppInstalled);
-		};
+		}
 	});
 
 	async function handleInstall() {
-		if (!deferredPrompt) return;
+		if (!pwaState.deferredPrompt) return;
 
 		isInstalling = true;
 
 		try {
 			// Show the install prompt
-			await deferredPrompt.prompt();
+			await pwaState.deferredPrompt.prompt();
 
 			// Wait for user choice
-			const choiceResult = await deferredPrompt.userChoice;
+			const choiceResult = await pwaState.deferredPrompt.userChoice;
 
 			if (choiceResult.outcome === 'accepted') {
 				console.log('✅ User accepted the install prompt');
@@ -73,7 +49,7 @@
 			console.error('Install error:', error);
 		} finally {
 			// Clear the prompt
-			deferredPrompt = null;
+			pwaStore.setPrompt(null);
 			showInstallPrompt = false;
 			isInstalling = false;
 		}
@@ -81,7 +57,7 @@
 
 	function handleDismiss() {
 		showInstallPrompt = false;
-		deferredPrompt = null;
+		pwaStore.setPrompt(null);
 		// Remember dismissal for 7 days
 		localStorage.setItem('pwa-install-dismissed', Date.now().toString());
 	}
