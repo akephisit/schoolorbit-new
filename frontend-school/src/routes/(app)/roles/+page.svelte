@@ -80,8 +80,8 @@
 
 	{#if loading}
 		<!-- Loading State -->
-{#each Array(6) as _, i (i)} // eslint-disable-line @typescript-eslint/no-unused-vars
-			{#each Array(6) as _unused, i (i)}
+		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+			{#each Array(6) as _, i (i)}
 				<Card>
 					<CardHeader>
 						<div class="h-6 bg-gray-200 rounded animate-pulse w-3/4"></div>
