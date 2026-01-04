@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { roleAPI, type Role } from '$lib/api/roles';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -71,7 +72,7 @@
 			<h1 class="text-3xl font-bold text-foreground">จัดการบทบาท</h1>
 			<p class="text-muted-foreground mt-1">กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน</p>
 		</div>
-		<Button onclick={() => goto('/roles/new')} class="gap-2">
+		<Button onclick={() => goto(resolve('/roles/new'))} class="gap-2">
 			<Plus class="h-4 w-4" />
 			สร้างบทบาทใหม่
 		</Button>
@@ -80,7 +81,7 @@
 	{#if loading}
 		<!-- Loading State -->
 		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-			{#each Array(6) as _}
+			{#each Array(6) as _, i (i)}
 				<Card>
 					<CardHeader>
 						<div class="h-6 bg-gray-200 rounded animate-pulse w-3/4"></div>
@@ -100,7 +101,7 @@
 					<Shield class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
 					<h3 class="text-lg font-medium text-foreground">ยังไม่มีบทบาท</h3>
 					<p class="text-muted-foreground mt-1">เริ่มต้นสร้างบทบาทแรกของคุณ</p>
-					<Button onclick={() => goto('/roles/new')} class="mt-4 gap-2">
+					<Button onclick={() => goto(resolve('/roles/new'))} class="mt-4 gap-2">
 						<Plus class="h-4 w-4" />
 						สร้างบทบาทใหม่
 					</Button>
@@ -113,7 +114,7 @@
 			{#each roles as role (role.id)}
 				<Card
 					class="hover:shadow-lg transition-shadow cursor-pointer"
-					onclick={() => goto(`/roles/${role.id}`)}
+					onclick={() => goto(resolve(`/roles/${role.id}`))}
 				>
 					<CardHeader>
 						<div class="flex items-start justify-between">
@@ -159,7 +160,7 @@
 								size="sm"
 								onclick={(e: MouseEvent) => {
 									e.stopPropagation();
-									goto(`/roles/${role.id}`);
+									goto(resolve(`/roles/${role.id}`));
 								}}
 								class="gap-1"
 							>

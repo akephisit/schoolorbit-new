@@ -2,23 +2,15 @@
 	import {
 		listMenuGroups,
 		listMenuItems,
-		createMenuItem,
-		updateMenuItem,
 		deleteMenuItem,
 		reorderMenuItems,
 		reorderMenuGroups,
 		moveItemToGroup,
 		type MenuGroup,
-		type MenuItem,
-		type CreateMenuItemRequest,
-		type UpdateMenuItemRequest
+		type MenuItem
 	} from '$lib/api/menu-admin';
-	import { untrack } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { LoaderCircle, FolderOpen } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
@@ -137,7 +129,7 @@
 				try {
 					await reorderMenuGroups(groups.map((g, i) => ({ id: g.id, display_order: i + 1 })));
 					toast.success('เรียงกลุ่มสำเร็จ');
-				} catch (error) {
+				} catch (_error) {
 					toast.error('ไม่สามารถเรียงกลุ่มได้');
 					await loadData();
 				}
@@ -157,7 +149,7 @@
 					await moveItemToGroup(active.id as string, overContainer.data.id);
 					toast.success('ย้ายเมนูสำเร็จ');
 					await loadData();
-				} catch (error) {
+				} catch (_error) {
 					toast.error('ไม่สามารถย้ายเมนูได้');
 					await loadData();
 				}
@@ -180,7 +172,7 @@
 						);
 						toast.success('เรียงลำดับสำเร็จ');
 						await loadData();
-					} catch (error) {
+					} catch (_error) {
 						toast.error('ไม่สามารถเรียงลำดับได้');
 						await loadData();
 					}
@@ -189,7 +181,7 @@
 		}
 	}
 
-	function handleDragOver({ active, over }: DragOverEvent) {
+	function handleDragOver(_event: DragOverEvent) {
 		// CONFIRMED: Cannot implement real-time preview in Svelte 5
 		// Even with untrack(), mutations trigger infinite loops
 		// This is a fundamental difference from vanilla JS/React
@@ -208,7 +200,7 @@
 			await deleteMenuItem(item.id);
 			toast.success('ลบเมนูสำเร็จ');
 			await loadData();
-		} catch (error) {
+		} catch (_error) {
 			toast.error('ไม่สามารถลบเมนูได้');
 		}
 	}
