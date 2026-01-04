@@ -72,12 +72,12 @@
 
 			<!-- Menu Items -->
 			<DropdownMenu.Group>
-				<DropdownMenu.Item class="cursor-pointer">
+				<DropdownMenu.Item class="cursor-pointer" onclick={() => goto(resolve('/profile'))}>
 					<UserCircle class="w-4 h-4 mr-2" />
 					<span>โปรไฟล์ของฉัน</span>
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item class="cursor-pointer">
+				<DropdownMenu.Item class="cursor-pointer" onclick={() => goto(resolve('/settings'))}>
 					<Settings class="w-4 h-4 mr-2" />
 					<span>การตั้งค่า</span>
 				</DropdownMenu.Item>
