@@ -9,6 +9,7 @@
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, User, Save } from 'lucide-svelte';
 	import { DatePicker } from '$lib/components/ui/date-picker';
+	import { createStudent } from '$lib/api/students';
 
 	// Form data
 	let formData = $state({
@@ -74,29 +75,17 @@
 		try {
 			const { confirmPassword, ...payload } = formData;
 
-			const response = await fetch('/api/students', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-				},
-				body: JSON.stringify({
-					...payload,
-					student_number: payload.student_number || undefined
-				})
+			const result = await createStudent({
+				...payload,
+				student_number: payload.student_number || undefined
 			});
 
-			if (response.ok) {
-				const data = await response.json();
-				toast.success('เพิ่มนักเรียนสำเร็จ');
-				goto(resolve(`/students/${data.id}/edit`));
-			} else {
-				const data = await response.json();
-				toast.error(data.error || 'ไม่สามารถเพิ่มนักเรียนได้');
-			}
+			toast.success('เพิ่มนักเรียนสำเร็จ');
+			goto(resolve(`/students/${result.id}/edit`));
 		} catch (error) {
 			console.error('Failed to create student:', error);
-			toast.error('เกิดข้อผิดพลาด');
+			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			toast.error(message);
 		} finally {
 			loading = false;
 		}

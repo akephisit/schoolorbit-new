@@ -7,6 +7,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
 	import { User, Edit, Save, X } from 'lucide-svelte';
+	import { getOwnProfile, updateOwnProfile } from '$lib/api/students';
 
 	let student = $state<any>(null);
 	let loading = $state(true);
@@ -25,26 +26,17 @@
 	async function loadProfile() {
 		loading = true;
 		try {
-			const response = await fetch('/api/student/profile', {
-				headers: {
-					Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-				}
-			});
-
-			if (response.ok) {
-				const data = await response.json();
-				student = data.data;
-				
-				// Initialize editable fields
-				phone = student.phone || '';
-				address = student.address || '';
-				nickname = student.nickname || '';
-			} else {
-				toast.error('ไม่สามารถโหลดข้อมูลได้');
-			}
+			const response = await getOwnProfile();
+			student = response.data;
+			
+			// Initialize editable fields
+			phone = student.phone || '';
+			address = student.address || '';
+			nickname = student.nickname || '';
 		} catch (error) {
 			console.error('Failed to load profile:', error);
-			toast.error('เกิดข้อผิดพลาด');
+			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			toast.error(message);
 		} finally {
 			loading = false;
 		}
@@ -53,30 +45,18 @@
 	async function handleSave() {
 		saving = true;
 		try {
-			const response = await fetch('/api/student/profile', {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-				},
-				body: JSON.stringify({
-					phone,
-					address,
-					nickname
-				})
+			await updateOwnProfile({
+				phone,
+				address,
+				nickname
 			});
-
-			if (response.ok) {
-				toast.success('บันทึกข้อมูลสำเร็จ');
-				editing = false;
-				await loadProfile();
-			} else {
-				const data = await response.json();
-				toast.error(data.error || 'ไม่สามารถบันทึกข้อมูลได้');
-			}
+			toast.success('บันทึกข้อมูลสำเร็จ');
+			editing = false;
+			await loadProfile();
 		} catch (error) {
 			console.error('Failed to save profile:', error);
-			toast.error('เกิดข้อผิดพลาด');
+			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			toast.error(message);
 		} finally {
 			saving = false;
 		}

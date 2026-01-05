@@ -8,18 +8,9 @@
 	import { Users, Plus, Search, Filter } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { listStudents, type StudentListItem } from '$lib/api/students';
 
-	interface Student {
-		id: string;
-		first_name: string;
-		last_name: string;
-		student_id: string;
-		grade_level: string;
-		class_room: string;
-		status: string;
-	}
-
-	let students = $state<Student[]>([]);
+	let students = $state<StudentListItem[]>([]);
 	let loading = $state(true);
 	let searchTerm = $state('');
 	let selectedGrade = $state('');
@@ -32,26 +23,16 @@
 	async function loadStudents() {
 		loading = true;
 		try {
-			const params = new URLSearchParams();
-			if (searchTerm) params.append('search', searchTerm);
-			if (selectedGrade) params.append('grade_level', selectedGrade);
-			if (selectedClass) params.append('class_room', selectedClass);
-
-			const response = await fetch(`/api/students?${params.toString()}`, {
-				headers: {
-					Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-				}
+			const response = await listStudents({
+				search: searchTerm || undefined,
+				grade_level: selectedGrade || undefined,
+				class_room: selectedClass || undefined
 			});
-
-			if (response.ok) {
-				const data = await response.json();
-				students = data.data || [];
-			} else {
-				toast.error('ไม่สามารถโหลดข้อมูลนักเรียนได้');
-			}
+			students = response.data || [];
 		} catch (error) {
 			console.error('Failed to load students:', error);
-			toast.error('เกิดข้อผิดพลาด');
+			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			toast.error(message);
 		} finally {
 			loading = false;
 		}

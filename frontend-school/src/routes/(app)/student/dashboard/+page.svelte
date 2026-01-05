@@ -3,25 +3,20 @@
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { User, Calendar, BookOpen, Award } from 'lucide-svelte';
-	import { authAPI } from '$lib/api/auth';
+	import { getOwnProfile } from '$lib/api/students';
+	import { toast } from 'svelte-sonner';
 
 	let student = $state<any>(null);
 	let loading = $state(true);
 
 	onMount(async () => {
 		try {
-			const response = await fetch('/api/student/profile', {
-				headers: {
-					Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-				}
-			});
-
-			if (response.ok) {
-				const data = await response.json();
-				student = data.data;
-			}
+			const response = await getOwnProfile();
+			student = response.data;
 		} catch (error) {
 			console.error('Failed to load profile:', error);
+			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			toast.error(message);
 		} finally {
 			loading = false;
 		}

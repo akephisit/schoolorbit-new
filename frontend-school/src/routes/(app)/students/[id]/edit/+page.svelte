@@ -12,8 +12,9 @@
 	import { ArrowLeft, Edit, Save, X, Trash2 } from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import { DatePicker } from '$lib/components/ui/date-picker';
+	import { getStudent, updateStudent, deleteStudent } from '$lib/api/students';
 
-	let studentId = $derived($page.params.id);
+	let studentId = $derived($page.params.id as string);
 	let student = $state<any>(null);
 	let loading = $state(true);
 	let editing = $state(false);
@@ -39,34 +40,25 @@
 	async function loadStudent() {
 		loading = true;
 		try {
-			const response = await fetch(`/api/students/${studentId}`, {
-				headers: {
-					Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-				}
-			});
-
-			if (response.ok) {
-				const data = await response.json();
-				student = data.data;
-				
-				// Initialize form data
-				formData = {
-					email: student.email || '',
-					first_name: student.first_name || '',
-					last_name: student.last_name || '',
-					phone: student.phone || '',
-					address: student.address || '',
-					grade_level: student.grade_level || '',
-					class_room: student.class_room || '',
-					student_number: student.student_number || null
-				};
-			} else {
-				toast.error('ไม่พบนักเรียน');
-				goto(resolve('/students'));
-			}
+			const response = await getStudent(studentId);
+			student = response.data;
+			
+			// Initialize form data
+			formData = {
+				email: student.email || '',
+				first_name: student.first_name || '',
+				last_name: student.last_name || '',
+				phone: student.phone || '',
+				address: student.address || '',
+				grade_level: student.grade_level || '',
+				class_room: student.class_room || '',
+				student_number: student.student_number || null
+			};
 		} catch (error) {
 			console.error('Failed to load student:', error);
-			toast.error('เกิดข้อผิดพลาด');
+			const message = error instanceof Error ? error.message : 'ไม่พบนักเรียน';
+			toast.error(message);
+			goto(resolve('/students'));
 		} finally {
 			loading = false;
 		}
@@ -75,26 +67,17 @@
 	async function handleSave() {
 		saving = true;
 		try {
-			const response = await fetch(`/api/students/${studentId}`, {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-				},
-				body: JSON.stringify(formData)
+			await updateStudent(studentId, {
+				...formData,
+				student_number: formData.student_number || undefined
 			});
-
-			if (response.ok) {
-				toast.success('บันทึกข้อมูลสำเร็จ');
-				editing = false;
-				await loadStudent();
-			} else {
-				const data = await response.json();
-				toast.error(data.error || 'ไม่สามารถบันทึกข้อมูลได้');
-			}
+			toast.success('บันทึกข้อมูลสำเร็จ');
+			editing = false;
+			await loadStudent();
 		} catch (error) {
 			console.error('Failed to save:', error);
-			toast.error('เกิดข้อผิดพลาด');
+			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			toast.error(message);
 		} finally {
 			saving = false;
 		}
@@ -122,23 +105,13 @@
 
 		deleting = true;
 		try {
-			const response = await fetch(`/api/students/${studentId}`, {
-				method: 'DELETE',
-				headers: {
-					Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-				}
-			});
-
-			if (response.ok) {
-				toast.success('ลบนักเรียนสำเร็จ');
-				goto(resolve('/students'));
-			} else {
-				const data = await response.json();
-				toast.error(data.error || 'ไม่สามารถลบนักเรียนได้');
-			}
+			await deleteStudent(studentId);
+			toast.success('ลบนักเรียนสำเร็จ');
+			goto(resolve('/students'));
 		} catch (error) {
 			console.error('Failed to delete:', error);
-			toast.error('เกิดข้อผิดพลาด');
+			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			toast.error(message);
 		} finally {
 			deleting = false;
 		}
