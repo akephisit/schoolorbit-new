@@ -10,7 +10,7 @@
 	import { onMount } from 'svelte';
 
 	import { authStore } from '$lib/stores/auth';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 
 	let nationalId = $state('');
 	let password = $state('');
@@ -20,7 +20,7 @@
 	let isCheckingAuth = $state(true);
 
 	// Get redirect URL from query params or sessionStorage
-	let redirectUrl = $derived($page.url.searchParams.get('redirect') || sessionStorage.getItem('redirectAfterLogin'));
+	let redirectUrl = $derived(page.url.searchParams.get('redirect') || sessionStorage.getItem('redirectAfterLogin'));
 
 	// Check if user is already authenticated
 	onMount(async () => {
