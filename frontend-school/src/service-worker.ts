@@ -44,10 +44,48 @@ sw.addEventListener('fetch', (event) => {
                 // Clone response for logging if needed
                 return response;
             })
-            .catch((error) => {
+            .catch(async (error) => {
                 console.error('[ServiceWorker] Fetch failed:', error);
 
-                // Return a custom offline response
+                // For navigation requests (HTML pages), show offline page
+                if (event.request.mode === 'navigate') {
+                    try {
+                        const offlinePage = await fetch('/offline.html');
+                        return offlinePage;
+                    } catch {
+                        // Fallback if offline.html can't be fetched
+                        return new Response(
+                            `<!DOCTYPE html>
+<html lang="th">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>ไม่มีการเชื่อมต่อ</title>
+	<style>
+		body { font-family: system-ui; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; padding: 20px; }
+		.container { background: white; color: #333; padding: 40px; border-radius: 12px; max-width: 400px; }
+		h1 { margin: 0 0 16px; }
+		button { background: #667eea; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; margin-top: 16px; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>🌐 ไม่มีการเชื่อมต่อ</h1>
+		<p>กรุณาตรวจสอบอินเทอร์เน็ตของคุณ</p>
+		<button onclick="window.location.reload()">ลองอีกครั้ง</button>
+	</div>
+</body>
+</html>`,
+                            {
+                                status: 503,
+                                statusText: 'Service Unavailable',
+                                headers: { 'Content-Type': 'text/html; charset=utf-8' }
+                            }
+                        );
+                    }
+                }
+
+                // For other requests (API, assets), return error
                 return new Response(
                     JSON.stringify({
                         error: 'Network unavailable',
