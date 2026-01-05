@@ -60,11 +60,17 @@ class AuthAPI {
 				throw new Error(result.error || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
 			}
 
+			// Map backend response to User interface
+			const user: User = {
+				...result.user,
+				user_type: result.user.userType || result.user.user_type
+			};
+
 			// Update store
-			authStore.setUser(result.user);
+			authStore.setUser(user);
 			toast.success(result.message || 'เข้าสู่ระบบสำเร็จ');
 
-			return result.user;
+			return user;
 		} catch (error: unknown) {
 			const message =
 				error instanceof Error ? error.message : 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
@@ -115,7 +121,14 @@ class AuthAPI {
 				throw new Error('Failed to check auth');
 			}
 
-			const user = await response.json();
+			const userData = await response.json();
+
+			// Map backend response to User interface
+			const user: User = {
+				...userData,
+				user_type: userData.userType || userData.user_type
+			};
+
 			authStore.setUser(user);
 			return true;
 		} catch (error) {
