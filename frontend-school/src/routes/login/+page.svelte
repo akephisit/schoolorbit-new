@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 
 	import { authStore } from '$lib/stores/auth';
+	import { page } from '$app/stores';
 
 	let nationalId = $state('');
 	let password = $state('');
@@ -18,13 +19,20 @@
 	let errorMessage = $state('');
 	let isCheckingAuth = $state(true);
 
+	// Get redirect URL from query params or sessionStorage
+	let redirectUrl = $derived($page.url.searchParams.get('redirect') || sessionStorage.getItem('redirectAfterLogin'));
+
 	// Check if user is already authenticated
 	onMount(async () => {
 		const isAuthenticated = await authAPI.checkAuth();
 		if (isAuthenticated) {
-			// Already logged in, redirect based on user type
+			// Already logged in, redirect based on user type or to redirectUrl
 			const user = $authStore.user;
-			if (user?.user_type === 'student') {
+			
+			if (redirectUrl) {
+				sessionStorage.removeItem('redirectAfterLogin');
+				await goto(redirectUrl, { replaceState: true });
+			} else if (user?.user_type === 'student') {
 				await goto(resolve('/student'), { replaceState: true });
 			} else {
 				await goto(resolve('/staff'), { replaceState: true });
@@ -52,8 +60,13 @@
 				rememberMe
 			});
 
-			// Redirect based on user type
-			if (user.user_type === 'student') {
+			// Clear redirectUrl from sessionStorage
+			sessionStorage.removeItem('redirectAfterLogin');
+
+			// Redirect to intended URL or default dashboard
+			if (redirectUrl) {
+				await goto(redirectUrl, { invalidateAll: true });
+			} else if (user.user_type === 'student') {
 				await goto(resolve('/student'), { invalidateAll: true });
 			} else {
 				await goto(resolve('/staff'), { invalidateAll: true });

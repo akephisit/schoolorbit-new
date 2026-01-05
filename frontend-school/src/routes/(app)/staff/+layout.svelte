@@ -26,10 +26,10 @@
 		// Get user from store
 		const user = $authStore.user;
 		
-		// Check if user is student (not staff)
-		if (user && user.user_type !== 'student') {
-			// Staff trying to access student area - redirect to staff dashboard
-			goto(resolve('/staff'));
+		// Check if user is staff (not student)
+		if (user && user.user_type === 'student') {
+			// Student trying to access staff area - redirect to student portal
+			goto(resolve('/student'));
 			return;
 		}
 
@@ -49,8 +49,5 @@
 		</div>
 	</div>
 {:else if authorized}
-	<div class="min-h-screen bg-background">
-		<!-- Student Portal Content -->
-		{@render children?.()}
-	</div>
+	{@render children?.()}
 {/if}
