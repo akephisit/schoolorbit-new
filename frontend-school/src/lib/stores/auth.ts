@@ -7,6 +7,7 @@ export interface User {
 	firstName: string;
 	lastName: string;
 	role: string;
+	user_type?: string; // 'staff' | 'student'
 	phone?: string;
 	status: string;
 	createdAt: string;

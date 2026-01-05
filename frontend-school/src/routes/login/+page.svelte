@@ -9,6 +9,8 @@
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 
+	import { authStore } from '$lib/stores/auth';
+
 	let nationalId = $state('');
 	let password = $state('');
 	let rememberMe = $state(false);
@@ -20,8 +22,13 @@
 	onMount(async () => {
 		const isAuthenticated = await authAPI.checkAuth();
 		if (isAuthenticated) {
-			// Already logged in, redirect to dashboard
-			await goto(resolve('/staff'), { replaceState: true });
+			// Already logged in, redirect based on user type
+			const user = $authStore.user;
+			if (user?.user_type === 'student') {
+				await goto(resolve('/student'), { replaceState: true });
+			} else {
+				await goto(resolve('/staff'), { replaceState: true });
+			}
 		}
 		isCheckingAuth = false;
 	});
@@ -39,14 +46,18 @@
 		}
 
 		try {
-			await authAPI.login({
+			const user = await authAPI.login({
 				nationalId,
 				password,
 				rememberMe
 			});
 
-			// Redirect to dashboard on success
-			await goto(resolve('/staff'), { invalidateAll: true });
+			// Redirect based on user type
+			if (user.user_type === 'student') {
+				await goto(resolve('/student'), { invalidateAll: true });
+			} else {
+				await goto(resolve('/staff'), { invalidateAll: true });
+			}
 		} catch (error) {
 			// Error already shown via toast in authAPI
 			errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
