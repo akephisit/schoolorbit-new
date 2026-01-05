@@ -27,6 +27,19 @@
 	let pwaState = $derived($pwaStore);
 	let isInstalling = $state(false);
 
+	// iOS detection
+	let isIOS = $state(false);
+	let isStandalone = $state(false);
+
+	onMount(() => {
+		// Check if iOS
+		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+		
+		// Check if already installed
+		isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+		               (navigator as any).standalone === true;
+	});
+
 	async function handleInstallPWA() {
 		if (!pwaState.deferredPrompt) return;
 
@@ -347,12 +360,45 @@
 								</Button>
 							</div>
 						{:else}
-							<!-- Not Available -->
-							<div class="p-4 bg-muted rounded-lg">
-								<p class="text-sm text-muted-foreground text-center">
-									ตัวเลือกการติดตั้งจะปรากฏเมื่อเปิดเว็บไซต์ในเบราว์เซอร์ที่รองรับ
-								</p>
-							</div>
+							<!-- Not Available (Show iOS instructions if on iOS) -->
+							{#if isIOS && !isStandalone}
+								<!-- iOS Manual Install Instructions -->
+								<div class="space-y-3">
+									<div class="flex items-start gap-3">
+										<div class="bg-blue-500/10 p-2 rounded-lg flex-shrink-0 mt-0.5">
+											<svg
+												class="w-5 h-5 text-blue-600"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+												/>
+											</svg>
+										</div>
+										<div class="flex-1">
+											<p class="text-sm font-medium text-foreground">วิธีติดตั้งบน iOS/Safari:</p>
+											<ol
+												class="text-sm text-muted-foreground mt-2 space-y-1.5 list-decimal list-inside"
+											>
+												<li>กดปุ่ม <strong>แชร์</strong> (Share) ที่แถบเมนู Safari</li>
+												<li>เลื่อนลงและเลือก <strong>"เพิ่มที่หน้าจอโฮม"</strong></li>
+												<li>กดปุ่ม <strong>"เพิ่ม"</strong> ที่มุมขวาบน</li>
+											</ol>
+										</div>
+									</div>
+								</div>
+							{:else}
+								<div class="p-4 bg-muted rounded-lg">
+									<p class="text-sm text-muted-foreground text-center">
+										ตัวเลือกการติดตั้งจะปรากฏเมื่อเปิดเว็บไซต์ในเบราว์เซอร์ที่รองรับ
+									</p>
+								</div>
+							{/if}
 						{/if}
 					</CardContent>
 				</Card>

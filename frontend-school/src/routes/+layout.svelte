@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import InstallPrompt from '$lib/components/pwa/InstallPrompt.svelte';
+	import IOSInstallPrompt from '$lib/components/pwa/IOSInstallPrompt.svelte';
 	import { initPWA } from '$lib/stores/pwa';
 
 	let { children } = $props();
@@ -28,7 +29,10 @@
 <!-- Sonner Toaster for global notifications -->
 <Toaster position="bottom-right" richColors />
 
-<!-- PWA Install Prompt -->
+<!-- PWA Install Prompt (Android/Desktop) -->
 <InstallPrompt />
+
+<!-- iOS Install Prompt (Safari) -->
+<IOSInstallPrompt />
 
 {@render children()}
