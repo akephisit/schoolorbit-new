@@ -72,7 +72,7 @@
 			<h1 class="text-3xl font-bold text-foreground">จัดการบทบาท</h1>
 			<p class="text-muted-foreground mt-1">กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน</p>
 		</div>
-		<Button onclick={() => goto(resolve('/roles/new'))} class="gap-2">
+		<Button onclick={() => goto(resolve('/staff/roles/new'))} class="gap-2">
 			<Plus class="h-4 w-4" />
 			สร้างบทบาทใหม่
 		</Button>
@@ -101,7 +101,7 @@
 					<Shield class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
 					<h3 class="text-lg font-medium text-foreground">ยังไม่มีบทบาท</h3>
 					<p class="text-muted-foreground mt-1">เริ่มต้นสร้างบทบาทแรกของคุณ</p>
-					<Button onclick={() => goto(resolve('/roles/new'))} class="mt-4 gap-2">
+					<Button onclick={() => goto(resolve('/staff/roles/new'))} class="mt-4 gap-2">
 						<Plus class="h-4 w-4" />
 						สร้างบทบาทใหม่
 					</Button>
@@ -114,7 +114,7 @@
 			{#each roles as role (role.id)}
 				<Card
 					class="hover:shadow-lg transition-shadow cursor-pointer"
-					onclick={() => goto(resolve(`/roles/${role.id}`))}
+					onclick={() => goto(resolve(`/staff/roles/${role.id}`))}
 				>
 					<CardHeader>
 						<div class="flex items-start justify-between">
@@ -160,7 +160,7 @@
 								size="sm"
 								onclick={(e: MouseEvent) => {
 									e.stopPropagation();
-									goto(resolve(`/roles/${role.id}`));
+									goto(resolve(`/staff/roles/${role.id}`));
 								}}
 								class="gap-1"
 							>

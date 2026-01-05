@@ -21,7 +21,7 @@
 		const isAuthenticated = await authAPI.checkAuth();
 		if (isAuthenticated) {
 			// Already logged in, redirect to dashboard
-			await goto(resolve('/dashboard'), { replaceState: true });
+			await goto(resolve('/staff'), { replaceState: true });
 		}
 		isCheckingAuth = false;
 	});
@@ -46,7 +46,7 @@
 			});
 
 			// Redirect to dashboard on success
-			await goto(resolve('/dashboard'), { invalidateAll: true });
+			await goto(resolve('/staff'), { invalidateAll: true });
 		} catch (error) {
 			// Error already shown via toast in authAPI
 			errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';

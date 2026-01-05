@@ -111,7 +111,7 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-4">
-			<Button variant="ghost" size="icon" onclick={() => goto(resolve('/dashboard'))}>
+			<Button variant="ghost" size="icon" onclick={() => goto(resolve('/staff'))}>
 				<ArrowLeft class="h-5 w-5" />
 			</Button>
 			<div>

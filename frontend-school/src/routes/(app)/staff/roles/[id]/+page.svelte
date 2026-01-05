@@ -71,12 +71,12 @@
 				selectedPermissions = new SvelteSet(role.permissions || []);
 			} else {
 				toast.error('ไม่สามารถโหลดข้อมูล role ได้');
-				goto(resolve('/roles'));
+				goto(resolve('/staff/roles'));
 			}
 		} catch (error) {
 			console.error('Failed to load role:', error);
 			toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
-			goto(resolve('/roles'));
+			goto(resolve('/staff/roles'));
 		}
 	}
 
@@ -156,7 +156,7 @@
 				const response = await roleAPI.createRole(data);
 				if (response.success) {
 					toast.success('สร้างบทบาทสำเร็จ');
-					goto(resolve('/roles'));
+					goto(resolve('/staff/roles'));
 				} else {
 					toast.error(response.error || 'ไม่สามารถสร้างบทบาทได้');
 				}
@@ -164,7 +164,7 @@
 				const response = await roleAPI.updateRole(roleId, data);
 				if (response.success) {
 					toast.success('บันทึกข้อมูลสำเร็จ');
-					goto(resolve('/roles'));
+					goto(resolve('/staff/roles'));
 				} else {
 					toast.error(response.error || 'ไม่สามารถบันทึกข้อมูลได้');
 				}
@@ -184,7 +184,7 @@
 			if (response.success) {
 				toast.success('ลบบทบาทสำเร็จ');
 				showDeleteDialog = false;
-				goto(resolve('/roles'));
+				goto(resolve('/staff/roles'));
 			} else {
 				toast.error(response.error || 'ไม่สามารถลบบทบาทได้');
 				showDeleteDialog = false;
@@ -205,7 +205,7 @@
 
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
-		<Button variant="ghost" size="icon" onclick={() => goto(resolve('/roles'))}>
+		<Button variant="ghost" size="icon" onclick={() => goto(resolve('/staff/roles'))}>
 			<ArrowLeft class="h-5 w-5" />
 		</Button>
 		<div class="flex-1">
@@ -372,7 +372,7 @@
 			</Card>
 
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => goto(resolve('/roles'))}>ยกเลิก</Button>
+				<Button variant="outline" onclick={() => goto(resolve('/staff/roles'))}>ยกเลิก</Button>
 				<Button onclick={handleSave} disabled={saving} class="gap-2">
 					<Save class="h-4 w-4" />
 					{saving ? 'กำลังบันทึก...' : 'บันทึก'}

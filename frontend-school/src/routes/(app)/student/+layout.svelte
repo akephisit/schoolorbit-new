@@ -25,8 +25,8 @@
 			
 			// Check if user is a student
 			if (user && user.user_type !== 'student') {
-				// Redirect non-students to regular dashboard
-				goto(resolve('/dashboard'));
+				// Redirect non-students to staff dashboard
+				goto(resolve('/staff'));
 			}
 		});
 
