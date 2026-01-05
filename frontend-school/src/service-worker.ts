@@ -6,6 +6,9 @@
 // This service worker uses a Network-Only strategy (no caching)
 // Perfect for online-only PWA that always needs fresh data
 
+// Version - increment this to force SW update
+const VERSION = '2.0.0';
+
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
 // Listen for install event
