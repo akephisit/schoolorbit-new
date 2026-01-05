@@ -5,6 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ไม่มีการเชื่อมต่อ - SchoolOrbit</title>
+
+    <!-- Kanit Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
     <style>
         * {
             margin: 0;
@@ -14,7 +20,9 @@
 
         body {
             font-family: 'Kanit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: hsl(0 0% 100%);
+            /* Light theme like landing page */
+            color: hsl(240 10% 3.9%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -23,17 +31,13 @@
         }
 
         .container {
-            background: white;
-            border-radius: 20px;
-            padding: 48px 32px;
-            max-width: 480px;
+            max-width: 600px;
             width: 100%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             text-align: center;
-            animation: slideUp 0.5s ease-out;
+            animation: fadeIn 0.5s ease-out;
         }
 
-        @keyframes slideUp {
+        @keyframes fadeIn {
             from {
                 opacity: 0;
                 transform: translateY(20px);
@@ -45,11 +49,27 @@
             }
         }
 
+        /* Logo */
+        .logo {
+            font-size: 48px;
+            font-weight: 700;
+            color: hsl(240 10% 3.9%);
+            margin-bottom: 16px;
+            letter-spacing: -0.02em;
+        }
+
+        /* Icon container */
+        .icon-container {
+            margin: 32px 0;
+            display: inline-block;
+        }
+
         .icon {
             width: 120px;
             height: 120px;
-            margin: 0 auto 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0 auto;
+            background: hsl(221.2 83.2% 53.3%);
+            /* Primary blue like buttons */
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -62,10 +82,12 @@
             0%,
             100% {
                 transform: scale(1);
+                opacity: 1;
             }
 
             50% {
                 transform: scale(1.05);
+                opacity: 0.9;
             }
         }
 
@@ -78,63 +100,70 @@
         }
 
         h1 {
-            font-size: 28px;
+            font-size: 32px;
             font-weight: 600;
-            color: #1a202c;
+            color: hsl(240 10% 3.9%);
             margin-bottom: 12px;
         }
 
         p {
-            font-size: 16px;
-            color: #718096;
+            font-size: 18px;
+            color: hsl(240 3.8% 46.1%);
+            /* Muted foreground */
             line-height: 1.6;
             margin-bottom: 32px;
         }
 
+        /* Button like landing page */
         .retry-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: hsl(221.2 83.2% 53.3%);
             color: white;
             border: none;
             padding: 14px 32px;
-            border-radius: 12px;
+            border-radius: 8px;
             font-size: 16px;
             font-weight: 500;
+            font-family: 'Kanit', sans-serif;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
         .retry-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+            background: hsl(221.2 83.2% 48%);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
         .retry-btn:active {
-            transform: translateY(0);
+            transform: translateY(1px);
         }
 
+        /* Tips section */
         .tips {
-            margin-top: 32px;
+            margin-top: 48px;
             padding-top: 32px;
-            border-top: 1px solid #e2e8f0;
+            border-top: 1px solid hsl(240 5.9% 90%);
+            /* Light border */
         }
 
         .tips h3 {
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 600;
-            color: #4a5568;
-            margin-bottom: 12px;
+            color: hsl(240 10% 3.9%);
+            margin-bottom: 16px;
         }
 
         .tips ul {
             list-style: none;
             text-align: left;
+            max-width: 400px;
+            margin: 0 auto;
         }
 
         .tips li {
-            font-size: 14px;
-            color: #718096;
-            padding: 6px 0;
+            font-size: 15px;
+            color: hsl(240 3.8% 46.1%);
+            padding: 8px 0;
             padding-left: 24px;
             position: relative;
         }
@@ -143,30 +172,67 @@
             content: "•";
             position: absolute;
             left: 8px;
-            color: #667eea;
+            color: hsl(221.2 83.2% 53.3%);
             font-weight: bold;
+            font-size: 18px;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .logo {
+                font-size: 40px;
+            }
+
+            h1 {
+                font-size: 28px;
+            }
+
+            p {
+                font-size: 16px;
+            }
+
+            .icon {
+                width: 100px;
+                height: 100px;
+            }
+
+            .icon svg {
+                width: 50px;
+                height: 50px;
+            }
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <div class="icon">
-            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path
-                    d="M8.111 16.404a5.5 5.5 0 0 1 7.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.14 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"
-                    stroke-linecap="round" stroke-linejoin="round" />
-                <line x1="3" y1="3" x2="21" y2="21" stroke-linecap="round" />
-            </svg>
+        <!-- Logo -->
+        <div class="logo">SchoolOrbit</div>
+
+        <!-- Icon -->
+        <div class="icon-container">
+            <div class="icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M8.111 16.404a5.5 5.5 0 0 1 7.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.14 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"
+                        stroke-linecap="round" stroke-linejoin="round" />
+                    <line x1="3" y1="3" x2="21" y2="21" stroke-linecap="round" />
+                </svg>
+            </div>
         </div>
 
+        <!-- Title -->
         <h1>ไม่มีการเชื่อมต่ออินเทอร์เน็ต</h1>
-        <p>ตรวจสอบไม่พบการเชื่อมต่อเครือข่าย<br>กรุณาตรวจสอบสัญญาณอินเทอร์เน็ตของคุณ</p>
 
+        <!-- Message -->
+        <p>กรุณาตรวจสอบการเชื่อมต่อเครือข่ายของคุณ<br>แล้วลองใหม่อีกครั้ง</p>
+
+        <!-- Retry Button -->
         <button class="retry-btn" onclick="window.location.reload()">
             ลองอีกครั้ง
         </button>
 
+        <!-- Tips -->
         <div class="tips">
             <h3>💡 คำแนะนำ</h3>
             <ul>
