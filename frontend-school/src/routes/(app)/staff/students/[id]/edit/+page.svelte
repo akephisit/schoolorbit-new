@@ -58,7 +58,7 @@
 			console.error('Failed to load student:', error);
 			const message = error instanceof Error ? error.message : 'ไม่พบนักเรียน';
 			toast.error(message);
-			goto(resolve('/students'));
+			goto(resolve('/staff/students'));
 		} finally {
 			loading = false;
 		}
@@ -107,7 +107,7 @@
 		try {
 			await deleteStudent(studentId);
 			toast.success('ลบนักเรียนสำเร็จ');
-			goto(resolve('/students'));
+			goto(resolve('/staff/students'));
 		} catch (error) {
 			console.error('Failed to delete:', error);
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
@@ -128,7 +128,7 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-4">
-			<Button href="/students" variant="ghost" size="sm">
+			<Button href="/staff/students" variant="ghost" size="sm">
 				<ArrowLeft class="w-4 h-4" />
 			</Button>
 			<div>

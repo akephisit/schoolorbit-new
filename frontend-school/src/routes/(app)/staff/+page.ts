@@ -1,19 +1,10 @@
 /**
- * Staff Management Page
+ * Staff Dashboard
+ * ไม่ต้อง permission - ทุกคนเข้าได้
  */
 
-export const _meta = {
-	menu: {
-		title: 'บุคลากร',
-		icon: 'Users',
-		group: 'main',
-		order: 10,
-		permission: 'staff'
-	}
-};
-
 export const load = async () => {
-	return {
-		title: 'จัดการบุคลากร'
-	};
+    return {
+        title: 'Staff Dashboard'
+    };
 };

@@ -1,5 +1,5 @@
 /**
- * Student Management Page (Admin/Staff)
+ * Student Management Page (Staff)
  */
 
 export const _meta = {

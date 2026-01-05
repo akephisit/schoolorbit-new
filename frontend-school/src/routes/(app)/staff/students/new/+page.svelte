@@ -81,7 +81,7 @@
 			});
 
 			toast.success('เพิ่มนักเรียนสำเร็จ');
-			goto(resolve(`/students/${result.id}/edit`));
+			goto(resolve(`/staff/students/${result.id}/edit`));
 		} catch (error) {
 			console.error('Failed to create student:', error);
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
@@ -99,7 +99,7 @@
 <div class="container mx-auto p-6 max-w-4xl space-y-6">
 	<!-- Header -->
 	<div class="flex items-center gap-4">
-		<Button href="/students" variant="ghost" size="sm">
+		<Button href="/staff/students" variant="ghost" size="sm">
 			<ArrowLeft class="w-4 h-4" />
 		</Button>
 		<div>
@@ -355,7 +355,9 @@
 					บันทึก
 				{/if}
 			</Button>
-			<Button type="button" variant="outline" href="/students" disabled={loading}>ยกเลิก</Button>
+			<Button type="button" variant="outline" href="/staff/students" disabled={loading}
+				>ยกเลิก</Button
+			>
 		</div>
 	</form>
 </div>
