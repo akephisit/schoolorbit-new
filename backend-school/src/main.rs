@@ -5,6 +5,10 @@ mod models;
 mod permissions;
 mod utils;
 
+#[cfg(test)]
+mod test_helpers;
+
+
 use axum::{
     middleware as axum_middleware,
     routing::{get, post},
@@ -28,12 +32,16 @@ pub struct AppState {
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-
-    println!("🚀 Starting SchoolOrbit Backend School Service...");
+    
+    // Initialize structured logging
+    utils::logging::init_pretty();
+    
+    tracing::info!("🚀 Starting SchoolOrbit Backend School Service...");
 
     // Get environment variables
     let port = env::var("PORT").unwrap_or_else(|_| "8081".to_string());
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+
     
     // Connect to backend-admin database for school mapping
     let admin_database_url = env::var("ADMIN_DATABASE_URL")
@@ -43,14 +51,14 @@ async fn main() {
     env::var("INTERNAL_API_SECRET")
         .expect("INTERNAL_API_SECRET must be set for internal API authentication");
 
-    println!("📦 Connecting to admin database for school mapping...");
+    tracing::info!("📦 Connecting to admin database for school mapping...");
     let admin_pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&admin_database_url)
         .await
         .expect("Failed to connect to admin database");
 
-    println!("✅ Admin database connected");
+    tracing::info!("✅ Admin database connected");
 
     // Create pool manager for tenant databases
     let pool_manager = Arc::new(PoolManager::new());
@@ -64,9 +72,9 @@ async fn main() {
         }
     });
 
-    println!("✅ Pool manager initialized");
-    println!("ℹ️  Multi-tenant architecture ready");
-    println!("ℹ️  Each school has its own database connection pool (cached)");
+    tracing::info!("✅ Pool manager initialized");
+    tracing::info!("ℹ️  Multi-tenant architecture ready");
+    tracing::info!("ℹ️  Each school has its own database connection pool (cached)");
 
     // Create shared state
     let state = AppState {
@@ -208,23 +216,24 @@ async fn main() {
         .with_state(state);
 
     let addr = format!("{}:{}", host, port);
-    println!("🌐 Server starting on http://{}", addr);
-    println!("\nAvailable endpoints:");
-    println!("  GET  /                    - API info");
-    println!("  GET  /health              - Health check");
-    println!("  POST /api/auth/login      - Login");
-    println!("  POST /api/auth/logout     - Logout");
-    println!("  GET  /api/auth/me         - Get current user (protected)");
-    println!("\n  Staff Management:");
-    println!("  GET    /api/staff         - List all staff (protected)");
-    println!("  GET    /api/staff/{{id}}    - Get staff profile (protected)");
-    println!("  POST   /api/staff         - Create staff (protected)");
-    println!("  PUT    /api/staff/{{id}}    - Update staff (protected)");
-    println!("  DELETE /api/staff/{{id}}    - Delete staff (protected)");
-    println!("\n  Internal APIs:");
-    println!("  POST /internal/provision  - Provision tenant database (internal only)");
-    println!("  POST /internal/migrate-all - Migrate all school databases (internal only)");
-    println!("  GET  /internal/migration-status - Get migration status (internal only)");
+    tracing::info!("🌐 Server starting on http://{}", addr);
+    tracing::info!("\nAvailable endpoints:");
+    tracing::info!("  GET  /                    - API info");
+    tracing::info!("  GET  /health              - Health check");
+    tracing::info!("  POST /api/auth/login      - Login");
+    tracing::info!("  POST /api/auth/logout     - Logout");
+    tracing::info!("  GET  /api/auth/me         - Get current user (protected)");
+    tracing::info!("\n  Staff Management:");
+    tracing::info!("  GET    /api/staff         - List all staff (protected)");
+    tracing::info!("  GET    /api/staff/{{id}}    - Get staff profile (protected)");
+    tracing::info!("  POST   /api/staff         - Create staff (protected)");
+    tracing::info!("  PUT    /api/staff/{{id}}    - Update staff (protected)");
+    tracing::info!("  DELETE /api/staff/{{id}}    - Delete staff (protected)");
+    tracing::info!("\n  Internal APIs:");
+    tracing::info!("  POST /internal/provision  - Provision tenant database (internal only)");
+    tracing::info!("  POST /internal/migrate-all - Migrate all school databases (internal only)");
+    tracing::info!("  GET  /internal/migration-status - Get migration status (internal only)");
+
 
     // Run server
     let listener = tokio::net::TcpListener::bind(&addr)
