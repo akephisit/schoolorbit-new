@@ -7,7 +7,7 @@
 // Perfect for online-only PWA that always needs fresh data
 
 // Version - increment this to force SW update
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -56,27 +56,36 @@ sw.addEventListener('fetch', (event) => {
                         const offlinePage = await fetch('/offline.html');
                         return offlinePage;
                     } catch {
-                        // Fallback if offline.html can't be fetched
+                        // Fallback if offline.html can't be fetched (matches new design)
                         return new Response(
                             `<!DOCTYPE html>
 <html lang="th">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>ไม่มีการเชื่อมต่อ</title>
-	<style>
-		body { font-family: system-ui; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; padding: 20px; }
-		.container { background: white; color: #333; padding: 40px; border-radius: 12px; max-width: 400px; }
-		h1 { margin: 0 0 16px; }
-		button { background: #667eea; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; margin-top: 16px; }
-	</style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ไม่มีการเชื่อมต่อ - SchoolOrbit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Kanit', sans-serif; background: hsl(0 0% 100%); color: hsl(240 10% 3.9%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.container { max-width: 600px; text-align: center; }
+.logo { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
+.icon { width: 120px; height: 120px; margin: 32px auto; background: hsl(221.2 83.2% 53.3%); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px; }
+h1 { font-size: 32px; font-weight: 600; margin-bottom: 12px; }
+p { font-size: 18px; color: hsl(240 3.8% 46.1%); margin-bottom: 32px; }
+button { background: hsl(221.2 83.2% 53.3%); color: white; border: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 500; font-family: 'Kanit', sans-serif; cursor: pointer; }
+</style>
 </head>
 <body>
-	<div class="container">
-		<h1>🌐 ไม่มีการเชื่อมต่อ</h1>
-		<p>กรุณาตรวจสอบอินเทอร์เน็ตของคุณ</p>
-		<button onclick="window.location.reload()">ลองอีกครั้ง</button>
-	</div>
+<div class="container">
+<div class="logo">SchoolOrbit</div>
+<div class="icon">📶</div>
+<h1>ไม่มีการเชื่อมต่อ</h1>
+<p>กรุณาตรวจสอบอินเทอร์เน็ต</p>
+<button onclick="window.location.reload()">ลองอีกครั้ง</button>
+</div>
 </body>
 </html>`,
                             {
