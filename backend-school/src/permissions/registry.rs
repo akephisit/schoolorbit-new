@@ -42,6 +42,17 @@ pub mod codes {
     // Feature toggles permissions
     pub const FEATURES_READ_ALL: &str = "features.read.all";
     pub const FEATURES_UPDATE_ALL: &str = "features.update.all";
+
+    // Dashboard permission
+    pub const DASHBOARD: &str = "dashboard";
+
+    // Student permissions
+    pub const STUDENT_READ_OWN: &str = "student.read.own";
+    pub const STUDENT_UPDATE_OWN: &str = "student.update.own";
+    pub const STUDENT_READ_ALL: &str = "student.read.all";
+    pub const STUDENT_CREATE: &str = "student.create";
+    pub const STUDENT_UPDATE_ALL: &str = "student.update.all";
+    pub const STUDENT_DELETE: &str = "student.delete";
 }
 
 /// Complete list of all permissions in the system
@@ -194,5 +205,63 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "update",
         scope: "all",
         description: "แก้ไขการตั้งค่าฟีเจอร์",
+    },
+    // Dashboard permission
+    PermissionDef {
+        code: codes::DASHBOARD,
+        name: "แดชบอร์ด",
+        module: "dashboard",
+        action: "read",
+        scope: "own",
+        description: "ดูหน้าแดชบอร์ด",
+    },
+    // Student permissions
+    PermissionDef {
+        code: codes::STUDENT_READ_OWN,
+        name: "ดูข้อมูลตนเอง",
+        module: "student",
+        action: "read",
+        scope: "own",
+        description: "นักเรียนดูข้อมูลตนเอง",
+    },
+    PermissionDef {
+        code: codes::STUDENT_UPDATE_OWN,
+        name: "แก้ไขข้อมูลตนเอง",
+        module: "student",
+        action: "update",
+        scope: "own",
+        description: "นักเรียนแก้ไขข้อมูลตนเอง (จำกัดฟิลด์)",
+    },
+    PermissionDef {
+        code: codes::STUDENT_READ_ALL,
+        name: "ดูนักเรียนทั้งหมด",
+        module: "student",
+        action: "read",
+        scope: "all",
+        description: "ดูข้อมูลนักเรียนทั้งหมด",
+    },
+    PermissionDef {
+        code: codes::STUDENT_CREATE,
+        name: "เพิ่มนักเรียน",
+        module: "student",
+        action: "create",
+        scope: "all",
+        description: "สร้างนักเรียนใหม่",
+    },
+    PermissionDef {
+        code: codes::STUDENT_UPDATE_ALL,
+        name: "แก้ไขนักเรียน",
+        module: "student",
+        action: "update",
+        scope: "all",
+        description: "แก้ไขข้อมูลนักเรียนทั้งหมด",
+    },
+    PermissionDef {
+        code: codes::STUDENT_DELETE,
+        name: "ลบนักเรียน",
+        module: "student",
+        action: "delete",
+        scope: "all",
+        description: "ลบนักเรียน",
     },
 ];
