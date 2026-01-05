@@ -1,7 +1,17 @@
 /**
  * Staff Dashboard
- * ไม่ต้อง permission - ทุกคนเข้าได้
+ * Main dashboard for staff members (no specific permission required)
  */
+
+export const _meta = {
+    menu: {
+        title: 'แดชบอร์ด',
+        icon: 'LayoutDashboard',
+        group: 'main',
+        order: 1
+        // No permission required - all authenticated staff can access
+    }
+};
 
 export const load = async () => {
     return {

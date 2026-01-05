@@ -1,9 +1,10 @@
 /**
- * Student Dashboard (Student Portal)
+ * Student Dashboard  
+ * Main dashboard for students (no specific permission required)
  */
 
 export const load = async () => {
     return {
-        title: 'แดชบอร์ด - Student Portal'
+        title: 'Student Dashboard'
     };
 };
