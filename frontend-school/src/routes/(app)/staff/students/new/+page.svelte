@@ -75,10 +75,18 @@
 		try {
 			const { confirmPassword, ...payload } = formData;
 
-			const result = await createStudent({
+			// Clean up payload - convert empty strings to undefined for optional fields
+			const cleanedPayload = {
 				...payload,
-				student_number: payload.student_number || undefined
-			});
+				email: payload.email || undefined,
+				date_of_birth: payload.date_of_birth || undefined,
+				grade_level: payload.grade_level || undefined,
+				class_room: payload.class_room || undefined,
+				student_number: payload.student_number || undefined,
+				title: payload.title || undefined
+			};
+
+			const result = await createStudent(cleanedPayload);
 
 			toast.success('เพิ่มนักเรียนสำเร็จ');
 			goto(resolve(`/staff/students/${result.id}/edit`));

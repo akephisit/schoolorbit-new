@@ -81,7 +81,7 @@ pub struct CreateStudentRequest {
     pub grade_level: Option<String>,
     pub class_room: Option<String>,
     pub student_number: Option<i32>,
-    pub date_of_birth: Option<chrono::NaiveDate>,
+    pub date_of_birth: Option<String>, // Changed from NaiveDate to String for flexible parsing
     pub gender: Option<String>,
 }
 
@@ -523,6 +523,8 @@ pub async fn create_student(
     headers: HeaderMap,
     Json(payload): Json<CreateStudentRequest>,
 ) -> Response {
+    // Debug: Log incoming request
+    eprintln!("🔍 Creating student with payload: {:?}", payload);
     let subdomain = match extract_subdomain_from_request(&headers) {
         Ok(s) => s,
         Err(response) => return response,
@@ -591,6 +593,27 @@ pub async fn create_student(
         }
     };
     
+    // Parse date_of_birth if provided
+    let date_of_birth = match &payload.date_of_birth {
+        Some(date_str) if !date_str.is_empty() => {
+            match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                Ok(date) => Some(date),
+                Err(e) => {
+                    eprintln!("❌ Invalid date format: {} (error: {})", date_str, e);
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({
+                            "success": false,
+                            "error": "รูปแบบวันเกิดไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)"
+                        })),
+                    ).into_response();
+                }
+            }
+        }
+        _ => None,
+    };
+    
+    
     // 2. Create user
     let user_id: Uuid = match sqlx::query_scalar(
         r#"
@@ -608,7 +631,7 @@ pub async fn create_student(
     .bind(&payload.first_name)
     .bind(&payload.last_name)
     .bind(&payload.title)
-    .bind(&payload.date_of_birth)
+    .bind(&date_of_birth) // Use parsed date
     .bind(&payload.gender)
     .fetch_one(&mut *tx)
     .await

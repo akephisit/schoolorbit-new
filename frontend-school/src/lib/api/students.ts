@@ -142,8 +142,16 @@ export async function createStudent(data: CreateStudentRequest): Promise<{ succe
     });
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create student');
+        // Try to parse as JSON first
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create student');
+        } else {
+            // If not JSON, use the text response
+            const errorText = await response.text();
+            throw new Error(errorText || `Failed to create student (${response.status})`);
+        }
     }
 
     return await response.json();
