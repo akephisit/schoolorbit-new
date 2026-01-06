@@ -48,6 +48,9 @@
 	// Dialog states
 	let groupDialogOpen = $state(false);
 	let editingGroup = $state<MenuGroup | null>(null);
+	
+	// Filter state
+	let userTypeFilter = $state<'all' | 'staff' | 'student' | 'parent'>('all');
 
 	// Use state instead of derived to allow direct mutation in onDragOver
 	let containers = $state<GroupContainer[]>([]);
@@ -74,6 +77,16 @@
 			loading = false;
 		}
 	}
+	
+	// Filtered containers based on user_type filter
+	const filteredContainers = $derived(
+		userTypeFilter === 'all'
+			? containers
+			: containers.map(container => ({
+				...container,
+				nesteds: container.nesteds.filter(item => item.user_type === userTypeFilter)
+			})).filter(container => container.nesteds.length > 0)
+	);
 
 	// Helper functions
 	function isContainerItem(item: MenuItem | GroupContainer | null): item is GroupContainer {
@@ -218,6 +231,22 @@
 		</div>
 	</div>
 
+	<!-- Filter -->
+	<div class="flex items-center gap-3">
+		<label for="user-type-filter" class="text-sm font-medium">กรองตาม User Type:</label>
+		<select
+			id="user-type-filter"
+			bind:value={userTypeFilter}
+			class="px-3 py-2 border rounded-md bg-background text-sm"
+		>
+			<option value="all">ทั้งหมด</option>
+			<option value="staff">👔 Staff</option>
+			<option value="student">🎓 Student</option>
+			<option value="parent">👨‍👩‍👧 Parent</option>
+		</select>
+	</div>
+
+
 	<!-- Tabs -->
 	<Tabs.Root bind:value={activeTab}>
 		<Tabs.List class="grid w-full grid-cols-2 max-w-md">
@@ -231,7 +260,7 @@
 				<div class="flex justify-center items-center py-20">
 					<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
 				</div>
-			{:else if containers.length === 0}
+			{:else if filteredContainers.length === 0}
 				<Card class="p-12 text-center">
 					<FolderOpen class="h-16 w-16 mx-auto mb-4 opacity-20" />
 					<p class="text-lg">ไม่พบกลุ่มเมนู</p>
@@ -244,10 +273,10 @@
 					onDragEnd={handleDragEnd}
 					onDragOver={handleDragOver}
 				>
-					<SortableContext items={containers.map((c) => c.data.id)}>
+					<SortableContext items={filteredContainers.map((c) => c.data.id)}>
 						<Droppable id="groups-container" data={{ accepts: ['group'] }}>
 							<div class="space-y-6">
-								{#each containers as { data, nesteds } (data.id)}
+								{ #each filteredContainers as { data, nesteds } (data.id)}
 									<MenuGroupContainer
 										{data}
 										type="group"
