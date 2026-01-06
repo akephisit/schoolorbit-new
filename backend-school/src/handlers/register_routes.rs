@@ -116,6 +116,10 @@ pub async fn register_routes(
         // Use provided user_type or default to 'staff'
         // Frontend SHOULD explicitly set user_type in _meta
         let user_type = route.user_type.as_deref().unwrap_or("staff");
+        
+        // Debug logging
+        println!("📝 Syncing: {} -> {} (user_type: {:?} -> {})", 
+            route.title, route.path, route.user_type, user_type);
 
         // UPSERT: Insert new or update existing, preserving display_order and is_active
         let result = sqlx::query(
