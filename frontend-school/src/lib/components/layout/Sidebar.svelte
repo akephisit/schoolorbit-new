@@ -43,9 +43,41 @@
 		uiPreferences.setSidebarCollapsed(isCollapsed);
 	});
 
-	// Check if a route is active (exact match only)
+	// Get all menu paths for finding best match
+	let allMenuPaths = $derived.by(() => {
+		const paths: string[] = [];
+		for (const group of menuGroups) {
+			for (const item of group.items) {
+				paths.push(item.path);
+			}
+		}
+		return paths;
+	});
+
+	// Check if a route is active
+	// Only highlights the BEST matching menu item (longest matching path)
 	function isActive(href: string): boolean {
-		return page.url.pathname === href;
+		const currentPath = page.url.pathname;
+		
+		// Exact match
+		if (currentPath === href) {
+			return true;
+		}
+		
+		// Child route match - but only if no other menu has a better match
+		if (currentPath.startsWith(href + '/')) {
+			// Find if there's a better (longer) match
+			const betterMatch = allMenuPaths.find(menuPath => 
+				menuPath !== href && 
+				menuPath.length > href.length &&
+				(currentPath === menuPath || currentPath.startsWith(menuPath + '/'))
+			);
+			
+			// Only highlight if this is the best match
+			return !betterMatch;
+		}
+		
+		return false;
 	}
 
 	// Handle navigation click on mobile
