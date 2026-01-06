@@ -373,7 +373,7 @@ pub async fn list_menu_items(
     // Fetch all or filtered items
     let all_items = if let Some(group_id) = filter.group_id {
         sqlx::query_as::<_, MenuItem>(
-            "SELECT id, code, name, name_en, path, icon, required_permission, 
+            "SELECT id, code, name, name_en, path, icon, required_permission, user_type, 
                     group_id, parent_id, display_order, is_active
              FROM menu_items
              WHERE group_id = $1
@@ -384,7 +384,7 @@ pub async fn list_menu_items(
         .await
     } else {
         sqlx::query_as::<_, MenuItem>(
-            "SELECT id, code, name, name_en, path, icon, required_permission, 
+            "SELECT id, code, name, name_en, path, icon, required_permission, user_type, 
                     group_id, parent_id, display_order, is_active
              FROM menu_items
              ORDER BY group_id, display_order, name"
@@ -525,7 +525,7 @@ pub async fn update_menu_item(
 
     // First, fetch existing item to check its module
     let existing_item = match sqlx::query_as::<_, MenuItem>(
-        "SELECT id, code, name, name_en, path, icon, required_permission, 
+        "SELECT id, code, name, name_en, path, icon, required_permission, user_type, 
                 group_id, parent_id, display_order, is_active
          FROM menu_items WHERE id = $1"
     )
@@ -625,7 +625,7 @@ pub async fn delete_menu_item(
 
     // First, fetch the item to check its module
     let existing_item = match sqlx::query_as::<_, MenuItem>(
-        "SELECT id, code, name, name_en, path, icon, required_permission, 
+        "SELECT id, code, name, name_en, path, icon, required_permission, user_type, 
                 group_id, parent_id, display_order, is_active
          FROM menu_items WHERE id = $1"
     )
@@ -682,7 +682,7 @@ pub async fn reorder_menu_items(
     for item in &data.items {
         // Fetch item to check permission
         let existing_item = match sqlx::query_as::<_, MenuItem>(
-            "SELECT id, code, name, name_en, path, icon, required_permission, 
+            "SELECT id, code, name, name_en, path, icon, required_permission, user_type, 
                     group_id, parent_id, display_order, is_active
              FROM menu_items WHERE id = $1"
         )
