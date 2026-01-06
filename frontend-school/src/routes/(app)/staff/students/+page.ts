@@ -8,6 +8,7 @@ export const _meta = {
         icon: 'GraduationCap',
         group: 'main',
         order: 20,
+        user_type: 'staff',
         permission: 'student.read.all'
     }
 };

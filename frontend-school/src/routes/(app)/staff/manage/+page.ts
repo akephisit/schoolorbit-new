@@ -8,6 +8,7 @@ export const _meta = {
 		icon: 'Users',
 		group: 'main',
 		order: 10,
+		user_type: 'staff',
 		permission: 'staff'
 	}
 };

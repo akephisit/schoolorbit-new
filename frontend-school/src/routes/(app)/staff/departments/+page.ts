@@ -8,6 +8,7 @@ export const _meta = {
 		icon: 'Building2',
 		group: 'settings',
 		order: 1002,
+        user_type: 'staff',
 		permission: 'departments'
 	}
 };
