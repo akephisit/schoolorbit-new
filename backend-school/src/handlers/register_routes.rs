@@ -1,4 +1,4 @@
-use crate::models::menu::{RouteRegistration, RouteItem, RouteRegistrationResponse};
+use crate::models::menu::{RouteRegistration, RouteRegistrationResponse};
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
@@ -101,7 +101,7 @@ pub async fn register_routes(
     println!("🔄 Syncing menu items (preserving user customizations)...");
     
     let mut registered_count = 0;
-    let mut updated_count = 0;
+    let _updated_count = 0;
     let total_routes = data.routes.len();
     
     // Collect all active codes for cleanup phase

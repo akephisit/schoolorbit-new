@@ -1,4 +1,3 @@
-use crate::models::auth::Claims;
 use crate::utils::jwt::JwtService;
 use axum::{
     extract::Request,

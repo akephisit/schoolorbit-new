@@ -137,7 +137,7 @@ pub async fn get_user_menu(
     };
 
     // Query menu items with groups - filter by user_type
-    let user_type = user.user_type.as_deref().unwrap_or("staff");
+    let user_type = user.user_type.as_str();
     let menu_rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, String, String, Option<String>, i32, i32)> = 
         match sqlx::query_as(
             r#"
