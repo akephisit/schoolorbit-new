@@ -21,7 +21,32 @@
 		try {
 			menuLoading = true;
 			const response = await getUserMenu();
-			menuGroups = response.groups;
+			
+			// Filter menus based on user_type
+			const user = $authStore.user;
+			const userType = user?.user_type;
+			
+			// Filter menu items by path prefix matching user type
+			const filteredGroups = response.groups.map(group => ({
+				...group,
+				items: group.items.filter(item => {
+					if (!userType) return true; // Show all if no user_type
+					
+					// Student: only show /student/* routes
+					if (userType === 'student') {
+						return item.path.startsWith('/student');
+					}
+					
+					// Staff: only show /staff/* routes
+					if (userType === 'staff') {
+						return item.path.startsWith('/staff');
+					}
+					
+					return true; // Show all for unknown types
+				})
+			})).filter(group => group.items.length > 0); // Remove empty groups
+			
+			menuGroups = filteredGroups;
 		} catch (error) {
 			console.error('Failed to load menu:', error);
 			menuGroups = [];
