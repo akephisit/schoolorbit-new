@@ -11,6 +11,7 @@ export interface RouteMetadata {
 	group: string;
 	order: number;
 	permission?: string;
+	user_type?: string;
 }
 
 /**
@@ -35,7 +36,8 @@ export async function scanRoutes(): Promise<RouteMetadata[]> {
 				icon: (meta.menu as any).icon,
 				group: (meta.menu as any).group,
 				order: (meta.menu as any).order ?? 999,
-				permission: (meta.menu as any).permission
+				permission: (meta.menu as any).permission,
+				user_type: (meta.menu as any).user_type
 			});
 		}
 	}
