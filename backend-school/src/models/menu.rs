@@ -24,6 +24,7 @@ pub struct MenuItem {
     pub path: String,
     pub icon: Option<String>,
     pub required_permission: Option<String>,
+    pub user_type: String, // 'staff', 'student', or 'all'
     pub group_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,
     pub display_order: i32,
@@ -98,6 +99,7 @@ pub struct RouteItem {
     pub group: String,  // group code
     pub order: i32,
     pub permission: Option<String>,  // module name
+    pub user_type: Option<String>,  // 'staff', 'student', or 'all' - defaults to 'staff'
 }
 
 /// Response for route registration

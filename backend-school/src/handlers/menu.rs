@@ -136,7 +136,8 @@ pub async fn get_user_menu(
         }
     };
 
-    // Query menu items with groups
+    // Query menu items with groups - filter by user_type
+    let user_type = user.user_type.as_deref().unwrap_or("staff");
     let menu_rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, String, String, Option<String>, i32, i32)> = 
         match sqlx::query_as(
             r#"
@@ -154,10 +155,13 @@ pub async fn get_user_menu(
                 mi.display_order
             FROM menu_items mi
             JOIN menu_groups mg ON mi.group_id = mg.id
-            WHERE mi.is_active = true AND mg.is_active = true
+            WHERE mi.is_active = true 
+              AND mg.is_active = true
+              AND (mi.user_type = $1 OR mi.user_type = 'all')
             ORDER BY mg.display_order, mi.display_order
             "#
         )
+        .bind(user_type)
         .fetch_all(&pool)
         .await
     {
