@@ -67,6 +67,11 @@
 					{#if item.required_permission}
 						<Badge variant="secondary" class="text-xs">{item.required_permission}</Badge>
 					{/if}
+					{#if item.user_type}
+						<Badge variant={item.user_type === 'staff' ? 'default' : item.user_type === 'student' ? 'outline' : 'secondary'} class="text-xs">
+							{item.user_type === 'staff' ? '👔 Staff' : item.user_type === 'student' ? '🎓 Student' : '👨‍👩‍👧 Parent'}
+						</Badge>
+					{/if}
 				</div>
 			</div>
 
