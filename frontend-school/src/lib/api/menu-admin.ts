@@ -25,6 +25,7 @@ export interface MenuItem {
 	path: string;
 	icon: string | null;
 	required_permission: string | null; // Module name
+	user_type: string; // 'staff' | 'student' | 'parent'
 	group_id: string;
 	parent_id: string | null;
 	display_order: number;

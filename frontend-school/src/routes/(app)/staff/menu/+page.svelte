@@ -276,7 +276,7 @@
 					<SortableContext items={filteredContainers.map((c) => c.data.id)}>
 						<Droppable id="groups-container" data={{ accepts: ['group'] }}>
 							<div class="space-y-6">
-								{ #each filteredContainers as { data, nesteds } (data.id)}
+								{#each filteredContainers as { data, nesteds } (data.id)}
 									<MenuGroupContainer
 										{data}
 										type="group"
