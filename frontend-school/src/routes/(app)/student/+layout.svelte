@@ -40,7 +40,7 @@
 </script>
 
 {#if loading}
-	<div class="fixed inset-0 bg-background flex items-center justify-center">
+	<div class="fixed inset-0 bg-background flex items-center justify-center z-50">
 		<div class="text-center">
 			<div
 				class="w-16 h-16 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4 animate-pulse"
