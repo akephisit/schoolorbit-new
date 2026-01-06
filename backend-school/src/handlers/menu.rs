@@ -200,6 +200,11 @@ fn user_has_module_permission(user_permissions: &[String], module: &str) -> bool
         return true;
     }
     
+    // Check for exact permission match
+    if user_permissions.contains(&module.to_string()) {
+        return true;
+    }
+    
     // Check for module-specific permissions
     let prefix = format!("{}.", module);
     user_permissions.iter().any(|perm| perm.starts_with(&prefix))
