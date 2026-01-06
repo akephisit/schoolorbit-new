@@ -108,8 +108,11 @@ pub async fn register_routes(
     let mut active_codes: Vec<String> = Vec::new();
     
     for route in &data.routes {
-        // Generate code from title (slugify)
-        let code = slugify(&route.title);
+        // Generate code from path (unique) instead of title (can duplicate)
+        // Example: /staff → "staff", /staff/students -> "staff-students"
+        let code = route.path
+            .trim_start_matches('/')
+            .replace('/', "-");
         active_codes.push(code.clone());
         
         
