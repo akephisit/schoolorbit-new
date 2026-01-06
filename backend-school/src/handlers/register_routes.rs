@@ -113,16 +113,9 @@ pub async fn register_routes(
         active_codes.push(code.clone());
         
         
-        // Determine user_type from path or use provided value
-        let user_type = route.user_type.as_deref().or_else(|| {
-            if route.path.starts_with("/student") {
-                Some("student")
-            } else if route.path.starts_with("/parent") {
-                Some("parent")
-            } else {
-                Some("staff")
-            }
-        }).unwrap();
+        // Use provided user_type or default to 'staff'
+        // Frontend SHOULD explicitly set user_type in _meta
+        let user_type = route.user_type.as_deref().unwrap_or("staff");
 
         // UPSERT: Insert new or update existing, preserving display_order and is_active
         let result = sqlx::query(
