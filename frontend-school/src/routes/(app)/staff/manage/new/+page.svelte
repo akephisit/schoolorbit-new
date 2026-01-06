@@ -288,7 +288,7 @@
 				// Clear draft
 				localStorage.removeItem('staff-create-draft');
 				// Redirect to profile
-				await goto(`/staff/${result.data.id}`, { invalidateAll: true });
+				await goto('/staff/manage', { invalidateAll: true });
 			} else {
 				errors.submit = result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
 			}
