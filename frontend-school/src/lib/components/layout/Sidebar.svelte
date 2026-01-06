@@ -42,6 +42,11 @@
 						return item.path.startsWith('/staff');
 					}
 					
+					// Parent: only show /parent/* routes
+					if (userType === 'parent') {
+						return item.path.startsWith('/parent');
+					}
+					
 					return true; // Show all for unknown types
 				})
 			})).filter(group => group.items.length > 0); // Remove empty groups
