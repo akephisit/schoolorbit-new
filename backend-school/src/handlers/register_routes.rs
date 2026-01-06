@@ -112,18 +112,30 @@ pub async fn register_routes(
         let code = slugify(&route.title);
         active_codes.push(code.clone());
         
+        
+        // Determine user_type from path or use provided value
+        let user_type = route.user_type.as_deref().or_else(|| {
+            if route.path.starts_with("/student") {
+                Some("student")
+            } else if route.path.starts_with("/parent") {
+                Some("parent")
+            } else {
+                Some("staff")
+            }
+        }).unwrap();
+
         // UPSERT: Insert new or update existing, preserving display_order and is_active
         let result = sqlx::query(
             r#"
             INSERT INTO menu_items (
                 id, code, name, name_en, path, icon, 
-                required_permission, group_id, display_order, is_active
+                required_permission, user_type, group_id, display_order, is_active
             )
             VALUES (
                 gen_random_uuid(),
-                $1, $2, NULL, $3, $4, $5,
-                (SELECT id FROM menu_groups WHERE code = $6),
-                $7,
+                $1, $2, NULL, $3, $4, $5, $6,
+                (SELECT id FROM menu_groups WHERE code = $7),
+                $8,
                 true
             )
             ON CONFLICT (code) DO UPDATE SET
@@ -131,6 +143,7 @@ pub async fn register_routes(
                 path = EXCLUDED.path,
                 icon = EXCLUDED.icon,
                 required_permission = EXCLUDED.required_permission,
+                user_type = EXCLUDED.user_type,
                 -- Preserve existing group_id (user may have moved items manually):
                 group_id = COALESCE(menu_items.group_id, EXCLUDED.group_id),
                 -- Preserve user customizations:
@@ -143,6 +156,7 @@ pub async fn register_routes(
         .bind(&route.path)
         .bind(&route.icon)
         .bind(&route.permission)
+        .bind(user_type)
         .bind(&route.group)
         .bind(route.order)
         .execute(&pool)
