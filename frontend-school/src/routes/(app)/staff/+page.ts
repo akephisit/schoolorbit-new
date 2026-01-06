@@ -8,7 +8,8 @@ export const _meta = {
         title: 'แดชบอร์ด',
         icon: 'LayoutDashboard',
         group: 'main',
-        order: 1
+        order: 1,
+        user_type: 'staff'
         // No permission required - all authenticated staff can access
     }
 };
