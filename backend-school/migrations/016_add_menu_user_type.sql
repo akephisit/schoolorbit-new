@@ -1,5 +1,5 @@
 -- Migration: Add user_type column to menus table
--- This allows filtering menus by user type (staff, student, parent, or all)
+-- This allows filtering menus by user type (staff, student, parent)
 
 -- Add user_type column
 ALTER TABLE menus
@@ -8,7 +8,7 @@ ADD COLUMN user_type VARCHAR(20) NOT NULL DEFAULT 'staff';
 -- Add check constraint to ensure valid values
 ALTER TABLE menus
 ADD CONSTRAINT menus_user_type_check 
-CHECK (user_type IN ('staff', 'student', 'parent', 'all'));
+CHECK (user_type IN ('staff', 'student', 'parent'));
 
 -- Update existing menus based on their path
 -- Student menus
@@ -30,4 +30,4 @@ WHERE path NOT LIKE '/student%' AND path NOT LIKE '/parent%';
 CREATE INDEX idx_menus_user_type ON menus(user_type);
 
 -- Comments
-COMMENT ON COLUMN menus.user_type IS 'Type of user who can see this menu: staff, student, parent, or all';
+COMMENT ON COLUMN menus.user_type IS 'Type of user who can see this menu: staff, student, or parent';

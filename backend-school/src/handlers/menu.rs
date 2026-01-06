@@ -157,7 +157,7 @@ pub async fn get_user_menu(
             JOIN menu_groups mg ON mi.group_id = mg.id
             WHERE mi.is_active = true 
               AND mg.is_active = true
-              AND (mi.user_type = $1 OR mi.user_type = 'all')
+              AND mi.user_type = $1
             ORDER BY mg.display_order, mi.display_order
             "#
         )
