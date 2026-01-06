@@ -43,9 +43,9 @@
 		uiPreferences.setSidebarCollapsed(isCollapsed);
 	});
 
-	// Check if a route is active
+	// Check if a route is active (exact match only)
 	function isActive(href: string): boolean {
-		return page.url.pathname.startsWith(href);
+		return page.url.pathname === href;
 	}
 
 	// Handle navigation click on mobile
