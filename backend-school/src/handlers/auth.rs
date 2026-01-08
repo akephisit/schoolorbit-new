@@ -70,9 +70,55 @@ pub async fn login(
         }
     };
 
-    // Fetch user from database
+    // Set encryption key in session for encrypted field operations
+    let encryption_key = match crate::utils::encryption::get_encryption_key() {
+        Ok(key) => key,
+        Err(e) => {
+            eprintln!("❌ Encryption key not set: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "error": "ระบบไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Set encryption key for this session
+    if let Err(e) = sqlx::query(&format!("SET LOCAL app.encryption_key = '{}'", encryption_key))
+        .execute(&pool)
+        .await
+    {
+        eprintln!("❌ Failed to set encryption key: {}", e);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "success": false,
+                "error": "เกิดข้อผิดพลาดในระบบรักษาความปลอดภัย"
+            })),
+        )
+            .into_response();
+    }
+
+    // Fetch user from database (with encrypted national_id decryption)
     let user = match sqlx::query_as::<_, User>(
-        "SELECT * FROM users WHERE national_id = $1 AND status = 'active'"
+        "SELECT 
+            id,
+            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            first_name,
+            last_name,
+            email,
+            phone,
+            user_type,
+            password_hash,
+            status,
+            created_at,
+            updated_at
+         FROM users 
+         WHERE pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) = $1 
+         AND status = 'active'"
     )
     .bind(&payload.national_id)
     .fetch_optional(&pool)

@@ -11,6 +11,20 @@ pub fn get_encryption_key() -> Result<String, String> {
         .map_err(|_| "ENCRYPTION_KEY environment variable not set".to_string())
 }
 
+/// Setup encryption key in database session
+///
+/// This must be called before any encrypted column operations
+pub async fn setup_encryption_key(pool: &sqlx::PgPool) -> Result<(), String> {
+    let key = get_encryption_key()?;
+    
+    sqlx::query(&format!("SET LOCAL app.encryption_key = '{}'", key))
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to set encryption key: {}", e))?;
+    
+    Ok(())
+}
+
 /// Encrypt sensitive text data
 /// 
 /// Uses PostgreSQL pgcrypto (pgp_sym_encrypt) for AES-256 encryption
