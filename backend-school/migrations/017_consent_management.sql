@@ -54,8 +54,9 @@ CREATE INDEX idx_consent_user_id ON consent_records(user_id);
 CREATE INDEX idx_consent_type ON consent_records(consent_type);
 CREATE INDEX idx_consent_status ON consent_records(consent_status);
 CREATE INDEX idx_consent_user_type ON consent_records(user_id, consent_type);
-CREATE INDEX idx_consent_active ON consent_records(user_id, consent_type, consent_status) 
-    WHERE consent_status = 'granted' AND (expires_at IS NULL OR expires_at > NOW());
+-- Removed partial index with NOW() as it's not IMMUTABLE
+-- Application layer should filter expired consents
+CREATE INDEX idx_consent_expires ON consent_records(expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX idx_consent_parent ON consent_records(parent_guardian_id) WHERE parent_guardian_id IS NOT NULL;
 
 COMMENT ON TABLE consent_records IS 'บันทึกความยินยอมในการเก็บและใช้ข้อมูลส่วนบุคคล (PDPA Compliance - มาตรา 19)';
