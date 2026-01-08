@@ -131,7 +131,8 @@
 			const [rolesRes, deptsRes] = await Promise.all([listRoles(), listDepartments()]);
 
 			if (rolesRes.success && rolesRes.data) {
-				roles = rolesRes.data;
+				// Filter to show only staff roles
+				roles = rolesRes.data.filter((role) => role.user_type === 'staff');
 			}
 			if (deptsRes.success && deptsRes.data) {
 				departments = deptsRes.data;
