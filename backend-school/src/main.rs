@@ -208,7 +208,7 @@ async fn main() {
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/consent", post(handlers::consent::create_consent)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/consent/:id/withdraw", post(handlers::consent::withdraw_consent)
+        .route("/api/consent/{id}/withdraw", post(handlers::consent::withdraw_consent)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/consent/summary", get(handlers::consent::get_consent_summary)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
