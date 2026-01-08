@@ -27,6 +27,17 @@
 		// Use primaryRoleName from backend (from roles table)
 		return user.primaryRoleName || 'ผู้ใช้งาน';
 	}
+
+	// Get profile and settings URLs based on user type
+	function getProfileUrl(): string {
+		if (!user) return resolve('/staff/profile');
+		return user.user_type === 'student' ? resolve('/student/profile') : resolve('/staff/profile');
+	}
+
+	function getSettingsUrl(): string {
+		if (!user) return resolve('/staff/settings');
+		return user.user_type === 'student' ? resolve('/student/settings') : resolve('/staff/settings');
+	}
 </script>
 
 {#if isLoading}
@@ -72,12 +83,12 @@
 
 			<!-- Menu Items -->
 			<DropdownMenu.Group>
-				<DropdownMenu.Item class="cursor-pointer" onclick={() => goto(resolve('/staff/profile'))}>
+				<DropdownMenu.Item class="cursor-pointer" onclick={() => goto(getProfileUrl())}>
 					<UserCircle class="w-4 h-4 mr-2" />
 					<span>โปรไฟล์ของฉัน</span>
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item class="cursor-pointer" onclick={() => goto(resolve('/staff/settings'))}>
+				<DropdownMenu.Item class="cursor-pointer" onclick={() => goto(getSettingsUrl())}>
 					<Settings class="w-4 h-4 mr-2" />
 					<span>การตั้งค่า</span>
 				</DropdownMenu.Item>
