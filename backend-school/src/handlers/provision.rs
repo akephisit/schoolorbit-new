@@ -97,6 +97,17 @@ pub async fn provision_tenant(
         }
     };
 
+    // Setup encryption key for encrypted columns
+    println!("🔐 Setting up encryption...");
+    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
+        eprintln!("❌ Encryption setup failed: {}", e);
+        let error = serde_json::json!({
+            "success": false,
+            "error": format!("Encryption setup failed: {}", e)
+        });
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+    }
+
     // Create admin user
     println!("👤 Creating admin user...");
     
@@ -113,11 +124,14 @@ pub async fn provision_tenant(
         }
     };
 
-    // Insert admin user into the database using user_type instead of role
+    // Insert admin user into the database with encrypted national_id
     let user_id = match sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
         INSERT INTO users (national_id, password_hash, first_name, last_name, user_type, status)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES (
+            pgp_sym_encrypt($1, current_setting('app.encryption_key')),
+            $2, $3, $4, $5, $6
+        )
         ON CONFLICT (national_id) DO UPDATE SET national_id = EXCLUDED.national_id
         RETURNING id
         "#
@@ -134,7 +148,7 @@ pub async fn provision_tenant(
         Ok(id) => {
             println!("✅ Admin user created successfully");
             println!("   User ID: {}", id);
-            println!("   National ID: {}", payload.admin_national_id);
+            println!("   National ID: {} (encrypted)", payload.admin_national_id);
             id
         }
         Err(e) => {
