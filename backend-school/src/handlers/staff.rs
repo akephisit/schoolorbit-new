@@ -49,7 +49,7 @@ struct RoleRow {
     code: String,
     name: String,
     name_en: Option<String>,
-    category: String,
+    user_type: String, // Changed from category to user_type
     level: i32,
     is_primary: bool,
 }
@@ -416,7 +416,7 @@ pub async fn get_staff_profile(
 
     // Get roles
     let roles = sqlx::query_as::<_, RoleRow>(
-        "SELECT r.id, r.code, r.name, r.name_en, r.category, r.level, ur.is_primary
+        "SELECT r.id, r.code, r.name, r.name_en, r.user_type, r.level, ur.is_primary
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
          WHERE ur.user_id = $1 AND ur.ended_at IS NULL
@@ -432,7 +432,7 @@ pub async fn get_staff_profile(
         code: row.code,
         name: row.name,
         name_en: row.name_en,
-        category: row.category,
+        user_type: row.user_type,
         level: row.level,
         is_primary: Some(row.is_primary),
     })
@@ -791,6 +791,44 @@ pub async fn create_staff(
         };
     }
 
+
+
+    // ===================================================================
+    // Validate: All roles must have user_type = 'staff'
+    // ===================================================================
+    if !payload.role_ids.is_empty() {
+        let invalid_roles: Vec<String> = sqlx::query_as::<_, (String,)>(
+            "SELECT code FROM roles 
+             WHERE id = ANY($1) 
+               AND (user_type != 'staff' OR is_active = false)"
+        )
+        .bind(&payload.role_ids)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(code,)| code)
+        .collect();
+
+        if !invalid_roles.is_empty() {
+            eprintln!(
+                "❌ Role validation failed for staff: invalid roles = {:?}",
+                invalid_roles
+            );
+            let _ = tx.rollback().await;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false,
+                    "error": format!(
+                        "บทบาทต่อไปนี้ไม่สามารถใช้กับบุคลากรได้: {}",
+                        invalid_roles.join(", ")
+                    )
+                })),
+            )
+                .into_response();
+        }
+    }
 
     // Assign roles
     for role_id in &payload.role_ids {

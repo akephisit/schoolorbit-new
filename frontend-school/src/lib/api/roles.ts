@@ -9,7 +9,7 @@ export interface Role {
 	name: string;
 	name_en?: string;
 	description?: string;
-	category?: string;
+	user_type: string; // Changed from category to user_type
 	level: number;
 	permissions: string[];
 	is_active: boolean;
@@ -60,7 +60,7 @@ export const roleAPI = {
 		name: string;
 		name_en?: string;
 		description?: string;
-		category?: string;
+		user_type: string; // Changed from category to user_type
 		level?: number;
 		permissions?: string[];
 	}): Promise<ApiResponse<{ id: string }>> {
@@ -74,7 +74,7 @@ export const roleAPI = {
 			name?: string;
 			name_en?: string;
 			description?: string;
-			category?: string;
+			user_type?: string; // Changed from category to user_type
 			level?: number;
 			permissions?: string[];
 			is_active?: boolean;

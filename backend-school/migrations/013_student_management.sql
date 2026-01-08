@@ -7,12 +7,12 @@
 -- ===================================================================
 -- 1. Insert STUDENT Role
 -- ===================================================================
-INSERT INTO roles (code, name, name_en, category, level, permissions) VALUES
+INSERT INTO roles (code, name, name_en, user_type, level, permissions) VALUES
 (
     'STUDENT',
     'นักเรียน',
     'Student',
-    'student',
+    'student', -- user_type is student
     1,
     ARRAY[
         'dashboard',
@@ -24,7 +24,7 @@ ON CONFLICT (code) DO UPDATE SET
     permissions = EXCLUDED.permissions,
     name = EXCLUDED.name,
     name_en = EXCLUDED.name_en,
-    category = EXCLUDED.category,
+    user_type = EXCLUDED.user_type,
     level = EXCLUDED.level;
 
 COMMENT ON COLUMN roles.permissions IS 'Permission codes (auto-synced from registry.rs)';
@@ -32,12 +32,12 @@ COMMENT ON COLUMN roles.permissions IS 'Permission codes (auto-synced from regis
 -- ===================================================================
 -- 2. Insert STUDENT_MANAGER Role (สำหรับครู/Admin ที่จัดการนักเรียน)
 -- ===================================================================
-INSERT INTO roles (code, name, name_en, category, level, permissions) VALUES
+INSERT INTO roles (code, name, name_en, user_type, level, permissions) VALUES
 (
     'STUDENT_MANAGER',
     'ผู้จัดการนักเรียน',
     'Student Manager',
-    'administrative',
+    'staff', -- user_type is staff (this role is for staff who manage students)
     50,
     ARRAY[
         'dashboard',
@@ -50,7 +50,7 @@ ON CONFLICT (code) DO UPDATE SET
     permissions = EXCLUDED.permissions,
     name = EXCLUDED.name,
     name_en = EXCLUDED.name_en,
-    category = EXCLUDED.category,
+    user_type = EXCLUDED.user_type,
     level = EXCLUDED.level;
 
 -- ===================================================================
@@ -83,7 +83,7 @@ COMMENT ON COLUMN student_info.class_room IS 'ห้อง (เช่น 1, 2, 3
 SELECT 
     code,
     name,
-    category,
+    user_type,
     level,
     array_length(permissions, 1) as permission_count
 FROM roles

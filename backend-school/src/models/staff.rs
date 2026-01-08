@@ -79,7 +79,7 @@ pub struct Role {
     pub name: String,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    pub category: String,
+    pub user_type: String, // Changed from category to user_type
     pub level: i32,
     pub permissions: Vec<String>, // Changed from serde_json::Value to Vec<String>
     pub is_active: bool,
@@ -93,7 +93,7 @@ pub struct CreateRoleRequest {
     pub name: String,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    pub category: String,
+    pub user_type: String, // Changed from category to user_type
     pub level: Option<i32>,
     pub permissions: Option<Vec<String>>,
 }
@@ -103,7 +103,7 @@ pub struct UpdateRoleRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    pub category: Option<String>,
+    pub user_type: Option<String>, // Changed from category to user_type
     pub level: Option<i32>,
     pub permissions: Option<Vec<String>>,
     pub is_active: Option<bool>,
@@ -312,7 +312,7 @@ pub struct RoleResponse {
     pub code: String,
     pub name: String,
     pub name_en: Option<String>,
-    pub category: String,
+    pub user_type: String, // Changed from category to user_type
     pub level: i32,
     pub is_primary: Option<bool>,
 }

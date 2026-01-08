@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS roles (
     name_en VARCHAR(100),
     description TEXT,
     
-    -- Role Category
-    category VARCHAR(50) NOT NULL,
+    -- User Type (staff, student, parent)
+    user_type VARCHAR(20) NOT NULL DEFAULT 'staff',
     
     -- Priority/Level for approvals
     level INTEGER DEFAULT 0,
@@ -71,14 +71,18 @@ CREATE TABLE IF NOT EXISTS roles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_roles_code ON roles(code);
-CREATE INDEX IF NOT EXISTS idx_roles_category ON roles(category);
+CREATE INDEX IF NOT EXISTS idx_roles_user_type ON roles(user_type);
 CREATE INDEX IF NOT EXISTS idx_roles_is_active ON roles(is_active);
 CREATE INDEX IF NOT EXISTS idx_roles_level ON roles(level);
 CREATE INDEX IF NOT EXISTS idx_roles_permissions ON roles USING GIN(permissions);
 
+-- Add check constraint for user_type
+ALTER TABLE roles 
+    ADD CONSTRAINT roles_user_type_check 
+    CHECK (user_type IN ('staff', 'student', 'parent'));
 
 COMMENT ON TABLE roles IS 'บทบาท/ตำแหน่งในระบบ';
-COMMENT ON COLUMN roles.category IS 'หมวดหมู่: administrative, teaching, operational, support';
+COMMENT ON COLUMN roles.user_type IS 'ประเภทผู้ใช้: staff, student, parent';
 COMMENT ON COLUMN roles.level IS 'ระดับอำนาจ (ยิ่งสูงยิ่งมีอำนาจมาก)';
 COMMENT ON COLUMN roles.permissions IS 'สิทธิ์การใช้งาน (JSON array of permission codes)';
 
@@ -375,14 +379,14 @@ COMMENT ON TABLE permissions IS 'สิทธิ์การใช้งาน�
 -- ===================================================================
 -- Create role templates without permissions
 -- Admin will assign permissions through the UI
-INSERT INTO roles (code, name, name_en, description, category, level, permissions) VALUES
-    ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'teaching', 10, ARRAY[]::TEXT[]),
-    ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'administrative', 50, ARRAY[]::TEXT[]),
-    ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'administrative', 80, ARRAY[]::TEXT[]),
-    ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'administrative', 100, ARRAY[]::TEXT[]),
-    ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'operational', 20, ARRAY[]::TEXT[]),
-    ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'operational', 15, ARRAY[]::TEXT[]),
-    ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'ผู้ดูแลระบบทั้งหมด', 'administrative', 999, ARRAY[]::TEXT[])
+INSERT INTO roles (code, name, name_en, description, user_type, level, permissions) VALUES
+    ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'staff', 10, ARRAY[]::TEXT[]),
+    ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'staff', 50, ARRAY[]::TEXT[]),
+    ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'staff', 80, ARRAY[]::TEXT[]),
+    ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'staff', 100, ARRAY[]::TEXT[]),
+    ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'staff', 20, ARRAY[]::TEXT[]),
+    ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'staff', 15, ARRAY[]::TEXT[]),
+    ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'ผู้ดูแลระบบทั้งหมด', 'staff', 999, ARRAY[]::TEXT[])
 ON CONFLICT (code) DO NOTHING;
 
 -- Note: ADMIN role will be updated by migration 015 to have wildcard (*) permission

@@ -206,7 +206,7 @@
 										{/if}
 									</div>
 									<p class="text-xs text-muted-foreground mt-1">
-										{role.category} • ระดับ {role.level}
+										{role.user_type} • ระดับ {role.level}
 									</p>
 								</div>
 							{/each}

@@ -654,7 +654,7 @@
 										</div>
 									</div>
 									<div class="flex items-center gap-2 text-xs">
-										<span class="px-2 py-0.5 bg-muted rounded">{role.category}</span>
+										<span class="px-2 py-0.5 bg-muted rounded">{role.user_type}</span>
 										<span class="text-muted-foreground">ระดับ {role.level}</span>
 									</div>
 								</Button>

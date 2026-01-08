@@ -235,7 +235,7 @@ pub async fn create_role(
     let permissions = payload.permissions.unwrap_or_default();
 
     let role_id: Uuid = match sqlx::query_scalar(
-        "INSERT INTO roles (code, name, name_en, description, category, level, permissions)
+        "INSERT INTO roles (code, name, name_en, description, user_type, level, permissions)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id",
     )
@@ -243,7 +243,7 @@ pub async fn create_role(
     .bind(&payload.name)
     .bind(&payload.name_en)
     .bind(&payload.description)
-    .bind(&payload.category)
+    .bind(&payload.user_type)
     .bind(payload.level.unwrap_or(0))
     .bind(&permissions)
     .fetch_one(&pool)
@@ -336,7 +336,7 @@ pub async fn update_role(
             name = COALESCE($2, name),
             name_en = COALESCE($3, name_en),
             description = COALESCE($4, description),
-            category = COALESCE($5, category),
+            user_type = COALESCE($5, user_type),
             level = COALESCE($6, level),
             permissions = COALESCE($7, permissions),
             is_active = COALESCE($8, is_active),
@@ -347,7 +347,7 @@ pub async fn update_role(
     .bind(&payload.name)
     .bind(&payload.name_en)
     .bind(&payload.description)
-    .bind(&payload.category)
+    .bind(&payload.user_type)
     .bind(&payload.level)
     .bind(&permissions)
     .bind(&payload.is_active)

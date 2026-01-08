@@ -150,6 +150,107 @@ pub async fn assign_user_role(
         Err(response) => return response,
     };
 
+    // ===================================================================
+    // Validate: Role user_type must match User user_type
+    // ===================================================================
+    
+    // Get user's user_type
+    let user_type: Option<String> = match sqlx::query_scalar(
+        "SELECT user_type FROM users WHERE id = $1"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(ut) => ut,
+        Err(e) => {
+            eprintln!("❌ Failed to fetch user: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่สามารถตรวจสอบข้อมูลผู้ใช้ได้"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let user_type = match user_type {
+        Some(ut) => ut,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่พบผู้ใช้"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Get role's user_type
+    let role_user_type: Option<String> = match sqlx::query_scalar(
+        "SELECT user_type FROM roles WHERE id = $1 AND is_active = true"
+    )
+    .bind(&payload.role_id)
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(rut) => rut,
+        Err(e) => {
+            eprintln!("❌ Failed to fetch role: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่สามารถตรวจสอบข้อมูลบทบาทได้"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let role_user_type = match role_user_type {
+        Some(rut) => rut,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่พบบทบาทหรือบทบาทไม่ active"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Validate: user_type must match
+    if user_type != role_user_type {
+        eprintln!(
+            "❌ Role assignment validation failed: user_type '{}' != role.user_type '{}'",
+            user_type, role_user_type
+        );
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "error": format!(
+                    "ไม่สามารถมอบหมายบทบาทนี้ได้: บทบาทนี้สำหรับ {} เท่านั้น",
+                    match role_user_type.as_str() {
+                        "staff" => "บุคลากร",
+                        "student" => "นักเรียน",
+                        "parent" => "ผู้ปกครอง",
+                        _ => "ผู้ใช้อื่น"
+                    }
+                )
+            })),
+        )
+            .into_response();
+    }
+
+
     let user_role_id: Uuid = match sqlx::query_scalar(
         "INSERT INTO user_roles (user_id, role_id, is_primary, started_at, notes)
          VALUES ($1, $2, $3, $4, $5)

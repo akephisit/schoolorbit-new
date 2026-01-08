@@ -45,7 +45,7 @@
 		name: '',
 		name_en: '',
 		description: '',
-		category: 'academic',
+		user_type: 'staff', // Changed from category to user_type
 		level: 10,
 		permissions: [],
 		is_active: true
@@ -146,7 +146,7 @@
 				name: role.name!,
 				name_en: role.name_en,
 				description: role.description,
-				category: role.category,
+				user_type: role.user_type!, // Changed from category to user_type
 				level: role.level,
 				permissions: Array.from(selectedPermissions),
 				is_active: role.is_active
@@ -286,15 +286,16 @@
 					</div>
 
 					<div class="space-y-2">
-						<Label for="category">ประเภท</Label>
+						<Label for="user_type">ประเภทผู้ใช้ *</Label>
 						<select
-							id="category"
-							bind:value={role.category}
+							id="user_type"
+							bind:value={role.user_type}
 							class="w-full px-3 py-2 border rounded-md"
+							required
 						>
-							<option value="administrative">บริหาร (Administrative)</option>
-							<option value="academic">วิชาการ (Academic)</option>
-							<option value="support">สนับสนุน (Support)</option>
+							<option value="staff">บุคลากร (Staff)</option>
+							<option value="student">นักเรียน (Student)</option>
+							<option value="parent">ผู้ปกครอง (Parent)</option>
 						</select>
 					</div>
 

@@ -28,7 +28,7 @@ export interface RoleResponse {
 	code: string;
 	name: string;
 	name_en?: string;
-	category: string;
+	user_type: string; // Changed from category to user_type
 	level: number;
 	is_primary?: boolean;
 }
@@ -157,7 +157,7 @@ export interface Role {
 	name: string;
 	name_en?: string;
 	description?: string;
-	category: string;
+	user_type: string; // Changed from category to user_type
 	level: number;
 	permissions: Record<string, unknown>;
 	is_active: boolean;

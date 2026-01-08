@@ -47,14 +47,14 @@
 		return 'bg-gray-500';
 	}
 
-	function getCategoryBadgeColor(category?: string): string {
-		switch (category) {
-			case 'administrative':
-				return 'bg-purple-100 text-purple-800';
-			case 'academic':
+	function getUserTypeBadgeColor(userType: string): string {
+		switch (userType) {
+			case 'staff':
 				return 'bg-blue-100 text-blue-800';
-			case 'support':
+			case 'student':
 				return 'bg-green-100 text-green-800';
+			case 'parent':
+				return 'bg-purple-100 text-purple-800';
 			default:
 				return 'bg-gray-100 text-gray-800';
 		}
@@ -143,11 +143,13 @@
 									{role.permissions.includes('*') ? 'All' : role.permissions.length} สิทธิ์
 								</span>
 							</div>
-							{#if role.category}
-								<Badge class={getCategoryBadgeColor(role.category)} variant="secondary">
-									{role.category}
-								</Badge>
-							{/if}
+							<Badge class={getUserTypeBadgeColor(role.user_type)} variant="secondary">
+								{role.user_type === 'staff'
+									? 'บุคลากร'
+									: role.user_type === 'student'
+										? 'นักเรียน'
+										: 'ผู้ปกครอง'}
+							</Badge>
 						</div>
 
 						<!-- Status -->
