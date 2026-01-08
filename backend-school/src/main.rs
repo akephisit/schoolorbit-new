@@ -202,6 +202,17 @@ async fn main() {
         .route("/api/admin/menu/items/reorder", post(handlers::menu_admin::reorder_menu_items)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
+        // Consent Management routes (PDPA Compliance)
+        .route("/api/consent/types", get(handlers::consent::get_consent_types))
+        .route("/api/consent/my-status", get(handlers::consent::get_my_consent_status)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/consent", post(handlers::consent::create_consent)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/consent/:id/withdraw", post(handlers::consent::withdraw_consent)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/consent/summary", get(handlers::consent::get_consent_summary)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+
         // Route registration (no auth - uses deploy key)
         .route("/api/admin/routes/register", post(handlers::register_routes::register_routes))
         

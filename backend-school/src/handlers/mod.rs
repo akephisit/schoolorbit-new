@@ -9,4 +9,5 @@ pub mod menu;
 pub mod feature_toggles;
 pub mod menu_admin;
 pub mod students;
+pub mod consent;
 pub mod register_routes;
