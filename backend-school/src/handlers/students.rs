@@ -267,11 +267,11 @@ pub async fn get_own_profile(
     let student = match sqlx::query_as::<_, StudentProfile>(
         r#"
         SELECT 
-            u.id, u.national_id, u.email, u.first_name, u.last_name,
+            u.id, pgp_sym_decrypt(u.national_id, current_setting('app.encryption_key')) as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
             u.address, u.profile_image_url,
             s.student_id, s.grade_level, s.class_room, s.student_number,
-            s.blood_type, s.allergies, s.medical_conditions
+            s.blood_type, s.allergies, pgp_sym_decrypt(s.medical_conditions, current_setting('app.encryption_key')) as medical_conditions
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
         WHERE u.id = $1 AND u.user_type = 'student' AND u.status = 'active'
@@ -563,6 +563,10 @@ pub async fn create_student(
         Ok(u) => u,
         Err(response) => return response,
     };
+
+    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "System error"}))).into_response();
+    }
     
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
@@ -621,7 +625,7 @@ pub async fn create_student(
             national_id, email, password_hash,
             first_name, last_name, title, 
             user_type, status, date_of_birth, gender
-        ) VALUES ($1, $2, $3, $4, $5, $6, 'student', 'active', $7, $8)
+        ) VALUES (pgp_sym_encrypt($1, current_setting('app.encryption_key')), $2, $3, $4, $5, $6, 'student', 'active', $7, $8)
         RETURNING id
         "#
     )
@@ -771,15 +775,19 @@ pub async fn get_student(
         Ok(u) => u,
         Err(response) => return response,
     };
+
+    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "System error"}))).into_response();
+    }
     
     let student = match sqlx::query_as::<_, StudentProfile>(
         r#"
         SELECT 
-            u.id, u.national_id, u.email, u.first_name, u.last_name,
+            u.id, pgp_sym_decrypt(u.national_id, current_setting('app.encryption_key')) as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
             u.address, u.profile_image_url,
             s.student_id, s.grade_level, s.class_room, s.student_number,
-            s.blood_type, s.allergies, s.medical_conditions
+            s.blood_type, s.allergies, pgp_sym_decrypt(s.medical_conditions, current_setting('app.encryption_key')) as medical_conditions
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
         WHERE u.id = $1 AND u.user_type = 'student'
@@ -865,6 +873,10 @@ pub async fn update_student(
         Ok(u) => u,
         Err(response) => return response,
     };
+
+    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "System error"}))).into_response();
+    }
     
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,

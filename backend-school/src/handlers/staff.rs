@@ -366,9 +366,13 @@ pub async fn get_staff_profile(
         Err(response) => return response,
     };
 
+    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "System error"}))).into_response();
+    }
+
     // Get user basic info
     let user = match sqlx::query_as::<_, UserBasicRow>(
-        "SELECT id, national_id, email, title, first_name, last_name, nickname, phone, 
+        "SELECT id, pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id, email, title, first_name, last_name, nickname, phone, 
                 emergency_contact, line_id, date_of_birth, gender, address, hired_date,
                 user_type, status
          FROM users 
@@ -575,6 +579,14 @@ pub async fn create_staff(
         Err(response) => return response,
     };
 
+    // Setup encryption key for encrypted columns
+    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "System error"})),
+        ).into_response();
+    }
+
     let password_hash = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
         Ok(hash) => hash,
         Err(e) => {
@@ -607,7 +619,7 @@ pub async fn create_staff(
 
     // Check if user already exists (might be inactive)
     let existing_user: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, status FROM users WHERE national_id = $1"
+        "SELECT id, status FROM users WHERE pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) = $1"
     )
     .bind(&payload.national_id)
     .fetch_optional(&mut *tx)
@@ -703,7 +715,7 @@ pub async fn create_staff(
                 national_id, email, password_hash, title, first_name, last_name, nickname,
                 phone, emergency_contact, line_id, date_of_birth, gender, address,
                 user_type, hired_date, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'staff', $14, 'active')
+            ) VALUES (pgp_sym_encrypt($1, current_setting('app.encryption_key')), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'staff', $14, 'active')
             RETURNING id",
         )
         .bind(&payload.national_id)
