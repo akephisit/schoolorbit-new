@@ -76,6 +76,12 @@ async fn main() {
     tracing::info!("ℹ️  Multi-tenant architecture ready");
     tracing::info!("ℹ️  Each school has its own database connection pool (cached)");
 
+    // Auto-configure encryption key for all tenants at startup
+    if let Err(e) = db::encryption_setup::setup_encryption_for_all_tenants(&admin_pool).await {
+        tracing::error!("❌ Failed to setup encryption for tenants: {}", e);
+        tracing::warn!("⚠️  Continuing startup, but encryption may not work correctly");
+    }
+
     // Create shared state
     let state = AppState {
         admin_pool,
