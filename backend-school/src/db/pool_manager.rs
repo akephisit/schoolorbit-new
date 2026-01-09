@@ -59,26 +59,25 @@ impl PoolManager {
                     .min_connections(1)  // Always keep 1 connection ready with encryption key
                     .max_connections(self.max_connections_per_school)
                     .acquire_timeout(Duration::from_secs(10))
-                    .after_connect(|conn, _meta| {
+                    .before_acquire(|conn, _meta| {
                         Box::pin(async move {
-                            // Get encryption key (MUST exist)
-                            let key = std::env::var("ENCRYPTION_KEY")
-                                .map_err(|_| {
-                                    eprintln!("❌ ENCRYPTION_KEY not set in environment!");
-                                    sqlx::Error::Configuration("ENCRYPTION_KEY not found".into())
-                                })?;
+                            // Get encryption key
+                            let key = match std::env::var("ENCRYPTION_KEY") {
+                                Ok(k) => k,
+                                Err(_) => {
+                                    eprintln!("❌ ENCRYPTION_KEY not set!");
+                                    return Ok(false); // Reject connection
+                                }
+                            };
                             
-                            eprintln!("🔑 after_connect: Setting encryption key...");
-                            
-                            // Set encryption key on connection
+                            // Set encryption key before EVERY query
                             let query = format!("SET app.encryption_key = '{}'", key);
                             if let Err(e) = sqlx::query(&query).execute(&mut *conn).await {
-                                eprintln!("❌ after_connect: Failed to set encryption key: {}", e);
-                                return Err(e);
+                                eprintln!("❌ before_acquire: Failed to set key: {}", e);
+                                return Ok(false); // Reject
                             }
                             
-                            eprintln!("✅ after_connect: Encryption key set successfully");
-                            Ok(())
+                            Ok(true) // Accept connection
                         })
                     })
                     .connect(&database_url)
