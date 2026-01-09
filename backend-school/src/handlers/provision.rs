@@ -115,8 +115,24 @@ pub async fn provision_tenant(
 
     // Setup encryption key for encrypted columns (inside transaction)
     println!("🔐 Setting up encryption...");
-    if let Err(e) = sqlx::query("SET LOCAL app.encryption_key = $1")
-        .bind(std::env::var("ENCRYPTION_KEY").unwrap_or_default())
+    
+    // Get encryption key from environment
+    let encryption_key = match std::env::var("ENCRYPTION_KEY") {
+        Ok(key) => key,
+        Err(_) => {
+            eprintln!("❌ ENCRYPTION_KEY not set");
+            let error = serde_json::json!({
+                "success": false,
+                "error": "ENCRYPTION_KEY environment variable not set"
+            });
+            let _ = tx.rollback().await;
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+        }
+    };
+    
+    // SET LOCAL cannot use parameter binding, must use literal value
+    // Note: encryption_key should only come from trusted source (environment)
+    if let Err(e) = sqlx::query(&format!("SET LOCAL app.encryption_key = '{}'", encryption_key))
         .execute(&mut *tx)
         .await
     {
