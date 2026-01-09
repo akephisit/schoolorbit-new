@@ -80,7 +80,8 @@ pub async fn login(
             user_type,
             first_name,
             last_name,
-            email
+            email,
+            date_of_birth
          FROM users 
          WHERE pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) = $1 
          AND status = 'active'"
