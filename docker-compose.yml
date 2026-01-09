@@ -55,6 +55,9 @@ services:
       - HOST=0.0.0.0
       - PORT=8081
       - DATABASE_URL=postgres://school_user:school_password@postgres:5432/school_db
+      - ADMIN_DATABASE_URL=postgres://admin_user:password@postgres:5432/schoolorbit_admin
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-this-encryption-key-in-production}
+      - DB_USER=school_user
       - JWT_SECRET=your-secret-key-change-this-in-production
       - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
     depends_on:
