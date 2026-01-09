@@ -14,10 +14,14 @@ pub fn get_encryption_key() -> Result<String, String> {
 /// Setup encryption key in database session
 ///
 /// This must be called before any encrypted column operations
+/// Uses SET (session-level) instead of SET LOCAL to avoid requiring transaction
 pub async fn setup_encryption_key(pool: &sqlx::PgPool) -> Result<(), String> {
     let key = get_encryption_key()?;
     
-    sqlx::query(&format!("SET LOCAL app.encryption_key = '{}'", key))
+    // Note: SET statement cannot use parameter binding
+    // Must use literal value via format!
+    // Key comes from trusted source (environment variable only)
+    sqlx::query(&format!("SET app.encryption_key = '{}'", key))
         .execute(pool)
         .await
         .map_err(|e| format!("Failed to set encryption key: {}", e))?;
@@ -60,10 +64,9 @@ pub fn decrypt_sql(column_name: &str) -> String {
 
 /// Helper to set encryption key in PostgreSQL session
 ///
-/// This should be called at the beginning of each database transaction
-/// that needs to encrypt/decrypt data
+/// Returns SQL to set encryption key (session-level)
 pub fn set_encryption_key_sql(key: &str) -> String {
-    format!("SET LOCAL app.encryption_key = '{}'", key)
+    format!("SET app.encryption_key = '{}'", key)
 }
 
 #[cfg(test)]
