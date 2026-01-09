@@ -71,32 +71,13 @@ pub async fn login(
     };
 
     // Set encryption key in session for encrypted field operations
-    let encryption_key = match crate::utils::encryption::get_encryption_key() {
-        Ok(key) => key,
-        Err(e) => {
-            eprintln!("❌ Encryption key not set: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": "ระบบไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ"
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // Set encryption key for this session
-    if let Err(e) = sqlx::query(&format!("SET LOCAL app.encryption_key = '{}'", encryption_key))
-        .execute(&pool)
-        .await
-    {
-        eprintln!("❌ Failed to set encryption key: {}", e);
+    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
+        eprintln!("❌ Encryption setup failed: {}", e);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({
                 "success": false,
-                "error": "เกิดข้อผิดพลาดในระบบรักษาความปลอดภัย"
+                "error": "ระบบไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ"
             })),
         )
             .into_response();
