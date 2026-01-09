@@ -65,8 +65,34 @@ pub async fn check_permission(
         }
     };
     
-    // Get user from database
-    let user: User = match sqlx::query_as("SELECT * FROM users WHERE id = $1")
+    // Get user from database (with decryption)
+    let user: User = match sqlx::query_as(
+        "SELECT 
+            id,
+            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            email,
+            password_hash,
+            first_name,
+            last_name,
+            user_type,
+            phone,
+            date_of_birth,
+            address,
+            status,
+            metadata,
+            created_at,
+            updated_at,
+            title,
+            nickname,
+            emergency_contact,
+            line_id,
+            gender,
+            profile_image_url,
+            hired_date,
+            resigned_date
+         FROM users 
+         WHERE id = $1"
+    )
         .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
         .fetch_one(pool)
         .await
