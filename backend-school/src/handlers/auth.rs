@@ -1,5 +1,5 @@
 use crate::db::school_mapping::get_school_database_url;
-use crate::models::auth::{Claims, LoginRequest, LoginResponse, User, UserResponse, ProfileResponse, UpdateProfileRequest, ChangePasswordRequest};
+use crate::models::auth::{Claims, LoginRequest, LoginResponse, LoginUser, User, UserResponse, ProfileResponse, UpdateProfileRequest, ChangePasswordRequest};
 use crate::utils::jwt::JwtService;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
@@ -70,32 +70,17 @@ pub async fn login(
         }
     };
 
-    // Fetch user from database (with encrypted national_id decryption)
+    // Fetch user from database (optimized - only essential fields for login)
     // Note: Encryption key is automatically set by pool's after_connect hook
-    let user = match sqlx::query_as::<_, User>(
+    let user = match sqlx::query_as::<_, LoginUser>(
         "SELECT 
             id,
-            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
-            email,
             password_hash,
+            status,
+            user_type,
             first_name,
             last_name,
-            user_type,
-            phone,
-            date_of_birth,
-            address,
-            status,
-            metadata,
-            created_at,
-            updated_at,
-            title,
-            nickname,
-            emergency_contact,
-            line_id,
-            gender,
-            profile_image_url,
-            hired_date,
-            resigned_date
+            email
          FROM users 
          WHERE pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) = $1 
          AND status = 'active'"
@@ -145,7 +130,7 @@ pub async fn login(
     // Generate JWT token
     let token = match JwtService::generate_token(
         &user.id.to_string(),
-        user.national_id.as_deref().unwrap_or(""),
+        &payload.national_id, // Use from payload since LoginUser doesn't have national_id
         &user.user_type,
     ) {
         Ok(t) => t,
@@ -178,9 +163,19 @@ pub async fn login(
     .ok()
     .flatten();
 
-    // Create user response with primary role name
-    let mut user_response = UserResponse::from(user);
-    user_response.primary_role_name = primary_role_name;
+    // Create user response manually (LoginUser doesn't implement From)
+    let user_response = UserResponse {
+        id: user.id,
+        national_id: Some(payload.national_id.clone()),
+        email: user.email.clone(),
+        first_name: user.first_name.clone(),
+        last_name: user.last_name.clone(),
+        user_type: user.user_type.clone(),
+        phone: None,
+        status: user.status.clone(),
+        created_at: chrono::Utc::now(),
+        primary_role_name,
+    };
 
     // Set cookie (optional, based on remember_me)
     let max_age = if payload.remember_me.unwrap_or(false) {

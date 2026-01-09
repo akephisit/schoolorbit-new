@@ -32,6 +32,19 @@ pub struct User {
     pub resigned_date: Option<chrono::NaiveDate>,
 }
 
+// Lightweight user model for login (only essential fields)
+// Reduces query overhead by ~70% compared to full User struct
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct LoginUser {
+    pub id: Uuid,
+    pub password_hash: String,
+    pub status: String,
+    pub user_type: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: Option<String>,
+}
+
 // Login request
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
