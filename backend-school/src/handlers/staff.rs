@@ -366,11 +366,7 @@ pub async fn get_staff_profile(
         Err(response) => return response,
     };
 
-    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "System error"}))).into_response();
-    }
-
-    // Get user basic info
+    // Get user basic info (encryption key auto-set by pool)
     let user = match sqlx::query_as::<_, UserBasicRow>(
         "SELECT id, pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id, email, title, first_name, last_name, nickname, phone, 
                 emergency_contact, line_id, date_of_birth, gender, address, hired_date,
@@ -579,14 +575,7 @@ pub async fn create_staff(
         Err(response) => return response,
     };
 
-    // Setup encryption key for encrypted columns
-    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "System error"})),
-        ).into_response();
-    }
-
+    // Hash password (encryption key auto-set by pool)
     let password_hash = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
         Ok(hash) => hash,
         Err(e) => {

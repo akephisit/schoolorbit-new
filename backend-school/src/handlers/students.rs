@@ -563,10 +563,6 @@ pub async fn create_student(
         Ok(u) => u,
         Err(response) => return response,
     };
-
-    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "System error"}))).into_response();
-    }
     
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
@@ -775,10 +771,6 @@ pub async fn get_student(
         Ok(u) => u,
         Err(response) => return response,
     };
-
-    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "System error"}))).into_response();
-    }
     
     let student = match sqlx::query_as::<_, StudentProfile>(
         r#"
@@ -873,10 +865,6 @@ pub async fn update_student(
         Ok(u) => u,
         Err(response) => return response,
     };
-
-    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "System error"}))).into_response();
-    }
     
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
