@@ -60,12 +60,20 @@ impl PoolManager {
                     .acquire_timeout(Duration::from_secs(10))
                     .after_connect(|conn, _meta| {
                         Box::pin(async move {
-                            // Automatically set encryption key on every new connection
-                            if let Ok(key) = std::env::var("ENCRYPTION_KEY") {
-                                sqlx::query(&format!("SET app.encryption_key = '{}'", key))
-                                    .execute(&mut *conn)
-                                    .await?;
+                            // Get encryption key (MUST exist)
+                            let key = std::env::var("ENCRYPTION_KEY")
+                                .map_err(|_| {
+                                    eprintln!("❌ ENCRYPTION_KEY not set in environment!");
+                                    sqlx::Error::Configuration("ENCRYPTION_KEY not found".into())
+                                })?;
+                            
+                            // Set encryption key on connection
+                            let query = format!("SET app.encryption_key = '{}'", key);
+                            if let Err(e) = sqlx::query(&query).execute(&mut *conn).await {
+                                eprintln!("❌ Failed to set encryption key: {}", e);
+                                return Err(e);
                             }
+                            
                             Ok(())
                         })
                     })
