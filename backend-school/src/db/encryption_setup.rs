@@ -15,7 +15,7 @@ pub async fn setup_encryption_for_all_tenants(admin_pool: &PgPool) -> Result<(),
     
     // Get all active tenant database URLs
     let tenant_urls: Vec<String> = sqlx::query_scalar(
-        "SELECT database_url FROM schools WHERE status = 'active'"
+        "SELECT db_connection_string FROM schools WHERE status = 'active'"
     )
     .fetch_all(admin_pool)
     .await
