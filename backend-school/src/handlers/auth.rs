@@ -88,15 +88,26 @@ pub async fn login(
         "SELECT 
             id,
             pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            email,
+            password_hash,
             first_name,
             last_name,
-            email,
-            phone,
             user_type,
-            password_hash,
+            phone,
+            date_of_birth,
+            address,
             status,
+            metadata,
             created_at,
-            updated_at
+            updated_at,
+            title,
+            nickname,
+            emergency_contact,
+            line_id,
+            gender,
+            profile_image_url,
+            hired_date,
+            resigned_date
          FROM users 
          WHERE pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) = $1 
          AND status = 'active'"
