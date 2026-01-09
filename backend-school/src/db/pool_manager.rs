@@ -56,6 +56,7 @@ impl PoolManager {
                 // Create new connection pool
                 println!("🔄 Creating new connection pool for: {}", subdomain);
                 let pool = PgPoolOptions::new()
+                    .min_connections(1)  // Always keep 1 connection ready with encryption key
                     .max_connections(self.max_connections_per_school)
                     .acquire_timeout(Duration::from_secs(10))
                     .after_connect(|conn, _meta| {
@@ -67,13 +68,16 @@ impl PoolManager {
                                     sqlx::Error::Configuration("ENCRYPTION_KEY not found".into())
                                 })?;
                             
+                            eprintln!("🔑 after_connect: Setting encryption key...");
+                            
                             // Set encryption key on connection
                             let query = format!("SET app.encryption_key = '{}'", key);
                             if let Err(e) = sqlx::query(&query).execute(&mut *conn).await {
-                                eprintln!("❌ Failed to set encryption key: {}", e);
+                                eprintln!("❌ after_connect: Failed to set encryption key: {}", e);
                                 return Err(e);
                             }
                             
+                            eprintln!("✅ after_connect: Encryption key set successfully");
                             Ok(())
                         })
                     })
