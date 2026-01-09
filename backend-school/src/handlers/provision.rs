@@ -97,19 +97,37 @@ pub async fn provision_tenant(
         }
     };
 
-    // Setup encryption key for encrypted columns
+    // Create admin user (must be in transaction for encryption to work)
+    println!("👤 Creating admin user...");
+    
+    // Start transaction
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            eprintln!("❌ Failed to start transaction: {}", e);
+            let error = serde_json::json!({
+                "success": false,
+                "error": "Failed to start transaction"
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+        }
+    };
+
+    // Setup encryption key for encrypted columns (inside transaction)
     println!("🔐 Setting up encryption...");
-    if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
+    if let Err(e) = sqlx::query("SET LOCAL app.encryption_key = $1")
+        .bind(std::env::var("ENCRYPTION_KEY").unwrap_or_default())
+        .execute(&mut *tx)
+        .await
+    {
         eprintln!("❌ Encryption setup failed: {}", e);
         let error = serde_json::json!({
             "success": false,
             "error": format!("Encryption setup failed: {}", e)
         });
+        let _ = tx.rollback().await;
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
     }
-
-    // Create admin user
-    println!("👤 Creating admin user...");
     
     // Hash the password using bcrypt
     let password_hash = match bcrypt::hash(&payload.admin_password, bcrypt::DEFAULT_COST) {
@@ -120,6 +138,7 @@ pub async fn provision_tenant(
                 "success": false,
                 "error": "Password hashing failed"
             });
+            let _ = tx.rollback().await;
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
         }
     };
@@ -142,7 +161,7 @@ pub async fn provision_tenant(
     .bind(&payload.subdomain) // Use subdomain as last name initially
     .bind("staff") // user_type is 'staff' (admin is determined by role assignment)
     .bind("active")
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await
     {
         Ok(id) => {
@@ -157,6 +176,7 @@ pub async fn provision_tenant(
                 "success": false,
                 "error": format!("Failed to create admin user: {}", e)
             });
+            let _ = tx.rollback().await;
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
         }
     };
@@ -173,7 +193,7 @@ pub async fn provision_tenant(
     .bind(user_id)
     .bind(admin_role_id)
     .bind(true) // is_primary = true for admin role
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     {
         Ok(_) => {
@@ -181,8 +201,23 @@ pub async fn provision_tenant(
         }
         Err(e) => {
             eprintln!("⚠️  Warning: Failed to assign admin role: {}", e);
-            // Continue anyway - user is created
+            let _ = tx.rollback().await;
+            let error = serde_json::json!({
+                "success": false,
+                "error": format!("Failed to assign admin role: {}", e)
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
         }
+    }
+
+    // Commit transaction
+    if let Err(e) = tx.commit().await {
+        eprintln!("❌ Failed to commit transaction: {}", e);
+        let error = serde_json::json!({
+            "success": false,
+            "error": "Failed to commit transaction"
+        });
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
     }
 
     println!("🎉 Tenant provisioning completed for school: {}", payload.school_id);
