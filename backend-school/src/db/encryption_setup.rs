@@ -55,8 +55,15 @@ pub async fn setup_encryption_for_all_tenants(admin_pool: &PgPool) -> Result<(),
                         success_count += 1;
                     }
                     Err(e) => {
-                        tracing::error!("  ❌ {}: Failed to set encryption key: {}", db_name, e);
-                        fail_count += 1;
+                        let error_msg = e.to_string();
+                        if error_msg.contains("permission denied") {
+                            tracing::warn!("  ⚠️  {}: Permission denied (expected on managed DBs like Neon)", db_name);
+                            tracing::info!("      → after_connect hook will handle encryption key instead");
+                            success_count += 1; // Count as success - hook will handle it
+                        } else {
+                            tracing::error!("  ❌ {}: Failed to set encryption key: {}", db_name, e);
+                            fail_count += 1;
+                        }
                     }
                 }
                 
