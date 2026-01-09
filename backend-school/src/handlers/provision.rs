@@ -130,9 +130,10 @@ pub async fn provision_tenant(
         }
     };
     
-    // SET LOCAL cannot use parameter binding, must use literal value
+    // SET cannot use parameter binding, must use literal value
     // Note: encryption_key should only come from trusted source (environment)
-    if let Err(e) = sqlx::query(&format!("SET LOCAL app.encryption_key = '{}'", encryption_key))
+    // Using SET (session-level) for consistency with other handlers
+    if let Err(e) = sqlx::query(&format!("SET app.encryption_key = '{}'", encryption_key))
         .execute(&mut *tx)
         .await
     {
