@@ -15,6 +15,7 @@ services:
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - DB_USER=${DB_USER}
       # Server config
       - RUST_LOG=${RUST_LOG:-info}
       - HOST=${HOST:-0.0.0.0}
