@@ -11,6 +11,33 @@ use axum::{
 };
 use tower_cookies::{Cookie, Cookies};
 
+// Common query to fetch user with decrypted national_id
+const SELECT_USER_BY_ID: &str = "SELECT 
+    id,
+    pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+    email,
+    password_hash,
+    first_name,
+    last_name,
+    user_type,
+    phone,
+    date_of_birth,
+    address,
+    status,
+    metadata,
+    created_at,
+    updated_at,
+    title,
+    nickname,
+    emergency_contact,
+    line_id,
+    gender,
+    profile_image_url,
+    hired_date,
+    resigned_date
+FROM users 
+WHERE id = $1";
+
 /// Login handler
 pub async fn login(
     State(state): State<AppState>,
@@ -414,7 +441,7 @@ pub async fn get_profile(
     };
 
     // Fetch user from database
-    let user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+    let user = match sqlx::query_as::<_, User>(SELECT_USER_BY_ID)
         .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
         .fetch_optional(&pool)
         .await
@@ -601,7 +628,7 @@ pub async fn update_profile(
     match result {
         Ok(_) => {
             // Fetch updated user
-            let user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+            let user = match sqlx::query_as::<_, User>(SELECT_USER_BY_ID)
                 .bind(user_id)
                 .fetch_optional(&pool)
                 .await
@@ -765,7 +792,7 @@ pub async fn change_password(
     };
 
     // Fetch user from database
-    let user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+    let user = match sqlx::query_as::<_, User>(SELECT_USER_BY_ID)
         .bind(user_id)
         .fetch_optional(&pool)
         .await

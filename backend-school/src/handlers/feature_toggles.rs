@@ -497,7 +497,33 @@ async fn authenticate_user(
         }
     };
 
-    let user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+    let user = match sqlx::query_as::<_, User>(
+        "SELECT 
+            id,
+            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            email,
+            password_hash,
+            first_name,
+            last_name,
+            user_type,
+            phone,
+            date_of_birth,
+            address,
+            status,
+            metadata,
+            created_at,
+            updated_at,
+            title,
+            nickname,
+            emergency_contact,
+            line_id,
+            gender,
+            profile_image_url,
+            hired_date,
+            resigned_date
+         FROM users 
+         WHERE id = $1"
+    )
         .bind(user_id)
         .fetch_optional(pool)
         .await
