@@ -58,6 +58,17 @@ impl PoolManager {
                 let pool = PgPoolOptions::new()
                     .max_connections(self.max_connections_per_school)
                     .acquire_timeout(Duration::from_secs(10))
+                    .after_connect(|conn, _meta| {
+                        Box::pin(async move {
+                            // Automatically set encryption key on every new connection
+                            if let Ok(key) = std::env::var("ENCRYPTION_KEY") {
+                                sqlx::query(&format!("SET app.encryption_key = '{}'", key))
+                                    .execute(&mut *conn)
+                                    .await?;
+                            }
+                            Ok(())
+                        })
+                    })
                     .connect(&database_url)
                     .await
                     .map_err(|e| format!("Failed to connect to database for {}: {}", subdomain, e))?;
