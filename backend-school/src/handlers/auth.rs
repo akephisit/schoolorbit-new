@@ -70,54 +70,8 @@ pub async fn login(
         }
     };
 
-    // Acquire connection from pool explicitly to ensure SET and SELECT use same connection
-    let mut conn = match pool.acquire().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("❌ Failed to acquire connection: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // Set encryption key on THIS connection
-    let encryption_key = match crate::utils::encryption::get_encryption_key() {
-        Ok(key) => key,
-        Err(e) => {
-            eprintln!("❌ Encryption key not set: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": "ระบบไม่พร้อมใช้งาน"
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    if let Err(e) = sqlx::query(&format!("SET app.encryption_key = '{}'", encryption_key))
-        .execute(&mut *conn)
-        .await
-    {
-        eprintln!("❌ Encryption setup failed: {}", e);
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "error": "ระบบไม่พร้อมใช้งาน"
-            })),
-        )
-            .into_response();
-    }
-
-    // Fetch user from database (with encrypted national_id decryption) - using SAME connection
+    // Fetch user from database (with encrypted national_id decryption)
+    // Note: Encryption key is automatically set by pool's after_connect hook
     let user = match sqlx::query_as::<_, User>(
         "SELECT 
             id,
@@ -147,7 +101,7 @@ pub async fn login(
          AND status = 'active'"
     )
     .bind(&payload.national_id)
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&pool)
     .await
     {
         Ok(Some(user)) => user,
