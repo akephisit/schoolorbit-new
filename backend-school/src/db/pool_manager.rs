@@ -59,25 +59,28 @@ impl PoolManager {
                     .min_connections(1)  // Always keep 1 connection ready with encryption key
                     .max_connections(self.max_connections_per_school)
                     .acquire_timeout(Duration::from_secs(10))
-                    .before_acquire(|conn, _meta| {
+                    .after_acquire(|conn, _meta| {
                         Box::pin(async move {
                             // Get encryption key
                             let key = match std::env::var("ENCRYPTION_KEY") {
                                 Ok(k) => k,
                                 Err(_) => {
                                     eprintln!("❌ ENCRYPTION_KEY not set!");
-                                    return Ok(false); // Reject connection
+                                    return Err(sqlx::Error::Configuration("ENCRYPTION_KEY not found".into()));
                                 }
                             };
                             
-                            // Set encryption key before EVERY query
+                            eprintln!("🔑 after_acquire: Setting encryption key on connection...");
+                            
+                            // Set encryption key EVERY time we acquire a connection
                             let query = format!("SET app.encryption_key = '{}'", key);
                             if let Err(e) = sqlx::query(&query).execute(&mut *conn).await {
-                                eprintln!("❌ before_acquire: Failed to set key: {}", e);
-                                return Ok(false); // Reject
+                                eprintln!("❌ after_acquire: Failed to set key: {}", e);
+                                return Err(e);
                             }
                             
-                            Ok(true) // Accept connection
+                            eprintln!("✅ after_acquire: Key set successfully");
+                            Ok(())
                         })
                     })
                     .connect(&database_url)
