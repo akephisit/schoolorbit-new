@@ -81,6 +81,13 @@ impl PoolManager {
                     .await
                     .map_err(|e| format!("Failed to connect to database for {}: {}", subdomain, e))?;
 
+                // Force a connection to trigger after_connect hook immediately
+                // This ensures encryption key is set before any queries run
+                sqlx::query("SELECT 1")
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| format!("Failed to initialize pool for {}: {}", subdomain, e))?;
+
                 // Store in cache
                 {
                     let mut pools = self.pools.write().await;
