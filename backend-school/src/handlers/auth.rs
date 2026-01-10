@@ -437,7 +437,7 @@ pub async fn get_profile(
     };
 
     // Fetch user from database
-    let user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+    let mut user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
         .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
         .fetch_optional(&pool)
         .await
@@ -463,6 +463,10 @@ pub async fn get_profile(
                 .into_response();
         }
     };
+    match field_encryption::decrypt(&user.national_id) {
+        Ok(d) => user.national_id = d,
+        Err(e) => eprintln!("Decrypt: {}", e),
+    }
 
     // Fetch primary role name
     let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
@@ -624,7 +628,7 @@ pub async fn update_profile(
     match result {
         Ok(_) => {
             // Fetch updated user
-            let user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+            let mut user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
                 .bind(user_id)
                 .fetch_optional(&pool)
                 .await
@@ -650,6 +654,10 @@ pub async fn update_profile(
                         .into_response();
                 }
             };
+            match field_encryption::decrypt(&user.national_id) {
+                Ok(d) => user.national_id = d,
+                Err(e) => eprintln!("Decrypt: {}", e),
+            }
 
             // Fetch primary role name
             let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
@@ -788,7 +796,7 @@ pub async fn change_password(
     };
 
     // Fetch user from database
-    let user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+    let mut user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(&pool)
         .await
@@ -814,6 +822,10 @@ pub async fn change_password(
                 .into_response();
         }
     };
+    match field_encryption::decrypt(&user.national_id) {
+        Ok(d) => user.national_id = d,
+        Err(e) => eprintln!("Decrypt: {}", e),
+    }
 
     // Verify current password
     let is_valid = bcrypt::verify(&payload.current_password, &user.password_hash).unwrap_or(false);
