@@ -1,14 +1,28 @@
 <script lang="ts">
+	import { type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { User } from 'lucide-svelte';
 
-	// Props
-	export let src: string | null | undefined = null;
-	export let alt: string = 'User avatar';
-	export let initials: string | null = null;
-	export let size: 'xs' | 'sm' | 'md' | 'lg' | 'xl' = 'md';
-	export let shape: 'circle' | 'square' = 'circle';
-	export let className: string = '';
+	interface Props {
+		src?: string | null | undefined;
+		alt?: string;
+		initials?: string | null;
+		size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+		shape?: 'circle' | 'square';
+		class?: string;
+		status?: Snippet;
+	}
+
+	let {
+		src = $bindable(null),
+		alt = 'User avatar',
+		initials = null,
+		size = 'md',
+		shape = 'circle',
+		class: className = '',
+		status,
+		...restProps
+	}: Props = $props();
 
 	// Size classes
 	const sizeClasses = {
@@ -50,11 +64,11 @@
 		shape === 'circle' ? 'rounded-full' : 'rounded-md',
 		className
 	)}
-	{...$$restProps}
+	{...restProps}
 >
 	{#if src}
 		<!-- Avatar Image -->
-		<img {src} {alt} class="w-full h-full object-cover" on:error={handleImageError} />
+		<img {src} {alt} class="w-full h-full object-cover" onerror={handleImageError} />
 	{:else if initials}
 		<!-- Initials Fallback -->
 		<span class="font-semibold text-muted-foreground select-none">
@@ -65,6 +79,8 @@
 		<User class={cn('text-muted-foreground', iconSizes[size])} />
 	{/if}
 
-	<!-- Status Indicator (Slot) -->
-	<slot name="status" />
+	<!-- Status Indicator (Snippet) -->
+	{#if status}
+		{@render status()}
+	{/if}
 </div>
