@@ -60,6 +60,22 @@ services:
       - DB_USER=school_user
       - JWT_SECRET=your-secret-key-change-this-in-production
       - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
+      # Cloudflare R2 Configuration (required for file uploads)
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-schoolorbit-files}
+      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
+      - R2_REGION=${R2_REGION:-auto}
+      # Optional: CDN URL for file serving
+      - CDN_URL=${CDN_URL}
+      # File Upload Limits
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-10}
+      - MAX_PROFILE_IMAGE_SIZE_MB=${MAX_PROFILE_IMAGE_SIZE_MB:-5}
+      - MAX_DOCUMENT_SIZE_MB=${MAX_DOCUMENT_SIZE_MB:-20}
+      # Allowed File Types
+      - ALLOWED_IMAGE_TYPES=${ALLOWED_IMAGE_TYPES:-jpg,jpeg,png,webp,gif}
+      - ALLOWED_DOCUMENT_TYPES=${ALLOWED_DOCUMENT_TYPES:-pdf,doc,docx,xls,xlsx}
     depends_on:
       postgres:
         condition: service_healthy
