@@ -72,8 +72,22 @@ pub async fn login(
         }
     };
 
-    // Fetch user from database (optimized - only essential fields for login)
-    // Note: Encryption key is automatically set by pool's after_connect hook
+    // Encrypt national_id for comparison
+    let encrypted_national_id = match field_encryption::encrypt(&payload.national_id) {
+        Ok(enc) => enc,
+        Err(e) => {
+            eprintln!("❌ Encryption failed: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "error": "เกิดข้อผิดพลาดในการประมวลผล"
+                })),
+            ).into_response();
+        }
+    };
+
+    // Fetch user from database
     let user = match sqlx::query_as::<_, LoginUser>(
         "SELECT 
             id,
@@ -85,10 +99,10 @@ pub async fn login(
             email,
             date_of_birth
          FROM users 
-         WHERE pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) = $1 
+         WHERE national_id = $1 
          AND status = 'active'"
     )
-    .bind(&payload.national_id)
+    .bind(&encrypted_national_id)
     .fetch_optional(&pool)
     .await
     {
@@ -281,11 +295,11 @@ pub async fn me(
         }
     };
 
-    // Fetch user from database (with decryption)
-    let user = match sqlx::query_as::<_, User>(
+    // Fetch user from database
+    let mut user = match sqlx::query_as::<_, User>(
         "SELECT 
             id,
-            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            national_id,
             email,
             password_hash,
             first_name,
@@ -334,6 +348,14 @@ pub async fn me(
                 .into_response();
         }
     };
+
+    // Decrypt national_id
+    if let Err(e) = field_encryption::decrypt(&user.national_id)
+        .map(|decrypted| user.national_id = decrypted) 
+    {
+        eprintln!("Failed to decrypt national_id: {}", e);
+    }
+
 
     // Fetch primary role name
     let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
