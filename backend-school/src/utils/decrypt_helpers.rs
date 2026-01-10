@@ -8,7 +8,7 @@ pub trait DecryptUser {
 
 impl DecryptUser for User {
     fn decrypt_sensitive_fields(&mut self) -> Result<(), String> {
-        self.national_id = field_encryption::decrypt(&self.national_id)?;
+        self.national_id = field_encryption::decrypt_optional(self.national_id.as_deref())?;
         Ok(())
     }
 }

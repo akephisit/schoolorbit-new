@@ -2,6 +2,7 @@ use crate::db::school_mapping::get_school_database_url;
 use crate::models::menu::*;
 use crate::models::auth::User;
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::field_encryption;
 use crate::AppState;
 
 use axum::{
@@ -103,10 +104,10 @@ pub async fn get_user_menu(
         }
     };
     
-    let user: User = match sqlx::query_as(
+    let mut user: User = match sqlx::query_as(
         "SELECT 
             id,
-            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            national_id,
             email,
             password_hash,
             first_name,
@@ -130,7 +131,7 @@ pub async fn get_user_menu(
          FROM users 
          WHERE id = $1"
     )
-        .bind(Uuid::parse_str(&claims.sub).unwrap())
+        .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
         .fetch_one(&pool)
         .await
     {
@@ -141,11 +142,18 @@ pub async fn get_user_menu(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
                     "success": false,
-                    "error": "ไม่สามารถดึงข้อมูลผู้ใช้ได้"
+                    "error": format!("Database error: {}", e)
                 })),
             ).into_response();
         }
     };
+
+    // Decrypt national_id
+    if let Some(ref nid) = user.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            user.national_id = Some(dec);
+        }
+    }
 
     // Get user permissions
     let user_permissions = match get_user_permissions(&user.id, &pool).await {

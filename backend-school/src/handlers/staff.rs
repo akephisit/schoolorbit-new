@@ -3,6 +3,7 @@ use crate::models::staff::*;
 use crate::models::auth::User;
 
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::field_encryption;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -138,10 +139,10 @@ async fn check_user_permission(
     };
     
     // Get user from database
-    let user: User = match sqlx::query_as(
+    let mut user: User = match sqlx::query_as(
         "SELECT 
             id,
-            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            national_id,
             email,
             password_hash,
             first_name,
@@ -181,6 +182,16 @@ async fn check_user_permission(
             ).into_response());
         }
     };
+    
+    // Decrypt national_id
+    if let Some(encrypted_national_id) = user.national_id {
+        if let Ok(decrypted_national_id) = field_encryption::decrypt(&encrypted_national_id) {
+            user.national_id = Some(decrypted_national_id);
+        } else {
+            eprintln!("❌ Failed to decrypt national_id for user {}", user.id);
+            user.national_id = None; // Or handle error as appropriate
+        }
+    }
     
     // Check permission
     match user.has_permission(pool, required_permission).await {
@@ -393,8 +404,8 @@ pub async fn get_staff_profile(
     };
 
     // Get user basic info (encryption key auto-set by pool)
-    let user = match sqlx::query_as::<_, UserBasicRow>(
-        "SELECT id, pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id, email, title, first_name, last_name, nickname, phone, 
+    let mut user = match sqlx::query_as::<_, UserBasicRow>(
+        "SELECT id, national_id, email, title, first_name, last_name, nickname, phone, 
                 emergency_contact, line_id, date_of_birth, gender, address, hired_date,
                 user_type, status
          FROM users 
@@ -427,6 +438,13 @@ pub async fn get_staff_profile(
                 .into_response();
         }
     };
+    
+    // Decrypt national_id
+    if let Some(ref nid) = user.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            user.national_id = Some(dec);
+        }
+    }
 
     // Get staff info
     let staff_info = sqlx::query_as::<_, StaffInfoRow>(
@@ -632,11 +650,20 @@ pub async fn create_staff(
         }
     };
 
+    // Encrypt national_id
+    let encrypted_national_id = match field_encryption::encrypt_optional(payload.national_id.as_deref()) {
+        Ok(enc) => enc,
+        Err(e) => {
+             eprintln!("Encryption failed: {}", e);
+             return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "error": "Encryption error"}))).into_response();
+        }
+    };
+
     // Check if user already exists (might be inactive)
     let existing_user: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, status FROM users WHERE pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) = $1"
+        "SELECT id, status FROM users WHERE national_id = $1"
     )
-    .bind(&payload.national_id)
+    .bind(&encrypted_national_id)
     .fetch_optional(&mut *tx)
     .await
     .ok()
@@ -730,10 +757,10 @@ pub async fn create_staff(
                 national_id, email, password_hash, title, first_name, last_name, nickname,
                 phone, emergency_contact, line_id, date_of_birth, gender, address,
                 user_type, hired_date, status
-            ) VALUES (pgp_sym_encrypt($1, current_setting('app.encryption_key')), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'staff', $14, 'active')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'staff', $14, 'active')
             RETURNING id",
         )
-        .bind(&payload.national_id)
+        .bind(&encrypted_national_id)
         .bind(&payload.email)
         .bind(&password_hash)
         .bind(&payload.title)

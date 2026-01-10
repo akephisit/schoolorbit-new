@@ -15,6 +15,7 @@ use crate::db::school_mapping::get_school_database_url;
 use crate::models::auth::User;
 use crate::models::staff::UserPermissions; // For has_permission method
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::field_encryption;
 use crate::AppState;
 
 // =========================================
@@ -161,10 +162,10 @@ async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Us
     };
     
     // Get user from database
-    let user: User = match sqlx::query_as(
+    let mut user: User = match sqlx::query_as(
         "SELECT 
             id,
-            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            national_id,
             email,
             password_hash,
             first_name,
@@ -204,6 +205,13 @@ async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Us
             ).into_response());
         }
     };
+    
+    // Decrypt national_id
+    if let Some(ref nid) = user.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            user.national_id = Some(dec);
+        }
+    }
     
     Ok(user)
 }
@@ -290,14 +298,14 @@ pub async fn get_own_profile(
     };
     
     // Query student profile
-    let student = match sqlx::query_as::<_, StudentProfile>(
+    let mut student = match sqlx::query_as::<_, StudentProfile>(
         r#"
         SELECT 
-            u.id, pgp_sym_decrypt(u.national_id, current_setting('app.encryption_key')) as national_id, u.email, u.first_name, u.last_name,
+            u.id, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
             u.address, u.profile_image_url,
             s.student_id, s.grade_level, s.class_room, s.student_number,
-            s.blood_type, s.allergies, pgp_sym_decrypt(s.medical_conditions, current_setting('app.encryption_key')) as medical_conditions
+            s.blood_type, s.allergies, s.medical_conditions as medical_conditions
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
         WHERE u.id = $1 AND u.user_type = 'student' AND u.status = 'active'
@@ -318,16 +326,28 @@ pub async fn get_own_profile(
             ).into_response();
         }
         Err(e) => {
-            eprintln!("❌ Database error: {}", e);
+            eprintln!("❌ Failed to get student profile: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
                     "success": false,
-                    "error": "เกิดข้อผิดพลาดในการดึงข้อมูล"
+                    "error": "ไม่สามารถดึงข้อมูลนักเรียนได้"
                 })),
             ).into_response();
         }
     };
+
+    // Decrypt fields
+    if let Some(ref nid) = student.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            student.national_id = Some(dec);
+        }
+    }
+    if let Some(ref mc) = student.medical_conditions {
+        if let Ok(dec) = field_encryption::decrypt(mc) {
+            student.medical_conditions = Some(dec);
+        }
+    }
     
     (
         StatusCode::OK,
@@ -640,6 +660,22 @@ pub async fn create_student(
     };
     
     
+    // Encrypt national_id
+    let encrypted_national_id = match field_encryption::encrypt(&payload.national_id) {
+        Ok(enc) => enc,
+        Err(e) => {
+            eprintln!("❌ Encryption failed: {}", e);
+            let _ = tx.rollback().await;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "เกิดข้อผิดพลาดในการประมวลผลข้อมูล"
+                })),
+            ).into_response();
+        }
+    };
+
     // 2. Create user
     let user_id: Uuid = match sqlx::query_scalar(
         r#"
@@ -647,11 +683,11 @@ pub async fn create_student(
             national_id, email, password_hash,
             first_name, last_name, title, 
             user_type, status, date_of_birth, gender
-        ) VALUES (pgp_sym_encrypt($1, current_setting('app.encryption_key')), $2, $3, $4, $5, $6, 'student', 'active', $7, $8)
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'student', 'active', $7, $8)
         RETURNING id
         "#
     )
-    .bind(&payload.national_id)
+    .bind(&encrypted_national_id)
     .bind(&payload.email)
     .bind(&password_hash)
     .bind(&payload.first_name)
@@ -798,14 +834,14 @@ pub async fn get_student(
         Err(response) => return response,
     };
     
-    let student = match sqlx::query_as::<_, StudentProfile>(
+    let mut student = match sqlx::query_as::<_, StudentProfile>(
         r#"
         SELECT 
-            u.id, pgp_sym_decrypt(u.national_id, current_setting('app.encryption_key')) as national_id, u.email, u.first_name, u.last_name,
+            u.id, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
             u.address, u.profile_image_url,
             s.student_id, s.grade_level, s.class_room, s.student_number,
-            s.blood_type, s.allergies, pgp_sym_decrypt(s.medical_conditions, current_setting('app.encryption_key')) as medical_conditions
+            s.blood_type, s.allergies, s.medical_conditions as medical_conditions
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
         WHERE u.id = $1 AND u.user_type = 'student'
@@ -836,6 +872,18 @@ pub async fn get_student(
             ).into_response();
         }
     };
+
+    // Decrypt fields
+    if let Some(ref nid) = student.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            student.national_id = Some(dec);
+        }
+    }
+    if let Some(ref mc) = student.medical_conditions {
+        if let Ok(dec) = field_encryption::decrypt(mc) {
+            student.medical_conditions = Some(dec);
+        }
+    }
     
     (
         StatusCode::OK,

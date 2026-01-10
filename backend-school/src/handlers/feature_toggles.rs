@@ -2,6 +2,7 @@ use crate::models::menu::FeatureToggle;
 use crate::models::auth::User;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::jwt::JwtService;
+use crate::utils::field_encryption;
 use crate::AppState;
 
 use axum::{
@@ -497,10 +498,10 @@ async fn authenticate_user(
         }
     };
 
-    let user = match sqlx::query_as::<_, User>(
+    let mut user = match sqlx::query_as::<_, User>(
         "SELECT 
             id,
-            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            national_id,
             email,
             password_hash,
             first_name,
@@ -548,6 +549,13 @@ async fn authenticate_user(
             ).into_response());
         }
     };
+
+    // Decrypt national_id
+    if let Some(ref nid) = user.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            user.national_id = Some(dec);
+        }
+    }
 
     // Get user permissions
     let permissions: Vec<String> = match sqlx::query_scalar(

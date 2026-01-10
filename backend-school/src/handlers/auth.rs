@@ -350,9 +350,10 @@ pub async fn me(
     };
 
     // Decrypt national_id
-    match field_encryption::decrypt(&user.national_id) {
-        Ok(dec) => user.national_id = dec,
-        Err(e) => eprintln!("Decrypt error: {}", e),
+    if let Some(ref nid) = user.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            user.national_id = Some(dec);
+        }
     }
 
 
@@ -463,9 +464,10 @@ pub async fn get_profile(
                 .into_response();
         }
     };
-    match field_encryption::decrypt(&user.national_id) {
-        Ok(d) => user.national_id = d,
-        Err(e) => eprintln!("Decrypt: {}", e),
+    if let Some(ref nid) = user.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            user.national_id = Some(dec);
+        }
     }
 
     // Fetch primary role name
@@ -654,9 +656,10 @@ pub async fn update_profile(
                         .into_response();
                 }
             };
-            match field_encryption::decrypt(&user.national_id) {
-                Ok(d) => user.national_id = d,
-                Err(e) => eprintln!("Decrypt: {}", e),
+            if let Some(ref nid) = user.national_id {
+                if let Ok(dec) = field_encryption::decrypt(nid) {
+                    user.national_id = Some(dec);
+                }
             }
 
             // Fetch primary role name
@@ -822,9 +825,10 @@ pub async fn change_password(
                 .into_response();
         }
     };
-    match field_encryption::decrypt(&user.national_id) {
-        Ok(d) => user.national_id = d,
-        Err(e) => eprintln!("Decrypt: {}", e),
+    if let Some(ref nid) = user.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            user.national_id = Some(dec);
+        }
     }
 
     // Verify current password
