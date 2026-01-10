@@ -229,9 +229,16 @@
 							<!-- Upload Component -->
 							<ProfileImageUpload
 								currentImage={formData.profile_image_url}
-								onsuccess={({ url }: { url: string; fileId: string }) => {
+								onsuccess={async ({ url }: { url: string; fileId: string }) => {
 									formData.profile_image_url = url;
-									toast.success('อัพโหลดรูปภาพสำเร็จ');
+									try {
+										await authAPI.updateProfile({ profileImageUrl: url });
+										await authAPI.checkAuth(); // Refresh header avatar
+										toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว');
+									} catch (e) {
+										console.error(e);
+										toast.warning('อัปโหลดสำเร็จ แต่การบันทึกข้อมูลมีปัญหา');
+									}
 								}}
 								onerror={(err: string) => toast.error(err)}
 								maxSizeMB={5}
