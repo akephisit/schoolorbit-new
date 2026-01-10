@@ -65,11 +65,11 @@ pub async fn check_permission(
         }
     };
     
-    // Get user from database (with decryption)
-    let user: User = match sqlx::query_as(
+    // Get user from database (select national_id directly)
+    let mut user: User = match sqlx::query_as(
         "SELECT 
             id,
-            pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
+            national_id,
             email,
             password_hash,
             first_name,
@@ -108,6 +108,21 @@ pub async fn check_permission(
             ).into_response());
         }
     };
+
+    // Decrypt national_id
+    if let Some(ref nid) = user.national_id {
+        match crate::utils::field_encryption::decrypt(nid) {
+            Ok(decrypted) => {
+                user.national_id = Some(decrypted);
+            }
+            Err(e) => {
+                eprintln!("Failed to decrypt national_id for user {}: {}", user.id, e);
+                // On failure, keep it as is or clear it? 
+                // Let's clear it to avoid showing garbage/ciphertext
+                user.national_id = None;
+            }
+        }
+    }
 
     // Check permission
     match user.has_permission(pool, required_permission).await {
