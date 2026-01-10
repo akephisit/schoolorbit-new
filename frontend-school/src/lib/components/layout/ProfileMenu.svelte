@@ -55,13 +55,22 @@
 			class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-accent transition-colors outline-none"
 		>
 			<!-- Avatar Only -->
-			<div
-				class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center flex-shrink-0 shadow-sm ring-2 ring-background"
-			>
-				<span class="text-sm font-semibold text-primary-foreground">
-					{getInitials(user.firstName, user.lastName)}
-				</span>
-			</div>
+			<!-- Avatar Or Initials -->
+			{#if user.profileImageUrl}
+				<img
+					src={user.profileImageUrl}
+					alt="Profile"
+					class="w-10 h-10 rounded-full object-cover shadow-sm ring-2 ring-background bg-muted"
+				/>
+			{:else}
+				<div
+					class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center flex-shrink-0 shadow-sm ring-2 ring-background"
+				>
+					<span class="text-sm font-semibold text-primary-foreground">
+						{getInitials(user.firstName, user.lastName)}
+					</span>
+				</div>
+			{/if}
 		</DropdownMenu.Trigger>
 
 		<DropdownMenu.Content align="end" side="bottom" class="w-56">
