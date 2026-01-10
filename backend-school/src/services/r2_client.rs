@@ -1,3 +1,5 @@
+use aws_sdk_s3::presigning::PresigningConfig;
+use std::time::Duration;
 use aws_config::meta::region::RegionProviderChain;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::config::Region;
@@ -194,11 +196,28 @@ impl R2Client {
             .is_ok()
     }
     
+    /// Generate a presigned URL for downloading a file
+    /// Only the key holder can access the file via this URL
+    pub async fn generate_presigned_url(&self, key: &str, expires_in_secs: u64) -> Result<String, String> {
+        let presigning_config = PresigningConfig::expires_in(Duration::from_secs(expires_in_secs))
+            .map_err(|e| format!("Failed to create presigning config: {}", e))?;
+
+        let presigned_req = self.client
+            .get_object()
+            .bucket(&self.config.bucket_name)
+            .key(key)
+            .presigned(presigning_config)
+            .await
+            .map_err(|e| format!("Failed to generate presigned URL: {}", e))?;
+
+        Ok(presigned_req.uri().to_string())
+    }
+
     /// Get the public URL for a file
     pub fn get_public_url(&self, key: &str) -> String {
         format!("{}/{}", self.config.public_url.trim_end_matches('/'), key)
     }
-    
+
     /// Get the bucket name
     pub fn bucket_name(&self) -> &str {
         &self.config.bucket_name
