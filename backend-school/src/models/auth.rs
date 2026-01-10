@@ -68,6 +68,7 @@ pub struct UpdateProfileRequest {
     pub date_of_birth: Option<String>, // Will be parsed to NaiveDate
     pub gender: Option<String>,
     pub address: Option<String>,
+    pub profile_image_url: Option<String>,
 }
 
 // Change password request

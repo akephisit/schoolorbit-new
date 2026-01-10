@@ -112,7 +112,8 @@
 				lineId: formData.line_id || undefined,
 				dateOfBirth: formData.date_of_birth || undefined,
 				gender: formData.gender || undefined,
-				address: formData.address || undefined
+				address: formData.address || undefined,
+				profileImageUrl: formData.profile_image_url || undefined
 			});
 
 			// Update local profile state

@@ -172,6 +172,7 @@ class AuthAPI {
 		dateOfBirth?: string;
 		gender?: string;
 		address?: string;
+		profileImageUrl?: string;
 	}): Promise<ProfileResponse> {
 		const response = await fetch(`${BACKEND_URL}/api/auth/me/profile`, {
 			method: 'PUT',

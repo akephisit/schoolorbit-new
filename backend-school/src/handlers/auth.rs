@@ -593,8 +593,9 @@ pub async fn update_profile(
              date_of_birth = COALESCE($7, date_of_birth),
              gender = COALESCE($8, gender),
              address = COALESCE($9, address),
+             profile_image_url = COALESCE($10, profile_image_url),
              updated_at = NOW()
-         WHERE id = $10"
+         WHERE id = $11"
     )
     .bind(&payload.title)
     .bind(&payload.nickname)
@@ -605,6 +606,7 @@ pub async fn update_profile(
     .bind(date_of_birth)
     .bind(&payload.gender)
     .bind(&payload.address)
+    .bind(&payload.profile_image_url)
     .bind(user_id)
     .execute(&pool)
     .await;
