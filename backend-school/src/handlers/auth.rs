@@ -350,10 +350,9 @@ pub async fn me(
     };
 
     // Decrypt national_id
-    if let Err(e) = field_encryption::decrypt(&user.national_id)
-        .map(|decrypted| user.national_id = decrypted) 
-    {
-        eprintln!("Failed to decrypt national_id: {}", e);
+    match field_encryption::decrypt(&user.national_id) {
+        Ok(dec) => user.national_id = dec,
+        Err(e) => eprintln!("Decrypt error: {}", e),
     }
 
 

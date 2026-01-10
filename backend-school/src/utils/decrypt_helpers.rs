@@ -1,8 +1,4 @@
 /// Helper to decrypt User's encrypted fields after fetching from database
-/// 
-/// This decrypts:
-/// - national_id (always encrypted)
-/// - Other sensitive fields as needed
 use crate::models::auth::User;
 use crate::utils::field_encryption;
 
@@ -12,12 +8,7 @@ pub trait DecryptUser {
 
 impl DecryptUser for User {
     fn decrypt_sensitive_fields(&mut self) -> Result<(), String> {
-        // Decrypt national_id if not empty
-        if !self.national_id.is_empty() {
-            self.national_id = field_encryption::decrypt(&self.national_id)
-                .map_err(|e| format!("Failed to decrypt national_id: {}", e))?;
-        }
-        
+        self.national_id = field_encryption::decrypt(&self.national_id)?;
         Ok(())
     }
 }
