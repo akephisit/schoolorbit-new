@@ -1,6 +1,4 @@
-import { getAuthToken } from './auth';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081';
+import { PUBLIC_BACKEND_URL } from '$env/static/public';
 
 export interface FileUploadResponse {
     success: boolean;
@@ -43,16 +41,9 @@ export async function uploadFile(
     formData.append('file_type', fileType);
     formData.append('is_temporary', isTemporary ? 'true' : 'false');
 
-    const token = getAuthToken();
-    if (!token) {
-        throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(`${API_URL}/api/files/upload`, {
+    const response = await fetch(`${PUBLIC_BACKEND_URL}/api/files/upload`, {
         method: 'POST',
-        headers: {
-            Authorization: `Bearer ${token}`
-        },
+        credentials: 'include', // Use cookie-based auth
         body: formData
     });
 
@@ -82,15 +73,8 @@ export async function uploadDocument(file: File): Promise<FileUploadResponse> {
  * List user's files
  */
 export async function listUserFiles(): Promise<FileListResponse> {
-    const token = getAuthToken();
-    if (!token) {
-        throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(`${API_URL}/api/files`, {
-        headers: {
-            Authorization: `Bearer ${token}`
-        }
+    const response = await fetch(`${PUBLIC_BACKEND_URL}/api/files`, {
+        credentials: 'include'
     });
 
     if (!response.ok) {
@@ -104,16 +88,9 @@ export async function listUserFiles(): Promise<FileListResponse> {
  * Delete a file
  */
 export async function deleteFile(fileId: string): Promise<DeleteFileResponse> {
-    const token = getAuthToken();
-    if (!token) {
-        throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(`${API_URL}/api/files/${fileId}`, {
+    const response = await fetch(`${PUBLIC_BACKEND_URL}/api/files/${fileId}`, {
         method: 'DELETE',
-        headers: {
-            Authorization: `Bearer ${token}`
-        }
+        credentials: 'include'
     });
 
     if (!response.ok) {

@@ -1,29 +1,41 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { type Snippet } from 'svelte';
 	import { Upload, X, Image as ImageIcon } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 
-	// Props
-	export let value: string | null = null; // Current image URL
-	export let maxSizeMB: number = 5;
-	export let accept: string = 'image/jpeg,image/png,image/webp,image/gif';
-	export let disabled: boolean = false;
-	export let className: string = '';
-	export let previewSize: 'sm' | 'md' | 'lg' = 'md';
+	interface Props {
+		value?: string | null;
+		maxSizeMB?: number;
+		accept?: string;
+		disabled?: boolean;
+		className?: string;
+		previewSize?: 'sm' | 'md' | 'lg';
+		onupload?: (file: File) => void;
+		onremove?: () => void;
+		onerror?: (error: string) => void;
+		helper?: Snippet;
+	}
+
+	let {
+		value = null,
+		maxSizeMB = 5,
+		accept = 'image/jpeg,image/png,image/webp,image/gif',
+		disabled = false,
+		className = '',
+		previewSize = 'md',
+		onupload,
+		onremove,
+		onerror,
+		helper
+	}: Props = $props();
 
 	// State
-	let isDragging = false;
-	let error: string | null = null;
-	let uploading = false;
-	let preview: string | null = value;
-	let fileInput: HTMLInputElement;
-
-	const dispatch = createEventDispatcher<{
-		upload: File;
-		remove: void;
-		error: string;
-	}>();
+	let isDragging = $state(false);
+	let error = $state<string | null>(null);
+	let uploading = $state(false);
+	let preview = $state<string | null>(value);
+	let fileInput = $state<HTMLInputElement>();
 
 	// Preview size classes
 	const sizeClasses = {
@@ -31,6 +43,13 @@
 		md: 'w-32 h-32',
 		lg: 'w-48 h-48'
 	};
+
+	// Update preview when value changes
+	$effect(() => {
+		if (value !== preview) {
+			preview = value;
+		}
+	});
 
 	// Handle file selection
 	function handleFileSelect(event: Event) {
@@ -68,7 +87,7 @@
 		// Validate file type
 		if (!file.type.startsWith('image/')) {
 			error = 'กรุณาเลือกไฟล์รูปภาพเท่านั้น';
-			dispatch('error', error);
+			onerror?.(error);
 			return;
 		}
 
@@ -76,7 +95,7 @@
 		const fileSizeMB = file.size / (1024 * 1024);
 		if (fileSizeMB > maxSizeMB) {
 			error = `ขนาดไฟล์ใหญ่เกิน ${maxSizeMB} MB`;
-			dispatch('error', error);
+			onerror?.(error);
 			return;
 		}
 
@@ -88,7 +107,7 @@
 		reader.readAsDataURL(file);
 
 		// Dispatch upload event
-		dispatch('upload', file);
+		onupload?.(file);
 	}
 
 	// Remove image
@@ -98,17 +117,12 @@
 		if (fileInput) {
 			fileInput.value = '';
 		}
-		dispatch('remove');
+		onremove?.();
 	}
 
 	// Trigger file input
 	function triggerFileInput() {
 		fileInput?.click();
-	}
-
-	// Update preview when value changes
-	$: if (value !== preview) {
-		preview = value;
 	}
 </script>
 
@@ -121,13 +135,13 @@
 			isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25',
 			disabled && 'opacity-50 cursor-not-allowed'
 		)}
-		on:drop={handleDrop}
-		on:dragover={handleDragOver}
-		on:dragleave={handleDragLeave}
+		ondrop={handleDrop}
+		ondragover={handleDragOver}
+		ondragleave={handleDragLeave}
 		role="button"
 		tabindex={disabled ? -1 : 0}
-		on:click={triggerFileInput}
-		on:keydown={(e) => e.key === 'Enter' && triggerFileInput()}
+		onclick={triggerFileInput}
+		onkeydown={(e) => e.key === 'Enter' && triggerFileInput()}
 	>
 		{#if preview}
 			<!-- Image Preview -->
@@ -139,7 +153,10 @@
 					<button
 						type="button"
 						class="absolute top-2 right-2 p-1 bg-destructive text-destructive-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-						on:click|stopPropagation={handleRemove}
+						onclick={(e) => {
+							e.stopPropagation();
+							handleRemove();
+						}}
 						aria-label="ลบรูปภาพ"
 					>
 						<X class="w-4 h-4" />
@@ -168,7 +185,7 @@
 			type="file"
 			{accept}
 			{disabled}
-			on:change={handleFileSelect}
+			onchange={handleFileSelect}
 			class="hidden"
 			aria-label="เลือกรูปภาพ"
 		/>
@@ -195,9 +212,11 @@
 	{/if}
 
 	<!-- Helper Text -->
-	<slot name="helper">
+	{#if helper}
+		{@render helper()}
+	{:else}
 		<p class="text-xs text-muted-foreground">
 			รองรับ: JPG, PNG, WebP, GIF (สูงสุด {maxSizeMB} MB)
 		</p>
-	</slot>
+	{/if}
 </div>
