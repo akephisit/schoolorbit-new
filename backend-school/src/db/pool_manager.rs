@@ -56,34 +56,9 @@ impl PoolManager {
                 // Create new connection pool
                 println!("🔄 Creating new connection pool for: {}", subdomain);
                 let pool = PgPoolOptions::new()
-                    .min_connections(1)  // Always keep 1 connection ready with encryption key
+                    .min_connections(1)
                     .max_connections(self.max_connections_per_school)
                     .acquire_timeout(Duration::from_secs(10))
-                    .after_connect(|conn, _meta| {
-                        Box::pin(async move {
-                            // Get encryption key
-                            let key = match std::env::var("ENCRYPTION_KEY") {
-                                Ok(k) => k,
-                                Err(_) => {
-                                    eprintln!("❌ ENCRYPTION_KEY not set!");
-                                    return Err(sqlx::Error::Configuration("ENCRYPTION_KEY not found".into()));
-                                }
-                            };
-                            
-                            eprintln!("🔑 after_connect: Setting encryption key...");
-                            
-                            // Set encryption key on new connection
-                            let query = format!("SET app.encryption_key = '{}'", key);
-                            if let Err(e) = sqlx::query(&query).execute(&mut *conn).await {
-                                eprintln!("❌ after_connect: Failed: {}", e);
-                                return Err(e);
-                            }
-                            
-                            eprintln!("✅ after_connect: Success");
-                            Ok(())
-                        })
-                    })
-                    .test_before_acquire(true)  // Test connections before use
                     .connect(&database_url)
                     .await
                     .map_err(|e| format!("Failed to connect to database for {}: {}", subdomain, e))?;
