@@ -23,6 +23,20 @@ async-trait = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
+# File Storage & R2/S3 Integration
+aws-config = "1.1"
+aws-sdk-s3 = "1.11"
+aws-credential-types = "1.1"
+
+# Image Processing
+image = "0.24"
+mime_guess = "2.0"
+bytes = "1.5"
+
+# File Hashing (for checksums)
+sha2 = "0.10"
+hex = "0.4"
+
 
 [dev-dependencies]
 tokio-test = "0.4"

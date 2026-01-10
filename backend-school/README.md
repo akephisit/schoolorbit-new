@@ -12,6 +12,7 @@ This backend implements a flexible **module-based permission system** for managi
 ## 📚 Documentation
 
 - **[Module Creation Guide](docs/MODULE_CREATION_GUIDE.md)** - Complete guide for adding new modules with permissions, feature toggles, and menus
+- **[File Storage System](docs/FILE_STORAGE.md)** - Path-based file storage with Cloudflare R2 integration
 
 ## 🚀 Quick Start
 
@@ -109,7 +110,8 @@ backend-school/
 ├── migrations/          # Database migrations
 │   ├── 010_scoped_permissions.sql
 │   ├── 011_settings_permissions.sql
-│   └── 012_admin_menu_items.sql
+│   ├── 012_admin_menu_items.sql
+│   └── 020_file_storage_system.sql  # File storage tables
 ├── src/
 │   ├── handlers/        # API handlers
 │   │   ├── feature_toggles.rs  # Feature toggle management
@@ -118,8 +120,11 @@ backend-school/
 │   ├── models/          # Data models
 │   ├── middleware/      # Auth & other middleware
 │   └── main.rs          # Application entry point
+├── scripts/
+│   └── setup_r2.sh      # R2 configuration helper
 └── docs/
-    └── MODULE_CREATION_GUIDE.md  # Detailed guide
+    ├── MODULE_CREATION_GUIDE.md  # Detailed guide
+    └── FILE_STORAGE.md           # File storage documentation
 ```
 
 ## 🔧 Environment Variables

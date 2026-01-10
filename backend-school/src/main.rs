@@ -3,6 +3,7 @@ mod handlers;
 mod middleware;
 mod models;
 mod permissions;
+mod services;
 mod utils;
 
 #[cfg(test)]
