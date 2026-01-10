@@ -3,6 +3,7 @@ use crate::models::auth::{Claims, LoginRequest, LoginResponse, LoginUser, User, 
 use crate::utils::jwt::JwtService;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
+use crate::utils::file_url::get_file_url_from_string;
 use crate::AppState;
 use axum::{
     extract::{Request, State},
@@ -79,12 +80,16 @@ pub async fn login(
     // Note: LoginUser struct doesn't need to change
     let user = match sqlx::query_as::<_, LoginUser>(
         r#"
-        SELECT id, password_hash, status, user_type, first_name, last_name, email, date_of_birth
+        SELECT id, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
         FROM users
         WHERE national_id_hash = $1 AND status = 'active'
         "#
     )
     .bind(&nid_hash)
+
+// ... (skip unchanged lines manually if tool allows, but here we replace block)
+
+// (Skipping to UserResponse construction part - I'll do this in 2 chunks to be safe)
     .fetch_optional(&pool)
     .await
     {
@@ -174,6 +179,7 @@ pub async fn login(
         status: user.status.clone(),
         created_at: chrono::Utc::now(),
         primary_role_name,
+        profile_image_url: get_file_url_from_string(&user.profile_image_url),
     };
 
     // Set cookie (optional, based on remember_me)

@@ -45,6 +45,7 @@ pub struct LoginUser {
     pub last_name: String,
     pub email: Option<String>,
     pub date_of_birth: Option<chrono::NaiveDate>,
+    pub profile_image_url: Option<String>,
 }
 
 // Login request
@@ -97,6 +98,8 @@ pub struct UserResponse {
     // Primary role name from roles table (if exists)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_role_name: Option<String>,
+    
+    pub profile_image_url: Option<String>,
 }
 
 impl From<User> for UserResponse {
@@ -112,6 +115,7 @@ impl From<User> for UserResponse {
             status: user.status,
             created_at: user.created_at,
             primary_role_name: None, // Will be populated separately
+            profile_image_url: get_file_url_from_string(&user.profile_image_url),
         }
     }
 }
