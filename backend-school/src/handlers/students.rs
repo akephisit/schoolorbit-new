@@ -675,19 +675,23 @@ pub async fn create_student(
             ).into_response();
         }
     };
+    
+    // Hash national_id for search
+    let national_id_hash = field_encryption::hash_for_search(&payload.national_id);
 
     // 2. Create user
     let user_id: Uuid = match sqlx::query_scalar(
         r#"
         INSERT INTO users (
-            national_id, email, password_hash,
+            national_id, national_id_hash, email, password_hash,
             first_name, last_name, title, 
             user_type, status, date_of_birth, gender
-        ) VALUES ($1, $2, $3, $4, $5, $6, 'student', 'active', $7, $8)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'student', 'active', $8, $9)
         RETURNING id
         "#
     )
     .bind(&encrypted_national_id)
+    .bind(&national_id_hash)
     .bind(&payload.email)
     .bind(&password_hash)
     .bind(&payload.first_name)

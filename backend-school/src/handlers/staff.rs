@@ -659,11 +659,14 @@ pub async fn create_staff(
         }
     };
 
+    // Hash national_id for search
+    let national_id_hash = payload.national_id.as_deref().map(|s| field_encryption::hash_for_search(s));
+
     // Check if user already exists (might be inactive)
     let existing_user: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, status FROM users WHERE national_id = $1"
+        "SELECT id, status FROM users WHERE national_id_hash = $1"
     )
-    .bind(&encrypted_national_id)
+    .bind(&national_id_hash)
     .fetch_optional(&mut *tx)
     .await
     .ok()
@@ -754,13 +757,14 @@ pub async fn create_staff(
         // Create new user
         match sqlx::query_scalar(
             "INSERT INTO users (
-                national_id, email, password_hash, title, first_name, last_name, nickname,
+                national_id, national_id_hash, email, password_hash, title, first_name, last_name, nickname,
                 phone, emergency_contact, line_id, date_of_birth, gender, address,
                 user_type, hired_date, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'staff', $14, 'active')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'staff', $15, 'active')
             RETURNING id",
         )
         .bind(&encrypted_national_id)
+        .bind(&national_id_hash)
         .bind(&payload.email)
         .bind(&password_hash)
         .bind(&payload.title)

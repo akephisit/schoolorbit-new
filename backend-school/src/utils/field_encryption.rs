@@ -93,6 +93,15 @@ pub fn decrypt_optional(encrypted: Option<&str>) -> Result<Option<String>, Strin
     }
 }
 
+/// Hash text for searching (Deterministic)
+/// Uses SHA-256
+pub fn hash_for_search(text: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    let result = hasher.finalize();
+    hex::encode(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

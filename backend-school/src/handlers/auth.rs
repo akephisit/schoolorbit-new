@@ -72,37 +72,19 @@ pub async fn login(
         }
     };
 
-    // Encrypt national_id for comparison
-    let encrypted_national_id = match field_encryption::encrypt(&payload.national_id) {
-        Ok(enc) => enc,
-        Err(e) => {
-            eprintln!("❌ Encryption failed: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการประมวลผล"
-                })),
-            ).into_response();
-        }
-    };
+    // Hash national_id for searching
+    let nid_hash = field_encryption::hash_for_search(&payload.national_id);
 
-    // Fetch user from database
+    // Find user by hashed national_id
+    // Note: LoginUser struct doesn't need to change
     let user = match sqlx::query_as::<_, LoginUser>(
-        "SELECT 
-            id,
-            password_hash,
-            status,
-            user_type,
-            first_name,
-            last_name,
-            email,
-            date_of_birth
-         FROM users 
-         WHERE national_id = $1 
-         AND status = 'active'"
+        r#"
+        SELECT id, password_hash, status, user_type, first_name, last_name, email, date_of_birth
+        FROM users
+        WHERE national_id_hash = $1 AND status = 'active'
+        "#
     )
-    .bind(&encrypted_national_id)
+    .bind(&nid_hash)
     .fetch_optional(&pool)
     .await
     {
