@@ -37,8 +37,15 @@ bytes = "1.5"
 sha2 = "0.10"
 hex = "0.4"
 
+# Field Encryption (AES-256-GCM)
+aes-gcm = "0.10"
+base64 = "0.21"
+sha256 = "1.5"
+rand = "0.8"
+
 
 [dev-dependencies]
 tokio-test = "0.4"
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
+rand = "0.8"
