@@ -38,6 +38,11 @@ impl FileUrlBuilder {
     /// # Returns
     /// Full URL (e.g., "https://cdn.schoolorbit.app/school-abc/users/profiles/uuid.jpg")
     pub fn build_url(&self, path: &str) -> String {
+        // If path is already a full URL, return it as is
+        if path.starts_with("http://") || path.starts_with("https://") {
+            return path.to_string();
+        }
+
         let base = self.cdn_url.as_ref().unwrap_or(&self.base_url);
         format!("{}/{}", base.trim_end_matches('/'), path.trim_start_matches('/'))
     }

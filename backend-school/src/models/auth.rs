@@ -1,3 +1,4 @@
+use crate::utils::file_url::get_file_url_from_string;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -168,7 +169,7 @@ impl From<User> for ProfileResponse {
             date_of_birth: user.date_of_birth,
             gender: user.gender,
             address: user.address,
-            profile_image_url: user.profile_image_url,
+            profile_image_url: get_file_url_from_string(&user.profile_image_url),
             hired_date: user.hired_date,
         }
     }
