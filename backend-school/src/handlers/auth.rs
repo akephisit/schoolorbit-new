@@ -2,6 +2,7 @@ use crate::db::school_mapping::get_school_database_url;
 use crate::models::auth::{Claims, LoginRequest, LoginResponse, LoginUser, User, UserResponse, ProfileResponse, UpdateProfileRequest, ChangePasswordRequest};
 use crate::utils::jwt::JwtService;
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::field_encryption;
 use crate::AppState;
 use axum::{
     extract::{Request, State},
@@ -11,32 +12,6 @@ use axum::{
 };
 use tower_cookies::{Cookie, Cookies};
 
-// Common query to fetch user with decrypted national_id
-const SELECT_USER_BY_ID: &str = "SELECT 
-    id,
-    pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
-    email,
-    password_hash,
-    first_name,
-    last_name,
-    user_type,
-    phone,
-    date_of_birth,
-    address,
-    status,
-    metadata,
-    created_at,
-    updated_at,
-    title,
-    nickname,
-    emergency_contact,
-    line_id,
-    gender,
-    profile_image_url,
-    hired_date,
-    resigned_date
-FROM users 
-WHERE id = $1";
 
 /// Login handler
 pub async fn login(
