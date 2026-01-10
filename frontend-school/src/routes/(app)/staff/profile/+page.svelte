@@ -9,6 +9,8 @@
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import * as Select from '$lib/components/ui/select';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import { Avatar } from '$lib/components/ui/avatar';
+	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
 	import {
 		ArrowLeft,
 		Save,
@@ -197,34 +199,43 @@
 					<CardTitle>รูปโปรไฟล์</CardTitle>
 					<CardDescription>อัพโหลดรูปโปรไฟล์ของคุณ</CardDescription>
 				</CardHeader>
-				<CardContent class="flex items-center gap-6">
-					<div
-						class="w-24 h-24 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg ring-4 ring-background flex-shrink-0"
-					>
-						{#if formData.profile_image_url}
-							<img
+				<CardContent class="space-y-6">
+					<div class="flex flex-col md:flex-row items-center gap-6">
+						<!-- Avatar Display -->
+						<div class="flex-shrink-0">
+							<Avatar
 								src={formData.profile_image_url}
-								alt="Profile"
-								class="w-full h-full rounded-full object-cover"
+								initials={(readOnlyData.first_name?.charAt(0) || 'U') +
+									(readOnlyData.last_name?.charAt(0) || '')}
+								size="xl"
+								shape="circle"
+								class="ring-4 ring-background shadow-lg"
 							/>
-						{:else}
-							<span class="text-3xl font-bold text-primary-foreground">
-								{readOnlyData.first_name?.charAt(0) || 'U'}{readOnlyData.last_name?.charAt(0) || ''}
-							</span>
-						{/if}
-					</div>
-					<div class="flex-1">
-						<p class="font-semibold text-lg text-foreground mb-1">
-							{readOnlyData.first_name}
-							{readOnlyData.last_name}
-						</p>
-						<p class="text-sm text-muted-foreground mb-3">
-							{readOnlyData.primary_role_name || 'ผู้ใช้งาน'}
-						</p>
-						<Button variant="outline" size="sm" type="button">
-							<User class="h-4 w-4 mr-2" />
-							เปลี่ยนรูปโปรไฟล์
-						</Button>
+						</div>
+
+						<!-- User Info & Upload -->
+						<div class="flex-1 space-y-4">
+							<div>
+								<p class="font-semibold text-lg text-foreground">
+									{readOnlyData.first_name}
+									{readOnlyData.last_name}
+								</p>
+								<p class="text-sm text-muted-foreground">
+									{readOnlyData.primary_role_name || 'ผู้ใช้งาน'}
+								</p>
+							</div>
+
+							<!-- Upload Component -->
+							<ProfileImageUpload
+								currentImage={formData.profile_image_url}
+								onsuccess={({ url }: { url: string; fileId: string }) => {
+									formData.profile_image_url = url;
+									toast.success('อัพโหลดรูปภาพสำเร็จ');
+								}}
+								onerror={(err: string) => toast.error(err)}
+								maxSizeMB={5}
+							/>
+						</div>
 					</div>
 				</CardContent>
 			</Card>
