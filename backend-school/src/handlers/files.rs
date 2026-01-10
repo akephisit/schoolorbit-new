@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     db::school_mapping::get_school_database_url,
     models::{
-        auth::User,
+        auth::{Claims, User},
         file::{
             DeleteFileResponse, File, FileListResponse, FileResponse, FileType,
             FileValidationConfig,
@@ -36,11 +36,25 @@ use crate::{
 /// - is_temporary: Optional, mark as temporary file
 pub async fn upload_file(
     State(state): State<AppState>,
-    Extension(user): Extension<User>,
+    Extension(claims): Extension<Claims>,
     subdomain_header: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    info!("Uploading file for user: {}", user.id);
+    let user_id = match Uuid::parse_str(&claims.sub) {
+        Ok(id) => id,
+        Err(_) => {
+            error!("Invalid user ID in claims: {}", claims.sub);
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "error": "Invalid user authentication"
+                })),
+            ));
+        }
+    };
+
+    info!("Uploading file for user: {}", user_id);
 
     // Extract subdomain
     let subdomain = match extract_subdomain_from_request(&subdomain_header) {
@@ -256,7 +270,7 @@ pub async fn upload_file(
         // For user documents, create user-specific folder
         format!(
             "school-{}/{}/{}/{}.{}",
-            subdomain, storage_folder, user.id, file_id, extension
+            subdomain, storage_folder, user_id, file_id, extension
         )
     } else {
         format!(
@@ -348,7 +362,7 @@ pub async fn upload_file(
         RETURNING *
         "#,
     )
-    .bind(user.id)
+    .bind(user_id)
     .bind(&subdomain)
     .bind(format!("{}.{}", file_id, extension))
     .bind(&original_filename)
@@ -363,7 +377,7 @@ pub async fn upload_file(
     .bind(is_temporary)
     .bind(true) // is_public - can be controlled later
     .bind(&checksum)
-    .bind(user.id)
+    .bind(user_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -404,11 +418,25 @@ pub async fn upload_file(
 /// DELETE /api/files/:id
 pub async fn delete_file(
     State(state): State<AppState>,
-    Extension(user): Extension<User>,
+    Extension(claims): Extension<Claims>,
     subdomain_header: axum::http::HeaderMap,
     Path(file_id): Path<Uuid>,
 ) -> Result<Json<DeleteFileResponse>, (StatusCode, Json<serde_json::Value>)> {
-    info!("Deleting file: {} for user: {}", file_id, user.id);
+    let user_id = match Uuid::parse_str(&claims.sub) {
+        Ok(id) => id,
+        Err(_) => {
+            error!("Invalid user ID in claims: {}", claims.sub);
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "error": "Invalid user authentication"
+                })),
+            ));
+        }
+    };
+
+    info!("Deleting file: {} for user: {}", file_id, user_id);
 
     let subdomain = match extract_subdomain_from_request(&subdomain_header) {
         Ok(s) => s,
@@ -459,7 +487,7 @@ pub async fn delete_file(
         "SELECT * FROM files WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
     )
     .bind(file_id)
-    .bind(user.id)
+    .bind(user_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| {
@@ -525,9 +553,22 @@ pub async fn delete_file(
 /// GET /api/files
 pub async fn list_user_files(
     State(state): State<AppState>,
-    Extension(user): Extension<User>,
+    Extension(claims): Extension<Claims>,
     subdomain_header: axum::http::HeaderMap,
 ) -> Result<Json<FileListResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let user_id = match Uuid::parse_str(&claims.sub) {
+        Ok(id) => id,
+        Err(_) => {
+            error!("Invalid user ID in claims: {}", claims.sub);
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "error": "Invalid user authentication"
+                })),
+            ));
+        }
+    };
     let subdomain = match extract_subdomain_from_request(&subdomain_header) {
         Ok(s) => s,
         Err(response) => {
@@ -575,7 +616,7 @@ pub async fn list_user_files(
     let files = sqlx::query_as::<_, File>(
         "SELECT * FROM files WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
     )
-    .bind(user.id)
+    .bind(user_id)
     .fetch_all(&pool)
     .await
     .map_err(|e| {
