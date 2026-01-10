@@ -1,5 +1,5 @@
 -- ===================================================================
--- Migration 015: Update ADMIN Role with Wildcard Permission
+-- Migration 014: Update ADMIN Role with Wildcard Permission
 -- Description: Update ADMIN role to have wildcard (*) permission
 --              which grants access to all permissions automatically.
 -- Date: 2025-12-30

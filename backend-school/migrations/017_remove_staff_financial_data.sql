@@ -1,5 +1,5 @@
 -- ===================================================================
--- Migration 018: Remove Unnecessary Data from Staff Info
+-- Migration 017: Remove Unnecessary Data from Staff Info
 -- Description: ลบข้อมูลการเงินและข้อมูลการทำงานออกจากระบบ (ลดความเสี่ยง PDPA)
 -- Reason: ระบบโรงเรียนไม่จำเป็นต้องเก็บข้อมูลเหล่านี้
 --         - ข้อมูลการเงิน → ควรอยู่ในระบบบัญชี/HR แยกต่างหาก

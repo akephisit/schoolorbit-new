@@ -1,5 +1,5 @@
 -- ===================================================================
--- Migration 017: Consent Management System (PDPA Compliance)
+-- Migration 016: Consent Management System (PDPA Compliance)
 -- Description: ระบบจัดการความยินยอมตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล
 -- Date: 2026-01-08
 -- ===================================================================

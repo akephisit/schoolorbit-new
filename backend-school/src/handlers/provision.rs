@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use sqlx::postgres::PgPoolOptions;
+use crate::utils::field_encryption;
 
 /// Handler for provisioning a new school tenant database
 /// 
@@ -113,39 +114,6 @@ pub async fn provision_tenant(
         }
     };
 
-    // Setup encryption key for encrypted columns (inside transaction)
-    println!("🔐 Setting up encryption...");
-    
-    // Get encryption key from environment
-    let encryption_key = match std::env::var("ENCRYPTION_KEY") {
-        Ok(key) => key,
-        Err(_) => {
-            eprintln!("❌ ENCRYPTION_KEY not set");
-            let error = serde_json::json!({
-                "success": false,
-                "error": "ENCRYPTION_KEY environment variable not set"
-            });
-            let _ = tx.rollback().await;
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
-        }
-    };
-    
-    // SET cannot use parameter binding, must use literal value
-    // Note: encryption_key should only come from trusted source (environment)
-    // Using SET (session-level) for consistency with other handlers
-    if let Err(e) = sqlx::query(&format!("SET app.encryption_key = '{}'", encryption_key))
-        .execute(&mut *tx)
-        .await
-    {
-        eprintln!("❌ Encryption setup failed: {}", e);
-        let error = serde_json::json!({
-            "success": false,
-            "error": format!("Encryption setup failed: {}", e)
-        });
-        let _ = tx.rollback().await;
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
-    }
-    
     // Hash the password using bcrypt
     let password_hash = match bcrypt::hash(&payload.admin_password, bcrypt::DEFAULT_COST) {
         Ok(hash) => hash,
@@ -160,23 +128,41 @@ pub async fn provision_tenant(
         }
     };
 
-    // Insert admin user into the database with encrypted national_id
+    // Encrypt national_id using App-Level AES-GCM
+    let encrypted_national_id = match field_encryption::encrypt(&payload.admin_national_id) {
+        Ok(enc) => enc,
+        Err(e) => {
+             eprintln!("❌ Encryption failed: {}", e);
+             let error = serde_json::json!({
+                 "success": false,
+                 "error": format!("Encryption failed: {}", e)
+             });
+             let _ = tx.rollback().await;
+             return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+        }
+    };
+    
+    // Hash national_id for search/unique constraint
+    let national_id_hash = field_encryption::hash_for_search(&payload.admin_national_id);
+
+    // Insert admin user into the database
+    // Use national_id_hash for uniqueness check
     let user_id = match sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
-        INSERT INTO users (national_id, password_hash, first_name, last_name, user_type, status)
-        VALUES (
-            pgp_sym_encrypt($1, current_setting('app.encryption_key')),
-            $2, $3, $4, $5, $6
-        )
-        ON CONFLICT (national_id) DO UPDATE SET national_id = EXCLUDED.national_id
+        INSERT INTO users (national_id, national_id_hash, password_hash, first_name, last_name, user_type, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (national_id_hash) DO UPDATE SET 
+            national_id = EXCLUDED.national_id,
+            password_hash = EXCLUDED.password_hash
         RETURNING id
         "#
     )
-    .bind(&payload.admin_national_id)
+    .bind(&encrypted_national_id)
+    .bind(&national_id_hash)
     .bind(&password_hash)
     .bind("ผู้ดูแลระบบ") // Default first name
     .bind(&payload.subdomain) // Use subdomain as last name initially
-    .bind("staff") // user_type is 'staff' (admin is determined by role assignment)
+    .bind("staff") // user_type is 'staff'
     .bind("active")
     .fetch_one(&mut *tx)
     .await

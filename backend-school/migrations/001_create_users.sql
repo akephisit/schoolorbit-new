@@ -2,7 +2,8 @@
 -- This will store students, teachers, and staff
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    national_id VARCHAR(13) UNIQUE,
+    national_id TEXT, -- Encrypted (Base64 AES-GCM)
+    national_id_hash TEXT UNIQUE, -- Blind Index (SHA256 Hex)
     email VARCHAR(255) UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Create indexes for common queries
-CREATE INDEX IF NOT EXISTS idx_users_national_id ON users(national_id);
+CREATE INDEX IF NOT EXISTS idx_users_national_id_hash ON users(national_id_hash);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);

@@ -1,5 +1,5 @@
 -- ===================================================================
--- Migration 020: File Storage System (Cloudflare R2/S3 Compatible)
+-- Migration 018: File Storage System (Cloudflare R2/S3 Compatible)
 -- Description: Comprehensive file management system for user files,
 --              documents, and images using path-based storage
 -- Author: SchoolOrbit Team
