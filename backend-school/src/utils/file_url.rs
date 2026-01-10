@@ -15,18 +15,19 @@ impl FileUrlBuilder {
     pub fn new() -> Result<Self, String> {
         let env_val = env::var("R2_PUBLIC_URL").unwrap_or_default();
         
+        // Use hardcoded fallback if env is missing or empty
         let base_url = if env_val.is_empty() {
-             tracing::error!("⚠️ R2_PUBLIC_URL is missing or empty! Using placeholder.");
-             "https://invalid-config-check-env.com".to_string() 
+             tracing::warn!("⚠️ R2_PUBLIC_URL is missing! Using default: https://files.schoolorbit.app");
+             "https://files.schoolorbit.app".to_string() 
         } else {
              env_val
         };
         
-        // Log logging for debugging (only on startup ideally, but fine here for debug)
-        tracing::debug!("Using R2_PUBLIC_URL for file links: {}", base_url);
-        
-        let cdn_url = env::var("CDN_URL").ok();
-        
+        // Filter out empty string for CDN_URL
+        let cdn_url = env::var("CDN_URL")
+            .ok()
+            .filter(|s| !s.is_empty()); // Important: Ignore empty string
+            
         Ok(Self { base_url, cdn_url })
     }
     
