@@ -13,8 +13,17 @@ pub struct FileUrlBuilder {
 impl FileUrlBuilder {
     /// Create a new FileUrlBuilder from environment variables
     pub fn new() -> Result<Self, String> {
-        let base_url = env::var("R2_PUBLIC_URL")
-            .map_err(|_| "R2_PUBLIC_URL environment variable not set".to_string())?;
+        let env_val = env::var("R2_PUBLIC_URL").unwrap_or_default();
+        
+        let base_url = if env_val.is_empty() {
+             tracing::error!("⚠️ R2_PUBLIC_URL is missing or empty! Using placeholder.");
+             "https://invalid-config-check-env.com".to_string() 
+        } else {
+             env_val
+        };
+        
+        // Log logging for debugging (only on startup ideally, but fine here for debug)
+        tracing::debug!("Using R2_PUBLIC_URL for file links: {}", base_url);
         
         let cdn_url = env::var("CDN_URL").ok();
         
