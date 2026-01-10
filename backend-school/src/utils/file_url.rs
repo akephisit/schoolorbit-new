@@ -73,11 +73,12 @@ impl Default for FileUrlBuilder {
 /// assert_eq!(url, Some("https://cdn.schoolorbit.app/school-abc/users/profiles/uuid.jpg".to_string()));
 /// ```
 pub fn get_file_url(path: Option<&str>) -> Option<String> {
-    path.and_then(|p| {
-        FileUrlBuilder::new()
-            .ok()
-            .map(|builder| builder.build_url(p))
-    })
+    path.filter(|p| !p.is_empty()) // Filter out empty strings
+        .and_then(|p| {
+            FileUrlBuilder::new()
+                .ok()
+                .map(|builder| builder.build_url(p))
+        })
 }
 
 /// Helper function to convert path reference to URL
