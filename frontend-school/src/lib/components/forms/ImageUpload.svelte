@@ -197,7 +197,7 @@
 			type="button"
 			variant="outline"
 			size="sm"
-			on:click={triggerFileInput}
+			onclick={triggerFileInput}
 			{disabled}
 			class="w-full"
 		>

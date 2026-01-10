@@ -1,26 +1,40 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { type Snippet } from 'svelte';
 	import ImageUpload from './ImageUpload.svelte';
 	import { uploadProfileImage } from '$lib/api/files';
 	import { toast } from 'svelte-sonner';
 
-	// Props
-	export let currentImage: string | null = null;
-	export let disabled: boolean = false;
-	export let maxSizeMB: number = 5;
+	interface Props {
+		currentImage?: string | null;
+		disabled?: boolean;
+		maxSizeMB?: number;
+		onsuccess?: (data: { url: string; fileId: string }) => void;
+		onerror?: (error: string) => void;
+		helper?: Snippet;
+	}
+
+	let {
+		currentImage = null,
+		disabled = false,
+		maxSizeMB = 5,
+		onsuccess,
+		onerror,
+		helper
+	}: Props = $props();
 
 	// State
-	let uploading = false;
-	let imageUrl = currentImage;
+	let uploading = $state(false);
+	let imageUrl = $state(currentImage);
 
-	const dispatch = createEventDispatcher<{
-		success: { url: string; fileId: string };
-		error: string;
-	}>();
+	// Update when prop changes
+	$effect(() => {
+		if (currentImage !== imageUrl) {
+			imageUrl = currentImage;
+		}
+	});
 
 	// Handle file upload
-	async function handleUpload(event: CustomEvent<File>) {
-		const file = event.detail;
+	async function handleUpload(file: File) {
 		uploading = true;
 
 		try {
@@ -30,7 +44,7 @@
 				imageUrl = response.file.url;
 				toast.success('อัปโหลดรูปภาพสำเร็จ');
 
-				dispatch('success', {
+				onsuccess?.({
 					url: response.file.url,
 					fileId: response.file.id
 				});
@@ -38,7 +52,7 @@
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
 			toast.error(`ไม่สามารถอัปโหลดรูปภาพได้: ${errorMessage}`);
-			dispatch('error', errorMessage);
+			onerror?.(errorMessage);
 		} finally {
 			uploading = false;
 		}
@@ -47,12 +61,7 @@
 	// Handle remove
 	function handleRemove() {
 		imageUrl = null;
-		dispatch('success', { url: '', fileId: '' });
-	}
-
-	// Update when prop changes
-	$: if (currentImage !== imageUrl) {
-		imageUrl = currentImage;
+		onsuccess?.({ url: '', fileId: '' });
 	}
 </script>
 
@@ -60,9 +69,7 @@
 	value={imageUrl}
 	{maxSizeMB}
 	{disabled}
-	on:upload={handleUpload}
-	on:remove={handleRemove}
-	{...$$restProps}
->
-	<slot slot="helper" name="helper" />
-</ImageUpload>
+	onupload={handleUpload}
+	onremove={handleRemove}
+	{helper}
+/>
