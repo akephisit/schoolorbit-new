@@ -220,6 +220,14 @@ async fn main() {
         .route("/api/consent/summary", get(handlers::consent::get_consent_summary)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
+        // File Management routes (protected)
+        .route("/api/files/upload", post(handlers::files::upload_file)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/files", get(handlers::files::list_user_files)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/files/{id}", axum::routing::delete(handlers::files::delete_file)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+
         // Route registration (no auth - uses deploy key)
         .route("/api/admin/routes/register", post(handlers::register_routes::register_routes))
         
