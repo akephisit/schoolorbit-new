@@ -146,28 +146,37 @@ pub async fn list_achievements(
     }
 
     // Prepare Query
-    let mut query = String::from("SELECT * FROM staff_achievements WHERE 1=1");
+    let mut query = String::from("
+        SELECT 
+            a.*,
+            u.first_name as user_first_name,
+            u.last_name as user_last_name,
+            u.profile_image_url as user_profile_image_url
+        FROM staff_achievements a
+        LEFT JOIN users u ON a.user_id = u.id
+        WHERE 1=1
+    ");
     
     // Apply Ownership Filter
     if !can_read_all {
         // If cannot read all, force filter by own ID
-        query.push_str(&format!(" AND user_id = '{}'", user.id));
+        query.push_str(&format!(" AND a.user_id = '{}'", user.id));
     } else {
         // If can read all, check if user provided a specific filter
         if let Some(target_user_id) = filter.user_id {
-            query.push_str(&format!(" AND user_id = '{}'", target_user_id));
+            query.push_str(&format!(" AND a.user_id = '{}'", target_user_id));
         }
     }
 
     // Date Filters
     if let Some(start) = filter.start_date {
-        query.push_str(&format!(" AND achievement_date >= '{}'", start));
+        query.push_str(&format!(" AND a.achievement_date >= '{}'", start));
     }
     if let Some(end) = filter.end_date {
-        query.push_str(&format!(" AND achievement_date <= '{}'", end));
+        query.push_str(&format!(" AND a.achievement_date <= '{}'", end));
     }
 
-    query.push_str(" ORDER BY achievement_date DESC, created_at DESC");
+    query.push_str(" ORDER BY a.achievement_date DESC, a.created_at DESC");
 
     let items = match sqlx::query_as::<_, Achievement>(&query)
         .fetch_all(&pool)

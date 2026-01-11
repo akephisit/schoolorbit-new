@@ -8,6 +8,9 @@ export interface Achievement {
     created_by?: string;
     created_at: string;
     updated_at: string;
+    user_first_name?: string;
+    user_last_name?: string;
+    user_profile_image_url?: string;
 }
 
 export interface CreateAchievementRequest {

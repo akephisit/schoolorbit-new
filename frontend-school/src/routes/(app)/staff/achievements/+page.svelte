@@ -32,18 +32,15 @@
 	import { getAchievements, deleteAchievement } from '$lib/api/achievement';
 	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
-    import { listStaff, type StaffListItem } from '$lib/api/staff';
 
 	let loading = $state(false);
 	let achievements = $state<Achievement[]>([]);
-	let staffMap = $state<Record<string, StaffListItem>>({});
     let searchTerm = $state('');
 
     // Derived state for filtering
     const filteredAchievements = $derived(
         achievements.filter(a => {
-            const staff = staffMap[a.user_id];
-            const staffName = staff ? `${staff.first_name} ${staff.last_name}` : '';
+            const staffName = `${a.user_first_name || ''} ${a.user_last_name || ''}`;
             const searchLower = searchTerm.toLowerCase();
             
             return (
@@ -58,16 +55,8 @@
 		try {
 			loading = true;
             
-            // 1. Fetch all staff to map IDs to names (Optimization: could be better to join in backend)
-            const staffRes = await listStaff({ page_size: 1000 }); // Fetch "all" staff roughly
-            if (staffRes.success) {
-                staffRes.data.forEach(s => {
-                    staffMap[s.id] = s;
-                });
-            }
-
-            // 2. Fetch all achievements
-			const res = await getAchievements(); // Assuming no filter returns all
+            // Fetch all achievements (backend now includes user details)
+			const res = await getAchievements(); 
 			if (res.success && res.data) {
 				achievements = res.data;
 			} else {
@@ -190,18 +179,16 @@
 										{/if}
 									</TableCell>
 									<TableCell>
-										{#if staffMap[achievement.user_id]}
+										{#if achievement.user_first_name}
 											<div class="flex items-center gap-2">
 												<UserIcon class="w-4 h-4 text-muted-foreground" />
 												<span>
-													{staffMap[achievement.user_id].first_name}
-													{staffMap[achievement.user_id].last_name}
+													{achievement.user_first_name}
+													{achievement.user_last_name}
 												</span>
 											</div>
 										{:else}
-											<span class="text-muted-foreground text-xs"
-												>Unknown User ({achievement.user_id})</span
-											>
+											<span class="text-muted-foreground text-xs">Unknown User</span>
 										{/if}
 									</TableCell>
 									<TableCell>
