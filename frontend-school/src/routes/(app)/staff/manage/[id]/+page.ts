@@ -3,17 +3,6 @@ import { getStaffProfile } from '$lib/api/staff';
 import { getAchievements } from '$lib/api/achievement';
 import { error } from '@sveltejs/kit';
 
-export const ssr = false;
-
-export const _meta = {
-    menu: {
-        title: 'รายละเอียดบุคลากร',
-        group: 'hidden',
-        user_type: 'staff',
-        permission: 'staff'
-    }
-};
-
 export const load: PageLoad = async ({ params, fetch }) => {
     const staffId = params.id;
 
