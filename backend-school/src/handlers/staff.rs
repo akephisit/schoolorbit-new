@@ -270,9 +270,15 @@ pub async fn list_staff(
     };
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.read.all").await {
+    let auth_result = check_user_permission(&headers, &pool, "staff.read.all").await;
+    let _user = match auth_result {
         Ok(u) => u,
-        Err(response) => return response,
+        Err(_) => {
+            match check_user_permission(&headers, &pool, "achievement.create.all").await {
+                Ok(u) => u,
+                Err(response) => return response,
+            }
+        }
     };
 
     let page = filter.page.unwrap_or(1);
