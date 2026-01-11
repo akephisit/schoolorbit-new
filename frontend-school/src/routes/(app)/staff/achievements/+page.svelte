@@ -181,20 +181,15 @@
     }
 
 	onMount(() => {
-        // Wait for authStore to be ready (usually immediate in client)
-        if (userId) loadData();
+        // We rely on the $effect below to trigger the initial load when userId is available
 	});
 
     // React to user ID change (e.g. reload or login)
     $effect(() => {
-        if (userId && !loading) {
-             // Only load if we really need to (e.g. user changed)
-             // But we already load on mount. 
-             // To be safe against "user not ready on mount", we can check if achievements are empty
-             // BUT NOT depend on achievements.length for re-triggering.
-             // Best way: check a tracked flag or just rely on the fact that if userId changes, we reload.
+        if (userId) {
+             // Use untrack to prevent re-running when dependencies inside loadData change (like loading state)
              untrack(() => {
-                 if (achievements.length === 0) loadData();
+                 loadData();
              });
         }
     });
