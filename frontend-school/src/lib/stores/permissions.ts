@@ -1,8 +1,8 @@
 /**
  * Enhanced Permission Store
- * - Auto-loads permissions when user logs in
+ * - Auto-syncs permissions from authStore.user
  * - Provides easy-to-use API via `can` store
- * - No need to use utils - everything in one place
+ * - No separate API call needed
  */
 import { writable, derived, get } from 'svelte/store';
 import type { Writable, Readable } from 'svelte/store';
@@ -10,7 +10,6 @@ import type { Writable, Readable } from 'svelte/store';
 // Internal state
 export const userPermissions: Writable<string[]> = writable([]);
 export const permissionsLoading: Writable<boolean> = writable(false);
-let lastLoadedUserId: string | null = null;
 
 /**
  * Enhanced permission checker with multiple methods
@@ -72,32 +71,42 @@ export const can: Readable<{
 }));
 
 /**
- * Load permissions for current user
- * @param userId - User ID to load permissions for
- * @param force - Force reload even if already loaded for this user
+ * Load permissions from user object (from /api/auth/me response)
+ * This avoids 403 error from /api/users/{id}/permissions which requires admin permission
+ * @param permissions - Permissions array from user object
+ */
+export function setPermissions(permissions: string[] | undefined): void {
+	if (permissions && Array.isArray(permissions)) {
+		userPermissions.set(permissions);
+	} else {
+		userPermissions.set([]);
+	}
+}
+
+/**
+ * Legacy function for backward compatibility
+ * Now just extracts permissions from authStore
+ * @deprecated Use setPermissions() with user.permissions instead
  */
 export async function loadUserPermissions(userId: string, force = false): Promise<void> {
-	// Skip if already loaded for this user (unless forced)
-	if (!force && lastLoadedUserId === userId && get(userPermissions).length > 0) {
-		return;
-	}
+	// This function is deprecated but kept for compatibility
+	// Permissions should come from authStore.user.permissions
+	// which is populated by /api/auth/me
 
+	// Try to get permissions from separate API (will fail with 403 for non-admin)
 	permissionsLoading.set(true);
 	try {
 		const { userRoleAPI } = await import('$lib/api/roles');
 		const response = await userRoleAPI.getUserPermissions(userId);
 		if (response.success && response.data) {
 			userPermissions.set(response.data);
-			lastLoadedUserId = userId;
 		} else {
-			console.error('Failed to load permissions:', response.error);
+			console.warn('Cannot load permissions via API (requires admin permission). Will use permissions from auth/me instead.');
 			userPermissions.set([]);
-			lastLoadedUserId = null;
 		}
 	} catch (error) {
-		console.error('Error loading permissions:', error);
+		console.warn('Failed to load permissions via API:', error);
 		userPermissions.set([]);
-		lastLoadedUserId = null;
 	} finally {
 		permissionsLoading.set(false);
 	}
@@ -108,14 +117,12 @@ export async function loadUserPermissions(userId: string, force = false): Promis
  */
 export function clearPermissions(): void {
 	userPermissions.set([]);
-	lastLoadedUserId = null;
 }
 
 /**
- * Refresh permissions for current user
+ * Refresh permissions from current auth state
  */
-export async function refreshPermissions(): Promise<void> {
-	if (lastLoadedUserId) {
-		await loadUserPermissions(lastLoadedUserId, true);
-	}
+export function refreshPermissions(): void {
+	// Permissions will be refreshed when user re-authenticates
+	// via authStore.setUser() which calls setPermissions()
 }

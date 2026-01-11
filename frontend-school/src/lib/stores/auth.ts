@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { loadUserPermissions, clearPermissions } from './permissions';
+import { setPermissions, clearPermissions } from './permissions';
 
 export interface User {
 	id: string;
@@ -14,7 +14,7 @@ export interface User {
 	createdAt: string;
 	primaryRoleName?: string; // ชื่อบทบาทหลักจากฐานข้อมูล
 	profileImageUrl?: string;
-	permissions?: string[]; // Optional - will be loaded from permission store
+	permissions?: string[]; // Permissions from /api/auth/me
 }
 
 export interface AuthState {
@@ -39,12 +39,9 @@ function createAuthStore() {
 				isLoading: false
 			});
 
-			// Auto-load permissions when user is set
-			if (user?.id) {
-				loadUserPermissions(user.id).catch((error) => {
-					console.error('Failed to auto-load permissions:', error);
-				});
-			}
+			// Sync permissions from user object (from /api/auth/me)
+			// This avoids 403 error from /api/users/{id}/permissions
+			setPermissions(user?.permissions);
 		},
 		clearUser: () => {
 			set({
