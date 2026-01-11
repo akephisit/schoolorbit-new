@@ -1,16 +1,29 @@
 import type { Achievement, CreateAchievementRequest, UpdateAchievementRequest, AchievementListFilter } from '$lib/types/achievement';
-import { browser } from '$app/environment';
+import { PUBLIC_BACKEND_URL } from '$env/static/public';
 
-const API_BASE = '/api/achievements';
+const API_BASE_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 
-export async function getAchievements(filter?: AchievementListFilter): Promise<{ success: boolean; data?: Achievement[]; error?: string }> {
+export interface ApiResponse<T> {
+    success: boolean;
+    data?: T;
+    error?: string;
+    message?: string;
+}
+
+export async function getAchievements(filter?: AchievementListFilter): Promise<ApiResponse<Achievement[]>> {
     try {
         const params = new URLSearchParams();
         if (filter?.user_id) params.append('user_id', filter.user_id);
         if (filter?.start_date) params.append('start_date', filter.start_date);
         if (filter?.end_date) params.append('end_date', filter.end_date);
 
-        const res = await fetch(`${API_BASE}?${params.toString()}`);
+        const res = await fetch(`${API_BASE_URL}/api/achievements?${params.toString()}`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
         const data = await res.json();
         return data;
     } catch (e) {
@@ -19,10 +32,11 @@ export async function getAchievements(filter?: AchievementListFilter): Promise<{
     }
 }
 
-export async function createAchievement(payload: CreateAchievementRequest): Promise<{ success: boolean; data?: Achievement; error?: string }> {
+export async function createAchievement(payload: CreateAchievementRequest): Promise<ApiResponse<Achievement>> {
     try {
-        const res = await fetch(API_BASE, {
+        const res = await fetch(`${API_BASE_URL}/api/achievements`, {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
@@ -34,10 +48,11 @@ export async function createAchievement(payload: CreateAchievementRequest): Prom
     }
 }
 
-export async function updateAchievement(id: string, payload: UpdateAchievementRequest): Promise<{ success: boolean; data?: Achievement; error?: string }> {
+export async function updateAchievement(id: string, payload: UpdateAchievementRequest): Promise<ApiResponse<Achievement>> {
     try {
-        const res = await fetch(`${API_BASE}/${id}`, {
+        const res = await fetch(`${API_BASE_URL}/api/achievements/${id}`, {
             method: 'PUT',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
@@ -49,10 +64,12 @@ export async function updateAchievement(id: string, payload: UpdateAchievementRe
     }
 }
 
-export async function deleteAchievement(id: string): Promise<{ success: boolean; error?: string }> {
+export async function deleteAchievement(id: string): Promise<ApiResponse<void>> {
     try {
-        const res = await fetch(`${API_BASE}/${id}`, {
-            method: 'DELETE'
+        const res = await fetch(`${API_BASE_URL}/api/achievements/${id}`, {
+            method: 'DELETE',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' }
         });
         const data = await res.json();
         return data;
