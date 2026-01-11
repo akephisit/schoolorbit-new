@@ -21,6 +21,7 @@ use dotenv::dotenv;
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, sync::Arc};
+use tokio_cron_scheduler::{Job, JobScheduler};
 use tower_cookies::CookieManagerLayer;
 
 /// Shared application state
@@ -278,6 +279,72 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect(&format!("Failed to bind to {}", addr));
+
+    // Initialize Job Scheduler for background tasks
+    // Run daily cleaning at 3:00 AM
+    let sched = JobScheduler::new().await.unwrap();
+    
+    // Clone shared resources for the job
+    let admin_pool_for_job = state.admin_pool.clone();
+    let pool_manager_for_job = Arc::clone(&state.pool_manager);
+
+    let cleaner_job = Job::new_async("0 0 3 * * *", move |_uuid, _l| {
+        let admin_pool = admin_pool_for_job.clone();
+        let pool_manager = pool_manager_for_job.clone();
+        
+        Box::pin(async move {
+            tracing::info!("⏰ Starting scheduled file cleanup job (Garbage Collection)...");
+            
+            // 1. Get List of all schools to clean
+            // We need database_url to establish connection via pool_manager
+            #[derive(sqlx::FromRow)]
+            struct SchoolInfo {
+                subdomain: String,
+                database_url: String,
+            }
+
+            let schools = match sqlx::query_as::<_, SchoolInfo>(
+                "SELECT subdomain, database_url FROM schools WHERE is_active = true"
+            )
+            .fetch_all(&admin_pool)
+            .await 
+            {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!("Failed to fetch schools list for cleanup: {}", e);
+                    return;
+                }
+            };
+
+            tracing::info!("Found {} active schools to clean.", schools.len());
+
+            for school in schools {
+                tracing::info!("🧹 Cleaning school tenant: {}", school.subdomain);
+                
+                // 2. Get Connection Pool (Reuse existing logic)
+                match pool_manager.get_pool(&school.database_url, &school.subdomain).await {
+                    Ok(pool) => {
+                        // 3. Run Cleaner Service
+                        match services::cleaner::FileCleaner::new(pool).await {
+                            Ok(cleaner) => {
+                                cleaner.clean_orphaned_files().await;
+                            },
+                            Err(e) => {
+                                tracing::error!("Failed to initialize FileCleaner for {}: {}", school.subdomain, e);
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!("Failed to get database connection for {}: {}", school.subdomain, e);
+                    }
+                }
+            }
+            tracing::info!("✅ Scheduled cleanup job completed for all tenants.");
+        })
+    }).expect("Failed to create cleaner job");
+
+    sched.add(cleaner_job).await.expect("Failed to add job to scheduler");
+    sched.start().await.expect("Failed to start scheduler");
 
     axum::serve(listener, app)
         .await
