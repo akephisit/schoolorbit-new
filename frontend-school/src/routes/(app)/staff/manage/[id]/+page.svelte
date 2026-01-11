@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { getStaffProfile, type StaffProfileResponse } from '$lib/api/staff';
+	import type { PageData } from './$types';
 	import { Button } from '$lib/components/ui/button';
 	import {
 		User,
@@ -21,49 +21,31 @@
 	import AchievementCard from '$lib/components/achievement/AchievementCard.svelte';
 	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
 	import { toast } from 'svelte-sonner';
+    import { invalidateAll } from '$app/navigation';
 
-	let staff: StaffProfileResponse | null = $state(null);
-	let loading = $state(true);
-	let error = $state('');
+    interface Props {
+        data: PageData;
+    }
+
+	let { data }: Props = $props();
+    
+    // Derived state from loaded data
+    const staff = $derived(data.staff);
     
     // Achievement State
-	let achievements: Achievement[] = $state([]);
+	let achievements = $state(data.achievements);
 	let loadingAchievements = $state(false);
 	let showAchievementDialog = $state(false);
 	let selectedAchievement: Achievement | null = $state(null);
-
-	const staffId = $derived(page.params.id);
-
-	async function loadStaffProfile() {
-		if (!staffId) return;
-
-		try {
-			loading = true;
-			error = '';
-			const response = await getStaffProfile(staffId);
-			if (response.success && response.data) {
-				staff = response.data;
-				// Load achievements after staff is loaded
-				loadAchievements();
-			} else {
-				error = response.error || 'ไม่พบข้อมูล';
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'เกิดข้อผิดพลาด';
-			console.error('Failed to load staff profile:', e);
-		} finally {
-			loading = false;
-		}
-	}
+    
+    // Update local state when data changes (e.g. after invalidateAll)
+    $effect(() => {
+        achievements = data.achievements;
+    });
 
 	async function loadAchievements() {
-		if (!staffId) return;
-		loadingAchievements = true;
-		const res = await getAchievements({ user_id: staffId });
-		if (res.success && res.data) {
-			achievements = res.data;
-		}
-		loadingAchievements = false;
+        // Reloads data via SvelteKit's invalidate mechanism
+		await invalidateAll();
 	}
 
 	async function handleSaveAchievement(e: CustomEvent) {
@@ -89,7 +71,7 @@
 		if (res.success) {
 			toast.success(payload.id ? 'แก้ไขผลงานเรียบร้อย' : 'เพิ่มผลงานเรียบร้อย');
 			showAchievementDialog = false;
-			loadAchievements();
+			await loadAchievements();
 		} else {
 			toast.error(res.error || 'เกิดข้อผิดพลาด');
 		}
@@ -101,15 +83,11 @@
 		const res = await deleteAchievement(achievement.id);
 		if (res.success) {
 			toast.success('ลบผลงานเรียบร้อย');
-			loadAchievements();
+			await loadAchievements();
 		} else {
 			toast.error(res.error || 'เกิดข้อผิดพลาด');
 		}
 	}
-
-	onMount(() => {
-		loadStaffProfile();
-	});
 </script>
 
 <svelte:head>
@@ -138,19 +116,7 @@
 		{/if}
 	</div>
 
-	{#if loading}
-		<div class="bg-card border border-border rounded-lg p-12 text-center">
-			<div
-				class="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-			></div>
-			<p class="mt-4 text-muted-foreground">กำลังโหลด...</p>
-		</div>
-	{:else if error}
-		<div class="bg-destructive/10 border border-destructive/20 rounded-lg p-6 text-center">
-			<p class="text-destructive">{error}</p>
-			<Button onclick={loadStaffProfile} variant="outline" class="mt-4">ลองอีกครั้ง</Button>
-		</div>
-	{:else if staff}
+	{#if staff}
 		<!-- Profile Card -->
 		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 			<!-- Left Column - Basic Info -->
@@ -420,7 +386,7 @@
 	<AchievementDialog
 		open={showAchievementDialog}
 		achievement={selectedAchievement}
-		userId={staffId ?? ''}
+		userId={staff?.id ?? ''}
 		on:close={() => (showAchievementDialog = false)}
 		on:save={handleSaveAchievement}
 	/>
