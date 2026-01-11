@@ -15,59 +15,73 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- 2. Users Table Search Optimization
 -- ===================================================================
 
--- 2.1 Name Search (Firstname & Lastname)
--- Allows extremely fast case-insensitive partial search: WHERE first_name ILIKE '%som%'
+-- 2.1 Name Search (Check if columns exist just in case)
 CREATE INDEX IF NOT EXISTS trgm_users_first_name ON users USING GIN (first_name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS trgm_users_last_name ON users USING GIN (last_name gin_trgm_ops);
 
--- 2.2 Combined Name Index (Optional but useful for full name search concat)
--- Useful if searching "First Last" string
+-- 2.2 Combined Name Index
 CREATE INDEX IF NOT EXISTS trgm_users_full_name ON users USING GIN ((first_name || ' ' || last_name) gin_trgm_ops);
 
 -- 2.3 Email & Phone Search
 CREATE INDEX IF NOT EXISTS trgm_users_email ON users USING GIN (email gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS trgm_users_phone ON users USING GIN (phone gin_trgm_ops);
 
--- 2.4 User Nickname (Often used for searching students)
-CREATE INDEX IF NOT EXISTS trgm_users_nickname ON users USING GIN (nickname gin_trgm_ops);
+-- 2.4 User Nickname (Check if column exists)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'nickname') THEN
+        CREATE INDEX IF NOT EXISTS trgm_users_nickname ON users USING GIN (nickname gin_trgm_ops);
+    END IF;
+END $$;
 
 -- ===================================================================
 -- 3. Student Search Optimization
 -- ===================================================================
 
--- 3.1 Student ID Search (Fast lookup by student ID partial or full)
-CREATE INDEX IF NOT EXISTS trgm_student_info_student_id ON student_info USING GIN (student_id gin_trgm_ops);
+-- 3.1 Student ID Search
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'student_info' AND column_name = 'student_id') THEN
+        CREATE INDEX IF NOT EXISTS trgm_student_info_student_id ON student_info USING GIN (student_id gin_trgm_ops);
+    END IF;
+END $$;
 
 -- 3.2 Optimize Filtering by Grade & Class
--- Composite index for frequent filtering: "Show all students in M.1/2"
-CREATE INDEX IF NOT EXISTS idx_student_info_grade_class ON student_info (grade_level, class_room);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'student_info' AND column_name = 'grade_level' AND column_name = 'class_room') THEN
+        CREATE INDEX IF NOT EXISTS idx_student_info_grade_class ON student_info (grade_level, class_room);
+    END IF;
+END $$;
 
 -- ===================================================================
 -- 4. Staff Search Optimization
 -- ===================================================================
 
 -- 4.1 Employee ID Search
-CREATE INDEX IF NOT EXISTS trgm_staff_info_employee_id ON staff_info USING GIN (employee_id gin_trgm_ops);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff_info' AND column_name = 'employee_id') THEN
+        CREATE INDEX IF NOT EXISTS trgm_staff_info_employee_id ON staff_info USING GIN (employee_id gin_trgm_ops);
+    END IF;
+END $$;
 
 -- ===================================================================
 -- 5. Status & User Type Optimization (Composite Indexes)
 -- ===================================================================
-
--- 5.1 Active Users by Type
--- Extremely common query: "Get all active students" or "Get all suspended staff"
--- The existing indexes are on single columns. Composite is faster for AND conditions.
+-- These columns are standard, should exist
 CREATE INDEX IF NOT EXISTS idx_users_type_status ON users (user_type, status);
-
--- 5.2 Role Assignments
--- Quick lookup for: "Is this user active in this role?"
--- Existing indexes cover FKs, but this composite covers the condition check
 CREATE INDEX IF NOT EXISTS idx_user_roles_check ON user_roles (user_id, role_id) WHERE ended_at IS NULL;
 
 -- ===================================================================
 -- 6. Achievements Search (Optimization for Migration 017)
 -- ===================================================================
--- Ensure searching achievements by title is fast
-CREATE INDEX IF NOT EXISTS trgm_staff_achievements_title ON staff_achievements USING GIN (title gin_trgm_ops);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'staff_achievements') THEN
+        CREATE INDEX IF NOT EXISTS trgm_staff_achievements_title ON staff_achievements USING GIN (title gin_trgm_ops);
+    END IF;
+END $$;
 
 -- ===================================================================
 -- NOTES:
