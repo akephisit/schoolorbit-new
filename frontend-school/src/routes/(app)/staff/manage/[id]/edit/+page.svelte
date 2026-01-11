@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { toast } from 'svelte-sonner';
 	import { page } from '$app/state';
 	import {
 		getStaffProfile,
@@ -498,8 +499,22 @@
 						<div class="flex justify-center mb-8">
 							<ProfileImageUpload
 								currentImage={formData.profile_image_url}
-								onsuccess={(data) => {
-									formData.profile_image_url = data.url;
+								onsuccess={async (data) => {
+									if (!staffId) return;
+									const toastId = toast.loading('กำลังอัปเดตรูปโปรไฟล์...');
+									try {
+										const res = await updateStaff(staffId, { profile_image_url: data.url });
+										if (res.success) {
+											formData.profile_image_url = data.url;
+											toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว', { id: toastId });
+										} else {
+											toast.error('ไม่สำเร็จ: ' + (res.error || 'ไม่ทราบสาเหตุ'), { id: toastId });
+											errors.profile_image = res.error || 'ไม่สามารถอัปเดตรูปภาพได้';
+										}
+									} catch (err) {
+										toast.error('เกิดข้อผิดพลาด', { id: toastId });
+										console.error(err);
+									}
 								}}
 								onerror={(msg) => {
 									errors.profile_image = msg;
