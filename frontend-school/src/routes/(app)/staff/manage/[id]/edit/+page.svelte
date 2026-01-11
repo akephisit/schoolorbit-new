@@ -399,7 +399,7 @@
 <div class="space-y-6">
 	<!-- Header -->
 	<div class="flex items-center gap-4">
-		<Button href="/staff/{staffId}" variant="ghost" size="sm">
+		<Button href="/staff/manage/{staffId}" variant="ghost" size="sm">
 			<ArrowLeft class="w-4 h-4" />
 		</Button>
 		<div>
