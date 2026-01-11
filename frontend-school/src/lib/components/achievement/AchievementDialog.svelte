@@ -2,6 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+    import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
@@ -269,12 +270,7 @@
 
 			<div class="grid gap-2">
 				<Label for="date">วันที่ได้รับ</Label>
-				<Input
-					id="date"
-					type="date"
-					bind:value={date}
-					class={errors.achievement_date ? 'border-destructive focus-visible:ring-destructive' : ''}
-				/>
+				<DatePicker bind:value={date} placeholder="เลือกวันที่ได้รับผลงาน" />
 				{#if errors.achievement_date}
 					<p class="text-xs text-destructive">{errors.achievement_date}</p>
 				{/if}
