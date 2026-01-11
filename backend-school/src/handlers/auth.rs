@@ -195,11 +195,7 @@ pub async fn login(
         created_at: chrono::Utc::now(),
         primary_role_name,
         profile_image_url: get_file_url_from_string(&user.profile_image_url),
-        permissions: if permissions.is_empty() {
-            None
-        } else {
-            Some(permissions)
-        },
+        permissions: Some(permissions), // Always send array even if empty
     };
 
     // Set cookie (optional, based on remember_me)
@@ -399,11 +395,8 @@ pub async fn me(
     // Create response with primary role name and permissions
     let mut user_response = UserResponse::from(user);
     user_response.primary_role_name = primary_role_name;
-    user_response.permissions = if permissions.is_empty() {
-        None
-    } else {
-        Some(permissions)
-    };
+    // Always send permissions array (even if empty) so frontend can check
+    user_response.permissions = Some(permissions);
 
     (StatusCode::OK, Json(user_response)).into_response()
 }
