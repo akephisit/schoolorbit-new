@@ -27,6 +27,7 @@ services:
       - R2_BUCKET_NAME=${R2_BUCKET_NAME:-schoolorbit-files}
       - R2_PUBLIC_URL=${R2_PUBLIC_URL}
       - R2_REGION=${R2_REGION:-auto}
+      - AWS_REGION=auto
       # Optional: CDN URL for file serving
       - CDN_URL=${CDN_URL}
       # File Upload Limits
