@@ -10,21 +10,11 @@ ALTER TABLE menu_items
 ADD CONSTRAINT menu_items_user_type_check 
 CHECK (user_type IN ('staff', 'student', 'parent'));
 
--- Update existing menus based on their path
--- Student menus
-UPDATE menu_items 
-SET user_type = 'student' 
-WHERE path LIKE '/student%';
+-- Update existing menus based on their path (REMOVED)
+-- Note: Menu items are empty by default, so no update needed.
+-- Frontend sync will handle setting user_type for new items.
 
--- Parent menus (if any exist)
-UPDATE menu_items 
-SET user_type = 'parent' 
-WHERE path LIKE '/parent%';
-
--- Staff menus (all others)
-UPDATE menu_items 
-SET user_type = 'staff' 
-WHERE path NOT LIKE '/student%' AND path NOT LIKE '/parent%';
+-- Keeping this section empty to preserve migration file structure.
 
 -- Add index for performance
 CREATE INDEX idx_menu_items_user_type ON menu_items(user_type);

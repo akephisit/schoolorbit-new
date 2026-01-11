@@ -14,71 +14,11 @@ VALUES (
 )
 ON CONFLICT (code) DO NOTHING;
 
--- Get the settings group ID for menu items
-DO $$
-DECLARE
-    settings_group_id UUID;
-BEGIN
-    SELECT id INTO settings_group_id FROM menu_groups WHERE code = 'settings';
-    
-    -- Insert Admin Dashboard menu item
-    INSERT INTO menu_items (
-        id, code, name, name_en, path, icon, 
-        group_id, required_permission, display_order, is_active
-    )
-    VALUES (
-        gen_random_uuid(),
-        'admin_dashboard',
-        'ระบบจัดการ',
-        'Admin Dashboard',
-        '/admin',
-        'Shield',
-        settings_group_id,
-        'settings',  -- Any settings.* permission
-        1,
-        true
-    )
-    ON CONFLICT (code) DO NOTHING;
-    
-    -- Insert Feature Toggles menu item
-    INSERT INTO menu_items (
-        id, code, name, name_en, path, icon, 
-        group_id, required_permission, display_order, is_active
-    )
-    VALUES (
-        gen_random_uuid(),
-        'feature_toggles',
-        'จัดการระบบงาน',
-        'Feature Toggles',
-        '/admin/features',
-        'Power',
-        settings_group_id,
-        'settings',  -- Any settings.* permission
-        2,
-        true
-    )
-    ON CONFLICT (code) DO NOTHING;
-    
-    -- Insert Menu Management menu item
-    INSERT INTO menu_items (
-        id, code, name, name_en, path, icon, 
-        group_id, required_permission, display_order, is_active
-    )
-    VALUES (
-        gen_random_uuid(),
-        'menu_management',
-        'จัดการเมนู',
-        'Menu Management',
-        '/admin/menu',
-        'Menu',
-        settings_group_id,
-        'settings',  -- Any settings.* permission
-        3,
-        true
-    )
-    ON CONFLICT (code) DO NOTHING;
-    
-END $$;
+-- ===================================================================
+-- Insert Admin Menu Items (REMOVED)
+-- ===================================================================
+-- Note: Admin menu items are now synced from the frontend application automatically.
+-- The DO block for insertion has been removed.
 
 -- Note: Users need at least one 'settings.*' permission to see these menu items
 -- For example: settings.features.read, settings.menu.read, or settings.manage.all
