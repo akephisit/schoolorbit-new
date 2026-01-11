@@ -15,6 +15,9 @@ pub struct PermissionDef {
 
 /// Permission constants for type-safe usage in handlers
 pub mod codes {
+    // System permissions
+    pub const WILDCARD: &str = "*";
+
     // Staff permissions
     pub const STAFF_READ_ALL: &str = "staff.read.all";
     pub const STAFF_CREATE_ALL: &str = "staff.create.all";
@@ -67,6 +70,16 @@ pub mod codes {
 
 /// Complete list of all permissions in the system
 pub const ALL_PERMISSIONS: &[PermissionDef] = &[
+    // Super Admin Permission (Wildcard)
+    PermissionDef {
+        code: codes::WILDCARD,
+        name: "Super Admin Access",
+        module: "system",
+        action: "all",
+        scope: "global",
+        description: "สิทธิ์ระดับสูงสุด (เข้าถึงทุกส่วน)",
+    },
+
     // Staff permissions
     PermissionDef {
         code: codes::STAFF_READ_ALL,
