@@ -167,8 +167,8 @@ pub async fn login(
     .ok()
     .flatten();
 
-    // Fetch all user permissions
-    let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
+    // Fetch all user permissions from normalized schema
+    let mut permissions: Vec<String> = sqlx::query_scalar::<_, String>(
         "SELECT DISTINCT p.code
          FROM user_roles ur
          JOIN role_permissions rp ON ur.role_id = rp.role_id
@@ -181,6 +181,33 @@ pub async fn login(
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
+
+    // Fallback: If no permissions found, try reading from roles.permission JSON column (legacy)
+    if permissions.is_empty() {
+        permissions = sqlx::query_scalar::<_, Option<serde_json::Value>>(
+            "SELECT r.permission
+             FROM user_roles ur
+             JOIN roles r ON ur.role_id = r.id
+             WHERE ur.user_id = $1 
+               AND ur.is_primary = true
+               AND ur.ended_at IS NULL
+             LIMIT 1"
+        )
+        .bind(&user.id)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|json| {
+            // Parse JSON array to Vec<String>
+            json.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+        })
+        .unwrap_or_default();
+    }
 
     // Create user response manually (LoginUser doesn't implement From)
     let user_response = UserResponse {
@@ -377,8 +404,8 @@ pub async fn me(
     .ok()
     .flatten();
 
-    // Fetch all user permissions
-    let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
+    // Fetch all user permissions from normalized schema
+    let mut permissions: Vec<String> = sqlx::query_scalar::<_, String>(
         "SELECT DISTINCT p.code
          FROM user_roles ur
          JOIN role_permissions rp ON ur.role_id = rp.role_id
@@ -391,6 +418,33 @@ pub async fn me(
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
+
+    // Fallback: If no permissions found, try reading from roles.permission JSON column (legacy)
+    if permissions.is_empty() {
+        permissions = sqlx::query_scalar::<_, Option<serde_json::Value>>(
+            "SELECT r.permission
+             FROM user_roles ur
+             JOIN roles r ON ur.role_id = r.id
+             WHERE ur.user_id = $1 
+               AND ur.is_primary = true
+               AND ur.ended_at IS NULL
+             LIMIT 1"
+        )
+        .bind(&user.id)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|json| {
+            // Parse JSON array to Vec<String>
+            json.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+        })
+        .unwrap_or_default();
+    }
 
     // Create response with primary role name and permissions
     let mut user_response = UserResponse::from(user);
