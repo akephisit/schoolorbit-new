@@ -232,7 +232,10 @@ pub async fn create_achievement(
     let result = sqlx::query_as::<_, Achievement>(
         "INSERT INTO staff_achievements (user_id, title, description, achievement_date, image_path, created_by)
          VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *"
+         RETURNING *, 
+         NULL::text as user_first_name, 
+         NULL::text as user_last_name, 
+         NULL::text as user_profile_image_url"
     )
     .bind(target_user_id)
     .bind(&payload.title)
@@ -312,7 +315,10 @@ pub async fn update_achievement(
             image_path = COALESCE($4, image_path),
             updated_at = NOW()
          WHERE id = $5
-         RETURNING *"
+         RETURNING *, 
+         NULL::text as user_first_name, 
+         NULL::text as user_last_name, 
+         NULL::text as user_profile_image_url"
     )
     .bind(payload.title)
     .bind(payload.description)
