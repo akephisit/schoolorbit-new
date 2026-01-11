@@ -253,12 +253,26 @@ pub async fn create_role(
         Err(response) => return response,
     };
 
-    // Use Vec<String> directly (no JSON conversion needed)
-    let permissions = payload.permissions.unwrap_or_default();
+
+    // Use transaction for atomic operations
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            eprintln!("❌ Failed to start transaction: {}", e);
+             return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่สามารถเริ่มต้น Transaction ได้"
+                })),
+            )
+            .into_response();
+        }
+    };
 
     let role_id: Uuid = match sqlx::query_scalar(
-        "INSERT INTO roles (code, name, name_en, description, user_type, level, permissions)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "INSERT INTO roles (code, name, name_en, description, user_type, level)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id",
     )
     .bind(&payload.code)
@@ -267,13 +281,13 @@ pub async fn create_role(
     .bind(&payload.description)
     .bind(&payload.user_type)
     .bind(payload.level.unwrap_or(0))
-    .bind(&permissions)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await
     {
         Ok(id) => id,
         Err(e) => {
             eprintln!("❌ Failed to create role: {}", e);
+            let _ = tx.rollback().await;
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -284,6 +298,69 @@ pub async fn create_role(
                 .into_response();
         }
     };
+
+    // Insert permissions if provided
+    if let Some(permissions) = &payload.permissions {
+        if !permissions.is_empty() {
+            // Find permission IDs from codes
+            let perm_ids: Vec<Uuid> = match sqlx::query_scalar(
+                "SELECT id FROM permissions WHERE code = ANY($1)"
+            )
+            .bind(permissions)
+            .fetch_all(&mut *tx)
+            .await 
+            {
+                Ok(ids) => ids,
+                Err(e) => {
+                     eprintln!("❌ Failed to find permissions: {}", e);
+                     let _ = tx.rollback().await;
+                     return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "success": false,
+                            "error": "ไม่พบสิทธิ์การใช้งานที่ระบุ"
+                        })),
+                    )
+                    .into_response();
+                }
+            };
+            
+            // Insert into junction table
+            for perm_id in perm_ids {
+                if let Err(e) = sqlx::query(
+                    "INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)"
+                )
+                .bind(role_id)
+                .bind(perm_id)
+                .execute(&mut *tx)
+                .await 
+                {
+                     eprintln!("❌ Failed to assign permission: {}", e);
+                     let _ = tx.rollback().await;
+                     return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "success": false,
+                            "error": "ไม่สามารถกำหนดสิทธิ์ได้"
+                        })),
+                    )
+                    .into_response();
+                }
+            }
+        }
+    }
+
+    if let Err(e) = tx.commit().await {
+         eprintln!("❌ Failed to commit transaction: {}", e);
+         return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "success": false,
+                "error": "ไม่สามารถบันทึกข้อมูลได้"
+            })),
+        )
+        .into_response();
+    }
 
     (
         StatusCode::CREATED,
@@ -349,9 +426,24 @@ pub async fn update_role(
         Err(response) => return response,
     };
 
-    // Use Vec<String> directly (no JSON conversion needed)
-    let permissions = payload.permissions.as_ref();
 
+    // Use transaction for atomic operations
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            eprintln!("❌ Failed to start transaction: {}", e);
+             return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่สามารถเริ่มต้น Transaction ได้"
+                })),
+            )
+            .into_response();
+        }
+    };
+
+    // Update role metadata
     let result = sqlx::query(
         "UPDATE roles 
          SET 
@@ -360,8 +452,7 @@ pub async fn update_role(
             description = COALESCE($4, description),
             user_type = COALESCE($5, user_type),
             level = COALESCE($6, level),
-            permissions = COALESCE($7, permissions),
-            is_active = COALESCE($8, is_active),
+            is_active = COALESCE($7, is_active),
             updated_at = NOW()
          WHERE id = $1",
     )
@@ -371,40 +462,125 @@ pub async fn update_role(
     .bind(&payload.description)
     .bind(&payload.user_type)
     .bind(&payload.level)
-    .bind(&permissions)
     .bind(&payload.is_active)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await;
 
-    match result {
-        Ok(result) if result.rows_affected() > 0 => (
-            StatusCode::OK,
+    if let Err(e) = result {
+         eprintln!("❌ Failed to update role: {}", e);
+         let _ = tx.rollback().await;
+         return (
+            StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({
-                "success": true,
-                "message": "อัปเดตบทบาทสำเร็จ"
+                "success": false,
+                "error": "เกิดข้อผิดพลาดในการอัปเดตบทบาท"
             })),
         )
-            .into_response(),
-        Ok(_) => (
+        .into_response();
+    }
+    
+    // Check if role exists
+    if result.unwrap().rows_affected() == 0 {
+         let _ = tx.rollback().await;
+         return (
             StatusCode::NOT_FOUND,
             Json(json!({
                 "success": false,
                 "error": "ไม่พบบทบาท"
             })),
         )
-            .into_response(),
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            (
+        .into_response();
+    }
+
+    // Update permissions if provided
+    if let Some(permissions) = &payload.permissions {
+        // Delete existing permissions
+        if let Err(e) = sqlx::query("DELETE FROM role_permissions WHERE role_id = $1")
+            .bind(role_id)
+            .execute(&mut *tx)
+            .await 
+        {
+             eprintln!("❌ Failed to clear old permissions: {}", e);
+             let _ = tx.rollback().await;
+             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
                     "success": false,
-                    "error": "เกิดข้อผิดพลาดในการอัปเดตบทบาท"
+                    "error": "เกิดข้อผิดพลาดในการลบสิทธิ์เดิม"
                 })),
             )
-                .into_response()
+            .into_response();
+        }
+
+        if !permissions.is_empty() {
+             // Find permission IDs from codes
+            let perm_ids: Vec<Uuid> = match sqlx::query_scalar(
+                "SELECT id FROM permissions WHERE code = ANY($1)"
+            )
+            .bind(permissions)
+            .fetch_all(&mut *tx)
+            .await 
+            {
+                Ok(ids) => ids,
+                Err(e) => {
+                     eprintln!("❌ Failed to find permissions: {}", e);
+                     let _ = tx.rollback().await;
+                     return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "success": false,
+                            "error": "ไม่พบสิทธิ์การใช้งานที่ระบุ"
+                        })),
+                    )
+                    .into_response();
+                }
+            };
+            
+            // Insert new permissions
+             for perm_id in perm_ids {
+                if let Err(e) = sqlx::query(
+                    "INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)"
+                )
+                .bind(role_id)
+                .bind(perm_id)
+                .execute(&mut *tx)
+                .await 
+                {
+                     eprintln!("❌ Failed to assign new permission: {}", e);
+                     let _ = tx.rollback().await;
+                     return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "success": false,
+                            "error": "ไม่สามารถกำหนดสิทธิ์ใหม่ได้"
+                        })),
+                    )
+                    .into_response();
+                }
+            }
         }
     }
+
+    if let Err(e) = tx.commit().await {
+         eprintln!("❌ Failed to commit transaction: {}", e);
+         return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "success": false,
+                "error": "ไม่สามารถบันทึกข้อมูลได้"
+            })),
+        )
+        .into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "success": true,
+            "message": "อัปเดตบทบาทสำเร็จ"
+        })),
+    )
+        .into_response()
 }
 
 // ===================================================================
