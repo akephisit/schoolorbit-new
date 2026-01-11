@@ -62,15 +62,26 @@ pub async fn list_roles(
         Err(response) => return response,
     };
 
+    // Use JOIN to get permissions
     let roles = match sqlx::query_as::<_, Role>(
-        "SELECT * FROM roles WHERE is_active = true ORDER BY level DESC, name"
+        "SELECT r.*, 
+                COALESCE(
+                    array_agg(p.code) FILTER (WHERE p.code IS NOT NULL), 
+                    '{}'
+                ) as permissions 
+         FROM roles r
+         LEFT JOIN role_permissions rp ON r.id = rp.role_id
+         LEFT JOIN permissions p ON rp.permission_id = p.id
+         WHERE r.is_active = true 
+         GROUP BY r.id
+         ORDER BY r.level DESC, r.name"
     )
     .fetch_all(&pool)
     .await
     {
         Ok(roles) => roles,
         Err(e) => {
-            eprintln!("❌ Database error: {}", e);
+            eprintln!("❌ Database error (list_roles): {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -81,7 +92,7 @@ pub async fn list_roles(
                 .into_response();
         }
     };
-
+    
     (
         StatusCode::OK,
         Json(json!({
@@ -142,7 +153,18 @@ pub async fn get_role(
         Err(response) => return response,
     };
 
-    let role = match sqlx::query_as::<_, Role>("SELECT * FROM roles WHERE id = $1")
+    let role = match sqlx::query_as::<_, Role>(
+        "SELECT r.*, 
+                COALESCE(
+                    array_agg(p.code) FILTER (WHERE p.code IS NOT NULL), 
+                    '{}'
+                ) as permissions 
+         FROM roles r
+         LEFT JOIN role_permissions rp ON r.id = rp.role_id
+         LEFT JOIN permissions p ON rp.permission_id = p.id
+         WHERE r.id = $1
+         GROUP BY r.id"
+    )
         .bind(role_id)
         .fetch_optional(&pool)
         .await
