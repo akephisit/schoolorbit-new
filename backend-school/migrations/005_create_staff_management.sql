@@ -60,9 +60,6 @@ CREATE TABLE IF NOT EXISTS roles (
     -- Priority/Level for approvals
     level INTEGER DEFAULT 0,
     
-    -- Permissions (text array for better performance)
-    permissions TEXT[] NOT NULL DEFAULT '{}',
-    
     -- Status
     is_active BOOLEAN DEFAULT true,
     
@@ -74,7 +71,6 @@ CREATE INDEX IF NOT EXISTS idx_roles_code ON roles(code);
 CREATE INDEX IF NOT EXISTS idx_roles_user_type ON roles(user_type);
 CREATE INDEX IF NOT EXISTS idx_roles_is_active ON roles(is_active);
 CREATE INDEX IF NOT EXISTS idx_roles_level ON roles(level);
-CREATE INDEX IF NOT EXISTS idx_roles_permissions ON roles USING GIN(permissions);
 
 -- Add check constraint for user_type
 ALTER TABLE roles 
@@ -84,10 +80,44 @@ ALTER TABLE roles
 COMMENT ON TABLE roles IS 'บทบาท/ตำแหน่งในระบบ';
 COMMENT ON COLUMN roles.user_type IS 'ประเภทผู้ใช้: staff, student, parent';
 COMMENT ON COLUMN roles.level IS 'ระดับอำนาจ (ยิ่งสูงยิ่งมีอำนาจมาก)';
-COMMENT ON COLUMN roles.permissions IS 'สิทธิ์การใช้งาน (JSON array of permission codes)';
 
 -- ===================================================================
--- 3. User Roles Table (ความสัมพันธ์ระหว่าง User และ Role)
+-- 3. Permission Tables (Normalized Schema)
+-- ===================================================================
+
+-- Permissions Table
+CREATE TABLE IF NOT EXISTS permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(100) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    module VARCHAR(50) NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    scope VARCHAR(50) NOT NULL DEFAULT 'all',
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_permissions_code ON permissions(code);
+CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module);
+CREATE INDEX IF NOT EXISTS idx_permissions_scope ON permissions(scope);
+
+-- Role Permissions Junction Table
+CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (role_id, permission_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_id);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission ON role_permissions(permission_id);
+
+COMMENT ON TABLE permissions IS 'สิทธิ์การใช้งานระบบ';
+COMMENT ON TABLE role_permissions IS 'ตารางเชื่อมระหว่าง Role และ Permission';
+
+-- ===================================================================
+-- 4. User Roles Table (ความสัมพันธ์ระหว่าง User และ Role)
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS user_roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -118,7 +148,7 @@ COMMENT ON TABLE user_roles IS 'ความสัมพันธ์ระหว
 COMMENT ON COLUMN user_roles.is_primary IS 'บทบาทหลักของผู้ใช้';
 
 -- ===================================================================
--- 4. Departments Table (ฝ่าย/แผนก)
+-- 5. Departments Table (ฝ่าย/แผนก)
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS departments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -154,7 +184,7 @@ COMMENT ON TABLE departments IS 'ฝ่าย/แผนก';
 COMMENT ON COLUMN departments.parent_department_id IS 'ฝ่ายแม่ (สำหรับฝ่ายย่อย)';
 
 -- ===================================================================
--- 5. Department Members Table (สมาชิกในฝ่าย)
+-- 6. Department Members Table (สมาชิกในฝ่าย)
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS department_members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -190,7 +220,7 @@ COMMENT ON TABLE department_members IS 'สมาชิกในแต่ละ�
 COMMENT ON COLUMN department_members.position IS 'ตำแหน่ง: head, deputy_head, member, coordinator';
 
 -- ===================================================================
--- 6. Update Teaching Assignments Table
+-- 7. Update Teaching Assignments Table
 -- ===================================================================
 ALTER TABLE classes 
     DROP COLUMN IF EXISTS teacher_id;
@@ -239,7 +269,7 @@ COMMENT ON TABLE teaching_assignments IS 'การมอบหมายกา�
 COMMENT ON COLUMN teaching_assignments.teacher_type IS 'ประเภท: main_teacher, co_teacher, substitute';
 
 -- ===================================================================
--- 7. Staff Info Table (ข้อมูลเฉพาะบุคลากร)
+-- 8. Staff Info Table (ข้อมูลเฉพาะบุคลากร)
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS staff_info (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -286,7 +316,7 @@ COMMENT ON TABLE staff_info IS 'ข้อมูลเฉพาะบุคลา
 COMMENT ON COLUMN staff_info.employment_type IS 'ประเภทการจ้าง: permanent, contract, temporary, part_time';
 
 -- ===================================================================
--- 8. Student Info Table (ข้อมูลเฉพาะนักเรียน)
+-- 9. Student Info Table (ข้อมูลเฉพาะนักเรียน)
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS student_info (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -325,7 +355,7 @@ CREATE INDEX IF NOT EXISTS idx_student_info_parent ON student_info(parent_id);
 COMMENT ON TABLE student_info IS 'ข้อมูลเฉพาะนักเรียน';
 
 -- ===================================================================
--- 9. Parent Info Table (ข้อมูลเฉพาะผู้ปกครอง)
+-- 10. Parent Info Table (ข้อมูลเฉพาะผู้ปกครอง)
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS parent_info (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -353,40 +383,18 @@ COMMENT ON TABLE parent_info IS 'ข้อมูลเฉพาะผู้ป�
 COMMENT ON COLUMN parent_info.relationship IS 'ความสัมพันธ์: father, mother, guardian';
 
 -- ===================================================================
--- 10. Permissions Table (สิทธิ์การใช้งาน)
--- ===================================================================
-CREATE TABLE IF NOT EXISTS permissions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
-    code VARCHAR(100) UNIQUE NOT NULL,
-    name VARCHAR(200) NOT NULL,
-    description TEXT,
-    
-    -- Category
-    module VARCHAR(50) NOT NULL,
-    action VARCHAR(50) NOT NULL,
-    
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_permissions_code ON permissions(code);
-CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module);
-
-COMMENT ON TABLE permissions IS 'สิทธิ์การใช้งานระบบ';
-
--- ===================================================================
 -- 11. Insert Default Role Templates
 -- ===================================================================
 -- Create role templates without permissions
 -- Admin will assign permissions through the UI
-INSERT INTO roles (code, name, name_en, description, user_type, level, permissions) VALUES
-    ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'staff', 10, ARRAY[]::TEXT[]),
-    ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'staff', 50, ARRAY[]::TEXT[]),
-    ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'staff', 80, ARRAY[]::TEXT[]),
-    ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'staff', 100, ARRAY[]::TEXT[]),
-    ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'staff', 20, ARRAY[]::TEXT[]),
-    ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'staff', 15, ARRAY[]::TEXT[]),
-    ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'ผู้ดูแลระบบทั้งหมด', 'staff', 999, ARRAY[]::TEXT[])
+INSERT INTO roles (code, name, name_en, description, user_type, level) VALUES
+    ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'staff', 10),
+    ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'staff', 50),
+    ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'staff', 80),
+    ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'staff', 100),
+    ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'staff', 20),
+    ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'staff', 15),
+    ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'ผู้ดูแลระบบทั้งหมด', 'staff', 999)
 ON CONFLICT (code) DO NOTHING;
 
 -- Note: ADMIN role will be updated by migration 015 to have wildcard (*) permission
