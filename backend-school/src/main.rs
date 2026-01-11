@@ -258,8 +258,10 @@ async fn main() {
                     middleware::internal_auth::validate_internal_secret,
                 )),
         )
-        // Add cookie middleware
+    // Add cookie middleware
         .layer(CookieManagerLayer::new())
+        // Increase request body limit to 20MB for file uploads
+        .layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024))
         // Add state
         .with_state(state.clone());
 
