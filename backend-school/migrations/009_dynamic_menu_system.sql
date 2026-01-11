@@ -1,5 +1,5 @@
 -- ===================================================================
--- Migration 011: Dynamic Menu System with Feature Toggles
+-- Migration 009: Dynamic Menu System with Feature Toggles
 -- Description: Database-driven menu system with permission-based filtering
 -- Date: 2025-12-23
 -- ===================================================================

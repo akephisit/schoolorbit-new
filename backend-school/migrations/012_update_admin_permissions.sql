@@ -1,5 +1,5 @@
 -- ===================================================================
--- Migration 014: Update ADMIN Role with Wildcard Permission (FIXED)
+-- Migration 012: Update ADMIN Role with Wildcard Permission (FIXED)
 -- Description: Give ADMIN role wildcard (*) permission for all access
 -- Date: 2025-12-30
 -- Updated: 2026-01-11 - Use normalized schema

@@ -1,5 +1,5 @@
 -- ===================================================================
--- Migration 013: Student Management System (FIXED for normalized schema)
+-- Migration 011: Student Management System (FIXED for normalized schema)
 -- Description: เพิ่ม STUDENT role และ STUDENT_MANAGER role
 -- Date: 2026-01-05
 -- Updated: 2026-01-11 - Use normalized schema
