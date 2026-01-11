@@ -1,5 +1,5 @@
 -- ===================================================================
--- Migration 018: Performance Tuning & Advanced Search
+-- Migration 017: Performance Tuning & Advanced Search
 -- Description: Add pg_trgm extension and indexes for high-performance text search
 --              Optimizes queries for users, students, and staff
 -- Date: 2026-01-11

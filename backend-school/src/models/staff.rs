@@ -252,16 +252,10 @@ pub struct StaffInfo {
     pub education_level: Option<String>,
     pub major: Option<String>,
     pub university: Option<String>,
+    // Teaching License
     pub teaching_license_number: Option<String>,
     pub teaching_license_expiry: Option<NaiveDate>,
-    pub salary: Option<f64>,
-    pub bank_account: Option<String>,
-    pub bank_name: Option<String>,
-    pub tax_id: Option<String>,
-    pub social_security_id: Option<String>,
-    pub work_days: serde_json::Value,
-    pub work_hours_start: Option<NaiveTime>,
-    pub work_hours_end: Option<NaiveTime>,
+    // Additional Data
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -274,9 +268,6 @@ pub struct CreateStaffInfoRequest {
     pub university: Option<String>,
     pub teaching_license_number: Option<String>,
     pub teaching_license_expiry: Option<NaiveDate>,
-    pub work_days: Option<Vec<String>>,
-    pub work_hours_start: Option<String>,
-    pub work_hours_end: Option<String>,
 }
 
 // ===================================================================

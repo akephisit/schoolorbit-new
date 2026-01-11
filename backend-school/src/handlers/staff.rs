@@ -819,14 +819,11 @@ pub async fn create_staff(
 
     // Create staff info (if provided)
     if let Some(staff_info) = &payload.staff_info {
-        let work_days_json = serde_json::to_value(staff_info.work_days.clone().unwrap_or_default())
-            .unwrap_or(serde_json::Value::Null);
-
         match sqlx::query(
             "INSERT INTO staff_info (
                 user_id, education_level, major, university,
-                teaching_license_number, teaching_license_expiry, work_days, metadata
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, '{}'::jsonb)",
+                teaching_license_number, teaching_license_expiry, metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6, '{}'::jsonb)",
         )
         .bind(user_id)
         .bind(&staff_info.education_level)
@@ -834,7 +831,6 @@ pub async fn create_staff(
         .bind(&staff_info.university)
         .bind(&staff_info.teaching_license_number)
         .bind(&staff_info.teaching_license_expiry)
-        .bind(&work_days_json)
         .execute(&mut *tx)
         .await
         {
@@ -1094,8 +1090,8 @@ pub async fn update_staff(
                 } else {
                     // Create new record
                     let _ = sqlx::query(
-                        "INSERT INTO staff_info (user_id, education_level, major, university, work_days, metadata)
-                         VALUES ($1, $2, $3, $4, '[]'::jsonb, '{}'::jsonb)",
+                        "INSERT INTO staff_info (user_id, education_level, major, university, metadata)
+                         VALUES ($1, $2, $3, $4, '{}'::jsonb)",
                     )
                     .bind(staff_id)
                     .bind(&staff_info.education_level)

@@ -108,7 +108,6 @@ export interface CreateStaffRequest {
 		university?: string;
 		teaching_license_number?: string;
 		teaching_license_expiry?: string;
-		work_days?: string[];
 	};
 	profile_image_url?: string;
 	role_ids: string[];
@@ -142,7 +141,6 @@ export interface UpdateStaffRequest {
 		university?: string;
 		teaching_license_number?: string;
 		teaching_license_expiry?: string;
-		work_days?: string[];
 	};
 	role_ids?: string[];
 	primary_role_id?: string;

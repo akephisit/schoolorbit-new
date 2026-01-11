@@ -287,20 +287,6 @@ CREATE TABLE IF NOT EXISTS staff_info (
     teaching_license_number VARCHAR(100),
     teaching_license_expiry DATE,
     
-    -- Financial Info
-    salary DECIMAL(10,2),
-    bank_account VARCHAR(50),
-    bank_name VARCHAR(100),
-    
-    -- Tax/Insurance
-    tax_id VARCHAR(20),
-    social_security_id VARCHAR(20),
-    
-    -- Work Schedule (JSON array)
-    work_days JSONB DEFAULT '[]',
-    work_hours_start TIME,
-    work_hours_end TIME,
-    
     -- Additional Data
     metadata JSONB DEFAULT '{}',
     

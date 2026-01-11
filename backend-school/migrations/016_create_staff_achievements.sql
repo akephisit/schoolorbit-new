@@ -1,5 +1,5 @@
 -- ===================================================================
--- Migration 017: Create Staff Achievements Table
+-- Migration 016: Create Staff Achievements Table
 -- Description: Stores achievements, awards, and certifications for staff members
 -- Date: 2026-01-11
 -- ===================================================================
