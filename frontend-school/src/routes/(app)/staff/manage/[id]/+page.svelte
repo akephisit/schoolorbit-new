@@ -12,12 +12,25 @@
 		Building2,
 		BookOpen,
 		ArrowLeft,
-		Pencil
+		Pencil,
+		Award,
+		Plus
 	} from 'lucide-svelte';
+	import type { Achievement } from '$lib/types/achievement';
+	import { getAchievements, createAchievement, updateAchievement, deleteAchievement } from '$lib/api/achievement';
+	import AchievementCard from '$lib/components/achievement/AchievementCard.svelte';
+	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
+	import { toast } from 'svelte-sonner';
 
 	let staff: StaffProfileResponse | null = $state(null);
 	let loading = $state(true);
 	let error = $state('');
+    
+    // Achievement State
+	let achievements: Achievement[] = $state([]);
+	let loadingAchievements = $state(false);
+	let showAchievementDialog = $state(false);
+	let selectedAchievement: Achievement | null = $state(null);
 
 	const staffId = $derived(page.params.id);
 
@@ -30,6 +43,8 @@
 			const response = await getStaffProfile(staffId);
 			if (response.success && response.data) {
 				staff = response.data;
+				// Load achievements after staff is loaded
+				loadAchievements();
 			} else {
 				error = response.error || 'ไม่พบข้อมูล';
 			}
@@ -38,6 +53,57 @@
 			console.error('Failed to load staff profile:', e);
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function loadAchievements() {
+		if (!staffId) return;
+		loadingAchievements = true;
+		const res = await getAchievements({ user_id: staffId });
+		if (res.success && res.data) {
+			achievements = res.data;
+		}
+		loadingAchievements = false;
+	}
+
+	async function handleSaveAchievement(e: CustomEvent) {
+		const payload = e.detail;
+		let res;
+		if (payload.id) {
+			res = await updateAchievement(payload.id, {
+				title: payload.title,
+				description: payload.description,
+				achievement_date: payload.achievement_date,
+				image_path: payload.image_path
+			});
+		} else {
+			res = await createAchievement({
+				user_id: payload.user_id,
+				title: payload.title,
+				description: payload.description,
+				achievement_date: payload.achievement_date,
+				image_path: payload.image_path
+			});
+		}
+
+		if (res.success) {
+			toast.success(payload.id ? 'แก้ไขผลงานเรียบร้อย' : 'เพิ่มผลงานเรียบร้อย');
+			showAchievementDialog = false;
+			loadAchievements();
+		} else {
+			toast.error(res.error || 'เกิดข้อผิดพลาด');
+		}
+	}
+
+	async function confirmDelete(achievement: Achievement) {
+		if (!confirm(`คุณต้องการลบผลงาน "${achievement.title}" ใช่หรือไม่?`)) return;
+		
+		const res = await deleteAchievement(achievement.id);
+		if (res.success) {
+			toast.success('ลบผลงานเรียบร้อย');
+			loadAchievements();
+		} else {
+			toast.error(res.error || 'เกิดข้อผิดพลาด');
 		}
 	}
 
@@ -306,5 +372,56 @@
 				</div>
 			</div>
 		</div>
+		<!-- Achievements Card -->
+		<div class="bg-card border border-border rounded-lg p-6">
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="font-semibold text-foreground flex items-center gap-2">
+					<Award class="w-5 h-5" />
+					ผลงานและรางวัล
+				</h3>
+				<Button
+					variant="outline"
+					size="sm"
+					class="h-8"
+					onclick={() => {
+						selectedAchievement = null;
+						showAchievementDialog = true;
+					}}
+				>
+					<Plus class="w-4 h-4 mr-2" />
+					เพิ่มผลงาน
+				</Button>
+			</div>
+
+			{#if loadingAchievements}
+				<div class="py-8 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
+			{:else if achievements.length > 0}
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+					{#each achievements as achievement (achievement.id)}
+						<AchievementCard
+							{achievement}
+							on:edit={(e) => {
+								selectedAchievement = e.detail;
+								showAchievementDialog = true;
+							}}
+							on:delete={(e) => confirmDelete(e.detail)}
+						/>
+					{/each}
+				</div>
+			{:else}
+				<div class="py-8 text-center bg-muted/20 rounded-lg border border-dashed">
+					<Award class="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
+					<p class="text-sm text-muted-foreground">ยังไม่มีข้อมูลผลงาน</p>
+				</div>
+			{/if}
+		</div>
 	{/if}
+
+	<AchievementDialog
+		open={showAchievementDialog}
+		achievement={selectedAchievement}
+		userId={staffId ?? ''}
+		on:close={() => (showAchievementDialog = false)}
+		on:save={handleSaveAchievement}
+	/>
 </div>

@@ -60,8 +60,62 @@
 		primary_role_name: profile?.primaryRoleName || user?.primaryRoleName || ''
 	});
 
+	// Achievements Logic imports
+	import type { Achievement } from '$lib/types/achievement';
+	import { getAchievements, createAchievement, updateAchievement, deleteAchievement } from '$lib/api/achievement';
+	import AchievementCard from '$lib/components/achievement/AchievementCard.svelte';
+	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
+	import { Award, Plus } from 'lucide-svelte';
+
 	let saving = $state(false);
 	let loading = $state(false);
+
+    // Achievement State
+	let achievements: Achievement[] = $state([]);
+	let loadingAchievements = $state(false);
+	let showAchievementDialog = $state(false);
+	let selectedAchievement: Achievement | null = $state(null);
+
+	async function loadAchievements() {
+		const uid = readOnlyData.id;
+		if (!uid) return;
+		loadingAchievements = true;
+		const res = await getAchievements({ user_id: uid });
+		if (res.success && res.data) {
+			achievements = res.data;
+		}
+		loadingAchievements = false;
+	}
+
+	async function handleSaveAchievement(e: CustomEvent) {
+		const payload = e.detail;
+		let res;
+		if (payload.id) {
+			res = await updateAchievement(payload.id, payload);
+		} else {
+			res = await createAchievement(payload);
+		}
+
+		if (res.success) {
+			toast.success(payload.id ? 'แก้ไขผลงานเรียบร้อย' : 'เพิ่มผลงานเรียบร้อย');
+			showAchievementDialog = false;
+			loadAchievements();
+		} else {
+			toast.error(res.error || 'เกิดข้อผิดพลาด');
+		}
+	}
+
+	async function confirmDelete(achievement: Achievement) {
+		if (!confirm(`คุณต้องการลบผลงาน "${achievement.title}" ใช่หรือไม่?`)) return;
+		
+		const res = await deleteAchievement(achievement.id);
+		if (res.success) {
+			toast.success('ลบผลงานเรียบร้อย');
+			loadAchievements();
+		} else {
+			toast.error(res.error || 'เกิดข้อผิดพลาด');
+		}
+	}
 
 	onMount(async () => {
 		// Load full user profile from API
@@ -82,6 +136,9 @@
 				address: profile.address || '',
 				profile_image_url: profile.profileImageUrl || ''
 			};
+			
+			// Load achievements
+			loadAchievements();
 		} catch (error) {
 			toast.error('ไม่สามารถโหลดข้อมูลได้');
 			console.error('Failed to load profile:', error);
@@ -450,6 +507,63 @@
 					</div>
 				</CardContent>
 			</Card>
+			<!-- Achievements -->
+			<Card>
+				<CardHeader>
+					<div class="flex items-center justify-between">
+						<div>
+							<CardTitle class="flex items-center gap-2">
+								<Award class="w-5 h-5" />
+								ผลงานและรางวัล
+							</CardTitle>
+							<CardDescription>บันทึกผลงานที่น่าภาคภูมิใจของคุณ</CardDescription>
+						</div>
+						<Button
+							variant="outline"
+							size="sm"
+							type="button"
+							onclick={() => {
+								selectedAchievement = null;
+								showAchievementDialog = true;
+							}}
+						>
+							<Plus class="w-4 h-4 mr-2" />
+							เพิ่มผลงาน
+						</Button>
+					</div>
+				</CardHeader>
+				<CardContent>
+					{#if loadingAchievements}
+						<div class="py-8 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
+					{:else if achievements.length > 0}
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+							{#each achievements as achievement (achievement.id)}
+								<AchievementCard
+									{achievement}
+									on:edit={(e) => {
+										selectedAchievement = e.detail;
+										showAchievementDialog = true;
+									}}
+									on:delete={(e) => confirmDelete(e.detail)}
+								/>
+							{/each}
+						</div>
+					{:else}
+						<div class="py-8 text-center bg-muted/20 rounded-lg border border-dashed">
+							<Award class="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
+							<p class="text-sm text-muted-foreground">ยังไม่มีข้อมูลผลงาน</p>
+						</div>
+					{/if}
+				</CardContent>
+			</Card>
 		</form>
 	{/if}
+
+	<AchievementDialog
+		open={showAchievementDialog}
+		achievement={selectedAchievement}
+		userId={readOnlyData.id}
+		on:close={() => (showAchievementDialog = false)}
+		on:save={handleSaveAchievement}
+	/>
 </div>
