@@ -1,42 +1,61 @@
 -- ===================================================================
--- Migration 020: Migrate Role Permissions to Normalized Schema
--- Description: Convert roles.permission JSON array to role_permissions table
+-- Migration 020: Clean Normalized Permissions Schema
+-- Description: Remove legacy JSON permission column, use only normalized tables
 -- Date: 2026-01-11
 -- ===================================================================
 
 -- ===================================================================
--- 1. Insert permissions into role_permissions from roles.permission
+-- 1. Drop Legacy Permission Column
 -- ===================================================================
-
--- For each role that has permissions in the permission column,
--- insert them into role_permissions table
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT 
-    r.id as role_id,
-    p.id as permission_id
-FROM roles r
-CROSS JOIN LATERAL jsonb_array_elements_text(r.permission::jsonb) AS perm_code
-JOIN permissions p ON p.code = perm_code
-WHERE r.permission IS NOT NULL 
-  AND r.permission != 'null'
-  AND r.permission != '[]'
-ON CONFLICT (role_id, permission_id) DO NOTHING;
+ALTER TABLE roles DROP COLUMN IF EXISTS permission;
 
 -- ===================================================================
--- 2. Verification
+-- 2. Ensure Permission Tables Exist
+-- ===================================================================
+
+-- Permissions table (if not exists from previous migrations)
+CREATE TABLE IF NOT EXISTS permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(100) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    module VARCHAR(50) NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    scope VARCHAR(50) NOT NULL DEFAULT 'all',
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_permissions_code ON permissions(code);
+CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module);
+CREATE INDEX IF NOT EXISTS idx_permissions_scope ON permissions(scope);
+
+-- Role Permissions junction table
+CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (role_id, permission_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_id);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission ON role_permissions(permission_id);
+
+-- ===================================================================
+-- 3. Verification
 -- ===================================================================
 SELECT 
-    r.name as role_name,
-    COUNT(rp.permission_id) as permission_count,
-    array_length(r.permission::jsonb::text[]::text[], 1) as old_permission_count
-FROM roles r
-LEFT JOIN role_permissions rp ON r.id = rp.role_id
-WHERE r.permission IS NOT NULL
-GROUP BY r.id, r.name, r.permission;
+    COUNT(*) as total_roles,
+    COUNT(*) FILTER (WHERE id IN (SELECT DISTINCT role_id FROM role_permissions)) as roles_with_permissions
+FROM roles;
+
+SELECT COUNT(*) as total_permissions FROM permissions;
+SELECT COUNT(*) as total_role_permissions FROM role_permissions;
 
 -- ===================================================================
 -- NOTES:
 -- ===================================================================
--- This migration preserves the old permission column for backward compatibility
--- Future migrations can drop the permission column after confirming all data is migrated
+-- This is a CLEAN migration - no backward compatibility with JSON column
+-- Permissions will be synced from Rust permission registry (src/permissions/registry.rs)
+-- Role permissions must be assigned through the admin UI or permission sync
 -- ===================================================================
