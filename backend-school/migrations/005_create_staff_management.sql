@@ -275,8 +275,7 @@ CREATE TABLE IF NOT EXISTS staff_info (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
-    -- Employment Info
-    employee_id VARCHAR(50) UNIQUE,
+    -- Employment Info (employee_id removed as it's unused)
     employment_type VARCHAR(50),
     
     -- Education
@@ -309,7 +308,7 @@ CREATE TABLE IF NOT EXISTS staff_info (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_staff_info_employee_id ON staff_info(employee_id);
+-- Index for user_id is sufficient
 CREATE INDEX IF NOT EXISTS idx_staff_info_user_id ON staff_info(user_id);
 
 COMMENT ON TABLE staff_info IS 'ข้อมูลเฉพาะบุคลากร';
