@@ -578,29 +578,21 @@ impl UserPermissions for User {
         .await
     }
     
+    
     async fn get_permissions(&self, pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
-        // Get all permissions from user's roles
-        let rows: Vec<(Vec<String>,)> = sqlx::query_as(
-            "SELECT r.permissions
+        // Get all permissions from user's roles (normalized schema)
+        let permissions: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT p.code
              FROM user_roles ur
-             JOIN roles r ON ur.role_id = r.id
+             JOIN role_permissions rp ON ur.role_id = rp.role_id
+             JOIN permissions p ON rp.permission_id = p.id
              WHERE ur.user_id = $1 
                AND ur.ended_at IS NULL
-               AND r.is_active = true"
+             ORDER BY p.code"
         )
         .bind(self.id)
-        .fetch_all(pool)
+       .fetch_all(pool)
         .await?;
-        
-        // Flatten permission arrays into single vec (deduplicated)
-        let mut permissions = Vec::new();
-        for (perms,) in rows {
-            for perm in perms {
-                if !permissions.contains(&perm) {
-                    permissions.push(perm);
-                }
-            }
-        }
         
         Ok(permissions)
     }

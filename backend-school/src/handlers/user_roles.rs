@@ -433,22 +433,23 @@ pub async fn get_user_permissions(
         Err(response) => return response,
     };
 
-    // Get all permissions from user's roles
-    let rows: Vec<(Vec<String>,)> = match sqlx::query_as(
-        "SELECT r.permissions
+    // Get all permissions from user's roles (normalized schema)
+    let permissions: Vec<String> = match sqlx::query_scalar(
+        "SELECT DISTINCT p.code
          FROM user_roles ur
-         JOIN roles r ON ur.role_id = r.id
+         JOIN role_permissions rp ON ur.role_id = rp.role_id
+         JOIN permissions p ON rp.permission_id = p.id
          WHERE ur.user_id = $1 
            AND ur.ended_at IS NULL
-           AND r.is_active = true"
+         ORDER BY p.code"
     )
     .bind(user_id)
     .fetch_all(&pool)
     .await
     {
-        Ok(rows) => rows,
+        Ok(perms) => perms,
         Err(e) => {
-            eprintln!("❌ Database error: {}", e);
+            eprintln!("❌ Database error ({}",e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -459,16 +460,6 @@ pub async fn get_user_permissions(
                 .into_response();
         }
     };
-
-    // Flatten permission arrays (deduplicated)
-    let mut permissions = Vec::new();
-    for (perms,) in rows {
-        for perm in perms {
-            if !permissions.contains(&perm) {
-                permissions.push(perm);
-            }
-        }
-    }
 
     (
         StatusCode::OK,

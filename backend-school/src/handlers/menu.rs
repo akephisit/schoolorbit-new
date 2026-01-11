@@ -315,19 +315,20 @@ fn group_and_filter_menu(
         .collect()
 }
 
-/// Get user's permissions from roles
+/// Get user's permissions from roles (normalized schema)
 async fn get_user_permissions(
     user_id: &Uuid,
     pool: &sqlx::PgPool,
 ) -> Result<Vec<String>, sqlx::Error> {
     let permissions: Vec<String> = sqlx::query_scalar(
         r#"
-        SELECT DISTINCT unnest(r.permissions) as permission
+        SELECT DISTINCT p.code
         FROM user_roles ur
-        JOIN roles r ON ur.role_id = r.id
+        JOIN role_permissions rp ON ur.role_id = rp.role_id
+        JOIN permissions p ON rp.permission_id = p.id
         WHERE ur.user_id = $1
           AND ur.ended_at IS NULL
-          AND r.is_active = true
+        ORDER BY p.code
         "#
     )
     .bind(user_id)
