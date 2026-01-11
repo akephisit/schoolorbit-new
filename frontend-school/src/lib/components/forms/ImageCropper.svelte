@@ -40,17 +40,23 @@
 	}
 
 	async function handleSave() {
-		if (!imageSrc || !croppedAreaPixels) return;
+		if (!imageSrc) return;
+        
+        // ถ้า croppedAreaPixels ยังไม่มีค่า ให้ลองใช้ค่า Default หรือรอ
+        if (!croppedAreaPixels) {
+             console.warn("No crop data available yet");
+             return;
+        }
 
 		try {
 			processing = true;
 			const croppedImage = await getCroppedImg(imageSrc, croppedAreaPixels);
 			if (croppedImage) {
 				onCropComplete(croppedImage);
-				open = false; // Close dialog via binding
+				open = false;
 			}
 		} catch (e) {
-			console.error(e);
+			console.error("Critical error in handleSave:", e);
 		} finally {
 			processing = false;
 		}
@@ -107,13 +113,15 @@
 			<DialogTitle>ปรับแต่งรูปโปรไฟล์</DialogTitle>
 		</DialogHeader>
 
-		<div class="relative w-full h-[400px] bg-black/5 rounded-md overflow-hidden">
+		<div class="relative w-full h-[400px] bg-black/80 rounded-md overflow-hidden">
 			{#if imageSrc}
 				<Cropper
 					image={imageSrc}
 					bind:crop
 					bind:zoom
 					{aspect}
+					cropShape="round"
+					showGrid={false}
 					on:cropcomplete={(e: any) => handleCropComplete(e.detail)}
 				/>
 			{/if}
