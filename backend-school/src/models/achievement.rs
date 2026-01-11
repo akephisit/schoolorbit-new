@@ -15,8 +15,11 @@ pub struct Achievement {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     // Joined fields
+    #[sqlx(default)]
     pub user_first_name: Option<String>,
+    #[sqlx(default)]
     pub user_last_name: Option<String>,
+    #[sqlx(default)]
     pub user_profile_image_url: Option<String>,
 }
 
