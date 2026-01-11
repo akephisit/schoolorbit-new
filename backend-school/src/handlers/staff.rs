@@ -38,49 +38,7 @@ struct UserBasicRow {
     profile_image_url: Option<String>,
 }
 
-// ... (other structs unchanged)
 
-// ...
-
-pub async fn get_staff_profile(...) {
-    // ...
-
-    // Get user basic info (encryption key auto-set by pool)
-    let mut user = match sqlx::query_as::<_, UserBasicRow>(
-        "SELECT id, national_id, email, title, first_name, last_name, nickname, phone, 
-                emergency_contact, line_id, date_of_birth, gender, address, hired_date,
-                user_type, status, profile_image_url
-         FROM users 
-         WHERE id = $1 AND user_type = 'staff'",
-    )
-    .bind(staff_id)
-    .fetch_optional(&pool)
-    .await
-    // ...
-    
-    
-    // ...
-    
-    let profile = StaffProfileResponse {
-        id: user.id,
-        national_id: user.national_id,
-        email: user.email,
-        title: user.title,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        nickname: user.nickname,
-        phone: user.phone,
-        emergency_contact: user.emergency_contact,
-        line_id: user.line_id,
-        date_of_birth: user.date_of_birth.map(|d| d.to_string()),
-        gender: user.gender,
-        address: user.address,
-        hired_date: user.hired_date.map(|d| d.to_string()),
-        user_type: user.user_type,
-        status: user.status,
-        profile_image_url: user.profile_image_url,
-        staff_info: staff_info.map(|si| StaffInfoResponse {
-        // ...
 
 #[derive(Debug, FromRow)]
 struct StaffInfoRow {

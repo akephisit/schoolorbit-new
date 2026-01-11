@@ -78,7 +78,7 @@ export interface StaffProfileResponse {
 	hired_date?: string;
 	user_type: string;
 	status: string;
-	profile_image_url?: string;
+	profile_image_url?: string | null;
 	staff_info?: StaffInfoResponse;
 	roles: RoleResponse[];
 	primary_role?: RoleResponse;
