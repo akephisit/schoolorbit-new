@@ -43,7 +43,8 @@
 	let dragging = $state(false);
 	let dragStart = { x: 0, y: 0 };
 
-    const MASK_SIZE = 250; // Size of the circular mask in pixels
+    // Dynamic Mask Size
+    let maskSize = $state(250); 
 
     // Reset when image source changes
     $effect(() => {
@@ -62,11 +63,16 @@
         const cw = containerElement.clientWidth;
         const ch = containerElement.clientHeight;
 
-        // Calculate base scale to FIT image in container (contain)
-        // We add some padding (0.8) to make it look nice initially
-        const scaleX = cw / naturalWidth;
-        const scaleY = ch / naturalHeight;
-        baseScale = Math.min(scaleX, scaleY) * 0.8; 
+        // Dynamic Mask Size: 90% of the smallest dimension of the container
+        maskSize = Math.min(cw, ch) * 0.9;
+
+        // Calculate base scale to COVER the mask
+        // We want the shortest side of the image to match the mask diameter.
+        const scaleX = maskSize / naturalWidth;
+        const scaleY = maskSize / naturalHeight;
+        
+        // Use Math.max for COVER logic (so no black borders initially)
+        baseScale = Math.max(scaleX, scaleY); 
         
         // Center image initially (position 0,0 is center because of logic below)
         position = { x: 0, y: 0 };
@@ -179,10 +185,10 @@
             const maskCenterInNatY = centerNatY - (position.y / totalScale);
             
             // 4. Determining the Crop Region in Natural Pixels
-            // We want to crop an area corresponding to MASK_SIZE pixels on screen.
-            // Dimension in Natural Pixels = MASK_SIZE / totalScale
+            // We want to crop an area corresponding to maskSize pixels on screen.
+            // Dimension in Natural Pixels = maskSize / totalScale
             
-            const cropNatSize = MASK_SIZE / totalScale;
+            const cropNatSize = maskSize / totalScale;
             
             const cropNatX = maskCenterInNatX - (cropNatSize / 2);
             const cropNatY = maskCenterInNatY - (cropNatSize / 2);
@@ -234,12 +240,18 @@
 				/>
 
 				<!-- Overlay (Circular Mask) -->
-				<!-- Mask size is MASK_SIZE (250px) -->
+				<!-- Mask size is dynamic -->
 				<div class="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
 					<div
 						class="rounded-full border-2 border-white/50 shadow-[0_0_0_9999px_rgba(0,0,0,0.8)]"
-						style:width="{MASK_SIZE}px"
-						style:height="{MASK_SIZE}px"
+						style:width="{maskSize}px"
+						style:height="{maskSize}px"
+					></div>
+					<!-- Slight dashed border for better UI visibility -->
+					<div
+						class="absolute rounded-full border border-dashed border-white/40"
+						style:width="{maskSize}px"
+						style:height="{maskSize}px"
 					></div>
 				</div>
 			{/if}
