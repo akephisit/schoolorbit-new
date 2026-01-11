@@ -24,17 +24,54 @@
 	}: Props = $props();
 
 	// State
-	let zoom = $state(1);
+	let zoom = $state(1); // 1 = fits container (base scale)
 	let processing = $state(false);
 	
 	// Image State
-    let imgElement = $state<HTMLImageElement>();
+    // imgElement: reference to the <img> tag
+	let imgElement = $state<HTMLImageElement>();
+    // containerElement: reference to the wrapper div
 	let containerElement = $state<HTMLDivElement>();
     
-    // Pan State (Relative to image center vs container center)
+    // Internal calculations
+    let baseScale = $state(1); // Scale to fit the image inside container completely
+    let naturalWidth = 0;
+    let naturalHeight = 0;
+    
+    // Pan State (x, y translation relative to center)
 	let position = $state({ x: 0, y: 0 });
 	let dragging = $state(false);
 	let dragStart = { x: 0, y: 0 };
+
+    const MASK_SIZE = 250; // Size of the circular mask in pixels
+
+    // Reset when image source changes
+    $effect(() => {
+        if (imageSrc) {
+            position = { x: 0, y: 0 };
+            zoom = 1;
+            // baseScale will be calculated in onImageLoad
+        }
+    });
+
+    function onImageLoad() {
+        if (!imgElement || !containerElement) return;
+
+        naturalWidth = imgElement.naturalWidth;
+        naturalHeight = imgElement.naturalHeight;
+        const cw = containerElement.clientWidth;
+        const ch = containerElement.clientHeight;
+
+        // Calculate base scale to FIT image in container (contain)
+        // We add some padding (0.8) to make it look nice initially
+        const scaleX = cw / naturalWidth;
+        const scaleY = ch / naturalHeight;
+        baseScale = Math.min(scaleX, scaleY) * 0.8; 
+        
+        // Center image initially (position 0,0 is center because of logic below)
+        position = { x: 0, y: 0 };
+        zoom = 1; 
+    }
 
 	function handleMouseDown(e: MouseEvent) {
 		e.preventDefault();
@@ -46,11 +83,8 @@
 
 	function handleMouseMove(e: MouseEvent) {
         if (!dragging) return;
-        // Basic Panning
         position.x = e.clientX - dragStart.x;
         position.y = e.clientY - dragStart.y;
-        
-        // เราสามารถเพิ่ม Boundary check ตรงนี้ได้ถ้าต้องการ แต่แบบ Free pan ก็ง่ายดี
 	}
 
 	function handleMouseUp() {
@@ -71,6 +105,7 @@
 
      function handleTouchMove(e: TouchEvent) {
          if (!dragging) return;
+         if (e.cancelable) e.preventDefault(); // Prevent scrolling
          const touch = e.touches[0];
          position.x = touch.clientX - dragStart.x;
          position.y = touch.clientY - dragStart.y;
@@ -88,11 +123,13 @@
 
 		try {
 			processing = true;
-			const croppedImage = await getCroppedImg(imgElement, position, zoom);
+			const croppedImage = await getCroppedImg();
 			if (croppedImage) {
 				onCropComplete(croppedImage);
 				open = false;
-			}
+			} else {
+                console.error("Failed to crop image: blob is null");
+            }
 		} catch (e) {
 			console.error("Critical error in handleSave:", e);
 		} finally {
@@ -100,25 +137,14 @@
 		}
 	}
     
-    // Reset position when image changes
-    $effect(() => {
-        if (imageSrc) {
-            position = { x: 0, y: 0 };
-            zoom = 1;
-        }
-    });
-
 	// Utility function to crop image using canvas
-	function getCroppedImg(
-		image: HTMLImageElement,
-        pos: { x: number, y: number },
-        zoom: number
-	): Promise<Blob | null> {
+	function getCroppedImg(): Promise<Blob | null> {
         return new Promise((resolve) => {
-            if (!containerElement) {
+             if (!imgElement || !containerElement) {
                  resolve(null);
                  return;
             }
+
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             if (!ctx) {
@@ -126,100 +152,57 @@
                 return;
             }
 
-            // Output size (Avatar size usually 256x256 or 512x512)
+            // Output size for avatar
             const size = 512;
             canvas.width = size;
             canvas.height = size;
             
-            // Draw Logic
-            // The container is like a viewport. The image is transformed inside it.
-            // We want to capture what is inside the center of the container (the circular mask area).
+            // --- CROP LOGIC ---
+            // 1. Current Displayed Properties
+            // The image is displayed with scale = baseScale * zoom
+            const totalScale = baseScale * zoom;
             
-            // 1. Calculate the image render size
-            // Scale natural size to fit container then multiply by zoom
-            // Assume container is 400x400 (from CSS)
-            // But checking natural aspect ratio matters.
+            // 2. Center Points
+            // We interpret position (x, y) as the displacement of the Image Center from the Container Center.
+            // Mask Center is always at Container Center.
+            // So: Image Center = Mask Center + (x, y)
+            // Or: Vector(Image -> Mask) = (-x, -y)
             
-            // To simplify: let's assume 'contain' fit logic base + zoom + pan.
-            // Image is rendered centered at (ContainerW/2 + pos.x, ContainerH/2 + pos.y)
+            // 3. Mapping Mask Center to Natural Image Coordinates
+            // Natural Center = (naturalWidth / 2, naturalHeight / 2)
+            // Displacement in Natural Pixels = (-x / totalScale, -y / totalScale)
             
-            // Let's rely on the image's displayed rect relative to the container center.
-            // Container Size:
-            const containerW = containerElement.clientWidth;
-            const containerH = containerElement.clientHeight;
+            const centerNatX = naturalWidth / 2;
+            const centerNatY = naturalHeight / 2;
             
-            // Mask Area (Center of container)
-            // Let's say mask is 80% of container or fixed size? 
-            // In CSS I'll set mask to be circle in center.
-            // Let's assume mask is min(containerW, containerH) * 0.8
-            const maskSize = 250; // Fixed size for simplicity or calculated
+            const maskCenterInNatX = centerNatX - (position.x / totalScale);
+            const maskCenterInNatY = centerNatY - (position.y / totalScale);
             
-            // Save context
-            ctx.fillStyle = '#FFFFFF';
+            // 4. Determining the Crop Region in Natural Pixels
+            // We want to crop an area corresponding to MASK_SIZE pixels on screen.
+            // Dimension in Natural Pixels = MASK_SIZE / totalScale
+            
+            const cropNatSize = MASK_SIZE / totalScale;
+            
+            const cropNatX = maskCenterInNatX - (cropNatSize / 2);
+            const cropNatY = maskCenterInNatY - (cropNatSize / 2);
+            
+            // 5. Draw
+            // Debug logs
+            // console.log({ totalScale, position, cropNatX, cropNatY, cropNatSize, naturalWidth, naturalHeight });
+
+            ctx.fillStyle = '#FFFFFF'; // Fill background white/transparent just in case
             ctx.fillRect(0, 0, size, size);
             
-            // Calculate source rectangle from the image
-            // Image is drawn at:
-            // CenterX = containerW/2 + pos.x
-            // CenterY = containerH/2 + pos.y
-            // Scale = (image displayed width / natural width) ???
-            // Let's use the actual transformations applied in CSS to calculating inverse.
-            
-            // Image CSS: transfrom: translate(x, y) scale(zoom)
-            // And it is centered in flex container.
-            
-            // Easier way: Draw image to canvas with same transforms.
-            
-            // Clear
-            ctx.clearRect(0, 0, size, size);
-            
-            // We want the area under the mask (size x size) to be drawn to canvas (size x size).
-            // So we need to map container pixels to canvas pixels.
-            // Mask in container is at center.
-            
-            // Canvas Center
-            const cx = size / 2;
-            const cy = size / 2;
-            
-            ctx.translate(cx, cy);
-            // Apply image transformations relative to mask center
-            // In container: Image Center is at (ContainerCenter + Position)
-            // Mask Center is at ContainerCenter
-            // So Image Center relative to Mask Center is (Position)
-            
-            // Warning: zoom is applied to the image.
-            
-            // Check aspect ratio to fit image initially (object-contain logic)
-            const imgAspect = image.naturalWidth / image.naturalHeight;
-            let renderW, renderH;
-            
-            // Assume initial fit is 'contain' within maskSize? No, usually 'cover' or 'fit'.
-            // Let's assume initial render: Image fits inside the viewing area?
-            // In the HTML below, I will render image with max-w-full max-h-full but initially centered.
-            // Let's say we scale image so that min(w, h) = maskSize (cover).
-            
-            const scaleBase = Math.max(maskSize / image.naturalWidth, maskSize / image.naturalHeight);
-            
-            // Apply user zoom
-            const scale = scaleBase * zoom;
-            
-            ctx.translate(position.x * (size/maskSize), position.y * (size/maskSize)); // Scale output movement?
-            // Actually, if we map the mask directly to canvas:
-            // 1 pixel on screen (mask) = (size / maskSize) pixels on canvas.
-            // Ratio = size / maskSize.
-            
-            const ratio = size / maskSize;
-            
-            // Apply transforms
-            ctx.translate(position.x * ratio, position.y * ratio);
-            ctx.scale(scale * ratio, scale * ratio);
-            
-            // Draw image centered
-            ctx.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+            ctx.drawImage(
+                imgElement,
+                cropNatX, cropNatY, cropNatSize, cropNatSize, // Source
+                0, 0, size, size // Destination
+            );
             
             canvas.toBlob((blob) => {
                 resolve(blob);
-            }, 'image/jpeg', 0.9);
+            }, 'image/jpeg', 0.95);
         });
 	}
 </script>
@@ -240,27 +223,24 @@
 		>
 			{#if imageSrc}
 				<!-- Image -->
-				<!-- We center it initially. transform handles pan & zoom -->
 				<img
 					bind:this={imgElement}
 					src={imageSrc}
 					alt="Crop target"
-					class="absolute max-w-none transition-transform duration-75 ease-linear pointer-events-none"
-					style:transform="translate({position.x}px, {position.y}px) scale({zoom})"
-					style:transform-origin="center"
-					style:min-width="250px"
-					style:min-height="250px"
+					class="absolute max-w-none transition-transform duration-75 ease-linear pointer-events-none origin-center"
+					style:transform="translate({position.x}px, {position.y}px) scale({baseScale * zoom})"
+					onload={onImageLoad}
 					ondragstart={(e) => e.preventDefault()}
 				/>
 
 				<!-- Overlay (Circular Mask) -->
-				<!-- Use a huge border/shadow technique or SVG mask -->
-				<!-- SVG Mask is safest for round hole -->
+				<!-- Mask size is MASK_SIZE (250px) -->
 				<div class="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
 					<div
-						class="w-[250px] h-[250px] rounded-full border-2 border-white/50 shadow-[0_0_0_9999px_rgba(0,0,0,0.8)]"
+						class="rounded-full border-2 border-white/50 shadow-[0_0_0_9999px_rgba(0,0,0,0.8)]"
+						style:width="{MASK_SIZE}px"
+						style:height="{MASK_SIZE}px"
 					></div>
-					<!-- Grid Lines (Optional) inside the circle -->
 				</div>
 			{/if}
 		</div>
@@ -272,7 +252,7 @@
 			</div>
 			<input
 				type="range"
-				min="1"
+				min="0.5"
 				max="3"
 				step="0.1"
 				bind:value={zoom}
