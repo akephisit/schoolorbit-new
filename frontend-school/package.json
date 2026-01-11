@@ -50,7 +50,9 @@
 		"bits-ui": "^2.14.4",
 		"date-fns": "^4.1.0",
 		"lucide-svelte": "^0.561.0",
+		"svelte-easy-crop": "^5.0.0",
 		"svelte-sonner": "^1.0.7",
+		"tslib": "^2.8.1",
 		"zod": "^4.3.5"
 	}
 }

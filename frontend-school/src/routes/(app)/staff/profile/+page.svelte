@@ -201,32 +201,9 @@
 					<CardDescription>อัพโหลดรูปโปรไฟล์ของคุณ</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-6">
-					<div class="flex flex-col md:flex-row items-center gap-6">
-						<!-- Avatar Display -->
+					<div class="flex flex-col md:flex-row items-center md:items-start gap-8">
+						<!-- Image Upload Component (Shows Avatar + Edit Button) -->
 						<div class="flex-shrink-0">
-							<Avatar
-								src={formData.profile_image_url}
-								initials={(readOnlyData.first_name?.charAt(0) || 'U') +
-									(readOnlyData.last_name?.charAt(0) || '')}
-								size="xl"
-								shape="circle"
-								class="ring-4 ring-background shadow-lg"
-							/>
-						</div>
-
-						<!-- User Info & Upload -->
-						<div class="flex-1 space-y-4">
-							<div>
-								<p class="font-semibold text-lg text-foreground">
-									{readOnlyData.first_name}
-									{readOnlyData.last_name}
-								</p>
-								<p class="text-sm text-muted-foreground">
-									{readOnlyData.primary_role_name || 'ผู้ใช้งาน'}
-								</p>
-							</div>
-
-							<!-- Upload Component -->
 							<ProfileImageUpload
 								currentImage={formData.profile_image_url}
 								onsuccess={async ({ url }: { url: string; fileId: string }) => {
@@ -243,6 +220,24 @@
 								onerror={(err: string) => toast.error(err)}
 								maxSizeMB={5}
 							/>
+						</div>
+
+						<!-- User Info -->
+						<div class="flex-1 space-y-2 text-center md:text-left py-4">
+							<div>
+								<h3 class="font-bold text-2xl text-foreground tracking-tight">
+									{readOnlyData.first_name}
+									{readOnlyData.last_name}
+								</h3>
+								<p class="text-muted-foreground font-medium">
+									{readOnlyData.primary_role_name || 'ผู้ใช้งาน'}
+								</p>
+							</div>
+
+							<div class="pt-4 text-sm text-muted-foreground">
+								<p>อัปโหลดรูปภาพของคุณเพื่อใช้เป็นรูปโปรไฟล์</p>
+								<p>รองรับไฟล์ JPG, PNG, WebP ขนาดไม่เกิน 5 MB</p>
+							</div>
 						</div>
 					</div>
 				</CardContent>
