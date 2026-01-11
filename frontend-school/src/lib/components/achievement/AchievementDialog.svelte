@@ -15,40 +15,54 @@
 	import { LoaderCircle, Upload, X } from 'lucide-svelte';
 	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
+	import { achievementSchema } from '$lib/validation/schemas';
+	import type { z } from 'zod';
 
-	export let open: boolean = false;
-	export let achievement: Achievement | null = null;
-	export let userId: string; // Target user ID
+	interface Props {
+		open: boolean;
+		achievement: Achievement | null;
+		userId: string;
+	}
 
-	let loading = false;
-	let title = '';
-	let description = '';
-	let date = new Date().toISOString().split('T')[0];
-	let imageFile: File | null = null;
-	let imagePreview: string | null = null;
-	let currentImagePath: string | null = null;
+	let { open = $bindable(false), achievement = null, userId }: Props = $props();
+
+	let loading = $state(false);
+	
+	// Form State
+	let title = $state('');
+	let description = $state('');
+	let date = $state(new Date().toISOString().split('T')[0]);
+	let imageFile = $state<File | null>(null);
+	let imagePreview = $state<string | null>(null);
+	let currentImagePath = $state<string | null>(null);
+	
+	// Validation State
+	let errors = $state<Record<string, string>>({});
 
 	const dispatch = createEventDispatcher();
 
     // Reset or Load form when dialog opens/changes
-	$: if (open) {
-		if (achievement) {
-			title = achievement.title;
-			description = achievement.description || '';
-			date = achievement.achievement_date;
-			currentImagePath = achievement.image_path || null;
-			imagePreview = null;
-			imageFile = null;
-		} else {
-            // Reset for create mode
-			title = '';
-			description = '';
-			date = new Date().toISOString().split('T')[0];
-			currentImagePath = null;
-			imagePreview = null;
-			imageFile = null;
+	$effect(() => {
+		if (open) {
+			if (achievement) {
+				title = achievement.title;
+				description = achievement.description || '';
+				date = achievement.achievement_date;
+				currentImagePath = achievement.image_path || null;
+				imagePreview = null;
+				imageFile = null;
+			} else {
+				// Reset for create mode
+				title = '';
+				description = '';
+				date = new Date().toISOString().split('T')[0];
+				currentImagePath = null;
+				imagePreview = null;
+				imageFile = null;
+			}
+			errors = {};
 		}
-	}
+	});
 
 	function handleFileChange(e: Event) {
 		const input = e.target as HTMLInputElement;
@@ -71,8 +85,28 @@
 	}
 
 	async function handleSubmit() {
-		if (!title || !date) {
-			toast.error('กรุณากรอกข้อมูลที่จำเป็น');
+		errors = {};
+		
+		// 1. Validate with Zod
+		const result = achievementSchema.safeParse({
+			title,
+			achievement_date: date,
+			description,
+			image_path: currentImagePath || '' 
+		});
+
+		if (!result.success) {
+			const formattedErrors: Record<string, string> = {};
+			const fieldErrors = result.error.flatten().fieldErrors;
+			
+			Object.entries(fieldErrors).forEach(([key, messages]) => {
+				if (messages && messages.length > 0) {
+					formattedErrors[key] = messages[0];
+				}
+			});
+
+			errors = formattedErrors;
+			toast.error('กรุณาตรวจสอบข้อมูลให้ถูกต้อง');
 			return;
 		}
 
@@ -137,13 +171,24 @@
 					id="title"
 					bind:value={title}
 					placeholder="เช่น รางวัลครูดีเด่นประจำปี 2567"
-					required
+					class={errors.title ? 'border-destructive focus-visible:ring-destructive' : ''}
 				/>
+				{#if errors.title}
+					<p class="text-xs text-destructive">{errors.title}</p>
+				{/if}
 			</div>
 
 			<div class="grid gap-2">
 				<Label for="date">วันที่ได้รับ</Label>
-				<Input id="date" type="date" bind:value={date} required />
+				<Input
+					id="date"
+					type="date"
+					bind:value={date}
+					class={errors.achievement_date ? 'border-destructive focus-visible:ring-destructive' : ''}
+				/>
+				{#if errors.achievement_date}
+					<p class="text-xs text-destructive">{errors.achievement_date}</p>
+				{/if}
 			</div>
 
 			<div class="grid gap-2">
@@ -153,7 +198,11 @@
 					bind:value={description}
 					placeholder="รายละเอียดของผลงาน หน่วยงานที่มอบ หรือหมายเหตุอื่นๆ"
 					rows={3}
+					class={errors.description ? 'border-destructive focus-visible:ring-destructive' : ''}
 				/>
+				{#if errors.description}
+					<p class="text-xs text-destructive">{errors.description}</p>
+				{/if}
 			</div>
 
 			<div class="grid gap-2">
