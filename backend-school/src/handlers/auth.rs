@@ -167,6 +167,21 @@ pub async fn login(
     .ok()
     .flatten();
 
+    // Fetch all user permissions
+    let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
+        "SELECT DISTINCT p.code
+         FROM user_roles ur
+         JOIN role_permissions rp ON ur.role_id = rp.role_id
+         JOIN permissions p ON rp.permission_id = p.id
+         WHERE ur.user_id = $1 
+           AND ur.ended_at IS NULL
+         ORDER BY p.code"
+    )
+    .bind(&user.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
     // Create user response manually (LoginUser doesn't implement From)
     let user_response = UserResponse {
         id: user.id,
@@ -180,6 +195,11 @@ pub async fn login(
         created_at: chrono::Utc::now(),
         primary_role_name,
         profile_image_url: get_file_url_from_string(&user.profile_image_url),
+        permissions: if permissions.is_empty() {
+            None
+        } else {
+            Some(permissions)
+        },
     };
 
     // Set cookie (optional, based on remember_me)
@@ -361,9 +381,29 @@ pub async fn me(
     .ok()
     .flatten();
 
-    // Create response with primary role name
+    // Fetch all user permissions
+    let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
+        "SELECT DISTINCT p.code
+         FROM user_roles ur
+         JOIN role_permissions rp ON ur.role_id = rp.role_id
+         JOIN permissions p ON rp.permission_id = p.id
+         WHERE ur.user_id = $1 
+           AND ur.ended_at IS NULL
+         ORDER BY p.code"
+    )
+    .bind(&user.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // Create response with primary role name and permissions
     let mut user_response = UserResponse::from(user);
     user_response.primary_role_name = primary_role_name;
+    user_response.permissions = if permissions.is_empty() {
+        None
+    } else {
+        Some(permissions)
+    };
 
     (StatusCode::OK, Json(user_response)).into_response()
 }

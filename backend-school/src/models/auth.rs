@@ -100,6 +100,10 @@ pub struct UserResponse {
     pub primary_role_name: Option<String>,
     
     pub profile_image_url: Option<String>,
+    
+    // User permissions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<Vec<String>>,
 }
 
 impl From<User> for UserResponse {
@@ -116,6 +120,7 @@ impl From<User> for UserResponse {
             created_at: user.created_at,
             primary_role_name: None, // Will be populated separately
             profile_image_url: get_file_url_from_string(&user.profile_image_url),
+            permissions: None, // Will be populated separately
         }
     }
 }
