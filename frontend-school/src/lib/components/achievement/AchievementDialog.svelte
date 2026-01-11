@@ -22,9 +22,10 @@
 		open: boolean;
 		achievement: Achievement | null;
 		userId: string;
+        canSelectUser?: boolean;
 	}
 
-	let { open = $bindable(false), achievement = null, userId }: Props = $props();
+	let { open = $bindable(false), achievement = null, userId, canSelectUser = false }: Props = $props();
 
 	let loading = $state(false);
 	
@@ -35,20 +36,41 @@
 	let imageFile = $state<File | null>(null);
 	let imagePreview = $state<string | null>(null);
 	let currentImagePath = $state<string | null>(null);
+    let targetUserId = $state(''); // For selecting user
 	
 	// Validation State
 	let errors = $state<Record<string, string>>({});
+
+    // Staff List for selection
+    import { listStaff, type StaffListItem } from '$lib/api/staff';
+    import * as Popover from '$lib/components/ui/popover';
+    import * as Command from '$lib/components/ui/command';
+    import { Check, ChevronsUpDown } from 'lucide-svelte';
+    import { cn } from '$lib/utils';
+    import { tick } from 'svelte';
+
+    let staffList = $state<StaffListItem[]>([]);
+    let openCombobox = $state(false);
+    let triggerRef = $state<HTMLButtonElement>(null!);
 
 	const dispatch = createEventDispatcher();
 
     // Reset or Load form when dialog opens/changes
 	$effect(() => {
 		if (open) {
+            // Load staff list if can select user
+            if (canSelectUser && staffList.length === 0) {
+                listStaff({ page_size: 1000 }).then(res => {
+                    if(res.success) staffList = res.data;
+                });
+            }
+
 			if (achievement) {
 				title = achievement.title;
 				description = achievement.description || '';
 				date = achievement.achievement_date;
 				currentImagePath = achievement.image_path || null;
+                targetUserId = achievement.user_id;
 				imagePreview = null;
 				imageFile = null;
 			} else {
@@ -57,6 +79,7 @@
 				description = '';
 				date = new Date().toISOString().split('T')[0];
 				currentImagePath = null;
+                targetUserId = userId || '';
 				imagePreview = null;
 				imageFile = null;
 			}
@@ -84,9 +107,22 @@
 		currentImagePath = null;
 	}
 
+    // Helper to get selected staff name
+    function getSelectedStaffName() {
+        if (!targetUserId) return 'เลือกบุคลากร';
+        const staff = staffList.find(s => s.id === targetUserId);
+        return staff ? `${staff.first_name} ${staff.last_name}` : 'เลือกบุคลากร';
+    }
+
 	async function handleSubmit() {
 		errors = {};
 		
+        if (canSelectUser && !targetUserId) {
+            errors.targetUserId = 'กรุณาเลือกบุคลากร';
+			toast.error('กรุณาเลือกบุคลากร');
+            return;
+        }
+
 		// 1. Validate with Zod
 		const result = achievementSchema.safeParse({
 			title,
@@ -134,7 +170,7 @@
 
 			dispatch('save', {
 				id: achievement?.id,
-				user_id: userId,
+				user_id: canSelectUser && targetUserId ? targetUserId : userId,
 				title,
 				description,
 				achievement_date: date,
@@ -165,6 +201,59 @@
 		</DialogHeader>
 
 		<div class="grid gap-4 py-4">
+			{#if canSelectUser}
+				<div class="grid gap-2">
+					<Label class="required">เจ้าของผลงาน</Label>
+					<Popover.Root bind:open={openCombobox}>
+						<Popover.Trigger bind:ref={triggerRef}>
+							{#snippet child({ props })}
+								<Button
+									variant="outline"
+									class="w-full justify-between"
+									{...props}
+									role="combobox"
+									aria-expanded={openCombobox}
+								>
+									{getSelectedStaffName()}
+									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+								</Button>
+							{/snippet}
+						</Popover.Trigger>
+						<Popover.Content class="w-full p-0">
+							<Command.Root>
+								<Command.Input placeholder="ค้นหาบุคลากร..." />
+								<Command.List>
+									<Command.Empty>ไม่พบรายชื่อ</Command.Empty>
+									<Command.Group>
+										{#each staffList as staff (staff.id)}
+											<Command.Item
+												value={staff.id}
+												onSelect={() => {
+													targetUserId = staff.id;
+													openCombobox = false;
+												}}
+											>
+												<Check
+													class={cn(
+														'mr-2 h-4 w-4',
+														targetUserId === staff.id ? 'opacity-100' : 'opacity-0'
+													)}
+												/>
+												{staff.first_name}
+												{staff.last_name}
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.List>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
+					{#if errors.targetUserId}
+						<p class="text-xs text-destructive">{errors.targetUserId}</p>
+					{/if}
+				</div>
+			{/if}
+
 			<div class="grid gap-2">
 				<Label for="title" class="required">ชื่อผลงาน / รางวัล</Label>
 				<Input

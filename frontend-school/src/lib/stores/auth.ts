@@ -13,6 +13,7 @@ export interface User {
 	createdAt: string;
 	primaryRoleName?: string; // ชื่อบทบาทหลักจากฐานข้อมูล
 	profileImageUrl?: string;
+	permissions?: string[];
 }
 
 export interface AuthState {
