@@ -44,6 +44,7 @@
 
     // Staff List for selection
     import { listStaff, type StaffListItem } from '$lib/api/staff';
+    import { uploadFile } from '$lib/api/files';
     import * as Popover from '$lib/components/ui/popover';
     import * as Command from '$lib/components/ui/command';
     import { Check, ChevronsUpDown } from 'lucide-svelte';
@@ -153,20 +154,12 @@
 
 			// Upload image if selected
 			if (imageFile) {
-				const formData = new FormData();
-				formData.append('file', imageFile);
-				formData.append('folder', 'achievements'); // Optional: organize files
+                const uploadData = await uploadFile(imageFile, 'other', false);
 
-				const res = await fetch('/api/files/upload', {
-					method: 'POST',
-					body: formData
-				});
-
-				const uploadData = await res.json();
 				if (!uploadData.success) {
-					throw new Error(uploadData.error || 'Failed to upload image');
+					throw new Error('Failed to upload image');
 				}
-				imagePath = uploadData.url; // Use the returned URL/Path
+				imagePath = uploadData.file.url;
 			}
 
 			dispatch('save', {
