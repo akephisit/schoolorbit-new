@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
     import { authStore } from '$lib/stores/auth';
+    import { userPermissions, loadUserPermissions } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
     import * as Tabs from "$lib/components/ui/tabs";
@@ -46,15 +47,12 @@
     let showDialog = $state(false);
     let selectedAchievement = $state<Achievement | null>(null);
 
-    // Permissions
+    // Permissions - Using centralized permission store
     const user = $derived($authStore.user);
     const userId = $derived(user?.id || '');
-    // Check permissions from authStore (assuming user object has fully populated permissions or we check roles/scopes)
-    // Note: In this system, permissions are strings like 'achievement.read.all'
-    const permissions = $derived(user?.permissions || []); 
+    const permissions = $derived($userPermissions); // Use store instead of user.permissions
 
     const canReadAll = $derived(permissions.includes('achievement.read.all'));
-    // const canReadOwn = $derived(permissions.includes('achievement.read.own')); // Implicitly true for valid users usually
     const canCreateAll = $derived(permissions.includes('achievement.create.all'));
     const canCreateOwn = $derived(permissions.includes('achievement.create.own'));
     const canUpdateAll = $derived(permissions.includes('achievement.update.all'));
@@ -75,14 +73,6 @@
             );
         })
     );
-
-    // Effect to set default tab based on permission
-    $effect(() => {
-        if (canReadAll && activeTab === 'own' && achievements.length === 0 && !loading) {
-            // If user can read all, maybe we want to default to 'all'? 
-            // Or let them switch. For now, default is 'own' but valid to switch.
-        }
-    });
 
 	async function loadData() {
         if (!userId) return;
@@ -180,19 +170,13 @@
         }
     }
 
-	onMount(() => {
-        // We rely on the $effect below to trigger the initial load when userId is available
-	});
-
-    // React to user ID change (e.g. reload or login)
-    $effect(() => {
+	onMount(async () => {
+        // Load permissions first, then load data
         if (userId) {
-             // Use untrack to prevent re-running when dependencies inside loadData change (like loading state)
-             untrack(() => {
-                 loadData();
-             });
+            await loadUserPermissions(userId);
+            loadData();
         }
-    });
+	});
 
     import { untrack } from 'svelte';
 </script>
