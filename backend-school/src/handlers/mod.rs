@@ -12,3 +12,5 @@ pub mod students;
 pub mod consent;
 pub mod register_routes;
 pub mod files;
+pub mod achievement;
+

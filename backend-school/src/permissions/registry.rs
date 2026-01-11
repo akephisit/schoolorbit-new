@@ -53,6 +53,16 @@ pub mod codes {
     pub const STUDENT_CREATE: &str = "student.create";
     pub const STUDENT_UPDATE_ALL: &str = "student.update.all";
     pub const STUDENT_DELETE: &str = "student.delete";
+
+    // Achievement permissions
+    pub const ACHIEVEMENT_READ_OWN: &str = "achievement.read.own";
+    pub const ACHIEVEMENT_READ_ALL: &str = "achievement.read.all";
+    pub const ACHIEVEMENT_CREATE_OWN: &str = "achievement.create.own";
+    pub const ACHIEVEMENT_CREATE_ALL: &str = "achievement.create.all";
+    pub const ACHIEVEMENT_UPDATE_OWN: &str = "achievement.update.own";
+    pub const ACHIEVEMENT_UPDATE_ALL: &str = "achievement.update.all";
+    pub const ACHIEVEMENT_DELETE_OWN: &str = "achievement.delete.own";
+    pub const ACHIEVEMENT_DELETE_ALL: &str = "achievement.delete.all";
 }
 
 /// Complete list of all permissions in the system
@@ -263,5 +273,70 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "delete",
         scope: "all",
         description: "ลบนักเรียน",
+    },
+    // Achievement permissions
+    PermissionDef {
+        code: codes::ACHIEVEMENT_READ_OWN,
+        name: "ดูผลงานตนเอง",
+        module: "achievement",
+        action: "read",
+        scope: "own",
+        description: "ดูรายการผลงานของตนเอง",
+    },
+    PermissionDef {
+        code: codes::ACHIEVEMENT_READ_ALL,
+        name: "ดูผลงานทั้งหมด",
+        module: "achievement",
+        action: "read",
+        scope: "all",
+        description: "ดูรายการผลงานของบุคคลากรทั้งหมด",
+    },
+    PermissionDef {
+        code: codes::ACHIEVEMENT_CREATE_OWN,
+        name: "เพิ่มผลงานตนเอง",
+        module: "achievement",
+        action: "create",
+        scope: "own",
+        description: "บันทึกผลงานของตนเอง",
+    },
+    PermissionDef {
+        code: codes::ACHIEVEMENT_CREATE_ALL,
+        name: "เพิ่มผลงานให้ผู้อื่น",
+        module: "achievement",
+        action: "create",
+        scope: "all",
+        description: "บันทึกผลงานแทนบุคคลากรอื่น",
+    },
+    PermissionDef {
+        code: codes::ACHIEVEMENT_UPDATE_OWN,
+        name: "แก้ไขผลงานตนเอง",
+        module: "achievement",
+        action: "update",
+        scope: "own",
+        description: "แก้ไขผลงานของตนเอง",
+    },
+    PermissionDef {
+        code: codes::ACHIEVEMENT_UPDATE_ALL,
+        name: "แก้ไขผลงานผู้อื่น",
+        module: "achievement",
+        action: "update",
+        scope: "all",
+        description: "แก้ไขผลงานของบุคคลากรอื่น",
+    },
+    PermissionDef {
+        code: codes::ACHIEVEMENT_DELETE_OWN,
+        name: "ลบผลงานตนเอง",
+        module: "achievement",
+        action: "delete",
+        scope: "own",
+        description: "ลบผลงานของตนเอง",
+    },
+    PermissionDef {
+        code: codes::ACHIEVEMENT_DELETE_ALL,
+        name: "ลบผลงานผู้อื่น",
+        module: "achievement",
+        action: "delete",
+        scope: "all",
+        description: "ลบผลงานของบุคคลากรอื่น",
     },
 ];

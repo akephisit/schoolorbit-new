@@ -116,6 +116,14 @@ async fn main() {
         .route("/api/staff/{id}", axum::routing::delete(handlers::staff::delete_staff)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
+        // Staff Achievements routes (protected)
+        .route("/api/achievements", get(handlers::achievement::list_achievements)
+            .post(handlers::achievement::create_achievement)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/achievements/{id}", axum::routing::put(handlers::achievement::update_achievement)
+            .delete(handlers::achievement::delete_achievement)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
         // Student Self-Service routes (protected)
         .route("/api/student/profile", get(handlers::students::get_own_profile)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
