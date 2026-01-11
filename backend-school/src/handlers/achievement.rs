@@ -274,8 +274,13 @@ pub async fn update_achievement(
         Err(e) => return e,
     };
 
-    // Get existing achievement to check ownership
-    let existing = match sqlx::query_as::<_, Achievement>("SELECT * FROM staff_achievements WHERE id = $1")
+    // Get existing achievement owner to check permission
+    #[derive(sqlx::FromRow)]
+    struct AchievementOwnership {
+        user_id: Uuid,
+    }
+
+    let existing = match sqlx::query_as::<_, AchievementOwnership>("SELECT user_id FROM staff_achievements WHERE id = $1")
         .bind(id)
         .fetch_optional(&pool)
         .await
@@ -355,8 +360,13 @@ pub async fn delete_achievement(
         Err(e) => return e,
     };
 
-    // Get existing achievement
-    let existing = match sqlx::query_as::<_, Achievement>("SELECT * FROM staff_achievements WHERE id = $1")
+    // Get existing achievement owner for permission check
+    #[derive(sqlx::FromRow)]
+    struct AchievementOwnership {
+        user_id: Uuid,
+    }
+
+    let existing = match sqlx::query_as::<_, AchievementOwnership>("SELECT user_id FROM staff_achievements WHERE id = $1")
         .bind(id)
         .fetch_optional(&pool)
         .await
