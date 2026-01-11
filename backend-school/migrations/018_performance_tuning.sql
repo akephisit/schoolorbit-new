@@ -58,13 +58,8 @@ END $$;
 -- 4. Staff Search Optimization
 -- ===================================================================
 
--- 4.1 Employee ID Search
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff_info' AND column_name = 'employee_id') THEN
-        CREATE INDEX IF NOT EXISTS trgm_staff_info_employee_id ON staff_info USING GIN (employee_id gin_trgm_ops);
-    END IF;
-END $$;
+-- 4.1 Employee ID Search (Removed as it may not be used/exist)
+-- DO $$ ... END $$;
 
 -- ===================================================================
 -- 5. Status & User Type Optimization (Composite Indexes)
