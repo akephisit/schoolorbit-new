@@ -37,9 +37,11 @@ export async function uploadFile(
     isTemporary: boolean = false
 ): Promise<FileUploadResponse> {
     const formData = new FormData();
-    formData.append('file', file);
+    // Append metadata query parameters first (Best practice for streaming servers)
     formData.append('file_type', fileType);
     formData.append('is_temporary', isTemporary ? 'true' : 'false');
+    // Append file last
+    formData.append('file', file);
 
     const response = await fetch(`${PUBLIC_BACKEND_URL}/api/files/upload`, {
         method: 'POST',
