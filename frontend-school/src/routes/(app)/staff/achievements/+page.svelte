@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
     import { authStore } from '$lib/stores/auth';
-    import { userPermissions, loadUserPermissions } from '$lib/stores/permissions';
+    import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
     import * as Tabs from "$lib/components/ui/tabs";
@@ -47,18 +47,19 @@
     let showDialog = $state(false);
     let selectedAchievement = $state<Achievement | null>(null);
 
-    // Permissions - Using centralized permission store
+    // User & Permissions - permissions auto-loaded by authStore
     const user = $derived($authStore.user);
     const userId = $derived(user?.id || '');
-    const permissions = $derived($userPermissions); // Use store instead of user.permissions
+    const permissions = $derived($can); // Use enhanced permission store
 
-    const canReadAll = $derived(permissions.includes('achievement.read.all'));
-    const canCreateAll = $derived(permissions.includes('achievement.create.all'));
-    const canCreateOwn = $derived(permissions.includes('achievement.create.own'));
-    const canUpdateAll = $derived(permissions.includes('achievement.update.all'));
-    const canUpdateOwn = $derived(permissions.includes('achievement.update.own'));
-    const canDeleteAll = $derived(permissions.includes('achievement.delete.all'));
-    const canDeleteOwn = $derived(permissions.includes('achievement.delete.own'));
+    // Permission checks - much simpler now!
+    const canReadAll = $derived(permissions.has('achievement.read.all'));
+    const canCreateOwn = $derived(permissions.has('achievement.create.own'));
+    const canCreateAll = $derived(permissions.has('achievement.create.all'));
+    const canUpdateOwn = $derived(permissions.has('achievement.update.own'));
+    const canUpdateAll = $derived(permissions.has('achievement.update.all'));
+    const canDeleteOwn = $derived(permissions.has('achievement.delete.own'));
+    const canDeleteAll = $derived(permissions.has('achievement.delete.all'));
 
     // Derived state for filtering
     const filteredAchievements = $derived(
@@ -170,15 +171,13 @@
         }
     }
 
-	onMount(async () => {
-        // Load permissions first, then load data
+	onMount(() => {
+        // Permissions are auto-loaded by authStore when user logs in
+        // Just load data when page mounts
         if (userId) {
-            await loadUserPermissions(userId);
             loadData();
         }
 	});
-
-    import { untrack } from 'svelte';
 </script>
 
 <div class="space-y-6">
