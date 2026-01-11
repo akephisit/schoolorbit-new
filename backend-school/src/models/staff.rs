@@ -357,6 +357,7 @@ pub struct StaffProfileResponse {
     pub hired_date: Option<String>,
     pub user_type: String,
     pub status: String,
+    pub profile_image_url: Option<String>,
     
     // Staff specific info
     pub staff_info: Option<StaffInfoResponse>,
@@ -405,6 +406,7 @@ pub struct CreateStaffRequest {
     
     // Staff Info (Optional - can be added later)
     pub staff_info: Option<CreateStaffInfoRequest>,
+    pub profile_image_url: Option<String>,
     
     // Roles
     pub role_ids: Vec<Uuid>,
@@ -441,6 +443,7 @@ pub struct UpdateStaffRequest {
     pub address: Option<String>,
     pub hired_date: Option<NaiveDate>,
     pub status: Option<String>,
+    pub profile_image_url: Option<String>,
     pub staff_info: Option<CreateStaffInfoRequest>,
     
     // Roles

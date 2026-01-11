@@ -18,6 +18,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { DatePicker } from '$lib/components/ui/date-picker';
+	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
 	import { ArrowLeft, LoaderCircle, Save, User, Building2, BookOpen, Check } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
@@ -41,6 +42,7 @@
 	// Form data
 	let formData = $state({
 		// Personal Information
+		profile_image_url: '',
 		title: '',
 		first_name: '',
 		last_name: '',
@@ -90,6 +92,7 @@
 
 				// Populate form
 				formData = {
+					profile_image_url: staff.profile_image_url || '',
 					title: staff.title || 'นาย',
 					first_name: staff.first_name,
 					last_name: staff.last_name,
@@ -288,6 +291,7 @@
 
 		try {
 			const payload = {
+				profile_image_url: formData.profile_image_url || undefined,
 				title: formData.title || undefined,
 				first_name: formData.first_name,
 				last_name: formData.last_name,
@@ -490,6 +494,18 @@
 					{#if currentStep === 1}
 						<!-- Step 1: Personal Information -->
 						<h2 class="text-xl font-semibold mb-6">ข้อมูลส่วนตัว</h2>
+
+						<div class="flex justify-center mb-8">
+							<ProfileImageUpload
+								currentImage={formData.profile_image_url}
+								onsuccess={(data) => {
+									formData.profile_image_url = data.url;
+								}}
+								onerror={(msg) => {
+									errors.profile_image = msg;
+								}}
+							/>
+						</div>
 
 						<div class="space-y-4">
 							<div class="grid grid-cols-2 gap-4">

@@ -65,7 +65,7 @@
 			</div>
 		</div>
 		{#if staff}
-			<Button href="/staff/{staff.id}/edit" class="flex items-center gap-2">
+			<Button href="/staff/manage/{staff.id}/edit" class="flex items-center gap-2">
 				<Pencil class="w-4 h-4" />
 				แก้ไข
 			</Button>
@@ -93,9 +93,17 @@
 				<div class="bg-card border border-border rounded-lg p-6">
 					<div class="text-center">
 						<div
-							class="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4"
+							class="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 overflow-hidden"
 						>
-							<User class="w-12 h-12 text-primary" />
+							{#if staff.profile_image_url}
+								<img
+									src={staff.profile_image_url}
+									alt={`${staff.first_name} ${staff.last_name}`}
+									class="w-full h-full object-cover"
+								/>
+							{:else}
+								<User class="w-12 h-12 text-primary" />
+							{/if}
 						</div>
 						<h2 class="text-2xl font-bold text-foreground">
 							{staff.title || ''}

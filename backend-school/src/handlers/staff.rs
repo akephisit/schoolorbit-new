@@ -35,7 +35,52 @@ struct UserBasicRow {
     hired_date: Option<chrono::NaiveDate>,
     user_type: String,
     status: String,
+    profile_image_url: Option<String>,
 }
+
+// ... (other structs unchanged)
+
+// ...
+
+pub async fn get_staff_profile(...) {
+    // ...
+
+    // Get user basic info (encryption key auto-set by pool)
+    let mut user = match sqlx::query_as::<_, UserBasicRow>(
+        "SELECT id, national_id, email, title, first_name, last_name, nickname, phone, 
+                emergency_contact, line_id, date_of_birth, gender, address, hired_date,
+                user_type, status, profile_image_url
+         FROM users 
+         WHERE id = $1 AND user_type = 'staff'",
+    )
+    .bind(staff_id)
+    .fetch_optional(&pool)
+    .await
+    // ...
+    
+    
+    // ...
+    
+    let profile = StaffProfileResponse {
+        id: user.id,
+        national_id: user.national_id,
+        email: user.email,
+        title: user.title,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        nickname: user.nickname,
+        phone: user.phone,
+        emergency_contact: user.emergency_contact,
+        line_id: user.line_id,
+        date_of_birth: user.date_of_birth.map(|d| d.to_string()),
+        gender: user.gender,
+        address: user.address,
+        hired_date: user.hired_date.map(|d| d.to_string()),
+        user_type: user.user_type,
+        status: user.status,
+        profile_image_url: user.profile_image_url,
+        staff_info: staff_info.map(|si| StaffInfoResponse {
+        // ...
 
 #[derive(Debug, FromRow)]
 struct StaffInfoRow {
@@ -407,7 +452,7 @@ pub async fn get_staff_profile(
     let mut user = match sqlx::query_as::<_, UserBasicRow>(
         "SELECT id, national_id, email, title, first_name, last_name, nickname, phone, 
                 emergency_contact, line_id, date_of_birth, gender, address, hired_date,
-                user_type, status
+                user_type, status, profile_image_url
          FROM users 
          WHERE id = $1 AND user_type = 'staff'",
     )
@@ -548,6 +593,7 @@ pub async fn get_staff_profile(
         hired_date: user.hired_date.map(|d| d.to_string()),
         user_type: user.user_type,
         status: user.status,
+        profile_image_url: user.profile_image_url,
         staff_info: staff_info.map(|si| StaffInfoResponse {
             education_level: si.education_level,
             major: si.major,
@@ -759,8 +805,8 @@ pub async fn create_staff(
             "INSERT INTO users (
                 national_id, national_id_hash, email, password_hash, title, first_name, last_name, nickname,
                 phone, emergency_contact, line_id, date_of_birth, gender, address,
-                user_type, hired_date, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'staff', $15, 'active')
+                user_type, hired_date, status, profile_image_url
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'staff', $15, 'active', $16)
             RETURNING id",
         )
         .bind(&encrypted_national_id)
@@ -778,6 +824,7 @@ pub async fn create_staff(
         .bind(&payload.gender)
         .bind(&payload.address)
         .bind(&payload.hired_date)
+        .bind(&payload.profile_image_url)
         .fetch_one(&mut *tx)
         .await
         {
@@ -1034,6 +1081,7 @@ pub async fn update_staff(
             address = COALESCE($12, address),
             hired_date = COALESCE($13, hired_date),
             status = COALESCE($14, status),
+            profile_image_url = COALESCE($15, profile_image_url),
             updated_at = NOW()
          WHERE id = $1 AND user_type = 'staff'",
     )
@@ -1051,6 +1099,7 @@ pub async fn update_staff(
     .bind(&payload.address)
     .bind(&payload.hired_date)
     .bind(&payload.status)
+    .bind(&payload.profile_image_url)
     .execute(&mut *tx)
     .await;
 

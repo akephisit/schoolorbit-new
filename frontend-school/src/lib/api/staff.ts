@@ -78,6 +78,7 @@ export interface StaffProfileResponse {
 	hired_date?: string;
 	user_type: string;
 	status: string;
+	profile_image_url?: string;
 	staff_info?: StaffInfoResponse;
 	roles: RoleResponse[];
 	primary_role?: RoleResponse;
@@ -109,6 +110,7 @@ export interface CreateStaffRequest {
 		teaching_license_expiry?: string;
 		work_days?: string[];
 	};
+	profile_image_url?: string;
 	role_ids: string[];
 	primary_role_id?: string;
 	department_assignments?: Array<{
@@ -133,6 +135,7 @@ export interface UpdateStaffRequest {
 	address?: string;
 	hired_date?: string;
 	status?: string;
+	profile_image_url?: string;
 	staff_info?: {
 		education_level?: string;
 		major?: string;
