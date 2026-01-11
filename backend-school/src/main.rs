@@ -253,7 +253,7 @@ async fn main() {
         // Add cookie middleware
         .layer(CookieManagerLayer::new())
         // Add state
-        .with_state(state);
+        .with_state(state.clone());
 
     let addr = format!("{}:{}", host, port);
     tracing::info!("🌐 Server starting on http://{}", addr);

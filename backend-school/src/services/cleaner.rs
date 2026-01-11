@@ -1,6 +1,5 @@
-use std::sync::Arc;
 use sqlx::{Pool, Postgres, Row};
-use tracing::{info, error, warn};
+use tracing::{info, error};
 use crate::services::r2_client::R2Client;
 
 pub struct FileCleaner {
@@ -9,7 +8,7 @@ pub struct FileCleaner {
 }
 
 impl FileCleaner {
-    pub async fn new(db_pool: Pool<Postgres>) -> Result<Self, anyhow::Error> {
+    pub async fn new(db_pool: Pool<Postgres>) -> Result<Self, String> {
         let r2_client = R2Client::new().await?;
         Ok(Self {
             db_pool,
