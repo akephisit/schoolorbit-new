@@ -87,10 +87,40 @@
 		window.addEventListener('mouseup', handleMouseUp);
 	}
 
+	function getConstraints() {
+        if (!naturalWidth || !naturalHeight) return { x: 0, y: 0 };
+        
+        // Current rendered dimensions
+        const currentScale = baseScale * zoom;
+        const renderW = naturalWidth * currentScale;
+        const renderH = naturalHeight * currentScale;
+        
+        // Panning is relative to center.
+        // We can move the image until its edge hits the mask edge?
+        // Actually, for "cover", we usually want the image to cover the mask completely?
+        // Or cover the container?
+        // Let's assume we want the image to cover the MASK area at least.
+        
+        // Max displacement is half the difference between Image Size and Mask Size
+        const maxX = Math.max(0, (renderW - maskSize) / 2);
+        const maxY = Math.max(0, (renderH - maskSize) / 2);
+        
+        return { x: maxX, y: maxY };
+    }
+
 	function handleMouseMove(e: MouseEvent) {
         if (!dragging) return;
-        position.x = e.clientX - dragStart.x;
-        position.y = e.clientY - dragStart.y;
+        
+        let newX = e.clientX - dragStart.x;
+        let newY = e.clientY - dragStart.y;
+        
+        // Apply Constraints (Prevent edges from entering mask)
+        const limits = getConstraints();
+        newX = Math.max(-limits.x, Math.min(newX, limits.x));
+        newY = Math.max(-limits.y, Math.min(newY, limits.y));
+        
+        position.x = newX;
+        position.y = newY;
 	}
 
 	function handleMouseUp() {
@@ -113,8 +143,16 @@
          if (!dragging) return;
          if (e.cancelable) e.preventDefault(); // Prevent scrolling
          const touch = e.touches[0];
-         position.x = touch.clientX - dragStart.x;
-         position.y = touch.clientY - dragStart.y;
+         
+         let newX = touch.clientX - dragStart.x;
+         let newY = touch.clientY - dragStart.y;
+         
+         const limits = getConstraints();
+         newX = Math.max(-limits.x, Math.min(newX, limits.x));
+         newY = Math.max(-limits.y, Math.min(newY, limits.y));
+         
+         position.x = newX;
+         position.y = newY;
      }
 
      function handleTouchEnd() {
@@ -264,9 +302,9 @@
 			</div>
 			<input
 				type="range"
-				min="0.5"
+				min="1"
 				max="3"
-				step="0.1"
+				step="0.01"
 				bind:value={zoom}
 				class="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
 			/>
