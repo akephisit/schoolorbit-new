@@ -1,73 +1,86 @@
 -- ===================================================================
--- Migration 013: Student Management System
+-- Migration 013: Student Management System (FIXED for normalized schema)
 -- Description: เพิ่ม STUDENT role และ STUDENT_MANAGER role
 -- Date: 2026-01-05
+-- Updated: 2026-01-11 - Use normalized schema
 -- ===================================================================
 
 -- ===================================================================
 -- 1. Insert STUDENT Role
 -- ===================================================================
-INSERT INTO roles (code, name, name_en, user_type, level, permissions) VALUES
+INSERT INTO roles (code, name, name_en, user_type, level) VALUES
 (
     'STUDENT',
     'นักเรียน',
     'Student',
-    'student', -- user_type is student
-    1,
-    ARRAY[
-        'dashboard',
-        'student.read.own',
-        'student.update.own'
-    ]
+    'student',
+    1
 )
 ON CONFLICT (code) DO UPDATE SET
-    permissions = EXCLUDED.permissions,
     name = EXCLUDED.name,
     name_en = EXCLUDED.name_en,
     user_type = EXCLUDED.user_type,
     level = EXCLUDED.level;
 
-COMMENT ON COLUMN roles.permissions IS 'Permission codes (auto-synced from registry.rs)';
+-- Assign permissions to STUDENT role
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT 
+    (SELECT id FROM roles WHERE code = 'STUDENT'),
+    id
+FROM permissions
+WHERE code IN (
+    'dashboard',
+    'student.read.own',
+    'student.update.own'
+)
+ON CONFLICT DO NOTHING;
 
 -- ===================================================================
--- 2. Insert STUDENT_MANAGER Role (สำหรับครู/Admin ที่จัดการนักเรียน)
+-- 2. Insert STUDENT_MANAGER Role
 -- ===================================================================
-INSERT INTO roles (code, name, name_en, user_type, level, permissions) VALUES
+INSERT INTO roles (code, name, name_en, user_type, level) VALUES
 (
     'STUDENT_MANAGER',
     'ผู้จัดการนักเรียน',
     'Student Manager',
-    'staff', -- user_type is staff (this role is for staff who manage students)
-    50,
-    ARRAY[
-        'dashboard',
-        'student.read.all',
-        'student.create',
-        'student.update.all'
-    ]
+    'staff',
+    50
 )
 ON CONFLICT (code) DO UPDATE SET
-    permissions = EXCLUDED.permissions,
     name = EXCLUDED.name,
     name_en = EXCLUDED.name_en,
     user_type = EXCLUDED.user_type,
     level = EXCLUDED.level;
 
+-- Assign permissions to STUDENT_MANAGER role
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT 
+    (SELECT id FROM roles WHERE code = 'STUDENT_MANAGER'),
+    id
+FROM permissions
+WHERE code IN (
+    'dashboard',
+    'student.read.all',
+    'student.create',
+    'student.update.all'
+)
+ON CONFLICT DO NOTHING;
+
 -- ===================================================================
 -- 3. Update ADMIN role to include student permissions
 -- ===================================================================
-UPDATE roles
-SET permissions = array_cat(
-    permissions,
-    ARRAY[
-        'student.read.all',
-        'student.create',
-        'student.update.all',
-        'student.delete'
-    ]::TEXT[]
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT 
+    (SELECT id FROM roles WHERE code = 'ADMIN'),
+    id
+FROM permissions
+WHERE code IN (
+    'student.read.all',
+    'student.create',
+    'student.update.all',
+    'student.delete'
 )
-WHERE code = 'ADMIN'
-AND NOT (permissions @> ARRAY['student.read.all']::TEXT[]);
+ON CONFLICT DO NOTHING;
 
 -- ===================================================================
 -- 4. Add helpful comments
@@ -81,11 +94,13 @@ COMMENT ON COLUMN student_info.class_room IS 'ห้อง (เช่น 1, 2, 3
 -- 5. Verify installation
 -- ===================================================================
 SELECT 
-    code,
-    name,
-    user_type,
-    level,
-    array_length(permissions, 1) as permission_count
-FROM roles
-WHERE code IN ('STUDENT', 'STUDENT_MANAGER')
-ORDER BY level;
+    r.code,
+    r.name,
+    r.user_type,
+    r.level,
+    COUNT(rp.permission_id) as permission_count
+FROM roles r
+LEFT JOIN role_permissions rp ON r.id = rp.role_id
+WHERE r.code IN ('STUDENT', 'STUDENT_MANAGER')
+GROUP BY r.id, r.code, r.name, r.user_type, r.level
+ORDER BY r.level;
