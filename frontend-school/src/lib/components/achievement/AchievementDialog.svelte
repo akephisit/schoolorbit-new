@@ -350,7 +350,7 @@
 </Dialog>
 
 <style>
-    .required::after {
+    :global(.required)::after {
         content: " *";
         color: hsl(var(--destructive));
     }
