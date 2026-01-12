@@ -150,22 +150,47 @@
         });
     }
 
-	async function handleFileChange(e: Event) {
+    import heic2any from 'heic2any'; // Ensure installed
+
+    async function handleFileChange(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (input.files && input.files[0]) {
-			const file = input.files[0];
+			let file = input.files[0];
             
-            // Allow larger input files (e.g. 25MB) because we will compress
-			if (file.size > 25 * 1024 * 1024) {
-				toast.error('ไฟล์ต้นฉบับต้องไม่เกิน 25MB');
+            // Allow larger input files (e.g. 50MB for HEIC/Raw)
+			if (file.size > 50 * 1024 * 1024) {
+				toast.error('ไฟล์ต้นฉบับต้องไม่เกิน 50MB');
 				return;
 			}
             
             const toastId = toast.loading('กำลังประมวลผลรูปภาพ...');
+            
             try {
+                // 1. Handle HEIC conversion
+                const isHeic = file.name.toLowerCase().endsWith('.heic') || 
+                               file.type === 'image/heic' || 
+                               file.type === 'image/heif';
+                               
+                if (isHeic) {
+                     // toast.loading will update or we use it
+                     // heic2any returns Blob | Blob[]
+                     const result = await heic2any({
+                         blob: file,
+                         toType: 'image/jpeg',
+                         quality: 0.8
+                     });
+                     
+                     const blob = Array.isArray(result) ? result[0] : result;
+                     file = new File([blob], file.name.replace(/\.heic$/i, ".jpg"), {
+                         type: 'image/jpeg',
+                         lastModified: Date.now()
+                     });
+                }
+            
+                // 2. Compress (Resize & Optimize)
 			    const compressed = await compressImage(file);
                 
-                // Final check
+                // Final check (5MB Limit)
                 if (compressed.size > 5 * 1024 * 1024) {
                     toast.error('ไฟล์มีขนาดใหญ่เกินไป (แม้หลังบีบอัด) กรุณาใช้ไฟล์อื่น');
                     return;
@@ -174,13 +199,16 @@
                 imageFile = compressed;
                 imagePreview = URL.createObjectURL(compressed);
                 
-                // Show success if compression happened significantly
-                if (compressed.size < file.size * 0.9) {
-                     toast.success(`ลดขนาดไฟล์เหลือ ${(compressed.size / 1024 / 1024).toFixed(2)} MB`);
+                // Show success
+                const sizeMsg = (compressed.size / 1024 / 1024).toFixed(2);
+                if (isHeic) {
+                     toast.success(`แปลง HEIC และลดขนาดเหลือ ${sizeMsg} MB`);
+                } else if (compressed.size < input.files[0].size * 0.9) {
+                     toast.success(`ลดขนาดไฟล์เหลือ ${sizeMsg} MB`);
                 }
             } catch (err) {
                 console.error(err);
-                toast.error('ไม่สามารถประมวลผลรูปภาพได้');
+                toast.error('ไม่สามารถประมวลผลรูปภาพได้ (อาจไม่ใช่ไฟล์รูปภาพที่รองรับ)');
             } finally {
                 toast.dismiss(toastId);
             }
@@ -398,13 +426,14 @@
 					>
 						<input
 							type="file"
-							accept="image/png, image/jpeg, image/webp"
+							accept="image/png, image/jpeg, image/webp, .heic, image/heic, image/heif"
 							class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
 							onchange={handleFileChange}
 						/>
 						<Upload class="w-8 h-8 mb-2" />
 						<span class="text-sm">คลิกเพื่ออัปโหลดรูปภาพ</span>
-						<span class="text-xs text-muted-foreground mt-1">PNG, JPG, WebP ไม่เกิน 25MB</span>
+						<span class="text-xs text-muted-foreground mt-1">PNG, JPG, WebP, HEIC ไม่เกิน 50MB</span
+						>
 					</div>
 				{/if}
 			</div>
