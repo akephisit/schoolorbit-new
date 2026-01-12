@@ -397,13 +397,13 @@
 					<img
 						src={viewingFileUrl}
 						alt="Preview"
-						class="max-w-full max-h-full object-contain shadow-sm rounded-sm"
+						class="max-w-full max-h-[80vh] object-contain shadow-sm rounded-sm"
 					/>
 				{:else if viewingFileType === 'pdf'}
 					<iframe
 						src={viewingFileUrl}
 						title="PDF Preview"
-						class="w-full h-[70vh] border-none bg-white rounded-md shadow-sm"
+						class="w-full h-[80vh] border-none bg-white rounded-md shadow-sm"
 					></iframe>
 				{:else}
 					<div class="text-center p-8">
