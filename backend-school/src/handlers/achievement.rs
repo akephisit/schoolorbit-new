@@ -407,3 +407,88 @@ pub async fn delete_achievement(
         }
     }
 }
+
+pub async fn get_achievement_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(user_id): Path<Uuid>,
+) -> Response {
+    let pool = match get_db_pool(&state, &headers).await {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    // Require Login only (Any authenticated user can view public profile)
+    if let Err(e) = get_authenticated_user(&headers, &pool).await {
+        return e;
+    }
+
+    // 1. Get User Basic Info
+    let user_rec = match sqlx::query!(
+        "SELECT id, first_name, last_name, nickname, email, user_type, status, profile_image_url, title, phone_number, hired_date
+         FROM users WHERE id = $1",
+        user_id
+    )
+    .fetch_optional(&pool)
+    .await {
+         Ok(Some(u)) => u,
+         Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({ "success": false, "error": "ไม่พบผู้ใช้" }))).into_response(),
+         Err(e) => {
+             eprintln!("❌ Database error (user): {}", e);
+             return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "success": false, "error": "เกิดข้อผิดพลาดในการดึงข้อมูล" }))).into_response();
+         }
+    };
+
+    // 2. Get Roles
+    let roles = sqlx::query!(
+        "SELECT r.id, r.code, r.name, ur.level 
+         FROM user_roles ur
+         JOIN roles r ON ur.role_id = r.id
+         WHERE ur.user_id = $1",
+        user_id
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // 3. Get Departments
+    let departments = sqlx::query!(
+        "SELECT d.id, d.code, d.name, dm.position
+         FROM department_members dm
+         JOIN departments d ON dm.department_id = d.id
+         WHERE dm.user_id = $1",
+        user_id
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // Construct Response
+    let response_data = json!({
+        "id": user_rec.id,
+        "first_name": user_rec.first_name,
+        "last_name": user_rec.last_name,
+        "nickname": user_rec.nickname,
+        "title": user_rec.title,
+        "email": user_rec.email,
+        "phone": user_rec.phone_number,
+        "hired_date": user_rec.hired_date,
+        "profile_image_url": user_rec.profile_image_url,
+        "user_type": user_rec.user_type,
+        "status": user_rec.status,
+        "roles": roles.into_iter().map(|r| json!({
+            "id": r.id,
+            "code": r.code,
+            "name": r.name,
+            "level": r.level
+        })).collect::<Vec<_>>(),
+        "departments": departments.into_iter().map(|d| json!({
+            "id": d.id,
+            "code": d.code,
+            "name": d.name,
+            "position": d.position
+        })).collect::<Vec<_>>()
+    });
+
+    (StatusCode::OK, Json(json!({ "success": true, "data": response_data }))).into_response()
+}

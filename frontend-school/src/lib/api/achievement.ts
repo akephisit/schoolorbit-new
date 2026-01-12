@@ -78,3 +78,21 @@ export async function deleteAchievement(id: string): Promise<ApiResponse<void>> 
         return { success: false, error: 'Network error' };
     }
 }
+
+// Import StaffProfileResponse to avoid circular or duplicating
+import type { StaffProfileResponse } from '$lib/api/staff';
+
+export async function getAchievementProfile(userId: string): Promise<ApiResponse<StaffProfileResponse>> {
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/achievements/profile/${userId}`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        return data;
+    } catch (e) {
+        console.error('Fetch achievement profile error:', e);
+        return { success: false, error: 'Network error' };
+    }
+}

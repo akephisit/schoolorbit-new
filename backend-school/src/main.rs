@@ -120,6 +120,8 @@ async fn main() {
         .route("/api/achievements", get(handlers::achievement::list_achievements)
             .post(handlers::achievement::create_achievement)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/achievements/profile/{user_id}", get(handlers::achievement::get_achievement_profile)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/achievements/{id}", axum::routing::put(handlers::achievement::update_achievement)
             .delete(handlers::achievement::delete_achievement)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))

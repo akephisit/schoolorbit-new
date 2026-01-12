@@ -18,7 +18,7 @@
         User,
         FileText
     } from 'lucide-svelte';
-	import { getStaffProfile } from '$lib/api/staff';
+	import { getAchievementProfile } from '$lib/api/achievement';
     import { getAchievements } from '$lib/api/achievement';
 	import type { StaffProfileResponse } from '$lib/api/staff';
     import type { Achievement } from '$lib/types/achievement';
@@ -33,7 +33,7 @@
 
 	async function loadStaffProfile() {
 		try {
-			const res = await getStaffProfile(staffId);
+			const res = await getAchievementProfile(staffId);
 			if (res.success && res.data) {
 				staff = res.data;
 			} else {
