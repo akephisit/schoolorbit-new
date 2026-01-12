@@ -13,7 +13,7 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
-	import { LoaderCircle, Upload, X } from 'lucide-svelte';
+	import { LoaderCircle, Upload, X, FileText } from 'lucide-svelte';
 	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
 	import { achievementSchema } from '$lib/validation/schemas';
@@ -396,20 +396,37 @@
 				<Label>รูปภาพประกอบ / เกียรติบัตร</Label>
 
 				{#if imagePreview || currentImagePath}
+					{@const isPdf =
+						imageFile?.type === 'application/pdf' ||
+						currentImagePath?.toLowerCase().endsWith('.pdf')}
 					<div
-						class="relative aspect-video w-full rounded-lg overflow-hidden border bg-muted group"
+						class="relative aspect-video w-full rounded-lg overflow-hidden border bg-muted group flex items-center justify-center p-4"
 					>
-						<img
-							src={imagePreview ||
-								(currentImagePath?.startsWith('http')
-									? currentImagePath
-									: `/api/files?path=${currentImagePath}`)}
-							alt="Preview"
-							class="w-full h-full object-cover"
-						/>
+						{#if isPdf}
+							<div
+								class="flex flex-col items-center gap-2 text-muted-foreground p-4 bg-muted/50 rounded-lg"
+							>
+								<FileText class="w-12 h-12" />
+								<span class="text-sm font-medium"
+									>{imageFile
+										? imageFile.name
+										: currentImagePath?.split('/').pop() || 'เอกสาร PDF'}</span
+								>
+								<span class="text-xs text-muted-foreground">PDF Document</span>
+							</div>
+						{:else}
+							<img
+								src={imagePreview ||
+									(currentImagePath?.startsWith('http')
+										? currentImagePath
+										: `/api/files?path=${currentImagePath}`)}
+								alt="Preview"
+								class="w-full h-full object-cover rounded-md"
+							/>
+						{/if}
 						<button
 							type="button"
-							class="absolute top-2 right-2 bg-destructive text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+							class="absolute top-2 right-2 bg-destructive text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
 							onclick={removeImage}
 						>
 							<X class="w-4 h-4" />
@@ -421,14 +438,13 @@
 					>
 						<input
 							type="file"
-							accept="image/png, image/jpeg, image/webp, .heic, image/heic, image/heif"
+							accept="image/png, image/jpeg, image/webp, .heic, image/heic, image/heif, application/pdf"
 							class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
 							onchange={handleFileChange}
 						/>
 						<Upload class="w-8 h-8 mb-2" />
-						<span class="text-sm">คลิกเพื่ออัปโหลดรูปภาพ</span>
-						<span class="text-xs text-muted-foreground mt-1">PNG, JPG, WebP, HEIC ไม่เกิน 50MB</span
-						>
+						<span class="text-sm">คลิกเพื่ออัปโหลดไฟล์ (รูปภาพ หรือ PDF)</span>
+						<span class="text-xs text-muted-foreground mt-1">PNG, JPG, HEIC, PDF ไม่เกิน 50MB</span>
 					</div>
 				{/if}
 			</div>
