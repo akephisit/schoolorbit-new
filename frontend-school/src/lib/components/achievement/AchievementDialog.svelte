@@ -199,13 +199,8 @@
                 imageFile = compressed;
                 imagePreview = URL.createObjectURL(compressed);
                 
-                // Show success
-                const sizeMsg = (compressed.size / 1024 / 1024).toFixed(2);
-                if (isHeic) {
-                     toast.success(`แปลง HEIC และลดขนาดเหลือ ${sizeMsg} MB`);
-                } else if (compressed.size < input.files[0].size * 0.9) {
-                     toast.success(`ลดขนาดไฟล์เหลือ ${sizeMsg} MB`);
-                }
+                // Show simple success message
+                toast.success('พร้อมอัปโหลดรูปภาพ');
             } catch (err) {
                 console.error(err);
                 toast.error('ไม่สามารถประมวลผลรูปภาพได้ (อาจไม่ใช่ไฟล์รูปภาพที่รองรับ)');
