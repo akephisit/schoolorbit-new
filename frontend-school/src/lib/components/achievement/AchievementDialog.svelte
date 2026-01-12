@@ -295,7 +295,7 @@
 		if (!v) dispatch('close');
 	}}
 >
-	<DialogContent class="sm:max-w-2xl">
+	<DialogContent class="max-w-[calc(100vw-2rem)] sm:max-w-2xl">
 		<DialogHeader>
 			<DialogTitle>{achievement ? 'แก้ไขผลงาน' : 'เพิ่มผลงานใหม่'}</DialogTitle>
 			<DialogDescription>
