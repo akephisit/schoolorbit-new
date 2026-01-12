@@ -163,8 +163,6 @@
 				return;
 			}
             
-            const toastId = toast.loading('กำลังประมวลผลรูปภาพ...');
-            
             try {
                 // 1. Handle HEIC conversion
                 const isHeic = file.name.toLowerCase().endsWith('.heic') || 
@@ -172,7 +170,6 @@
                                file.type === 'image/heif';
                                
                 if (isHeic) {
-                     // toast.loading will update or we use it
                      // heic2any returns Blob | Blob[]
                      const result = await heic2any({
                          blob: file,
@@ -198,14 +195,9 @@
                 
                 imageFile = compressed;
                 imagePreview = URL.createObjectURL(compressed);
-                
-                // Show simple success message
-                toast.success('พร้อมอัปโหลดรูปภาพ');
             } catch (err) {
                 console.error(err);
                 toast.error('ไม่สามารถประมวลผลรูปภาพได้ (อาจไม่ใช่ไฟล์รูปภาพที่รองรับ)');
-            } finally {
-                toast.dismiss(toastId);
             }
 		}
 	}

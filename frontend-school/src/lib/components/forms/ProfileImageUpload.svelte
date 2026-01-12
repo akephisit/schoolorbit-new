@@ -65,8 +65,7 @@
 				return;
 			}
             
-            // Loading toast for HEIC
-            const toastId = isHeic ? toast.loading('กำลังแปลงไฟล์ HEIC...') : null;
+            // Loading toast removed as requested
 
             try {
                 if (isHeic) {
@@ -93,10 +92,10 @@
                 reader.readAsDataURL(file);
             } catch (e) {
                 console.error('File processing error:', e);
-                toast.error('ไม่สามารถประมวลผลรูปภาพได้');
-            } finally {
-                if (toastId) toast.dismiss(toastId);
-            }
+                // toast.error('ไม่สามารถประมวลผลรูปภาพได้'); // Keep error toast or remove per preference? keeping error is usually safe.
+            } 
+            // finally block removed as toastId is gone
+		}
 		}
 	}
 
