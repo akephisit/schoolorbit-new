@@ -387,9 +387,11 @@
 
 	<!-- File Preview Dialog -->
 	<Dialog.Root bind:open={showFileDialog}>
-		<Dialog.Content class="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+		<Dialog.Content
+			class="max-w-[95vw] md:max-w-7xl max-h-[95vh] overflow-hidden flex flex-col p-0 gap-0"
+		>
 			<div
-				class="relative flex-1 bg-muted/30 min-h-[200px] flex items-center justify-center overflow-auto p-4 max-h-[80vh]"
+				class="relative flex-1 bg-muted/30 min-h-[200px] flex items-center justify-center overflow-auto p-4"
 			>
 				{#if viewingFileType === 'image'}
 					<img
