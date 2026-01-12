@@ -295,7 +295,7 @@
 		if (!v) dispatch('close');
 	}}
 >
-	<DialogContent class="sm:max-w-[500px]">
+	<DialogContent class="sm:max-w-2xl">
 		<DialogHeader>
 			<DialogTitle>{achievement ? 'แก้ไขผลงาน' : 'เพิ่มผลงานใหม่'}</DialogTitle>
 			<DialogDescription>
