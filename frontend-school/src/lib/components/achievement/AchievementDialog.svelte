@@ -91,7 +91,7 @@
 		}
 	});
 
-    function compressImage(file: File): Promise<File | Blob> {
+    function compressImage(file: File): Promise<File> {
         if (!file.type.startsWith('image/')) return Promise.resolve(file);
 
         return new Promise((resolve) => {
@@ -100,14 +100,14 @@
                 maxWidth: 1920,
                 maxHeight: 1920,
                 mimeType: 'image/jpeg',
-                success(result) {
+                success(result: Blob | File) {
                     const newFile = new File([result], file.name.replace(/\.[^/.]+$/, ".jpg"), {
                         type: result.type,
                         lastModified: Date.now(),
                     });
                     resolve(newFile);
                 },
-                error(err) {
+                error(err: Error) {
                     console.error('Compression failed:', err);
                     resolve(file); // Fallback to original
                 }

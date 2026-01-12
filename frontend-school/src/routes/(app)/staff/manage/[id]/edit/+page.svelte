@@ -499,7 +499,7 @@
 						<div class="flex justify-center mb-8">
 							<ProfileImageUpload
 								currentImage={formData.profile_image_url}
-								onsuccess={async (data) => {
+								onsuccess={async (data: { url: string; fileId: string }) => {
 									if (!staffId) return;
 									const toastId = toast.loading('กำลังอัปเดตรูปโปรไฟล์...');
 									try {
@@ -516,7 +516,7 @@
 										console.error(err);
 									}
 								}}
-								onerror={(msg) => {
+								onerror={(msg: string) => {
 									errors.profile_image = msg;
 								}}
 							/>

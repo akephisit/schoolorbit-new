@@ -84,12 +84,13 @@
                 }
 
                 // Optimize & Fix Orientation with Compressor.js
+                // Optimize & Fix Orientation with Compressor.js
                 new Compressor(file, {
                     quality: 0.8,
                     maxWidth: 1920,
                     maxHeight: 1920,
                     mimeType: 'image/jpeg',
-                    success(result) {
+                    success(result: Blob | File) {
                         const reader = new FileReader();
                         reader.onload = (e) => {
                             tempImageSrc = e.target?.result as string;
@@ -98,16 +99,18 @@
                         };
                         reader.readAsDataURL(result);
                     },
-                    error(err) {
+                    error(err: Error) {
                         console.error('Compressor error:', err);
                         // Fallback to original
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                            tempImageSrc = e.target?.result as string;
-                            showCropper = true;
-                            target.value = '';
-                        };
-                        reader.readAsDataURL(file);
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (e) => {
+                                tempImageSrc = e.target?.result as string;
+                                showCropper = true;
+                                target.value = '';
+                            };
+                            reader.readAsDataURL(file);
+                        }
                     }
                 });
             } catch (e) {
@@ -115,7 +118,6 @@
                 // toast.error('ไม่สามารถประมวลผลรูปภาพได้'); // Keep error toast or remove per preference? keeping error is usually safe.
             } 
             // finally block removed as toastId is gone
-		}
 		}
 	}
 
