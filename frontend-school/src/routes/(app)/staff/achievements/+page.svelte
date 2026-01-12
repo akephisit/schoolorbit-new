@@ -47,6 +47,8 @@
     // Dialog State
     let showDialog = $state(false);
     let selectedAchievement = $state<Achievement | null>(null);
+    let showDeleteDialog = $state(false);
+    let deleteId = $state<string | null>(null);
 
     // File Preview State
     let showFileDialog = $state(false);
@@ -182,16 +184,26 @@
         }
     }
 
-    async function handleDelete(id: string) {
-        if (!confirm('คุณต้องการลบรายการนี้ใช่หรือไม่?')) return;
+    function handleDelete(id: string) {
+        deleteId = id;
+        showDeleteDialog = true;
+    }
+
+    async function confirmDelete() {
+        if (!deleteId) return;
         
-        const res = await deleteAchievement(id);
+        loading = true; // Optional: Show loading state
+        const res = await deleteAchievement(deleteId);
+        loading = false;
+
         if (res.success) {
             toast.success('ลบข้อมูลเรียบร้อย');
-            achievements = achievements.filter(a => a.id !== id);
+            achievements = achievements.filter(a => a.id !== deleteId);
         } else {
             toast.error(res.error || 'ลบข้อมูลไม่สำเร็จ');
         }
+        showDeleteDialog = false;
+        deleteId = null;
     }
 
 	onMount(() => {
@@ -419,6 +431,22 @@
 			<div class="p-4 border-t flex justify-end bg-background">
 				<Button variant="outline" onclick={() => (showFileDialog = false)}>ปิด</Button>
 			</div>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Delete Confirmation Dialog -->
+	<Dialog.Root bind:open={showDeleteDialog}>
+		<Dialog.Content class="sm:max-w-[425px]">
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการลบข้อมูล</Dialog.Title>
+				<Dialog.Description>
+					คุณต้องการลบรายการนี้ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
+				<Button variant="destructive" onclick={confirmDelete}>ลบข้อมูล</Button>
+			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
 </div>

@@ -31,6 +31,8 @@
 	let loadingAchievements = $state(false);
 	let showAchievementDialog = $state(false);
 	let selectedAchievement: Achievement | null = $state(null);
+    let showDeleteDialog = $state(false);
+    let deleteId = $state<string | null>(null);
 
 	const staffId = $derived(page.params.id);
 
@@ -94,17 +96,24 @@
 		}
 	}
 
-	async function confirmDelete(achievement: Achievement) {
-		if (!confirm(`คุณต้องการลบผลงาน "${achievement.title}" ใช่หรือไม่?`)) return;
-		
-		const res = await deleteAchievement(achievement.id);
-		if (res.success) {
-			toast.success('ลบผลงานเรียบร้อย');
-			loadAchievements();
-		} else {
-			toast.error(res.error || 'เกิดข้อผิดพลาด');
-		}
+	function confirmDelete(achievement: Achievement) {
+        deleteId = achievement.id;
+        showDeleteDialog = true;
 	}
+
+    async function handleConfirmDelete() {
+        if (!deleteId) return;
+        
+        const res = await deleteAchievement(deleteId);
+        if (res.success) {
+            toast.success('ลบผลงานเรียบร้อย');
+            loadAchievements();
+        } else {
+            toast.error(res.error || 'เกิดข้อผิดพลาด');
+        }
+        showDeleteDialog = false;
+        deleteId = null;
+    }
 
 	onMount(() => {
 		loadStaffProfile();
@@ -423,4 +432,20 @@
 		onclose={() => (showAchievementDialog = false)}
 		onsave={handleSaveAchievement}
 	/>
+
+	<!-- Delete Confirmation Dialog -->
+	<Dialog.Root bind:open={showDeleteDialog}>
+		<Dialog.Content class="sm:max-w-[425px]">
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการลบข้อมูล</Dialog.Title>
+				<Dialog.Description>
+					คุณต้องการลบรายการนี้ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
+				<Button variant="destructive" onclick={handleConfirmDelete}>ลบข้อมูล</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 </div>
