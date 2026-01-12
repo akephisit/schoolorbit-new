@@ -90,17 +90,100 @@
 		}
 	});
 
-	function handleFileChange(e: Event) {
+    async function compressImage(file: File): Promise<File> {
+        // Basic configuration
+        const MAX_WIDTH = 1920;
+        const QUALITY = 0.8;
+        
+        // Skip non-images
+        if (!file.type.startsWith('image/')) return file;
+        // Skip small images (e.g. < 500KB)
+        if (file.size < 500 * 1024) return file;
+
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (e) => {
+                const img = new Image();
+                img.src = e.target?.result as string;
+                img.onload = () => {
+                   // Calculate new dimensions
+                   let w = img.width;
+                   let h = img.height;
+                   
+                   if (w > MAX_WIDTH) {
+                       h = Math.round(h * (MAX_WIDTH / w));
+                       w = MAX_WIDTH;
+                   }
+                   
+                   const canvas = document.createElement('canvas');
+                   canvas.width = w;
+                   canvas.height = h;
+                   const ctx = canvas.getContext('2d');
+                   if(!ctx) { resolve(file); return; }
+                   
+                   // Draw
+                   ctx.drawImage(img, 0, 0, w, h);
+                   
+                   // Export
+                   canvas.toBlob((blob) => {
+                       if (!blob) { resolve(file); return; }
+                       
+                       // Convert to File (Force JPEG for better compression)
+                       const newName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+                       const processedFile = new File([blob], newName, {
+                           type: 'image/jpeg',
+                           lastModified: Date.now()
+                       });
+                       
+                       // If compressed is somehow bigger, keep original (unless original was not jpg)
+                       if (processedFile.size > file.size && file.type === 'image/jpeg') {
+                           resolve(file);
+                       } else {
+                           resolve(processedFile);
+                       }
+                   }, 'image/jpeg', QUALITY);
+                };
+                img.onerror = () => resolve(file); // Fallback to original
+            };
+            reader.onerror = () => resolve(file);
+        });
+    }
+
+	async function handleFileChange(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (input.files && input.files[0]) {
 			const file = input.files[0];
-            // Simple validation
-			if (file.size > 5 * 1024 * 1024) {
-				toast.error('ขนาดไฟล์ต้องไม่เกิน 5MB');
+            
+            // Allow larger input files (e.g. 25MB) because we will compress
+			if (file.size > 25 * 1024 * 1024) {
+				toast.error('ไฟล์ต้นฉบับต้องไม่เกิน 25MB');
 				return;
 			}
-			imageFile = file;
-			imagePreview = URL.createObjectURL(file);
+            
+            const toastId = toast.loading('กำลังประมวลผลรูปภาพ...');
+            try {
+			    const compressed = await compressImage(file);
+                
+                // Final check
+                if (compressed.size > 5 * 1024 * 1024) {
+                    toast.error('ไฟล์มีขนาดใหญ่เกินไป (แม้หลังบีบอัด) กรุณาใช้ไฟล์อื่น');
+                    return;
+                }
+                
+                imageFile = compressed;
+                imagePreview = URL.createObjectURL(compressed);
+                
+                // Show success if compression happened significantly
+                if (compressed.size < file.size * 0.9) {
+                     toast.success(`ลดขนาดไฟล์เหลือ ${(compressed.size / 1024 / 1024).toFixed(2)} MB`);
+                }
+            } catch (err) {
+                console.error(err);
+                toast.error('ไม่สามารถประมวลผลรูปภาพได้');
+            } finally {
+                toast.dismiss(toastId);
+            }
 		}
 	}
 
