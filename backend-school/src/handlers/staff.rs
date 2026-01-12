@@ -1334,7 +1334,7 @@ pub async fn get_public_staff_profile(
         }
     };
 
-    // Authentication Only (No specific permission required - just need to be logged in)
+    // Authentication Only
     let auth_header = headers.get(header::AUTHORIZATION).and_then(|h| h.to_str().ok());
     let token_from_header = auth_header.and_then(|h| if h.starts_with("Bearer ") { Some(h[7..].to_string()) } else { None });
     let token_from_cookie = headers.get(header::COOKIE).and_then(|h| h.to_str().ok()).and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
@@ -1348,12 +1348,29 @@ pub async fn get_public_staff_profile(
         return (StatusCode::UNAUTHORIZED, Json(json!({"success": false,"error": "Token ไม่ถูกต้อง"}))).into_response();
     }
 
+    // Helper Structs for Public Profile
+    #[derive(sqlx::FromRow)]
+    struct PublicUserRow {
+        id: Uuid,
+        first_name: String,
+        last_name: String,
+        nickname: Option<String>,
+        email: Option<String>,
+        user_type: String,
+        status: String,
+        profile_image_url: Option<String>,
+        title: Option<String>,
+        phone: Option<String>,
+        hired_date: Option<chrono::NaiveDate>,
+    }
+
     // 1. Get User Basic Info
-    let user_rec = match sqlx::query!(
-        "SELECT id, first_name, last_name, nickname, email, user_type, status, profile_image_url, title, phone as phone_number, hired_date
-         FROM users WHERE id = $1 AND user_type = 'staff'",
-        staff_id
+    // Note: Alias phone_number no longer needed if we map to 'phone' field in struct
+    let user_rec = match sqlx::query_as::<_, PublicUserRow>(
+        "SELECT id, first_name, last_name, nickname, email, user_type, status, profile_image_url, title, phone, hired_date
+         FROM users WHERE id = $1 AND user_type = 'staff'"
     )
+    .bind(staff_id)
     .fetch_optional(&pool)
     .await {
          Ok(Some(u)) => u,
@@ -1364,26 +1381,42 @@ pub async fn get_public_staff_profile(
          }
     };
 
+    #[derive(sqlx::FromRow)]
+    struct PublicRoleRow {
+        id: Uuid,
+        code: String,
+        name: String,
+        level: Option<i32>, // level in roles is i32
+    }
+
     // 2. Get Roles
-    let roles = sqlx::query!(
-        "SELECT r.id, r.code, r.name, ur.level 
+    let roles = sqlx::query_as::<_, PublicRoleRow>(
+        "SELECT r.id, r.code, r.name, r.level 
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
-         WHERE ur.user_id = $1",
-        staff_id
+         WHERE ur.user_id = $1"
     )
+    .bind(staff_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
 
+    #[derive(sqlx::FromRow)]
+    struct PublicDeptRow {
+        id: Uuid,
+        code: String,
+        name: String,
+        position: String,
+    }
+
     // 3. Get Departments
-    let departments = sqlx::query!(
+    let departments = sqlx::query_as::<_, PublicDeptRow>(
         "SELECT d.id, d.code, d.name, dm.position
          FROM department_members dm
          JOIN departments d ON dm.department_id = d.id
-         WHERE dm.user_id = $1",
-        staff_id
+         WHERE dm.user_id = $1"
     )
+    .bind(staff_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
@@ -1396,7 +1429,7 @@ pub async fn get_public_staff_profile(
         "nickname": user_rec.nickname,
         "title": user_rec.title,
         "email": user_rec.email,
-        "phone": user_rec.phone_number,
+        "phone": user_rec.phone,
         "hired_date": user_rec.hired_date,
         "profile_image_url": user_rec.profile_image_url,
         "user_type": user_rec.user_type,
