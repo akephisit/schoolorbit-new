@@ -131,9 +131,6 @@
         if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext || '')) {
             viewingFileType = 'image';
             showFileDialog = true;
-        } else if (ext === 'pdf') {
-            viewingFileType = 'pdf';
-            showFileDialog = true;
         } else {
             // Fallback: open in new tab for other types
             window.open(url, '_blank');
@@ -399,12 +396,6 @@
 						alt="Preview"
 						class="max-w-full max-h-[80vh] object-contain shadow-sm rounded-sm"
 					/>
-				{:else if viewingFileType === 'pdf'}
-					<iframe
-						src={viewingFileUrl}
-						title="PDF Preview"
-						class="w-full h-[80vh] border-none bg-white rounded-md shadow-sm"
-					></iframe>
 				{:else}
 					<div class="text-center p-8">
 						<p class="mb-4 text-muted-foreground">ไม่สามารถแสดงตัวอย่างไฟล์ประเภทนี้ได้</p>
