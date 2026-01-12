@@ -8,6 +8,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
     import heic2any from 'heic2any';
+    import Compressor from 'compressorjs';
 
 	interface Props {
 		currentImage?: string | null;
@@ -82,14 +83,33 @@
                      });
                 }
 
-                // Read file for cropper
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    tempImageSrc = e.target?.result as string;
-                    showCropper = true; // Open cropper modal
-                    target.value = '';
-                };
-                reader.readAsDataURL(file);
+                // Optimize & Fix Orientation with Compressor.js
+                new Compressor(file, {
+                    quality: 0.8,
+                    maxWidth: 1920,
+                    maxHeight: 1920,
+                    mimeType: 'image/jpeg',
+                    success(result) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            tempImageSrc = e.target?.result as string;
+                            showCropper = true;
+                            target.value = '';
+                        };
+                        reader.readAsDataURL(result);
+                    },
+                    error(err) {
+                        console.error('Compressor error:', err);
+                        // Fallback to original
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            tempImageSrc = e.target?.result as string;
+                            showCropper = true;
+                            target.value = '';
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
             } catch (e) {
                 console.error('File processing error:', e);
                 // toast.error('ไม่สามารถประมวลผลรูปภาพได้'); // Keep error toast or remove per preference? keeping error is usually safe.

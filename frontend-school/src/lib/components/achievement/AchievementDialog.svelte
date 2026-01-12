@@ -18,6 +18,7 @@
 	import { toast } from 'svelte-sonner';
 	import { achievementSchema } from '$lib/validation/schemas';
 	import type { z } from 'zod';
+    import Compressor from 'compressorjs';
 
 	interface Props {
 		open: boolean;
@@ -90,63 +91,27 @@
 		}
 	});
 
-    async function compressImage(file: File): Promise<File> {
-        // Basic configuration
-        const MAX_WIDTH = 1920;
-        const QUALITY = 0.8;
-        
-        // Skip non-images
-        if (!file.type.startsWith('image/')) return file;
-        // Skip small images (e.g. < 500KB)
-        if (file.size < 500 * 1024) return file;
+    function compressImage(file: File): Promise<File | Blob> {
+        if (!file.type.startsWith('image/')) return Promise.resolve(file);
 
         return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (e) => {
-                const img = new Image();
-                img.src = e.target?.result as string;
-                img.onload = () => {
-                   // Calculate new dimensions
-                   let w = img.width;
-                   let h = img.height;
-                   
-                   if (w > MAX_WIDTH) {
-                       h = Math.round(h * (MAX_WIDTH / w));
-                       w = MAX_WIDTH;
-                   }
-                   
-                   const canvas = document.createElement('canvas');
-                   canvas.width = w;
-                   canvas.height = h;
-                   const ctx = canvas.getContext('2d');
-                   if(!ctx) { resolve(file); return; }
-                   
-                   // Draw
-                   ctx.drawImage(img, 0, 0, w, h);
-                   
-                   // Export
-                   canvas.toBlob((blob) => {
-                       if (!blob) { resolve(file); return; }
-                       
-                       // Convert to File (Force JPEG for better compression)
-                       const newName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
-                       const processedFile = new File([blob], newName, {
-                           type: 'image/jpeg',
-                           lastModified: Date.now()
-                       });
-                       
-                       // If compressed is somehow bigger, keep original (unless original was not jpg)
-                       if (processedFile.size > file.size && file.type === 'image/jpeg') {
-                           resolve(file);
-                       } else {
-                           resolve(processedFile);
-                       }
-                   }, 'image/jpeg', QUALITY);
-                };
-                img.onerror = () => resolve(file); // Fallback to original
-            };
-            reader.onerror = () => resolve(file);
+            new Compressor(file, {
+                quality: 0.8,
+                maxWidth: 1920,
+                maxHeight: 1920,
+                mimeType: 'image/jpeg',
+                success(result) {
+                    const newFile = new File([result], file.name.replace(/\.[^/.]+$/, ".jpg"), {
+                        type: result.type,
+                        lastModified: Date.now(),
+                    });
+                    resolve(newFile);
+                },
+                error(err) {
+                    console.error('Compression failed:', err);
+                    resolve(file); // Fallback to original
+                }
+            });
         });
     }
 
