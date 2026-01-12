@@ -52,6 +52,7 @@
     let showFileDialog = $state(false);
     let viewingFileUrl = $state('');
     let viewingFileType = $state(''); // 'image' | 'pdf'
+    let isImageLoading = $state(false);
 
     // User & Permissions - permissions auto-loaded by authStore
     const user = $derived($authStore.user);
@@ -130,6 +131,7 @@
         const ext = path.split('.').pop()?.toLowerCase();
         if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext || '')) {
             viewingFileType = 'image';
+            isImageLoading = true;
             showFileDialog = true;
         } else {
             // Fallback: open in new tab for other types
@@ -390,10 +392,19 @@
 				class="relative flex-1 bg-muted/30 min-h-[200px] flex items-center justify-center overflow-auto p-4"
 			>
 				{#if viewingFileType === 'image'}
+					{#if isImageLoading}
+						<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+							<LoaderCircle class="w-10 h-10 animate-spin text-primary" />
+						</div>
+					{/if}
 					<img
 						src={viewingFileUrl}
 						alt="Preview"
-						class="max-w-full max-h-[80vh] object-contain shadow-sm rounded-sm"
+						class="max-w-full max-h-[80vh] object-contain shadow-sm rounded-sm transition-opacity duration-300 {isImageLoading
+							? 'opacity-0'
+							: 'opacity-100'}"
+						onload={() => (isImageLoading = false)}
+						onerror={() => (isImageLoading = false)}
 					/>
 				{:else}
 					<div class="text-center p-8">
