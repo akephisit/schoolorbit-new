@@ -312,7 +312,7 @@
 													variant="ghost"
 													size="icon"
 													class="h-8 w-8"
-													href={`/staff/manage/${achievement.user_id}`}
+													href={`/staff/view/${achievement.user_id}`}
 													title="ดูโปรไฟล์"
 												>
 													<ExternalLink class="w-4 h-4" />
