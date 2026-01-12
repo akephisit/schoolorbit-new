@@ -76,7 +76,7 @@
 	});
 </script>
 
-<div class="container mx-auto py-6 max-w-4xl space-y-6">
+<div class="container mx-auto py-6 max-w-7xl space-y-6">
 	<!-- Back Button -->
 	<Button
 		variant="ghost"
