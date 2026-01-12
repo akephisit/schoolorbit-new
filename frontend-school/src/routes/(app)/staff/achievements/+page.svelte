@@ -147,8 +147,7 @@
         showDialog = true;
     }
 
-    async function handleSave(e: CustomEvent) {
-        const payload = e.detail;
+    async function handleSave(payload: any) {
         
         // If create mode and canCreateAll -> payload.user_id might be set to selected user
         // If edit mode -> payload.id exists
@@ -378,8 +377,8 @@
 		achievement={selectedAchievement}
 		{userId}
 		canSelectUser={canCreateAll}
-		on:close={() => (showDialog = false)}
-		on:save={handleSave}
+		onclose={() => (showDialog = false)}
+		onsave={handleSave}
 	/>
 
 	<!-- File Preview Dialog -->

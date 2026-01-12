@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
     import { DatePicker } from '$lib/components/ui/date-picker';
@@ -25,9 +24,18 @@
 		achievement: Achievement | null;
 		userId: string;
         canSelectUser?: boolean;
+        onclose?: () => void;
+        onsave?: (data: any) => void;
 	}
 
-	let { open = $bindable(false), achievement = null, userId, canSelectUser = false }: Props = $props();
+	let { 
+        open = $bindable(false), 
+        achievement = null, 
+        userId, 
+        canSelectUser = false,
+        onclose,
+        onsave 
+    }: Props = $props();
 
 	let loading = $state(false);
 	
@@ -56,7 +64,6 @@
     let openCombobox = $state(false);
     let triggerRef = $state<HTMLButtonElement>(null!);
 
-	const dispatch = createEventDispatcher();
 
     // Reset or Load form when dialog opens/changes
 	$effect(() => {
@@ -226,7 +233,7 @@
 				imagePath = uploadData.file.url;
 			}
 
-			dispatch('save', {
+			onsave?.({
 				id: achievement?.id,
 				user_id: canSelectUser && targetUserId ? targetUserId : userId,
 				title,
@@ -249,7 +256,7 @@
 <Dialog
 	bind:open
 	onOpenChange={(v) => {
-		if (!v) dispatch('close');
+		if (!v) onclose?.();
 	}}
 >
 	<DialogContent class="max-w-[calc(100vw-2rem)] sm:max-w-2xl">
@@ -391,7 +398,7 @@
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={() => dispatch('close')} disabled={loading}>ยกเลิก</Button>
+			<Button variant="outline" onclick={() => onclose?.()} disabled={loading}>ยกเลิก</Button>
 			<Button onclick={handleSubmit} disabled={loading} class="w-[120px]">
 				{#if loading}
 					<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />

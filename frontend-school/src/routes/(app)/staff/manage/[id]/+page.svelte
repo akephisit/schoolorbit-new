@@ -66,8 +66,7 @@
 		loadingAchievements = false;
 	}
 
-	async function handleSaveAchievement(e: CustomEvent) {
-		const payload = e.detail;
+	async function handleSaveAchievement(payload: any) {
 		let res;
 		if (payload.id) {
 			res = await updateAchievement(payload.id, {
@@ -421,7 +420,7 @@
 		open={showAchievementDialog}
 		achievement={selectedAchievement}
 		userId={staffId ?? ''}
-		on:close={() => (showAchievementDialog = false)}
-		on:save={handleSaveAchievement}
+		onclose={() => (showAchievementDialog = false)}
+		onsave={handleSaveAchievement}
 	/>
 </div>
