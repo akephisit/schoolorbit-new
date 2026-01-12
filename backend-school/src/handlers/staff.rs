@@ -1295,3 +1295,125 @@ pub async fn delete_staff(
         }
     }
 }
+
+pub async fn get_public_staff_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(staff_id): Path<Uuid>,
+) -> Response {
+    let subdomain = match extract_subdomain_from_request(&headers) {
+        Ok(s) => s,
+        Err(response) => return response,
+    };
+
+    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("❌ Failed to get school database: {}", e);
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่พบโรงเรียน"
+                })),
+            ).into_response();
+        }
+    };
+
+    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("❌ Failed to get database pool: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
+                })),
+            ).into_response();
+        }
+    };
+
+    // Authentication Only (No specific permission required - just need to be logged in)
+    let auth_header = headers.get(header::AUTHORIZATION).and_then(|h| h.to_str().ok());
+    let token_from_header = auth_header.and_then(|h| if h.starts_with("Bearer ") { Some(h[7..].to_string()) } else { None });
+    let token_from_cookie = headers.get(header::COOKIE).and_then(|h| h.to_str().ok()).and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
+    
+    let token = match token_from_header.or(token_from_cookie) {
+        Some(t) => t,
+        None => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false,"error": "กรุณาเข้าสู่ระบบ"}))).into_response(),
+    };
+    
+    if let Err(_) = crate::utils::jwt::JwtService::verify_token(&token) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({"success": false,"error": "Token ไม่ถูกต้อง"}))).into_response();
+    }
+
+    // 1. Get User Basic Info
+    let user_rec = match sqlx::query!(
+        "SELECT id, first_name, last_name, nickname, email, user_type, status, profile_image_url, title, phone as phone_number, hired_date
+         FROM users WHERE id = $1 AND user_type = 'staff'",
+        staff_id
+    )
+    .fetch_optional(&pool)
+    .await {
+         Ok(Some(u)) => u,
+         Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({ "success": false, "error": "ไม่พบบุคลากร" }))).into_response(),
+         Err(e) => {
+             eprintln!("❌ Database error (user): {}", e);
+             return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "success": false, "error": "เกิดข้อผิดพลาดในการดึงข้อมูล" }))).into_response();
+         }
+    };
+
+    // 2. Get Roles
+    let roles = sqlx::query!(
+        "SELECT r.id, r.code, r.name, ur.level 
+         FROM user_roles ur
+         JOIN roles r ON ur.role_id = r.id
+         WHERE ur.user_id = $1",
+        staff_id
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // 3. Get Departments
+    let departments = sqlx::query!(
+        "SELECT d.id, d.code, d.name, dm.position
+         FROM department_members dm
+         JOIN departments d ON dm.department_id = d.id
+         WHERE dm.user_id = $1",
+        staff_id
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // Construct Response
+    let response_data = json!({
+        "id": user_rec.id,
+        "first_name": user_rec.first_name,
+        "last_name": user_rec.last_name,
+        "nickname": user_rec.nickname,
+        "title": user_rec.title,
+        "email": user_rec.email,
+        "phone": user_rec.phone_number,
+        "hired_date": user_rec.hired_date,
+        "profile_image_url": user_rec.profile_image_url,
+        "user_type": user_rec.user_type,
+        "status": user_rec.status,
+        "roles": roles.into_iter().map(|r| json!({
+            "id": r.id,
+            "code": r.code,
+            "name": r.name,
+            "level": r.level
+        })).collect::<Vec<_>>(),
+        "departments": departments.into_iter().map(|d| json!({
+            "id": d.id,
+            "code": d.code,
+            "name": d.name,
+            "position": d.position
+        })).collect::<Vec<_>>()
+    });
+
+    (StatusCode::OK, Json(json!({ "success": true, "data": response_data }))).into_response()
+}

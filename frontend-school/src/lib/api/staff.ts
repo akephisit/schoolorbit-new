@@ -241,6 +241,23 @@ export async function getStaffProfile(staffId: string): Promise<ApiResponse<Staf
 	return response.json();
 }
 
+export async function getPublicStaffProfile(staffId: string): Promise<ApiResponse<StaffProfileResponse>> {
+	const response = await fetch(`${API_BASE_URL}/api/staff/${staffId}/public-profile`, {
+		method: 'GET',
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json'
+		}
+	});
+
+	if (!response.ok) {
+		// Return null or throw? Throwing allows catch block in UI to handle
+		throw new Error('Failed to fetch public staff profile');
+	}
+
+	return response.json();
+}
+
 export async function createStaff(data: CreateStaffRequest): Promise<ApiResponse<{ id: string }>> {
 	const response = await fetch(`${API_BASE_URL}/api/staff`, {
 		method: 'POST',
