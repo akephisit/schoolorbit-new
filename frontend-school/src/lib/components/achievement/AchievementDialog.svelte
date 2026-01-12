@@ -67,6 +67,7 @@
                 });
             }
 
+            loading = false; // Reset loading state
 			if (achievement) {
 				title = achievement.title;
 				description = achievement.description || '';
@@ -170,6 +171,8 @@
 				achievement_date: date,
 				image_path: imagePath
 			});
+            
+            loading = false;
             
             // Wait for parent to close or handle state
 		} catch (e) {
