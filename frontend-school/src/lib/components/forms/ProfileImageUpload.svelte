@@ -7,6 +7,7 @@
 	import ImageCropper from './ImageCropper.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
+    import heic2any from 'heic2any';
 
 	interface Props {
 		currentImage?: string | null;
@@ -43,31 +44,59 @@
 	});
 
 	// 1. Handle File Selection
-	function handleFileSelect(event: Event) {
+	async function handleFileSelect(event: Event) {
 		const target = event.target as HTMLInputElement;
-		const file = target.files?.[0];
+		let file = target.files?.[0];
 
 		if (file) {
+            const isHeic = file.name.toLowerCase().endsWith('.heic') || 
+                           file.type === 'image/heic' || 
+                           file.type === 'image/heif';
+
 			// Validate type
-			if (!file.type.startsWith('image/')) {
+			if (!isHeic && !file.type.startsWith('image/')) {
 				toast.error('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
 				return;
 			}
-			// Validate size
-			if (file.size / 1024 / 1024 > maxSizeMB) {
-				toast.error(`ขนาดไฟล์ต้องไม่เกิน ${maxSizeMB} MB`);
+            
+			// Validate initial size (Allow up to 50MB for processing)
+			if (file.size > 50 * 1024 * 1024) {
+				toast.error(`ไฟล์ต้นฉบับต้องไม่เกิน 50MB`);
 				return;
 			}
+            
+            // Loading toast for HEIC
+            const toastId = isHeic ? toast.loading('กำลังแปลงไฟล์ HEIC...') : null;
 
-			// Read file for cropper
-			const reader = new FileReader();
-			reader.onload = (e) => {
-				tempImageSrc = e.target?.result as string;
-				showCropper = true; // Open cropper modal
-				// Reset input so same file can be selected again if needed
-				target.value = '';
-			};
-			reader.readAsDataURL(file);
+            try {
+                if (isHeic) {
+                     const result = await heic2any({
+                         blob: file,
+                         toType: 'image/jpeg',
+                         quality: 0.8
+                     });
+                     
+                     const blob = Array.isArray(result) ? result[0] : result;
+                     file = new File([blob], file.name.replace(/\.heic$/i, ".jpg"), {
+                         type: 'image/jpeg',
+                         lastModified: Date.now()
+                     });
+                }
+
+                // Read file for cropper
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    tempImageSrc = e.target?.result as string;
+                    showCropper = true; // Open cropper modal
+                    target.value = '';
+                };
+                reader.readAsDataURL(file);
+            } catch (e) {
+                console.error('File processing error:', e);
+                toast.error('ไม่สามารถประมวลผลรูปภาพได้');
+            } finally {
+                if (toastId) toast.dismiss(toastId);
+            }
 		}
 	}
 
@@ -168,7 +197,7 @@
 	<input
 		bind:this={fileInput}
 		type="file"
-		accept="image/*"
+		accept="image/png, image/jpeg, image/webp, .heic, image/heic, image/heif"
 		class="hidden"
 		onchange={handleFileSelect}
 		{disabled}
@@ -179,7 +208,7 @@
 		{@render helper()}
 	{:else}
 		<p class="text-center text-sm text-muted-foreground mt-2">
-			รองรับ: JPG, PNG, WebP (สูงสุด {maxSizeMB} MB)
+			รองรับ: JPG, PNG, WebP, HEIC (สูงสุด 50MB)
 		</p>
 	{/if}
 
