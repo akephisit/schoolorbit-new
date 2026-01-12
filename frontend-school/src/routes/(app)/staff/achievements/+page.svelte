@@ -5,6 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
     import * as Tabs from "$lib/components/ui/tabs";
+    import * as Dialog from "$lib/components/ui/dialog";
 	import {
 		Table,
 		TableBody,
@@ -46,6 +47,11 @@
     // Dialog State
     let showDialog = $state(false);
     let selectedAchievement = $state<Achievement | null>(null);
+
+    // File Preview State
+    let showFileDialog = $state(false);
+    let viewingFileUrl = $state('');
+    let viewingFileType = $state(''); // 'image' | 'pdf'
 
     // User & Permissions - permissions auto-loaded by authStore
     const user = $derived($authStore.user);
@@ -115,6 +121,25 @@
     }
 
     // Actions
+    function viewFile(path: string) {
+        if (!path) return;
+        
+        const url = path.startsWith('http') ? path : `/api/files?path=${path}`;
+        viewingFileUrl = url;
+        
+        const ext = path.split('.').pop()?.toLowerCase();
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext || '')) {
+            viewingFileType = 'image';
+            showFileDialog = true;
+        } else if (ext === 'pdf') {
+            viewingFileType = 'pdf';
+            showFileDialog = true;
+        } else {
+            // Fallback: open in new tab for other types
+            window.open(url, '_blank');
+        }
+    }
+
     function openCreateDialog() {
         selectedAchievement = null;
         showDialog = true;
@@ -291,16 +316,14 @@
 									</TableCell>
 									<TableCell>
 										{#if achievement.image_path}
-											<a
-												href={achievement.image_path.startsWith('http')
-													? achievement.image_path
-													: `/api/files?path=${achievement.image_path}`}
-												target="_blank"
-												class="flex items-center gap-1 text-primary hover:underline text-sm"
+											<button
+												type="button"
+												onclick={() => viewFile(achievement.image_path || '')}
+												class="flex items-center gap-1 text-primary hover:underline text-sm bg-transparent border-0 p-0 cursor-pointer"
 											>
 												<FileText class="w-4 h-4" />
 												ดูไฟล์
-											</a>
+											</button>
 										{:else}
 											<span class="text-muted-foreground text-xs">-</span>
 										{/if}
@@ -361,4 +384,38 @@
 		on:close={() => (showDialog = false)}
 		on:save={handleSave}
 	/>
+
+	<!-- File Preview Dialog -->
+	<Dialog.Root bind:open={showFileDialog}>
+		<Dialog.Content class="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+			<div
+				class="relative flex-1 bg-muted/30 min-h-[200px] flex items-center justify-center overflow-auto p-4 max-h-[80vh]"
+			>
+				{#if viewingFileType === 'image'}
+					<img
+						src={viewingFileUrl}
+						alt="Preview"
+						class="max-w-full max-h-full object-contain shadow-sm rounded-sm"
+					/>
+				{:else if viewingFileType === 'pdf'}
+					<iframe
+						src={viewingFileUrl}
+						title="PDF Preview"
+						class="w-full h-[70vh] border-none bg-white rounded-md shadow-sm"
+					></iframe>
+				{:else}
+					<div class="text-center p-8">
+						<p class="mb-4 text-muted-foreground">ไม่สามารถแสดงตัวอย่างไฟล์ประเภทนี้ได้</p>
+						<Button href={viewingFileUrl} target="_blank" variant="outline">
+							<ExternalLink class="w-4 h-4 mr-2" />
+							ดาวน์โหลด / เปิดในหน้าต่างใหม่
+						</Button>
+					</div>
+				{/if}
+			</div>
+			<div class="p-4 border-t flex justify-end bg-background">
+				<Button variant="outline" onclick={() => (showFileDialog = false)}>ปิด</Button>
+			</div>
+		</Dialog.Content>
+	</Dialog.Root>
 </div>
