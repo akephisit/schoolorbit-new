@@ -398,13 +398,13 @@
 					>
 						<input
 							type="file"
-							accept="image/*"
+							accept="image/png, image/jpeg, image/webp"
 							class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
 							onchange={handleFileChange}
 						/>
 						<Upload class="w-8 h-8 mb-2" />
 						<span class="text-sm">คลิกเพื่ออัปโหลดรูปภาพ</span>
-						<span class="text-xs text-muted-foreground mt-1">PNG, JPG, WebP ไม่เกิน 5MB</span>
+						<span class="text-xs text-muted-foreground mt-1">PNG, JPG, WebP ไม่เกิน 25MB</span>
 					</div>
 				{/if}
 			</div>
