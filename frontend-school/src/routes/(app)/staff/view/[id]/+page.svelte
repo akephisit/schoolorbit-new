@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
-	import { Avatar, AvatarImage, AvatarFallback } from '$lib/components/ui/avatar';
+	import { Avatar } from '$lib/components/ui/avatar';
 	import { Badge } from '$lib/components/ui/badge';
     import { Separator } from '$lib/components/ui/separator';
 	import { 
@@ -18,22 +18,22 @@
         User,
         FileText
     } from 'lucide-svelte';
-	import { getStaff } from '$lib/api/staff';
+	import { getStaffProfile } from '$lib/api/staff';
     import { getAchievements } from '$lib/api/achievement';
-	import type { Staff } from '$lib/types/staff';
+	import type { StaffProfileResponse } from '$lib/api/staff';
     import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
     import { LoaderCircle } from 'lucide-svelte';
 
-	const staffId = $page.params.id;
-	let staff = $state<Staff | null>(null);
+	const staffId = $page.params.id ?? '';
+	let staff = $state<StaffProfileResponse | null>(null);
     let achievements = $state<Achievement[]>([]);
 	let loading = $state(true);
     let loadingAchievements = $state(true);
 
 	async function loadStaffProfile() {
 		try {
-			const res = await getStaff(staffId);
+			const res = await getStaffProfile(staffId);
 			if (res.success && res.data) {
 				staff = res.data;
 			} else {
@@ -103,12 +103,13 @@
 						<div
 							class="absolute -inset-1 rounded-full bg-gradient-to-r from-primary to-primary/50 opacity-30 blur group-hover:opacity-60 transition-opacity"
 						></div>
-						<Avatar class="w-32 h-32 border-4 border-background relative shadow-xl">
-							<AvatarImage src={staff.profile_image_url} alt={staff.first_name} />
-							<AvatarFallback class="text-3xl bg-primary/10 text-primary">
-								{staff.first_name[0]}{staff.last_name[0]}
-							</AvatarFallback>
-						</Avatar>
+						<Avatar
+							src={staff.profile_image_url}
+							alt={staff.first_name}
+							initials={staff.first_name[0] + (staff.last_name[0] || '')}
+							size="xl"
+							class="w-32 h-32 border-4 border-background relative shadow-xl"
+						/>
 					</div>
 
 					<!-- Basic Info -->
@@ -170,19 +171,19 @@
 							</div>
 						</div>
 
-						{#if staff.phone_number}
+						{#if staff.phone}
 							<div class="space-y-1">
 								<span class="text-xs text-muted-foreground uppercase font-semibold"
 									>เบอร์โทรศัพท์</span
 								>
 								<div class="flex items-center gap-2 text-sm">
 									<Phone class="w-4 h-4 text-muted-foreground" />
-									{staff.phone_number}
+									{staff.phone}
 								</div>
 							</div>
 						{/if}
 
-						{#if staff.employment_date}
+						{#if staff.hired_date}
 							<div class="space-y-1">
 								<div class="flex items-center justify-between">
 									<span class="text-xs text-muted-foreground uppercase font-semibold"
@@ -191,7 +192,7 @@
 								</div>
 								<div class="flex items-center gap-2 text-sm">
 									<Calendar class="w-4 h-4 text-muted-foreground" />
-									{formatDate(staff.employment_date)}
+									{formatDate(staff.hired_date)}
 								</div>
 							</div>
 						{/if}
