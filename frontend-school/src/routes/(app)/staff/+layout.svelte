@@ -12,10 +12,12 @@
 	let loading = $state(true);
 	let authorized = $state(false);
 
-	onMount(async () => {
+	$effect(() => {
+		// Wait for global auth check to complete
+		if ($authStore.isLoading) return;
+
 		// Check authentication
-		const isAuth = await authAPI.checkAuth();
-		if (!isAuth) {
+		if (!$authStore.isAuthenticated) {
 			// Not authenticated - save current URL and redirect to login
 			const currentPath = window.location.pathname + window.location.search;
 			sessionStorage.setItem('redirectAfterLogin', currentPath);
