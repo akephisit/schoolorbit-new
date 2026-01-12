@@ -895,9 +895,11 @@ async fn authenticate_user(
 
     // Get user permissions (use unnest to handle wildcard and all permissions)
     let permissions: Vec<String> = match sqlx::query_scalar(
-        "SELECT DISTINCT unnest(r.permissions) as permission
+        "SELECT DISTINCT p.code
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
+         JOIN role_permissions rp ON r.id = rp.role_id
+         JOIN permissions p ON rp.permission_id = p.id
          WHERE ur.user_id = $1 
            AND ur.ended_at IS NULL
            AND r.is_active = true"

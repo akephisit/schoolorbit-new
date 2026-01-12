@@ -562,8 +562,11 @@ async fn authenticate_user(
         "SELECT DISTINCT p.code 
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
-         JOIN permissions p ON p.code = ANY(r.permissions)
-         WHERE ur.user_id = $1 AND ur.ended_at IS NULL"
+         JOIN role_permissions rp ON r.id = rp.role_id
+         JOIN permissions p ON rp.permission_id = p.id
+         WHERE ur.user_id = $1 
+           AND ur.ended_at IS NULL
+           AND r.is_active = true"
     )
     .bind(user.id)
     .fetch_all(pool)
