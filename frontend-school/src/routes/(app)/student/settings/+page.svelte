@@ -11,7 +11,6 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
 	import {
 		ArrowLeft,
 		Lock,
@@ -48,11 +47,13 @@
 
 	onMount(() => {
 		// Check if iOS
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
 
 		// Check if already installed
 		isStandalone =
 			window.matchMedia('(display-mode: standalone)').matches ||
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(navigator as any).standalone === true;
 	});
 
@@ -68,7 +69,8 @@
 			if (choiceResult.outcome === 'accepted') {
 				toast.success('ติดตั้งแอปสำเร็จ');
 			}
-		} catch (error) {
+		} catch (_) {
+			// eslint-disable-line @typescript-eslint/no-unused-vars
 			toast.error('ไม่สามารถติดตั้งแอปได้');
 		} finally {
 			pwaStore.setPrompt(null);

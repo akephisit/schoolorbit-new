@@ -6,6 +6,7 @@
 	import { getOwnProfile } from '$lib/api/students';
 	import { toast } from 'svelte-sonner';
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let student = $state<any>(null);
 	let loading = $state(true);
 
@@ -42,7 +43,7 @@
 
 	{#if loading}
 		<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-			{#each Array(3) as _}
+			{#each [0, 1, 2] as i (i)}
 				<Card class="p-6 animate-pulse">
 					<div class="h-4 bg-muted rounded w-1/2 mb-4"></div>
 					<div class="h-8 bg-muted rounded w-3/4"></div>

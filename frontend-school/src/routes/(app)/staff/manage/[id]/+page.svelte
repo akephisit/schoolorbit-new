@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { getStaffProfile, type StaffProfileResponse } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import {
 		User,
 		Mail,

@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { authAPI } from '$lib/api/auth';
 	import { authStore } from '$lib/stores/auth';
 	import { GraduationCap } from 'lucide-svelte';
 	import type { Snippet } from 'svelte';

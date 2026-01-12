@@ -9,6 +9,7 @@
 	import { User, Edit, Save, X } from 'lucide-svelte';
 	import { getOwnProfile, updateOwnProfile } from '$lib/api/students';
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let student = $state<any>(null);
 	let loading = $state(true);
 	let editing = $state(false);
@@ -94,7 +95,7 @@
 	{#if loading}
 		<Card class="p-6">
 			<div class="space-y-4">
-				{#each Array(6) as _}
+				{#each [0, 1, 2, 3, 4, 5] as i (i)}
 					<div class="animate-pulse">
 						<div class="h-4 bg-muted rounded w-1/4 mb-2"></div>
 						<div class="h-10 bg-muted rounded"></div>

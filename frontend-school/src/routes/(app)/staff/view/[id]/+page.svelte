@@ -12,7 +12,6 @@
 	} from '$lib/components/ui/card';
 	import { Avatar } from '$lib/components/ui/avatar';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Separator } from '$lib/components/ui/separator';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import {
 		ArrowLeft,
@@ -69,7 +68,7 @@
 				staff = res.data;
 			} else {
 				toast.error('ไม่พบข้อมูลบุคลากร');
-				goto('/staff/achievements');
+				goto(resolve('/staff/achievements'));
 			}
 		} catch (error) {
 			console.error('Error loading staff:', error);
@@ -158,7 +157,7 @@
 
 						<div class="flex flex-wrap justify-center md:justify-start gap-2 mt-3">
 							{#if staff.roles && staff.roles.length > 0}
-								{#each staff.roles as role}
+								{#each staff.roles as role (role.id || role.name)}
 									<Badge
 										variant="secondary"
 										class="bg-primary/10 text-primary hover:bg-primary/20 border-primary/20"
@@ -170,7 +169,7 @@
 							{/if}
 
 							{#if staff.departments && staff.departments.length > 0}
-								{#each staff.departments as dept}
+								{#each staff.departments as dept (dept.id || dept.name)}
 									<Badge variant="outline" class="border-border/60">
 										<Building2 class="w-3 h-3 mr-1" />
 										{dept.name}
@@ -257,7 +256,7 @@
 							<div
 								class="relative space-y-0 before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent"
 							>
-								{#each achievements as item}
+								{#each achievements as item (item.id || item.title)}
 									<div
 										class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active mb-8 last:mb-0"
 									>

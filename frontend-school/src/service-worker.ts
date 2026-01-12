@@ -7,7 +7,6 @@
 // Perfect for online-only PWA that always needs fresh data
 
 // Version - increment this to force SW update
-const VERSION = '2.1.0';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
