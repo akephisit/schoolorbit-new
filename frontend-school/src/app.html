@@ -1,40 +1,40 @@
 <!doctype html>
 <html lang="th">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
 
-<head>
-	<meta charset="utf-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!-- Favicon -->
+		<link rel="icon" type="image/png" href="/favicon.png" />
 
-	<!-- Favicon -->
-	<link rel="icon" type="image/png" href="/favicon.png" />
+		<!-- PWA Manifest -->
+		<link rel="manifest" href="/manifest.webmanifest" />
 
-	<!-- PWA Manifest -->
-	<link rel="manifest" href="/manifest.webmanifest" />
+		<!-- Theme Color -->
+		<meta name="theme-color" content="#4f46e5" />
 
-	<!-- Theme Color -->
-	<meta name="theme-color" content="#4f46e5" />
+		<!-- Mobile Web App -->
+		<meta name="mobile-web-app-capable" content="yes" />
 
-	<!-- Mobile Web App -->
-	<meta name="mobile-web-app-capable" content="yes" />
+		<!-- Apple Touch Icon -->
+		<link rel="apple-touch-icon" href="/icon-192.png" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+		<meta name="apple-mobile-web-app-title" content="SchoolOrbit" />
 
-	<!-- Apple Touch Icon -->
-	<link rel="apple-touch-icon" href="/icon-192.png" />
-	<meta name="apple-mobile-web-app-status-bar-style" content="default" />
-	<meta name="apple-mobile-web-app-title" content="SchoolOrbit" />
+		<!-- Description for SEO and PWA -->
+		<meta name="description" content="ระบบจัดการโรงเรียนแบบครบวงจร" />
 
-	<!-- Description for SEO and PWA -->
-	<meta name="description" content="ระบบจัดการโรงเรียนแบบครบวงจร" />
+		<!-- Fonts -->
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		%sveltekit.head%
+	</head>
 
-	<!-- Fonts -->
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-	<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap"
-		rel="stylesheet" />
-	%sveltekit.head%
-</head>
-
-<body data-sveltekit-preload-data="hover">
-	<div style="display: contents">%sveltekit.body%</div>
-</body>
-
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
 </html>

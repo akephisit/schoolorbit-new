@@ -17,7 +17,12 @@
 		Plus
 	} from 'lucide-svelte';
 	import type { Achievement } from '$lib/types/achievement';
-	import { getAchievements, createAchievement, updateAchievement, deleteAchievement } from '$lib/api/achievement';
+	import {
+		getAchievements,
+		createAchievement,
+		updateAchievement,
+		deleteAchievement
+	} from '$lib/api/achievement';
 	import AchievementCard from '$lib/components/achievement/AchievementCard.svelte';
 	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
 	import { toast } from 'svelte-sonner';
@@ -25,14 +30,14 @@
 	let staff: StaffProfileResponse | null = $state(null);
 	let loading = $state(true);
 	let error = $state('');
-    
-    // Achievement State
+
+	// Achievement State
 	let achievements: Achievement[] = $state([]);
 	let loadingAchievements = $state(false);
 	let showAchievementDialog = $state(false);
 	let selectedAchievement: Achievement | null = $state(null);
-    let showDeleteDialog = $state(false);
-    let deleteId = $state<string | null>(null);
+	let showDeleteDialog = $state(false);
+	let deleteId = $state<string | null>(null);
 
 	const staffId = $derived(page.params.id);
 
@@ -97,23 +102,23 @@
 	}
 
 	function confirmDelete(achievement: Achievement) {
-        deleteId = achievement.id;
-        showDeleteDialog = true;
+		deleteId = achievement.id;
+		showDeleteDialog = true;
 	}
 
-    async function handleConfirmDelete() {
-        if (!deleteId) return;
-        
-        const res = await deleteAchievement(deleteId);
-        if (res.success) {
-            toast.success('ลบผลงานเรียบร้อย');
-            loadAchievements();
-        } else {
-            toast.error(res.error || 'เกิดข้อผิดพลาด');
-        }
-        showDeleteDialog = false;
-        deleteId = null;
-    }
+	async function handleConfirmDelete() {
+		if (!deleteId) return;
+
+		const res = await deleteAchievement(deleteId);
+		if (res.success) {
+			toast.success('ลบผลงานเรียบร้อย');
+			loadAchievements();
+		} else {
+			toast.error(res.error || 'เกิดข้อผิดพลาด');
+		}
+		showDeleteDialog = false;
+		deleteId = null;
+	}
 
 	onMount(() => {
 		loadStaffProfile();

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-    import { DatePicker } from '$lib/components/ui/date-picker';
+	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
@@ -17,28 +17,28 @@
 	import { toast } from 'svelte-sonner';
 	import { achievementSchema } from '$lib/validation/schemas';
 	import type { z } from 'zod';
-    import Compressor from 'compressorjs';
+	import Compressor from 'compressorjs';
 
 	interface Props {
 		open: boolean;
 		achievement: Achievement | null;
 		userId: string;
-        canSelectUser?: boolean;
-        onclose?: () => void;
-        onsave?: (data: any) => void;
+		canSelectUser?: boolean;
+		onclose?: () => void;
+		onsave?: (data: any) => void;
 	}
 
-	let { 
-        open = $bindable(false), 
-        achievement = null, 
-        userId, 
-        canSelectUser = false,
-        onclose,
-        onsave 
-    }: Props = $props();
+	let {
+		open = $bindable(false),
+		achievement = null,
+		userId,
+		canSelectUser = false,
+		onclose,
+		onsave
+	}: Props = $props();
 
 	let loading = $state(false);
-	
+
 	// Form State
 	let title = $state('');
 	let description = $state('');
@@ -46,42 +46,41 @@
 	let imageFile = $state<File | null>(null);
 	let imagePreview = $state<string | null>(null);
 	let currentImagePath = $state<string | null>(null);
-    let targetUserId = $state(''); // For selecting user
-	
+	let targetUserId = $state(''); // For selecting user
+
 	// Validation State
 	let errors = $state<Record<string, string>>({});
 
-    // Staff List for selection
-    import { listStaff, type StaffListItem } from '$lib/api/staff';
-    import { uploadFile } from '$lib/api/files';
-    import * as Popover from '$lib/components/ui/popover';
-    import * as Command from '$lib/components/ui/command';
-    import { Check, ChevronsUpDown } from 'lucide-svelte';
-    import { cn } from '$lib/utils';
-    import { tick } from 'svelte';
+	// Staff List for selection
+	import { listStaff, type StaffListItem } from '$lib/api/staff';
+	import { uploadFile } from '$lib/api/files';
+	import * as Popover from '$lib/components/ui/popover';
+	import * as Command from '$lib/components/ui/command';
+	import { Check, ChevronsUpDown } from 'lucide-svelte';
+	import { cn } from '$lib/utils';
+	import { tick } from 'svelte';
 
-    let staffList = $state<StaffListItem[]>([]);
-    let openCombobox = $state(false);
-    let triggerRef = $state<HTMLButtonElement>(null!);
+	let staffList = $state<StaffListItem[]>([]);
+	let openCombobox = $state(false);
+	let triggerRef = $state<HTMLButtonElement>(null!);
 
-
-    // Reset or Load form when dialog opens/changes
+	// Reset or Load form when dialog opens/changes
 	$effect(() => {
 		if (open) {
-            // Load staff list if can select user
-            if (canSelectUser && staffList.length === 0) {
-                listStaff({ page_size: 1000 }).then(res => {
-                    if(res.success) staffList = res.data;
-                });
-            }
+			// Load staff list if can select user
+			if (canSelectUser && staffList.length === 0) {
+				listStaff({ page_size: 1000 }).then((res) => {
+					if (res.success) staffList = res.data;
+				});
+			}
 
-            loading = false; // Reset loading state
+			loading = false; // Reset loading state
 			if (achievement) {
 				title = achievement.title;
 				description = achievement.description || '';
 				date = achievement.achievement_date;
 				currentImagePath = achievement.image_path || null;
-                targetUserId = achievement.user_id;
+				targetUserId = achievement.user_id;
 				imagePreview = null;
 				imageFile = null;
 			} else {
@@ -90,7 +89,7 @@
 				description = '';
 				date = new Date().toISOString().split('T')[0];
 				currentImagePath = null;
-                targetUserId = userId || '';
+				targetUserId = userId || '';
 				imagePreview = null;
 				imageFile = null;
 			}
@@ -98,79 +97,80 @@
 		}
 	});
 
-    function compressImage(file: File): Promise<File> {
-        if (!file.type.startsWith('image/')) return Promise.resolve(file);
+	function compressImage(file: File): Promise<File> {
+		if (!file.type.startsWith('image/')) return Promise.resolve(file);
 
-        return new Promise((resolve) => {
-            new Compressor(file, {
-                quality: 0.8,
-                maxWidth: 1920,
-                maxHeight: 1920,
-                mimeType: 'image/jpeg',
-                success(result: Blob | File) {
-                    const newFile = new File([result], file.name.replace(/\.[^/.]+$/, ".jpg"), {
-                        type: result.type,
-                        lastModified: Date.now(),
-                    });
-                    resolve(newFile);
-                },
-                error(err: Error) {
-                    console.error('Compression failed:', err);
-                    resolve(file); // Fallback to original
-                }
-            });
-        });
-    }
+		return new Promise((resolve) => {
+			new Compressor(file, {
+				quality: 0.8,
+				maxWidth: 1920,
+				maxHeight: 1920,
+				mimeType: 'image/jpeg',
+				success(result: Blob | File) {
+					const newFile = new File([result], file.name.replace(/\.[^/.]+$/, '.jpg'), {
+						type: result.type,
+						lastModified: Date.now()
+					});
+					resolve(newFile);
+				},
+				error(err: Error) {
+					console.error('Compression failed:', err);
+					resolve(file); // Fallback to original
+				}
+			});
+		});
+	}
 
-    import heic2any from 'heic2any'; // Ensure installed
+	import heic2any from 'heic2any'; // Ensure installed
 
-    async function handleFileChange(e: Event) {
+	async function handleFileChange(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (input.files && input.files[0]) {
 			let file = input.files[0];
-            
-            // Allow larger input files (e.g. 50MB for HEIC/Raw)
+
+			// Allow larger input files (e.g. 50MB for HEIC/Raw)
 			if (file.size > 50 * 1024 * 1024) {
 				toast.error('ไฟล์ต้นฉบับต้องไม่เกิน 50MB');
 				return;
 			}
-            
-            try {
-                // 1. Handle HEIC conversion
-                const isHeic = file.name.toLowerCase().endsWith('.heic') || 
-                               file.type === 'image/heic' || 
-                               file.type === 'image/heif';
-                               
-                if (isHeic) {
-                     // heic2any returns Blob | Blob[]
-                     const result = await heic2any({
-                         blob: file,
-                         toType: 'image/jpeg',
-                         quality: 0.8
-                     });
-                     
-                     const blob = Array.isArray(result) ? result[0] : result;
-                     file = new File([blob], file.name.replace(/\.heic$/i, ".jpg"), {
-                         type: 'image/jpeg',
-                         lastModified: Date.now()
-                     });
-                }
-            
-                // 2. Compress (Resize & Optimize)
-			    const compressed = await compressImage(file);
-                
-                // Final check (5MB Limit)
-                if (compressed.size > 5 * 1024 * 1024) {
-                    toast.error('ไฟล์มีขนาดใหญ่เกินไป (แม้หลังบีบอัด) กรุณาใช้ไฟล์อื่น');
-                    return;
-                }
-                
-                imageFile = compressed;
-                imagePreview = URL.createObjectURL(compressed);
-            } catch (err) {
-                console.error(err);
-                toast.error('ไม่สามารถประมวลผลรูปภาพได้ (อาจไม่ใช่ไฟล์รูปภาพที่รองรับ)');
-            }
+
+			try {
+				// 1. Handle HEIC conversion
+				const isHeic =
+					file.name.toLowerCase().endsWith('.heic') ||
+					file.type === 'image/heic' ||
+					file.type === 'image/heif';
+
+				if (isHeic) {
+					// heic2any returns Blob | Blob[]
+					const result = await heic2any({
+						blob: file,
+						toType: 'image/jpeg',
+						quality: 0.8
+					});
+
+					const blob = Array.isArray(result) ? result[0] : result;
+					file = new File([blob], file.name.replace(/\.heic$/i, '.jpg'), {
+						type: 'image/jpeg',
+						lastModified: Date.now()
+					});
+				}
+
+				// 2. Compress (Resize & Optimize)
+				const compressed = await compressImage(file);
+
+				// Final check (5MB Limit)
+				if (compressed.size > 5 * 1024 * 1024) {
+					toast.error('ไฟล์มีขนาดใหญ่เกินไป (แม้หลังบีบอัด) กรุณาใช้ไฟล์อื่น');
+					return;
+				}
+
+				imageFile = compressed;
+				imagePreview = URL.createObjectURL(compressed);
+			} catch (err) {
+				console.error(err);
+				toast.error('ไม่สามารถประมวลผลรูปภาพได้ (อาจไม่ใช่ไฟล์รูปภาพที่รองรับ)');
+			}
 		}
 	}
 
@@ -180,34 +180,34 @@
 		currentImagePath = null;
 	}
 
-    // Helper to get selected staff name
-    function getSelectedStaffName() {
-        if (!targetUserId) return 'เลือกบุคลากร';
-        const staff = staffList.find(s => s.id === targetUserId);
-        return staff ? `${staff.first_name} ${staff.last_name}` : 'เลือกบุคลากร';
-    }
+	// Helper to get selected staff name
+	function getSelectedStaffName() {
+		if (!targetUserId) return 'เลือกบุคลากร';
+		const staff = staffList.find((s) => s.id === targetUserId);
+		return staff ? `${staff.first_name} ${staff.last_name}` : 'เลือกบุคลากร';
+	}
 
 	async function handleSubmit() {
 		errors = {};
-		
-        if (canSelectUser && !targetUserId) {
-            errors.targetUserId = 'กรุณาเลือกบุคลากร';
+
+		if (canSelectUser && !targetUserId) {
+			errors.targetUserId = 'กรุณาเลือกบุคลากร';
 			toast.error('กรุณาเลือกบุคลากร');
-            return;
-        }
+			return;
+		}
 
 		// 1. Validate with Zod
 		const result = achievementSchema.safeParse({
 			title,
 			achievement_date: date,
 			description,
-			image_path: currentImagePath || '' 
+			image_path: currentImagePath || ''
 		});
 
 		if (!result.success) {
 			const formattedErrors: Record<string, string> = {};
 			const fieldErrors = result.error.flatten().fieldErrors;
-			
+
 			Object.entries(fieldErrors).forEach(([key, messages]) => {
 				if (messages && messages.length > 0) {
 					formattedErrors[key] = messages[0];
@@ -225,7 +225,7 @@
 
 			// Upload image if selected
 			if (imageFile) {
-                const uploadData = await uploadFile(imageFile, 'other', false);
+				const uploadData = await uploadFile(imageFile, 'other', false);
 
 				if (!uploadData.success) {
 					throw new Error('Failed to upload image');
@@ -241,14 +241,14 @@
 				achievement_date: date,
 				image_path: imagePath
 			});
-            
-            loading = false;
-            
-            // Wait for parent to close or handle state
+
+			loading = false;
+
+			// Wait for parent to close or handle state
 		} catch (e) {
 			console.error(e);
 			toast.error('เกิดข้อผิดพลาดในการบันทึก');
-            loading = false;
+			loading = false;
 		}
 	}
 </script>
@@ -412,8 +412,8 @@
 </Dialog>
 
 <style>
-    :global(.required)::after {
-        content: " *";
-        color: hsl(var(--destructive));
-    }
+	:global(.required)::after {
+		content: ' *';
+		color: hsl(var(--destructive));
+	}
 </style>

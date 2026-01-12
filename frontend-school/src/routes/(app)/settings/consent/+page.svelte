@@ -31,9 +31,7 @@
 	const withdrawnConsents = $derived(
 		status?.consents.filter((c) => c.consent_status === 'withdrawn') || []
 	);
-	const expiredConsents = $derived(
-		status?.consents.filter((c) => c.is_expired) || []
-	);
+	const expiredConsents = $derived(status?.consents.filter((c) => c.is_expired) || []);
 
 	// Load consent status
 	onMount(async () => {
@@ -58,7 +56,11 @@
 			return;
 		}
 
-		if (!confirm(`ต้องการถอนความยินยอม "${consent.consent_type_name || consent.consent_type}" หรือไม่?`)) {
+		if (
+			!confirm(
+				`ต้องการถอนความยินยอม "${consent.consent_type_name || consent.consent_type}" หรือไม่?`
+			)
+		) {
 			return;
 		}
 
@@ -66,7 +68,7 @@
 			withdrawing = consent.id;
 			error = null;
 			await consentApi.withdrawConsent(consent.id);
-			
+
 			// Reload status
 			await loadConsentStatus();
 		} catch (err) {
@@ -230,7 +232,7 @@
 									<p class="text-sm text-muted-foreground">
 										{consent.purpose}
 									</p>
-</div>
+								</div>
 								<StatusBadge {...getStatusBadge(consent)} />
 							</div>
 

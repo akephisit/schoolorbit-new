@@ -101,7 +101,9 @@ export async function loadUserPermissions(userId: string, force = false): Promis
 		if (response.success && response.data) {
 			userPermissions.set(response.data);
 		} else {
-			console.warn('Cannot load permissions via API (requires admin permission). Will use permissions from auth/me instead.');
+			console.warn(
+				'Cannot load permissions via API (requires admin permission). Will use permissions from auth/me instead.'
+			);
 			userPermissions.set([]);
 		}
 	} catch (error) {

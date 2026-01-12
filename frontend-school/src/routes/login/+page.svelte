@@ -23,12 +23,12 @@
 	onMount(async () => {
 		// Get redirect URL from sessionStorage (set by route guards)
 		redirectUrl = sessionStorage.getItem('redirectAfterLogin');
-		
+
 		const isAuthenticated = await authAPI.checkAuth();
 		if (isAuthenticated) {
 			// Already logged in, redirect based on user type or to redirectUrl
 			const user = $authStore.user;
-			
+
 			if (redirectUrl) {
 				sessionStorage.removeItem('redirectAfterLogin');
 				await goto(redirectUrl, { replaceState: true });

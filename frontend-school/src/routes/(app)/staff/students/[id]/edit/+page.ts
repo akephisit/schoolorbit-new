@@ -3,8 +3,8 @@
  */
 
 export const load = async ({ params }) => {
-    return {
-        title: 'แก้ไขข้อมูลนักเรียน',
-        studentId: params.id
-    };
+	return {
+		title: 'แก้ไขข้อมูลนักเรียน',
+		studentId: params.id
+	};
 };

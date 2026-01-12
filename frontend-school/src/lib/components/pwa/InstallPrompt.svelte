@@ -18,7 +18,7 @@
 			const dismissed = localStorage.getItem('pwa-install-dismissed');
 			const dismissedTime = dismissed ? parseInt(dismissed) : 0;
 			const now = Date.now();
-			
+
 			// Show prompt if not dismissed in last 7 days
 			if (!dismissed || now - dismissedTime > 7 * 24 * 60 * 60 * 1000) {
 				showInstallPrompt = true;

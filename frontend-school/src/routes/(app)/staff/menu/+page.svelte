@@ -48,7 +48,7 @@
 	// Dialog states
 	let groupDialogOpen = $state(false);
 	let editingGroup = $state<MenuGroup | null>(null);
-	
+
 	// Filter state
 	let userTypeFilter = $state<'all' | 'staff' | 'student' | 'parent'>('all');
 
@@ -77,15 +77,17 @@
 			loading = false;
 		}
 	}
-	
+
 	// Filtered containers based on user_type filter
 	const filteredContainers = $derived(
 		userTypeFilter === 'all'
 			? containers
-			: containers.map(container => ({
-				...container,
-				nesteds: container.nesteds.filter(item => item.user_type === userTypeFilter)
-			})).filter(container => container.nesteds.length > 0)
+			: containers
+					.map((container) => ({
+						...container,
+						nesteds: container.nesteds.filter((item) => item.user_type === userTypeFilter)
+					}))
+					.filter((container) => container.nesteds.length > 0)
 	);
 
 	// Helper functions
@@ -245,7 +247,6 @@
 			<option value="parent">👨‍👩‍👧 Parent</option>
 		</select>
 	</div>
-
 
 	<!-- Tabs -->
 	<Tabs.Root bind:value={activeTab}>

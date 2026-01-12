@@ -76,15 +76,13 @@
 			submitting = true;
 			error = null;
 
-			const consentsToSubmit: CreateConsentRequest[] = Array.from(selectedConsents).map(
-				(code) => ({
-					consent_type: code,
-					consent_status: 'granted',
-					is_minor_consent: isMinor,
-					parent_guardian_name: isMinor ? parentGuardianName : undefined,
-					parent_relationship: isMinor ? parentRelationship : undefined
-				})
-			);
+			const consentsToSubmit: CreateConsentRequest[] = Array.from(selectedConsents).map((code) => ({
+				consent_type: code,
+				consent_status: 'granted',
+				is_minor_consent: isMinor,
+				parent_guardian_name: isMinor ? parentGuardianName : undefined,
+				parent_relationship: isMinor ? parentRelationship : undefined
+			}));
 
 			await consentApi.giveMultipleConsents(consentsToSubmit);
 

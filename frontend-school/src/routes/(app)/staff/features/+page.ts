@@ -8,7 +8,7 @@ export const _meta = {
 		icon: 'Zap',
 		group: 'settings',
 		order: 1000,
-        user_type: 'staff',
+		user_type: 'staff',
 		permission: 'settings'
 	}
 };

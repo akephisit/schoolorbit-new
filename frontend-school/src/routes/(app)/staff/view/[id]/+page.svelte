@@ -3,58 +3,64 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardHeader,
+		CardTitle,
+		CardDescription
+	} from '$lib/components/ui/card';
 	import { Avatar } from '$lib/components/ui/avatar';
 	import { Badge } from '$lib/components/ui/badge';
-    import { Separator } from '$lib/components/ui/separator';
-    import * as Dialog from '$lib/components/ui/dialog';
-	import { 
-        ArrowLeft, 
-        Building2, 
-        Briefcase, 
-        Mail, 
-        Phone, 
-        Calendar, 
-        Award, 
-        User,
-        FileText,
-        ExternalLink
-    } from 'lucide-svelte';
+	import { Separator } from '$lib/components/ui/separator';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import {
+		ArrowLeft,
+		Building2,
+		Briefcase,
+		Mail,
+		Phone,
+		Calendar,
+		Award,
+		User,
+		FileText,
+		ExternalLink
+	} from 'lucide-svelte';
 	import { getPublicStaffProfile } from '$lib/api/staff';
-    import { getAchievements } from '$lib/api/achievement';
+	import { getAchievements } from '$lib/api/achievement';
 	import type { StaffProfileResponse } from '$lib/api/staff';
-    import type { Achievement } from '$lib/types/achievement';
+	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
-    import { LoaderCircle } from 'lucide-svelte';
+	import { LoaderCircle } from 'lucide-svelte';
 
 	const staffId = $page.params.id ?? '';
 	let staff = $state<StaffProfileResponse | null>(null);
-    let achievements = $state<Achievement[]>([]);
+	let achievements = $state<Achievement[]>([]);
 	let loading = $state(true);
-    let loadingAchievements = $state(true);
-    
-    // File Preview State
-    let showFileDialog = $state(false);
-    let viewingFileUrl = $state('');
-    let viewingFileType = $state('');
-    let isImageLoading = $state(false);
+	let loadingAchievements = $state(true);
 
-    function viewFile(path: string) {
-        if (!path) return;
-        
-        const url = path.startsWith('http') ? path : `/api/files?path=${path}`;
-        viewingFileUrl = url;
-        
-        const ext = path.split('.').pop()?.toLowerCase();
-        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext || '')) {
-            viewingFileType = 'image';
-            isImageLoading = true;
-            showFileDialog = true;
-        } else {
-            // Fallback: open in new tab for other types
-            window.open(url, '_blank');
-        }
-    }
+	// File Preview State
+	let showFileDialog = $state(false);
+	let viewingFileUrl = $state('');
+	let viewingFileType = $state('');
+	let isImageLoading = $state(false);
+
+	function viewFile(path: string) {
+		if (!path) return;
+
+		const url = path.startsWith('http') ? path : `/api/files?path=${path}`;
+		viewingFileUrl = url;
+
+		const ext = path.split('.').pop()?.toLowerCase();
+		if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext || '')) {
+			viewingFileType = 'image';
+			isImageLoading = true;
+			showFileDialog = true;
+		} else {
+			// Fallback: open in new tab for other types
+			window.open(url, '_blank');
+		}
+	}
 
 	async function loadStaffProfile() {
 		try {
@@ -73,31 +79,31 @@
 		}
 	}
 
-    async function loadAchievements() {
-        try {
-            const res = await getAchievements({ user_id: staffId });
-            if (res.success && res.data) {
-                achievements = res.data;
-            }
-        } catch (error) {
-            console.error('Error loading achievements:', error);
-        } finally {
-            loadingAchievements = false;
-        }
-    }
+	async function loadAchievements() {
+		try {
+			const res = await getAchievements({ user_id: staffId });
+			if (res.success && res.data) {
+				achievements = res.data;
+			}
+		} catch (error) {
+			console.error('Error loading achievements:', error);
+		} finally {
+			loadingAchievements = false;
+		}
+	}
 
-    function formatDate(dateStr: string) {
-        if (!dateStr) return '-';
-        return new Date(dateStr).toLocaleDateString('th-TH', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    }
+	function formatDate(dateStr: string) {
+		if (!dateStr) return '-';
+		return new Date(dateStr).toLocaleDateString('th-TH', {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric'
+		});
+	}
 
 	onMount(() => {
 		loadStaffProfile();
-        loadAchievements();
+		loadAchievements();
 	});
 </script>
 

@@ -28,7 +28,7 @@
 		try {
 			const response = await getOwnProfile();
 			student = response.data;
-			
+
 			// Initialize editable fields
 			phone = student.phone || '';
 			address = student.address || '';

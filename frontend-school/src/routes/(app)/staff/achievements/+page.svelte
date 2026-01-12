@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-    import { authStore } from '$lib/stores/auth';
-    import { can } from '$lib/stores/permissions';
+	import { authStore } from '$lib/stores/auth';
+	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-    import * as Tabs from "$lib/components/ui/tabs";
-    import * as Dialog from "$lib/components/ui/dialog";
+	import * as Tabs from '$lib/components/ui/tabs';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import {
 		Table,
 		TableBody,
@@ -21,87 +21,92 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { 
-        Award, 
-        Plus, 
-        Search, 
-        Calendar, 
-        FileText, 
-        User as UserIcon,
-        Trash2,
-        Pencil,
-        ExternalLink,
-        LoaderCircle 
-    } from 'lucide-svelte';
-	import { getAchievements, createAchievement, updateAchievement, deleteAchievement } from '$lib/api/achievement';
+	import {
+		Award,
+		Plus,
+		Search,
+		Calendar,
+		FileText,
+		User as UserIcon,
+		Trash2,
+		Pencil,
+		ExternalLink,
+		LoaderCircle
+	} from 'lucide-svelte';
+	import {
+		getAchievements,
+		createAchievement,
+		updateAchievement,
+		deleteAchievement
+	} from '$lib/api/achievement';
 	import type { Achievement } from '$lib/types/achievement';
-    import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
+	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
 	import { toast } from 'svelte-sonner';
 
-    // State
+	// State
 	let loading = $state(false);
 	let achievements = $state<Achievement[]>([]);
-    let searchTerm = $state('');
-    let activeTab = $state('own'); // 'own' | 'all'
+	let searchTerm = $state('');
+	let activeTab = $state('own'); // 'own' | 'all'
 
-    // Dialog State
-    let showDialog = $state(false);
-    let selectedAchievement = $state<Achievement | null>(null);
-    let showDeleteDialog = $state(false);
-    let deleteId = $state<string | null>(null);
+	// Dialog State
+	let showDialog = $state(false);
+	let selectedAchievement = $state<Achievement | null>(null);
+	let showDeleteDialog = $state(false);
+	let deleteId = $state<string | null>(null);
 
-    // File Preview State
-    let showFileDialog = $state(false);
-    let viewingFileUrl = $state('');
-    let viewingFileType = $state(''); // 'image' | 'pdf'
-    let isImageLoading = $state(false);
+	// File Preview State
+	let showFileDialog = $state(false);
+	let viewingFileUrl = $state('');
+	let viewingFileType = $state(''); // 'image' | 'pdf'
+	let isImageLoading = $state(false);
 
-    // User & Permissions - permissions auto-loaded by authStore
-    const user = $derived($authStore.user);
-    const userId = $derived(user?.id || '');
-    const permissions = $derived($can); // Use enhanced permission store
+	// User & Permissions - permissions auto-loaded by authStore
+	const user = $derived($authStore.user);
+	const userId = $derived(user?.id || '');
+	const permissions = $derived($can); // Use enhanced permission store
 
-    // Permission checks - much simpler now!
-    const canReadAll = $derived(permissions.has('achievement.read.all'));
-    const canCreateOwn = $derived(permissions.has('achievement.create.own'));
-    const canCreateAll = $derived(permissions.has('achievement.create.all'));
-    const canUpdateOwn = $derived(permissions.has('achievement.update.own'));
-    const canUpdateAll = $derived(permissions.has('achievement.update.all'));
-    const canDeleteOwn = $derived(permissions.has('achievement.delete.own'));
-    const canDeleteAll = $derived(permissions.has('achievement.delete.all'));
+	// Permission checks - much simpler now!
+	const canReadAll = $derived(permissions.has('achievement.read.all'));
+	const canCreateOwn = $derived(permissions.has('achievement.create.own'));
+	const canCreateAll = $derived(permissions.has('achievement.create.all'));
+	const canUpdateOwn = $derived(permissions.has('achievement.update.own'));
+	const canUpdateAll = $derived(permissions.has('achievement.update.all'));
+	const canDeleteOwn = $derived(permissions.has('achievement.delete.own'));
+	const canDeleteAll = $derived(permissions.has('achievement.delete.all'));
 
-    // Derived state for filtering
-    const filteredAchievements = $derived(
-        achievements.filter(a => {
-            const staffName = `${a.user_first_name || ''} ${a.user_last_name || ''}`;
-            const searchLower = searchTerm.toLowerCase();
-            
-            return (
-                a.title.toLowerCase().includes(searchLower) ||
-                (a.description || '').toLowerCase().includes(searchLower) ||
-                staffName.toLowerCase().includes(searchLower)
-            );
-        })
-    );
+	// Derived state for filtering
+	const filteredAchievements = $derived(
+		achievements.filter((a) => {
+			const staffName = `${a.user_first_name || ''} ${a.user_last_name || ''}`;
+			const searchLower = searchTerm.toLowerCase();
+
+			return (
+				a.title.toLowerCase().includes(searchLower) ||
+				(a.description || '').toLowerCase().includes(searchLower) ||
+				staffName.toLowerCase().includes(searchLower)
+			);
+		})
+	);
 
 	async function loadData() {
-        if (!userId) return;
+		if (!userId) return;
 
 		try {
 			loading = true;
-            
-            const filter: any = {};
-            if (activeTab === 'own') {
-                filter.user_id = userId;
-            } 
-            // If 'all', send no user_id filter (backend handles permission check too)
 
-			const res = await getAchievements(filter); 
+			const filter: any = {};
+			if (activeTab === 'own') {
+				filter.user_id = userId;
+			}
+			// If 'all', send no user_id filter (backend handles permission check too)
+
+			const res = await getAchievements(filter);
 			if (res.success && res.data) {
 				achievements = res.data;
 			} else {
-                achievements = [];
-            }
+				achievements = [];
+			}
 		} catch (error) {
 			console.error('Failed to load data:', error);
 			toast.error('ไม่สามารถโหลดข้อมูลได้');
@@ -110,108 +115,107 @@
 		}
 	}
 
-    function handleTabChange(value: string) {
-        activeTab = value;
-        loadData();
-    }
+	function handleTabChange(value: string) {
+		activeTab = value;
+		loadData();
+	}
 
-    function formatDate(dateStr: string) {
-        return new Date(dateStr).toLocaleDateString('th-TH', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    }
+	function formatDate(dateStr: string) {
+		return new Date(dateStr).toLocaleDateString('th-TH', {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric'
+		});
+	}
 
-    // Actions
-    function viewFile(path: string) {
-        if (!path) return;
-        
-        const url = path.startsWith('http') ? path : `/api/files?path=${path}`;
-        viewingFileUrl = url;
-        
-        const ext = path.split('.').pop()?.toLowerCase();
-        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext || '')) {
-            viewingFileType = 'image';
-            isImageLoading = true;
-            showFileDialog = true;
-        } else {
-            // Fallback: open in new tab for other types
-            window.open(url, '_blank');
-        }
-    }
+	// Actions
+	function viewFile(path: string) {
+		if (!path) return;
 
-    function openCreateDialog() {
-        selectedAchievement = null;
-        showDialog = true;
-    }
+		const url = path.startsWith('http') ? path : `/api/files?path=${path}`;
+		viewingFileUrl = url;
 
-    function openEditDialog(achievement: Achievement) {
-        selectedAchievement = achievement;
-        showDialog = true;
-    }
+		const ext = path.split('.').pop()?.toLowerCase();
+		if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext || '')) {
+			viewingFileType = 'image';
+			isImageLoading = true;
+			showFileDialog = true;
+		} else {
+			// Fallback: open in new tab for other types
+			window.open(url, '_blank');
+		}
+	}
 
-    async function handleSave(payload: any) {
-        
-        // If create mode and canCreateAll -> payload.user_id might be set to selected user
-        // If edit mode -> payload.id exists
+	function openCreateDialog() {
+		selectedAchievement = null;
+		showDialog = true;
+	}
 
-        let res;
-        if (payload.id) {
-            res = await updateAchievement(payload.id, {
-                title: payload.title,
-                description: payload.description,
-                achievement_date: payload.achievement_date,
-                image_path: payload.image_path,
-                // user_id is generally not updatable via this specific simple DTO but let's check
-            });
-        } else {
-             res = await createAchievement({
-                user_id: payload.user_id || userId,
-                title: payload.title,
-                description: payload.description,
-                achievement_date: payload.achievement_date,
-                image_path: payload.image_path
-            });
-        }
+	function openEditDialog(achievement: Achievement) {
+		selectedAchievement = achievement;
+		showDialog = true;
+	}
 
-        if (res.success) {
-            toast.success('บันทึกข้อมูลเรียบร้อย');
-            showDialog = false;
-            loadData();
-        } else {
-             toast.error(res.error || 'บันทึกข้อมูลไม่สำเร็จ');
-        }
-    }
+	async function handleSave(payload: any) {
+		// If create mode and canCreateAll -> payload.user_id might be set to selected user
+		// If edit mode -> payload.id exists
 
-    function handleDelete(id: string) {
-        deleteId = id;
-        showDeleteDialog = true;
-    }
+		let res;
+		if (payload.id) {
+			res = await updateAchievement(payload.id, {
+				title: payload.title,
+				description: payload.description,
+				achievement_date: payload.achievement_date,
+				image_path: payload.image_path
+				// user_id is generally not updatable via this specific simple DTO but let's check
+			});
+		} else {
+			res = await createAchievement({
+				user_id: payload.user_id || userId,
+				title: payload.title,
+				description: payload.description,
+				achievement_date: payload.achievement_date,
+				image_path: payload.image_path
+			});
+		}
 
-    async function confirmDelete() {
-        if (!deleteId) return;
-        
-        loading = true; // Optional: Show loading state
-        const res = await deleteAchievement(deleteId);
-        loading = false;
+		if (res.success) {
+			toast.success('บันทึกข้อมูลเรียบร้อย');
+			showDialog = false;
+			loadData();
+		} else {
+			toast.error(res.error || 'บันทึกข้อมูลไม่สำเร็จ');
+		}
+	}
 
-        if (res.success) {
-            toast.success('ลบข้อมูลเรียบร้อย');
-            achievements = achievements.filter(a => a.id !== deleteId);
-        } else {
-            toast.error(res.error || 'ลบข้อมูลไม่สำเร็จ');
-        }
-        showDeleteDialog = false;
-        deleteId = null;
-    }
+	function handleDelete(id: string) {
+		deleteId = id;
+		showDeleteDialog = true;
+	}
+
+	async function confirmDelete() {
+		if (!deleteId) return;
+
+		loading = true; // Optional: Show loading state
+		const res = await deleteAchievement(deleteId);
+		loading = false;
+
+		if (res.success) {
+			toast.success('ลบข้อมูลเรียบร้อย');
+			achievements = achievements.filter((a) => a.id !== deleteId);
+		} else {
+			toast.error(res.error || 'ลบข้อมูลไม่สำเร็จ');
+		}
+		showDeleteDialog = false;
+		deleteId = null;
+	}
 
 	onMount(() => {
-        // Permissions are auto-loaded by authStore when user logs in
-        // Just load data when page mounts
-        if (userId) {
-            loadData();
-        }
+		// Permissions are auto-loaded by authStore when user logs in
+		// Just load data when page mounts
+		if (userId) {
+			loadData();
+		}
 	});
 </script>
 

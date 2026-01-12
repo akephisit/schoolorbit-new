@@ -8,7 +8,7 @@ export const _meta = {
 		icon: 'Shield',
 		group: 'settings',
 		order: 1000,
-        user_type: 'staff',
+		user_type: 'staff',
 		permission: 'roles'
 	}
 };

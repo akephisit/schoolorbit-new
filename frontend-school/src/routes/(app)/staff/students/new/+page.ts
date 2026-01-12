@@ -3,7 +3,7 @@
  */
 
 export const load = async () => {
-    return {
-        title: 'เพิ่มนักเรียนใหม่'
-    };
+	return {
+		title: 'เพิ่มนักเรียนใหม่'
+	};
 };

@@ -8,7 +8,7 @@ export const _meta = {
 		icon: 'Menu',
 		group: 'settings',
 		order: 1001,
-        user_type: 'staff',
+		user_type: 'staff',
 		permission: 'settings'
 	}
 };

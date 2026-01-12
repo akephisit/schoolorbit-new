@@ -42,7 +42,7 @@
 		try {
 			const response = await getStudent(studentId);
 			student = response.data;
-			
+
 			// Initialize form data
 			formData = {
 				email: student.email || '',

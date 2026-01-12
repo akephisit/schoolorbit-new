@@ -8,7 +8,13 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import * as Select from '$lib/components/ui/select';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Avatar } from '$lib/components/ui/avatar';
 	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
 	import {
@@ -63,7 +69,6 @@
 	let saving = $state(false);
 	let loading = $state(false);
 
-
 	onMount(async () => {
 		// Load full user profile from API
 		loading = true;
@@ -83,8 +88,6 @@
 				address: profile.address || '',
 				profile_image_url: profile.profileImageUrl || ''
 			};
-			
-			
 		} catch (error) {
 			toast.error('ไม่สามารถโหลดข้อมูลได้');
 			console.error('Failed to load profile:', error);

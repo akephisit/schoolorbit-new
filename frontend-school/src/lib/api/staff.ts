@@ -241,7 +241,9 @@ export async function getStaffProfile(staffId: string): Promise<ApiResponse<Staf
 	return response.json();
 }
 
-export async function getPublicStaffProfile(staffId: string): Promise<ApiResponse<StaffProfileResponse>> {
+export async function getPublicStaffProfile(
+	staffId: string
+): Promise<ApiResponse<StaffProfileResponse>> {
 	const response = await fetch(`${API_BASE_URL}/api/staff/${staffId}/public-profile`, {
 		method: 'GET',
 		credentials: 'include',

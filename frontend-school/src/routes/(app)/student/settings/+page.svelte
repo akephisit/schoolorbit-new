@@ -4,9 +4,24 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
-	import { ArrowLeft, Lock, Save, Eye, EyeOff, Download, Smartphone, CheckCircle2 } from 'lucide-svelte';
+	import {
+		ArrowLeft,
+		Lock,
+		Save,
+		Eye,
+		EyeOff,
+		Download,
+		Smartphone,
+		CheckCircle2
+	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -34,10 +49,11 @@
 	onMount(() => {
 		// Check if iOS
 		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-		
+
 		// Check if already installed
-		isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-		               (navigator as any).standalone === true;
+		isStandalone =
+			window.matchMedia('(display-mode: standalone)').matches ||
+			(navigator as any).standalone === true;
 	});
 
 	async function handleInstallPWA() {

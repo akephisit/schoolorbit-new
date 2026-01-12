@@ -11,10 +11,11 @@
 	onMount(() => {
 		// Check if iOS
 		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-		
+
 		// Check if already installed (standalone mode)
-		isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-		               (navigator as any).standalone === true;
+		isStandalone =
+			window.matchMedia('(display-mode: standalone)').matches ||
+			(navigator as any).standalone === true;
 
 		// Show prompt if iOS and not installed
 		if (isIOS && !isStandalone) {
@@ -22,7 +23,7 @@
 			const dismissed = localStorage.getItem('ios-install-dismissed');
 			const dismissedTime = dismissed ? parseInt(dismissed) : 0;
 			const now = Date.now();
-			
+
 			// Show if not dismissed or dismissed more than 7 days ago
 			if (!dismissed || now - dismissedTime > 7 * 24 * 60 * 60 * 1000) {
 				// Show after 3 seconds delay

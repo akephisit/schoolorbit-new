@@ -7,8 +7,8 @@
 	import ImageCropper from './ImageCropper.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
-    import heic2any from 'heic2any';
-    import Compressor from 'compressorjs';
+	import heic2any from 'heic2any';
+	import Compressor from 'compressorjs';
 
 	interface Props {
 		currentImage?: string | null;
@@ -50,90 +50,91 @@
 		let file = target.files?.[0];
 
 		if (file) {
-            const isHeic = file.name.toLowerCase().endsWith('.heic') || 
-                           file.type === 'image/heic' || 
-                           file.type === 'image/heif';
+			const isHeic =
+				file.name.toLowerCase().endsWith('.heic') ||
+				file.type === 'image/heic' ||
+				file.type === 'image/heif';
 
 			// Validate type
 			if (!isHeic && !file.type.startsWith('image/')) {
 				toast.error('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
 				return;
 			}
-            
+
 			// Validate initial size (Allow up to 50MB for processing)
 			if (file.size > 50 * 1024 * 1024) {
 				toast.error(`ไฟล์ต้นฉบับต้องไม่เกิน 50MB`);
 				return;
 			}
-            
-            // Loading toast removed as requested
 
-            try {
-                if (isHeic) {
-                     const result = await heic2any({
-                         blob: file,
-                         toType: 'image/jpeg',
-                         quality: 0.8
-                     });
-                     
-                     const blob = Array.isArray(result) ? result[0] : result;
-                     file = new File([blob], file.name.replace(/\.heic$/i, ".jpg"), {
-                         type: 'image/jpeg',
-                         lastModified: Date.now()
-                     });
-                }
+			// Loading toast removed as requested
 
-                // Optimize & Fix Orientation with Compressor.js
-                // Optimize & Fix Orientation with Compressor.js
-                new Compressor(file, {
-                    quality: 0.8,
-                    maxWidth: 1920,
-                    maxHeight: 1920,
-                    mimeType: 'image/jpeg',
-                    success(result: Blob | File) {
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                            tempImageSrc = e.target?.result as string;
-                            showCropper = true;
-                            target.value = '';
-                        };
-                        reader.readAsDataURL(result);
-                    },
-                    error(err: Error) {
-                        console.error('Compressor error:', err);
-                        // Fallback to original
-                        if (file) {
-                            const reader = new FileReader();
-                            reader.onload = (e) => {
-                                tempImageSrc = e.target?.result as string;
-                                showCropper = true;
-                                target.value = '';
-                            };
-                            reader.readAsDataURL(file);
-                        }
-                    }
-                });
-            } catch (e) {
-                console.error('File processing error:', e);
-                // toast.error('ไม่สามารถประมวลผลรูปภาพได้'); // Keep error toast or remove per preference? keeping error is usually safe.
-            } 
-            // finally block removed as toastId is gone
+			try {
+				if (isHeic) {
+					const result = await heic2any({
+						blob: file,
+						toType: 'image/jpeg',
+						quality: 0.8
+					});
+
+					const blob = Array.isArray(result) ? result[0] : result;
+					file = new File([blob], file.name.replace(/\.heic$/i, '.jpg'), {
+						type: 'image/jpeg',
+						lastModified: Date.now()
+					});
+				}
+
+				// Optimize & Fix Orientation with Compressor.js
+				// Optimize & Fix Orientation with Compressor.js
+				new Compressor(file, {
+					quality: 0.8,
+					maxWidth: 1920,
+					maxHeight: 1920,
+					mimeType: 'image/jpeg',
+					success(result: Blob | File) {
+						const reader = new FileReader();
+						reader.onload = (e) => {
+							tempImageSrc = e.target?.result as string;
+							showCropper = true;
+							target.value = '';
+						};
+						reader.readAsDataURL(result);
+					},
+					error(err: Error) {
+						console.error('Compressor error:', err);
+						// Fallback to original
+						if (file) {
+							const reader = new FileReader();
+							reader.onload = (e) => {
+								tempImageSrc = e.target?.result as string;
+								showCropper = true;
+								target.value = '';
+							};
+							reader.readAsDataURL(file);
+						}
+					}
+				});
+			} catch (e) {
+				console.error('File processing error:', e);
+				// toast.error('ไม่สามารถประมวลผลรูปภาพได้'); // Keep error toast or remove per preference? keeping error is usually safe.
+			}
+			// finally block removed as toastId is gone
 		}
 	}
 
 	// 2. Handle Cropped Image -> Upload
 	async function handleCropComplete(croppedBlob: Blob) {
 		uploading = true;
-		
+
 		// Convert Blob to File
-		const file = new File([croppedBlob], "profile_avatar.jpg", { type: "image/jpeg" });
+		const file = new File([croppedBlob], 'profile_avatar.jpg', { type: 'image/jpeg' });
 
 		try {
 			const response = await uploadProfileImage(file);
 
 			if (response.success) {
 				imageUrl = response.file.url;
-				
+
 				onsuccess?.({
 					url: response.file.url,
 					fileId: response.file.id

@@ -27,7 +27,7 @@
 
 		// Get user from store
 		const user = $authStore.user;
-		
+
 		// Check if user is staff (not student)
 		if (user && user.user_type === 'student') {
 			// Student trying to access staff area - redirect to student portal

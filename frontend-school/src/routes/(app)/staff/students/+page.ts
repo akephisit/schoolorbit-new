@@ -3,18 +3,18 @@
  */
 
 export const _meta = {
-    menu: {
-        title: 'นักเรียน',
-        icon: 'GraduationCap',
-        group: 'main',
-        order: 20,
-        user_type: 'staff',
-        permission: 'student.read.all'
-    }
+	menu: {
+		title: 'นักเรียน',
+		icon: 'GraduationCap',
+		group: 'main',
+		order: 20,
+		user_type: 'staff',
+		permission: 'student.read.all'
+	}
 };
 
 export const load = async () => {
-    return {
-        title: 'จัดการนักเรียน'
-    };
+	return {
+		title: 'จัดการนักเรียน'
+	};
 };

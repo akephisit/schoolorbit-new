@@ -21,7 +21,7 @@
 		try {
 			menuLoading = true;
 			const response = await getUserMenu();
-			
+
 			// Backend already filters by user_type - use response directly
 			menuGroups = response.groups;
 		} catch (error) {
@@ -60,25 +60,26 @@
 	// Only highlights the BEST matching menu item (longest matching path)
 	function isActive(href: string): boolean {
 		const currentPath = page.url.pathname;
-		
+
 		// Exact match
 		if (currentPath === href) {
 			return true;
 		}
-		
+
 		// Child route match - but only if no other menu has a better match
 		if (currentPath.startsWith(href + '/')) {
 			// Find if there's a better (longer) match
-			const betterMatch = allMenuPaths.find(menuPath => 
-				menuPath !== href && 
-				menuPath.length > href.length &&
-				(currentPath === menuPath || currentPath.startsWith(menuPath + '/'))
+			const betterMatch = allMenuPaths.find(
+				(menuPath) =>
+					menuPath !== href &&
+					menuPath.length > href.length &&
+					(currentPath === menuPath || currentPath.startsWith(menuPath + '/'))
 			);
-			
+
 			// Only highlight if this is the best match
 			return !betterMatch;
 		}
-		
+
 		return false;
 	}
 

@@ -4,18 +4,18 @@
  */
 
 export const _meta = {
-    menu: {
-        title: 'แดชบอร์ด',
-        icon: 'LayoutDashboard',
-        group: 'main',
-        order: 1,
-        user_type: 'staff'
-        // No permission required - all authenticated staff can access
-    }
+	menu: {
+		title: 'แดชบอร์ด',
+		icon: 'LayoutDashboard',
+		group: 'main',
+		order: 1,
+		user_type: 'staff'
+		// No permission required - all authenticated staff can access
+	}
 };
 
 export const load = async () => {
-    return {
-        title: 'Staff Dashboard'
-    };
+	return {
+		title: 'Staff Dashboard'
+	};
 };

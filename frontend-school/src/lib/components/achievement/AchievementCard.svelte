@@ -1,31 +1,31 @@
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
-    import type { Achievement } from '$lib/types/achievement';
-    import { Calendar, Trash2, Pencil } from 'lucide-svelte';
-    import { Button } from '$lib/components/ui/button';
-    import {
-      Card,
-      CardContent,
-      CardDescription,
-      CardFooter,
-      CardHeader,
-      CardTitle,
-    } from "$lib/components/ui/card";
-    import { cn } from "$lib/utils";
+	import { createEventDispatcher } from 'svelte';
+	import type { Achievement } from '$lib/types/achievement';
+	import { Calendar, Trash2, Pencil } from 'lucide-svelte';
+	import { Button } from '$lib/components/ui/button';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardFooter,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
+	import { cn } from '$lib/utils';
 
-    export let achievement: Achievement;
-    export let readonly: boolean = false;
+	export let achievement: Achievement;
+	export let readonly: boolean = false;
 
-    const dispatch = createEventDispatcher();
+	const dispatch = createEventDispatcher();
 
-    function formatDate(dateStr: string) {
-        const date = new Date(dateStr);
-        return new Intl.DateTimeFormat('th-TH', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-        }).format(date);
-    }
+	function formatDate(dateStr: string) {
+		const date = new Date(dateStr);
+		return new Intl.DateTimeFormat('th-TH', {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric'
+		}).format(date);
+	}
 </script>
 
 <Card class="overflow-hidden hover:shadow-md transition-shadow">
