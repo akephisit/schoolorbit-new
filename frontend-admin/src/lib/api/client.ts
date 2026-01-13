@@ -160,7 +160,7 @@ export const apiClient = new ApiClient();
 export interface CreateSchool {
 	name: string;
 	subdomain: string;
-	adminNationalId: string;
+	adminUsername: string;
 	adminPassword: string;
 }
 

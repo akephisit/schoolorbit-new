@@ -21,7 +21,7 @@ pub struct School {
 pub struct CreateSchool {
     pub name: String,
     pub subdomain: String,
-    pub admin_national_id: String,
+    pub admin_username: String,
     pub admin_password: String,
 }
 

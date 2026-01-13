@@ -25,7 +25,7 @@
 	let createData = $state<CreateSchool>({
 		name: '',
 		subdomain: '',
-		adminNationalId: '',
+		adminUsername: '',
 		adminPassword: ''
 	});
 	let creating = $state(false);
@@ -37,12 +37,9 @@
 		subdomain: z.string()
 			.min(1, 'กรุณากรอก subdomain')
 			.regex(/^[a-z0-9\-]+$/, 'ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น'),
-		adminNationalId: z.string()
-			.length(13, 'ต้องมี 13 หลัก')
-			.refine(
-				(val) => /^(G[0-9]{12}|[0-9]{13})$/.test(val),
-				'กรุณากรอกเลขบัตรประชาชน 13 หลัก หรือ รหัส G + 12 ตัวเลข'
-			),
+		adminUsername: z.string()
+			.min(4, 'ชื่อผู้ใช้ต้องมีอย่างน้อย 4 ตัวอักษร')
+			.regex(/^[a-zA-Z0-9_\-]+$/, 'ใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ ตัวเลข _ และ -'),
 		adminPassword: z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร')
 	});
 	
@@ -132,7 +129,7 @@
 						createData = {
 							name: '',
 							subdomain: '',
-							adminNationalId: '',
+							adminUsername: '',
 							adminPassword: ''
 						};
 					},
@@ -305,18 +302,15 @@
 				</div>
 
 				<div class="form-group">
-					<label for="nationalId">เลขบัตรประชาชน/รหัสผู้ดูแล</label>
+					<label for="adminUsername">ชื่อผู้ใช้ผู้ดูแล (Admin Username)</label>
 					<input
 						type="text"
-						id="nationalId"
-						bind:value={createData.adminNationalId}
-						maxlength="13"
-						placeholder="1234567890123 หรือ G123456789012"
+						id="adminUsername"
+						bind:value={createData.adminUsername}
+						placeholder="admin"
 					/>
-					{#if validationErrors.adminNationalId}
-						<span class="error-text">{validationErrors.adminNationalId}</span>
-					{:else}
-						<small>13 หลัก (ตัว เลข หรือ G + 12 ตัวเลข สำหรับชาวต่างชาติ)</small>
+					{#if validationErrors.adminUsername}
+						<span class="error-text">{validationErrors.adminUsername}</span>
 					{/if}
 				</div>
 
@@ -767,7 +761,7 @@
 		color: #4a5568;
 		font-weight: 500;
 	}
-
+	
 	/* Status badges animations */
 	.status.deploying,
 	.status.deleting {

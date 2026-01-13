@@ -13,13 +13,6 @@ impl SchoolService {
     }
 
     pub async fn create_school(&self, data: CreateSchool) -> Result<School, AppError> {
-        // Validate Thai national ID (13 digits)
-        if !data.admin_national_id.chars().all(|c| c.is_ascii_digit()) || data.admin_national_id.len() != 13 {
-            return Err(AppError::ValidationError(
-                "Admin national ID must be exactly 13 digits".to_string()
-            ));
-        }
-
         // Validate subdomain format (lowercase, alphanumeric, hyphens)
         if !data.subdomain.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return Err(AppError::ValidationError(
@@ -114,14 +107,14 @@ impl SchoolService {
                 &school_id.to_string(),
                 &db_connection_string,
                 &data.subdomain,
-                &data.admin_national_id,
+                &data.admin_username,
                 &data.admin_password,
             )
             .await
         {
             Ok(_) => {
                 println!("✅ Tenant database provisioned successfully");
-                println!("✅ Admin user created with national ID: {}", data.admin_national_id);
+                println!("✅ Admin user created (Username: {:?})", data.admin_username);
             }
             Err(e) => {
                 eprintln!("❌ Failed to provision tenant: {}", e);
@@ -536,12 +529,7 @@ impl SchoolService {
         logger.progress(0, 4, "Validating input...").await;
 
         // Validation (same as create_school)
-        if !data.admin_national_id.chars().all(|c| c.is_ascii_digit()) || data.admin_national_id.len() != 13 {
-            return Err(AppError::ValidationError(
-                "Admin national ID must be exactly 13 digits".to_string()
-            ));
-        }
-
+        // Validation (same as create_school)
         if !data.subdomain.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return Err(AppError::ValidationError(
                 "Subdomain must contain only lowercase letters, numbers, and hyphens".to_string()
@@ -561,7 +549,6 @@ impl SchoolService {
                 "Subdomain already exists".to_string()
             ));
         }
-
         logger.success("✅ Validation passed").await;
 
         // Step 0: Create school record first (status='provisioning')
@@ -645,7 +632,7 @@ impl SchoolService {
                 "schoolId": school_id.to_string(),
                 "dbConnectionString": connection_string,
                 "subdomain": data.subdomain,
-                "adminNationalId": data.admin_national_id,
+                "adminUsername": data.admin_username,
                 "adminPassword": data.admin_password,
             }))
             .send()

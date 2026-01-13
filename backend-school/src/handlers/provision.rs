@@ -19,7 +19,7 @@ pub async fn provision_tenant(
 ) -> Response {
     println!("📦 Provisioning tenant for school: {}", payload.school_id);
     println!("   Subdomain: {}", payload.subdomain);
-    println!("   Admin National ID: {}", payload.admin_national_id);
+    println!("   Admin Username: {:?}", payload.admin_username);
 
     // Connect to the tenant database
     let pool = match PgPoolOptions::new()
@@ -128,42 +128,21 @@ pub async fn provision_tenant(
         }
     };
 
-    // Encrypt national_id using App-Level AES-GCM
-    let encrypted_national_id = match field_encryption::encrypt(&payload.admin_national_id) {
-        Ok(enc) => enc,
-        Err(e) => {
-             eprintln!("❌ Encryption failed: {}", e);
-             let error = serde_json::json!({
-                 "success": false,
-                 "error": format!("Encryption failed: {}", e)
-             });
-             let _ = tx.rollback().await;
-             return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
-        }
-    };
-    
-    // Hash national_id for search/unique constraint
-    let national_id_hash = field_encryption::hash_for_search(&payload.admin_national_id);
-
-    // Generate username, default to "admin" or payload logic if updated
-    // For now, default to "admin" for initial provisional user.
-    let username = "admin".to_string();
+    // Use admin_username directly
+    let username = payload.admin_username.clone();
 
     // Insert admin user into the database
     // Use username for uniqueness check (unique index on username should exist)
     let user_id = match sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
         INSERT INTO users (username, national_id, national_id_hash, password_hash, first_name, last_name, user_type, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6)
         ON CONFLICT (username) DO UPDATE SET 
-            national_id = EXCLUDED.national_id,
             password_hash = EXCLUDED.password_hash
         RETURNING id
         "#
     )
     .bind(&username)
-    .bind(&encrypted_national_id)
-    .bind(&national_id_hash)
     .bind(&password_hash)
     .bind("ผู้ดูแลระบบ") // Default first name
     .bind(&payload.subdomain) // Use subdomain as last name initially
@@ -175,7 +154,7 @@ pub async fn provision_tenant(
         Ok(id) => {
             println!("✅ Admin user created successfully");
             println!("   User ID: {}", id);
-            println!("   National ID: {} (encrypted)", payload.admin_national_id);
+            println!("   Username: {}", username);
             id
         }
         Err(e) => {
