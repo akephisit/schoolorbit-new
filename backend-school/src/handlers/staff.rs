@@ -15,6 +15,7 @@ use axum::{
 use serde_json::json;
 use sqlx::FromRow;
 use uuid::Uuid;
+use chrono::Datelike;
 
 // Helper structs for query results
 #[derive(Debug, FromRow)]
@@ -672,155 +673,73 @@ pub async fn create_staff(
     // Hash national_id for search
     let national_id_hash = payload.national_id.as_deref().map(|s| field_encryption::hash_for_search(s));
 
-    // Check if user already exists (might be inactive)
-    let existing_user: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, status FROM users WHERE national_id_hash = $1"
-    )
-    .bind(&national_id_hash)
-    .fetch_optional(&mut *tx)
-    .await
-    .ok()
-    .flatten();
+    // Generate running number for staff code if not provided
+    // Pattern: T + Year(2) + Running(4) e.g., T670001
+    let username = if let Some(u) = &payload.username {
+         if !u.is_empty() { u.clone() } else { 
+             // Generate default
+             let thai_year = (chrono::Utc::now().year() + 543) % 100;
+             let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE user_type = 'staff'")
+                 .fetch_one(&pool).await.unwrap_or(0);
+             format!("T{}{:04}", thai_year, count + 1)
+         }
+    } else {
+         let thai_year = (chrono::Utc::now().year() + 543) % 100;
+         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE user_type = 'staff'")
+             .fetch_one(&pool).await.unwrap_or(0);
+         format!("T{}{:04}", thai_year, count + 1)
+    };
 
-    let user_id: Uuid = if let Some((existing_id, status)) = existing_user {
-        if status == "inactive" {
-            // Reactivate existing user
-            println!("♻️  Reactivating inactive user: {}", existing_id);
-            
-            // Clean up old relationships first
-            println!("🧹 Cleaning up old user_roles and department_members...");
-            
-            // Delete old user_roles
-            let _ = sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
-                .bind(existing_id)
-                .execute(&mut *tx)
-                .await;
-            
-            // Delete old department_members
-            let _ = sqlx::query("DELETE FROM department_members WHERE user_id = $1")
-                .bind(existing_id)
-                .execute(&mut *tx)
-                .await;
-            
-            // Delete old teaching_assignments if exists
-            let _ = sqlx::query("DELETE FROM teaching_assignments WHERE teacher_id = $1")
-                .bind(existing_id)
-                .execute(&mut *tx)
-                .await;
-            
-            // Update user info
-            match sqlx::query(
-                "UPDATE users SET 
-                    email = $1, password_hash = $2, title = $3, first_name = $4, last_name = $5, 
-                    nickname = $6, phone = $7, emergency_contact = $8, line_id = $9, 
-                    date_of_birth = $10, gender = $11, address = $12, hired_date = $13,
-                    status = 'active', updated_at = NOW()
-                WHERE id = $14"
-            )
-            .bind(&payload.email)
-            .bind(&password_hash)
-            .bind(&payload.title)
-            .bind(&payload.first_name)
-            .bind(&payload.last_name)
-            .bind(&payload.nickname)
-            .bind(&payload.phone)
-            .bind(&payload.emergency_contact)
-            .bind(&payload.line_id)
-            .bind(&payload.date_of_birth)
-            .bind(&payload.gender)
-            .bind(&payload.address)
-            .bind(&payload.hired_date)
-            .bind(existing_id)
-            .execute(&mut *tx)
-            .await
-            {
-                Ok(_) => {
-                    println!("✅ User reactivated and cleaned up successfully");
-                    existing_id
-                },
-                Err(e) => {
-                    eprintln!("❌ Failed to reactivate user: {}", e);
-                    let _ = tx.rollback().await;
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({
-                            "success": false,
-                            "error": "ไม่สามารถเปิดใช้งานบุคลากรได้"
-                        })),
-                    )
-                        .into_response();
-                }
-            }
-        } else {
-            // User exists and is active - duplicate!
+    // Check if user already exists (by username or national_id if provided)
+    // Simplified: Just insert, if fail let unique constraint handle it or check username specifically.
+    // For "Reactivation" logic, we might need to check if we want to support it still.
+    // Given the prompt "don't care about old data", we can probably simplify this.
+    // But let's try to keep it robust.
+
+    // Create new user
+    let user_id: Uuid = match sqlx::query_scalar(
+        "INSERT INTO users (
+            username, national_id, national_id_hash, email, password_hash, title, first_name, last_name, nickname,
+            phone, emergency_contact, line_id, date_of_birth, gender, address,
+            user_type, hired_date, status, profile_image_url
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'staff', $16, 'active', $17)
+        RETURNING id",
+    )
+    .bind(&username)
+    .bind(&encrypted_national_id)
+    .bind(&national_id_hash)
+    .bind(&payload.email)
+    .bind(&password_hash)
+    .bind(&payload.title)
+    .bind(&payload.first_name)
+    .bind(&payload.last_name)
+    .bind(&payload.nickname)
+    .bind(&payload.phone)
+    .bind(&payload.emergency_contact)
+    .bind(&payload.line_id)
+    .bind(&payload.date_of_birth)
+    .bind(&payload.gender)
+    .bind(&payload.address)
+    .bind(&payload.hired_date)
+    .bind(&payload.profile_image_url)
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("❌ Failed to create user: {}", e);
             let _ = tx.rollback().await;
             return (
-                StatusCode::CONFLICT,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
                     "success": false,
-                    "error": "เลขบัตรประชาชนนี้มีในระบบแล้ว"
+                    "error": "ไม่สามารถสร้างบุคลากรได้ (Username อาจซ้ำ)"
                 })),
             )
-                .into_response();
-        }
-    } else {
-        // Create new user
-        match sqlx::query_scalar(
-            "INSERT INTO users (
-                national_id, national_id_hash, email, password_hash, title, first_name, last_name, nickname,
-                phone, emergency_contact, line_id, date_of_birth, gender, address,
-                user_type, hired_date, status, profile_image_url
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'staff', $15, 'active', $16)
-            RETURNING id",
-        )
-        .bind(&encrypted_national_id)
-        .bind(&national_id_hash)
-        .bind(&payload.email)
-        .bind(&password_hash)
-        .bind(&payload.title)
-        .bind(&payload.first_name)
-        .bind(&payload.last_name)
-        .bind(&payload.nickname)
-        .bind(&payload.phone)
-        .bind(&payload.emergency_contact)
-        .bind(&payload.line_id)
-        .bind(&payload.date_of_birth)
-        .bind(&payload.gender)
-        .bind(&payload.address)
-        .bind(&payload.hired_date)
-        .bind(&payload.profile_image_url)
-        .fetch_one(&mut *tx)
-        .await
-        {
-            Ok(id) => id,
-            Err(e) => {
-                eprintln!("❌ Failed to create user: {}", e);
-                let _ = tx.rollback().await;
-                
-                // More detailed error message
-                let error_msg = if e.to_string().contains("unique constraint") {
-                    if e.to_string().contains("email") {
-                        "อีเมลนี้มีในระบบแล้ว"
-                    } else {
-                        "ข้อมูลซ้ำในระบบ กรุณาตรวจสอบข้อมูล"
-                    }
-                } else if e.to_string().contains("null value") {
-                    &format!("ข้อมูลบังคับกรอกไม่ครบ: {}", e)
-                } else {
-                    &format!("ไม่สามารถสร้างผู้ใช้งานได้: {}", e)
-                };
-                
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({
-                        "success": false,
-                        "error": error_msg
-                    })),
-                )
-                    .into_response();
-            }
+            .into_response();
         }
     };
+
 
 
     // Create staff info (if provided)

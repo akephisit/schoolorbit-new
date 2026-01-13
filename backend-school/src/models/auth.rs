@@ -8,6 +8,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct User {
     pub id: Uuid,
+    pub username: String, // Added field
     pub national_id: Option<String>,
     pub email: Option<String>,
     pub password_hash: String,
@@ -38,6 +39,7 @@ pub struct User {
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct LoginUser {
     pub id: Uuid,
+    pub username: String, // Added field
     pub password_hash: String,
     pub status: String,
     pub user_type: String,
@@ -52,7 +54,7 @@ pub struct LoginUser {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginRequest {
-    pub national_id: String,
+    pub username: String, // PROMOTED: login with username
     pub password: String,
     pub remember_me: Option<bool>,
 }
@@ -86,6 +88,7 @@ pub struct ChangePasswordRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UserResponse {
     pub id: Uuid,
+    pub username: String, // Added field
     pub national_id: Option<String>,
     pub email: Option<String>,
     pub first_name: String,
@@ -110,6 +113,7 @@ impl From<User> for UserResponse {
     fn from(user: User) -> Self {
         Self {
             id: user.id,
+            username: user.username,
             national_id: user.national_id,
             email: user.email,
             first_name: user.first_name,
@@ -131,6 +135,7 @@ impl From<User> for UserResponse {
 pub struct ProfileResponse {
     // Basic info (read-only)
     pub id: Uuid,
+    pub username: String, // Added field
     pub national_id: Option<String>,
     pub first_name: String,
     pub last_name: String,
@@ -161,6 +166,7 @@ impl From<User> for ProfileResponse {
     fn from(user: User) -> Self {
         Self {
             id: user.id,
+            username: user.username,
             national_id: user.national_id.clone(),
             first_name: user.first_name.clone(),
             last_name: user.last_name.clone(),
@@ -197,7 +203,7 @@ pub struct LoginResponse {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub sub: String,           // user_id
-    pub national_id: String,
+    pub username: String,      // Changed from national_id
     pub user_type: String,
     pub exp: i64,              // Expiry timestamp
     pub iat: i64,              // Issued at timestamp

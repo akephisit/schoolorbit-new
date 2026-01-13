@@ -27,19 +27,7 @@ pub async fn login(
         Err(response) => return response,
     };
 
-    println!("🔐 Login attempt for school: {}, national ID: {}", subdomain, payload.national_id);
-
-    // Validate national ID format
-    if payload.national_id.len() != 13 || !payload.national_id.chars().all(|c| c.is_ascii_digit()) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "success": false,
-                "error": "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก"
-            })),
-        )
-            .into_response();
-    }
+    println!("🔐 Login attempt for school: {}, username: {}", subdomain, payload.username);
 
     // Get school database URL from mapping
     let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
@@ -73,23 +61,15 @@ pub async fn login(
         }
     };
 
-    // Hash national_id for searching
-    let nid_hash = field_encryption::hash_for_search(&payload.national_id);
-
-    // Find user by hashed national_id
-    // Note: LoginUser struct doesn't need to change
+    // Find user by username
     let user = match sqlx::query_as::<_, LoginUser>(
         r#"
-        SELECT id, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
+        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
         FROM users
-        WHERE national_id_hash = $1 AND status = 'active'
+        WHERE username = $1 AND status = 'active'
         "#
     )
-    .bind(&nid_hash)
-
-// ... (skip unchanged lines manually if tool allows, but here we replace block)
-
-// (Skipping to UserResponse construction part - I'll do this in 2 chunks to be safe)
+    .bind(&payload.username)
     .fetch_optional(&pool)
     .await
     {
@@ -134,7 +114,7 @@ pub async fn login(
     // Generate JWT token
     let token = match JwtService::generate_token(
         &user.id.to_string(),
-        &payload.national_id, // Use from payload since LoginUser doesn't have national_id
+        &user.username,
         &user.user_type,
     ) {
         Ok(t) => t,
@@ -185,7 +165,8 @@ pub async fn login(
     // Create user response manually (LoginUser doesn't implement From)
     let user_response = UserResponse {
         id: user.id,
-        national_id: Some(payload.national_id.clone()),
+        username: user.username.clone(),
+        national_id: None, // Don't send national_id on login via username for privacy
         email: user.email.clone(),
         first_name: user.first_name.clone(),
         last_name: user.last_name.clone(),
@@ -195,7 +176,7 @@ pub async fn login(
         created_at: chrono::Utc::now(),
         primary_role_name,
         profile_image_url: get_file_url_from_string(&user.profile_image_url),
-        permissions: Some(permissions), // Always send array even if empty
+        permissions: Some(permissions),
     };
 
     // Set cookie (optional, based on remember_me)
@@ -303,6 +284,7 @@ pub async fn me(
     let mut user = match sqlx::query_as::<_, User>(
         "SELECT 
             id,
+            username,
             national_id,
             email,
             password_hash,
@@ -821,13 +803,19 @@ pub async fn change_password(
         }
     };
 
-    // Fetch user from database
-    let mut user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await
+    // Fetch user to verify password
+    let user = match sqlx::query_as::<_, LoginUser>(
+        r#"
+        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
+        FROM users
+        WHERE id = $1
+        "#
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await
     {
-        Ok(Some(user)) => user,
+        Ok(Some(u)) => u,
         Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
@@ -848,18 +836,13 @@ pub async fn change_password(
                 .into_response();
         }
     };
-    if let Some(ref nid) = user.national_id {
-        if let Ok(dec) = field_encryption::decrypt(nid) {
-            user.national_id = Some(dec);
-        }
-    }
 
     // Verify current password
     let is_valid = bcrypt::verify(&payload.current_password, &user.password_hash).unwrap_or(false);
 
     if !is_valid {
         return (
-            StatusCode::UNAUTHORIZED,
+            StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
                 "error": "รหัสผ่านปัจจุบันไม่ถูกต้อง"
             })),
@@ -869,48 +852,40 @@ pub async fn change_password(
 
     // Hash new password
     let new_password_hash = match bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST) {
-        Ok(hash) => hash,
+        Ok(h) => h,
         Err(e) => {
-            eprintln!("❌ Failed to hash password: {}", e);
+            eprintln!("❌ Password hashing failed: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
-                    "error": "ไม่สามารถเข้ารหัสรหัสผ่านได้"
+                    "error": "เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน"
                 })),
             )
                 .into_response();
         }
     };
 
-    // Update password in database
-    let result = sqlx::query(
-        "UPDATE users 
-         SET password_hash = $1,
-             updated_at = NOW()
-         WHERE id = $2"
-    )
-    .bind(&new_password_hash)
-    .bind(user_id)
-    .execute(&pool)
-    .await;
-
-    match result {
-        Ok(_) => {
-            (
-                StatusCode::OK,
-                Json(serde_json::json!({
-                    "success": true,
-                    "message": "เปลี่ยนรหัสผ่านสำเร็จ"
-                })),
-            )
-                .into_response()
-        }
+    // Update password
+    match sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
+        .bind(&new_password_hash)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+    {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "เปลี่ยนรหัสผ่านสำเร็จ"
+            })),
+        )
+            .into_response(),
         Err(e) => {
             eprintln!("❌ Failed to update password: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
-                    "error": "ไม่สามารถเปลี่ยนรหัสผ่านได้"
+                    "error": "เกิดข้อผิดพลาดในการบันทึกรหัสผ่านใหม่"
                 })),
             )
                 .into_response()

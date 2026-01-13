@@ -11,7 +11,7 @@
 
 	import { authStore } from '$lib/stores/auth';
 
-	let nationalId = $state('');
+	let username = $state('');
 	let password = $state('');
 	let rememberMe = $state(false);
 	let isLoading = $state(false);
@@ -47,16 +47,22 @@
 		isLoading = true;
 		errorMessage = '';
 
-		// Validate Thai national ID (13 digits)
-		if (!/^\d{13}$/.test(nationalId)) {
-			errorMessage = 'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลักเท่านั้น';
-			isLoading = false;
-			return;
-		}
+        // Username validation (if any specific rule is needed, add here).
+        // For now, just non-empty.
+        if (!username.trim()) {
+            errorMessage = 'กรุณากรอกชื่อผู้ใช้งาน';
+            isLoading = false;
+            return;
+        }
 
 		try {
+			// Note: authAPI.login needs to be updated to accept username instead of nationalId
+            // Assuming we will update valid `login` in $lib/api/auth as a next step.
+            // But here we construct the object that matches what backend expects if we use the same old function name 
+            // OR we update the type definition in the next step.
+            // Let's assume authAPI.login will change signature.
 			const user = await authAPI.login({
-				nationalId,
+				username, // Changed from nationalId
 				password,
 				rememberMe
 			});
@@ -83,18 +89,6 @@
 
 	function goBack() {
 		window.location.href = '/';
-	}
-
-	function formatNationalId(value: string) {
-		// Remove non-digits
-		const digits = value.replace(/\D/g, '');
-		// Limit to 13 digits
-		return digits.slice(0, 13);
-	}
-
-	function handleNationalIdInput(e: Event) {
-		const target = e.target as HTMLInputElement;
-		nationalId = formatNationalId(target.value);
 	}
 </script>
 
@@ -143,20 +137,18 @@
 
 				<!-- Login Form -->
 				<form onsubmit={handleSubmit} class="space-y-6">
-					<!-- National ID Input -->
+					<!-- Username Input -->
 					<div class="space-y-2">
-						<Label for="nationalId">เลขบัตรประชาชน</Label>
+						<Label for="username">ชื่อผู้ใช้งาน (Username)</Label>
 						<Input
 							type="text"
-							id="nationalId"
-							bind:value={nationalId}
-							oninput={handleNationalIdInput}
-							placeholder="1234567890123"
-							maxlength={13}
-							autocomplete="off"
+							id="username"
+							bind:value={username}
+							placeholder="e.g. T670001, S12345"
+							autocomplete="username"
 							required
 						/>
-						<p class="text-xs text-muted-foreground">กรอกเลขบัตรประชาชน 13 หลัก</p>
+						<p class="text-xs text-muted-foreground">กรอกชื่อผู้ใช้งานของคุณ</p>
 					</div>
 
 					<!-- Password Input -->

@@ -26,6 +26,7 @@ use crate::AppState;
 pub struct StudentProfile {
     // User fields
     pub id: Uuid,
+    pub username: String, // Add username
     pub national_id: Option<String>,
     pub email: Option<String>,
     pub first_name: String,
@@ -51,6 +52,7 @@ pub struct StudentProfile {
 #[derive(Debug, Serialize, FromRow)]
 pub struct StudentListItem {
     pub id: Uuid,
+    pub username: String, // Add username
     pub first_name: String,
     pub last_name: String,
     pub student_id: Option<String>,
@@ -72,7 +74,8 @@ pub struct UpdateOwnProfileRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateStudentRequest {
-    pub national_id: String,
+    pub national_id: Option<String>,
+    pub username: Option<String>, // Optional, will be generated if not provided
     pub email: Option<String>,
     pub password: String,
     pub first_name: String,
@@ -165,6 +168,7 @@ async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Us
     let mut user: User = match sqlx::query_as(
         "SELECT 
             id,
+            username,
             national_id,
             email,
             password_hash,
@@ -301,7 +305,7 @@ pub async fn get_own_profile(
     let mut student = match sqlx::query_as::<_, StudentProfile>(
         r#"
         SELECT 
-            u.id, u.national_id as national_id, u.email, u.first_name, u.last_name,
+            u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
             u.address, u.profile_image_url,
             s.student_id, s.grade_level, s.class_room, s.student_number,
@@ -501,7 +505,7 @@ pub async fn list_students(
     let mut query = String::from(
         r#"
         SELECT 
-            u.id, u.first_name, u.last_name,
+            u.id, u.username, u.first_name, u.last_name,
             s.student_id, s.grade_level, s.class_room,
             u.status
         FROM users u
@@ -522,8 +526,8 @@ pub async fn list_students(
     
     if let Some(ref search) = filter.search {
         conditions.push(format!(
-            "(u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%' OR s.student_id ILIKE '%{}%')",
-            search, search, search
+            "(u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%' OR s.student_id ILIKE '%{}%' OR u.username ILIKE '%{}%')",
+            search, search, search, search
         ));
     }
     
@@ -660,36 +664,52 @@ pub async fn create_student(
     };
     
     
-    // Encrypt national_id
-    let encrypted_national_id = match field_encryption::encrypt(&payload.national_id) {
-        Ok(enc) => enc,
-        Err(e) => {
-            eprintln!("❌ Encryption failed: {}", e);
-            let _ = tx.rollback().await;
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการประมวลผลข้อมูล"
-                })),
-            ).into_response();
+    // Encrypt national_id if provided
+    let (encrypted_national_id, national_id_hash) = if let Some(nid) = &payload.national_id {
+        if !nid.is_empty() {
+             let enc = match field_encryption::encrypt(nid) {
+                Ok(enc) => enc,
+                Err(e) => {
+                    eprintln!("❌ Encryption failed: {}", e);
+                    let _ = tx.rollback().await;
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "success": false,
+                            "error": "เกิดข้อผิดพลาดในการประมวลผลข้อมูล"
+                        })),
+                    ).into_response();
+                }
+            };
+            let hash = field_encryption::hash_for_search(nid);
+            (Some(enc), Some(hash))
+        } else {
+            (None, None)
         }
+    } else {
+        (None, None)
     };
     
-    // Hash national_id for search
-    let national_id_hash = field_encryption::hash_for_search(&payload.national_id);
+    // Determine Username
+    // Priority: Supplied Username > 'S' + Student ID > 'S' + Random
+    let username = if let Some(u) = &payload.username {
+         if !u.is_empty() { u.clone() } else { format!("S{}", payload.student_id) }
+    } else {
+         format!("S{}", payload.student_id)
+    };
 
     // 2. Create user
     let user_id: Uuid = match sqlx::query_scalar(
         r#"
         INSERT INTO users (
-            national_id, national_id_hash, email, password_hash,
+            username, national_id, national_id_hash, email, password_hash,
             first_name, last_name, title, 
             user_type, status, date_of_birth, gender
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'student', 'active', $8, $9)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'student', 'active', $9, $10)
         RETURNING id
         "#
     )
+    .bind(&username)
     .bind(&encrypted_national_id)
     .bind(&national_id_hash)
     .bind(&payload.email)
@@ -776,6 +796,7 @@ pub async fn create_student(
                 Json(json!({
                     "success": true,
                     "id": user_id,
+                    "username": username,
                     "message": "เพิ่มนักเรียนสำเร็จ"
                 })),
             ).into_response()
@@ -841,7 +862,7 @@ pub async fn get_student(
     let mut student = match sqlx::query_as::<_, StudentProfile>(
         r#"
         SELECT 
-            u.id, u.national_id as national_id, u.email, u.first_name, u.last_name,
+            u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
             u.address, u.profile_image_url,
             s.student_id, s.grade_level, s.class_room, s.student_number,

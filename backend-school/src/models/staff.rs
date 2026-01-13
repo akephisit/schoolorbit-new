@@ -380,6 +380,7 @@ pub struct StaffInfoResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateStaffRequest {
     // Basic User Info
+    pub username: Option<String>,
     pub national_id: Option<String>,
     pub email: Option<String>,
     pub password: String,

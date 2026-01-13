@@ -58,7 +58,8 @@ export interface ListStudentsResponse {
 }
 
 export interface CreateStudentRequest {
-	national_id: string;
+	username?: string;
+	national_id?: string;
 	email?: string;
 	password: string;
 	first_name: string;

@@ -3,6 +3,7 @@ import { setPermissions, clearPermissions } from './permissions';
 
 export interface User {
 	id: string;
+	username?: string;
 	nationalId?: string;
 	email?: string;
 	firstName: string;

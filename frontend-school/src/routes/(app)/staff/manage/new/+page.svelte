@@ -42,6 +42,7 @@
 	// Form data
 	let formData = $state({
 		// Step 1: Personal Information
+        username: '',
 		national_id: '',
 		email: '',
 		password: '',
@@ -116,12 +117,15 @@
 	function validateStep1(): boolean {
 		errors = {};
 
-		// Required: National ID (for login)
-		if (!formData.national_id) {
-			errors.national_id = 'กรุณากรอกเลขบัตรประชาชน';
-		} else if (!/^\d{13}$/.test(formData.national_id)) {
+		// Optional: National ID
+		if (formData.national_id && !/^\d{13}$/.test(formData.national_id)) {
 			errors.national_id = 'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก';
 		}
+        
+        // Optional: Username
+        // if (formData.username && formData.username.length < 3) {
+        //     errors.username = 'ชื่อผู้ใช้งานต้องมีอย่างน้อย 3 ตัวอักษร';
+        // }
 
 		// Required: Basic info
 		if (!formData.first_name) errors.first_name = 'กรุณากรอกชื่อ';
@@ -264,6 +268,7 @@
 
 			// Clean up payload - convert empty strings to undefined
 			const payload = {
+                username: payloadData.username || undefined,
 				national_id: payloadData.national_id || undefined,
 				email: payloadData.email || undefined,
 				password: payloadData.password,
@@ -416,14 +421,31 @@
 						<p class="text-xs text-muted-foreground mb-4">ข้อมูลนี้จะใช้สำหรับเข้าสู่ระบบ</p>
 
 						<div class="space-y-4">
+							<!-- Username Input -->
 							<div>
-								<Label class="mb-2">
-									เลขบัตรประชาชน <span class="text-destructive">*</span>
-								</Label>
+								<Label class="mb-2">ชื่อผู้ใช้งาน (Username)</Label>
+								<Input
+									type="text"
+									bind:value={formData.username}
+									placeholder="ใส่ชื่อผู้ใช้งาน (หากไม่ระบุระบบจะสร้างให้อัตโนมัติ)"
+									class="w-full px-3 py-2 border border-border rounded-md
+                                {errors.username ? 'border-destructive' : ''}"
+								/>
+								{#if errors.username}
+									<p class="text-xs text-destructive mt-1">{errors.username}</p>
+								{:else}
+									<p class="text-xs text-muted-foreground mt-1">
+										ชื่อผู้ใช้งานสำหรับเข้าสู่ระบบ (เว้นว่างได้เพื่อให้ระบบสร้างอัตโนมัติ)
+									</p>
+								{/if}
+							</div>
+
+							<div>
+								<Label class="mb-2">เลขบัตรประชาชน</Label>
 								<Input
 									type="text"
 									bind:value={formData.national_id}
-									placeholder="1234567890123"
+									placeholder="1234567890123 (ไม่บังคับ)"
 									maxlength={13}
 									class="w-full px-3 py-2 border border-border rounded-md
 								{errors.national_id ? 'border-destructive' : ''}"
@@ -432,7 +454,7 @@
 									<p class="text-xs text-destructive mt-1">{errors.national_id}</p>
 								{:else}
 									<p class="text-xs text-muted-foreground mt-1">
-										ใช้เลขบัตรประชาชนนี้ในการเข้าสู่ระบบ
+										เลขบัตรประชาชนสำหรับใช้ในระบบตรวจสอบสิทธิ์อื่นๆ (ถ้ามี)
 									</p>
 								{/if}
 							</div>

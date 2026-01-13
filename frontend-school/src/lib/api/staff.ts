@@ -88,6 +88,7 @@ export interface StaffProfileResponse {
 }
 
 export interface CreateStaffRequest {
+	username?: string;
 	national_id?: string;
 	email?: string;
 	password: string;

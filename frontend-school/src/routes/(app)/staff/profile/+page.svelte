@@ -56,6 +56,7 @@
 	// Read-only data - ข้อมูลที่แสดงผลเฉยๆ แก้ไม่ได้
 	let readOnlyData = $derived({
 		id: profile?.id || user?.id || '',
+        username: profile?.username || user?.username || '',
 		national_id: profile?.nationalId || user?.nationalId || '',
 		first_name: profile?.firstName || user?.firstName || '',
 		last_name: profile?.lastName || user?.lastName || '',
@@ -260,6 +261,12 @@
 				</CardHeader>
 				<CardContent class="space-y-4">
 					<div class="grid gap-4 md:grid-cols-2">
+						<!-- Username -->
+						<div class="space-y-2">
+							<Label>ชื่อผู้ใช้งาน (Username)</Label>
+							<Input value={readOnlyData.username || 'ไม่ระบุ'} disabled class="bg-muted" />
+						</div>
+
 						<!-- National ID -->
 						<div class="space-y-2">
 							<Label>เลขบัตรประชาชน</Label>

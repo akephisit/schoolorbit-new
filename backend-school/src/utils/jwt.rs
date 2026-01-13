@@ -12,7 +12,7 @@ impl JwtService {
     /// Generate JWT token from claims
     pub fn generate_token(
         user_id: &str,
-        national_id: &str,
+        username: &str,
         user_type: &str,
     ) -> Result<String, String> {
         let secret = env::var("JWT_SECRET").unwrap_or_else(|_| DEFAULT_JWT_SECRET.to_string());
@@ -22,7 +22,7 @@ impl JwtService {
 
         let claims = Claims {
             sub: user_id.to_string(),
-            national_id: national_id.to_string(),
+            username: username.to_string(),
             user_type: user_type.to_string(),
             exp,
             iat: now,

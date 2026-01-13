@@ -13,6 +13,7 @@
 
 	// Form data
 	let formData = $state({
+        username: '',
 		national_id: '',
 		email: '',
 		password: '',
@@ -34,10 +35,8 @@
 	function validateForm(): boolean {
 		errors = {};
 
-		// Required fields
-		if (!formData.national_id) {
-			errors.national_id = 'กรุณากรอกเลขบัตรประชาชน';
-		} else if (!/^\d{13}$/.test(formData.national_id)) {
+		// Optional fields check
+		if (formData.national_id && !/^\d{13}$/.test(formData.national_id)) {
 			errors.national_id = 'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก';
 		}
 
@@ -133,24 +132,43 @@
 			</div>
 
 			<div class="space-y-4">
+				<!-- Username Input -->
 				<div>
-					<Label for="national_id">
-						เลขบัตรประชาชน <span class="text-destructive">*</span>
-					</Label>
+					<Label for="username">ชื่อผู้ใช้งาน (Username)</Label>
+					<Input
+						id="username"
+						type="text"
+						bind:value={formData.username}
+						placeholder="ใส่ชื่อผู้ใช้งาน (หากไม่ระบุระบบจะสร้างให้อัตโนมัติ)"
+						class={errors.username ? 'border-destructive' : ''}
+						disabled={loading}
+					/>
+					{#if errors.username}
+						<p class="text-xs text-destructive mt-1">{errors.username}</p>
+					{:else}
+						<p class="text-xs text-muted-foreground mt-1">
+							ชื่อผู้ใช้งานสำหรับเข้าสู่ระบบ (เว้นว่างได้เพื่อให้ระบบสร้างอัตโนมัติ)
+						</p>
+					{/if}
+				</div>
+
+				<div>
+					<Label for="national_id">เลขบัตรประชาชน</Label>
 					<Input
 						id="national_id"
 						type="text"
 						bind:value={formData.national_id}
-						placeholder="1234567890123"
+						placeholder="1234567890123 (ไม่บังคับ)"
 						maxlength={13}
 						class={errors.national_id ? 'border-destructive' : ''}
 						disabled={loading}
-						required
 					/>
 					{#if errors.national_id}
 						<p class="text-xs text-destructive mt-1">{errors.national_id}</p>
 					{:else}
-						<p class="text-xs text-muted-foreground mt-1">ใช้เลขบัตรประชาชนนี้ในการเข้าสู่ระบบ</p>
+						<p class="text-xs text-muted-foreground mt-1">
+							เลขบัตรประชาชนสำหรับใช้ในระบบตรวจสอบสิทธิ์อื่นๆ (ถ้ามี)
+						</p>
 					{/if}
 				</div>
 

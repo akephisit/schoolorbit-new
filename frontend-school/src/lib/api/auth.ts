@@ -5,7 +5,7 @@ import { PUBLIC_BACKEND_URL } from '$env/static/public';
 const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 
 export interface LoginRequest {
-	nationalId: string;
+	username: string;
 	password: string;
 	rememberMe?: boolean;
 }
@@ -13,6 +13,7 @@ export interface LoginRequest {
 export interface ProfileResponse {
 	// Read-only fields
 	id: string;
+	username?: string;
 	nationalId?: string;
 	firstName: string;
 	lastName: string;

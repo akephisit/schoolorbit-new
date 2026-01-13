@@ -145,18 +145,23 @@ pub async fn provision_tenant(
     // Hash national_id for search/unique constraint
     let national_id_hash = field_encryption::hash_for_search(&payload.admin_national_id);
 
+    // Generate username, default to "admin" or payload logic if updated
+    // For now, default to "admin" for initial provisional user.
+    let username = "admin".to_string();
+
     // Insert admin user into the database
-    // Use national_id_hash for uniqueness check
+    // Use username for uniqueness check (unique index on username should exist)
     let user_id = match sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
-        INSERT INTO users (national_id, national_id_hash, password_hash, first_name, last_name, user_type, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (national_id_hash) DO UPDATE SET 
+        INSERT INTO users (username, national_id, national_id_hash, password_hash, first_name, last_name, user_type, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (username) DO UPDATE SET 
             national_id = EXCLUDED.national_id,
             password_hash = EXCLUDED.password_hash
         RETURNING id
         "#
     )
+    .bind(&username)
     .bind(&encrypted_national_id)
     .bind(&national_id_hash)
     .bind(&password_hash)
