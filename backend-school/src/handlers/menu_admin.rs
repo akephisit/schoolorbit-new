@@ -1,5 +1,5 @@
 use crate::models::menu::{MenuGroup, MenuItem};
-use crate::models::auth::User;
+use crate::modules::auth::models::User;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::jwt::JwtService;
 use crate::utils::field_encryption;

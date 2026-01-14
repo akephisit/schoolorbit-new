@@ -1,5 +1,5 @@
 /// Helper to decrypt User's encrypted fields after fetching from database
-use crate::models::auth::User;
+use crate::modules::auth::models::User;
 use crate::utils::field_encryption;
 
 pub trait DecryptUser {

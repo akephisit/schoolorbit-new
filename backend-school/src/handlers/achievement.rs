@@ -1,7 +1,7 @@
 use crate::db::school_mapping::get_school_database_url;
 use crate::models::achievement::*;
-use crate::models::auth::User;
-use crate::models::staff::UserPermissions;
+use crate::modules::auth::models::User;
+use crate::modules::auth::permissions::UserPermissions;
 use crate::permissions::registry::codes;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;

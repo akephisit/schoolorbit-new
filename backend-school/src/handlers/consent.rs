@@ -1,8 +1,8 @@
 use crate::db::school_mapping::get_school_database_url;
-use crate::models::auth::Claims;
+use crate::modules::auth::models::Claims;
 use crate::models::consent::{
-    BulkConsentRequest, ConsentRecord, ConsentRecordResponse, ConsentSummary, ConsentType,
-    ConsentTypeResponse, CreateConsentRequest, UserConsentStatus, WithdrawConsentRequest,
+    ConsentRecord, ConsentRecordResponse, ConsentSummary, ConsentType,
+    ConsentTypeResponse, CreateConsentRequest, UserConsentStatus,
 };
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;

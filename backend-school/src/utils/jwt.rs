@@ -1,4 +1,4 @@
-use crate::models::auth::Claims;
+use crate::modules::auth::models::Claims;
 use chrono::Utc;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use std::env;

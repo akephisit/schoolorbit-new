@@ -1,5 +1,5 @@
-use crate::models::auth::User;
-use crate::models::staff::UserPermissions;
+use crate::modules::auth::models::User;
+use crate::modules::auth::permissions::UserPermissions;
 use axum::{
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},

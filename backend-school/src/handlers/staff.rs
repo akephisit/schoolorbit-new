@@ -1,6 +1,6 @@
 use crate::db::school_mapping::get_school_database_url;
 use crate::models::staff::*;
-use crate::models::auth::User;
+use crate::modules::auth::models::User;
 
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
@@ -91,7 +91,7 @@ async fn check_user_permission(
     pool: &sqlx::PgPool,
     required_permission: &str,
 ) -> Result<User, Response> {
-    use crate::models::staff::UserPermissions;
+    use crate::modules::auth::permissions::UserPermissions;
     
     // Try to extract token from Authorization header first
     let auth_header = headers

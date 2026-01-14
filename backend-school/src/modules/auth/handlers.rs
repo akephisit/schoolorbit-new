@@ -1,5 +1,5 @@
 use crate::db::school_mapping::get_school_database_url;
-use crate::models::auth::{Claims, LoginRequest, LoginResponse, LoginUser, User, UserResponse, ProfileResponse, UpdateProfileRequest, ChangePasswordRequest};
+use super::models::{Claims, LoginRequest, LoginResponse, LoginUser, User, UserResponse, ProfileResponse, UpdateProfileRequest, ChangePasswordRequest};
 use crate::utils::jwt::JwtService;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
@@ -803,20 +803,30 @@ pub async fn change_password(
         }
     };
 
-    // Fetch user to verify password
-    let user = match sqlx::query_as::<_, LoginUser>(
-        r#"
-        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
-        FROM users
-        WHERE id = $1
-        "#
+    // Verify current password
+    // Get current password hash
+    let stored_hash: Option<String> = sqlx::query_scalar(
+        "SELECT password_hash FROM users WHERE id = $1"
     )
     .bind(user_id)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(u)) => u,
-        Ok(None) => {
+    .unwrap_or(None);
+
+    match stored_hash {
+        Some(hash) => {
+            // Verify
+            if !bcrypt::verify(&payload.current_password, &hash).unwrap_or(false) {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({
+                        "error": "รหัสผ่านปัจจุบันไม่ถูกต้อง"
+                    })),
+                )
+                    .into_response();
+            }
+        },
+        None => {
             return (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({
@@ -825,40 +835,16 @@ pub async fn change_password(
             )
                 .into_response();
         }
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // Verify current password
-    let is_valid = bcrypt::verify(&payload.current_password, &user.password_hash).unwrap_or(false);
-
-    if !is_valid {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "รหัสผ่านปัจจุบันไม่ถูกต้อง"
-            })),
-        )
-            .into_response();
     }
 
     // Hash new password
-    let new_password_hash = match bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST) {
+    let new_hash = match bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST) {
         Ok(h) => h,
-        Err(e) => {
-            eprintln!("❌ Password hashing failed: {}", e);
+        Err(_) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน"
+                    "error": "ไม่สามารถเปลี่ยนรหัสผ่านได้"
                 })),
             )
                 .into_response();
@@ -866,26 +852,28 @@ pub async fn change_password(
     };
 
     // Update password
-    match sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
-        .bind(&new_password_hash)
+    match sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
+        .bind(new_hash)
         .bind(user_id)
         .execute(&pool)
         .await
     {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "success": true,
-                "message": "เปลี่ยนรหัสผ่านสำเร็จ"
-            })),
-        )
-            .into_response(),
+        Ok(_) => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "success": true,
+                    "message": "เปลี่ยนรหัสผ่านสำเร็จ"
+                })),
+            )
+                .into_response()
+        },
         Err(e) => {
-            eprintln!("❌ Failed to update password: {}", e);
+            eprintln!("❌ Failed to change password: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาดในการบันทึกรหัสผ่านใหม่"
+                    "error": "มีบางอย่างผิดพลาด"
                 })),
             )
                 .into_response()

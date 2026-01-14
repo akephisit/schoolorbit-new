@@ -5,6 +5,7 @@ mod models;
 mod permissions;
 mod services;
 mod utils;
+mod modules;
 
 #[cfg(test)]
 mod test_helpers;
@@ -92,16 +93,16 @@ async fn main() {
         .route("/health", get(health_check))
         
         // Auth routes (public)
-        .route("/api/auth/login", post(handlers::auth::login))
-        .route("/api/auth/logout", post(handlers::auth::logout))
+        .route("/api/auth/login", post(modules::auth::handlers::login))
+        .route("/api/auth/logout", post(modules::auth::handlers::logout))
         
         // Protected auth routes
-        .route("/api/auth/me", get(handlers::auth::me)
+        .route("/api/auth/me", get(modules::auth::handlers::me)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/auth/me/profile", get(handlers::auth::get_profile)
-            .put(handlers::auth::update_profile)
+        .route("/api/auth/me/profile", get(modules::auth::handlers::get_profile)
+            .put(modules::auth::handlers::update_profile)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/auth/me/change-password", post(handlers::auth::change_password)
+        .route("/api/auth/me/change-password", post(modules::auth::handlers::change_password)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
         // Staff Management routes (protected)

@@ -12,8 +12,8 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::db::school_mapping::get_school_database_url;
-use crate::models::auth::User;
-use crate::models::staff::UserPermissions; // For has_permission method
+use crate::modules::auth::models::User;
+use crate::modules::auth::permissions::UserPermissions; // For has_permission method
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
 use crate::AppState;
