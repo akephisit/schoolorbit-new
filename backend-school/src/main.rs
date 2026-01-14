@@ -125,7 +125,23 @@ async fn main() {
             .delete(modules::achievement::handlers::delete_achievement)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
-        // Student Self-Service routes and Management routes are already done.
+        // Student Self-Service routes (protected)
+        .route("/api/student/profile", get(modules::students::handlers::get_own_profile)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/student/profile", axum::routing::put(modules::students::handlers::update_own_profile)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
+        // Student Management routes (protected - for admin/staff)
+        .route("/api/students", get(modules::students::handlers::list_students)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/students", post(modules::students::handlers::create_student)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/students/{id}", get(modules::students::handlers::get_student)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/students/{id}", axum::routing::put(modules::students::handlers::update_student)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/students/{id}", axum::routing::delete(modules::students::handlers::delete_student)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
         // Role Management routes (protected)
         .route("/api/roles", get(modules::staff::handlers::roles::list_roles)
