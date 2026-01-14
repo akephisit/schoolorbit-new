@@ -40,9 +40,7 @@ impl UserPermissions for User {
     
     async fn has_permission(&self, pool: &PgPool, permission: &str) -> Result<bool, sqlx::Error> {
         // Admin wildcard permission
-        if self.user_type == "admin" {
-            return Ok(true);
-        }
+
         
         let permissions = self.get_permissions(pool).await?;
         
