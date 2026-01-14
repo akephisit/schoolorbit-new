@@ -1,4 +1,4 @@
-use crate::models::menu::{MenuGroup, MenuItem};
+use crate::modules::menu::models::{MenuGroup, MenuItem};
 use crate::modules::auth::models::User;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::jwt::JwtService;

@@ -1,4 +1,4 @@
-use crate::models::provision::{ProvisionRequest, ProvisionResponse};
+use crate::modules::system::models::{ProvisionRequest, ProvisionResponse};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},

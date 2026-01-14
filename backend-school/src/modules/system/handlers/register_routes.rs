@@ -1,4 +1,4 @@
-use crate::models::menu::{RouteRegistration, RouteRegistrationResponse};
+use crate::modules::menu::models::{RouteRegistration, RouteRegistrationResponse};
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 

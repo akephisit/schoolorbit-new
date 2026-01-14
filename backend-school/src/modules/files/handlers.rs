@@ -11,11 +11,11 @@ use uuid::Uuid;
 
 use crate::{
     db::school_mapping::get_school_database_url,
-    models::file::{
+    modules::files::models::{
         DeleteFileResponse, File, FileListResponse, FileResponse, FileType,
         FileValidationConfig,
     },
-    modules::auth::models::{Claims, User},
+    modules::auth::models::Claims,
     services::r2_client::R2Client,
     utils::{
         file_hash::FileHasher, file_processor::ImageProcessor, file_url::FileUrlBuilder,

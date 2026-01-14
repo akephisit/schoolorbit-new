@@ -1,4 +1,4 @@
-use crate::models::staff::Role;
+use crate::modules::staff::models::Role;
 use crate::modules::auth::models::User;
 use sqlx::PgPool;
 

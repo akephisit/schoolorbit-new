@@ -1,2 +1,8 @@
 pub mod auth;
 pub mod students;
+pub mod staff;
+pub mod files;
+pub mod consent;
+pub mod achievement;
+pub mod menu;
+pub mod system;

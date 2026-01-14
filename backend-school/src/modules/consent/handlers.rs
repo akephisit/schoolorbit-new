@@ -1,6 +1,6 @@
 use crate::db::school_mapping::get_school_database_url;
 use crate::modules::auth::models::Claims;
-use crate::models::consent::{
+use crate::modules::consent::models::{
     ConsentRecord, ConsentRecordResponse, ConsentSummary, ConsentType,
     ConsentTypeResponse, CreateConsentRequest, UserConsentStatus,
 };

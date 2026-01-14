@@ -1,5 +1,5 @@
 use crate::db::school_mapping::get_school_database_url;
-use crate::models::achievement::*;
+use crate::modules::achievement::models::*;
 use crate::modules::auth::models::User;
 use crate::modules::auth::permissions::UserPermissions;
 use crate::permissions::registry::codes;

@@ -1,6 +1,6 @@
 use crate::db::school_mapping::get_school_database_url;
 use crate::middleware::permission::check_permission;
-use crate::models::staff::Permission;
+use crate::modules::staff::models::Permission;
 use crate::permissions::registry::codes;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;

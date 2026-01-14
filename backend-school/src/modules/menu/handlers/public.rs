@@ -1,5 +1,5 @@
 use crate::db::school_mapping::get_school_database_url;
-use crate::models::menu::*;
+use crate::modules::menu::models::*;
 use crate::modules::auth::models::User;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
