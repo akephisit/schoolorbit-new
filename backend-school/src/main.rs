@@ -312,11 +312,11 @@ async fn main() {
             #[derive(sqlx::FromRow)]
             struct SchoolInfo {
                 subdomain: String,
-                database_url: String,
+                db_connection_string: String,
             }
 
             let schools = match sqlx::query_as::<_, SchoolInfo>(
-                "SELECT subdomain, database_url FROM schools WHERE is_active = true"
+                "SELECT subdomain, db_connection_string FROM schools WHERE status = 'active' AND db_connection_string IS NOT NULL"
             )
             .fetch_all(&admin_pool)
             .await 
@@ -334,7 +334,7 @@ async fn main() {
                 tracing::info!("🧹 Cleaning school tenant: {}", school.subdomain);
                 
                 // 2. Get Connection Pool (Reuse existing logic)
-                match pool_manager.get_pool(&school.database_url, &school.subdomain).await {
+                match pool_manager.get_pool(&school.db_connection_string, &school.subdomain).await {
                     Ok(pool) => {
                         // 3. Run Cleaner Service
                         match services::cleaner::FileCleaner::new(pool).await {
