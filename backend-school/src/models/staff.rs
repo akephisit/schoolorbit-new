@@ -270,28 +270,7 @@ pub struct CreateStaffInfoRequest {
     pub teaching_license_expiry: Option<NaiveDate>,
 }
 
-// ===================================================================
-// Student Info (ข้อมูลเฉพาะนักเรียน)
-// ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct StudentInfo {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub student_id: String,
-    pub grade_level: Option<String>,
-    pub class_room: Option<String>,
-    pub student_number: Option<i32>,
-    pub parent_id: Option<Uuid>,
-    pub enrollment_date: Option<NaiveDate>,
-    pub expected_graduation_date: Option<NaiveDate>,
-    pub blood_type: Option<String>,
-    pub allergies: Option<String>,
-    pub medical_conditions: Option<String>,
-    pub metadata: serde_json::Value,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
 
 // ===================================================================
 // Response Models

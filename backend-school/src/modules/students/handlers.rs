@@ -1,114 +1,19 @@
-/// Student Management Handlers (Axum Framework)
-/// Provides APIs for student self-service and admin student management
 use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::db::school_mapping::get_school_database_url;
 use crate::modules::auth::models::User;
-use crate::modules::auth::permissions::UserPermissions; // For has_permission method
+use crate::modules::auth::permissions::UserPermissions;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
 use crate::AppState;
-
-// =========================================
-// Response Structures
-// =========================================
-
-#[derive(Debug, Serialize, Deserialize, FromRow)]
-pub struct StudentProfile {
-    // User fields
-    pub id: Uuid,
-    pub username: String, // Add username
-    pub national_id: Option<String>,
-    pub email: Option<String>,
-    pub first_name: String,
-    pub last_name: String,
-    pub title: Option<String>,
-    pub nickname: Option<String>,
-    pub phone: Option<String>,
-    pub date_of_birth: Option<chrono::NaiveDate>,
-    pub gender: Option<String>,
-    pub address: Option<String>,
-    pub profile_image_url: Option<String>,
-    
-    // Student info fields
-    pub student_id: Option<String>,
-    pub grade_level: Option<String>,
-    pub class_room: Option<String>,
-    pub student_number: Option<i32>,
-    pub blood_type: Option<String>,
-    pub allergies: Option<String>,
-    pub medical_conditions: Option<String>,
-}
-
-#[derive(Debug, Serialize, FromRow)]
-pub struct StudentListItem {
-    pub id: Uuid,
-    pub username: String, // Add username
-    pub first_name: String,
-    pub last_name: String,
-    pub student_id: Option<String>,
-    pub grade_level: Option<String>,
-    pub class_room: Option<String>,
-    pub status: String,
-}
-
-// =========================================
-// Request Structures
-// =========================================
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateOwnProfileRequest {
-    pub phone: Option<String>,
-    pub address: Option<String>,
-    pub nickname: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateStudentRequest {
-    pub national_id: Option<String>,
-    pub username: Option<String>, // Optional, will be generated if not provided
-    pub email: Option<String>,
-    pub password: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub title: Option<String>,
-    pub student_id: String,
-    pub grade_level: Option<String>,
-    pub class_room: Option<String>,
-    pub student_number: Option<i32>,
-    pub date_of_birth: Option<String>, // Changed from NaiveDate to String for flexible parsing
-    pub gender: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateStudentRequest {
-    pub email: Option<String>,
-    pub first_name: Option<String>,
-    pub last_name: Option<String>,
-    pub phone: Option<String>,
-    pub address: Option<String>,
-    pub grade_level: Option<String>,
-    pub class_room: Option<String>,
-    pub student_number: Option<i32>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ListStudentsQuery {
-    pub page: Option<i64>,
-    pub page_size: Option<i64>,
-    pub grade_level: Option<String>,
-    pub class_room: Option<String>,
-    pub search: Option<String>,
-}
+use super::models::{CreateStudentRequest, ListStudentsQuery, StudentListItem, StudentProfile, UpdateOwnProfileRequest, UpdateStudentRequest};
 
 // =========================================
 // Helper Functions
