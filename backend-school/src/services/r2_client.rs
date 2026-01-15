@@ -72,7 +72,7 @@ impl R2Client {
         let region_provider = RegionProviderChain::default_provider().or_else(region);
         
         // Build S3 config for R2
-        let aws_config = aws_config::from_env()
+        let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(region_provider)
             .credentials_provider(credentials)
             .load()
