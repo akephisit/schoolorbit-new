@@ -9,7 +9,7 @@ use crate::error::AppError;
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 use tower_cookies::{Cookie, Cookies};

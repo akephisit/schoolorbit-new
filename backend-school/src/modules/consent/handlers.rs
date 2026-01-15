@@ -6,10 +6,11 @@ use crate::modules::consent::models::{
 };
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
+use crate::error::AppError;
 use axum::{
     extract::{Path, Request, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 use uuid::Uuid;
@@ -23,39 +24,23 @@ use uuid::Uuid;
 pub async fn get_consent_types(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     // Get user_type from query params
     let user_type = headers
@@ -63,7 +48,7 @@ pub async fn get_consent_types(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("student");
 
-    let consent_types = match sqlx::query_as::<_, ConsentType>(
+    let consent_types = sqlx::query_as::<_, ConsentType>(
         "SELECT * FROM consent_types 
          WHERE is_active = true 
          AND $1 = ANY(applicable_user_types)
@@ -72,26 +57,17 @@ pub async fn get_consent_types(
     .bind(user_type)
     .fetch_all(&pool)
     .await
-    {
-        Ok(types) => types,
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
     let responses: Vec<ConsentTypeResponse> = consent_types
         .into_iter()
         .map(ConsentTypeResponse::from)
         .collect();
 
-    (StatusCode::OK, Json(responses)).into_response()
+    Ok((StatusCode::OK, Json(responses)))
 }
 
 // ===================================================================
@@ -104,87 +80,43 @@ pub async fn get_my_consent_status(
     State(state): State<AppState>,
     headers: HeaderMap,
     req: Request,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let claims = match req.extensions().get::<Claims>() {
-        Some(c) => c.clone(),
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": "ไม่พบข้อมูลผู้ใช้"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let claims = req.extensions().get::<Claims>()
+        .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
+        .clone();
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "Invalid user ID"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
 
     // Get user type
-    let user_type: String = match sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
+    let user_type: String = sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(&pool)
         .await
-    {
-        Ok(ut) => ut,
-        Err(e) => {
+        .map_err(|e| {
             eprintln!("❌ Failed to get user type: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     // Get required consent types for this user type
-    let required_types = match sqlx::query_as::<_, ConsentType>(
+    let required_types = sqlx::query_as::<_, ConsentType>(
         "SELECT * FROM consent_types 
          WHERE is_required = true 
          AND is_active = true
@@ -193,22 +125,13 @@ pub async fn get_my_consent_status(
     .bind(&user_type)
     .fetch_all(&pool)
     .await
-    {
-        Ok(types) => types,
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
     // Get user's consents
-    let consents = match sqlx::query_as::<_, ConsentRecord>(
+    let consents = sqlx::query_as::<_, ConsentRecord>(
         "SELECT * FROM consent_records 
          WHERE user_id = $1 
          ORDER BY created_at DESC",
@@ -216,19 +139,10 @@ pub async fn get_my_consent_status(
     .bind(user_id)
     .fetch_all(&pool)
     .await
-    {
-        Ok(records) => records,
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
     // Convert to response format
     let consent_responses: Vec<ConsentRecordResponse> = consents
@@ -286,7 +200,7 @@ pub async fn get_my_consent_status(
         consents: consent_responses,
     };
 
-    (StatusCode::OK, Json(status)).into_response()
+    Ok((StatusCode::OK, Json(status)))
 }
 
 /// Give consent (single or bulk)
@@ -295,144 +209,67 @@ pub async fn create_consent(
     State(state): State<AppState>,
     headers: HeaderMap,
     req: Request,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let claims = match req.extensions().get::<Claims>() {
-        Some(c) => c.clone(),
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": "ไม่พบข้อมูลผู้ใช้"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let claims = req.extensions().get::<Claims>()
+        .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
+        .clone();
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "Invalid user ID"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
 
     // Extract request body
-    let (mut parts, body) = req.into_parts();
-    let bytes = match axum::body::to_bytes(body, usize::MAX).await {
-        Ok(b) => b,
-        Err(e) => {
+    let (parts, body) = req.into_parts();
+    let bytes = axum::body::to_bytes(body, usize::MAX).await
+        .map_err(|e| {
             eprintln!("❌ Failed to read request body: {}", e);
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "Invalid request body"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::BadRequest("Invalid request body".to_string())
+        })?;
 
-    let payload: CreateConsentRequest = match serde_json::from_slice(&bytes) {
-        Ok(p) => p,
-        Err(e) => {
+    let payload: CreateConsentRequest = serde_json::from_slice(&bytes)
+        .map_err(|e| {
             eprintln!("❌ Failed to parse request: {}", e);
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "Invalid request format"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::BadRequest("Invalid request format".to_string())
+        })?;
 
     // Get user type
-    let user_type: String = match sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
+    let user_type: String = sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(&pool)
         .await
-    {
-        Ok(ut) => ut,
-        Err(e) => {
+        .map_err(|e| {
             eprintln!("❌ Failed to get user type: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     // Get consent type details
-    let consent_type_data = match sqlx::query_as::<_, ConsentType>(
+    let consent_type_data = sqlx::query_as::<_, ConsentType>(
         "SELECT * FROM consent_types WHERE code = $1 AND is_active = true",
     )
     .bind(&payload.consent_type)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(ct)) => ct,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบประเภทความยินยอมนี้"
-                })),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?
+    .ok_or(AppError::NotFound("ไม่พบประเภทความยินยอมนี้".to_string()))?;
 
     // Calculate expiration date
     let expires_at = consent_type_data.default_duration_days.map(|days| {
@@ -458,7 +295,7 @@ pub async fn create_consent(
         None
     };
 
-    let consent_id = match sqlx::query_scalar::<_, Uuid>(
+    let consent_id = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO consent_records (
             user_id, user_type, consent_type, purpose, data_categories,
             consent_status, granted_at, expires_at, consent_method,
@@ -485,29 +322,19 @@ pub async fn create_consent(
     .bind(&payload.parent_relationship)
     .fetch_one(&pool)
     .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            eprintln!("❌ Failed to create consent: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "ไม่สามารถบันทึกความยินยอมได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Failed to create consent: {}", e);
+        AppError::InternalServerError("ไม่สามารถบันทึกความยินยอมได้".to_string())
+    })?;
 
-    (
+    Ok((
         StatusCode::CREATED,
         Json(serde_json::json!({
             "success": true,
             "message": "บันทึกความยินยอมสำเร็จ",
             "consent_id": consent_id
         })),
-    )
-        .into_response()
+    ))
 }
 
 /// Withdraw consent
@@ -517,124 +344,60 @@ pub async fn withdraw_consent(
     headers: HeaderMap,
     Path(consent_id): Path<Uuid>,
     req: Request,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let claims = match req.extensions().get::<Claims>() {
-        Some(c) => c.clone(),
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": "ไม่พบข้อมูลผู้ใช้"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let claims = req.extensions().get::<Claims>()
+        .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
+        .clone();
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+             AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "Invalid user ID"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
 
     // Check if consent belongs to user
-    let consent = match sqlx::query_as::<_, ConsentRecord>(
+    let consent = sqlx::query_as::<_, ConsentRecord>(
         "SELECT * FROM consent_records WHERE id = $1 AND user_id = $2",
     )
     .bind(consent_id)
     .bind(user_id)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(c)) => c,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบความยินยอมนี้"
-                })),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?
+    .ok_or(AppError::NotFound("ไม่พบความยินยอมนี้".to_string()))?;
 
     // Check if it's a required consent
-    let is_required: bool = match sqlx::query_scalar(
+    let is_required: bool = sqlx::query_scalar(
         "SELECT is_required FROM consent_types WHERE code = $1",
     )
     .bind(&consent.consent_type)
     .fetch_one(&pool)
     .await
-    {
-        Ok(req) => req,
-        Err(e) => {
-            eprintln!("❌ Failed to check consent type: {}", e);
-            false
-        }
-    };
+    .unwrap_or(false);
 
     if is_required {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "ไม่สามารถถอนความยินยอมที่จำเป็นได้"
-            })),
-        )
-            .into_response();
+        return Err(AppError::BadRequest("ไม่สามารถถอนความยินยอมที่จำเป็นได้".to_string()));
     }
 
     // Withdraw consent
-    match sqlx::query(
+    sqlx::query(
         "UPDATE consent_records 
          SET consent_status = 'withdrawn', withdrawn_at = NOW(), updated_at = NOW()
          WHERE id = $1",
@@ -642,28 +405,18 @@ pub async fn withdraw_consent(
     .bind(consent_id)
     .execute(&pool)
     .await
-    {
-        Ok(_) => {
-            (
-                StatusCode::OK,
-                Json(serde_json::json!({
-                    "success": true,
-                    "message": "ถอนความยินยอมสำเร็จ"
-                })),
-            )
-                .into_response()
-        }
-        Err(e) => {
-            eprintln!("❌ Failed to withdraw consent: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "ไม่สามารถถอนความยินยอมได้"
-                })),
-            )
-                .into_response()
-        }
-    }
+    .map_err(|e| {
+        eprintln!("❌ Failed to withdraw consent: {}", e);
+        AppError::InternalServerError("ไม่สามารถถอนความยินยอมได้".to_string())
+    })?;
+
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "message": "ถอนความยินยอมสำเร็จ"
+        })),
+    ))
 }
 
 /// Get consent summary (Admin only)
@@ -671,39 +424,23 @@ pub async fn withdraw_consent(
 pub async fn get_consent_summary(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     // Get statistics
     let total_users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE status = 'active'")
@@ -759,5 +496,5 @@ pub async fn get_consent_summary(
         compliance_rate,
     };
 
-    (StatusCode::OK, Json(summary)).into_response()
+    Ok((StatusCode::OK, Json(summary)))
 }

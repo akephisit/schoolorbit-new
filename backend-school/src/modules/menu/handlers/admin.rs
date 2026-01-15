@@ -4,11 +4,12 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::jwt::JwtService;
 use crate::utils::field_encryption;
 use crate::AppState;
+use crate::error::AppError;
 
 use axum::{
     extract::{State, Path, Query},
     http::{StatusCode, HeaderMap},
-    response::{Response, IntoResponse, Json as JsonResponse},
+    response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -112,32 +113,25 @@ pub struct MenuItemResponse {
 pub async fn list_menu_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Response {
-    let (pool, _) = match get_pool_and_authenticate(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _) = get_pool_and_authenticate(&state, &headers).await?;
 
-    let groups = match sqlx::query_as::<_, MenuGroup>(
+    let groups = sqlx::query_as::<_, MenuGroup>(
         "SELECT id, code, name, name_en, icon, display_order, is_active
          FROM menu_groups
          ORDER BY display_order, name"
     )
     .fetch_all(&pool)
     .await
-    {
-        Ok(g) => g,
-        Err(e) => return internal_error_response(&format!("Failed to fetch menu groups: {}", e)),
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu groups: {}", e)))?;
 
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(MenuGroupListResponse {
             success: true,
             data: groups,
         })
-    )
-        .into_response()
+    ))
 }
 
 /// Create menu group (any authenticated user can create groups)
@@ -145,13 +139,10 @@ pub async fn create_menu_group(
     State(state): State<AppState>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<CreateMenuGroupRequest>,
-) -> Response {
-    let (pool, _) = match get_pool_and_authenticate(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _) = get_pool_and_authenticate(&state, &headers).await?;
 
-    let group = match sqlx::query_as::<_, MenuGroup>(
+    let group = sqlx::query_as::<_, MenuGroup>(
         "INSERT INTO menu_groups (code, name, name_en, description, icon, display_order)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, code, name, name_en, icon, display_order, is_active"
@@ -164,20 +155,16 @@ pub async fn create_menu_group(
     .bind(data.display_order.unwrap_or(0))
     .fetch_one(&pool)
     .await
-    {
-        Ok(g) => g,
-        Err(e) => return internal_error_response(&format!("Failed to create menu group: {}", e)),
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Failed to create menu group: {}", e)))?;
 
-    (
+    Ok((
         StatusCode::CREATED,
         JsonResponse(MenuGroupResponse {
             success: true,
             data: Some(group),
             message: Some("Menu group created successfully".to_string()),
         })
-    )
-        .into_response()
+    ))
 }
 
 /// Update menu group
@@ -186,11 +173,8 @@ pub async fn update_menu_group(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<UpdateMenuGroupRequest>,
-) -> Response {
-    let (pool, _) = match get_pool_and_authenticate(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _) = get_pool_and_authenticate(&state, &headers).await?;
 
     // Build dynamic update
     let mut updates = vec!["updated_at = NOW()".to_string()];
@@ -203,6 +187,10 @@ pub async fn update_menu_group(
     if data.name_en.is_some() {
         bind_count += 1;
         updates.push(format!("name_en = ${}", bind_count));
+    }
+    if data.description.is_some() {
+        bind_count += 1;
+        updates.push(format!("description = ${}", bind_count));
     }
     if data.icon.is_some() {
         bind_count += 1;
@@ -231,6 +219,9 @@ pub async fn update_menu_group(
     if let Some(name_en) = &data.name_en {
         query_builder = query_builder.bind(name_en);
     }
+    if let Some(desc) = &data.description {
+        query_builder = query_builder.bind(desc);
+    }
     if let Some(icon) = &data.icon {
         query_builder = query_builder.bind(icon);
     }
@@ -241,21 +232,18 @@ pub async fn update_menu_group(
         query_builder = query_builder.bind(active);
     }
 
-    let group = match query_builder.fetch_optional(&pool).await {
-        Ok(Some(g)) => g,
-        Ok(None) => return not_found_response("Menu group not found"),
-        Err(e) => return internal_error_response(&format!("Failed to update menu group: {}", e)),
-    };
+    let group = query_builder.fetch_optional(&pool).await
+        .map_err(|e| AppError::InternalServerError(format!("Failed to update menu group: {}", e)))?
+        .ok_or(AppError::NotFound("Menu group not found".to_string()))?;
 
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(MenuGroupResponse {
             success: true,
             data: Some(group),
             message: Some("Menu group updated successfully".to_string()),
         })
-    )
-        .into_response()
+    ))
 }
 
 /// Delete menu group (moves items to "other" group)
@@ -263,53 +251,34 @@ pub async fn delete_menu_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-) -> Response {
-    let (pool, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _) = get_pool_and_check_module(&state, &headers, "settings").await?;
 
     // Get the group being deleted
-    let group = match sqlx::query_as::<_, MenuGroup>(
+    let group = sqlx::query_as::<_, MenuGroup>(
         "SELECT id, code, name, name_en, description, icon, display_order, is_active FROM menu_groups WHERE id = $1"
     )
     .bind(id)
-    .fetch_one(&pool)
+    .fetch_optional(&pool)
     .await
-    {
-        Ok(g) => g,
-        Err(_) => return not_found_response("Group not found"),
-    };
+    .map_err(|_| AppError::NotFound("Group not found".to_string()))?
+    .ok_or(AppError::NotFound("Group not found".to_string()))?;
 
     // Prevent deletion of "other" group
     if group.code == "other" {
-        return (
-            StatusCode::BAD_REQUEST,
-            JsonResponse(serde_json::json!({
-                "success": false,
-                "error": "Cannot delete 'other' group - it serves as fallback for orphaned items"
-            }))
-        ).into_response();
+        return Err(AppError::BadRequest("Cannot delete 'other' group - it serves as fallback for orphaned items".to_string()));
     }
 
     // Get "other" group ID
-    let other_group = match sqlx::query_as::<_, MenuGroup>(
+    let other_group = sqlx::query_as::<_, MenuGroup>(
         "SELECT id, code, name, name_en, description, icon, display_order, is_active FROM menu_groups WHERE code = 'other'"
     )
     .fetch_one(&pool)
     .await
-    {
-        Ok(g) => g,
-        Err(_) => {
-            return internal_error_response("'other' group not found in database");
-        }
-    };
+    .map_err(|_| AppError::InternalServerError("'other' group not found in database".to_string()))?;
 
     // Begin transaction
-    let mut tx = match pool.begin().await {
-        Ok(t) => t,
-        Err(e) => return internal_error_response(&format!("Transaction failed: {}", e)),
-    };
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
 
     // Move all menu items to "other" group
     let move_result = sqlx::query(
@@ -324,7 +293,7 @@ pub async fn delete_menu_group(
         Ok(result) => result.rows_affected(),
         Err(e) => {
             let _ = tx.rollback().await;
-            return internal_error_response(&format!("Failed to move items: {}", e));
+            return Err(AppError::InternalServerError(format!("Failed to move items: {}", e)));
         }
     };
 
@@ -339,21 +308,21 @@ pub async fn delete_menu_group(
     match delete_result {
         Ok(_) => {
             if let Err(e) = tx.commit().await {
-                return internal_error_response(&format!("Failed to commit: {}", e));
+                return Err(AppError::InternalServerError(format!("Failed to commit: {}", e)));
             }
 
-            (
+            Ok((
                 StatusCode::OK,
                 JsonResponse(serde_json::json!({
                     "success": true,
                     "message": format!("Deleted group and moved {} items to 'other'", moved_count),
                     "moved_count": moved_count
                 }))
-            ).into_response()
+            ))
         }
         Err(e) => {
             let _ = tx.rollback().await;
-            internal_error_response(&format!("Failed to delete group: {}", e))
+            Err(AppError::InternalServerError(format!("Failed to delete group: {}", e)))
         }
     }
 }
@@ -365,11 +334,8 @@ pub async fn list_menu_items(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(filter): Query<MenuItemFilter>,
-) -> Response {
-    let (pool, _, permissions) = match get_pool_and_authenticate_with_perms(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _, permissions) = get_pool_and_authenticate_with_perms(&state, &headers).await?;
 
     // Fetch all or filtered items
     let all_items = if let Some(group_id) = filter.group_id {
@@ -394,10 +360,7 @@ pub async fn list_menu_items(
         .await
     };
 
-    let all_items = match all_items {
-        Ok(i) => i,
-        Err(e) => return internal_error_response(&format!("Failed to fetch menu items: {}", e)),
-    };
+    let all_items = all_items.map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu items: {}", e)))?;
 
     // Filter by module permission
     let items: Vec<MenuItem> = all_items
@@ -411,14 +374,13 @@ pub async fn list_menu_items(
         })
         .collect();
 
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(MenuItemListResponse {
             success: true,
             data: items,
         })
-    )
-        .into_response()
+    ))
 }
 
 /// Create menu item (requires module permission)
@@ -426,63 +388,24 @@ pub async fn create_menu_item(
     State(state): State<AppState>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<CreateMenuItemRequest>,
-) -> Response {
+) -> Result<impl IntoResponse, AppError> {
     // Check module permission if required_permission is set
-    if let Some(ref module) = data.required_permission {
-        let (pool, _) = match get_pool_and_check_module(&state, &headers, module).await {
-            Ok(result) => result,
-            Err(response) => return response,
-        };
-
-        let item = match sqlx::query_as::<_, MenuItem>(
-            "INSERT INTO menu_items 
-             (code, name, name_en, description, path, icon, group_id, parent_id, 
-              required_permission, display_order)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-             RETURNING id, code, name, name_en, path, icon, required_permission, 
-                       group_id, parent_id, display_order, is_active"
-        )
-        .bind(&data.code)
-        .bind(&data.name)
-        .bind(&data.name_en)
-        .bind(&data.description)
-        .bind(&data.path)
-        .bind(&data.icon)
-        .bind(data.group_id)
-        .bind(data.parent_id)
-        .bind(&data.required_permission)
-        .bind(data.display_order.unwrap_or(0))
-        .fetch_one(&pool)
-        .await
-        {
-            Ok(i) => i,
-            Err(e) => return internal_error_response(&format!("Failed to create menu item: {}", e)),
-        };
-
-        return (
-            StatusCode::CREATED,
-            JsonResponse(MenuItemResponse {
-                success: true,
-                data: Some(item),
-                message: Some("Menu item created successfully".to_string()),
-            })
-        )
-            .into_response();
-    }
-
-    // No permission required - just authenticate
-    let (pool, _) = match get_pool_and_authenticate(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
+    let pool = if let Some(ref module) = data.required_permission {
+        let (pool, _) = get_pool_and_check_module(&state, &headers, module).await?;
+        pool
+    } else {
+        // No permission required - just authenticate
+        let (pool, _) = get_pool_and_authenticate(&state, &headers).await?;
+        pool
     };
 
-    let item = match sqlx::query_as::<_, MenuItem>(
+    let item = sqlx::query_as::<_, MenuItem>(
         "INSERT INTO menu_items 
-         (code, name, name_en, description, path, icon, group_id, parent_id, 
-          required_permission, display_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         RETURNING id, code, name, name_en, path, icon, required_permission, 
-                   group_id, parent_id, display_order, is_active"
+            (code, name, name_en, description, path, icon, group_id, parent_id, 
+            required_permission, display_order)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id, code, name, name_en, path, icon, required_permission, 
+                    group_id, parent_id, display_order, is_active"
     )
     .bind(&data.code)
     .bind(&data.name)
@@ -496,20 +419,16 @@ pub async fn create_menu_item(
     .bind(data.display_order.unwrap_or(0))
     .fetch_one(&pool)
     .await
-    {
-        Ok(i) => i,
-        Err(e) => return internal_error_response(&format!("Failed to create menu item: {}", e)),
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Failed to create menu item: {}", e)))?;
 
-    (
+    Ok((
         StatusCode::CREATED,
         JsonResponse(MenuItemResponse {
             success: true,
             data: Some(item),
             message: Some("Menu item created successfully".to_string()),
         })
-    )
-        .into_response()
+    ))
 }
 
 /// Update menu item (requires module permission for existing item)
@@ -518,14 +437,11 @@ pub async fn update_menu_item(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<UpdateMenuItemRequest>,
-) -> Response {
-    let (pool, _, permissions) = match get_pool_and_authenticate_with_perms(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _, permissions) = get_pool_and_authenticate_with_perms(&state, &headers).await?;
 
     // First, fetch existing item to check its module
-    let existing_item = match sqlx::query_as::<_, MenuItem>(
+    let existing_item = sqlx::query_as::<_, MenuItem>(
         "SELECT id, code, name, name_en, path, icon, required_permission, user_type, 
                 group_id, parent_id, display_order, is_active
          FROM menu_items WHERE id = $1"
@@ -533,16 +449,13 @@ pub async fn update_menu_item(
     .bind(id)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(item)) => item,
-        Ok(None) => return not_found_response("Menu item not found"),
-        Err(e) => return internal_error_response(&format!("Database error: {}", e)),
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
+    .ok_or(AppError::NotFound("Menu item not found".to_string()))?;
 
     // Check module permission for existing item
     if let Some(ref module) = existing_item.required_permission {
         if !has_module_permission(&permissions, module) {
-            return forbidden_response(&format!("No permission for module '{}'", module));
+            return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
         }
     }
 
@@ -554,9 +467,29 @@ pub async fn update_menu_item(
         bind_count += 1;
         updates.push(format!("name = ${}", bind_count));
     }
+    if data.name_en.is_some() {
+        bind_count += 1;
+        updates.push(format!("name_en = ${}", bind_count));
+    }
+    if data.description.is_some() {
+        bind_count += 1;
+        updates.push(format!("description = ${}", bind_count));
+    }
     if data.path.is_some() {
         bind_count += 1;
         updates.push(format!("path = ${}", bind_count));
+    }
+    if data.icon.is_some() {
+        bind_count += 1;
+        updates.push(format!("icon = ${}", bind_count));
+    }
+    if data.group_id.is_some() {
+        bind_count += 1;
+        updates.push(format!("group_id = ${}", bind_count));
+    }
+    if data.parent_id.is_some() {
+        bind_count += 1;
+        updates.push(format!("parent_id = ${}", bind_count));
     }
     if data.required_permission.is_some() {
         bind_count += 1;
@@ -583,8 +516,23 @@ pub async fn update_menu_item(
     if let Some(name) = &data.name {
         query_builder = query_builder.bind(name);
     }
+    if let Some(name_en) = &data.name_en {
+        query_builder = query_builder.bind(name_en);
+    }
+    if let Some(desc) = &data.description {
+        query_builder = query_builder.bind(desc);
+    }
     if let Some(path) = &data.path {
         query_builder = query_builder.bind(path);
+    }
+    if let Some(icon) = &data.icon {
+        query_builder = query_builder.bind(icon);
+    }
+    if let Some(group_id) = data.group_id {
+        query_builder = query_builder.bind(group_id);
+    }
+    if let Some(parent_id) = data.parent_id {
+        query_builder = query_builder.bind(parent_id);
     }
     if let Some(perm) = &data.required_permission {
         query_builder = query_builder.bind(perm);
@@ -596,21 +544,18 @@ pub async fn update_menu_item(
         query_builder = query_builder.bind(active);
     }
 
-    let item = match query_builder.fetch_optional(&pool).await {
-        Ok(Some(i)) => i,
-        Ok(None) => return not_found_response("Menu item not found"),
-        Err(e) => return internal_error_response(&format!("Failed to update menu item: {}", e)),
-    };
+    let item = query_builder.fetch_optional(&pool).await
+        .map_err(|e| AppError::InternalServerError(format!("Failed to update menu item: {}", e)))?
+        .ok_or(AppError::NotFound("Menu item not found".to_string()))?;
 
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(MenuItemResponse {
             success: true,
             data: Some(item),
             message: Some("Menu item updated successfully".to_string()),
         })
-    )
-        .into_response()
+    ))
 }
 
 /// Delete menu item (requires module permission)
@@ -618,14 +563,11 @@ pub async fn delete_menu_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-) -> Response {
-    let (pool, _, permissions) = match get_pool_and_authenticate_with_perms(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _, permissions) = get_pool_and_authenticate_with_perms(&state, &headers).await?;
 
     // First, fetch the item to check its module
-    let existing_item = match sqlx::query_as::<_, MenuItem>(
+    let existing_item = sqlx::query_as::<_, MenuItem>(
         "SELECT id, code, name, name_en, path, icon, required_permission, user_type, 
                 group_id, parent_id, display_order, is_active
          FROM menu_items WHERE id = $1"
@@ -633,39 +575,33 @@ pub async fn delete_menu_item(
     .bind(id)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(item)) => item,
-        Ok(None) => return not_found_response("Menu item not found"),
-        Err(e) => return internal_error_response(&format!("Database error: {}", e)),
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
+    .ok_or(AppError::NotFound("Menu item not found".to_string()))?;
 
     // Check module permission
     if let Some(ref module) = existing_item.required_permission {
         if !has_module_permission(&permissions, module) {
-            return forbidden_response(&format!("No permission for module '{}'", module));
+            return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
         }
     }
 
-    match sqlx::query("DELETE FROM menu_items WHERE id = $1")
+    let result = sqlx::query("DELETE FROM menu_items WHERE id = $1")
         .bind(id)
         .execute(&pool)
         .await
-    {
-        Ok(result) if result.rows_affected() == 0 => {
-            return not_found_response("Menu item not found");
-        }
-        Ok(_) => {}
-        Err(e) => return internal_error_response(&format!("Failed to delete menu item: {}", e)),
+        .map_err(|e| AppError::InternalServerError(format!("Failed to delete menu item: {}", e)))?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Menu item not found".to_string()));
     }
 
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(serde_json::json!({
             "success": true,
             "message": "Menu item deleted successfully"
         }))
-    )
-        .into_response()
+    ))
 }
 
 /// Reorder menu items (requires module permission for each item)
@@ -673,11 +609,8 @@ pub async fn reorder_menu_items(
     State(state): State<AppState>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<ReorderRequest>,
-) -> Response {
-    let (pool, _, permissions) = match get_pool_and_authenticate_with_perms(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _, permissions) = get_pool_and_authenticate_with_perms(&state, &headers).await?;
 
     // Update display_order for each item (with permission check)
     for item in &data.items {
@@ -693,38 +626,34 @@ pub async fn reorder_menu_items(
         {
             Ok(Some(i)) => i,
             Ok(None) => continue, // Skip if not found
-            Err(e) => return internal_error_response(&format!("Failed to fetch item: {}", e)),
+            Err(e) => return Err(AppError::InternalServerError(format!("Failed to fetch item: {}", e))),
         };
 
         // Check permission
         if let Some(ref module) = existing_item.required_permission {
             if !has_module_permission(&permissions, module) {
-                return forbidden_response(&format!("No permission for module '{}'", module));
+                return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
             }
         }
 
         // Update order
-        match sqlx::query(
+        sqlx::query(
             "UPDATE menu_items SET display_order = $1, updated_at = NOW() WHERE id = $2"
         )
         .bind(item.display_order)
         .bind(item.id)
         .execute(&pool)
         .await
-        {
-            Ok(_) => {}
-            Err(e) => return internal_error_response(&format!("Failed to reorder items: {}", e)),
-        }
+        .map_err(|e| AppError::InternalServerError(format!("Failed to reorder items: {}", e)))?;
     }
 
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(serde_json::json!({
             "success": true,
             "message": "Menu items reordered successfully"
         }))
-    )
-        .into_response()
+    ))
 }
 
 // ==================== Helper Functions ====================
@@ -742,7 +671,9 @@ fn has_module_permission(user_permissions: &[String], module: &str) -> bool {
     
     // Check for module-specific permissions
     let prefix = format!("{}.", module);
-    user_permissions.iter().any(|perm| perm.starts_with(&prefix))
+    user_permissions.iter().any(|perm| {
+        perm.starts_with(&prefix) || perm.starts_with("*.")
+    })
 }
 
 /// Helper: Get pool and check module permission
@@ -750,12 +681,12 @@ async fn get_pool_and_check_module(
     state: &AppState,
     headers: &HeaderMap,
     module: &str,
-) -> Result<(PgPool, User), Response> {
+) -> Result<(PgPool, User), AppError> {
     let (pool, user, permissions) = get_pool_and_authenticate_with_perms(state, headers).await?;
 
     // Check module permission
     if !has_module_permission(&permissions, module) {
-        return Err(forbidden_response(&format!("No permission for module '{}'", module)));
+        return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
     }
 
     Ok((pool, user))
@@ -765,7 +696,7 @@ async fn get_pool_and_check_module(
 async fn get_pool_and_authenticate(
     state: &AppState,
     headers: &HeaderMap,
-) -> Result<(PgPool, User), Response> {
+) -> Result<(PgPool, User), AppError> {
     let (pool, user, _) = get_pool_and_authenticate_with_perms(state, headers).await?;
     Ok((pool, user))
 }
@@ -774,34 +705,21 @@ async fn get_pool_and_authenticate(
 async fn get_pool_and_authenticate_with_perms(
     state: &AppState,
     headers: &HeaderMap,
-) -> Result<(PgPool, User, Vec<String>), Response> {
+) -> Result<(PgPool, User, Vec<String>), AppError> {
     // Extract subdomain
-    let subdomain = match extract_subdomain_from_request(headers) {
-        Ok(s) => s,
-        Err(response) => return Err(response),
-    };
+    let subdomain = extract_subdomain_from_request(headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     // Get database URL
-    let db_url = match crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
-            return Err(bad_request_response(&format!("School not found: {}", e)));
-        }
-    };
+    let db_url = crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|e| AppError::NotFound(format!("School not found: {}", e)))?;
 
     // Get pool
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(internal_error_response(&format!("Database error: {}", e)));
-        }
-    };
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?;
 
     // Get user and permissions
-    let (user, permissions) = match authenticate_user(headers, &pool).await {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
+    let (user, permissions) = authenticate_user(headers, &pool).await?;
 
     Ok((pool, user, permissions))
 }
@@ -810,7 +728,7 @@ async fn get_pool_and_authenticate_with_perms(
 async fn authenticate_user(
     headers: &HeaderMap,
     pool: &PgPool,
-) -> Result<(User, Vec<String>), Response> {
+) -> Result<(User, Vec<String>), AppError> {
     // Try to extract token from Authorization header first
     let auth_header = headers
         .get("Authorization")
@@ -832,25 +750,18 @@ async fn authenticate_user(
         .and_then(|cookie| JwtService::extract_token_from_cookie(Some(cookie)));
 
     // Use Authorization header first, then cookie
-    let token = match token_from_header.or(token_from_cookie) {
-        Some(t) => t,
-        None => return Err(unauthorized_response("No authentication token found")),
-    };
-
+    let token = token_from_header.or(token_from_cookie)
+        .ok_or(AppError::AuthError("No authentication token found".to_string()))?;
 
     // Validate token and extract claims
-    let claims = match JwtService::verify_token(&token) {
-        Ok(c) => c,
-        Err(_) => return Err(unauthorized_response("Invalid or expired token")),
-    };
+    let claims = JwtService::verify_token(&token)
+        .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
 
     // Get user from database
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => return Err(unauthorized_response("Invalid user ID in token")),
-    };
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?;
 
-    let mut user = match sqlx::query_as::<_, User>(
+    let mut user = sqlx::query_as::<_, User>(
         "SELECT 
             id,
             national_id,
@@ -880,11 +791,8 @@ async fn authenticate_user(
         .bind(user_id)
         .fetch_optional(pool)
         .await
-    {
-        Ok(Some(u)) => u,
-        Ok(None) => return Err(unauthorized_response("User not found")),
-        Err(e) => return Err(internal_error_response(&format!("Database error: {}", e))),
-    };
+        .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
+        .ok_or(AppError::AuthError("User not found".to_string()))?;
 
     // Decrypt national_id
     if let Some(ref nid) = user.national_id {
@@ -894,7 +802,7 @@ async fn authenticate_user(
     }
 
     // Get user permissions (use unnest to handle wildcard and all permissions)
-    let permissions: Vec<String> = match sqlx::query_scalar(
+    let permissions: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT p.code
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
@@ -907,70 +815,9 @@ async fn authenticate_user(
     .bind(user.id)
     .fetch_all(pool)
     .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(internal_error_response(&format!("Failed to fetch permissions: {}", e)));
-        }
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch permissions: {}", e)))?;
 
     Ok((user, permissions))
-}
-
-// Response helpers
-fn bad_request_response(message: &str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        JsonResponse(serde_json::json!({
-            "success": false,
-            "error": message
-        }))
-    )
-        .into_response()
-}
-
-fn unauthorized_response(message: &str) -> Response {
-    (
-        StatusCode::UNAUTHORIZED,
-        JsonResponse(serde_json::json!({
-            "success": false,
-            "error": message
-        }))
-    )
-        .into_response()
-}
-
-fn forbidden_response(message: &str) -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        JsonResponse(serde_json::json!({
-            "success": false,
-            "error": message
-        }))
-    )
-        .into_response()
-}
-
-fn not_found_response(message: &str) -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        JsonResponse(serde_json::json!({
-            "success": false,
-            "error": message
-        }))
-    )
-        .into_response()
-}
-
-fn internal_error_response(message: &str) -> Response {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        JsonResponse(serde_json::json!({
-            "success": false,
-            "error": message
-        }))
-    )
-        .into_response()
 }
 
 
@@ -986,31 +833,30 @@ pub async fn reorder_menu_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<ReorderGroupsRequest>,
-) -> Response {
-    let (pool, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _) = get_pool_and_check_module(&state, &headers, "settings").await?;
 
-    let mut tx = match pool.begin().await {
-        Ok(t) => t,
-        Err(e) => return internal_error_response(&format!("Transaction failed: {}", e)),
-    };
+    let mut tx = pool.begin().await
+        .map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
 
     for item in &data.groups {
         if let Err(e) = sqlx::query("UPDATE menu_groups SET display_order = $1 WHERE id = $2")
             .bind(item.display_order).bind(item.id).execute(&mut *tx).await {
             let _ = tx.rollback().await;
-            return internal_error_response(&format!("Failed to reorder: {}", e));
+            return Err(AppError::InternalServerError(format!("Failed to reorder: {}", e)));
         }
     }
 
-    match tx.commit().await {
-        Ok(_) => (StatusCode::OK, JsonResponse(serde_json::json!({
-            "success": true, "message": format!("Reordered {} groups", data.groups.len())
-        }))).into_response(),
-        Err(e) => internal_error_response(&format!("Failed to commit: {}", e)),
+    if let Err(e) = tx.commit().await {
+         return Err(AppError::InternalServerError(format!("Failed to commit: {}", e)));
     }
+    
+    Ok((
+        StatusCode::OK,
+        JsonResponse(serde_json::json!({
+            "success": true, "message": format!("Reordered {} groups", data.groups.len())
+        }))
+    ))
 }
 
 /// Move menu item to different group
@@ -1019,25 +865,18 @@ pub async fn move_item_to_group(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<serde_json::Value>,
-) -> Response {
-    let (pool, _) = match get_pool_and_check_module(&state, &headers, "settings").await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _) = get_pool_and_check_module(&state, &headers, "settings").await?;
 
     let group_id = match data.get("group_id").and_then(|v| v.as_str()) {
         Some(id_str) => match Uuid::parse_str(id_str) {
             Ok(uuid) => uuid,
-            Err(_) => return (StatusCode::BAD_REQUEST, JsonResponse(serde_json::json!({
-                "success": false, "error": "Invalid group_id format"
-            }))).into_response(),
+            Err(_) => return Err(AppError::BadRequest("Invalid group_id format".to_string())),
         },
-        None => return (StatusCode::BAD_REQUEST, JsonResponse(serde_json::json!({
-            "success": false, "error": "group_id required"
-        }))).into_response(),
+        None => return Err(AppError::BadRequest("group_id required".to_string())),
     };
 
-    let result = sqlx::query_as::<_, MenuItem>(
+    let item = sqlx::query_as::<_, MenuItem>(
         r#"UPDATE menu_items 
            SET group_id = $1 
            WHERE id = $2 
@@ -1047,13 +886,14 @@ pub async fn move_item_to_group(
     .bind(group_id)
     .bind(id)
     .fetch_one(&pool)
-    .await;
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to move item: {}", e)))?;
 
-    match result {
-        Ok(item) => (StatusCode::OK, JsonResponse(serde_json::json!({
+    Ok((
+        StatusCode::OK,
+        JsonResponse(serde_json::json!({
             "success": true,
             "data": item
-        }))).into_response(),
-        Err(e) => internal_error_response(&format!("Failed to move item: {}", e)),
-    }
+        }))
+    ))
 }

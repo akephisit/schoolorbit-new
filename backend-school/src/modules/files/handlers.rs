@@ -1,10 +1,11 @@
 use axum::{
     extract::{Multipart, Path, State},
     http::StatusCode,
-    response::Json,
+    response::{IntoResponse, Json},
     Extension,
 };
 use serde_json::json;
+use std::str::FromStr;
 
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -22,6 +23,7 @@ use crate::{
         subdomain::extract_subdomain_from_request,
     },
     AppState,
+    error::AppError,
 };
 
 /// Upload a file
@@ -37,37 +39,17 @@ pub async fn upload_file(
     Extension(claims): Extension<Claims>,
     subdomain_header: axum::http::HeaderMap,
     mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => {
-            error!("Invalid user ID in claims: {}", claims.sub);
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "success": false,
-                    "error": "Invalid user authentication"
-                })),
-            ));
-        }
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| {
+        error!("Invalid user ID in claims: {}", claims.sub);
+        AppError::AuthError("Invalid user authentication".to_string())
+    })?;
 
     info!("Uploading file for user: {}", user_id);
 
     // Extract subdomain
-    let subdomain = match extract_subdomain_from_request(&subdomain_header) {
-        Ok(s) => s,
-        Err(response) => {
-            error!("Failed to extract subdomain");
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "success": false,
-                    "error": "Missing or invalid subdomain"
-                })),
-            ));
-        }
-    };
+    let subdomain = extract_subdomain_from_request(&subdomain_header)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     // Get validation config
     let validation_config = FileValidationConfig::from_env();
@@ -75,13 +57,7 @@ pub async fn upload_file(
     // Initialize R2 client
     let r2_client = R2Client::new().await.map_err(|e| {
         error!("Failed to initialize R2 client: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "success": false,
-                "error": "Storage service unavailable"
-            })),
-        )
+        AppError::InternalServerError("Storage service unavailable".to_string())
     })?;
 
     // Parse multipart form
@@ -93,13 +69,7 @@ pub async fn upload_file(
 
     while let Some(field) = multipart.next_field().await.map_err(|e| {
         error!("Failed to read multipart field: {}", e);
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "success": false,
-                "error": "Invalid multipart data"
-            })),
-        )
+        AppError::BadRequest("Invalid multipart data".to_string())
     })? {
         let field_name = field.name().unwrap_or("").to_string();
 
@@ -116,38 +86,20 @@ pub async fn upload_file(
 
                 let data = field.bytes().await.map_err(|e| {
                     error!("Failed to read file data: {}", e);
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({
-                            "success": false,
-                            "error": "Failed to read file"
-                        })),
-                    )
+                    AppError::BadRequest("Failed to read file".to_string())
                 })?;
 
                 file_data = Some(data.to_vec());
             }
             "file_type" => {
                 let data = field.bytes().await.map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({
-                            "success": false,
-                            "error": "Invalid file_type"
-                        })),
-                    )
+                     AppError::BadRequest("Invalid file_type".to_string())
                 })?;
                 file_type_str = String::from_utf8_lossy(&data).to_string();
             }
             "is_temporary" => {
                 let data = field.bytes().await.map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({
-                            "success": false,
-                            "error": "Invalid is_temporary"
-                        })),
-                    )
+                     AppError::BadRequest("Invalid is_temporary".to_string())
                 })?;
                 let value = String::from_utf8_lossy(&data).to_string();
                 is_temporary = value == "true" || value == "1";
@@ -159,26 +111,8 @@ pub async fn upload_file(
     }
 
     // Validate required fields
-    let file_data = file_data.ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "success": false,
-                "error": "No file provided"
-            })),
-        )
-    })?;
-
-    let original_filename = file_name.ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "success": false,
-                "error": "No filename provided"
-            })),
-        )
-    })?;
-
+    let file_data = file_data.ok_or_else(|| AppError::BadRequest("No file provided".to_string()))?;
+    let original_filename = file_name.ok_or_else(|| AppError::BadRequest("No filename provided".to_string()))?;
     let mime_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
 
     // Parse file type
@@ -190,25 +124,13 @@ pub async fn upload_file(
         crate::utils::file_processor::FileValidator::validate_size(file_data.len(), max_size)
     {
         warn!("File size validation failed: {}", e);
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "success": false,
-                "error": e
-            })),
-        ));
+        return Err(AppError::BadRequest(e));
     }
 
     // Validate file extension
     if !validation_config.is_allowed_extension(&original_filename, &file_type) {
         warn!("File extension not allowed: {}", original_filename);
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "success": false,
-                "error": format!("File type '{}' not allowed for {}", original_filename, file_type_str)
-            })),
-        ));
+        return Err(AppError::BadRequest(format!("File type '{}' not allowed for {}", original_filename, file_type_str)));
     }
 
     // Process image if needed
@@ -220,25 +142,13 @@ pub async fn upload_file(
 
         // Validate it's actually an image
         if !ImageProcessor::is_valid_image(&file_data) {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "success": false,
-                    "error": "Invalid image file"
-                })),
-            ));
+            return Err(AppError::BadRequest("Invalid image file".to_string()));
         }
 
         // Get original dimensions
         let (orig_width, orig_height) = ImageProcessor::get_dimensions(&file_data).map_err(|e| {
             error!("Failed to get image dimensions: {}", e);
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "success": false,
-                    "error": "Invalid image"
-                })),
-            )
+            AppError::BadRequest("Invalid image".to_string())
         })?;
 
         // Resize if needed (max 2048x2048 for storage efficiency)
@@ -297,13 +207,7 @@ pub async fn upload_file(
         .await
         .map_err(|e| {
             error!("Failed to upload to R2: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "Failed to upload file"
-                })),
-            )
+            AppError::InternalServerError("Failed to upload file".to_string())
         })?;
 
     // Upload thumbnail if exists
@@ -323,13 +227,7 @@ pub async fn upload_file(
         .await
         .map_err(|e| {
             error!("Failed to get school database: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "School not found"
-                })),
-            )
+            AppError::NotFound("School not found".to_string())
         })?;
 
     // Get pool
@@ -339,13 +237,7 @@ pub async fn upload_file(
         .await
         .map_err(|e| {
             error!("Failed to get database pool: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "Database unavailable"
-                })),
-            )
+            AppError::InternalServerError("Database unavailable".to_string())
         })?;
 
     let file_record = sqlx::query_as::<_, File>(
@@ -380,35 +272,26 @@ pub async fn upload_file(
     .await
     .map_err(|e| {
         error!("Failed to save file metadata: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "success": false,
-                "error": "Failed to save file metadata"
-            })),
-        )
+        AppError::InternalServerError("Failed to save file metadata".to_string())
     })?;
 
     // Build file response with URLs
     let url_builder = FileUrlBuilder::new().map_err(|e| {
         error!("Failed to create URL builder: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "success": false,
-                "error": "Configuration error"
-            })),
-        )
+        AppError::InternalServerError("Configuration error".to_string())
     })?;
 
     let file_response = FileResponse::from_file(file_record, url_builder.base_url());
 
     info!("File uploaded successfully: {}", file_id);
 
-    Ok(Json(json!({
-        "success": true,
-        "file": file_response
-    })))
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "success": true,
+            "file": file_response
+        })),
+    ))
 }
 
 /// Delete a file
@@ -419,49 +302,23 @@ pub async fn delete_file(
     Extension(claims): Extension<Claims>,
     subdomain_header: axum::http::HeaderMap,
     Path(file_id): Path<Uuid>,
-) -> Result<Json<DeleteFileResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => {
-            error!("Invalid user ID in claims: {}", claims.sub);
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "success": false,
-                    "error": "Invalid user authentication"
-                })),
-            ));
-        }
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| {
+        error!("Invalid user ID in claims: {}", claims.sub);
+        AppError::AuthError("Invalid user authentication".to_string())
+    })?;
 
     info!("Deleting file: {} for user: {}", file_id, user_id);
 
-    let subdomain = match extract_subdomain_from_request(&subdomain_header) {
-        Ok(s) => s,
-        Err(response) => {
-            error!("Failed to extract subdomain");
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "success": false,
-                    "error": "Missing subdomain"
-                })),
-            ));
-        }
-    };
+    let subdomain = extract_subdomain_from_request(&subdomain_header)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
     // Get school database URL
     let db_url = get_school_database_url(&state.admin_pool, &subdomain)
         .await
         .map_err(|e| {
             error!("Failed to get school database: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "School not found"
-                })),
-            )
+             AppError::NotFound("School not found".to_string())
         })?;
 
     // Get pool  
@@ -471,13 +328,7 @@ pub async fn delete_file(
         .await
         .map_err(|e| {
             error!("Failed to get database pool: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "Database unavailable"
-                })),
-            )
+            AppError::InternalServerError("Database unavailable".to_string())
         })?;
 
     // Get file metadata
@@ -490,23 +341,9 @@ pub async fn delete_file(
     .await
     .map_err(|e| {
         error!("Database error: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "success": false,
-                "error": "Database error"
-            })),
-        )
+        AppError::InternalServerError("Database error".to_string())
     })?
-    .ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(json!({
-                "success": false,
-                "error": "File not found"
-            })),
-        )
-    })?;
+    .ok_or(AppError::NotFound("File not found".to_string()))?;
 
     // Soft delete in database
     sqlx::query("UPDATE files SET deleted_at = NOW() WHERE id = $1")
@@ -515,13 +352,7 @@ pub async fn delete_file(
         .await
         .map_err(|e| {
             error!("Failed to delete file metadata: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "Failed to delete file"
-                })),
-            )
+            AppError::InternalServerError("Failed to delete file".to_string())
         })?;
 
     // Delete from R2 (optional - can be done by cleanup job later)
@@ -540,10 +371,13 @@ pub async fn delete_file(
 
     info!("File deleted successfully: {}", file_id);
 
-    Ok(Json(DeleteFileResponse {
-        success: true,
-        message: "File deleted successfully".to_string(),
-    }))
+    Ok((
+        StatusCode::OK,
+        Json(DeleteFileResponse {
+            success: true,
+            message: "File deleted successfully".to_string(),
+        }),
+    ))
 }
 
 /// Get file list for current user
@@ -553,46 +387,20 @@ pub async fn list_user_files(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     subdomain_header: axum::http::HeaderMap,
-) -> Result<Json<FileListResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => {
-            error!("Invalid user ID in claims: {}", claims.sub);
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "success": false,
-                    "error": "Invalid user authentication"
-                })),
-            ));
-        }
-    };
-    let subdomain = match extract_subdomain_from_request(&subdomain_header) {
-        Ok(s) => s,
-        Err(response) => {
-            error!("Failed to extract subdomain");
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "success": false,
-                    "error": "Missing subdomain"
-                })),
-            ));
-        }
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| {
+        error!("Invalid user ID in claims: {}", claims.sub);
+        AppError::AuthError("Invalid user authentication".to_string())
+    })?;
+    let subdomain = extract_subdomain_from_request(&subdomain_header)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
     // Get school database URL
     let db_url = get_school_database_url(&state.admin_pool, &subdomain)
         .await
         .map_err(|e| {
             error!("Failed to get school database: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "School not found"
-                })),
-            )
+            AppError::NotFound("School not found".to_string())
         })?;
 
     // Get pool
@@ -602,13 +410,7 @@ pub async fn list_user_files(
         .await
         .map_err(|e| {
             error!("Failed to get database pool: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "Database unavailable"
-                })),
-            )
+            AppError::InternalServerError("Database unavailable".to_string())
         })?;
 
     let files = sqlx::query_as::<_, File>(
@@ -619,25 +421,13 @@ pub async fn list_user_files(
     .await
     .map_err(|e| {
         error!("Failed to fetch files: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "success": false,
-                "error": "Failed to fetch files"
-            })),
-        )
+        AppError::InternalServerError("Failed to fetch files".to_string())
     })?;
 
     let total = files.len() as i64;
 
     let url_builder = FileUrlBuilder::new().map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "success": false,
-                "error": "Configuration error"
-            })),
-        )
+        AppError::InternalServerError("Configuration error".to_string())
     })?;
 
     let file_responses: Vec<FileResponse> = files
@@ -645,9 +435,12 @@ pub async fn list_user_files(
         .map(|f| FileResponse::from_file(f, url_builder.base_url()))
         .collect();
 
-    Ok(Json(FileListResponse {
-        success: true,
-        files: file_responses,
-        total,
-    }))
+    Ok((
+        StatusCode::OK,
+        Json(FileListResponse {
+            success: true,
+            files: file_responses,
+            total,
+        }),
+    ))
 }

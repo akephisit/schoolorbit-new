@@ -1,11 +1,12 @@
 use crate::modules::menu::models::{RouteRegistration, RouteRegistrationResponse};
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
+use crate::error::AppError;
 
 use axum::{
     extract::State,
     http::{StatusCode, HeaderMap},
-    response::{Response, IntoResponse},
+    response::IntoResponse,
     Json as JsonResponse,
 };
 
@@ -15,35 +16,21 @@ pub async fn register_routes(
     State(state): State<AppState>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<RouteRegistration>,
-) -> Response {
+) -> Result<impl IntoResponse, AppError> {
     // Validate deploy key
     let deploy_key = headers
         .get("X-Deploy-Key")
         .and_then(|h| h.to_str().ok());
     
-    let expected_key = match std::env::var("DEPLOY_KEY") {
-        Ok(key) => key,
-        Err(_) => {
+    let expected_key = std::env::var("DEPLOY_KEY")
+        .map_err(|_| {
             eprintln!("❌ DEPLOY_KEY environment variable not set!");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Server configuration error"
-                }))
-            ).into_response();
-        }
-    };
+            AppError::InternalServerError("Server configuration error".to_string())
+        })?;
     
     if deploy_key != Some(&expected_key.as_str()) {
         eprintln!("❌ Invalid deploy key provided");
-        return (
-            StatusCode::UNAUTHORIZED,
-            JsonResponse(serde_json::json!({
-                "success": false,
-                "error": "Invalid deploy key"
-            }))
-        ).into_response();
+        return Err(AppError::AuthError("Invalid deploy key".to_string()));
     }
     
     println!("✅ Deploy key validated");
@@ -53,47 +40,23 @@ pub async fn register_routes(
     );
     
     // Get tenant pool
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(_) => {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| {
             eprintln!("⚠️  No subdomain provided, skipping registration");
-            return (
-                StatusCode::BAD_REQUEST,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "No subdomain specified"
-                }))
-            ).into_response();
-        }
-    };
+            AppError::BadRequest("No subdomain specified".to_string())
+        })?;
     
-    let db_url = match crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Database connection failed"
-                }))
-            ).into_response();
-        }
-    };
+             AppError::InternalServerError("Database connection failed".to_string())
+        })?;
     
-    let pool = match sqlx::PgPool::connect(&db_url).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = sqlx::PgPool::connect(&db_url).await
+        .map_err(|e| {
             eprintln!("❌ Failed to connect to database: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Database connection failed"
-                }))
-            ).into_response();
-        }
-    };
+            AppError::InternalServerError("Database connection failed".to_string())
+        })?;
     
     
     // Smart sync: UPSERT to preserve user customizations (display_order, is_active)
@@ -211,32 +174,14 @@ pub async fn register_routes(
     
     println!("🎉 Successfully synced {}/{} routes", registered_count, total_routes);
     
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(RouteRegistrationResponse {
             success: true,
             registered: registered_count,
             message: format!("Synced {} routes (preserved user customizations)", registered_count),
         })
-    ).into_response()
+    ))
 }
 
-/// Helper: Convert title to slug (code)
-fn slugify(text: &str) -> String {
-    text.to_lowercase()
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c
-            } else if c.is_whitespace() || c == '-' {
-                '_'
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>()
-        .split('_')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<&str>>()
-        .join("_")
-}
+

@@ -4,15 +4,14 @@ use crate::modules::auth::models::User;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
 use crate::AppState;
+use crate::error::AppError;
 
 use axum::{
     extract::State,
     http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    Json,
+    response::{IntoResponse, Json},
 };
 
-use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -20,41 +19,23 @@ use uuid::Uuid;
 pub async fn get_user_menu(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
+        })?;
 
     // Get authenticated user
     // Try to extract token from Authorization header first
@@ -78,33 +59,13 @@ pub async fn get_user_menu(
         .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
 
     // Use Authorization header first, then cookie
-    let token = match token_from_header.or(token_from_cookie) {
-        Some(t) => t,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "success": false,
-                    "error": "กรุณาเข้าสู่ระบบ"
-                })),
-            ).into_response();
-        }
-    };
+    let token = token_from_header.or(token_from_cookie)
+        .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
     
-    let claims = match crate::utils::jwt::JwtService::verify_token(&token) {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "success": false,
-                    "error": "Token ไม่ถูกต้อง"
-                })),
-            ).into_response();
-        }
-    };
+    let claims = crate::utils::jwt::JwtService::verify_token(&token)
+        .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
     
-    let mut user: User = match sqlx::query_as(
+    let mut user: User = sqlx::query_as(
         "SELECT 
             id,
             national_id,
@@ -134,19 +95,10 @@ pub async fn get_user_menu(
         .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
         .fetch_one(&pool)
         .await
-    {
-        Ok(u) => u,
-        Err(e) => {
+        .map_err(|e| {
             eprintln!("❌ Failed to get user: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": format!("Database error: {}", e)
-                })),
-            ).into_response();
-        }
-    };
+            AppError::InternalServerError(format!("Database error: {}", e))
+        })?;
 
     // Decrypt national_id
     if let Some(ref nid) = user.national_id {
@@ -156,24 +108,17 @@ pub async fn get_user_menu(
     }
 
     // Get user permissions
-    let user_permissions = match get_user_permissions(&user.id, &pool).await {
-        Ok(perms) => perms,
-        Err(e) => {
+    let user_permissions = get_user_permissions(&user.id, &pool)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get user permissions: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถดึงข้อมูล permissions ได้"
-                })),
-            ).into_response();
-        }
-    };
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูล permissions ได้".to_string())
+        })?;
 
     // Query menu items with groups - filter by user_type
     let user_type = user.user_type.as_str();
     let menu_rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, String, String, Option<String>, i32, i32)> = 
-        match sqlx::query_as(
+        sqlx::query_as(
             r#"
             SELECT 
                 mi.id,
@@ -198,31 +143,21 @@ pub async fn get_user_menu(
         .bind(user_type)
         .fetch_all(&pool)
         .await
-    {
-        Ok(rows) => rows,
-        Err(e) => {
+        .map_err(|e| {
             eprintln!("❌ Failed to fetch menu items: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถดึงข้อมูลเมนูได้"
-                })),
-            ).into_response();
-        }
-    };
+             AppError::InternalServerError("ไม่สามารถดึงข้อมูลเมนูได้".to_string())
+        })?;
 
     // Group and filter menu items
     let groups = group_and_filter_menu(menu_rows, &user_permissions);
 
-    (
+    Ok((
         StatusCode::OK,
         Json(UserMenuResponse {
             success: true,
             groups,
         }),
-    )
-        .into_response()
+    ))
 }
 
 /// Check if user has ANY permission in the specified module

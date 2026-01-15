@@ -4,11 +4,12 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::jwt::JwtService;
 use crate::utils::field_encryption;
 use crate::AppState;
+use crate::error::AppError;
 
 use axum::{
     extract::{State, Path},
     http::{StatusCode, HeaderMap},
-    response::{Response, IntoResponse, Json as JsonResponse},
+    response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -39,31 +40,17 @@ pub struct FeatureListResponse {
 pub async fn list_features(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Response {
-    let (pool, _, permissions) = match get_pool_and_authenticate(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _, permissions) = get_pool_and_authenticate(&state, &headers).await?;
 
-    let all_features = match sqlx::query_as::<_, FeatureToggle>(
+    let all_features = sqlx::query_as::<_, FeatureToggle>(
         "SELECT id, code, name, name_en, module, is_enabled
          FROM feature_toggles
          ORDER BY module, name"
     )
     .fetch_all(&pool)
     .await
-    {
-        Ok(f) => f,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to fetch features: {}", e)
-                }))
-            ).into_response();
-        }
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch features: {}", e)))?;
 
     // Filter features by user's module permissions
     let features: Vec<FeatureToggle> = all_features
@@ -77,14 +64,13 @@ pub async fn list_features(
         })
         .collect();
 
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(FeatureListResponse {
             success: true,
             data: features,
         })
-    )
-        .into_response()
+    ))
 }
 
 /// Get single feature toggle
@@ -92,13 +78,10 @@ pub async fn get_feature(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-) -> Response {
-    let (pool, _, permissions) = match get_pool_and_authenticate(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _, permissions) = get_pool_and_authenticate(&state, &headers).await?;
 
-    let feature = match sqlx::query_as::<_, FeatureToggle>(
+    let feature = sqlx::query_as::<_, FeatureToggle>(
         "SELECT id, code, name, name_en, module, is_enabled
          FROM feature_toggles
          WHERE id = $1"
@@ -106,51 +89,24 @@ pub async fn get_feature(
     .bind(id)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(f)) => {
-            // Check module permission
-            if let Some(ref module) = f.module {
-                if !has_module_permission(&permissions, module) {
-                    return (
-                        StatusCode::FORBIDDEN,
-                        JsonResponse(serde_json::json!({
-                            "success": false,
-                            "error": format!("No permission for module '{}'", module)
-                        }))
-                    ).into_response();
-                }
-            }
-            f
-        },
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Feature toggle not found"
-                }))
-            ).into_response();
-        }
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("Database error: {}", e)
-                }))
-            ).into_response();
-        }
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
+    .ok_or(AppError::NotFound("Feature toggle not found".to_string()))?;
 
-    (
+    // Check module permission
+    if let Some(ref module) = feature.module {
+        if !has_module_permission(&permissions, module) {
+            return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
+        }
+    }
+
+    Ok((
         StatusCode::OK,
         JsonResponse(FeatureToggleResponse {
             success: true,
             data: Some(feature),
             message: None,
         })
-    )
-        .into_response()
+    ))
 }
 
 /// Update feature toggle
@@ -159,48 +115,23 @@ pub async fn update_feature(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<UpdateFeatureRequest>,
-) -> Response {
-    let (pool, _, permissions) = match get_pool_and_authenticate(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _, permissions) = get_pool_and_authenticate(&state, &headers).await?;
 
     // First, get the feature to check its module
-    let existing_feature = match sqlx::query_as::<_, FeatureToggle>(
+    let existing_feature = sqlx::query_as::<_, FeatureToggle>(
         "SELECT id, code, name, name_en, module, is_enabled FROM feature_toggles WHERE id = $1"
     )
     .bind(id)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(f)) => f,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Feature toggle not found"
-                }))
-            ).into_response();
-        }
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({"success": false, "error": format!("Database error: {}", e)}))
-            ).into_response();
-        }
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
+    .ok_or(AppError::NotFound("Feature toggle not found".to_string()))?;
 
     // Check module permission
     if let Some(ref module) = existing_feature.module {
         if !has_module_permission(&permissions, module) {
-            return (
-                StatusCode::FORBIDDEN,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("No permission for module '{}'", module)
-                }))
-            ).into_response();
+            return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
         }
     }
 
@@ -219,41 +150,21 @@ pub async fn update_feature(
     
     query.push_str(" WHERE id = $1 RETURNING id, code, name, name_en, module, is_enabled");
 
-    let feature = match sqlx::query_as::<_, FeatureToggle>(&query)
+    let feature = sqlx::query_as::<_, FeatureToggle>(&query)
         .bind(id)
         .fetch_optional(&pool)
         .await
-    {
-        Ok(Some(f)) => f,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Feature toggle not found"
-                }))
-            ).into_response();
-        }
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to update feature: {}", e)
-                }))
-            ).into_response();
-        }
-    };
+        .map_err(|e| AppError::InternalServerError(format!("Failed to update feature: {}", e)))?
+        .ok_or(AppError::NotFound("Feature toggle not found".to_string()))?;
 
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(FeatureToggleResponse {
             success: true,
             data: Some(feature),
             message: Some("Feature toggle updated successfully".to_string()),
         })
-    )
-        .into_response()
+    ))
 }
 
 /// Quick toggle feature on/off
@@ -261,53 +172,28 @@ pub async fn toggle_feature(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-) -> Response {
-    let (pool, _, permissions) = match get_pool_and_authenticate(&state, &headers).await {
-        Ok(result) => result,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let (pool, _, permissions) = get_pool_and_authenticate(&state, &headers).await?;
 
     // First, get the feature to check its module
-    let existing_feature = match sqlx::query_as::<_, FeatureToggle>(
+    let existing_feature = sqlx::query_as::<_, FeatureToggle>(
         "SELECT id, code, name, name_en, module, is_enabled FROM feature_toggles WHERE id = $1"
     )
     .bind(id)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(f)) => f,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Feature toggle not found"
-                }))
-            ).into_response();
-        }
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({"success": false, "error": format!("Database error: {}", e)}))
-            ).into_response();
-        }
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
+    .ok_or(AppError::NotFound("Feature toggle not found".to_string()))?;
 
     // Check module permission
     if let Some(ref module) = existing_feature.module {
         if !has_module_permission(&permissions, module) {
-            return (
-                StatusCode::FORBIDDEN,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("No permission for module '{}'", module)
-                }))
-            ).into_response();
+            return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
         }
     }
 
     // Toggle the feature (flip is_enabled)
-    let feature = match sqlx::query_as::<_, FeatureToggle>(
+    let feature = sqlx::query_as::<_, FeatureToggle>(
         "UPDATE feature_toggles 
          SET is_enabled = NOT is_enabled, updated_at = NOW()
          WHERE id = $1
@@ -316,33 +202,14 @@ pub async fn toggle_feature(
     .bind(id)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(f)) => f,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Feature toggle not found"
-                }))
-            ).into_response();
-        }
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to toggle feature: {}", e)
-                }))
-            ).into_response();
-        }
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Failed to toggle feature: {}", e)))?
+    .ok_or(AppError::NotFound("Feature toggle not found".to_string()))?;
 
     // Extract values before moving feature
     let feature_code = feature.code.clone();
     let feature_enabled = feature.is_enabled;
 
-    (
+    Ok((
         StatusCode::OK,
         JsonResponse(FeatureToggleResponse {
             success: true,
@@ -352,8 +219,7 @@ pub async fn toggle_feature(
                 if feature_enabled { "enabled" } else { "disabled" }
             )),
         })
-    )
-        .into_response()
+    ))
 }
 
 // ==================== Helper Functions ====================
@@ -370,71 +236,11 @@ fn has_module_permission(user_permissions: &[String], module: &str) -> bool {
     })
 }
 
-/// Helper: Get pool and check module permission
-async fn get_pool_and_check_module(
-    state: &AppState,
-    headers: &HeaderMap,
-    module: &str,
-) -> Result<(PgPool, User), Response> {
-    // Extract subdomain
-    let subdomain = match extract_subdomain_from_request(headers) {
-        Ok(s) => s,
-        Err(response) => return Err(response),
-    };
-
-    // Get database URL
-    let db_url = match crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("School not found: {}", e)
-                }))
-            ).into_response());
-        }
-    };
-
-    // Get pool
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("Database error: {}", e)
-                }))
-            ).into_response());
-        }
-    };
-
-    // Get user and permissions
-    let (user, permissions) = match authenticate_user(headers, &pool).await {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
-
-    // Check module permission
-    if !has_module_permission(&permissions, module) {
-        return Err((
-            StatusCode::FORBIDDEN,
-            JsonResponse(serde_json::json!({
-                "success": false,
-                "error": format!("No permission for module '{}'", module)
-            }))
-        ).into_response());
-    }
-
-    Ok((pool, user))
-}
-
 /// Helper: Authenticate user and get their permissions
 async fn authenticate_user(
     headers: &HeaderMap,
     pool: &PgPool,
-) -> Result<(User, Vec<String>), Response> {
+) -> Result<(User, Vec<String>), AppError> {
     // Try to extract token from Authorization header first
     let auth_header = headers
         .get("Authorization")
@@ -456,49 +262,18 @@ async fn authenticate_user(
         .and_then(|cookie| JwtService::extract_token_from_cookie(Some(cookie)));
 
     // Use Authorization header first, then cookie
-    let token = match token_from_header.or(token_from_cookie) {
-        Some(t) => t,
-        None => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "No authentication token found"
-                }))
-            ).into_response());
-        }
-    };
-
+    let token = token_from_header.or(token_from_cookie)
+        .ok_or(AppError::AuthError("No authentication token found".to_string()))?;
 
     // Validate token and extract claims
-    let claims = match JwtService::verify_token(&token) {
-        Ok(c) => c,
-        Err(_) => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Invalid or expired token"
-                }))
-            ).into_response());
-        }
-    };
+    let claims = JwtService::verify_token(&token)
+        .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
 
     // Get user from database
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "Invalid user ID in token"
-                }))
-            ).into_response());
-        }
-    };
+    let user_id = Uuid::parse_str(&claims.sub)
+         .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?;
 
-    let mut user = match sqlx::query_as::<_, User>(
+    let mut user = sqlx::query_as::<_, User>(
         "SELECT 
             id,
             national_id,
@@ -528,27 +303,8 @@ async fn authenticate_user(
         .bind(user_id)
         .fetch_optional(pool)
         .await
-    {
-        Ok(Some(u)) => u,
-        Ok(None) => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": "User not found"
-                }))
-            ).into_response());
-        }
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("Database error: {}", e)
-                }))
-            ).into_response());
-        }
-    };
+        .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
+        .ok_or(AppError::AuthError("User not found".to_string()))?;
 
     // Decrypt national_id
     if let Some(ref nid) = user.national_id {
@@ -558,7 +314,7 @@ async fn authenticate_user(
     }
 
     // Get user permissions
-    let permissions: Vec<String> = match sqlx::query_scalar(
+    let permissions: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT p.code 
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
@@ -571,18 +327,7 @@ async fn authenticate_user(
     .bind(user.id)
     .fetch_all(pool)
     .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to fetch permissions: {}", e)
-                }))
-            ).into_response());
-        }
-    };
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch permissions: {}", e)))?;
 
     Ok((user, permissions))
 }
@@ -591,46 +336,22 @@ async fn authenticate_user(
 async fn get_pool_and_authenticate(
     state: &AppState,
     headers: &HeaderMap,
-) -> Result<(PgPool, User, Vec<String>), Response> {
+) -> Result<(PgPool, User, Vec<String>), AppError> {
     // Extract subdomain
-    let subdomain = match extract_subdomain_from_request(headers) {
-        Ok(s) => s,
-        Err(response) => return Err(response),
-    };
+    let subdomain = extract_subdomain_from_request(headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
+
 
     // Get database URL
-    let db_url = match crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("School not found: {}", e)
-                }))
-            ).into_response());
-        }
-    };
+    let db_url = crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|e| AppError::NotFound(format!("School not found: {}", e)))?;
 
     // Get pool
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(serde_json::json!({
-                    "success": false,
-                    "error": format!("Database error: {}", e)
-                }))
-            ).into_response());
-        }
-    };
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+         .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?;
 
     // Get user and permissions
-    let (user, permissions) = match authenticate_user(headers, &pool).await {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
+    let (user, permissions) = authenticate_user(headers, &pool).await?;
 
     Ok((pool, user, permissions))
 }

@@ -1,11 +1,11 @@
 use crate::modules::system::models::{ProvisionRequest, ProvisionResponse};
+use crate::error::AppError;
 use axum::{
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 use sqlx::postgres::PgPoolOptions;
-
 
 /// Handler for provisioning a new school tenant database
 /// 
@@ -16,50 +16,35 @@ use sqlx::postgres::PgPoolOptions;
 /// 4. Returns success/failure
 pub async fn provision_tenant(
     Json(payload): Json<ProvisionRequest>,
-) -> Response {
+) -> Result<impl IntoResponse, AppError> {
     println!("📦 Provisioning tenant for school: {}", payload.school_id);
     println!("   Subdomain: {}", payload.subdomain);
     println!("   Admin Username: {:?}", payload.admin_username);
 
     // Connect to the tenant database
-    let pool = match PgPoolOptions::new()
+    let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(std::time::Duration::from_secs(30))
         .connect(&payload.db_connection_string)
         .await
-    {
-        Ok(pool) => pool,
-        Err(e) => {
+        .map_err(|e| {
             eprintln!("❌ Failed to connect to tenant database: {}", e);
-            let error = serde_json::json!({
-                "success": false,
-                "error": format!("Database connection failed: {}", e)
-            });
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
-        }
-    };
-
+             AppError::InternalServerError(format!("Database connection failed: {}", e))
+        })?;
 
     println!("✅ Connected to tenant database");
 
     // Run migrations
     println!("📦 Running migrations...");
-    match sqlx::migrate!("./migrations")
+    sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-    {
-        Ok(_) => {
-            println!("✅ Migrations completed successfully");
-        }
-        Err(e) => {
+        .map_err(|e| {
             eprintln!("❌ Migration failed: {}", e);
-            let error = serde_json::json!({
-                "success": false,
-                "error": format!("Migration failed: {}", e)
-            });
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
-        }
-    }
+            AppError::InternalServerError(format!("Migration failed: {}", e))
+        })?;
+
+    println!("✅ Migrations completed successfully");
 
     // Sync permissions immediately after migrations
     println!("🔄 Syncing permissions...");
@@ -76,64 +61,40 @@ pub async fn provision_tenant(
     // Get admin role (created by migration)
     println!("🔍 Getting admin role...");
     
-    let admin_role_id = match sqlx::query_scalar::<_, uuid::Uuid>(
+    let admin_role_id = sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
         SELECT id FROM roles WHERE code = 'ADMIN'
         "#
     )
     .fetch_one(&pool)
     .await
-    {
-        Ok(id) => {
-            println!("✅ Admin role found with ID: {}", id);
-            id
-        }
-        Err(e) => {
-            eprintln!("❌ Failed to find admin role: {}", e);
-            let error = serde_json::json!({
-                "success": false,
-                "error": format!("Failed to find admin role (migrations may not have run): {}", e)
-            });
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Failed to find admin role: {}", e);
+        AppError::InternalServerError(format!("Failed to find admin role (migrations may not have run): {}", e))
+    })?;
 
     // Create admin user (must be in transaction for encryption to work)
     println!("👤 Creating admin user...");
     
     // Start transaction
-    let mut tx = match pool.begin().await {
-        Ok(tx) => tx,
-        Err(e) => {
-            eprintln!("❌ Failed to start transaction: {}", e);
-            let error = serde_json::json!({
-                "success": false,
-                "error": "Failed to start transaction"
-            });
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
-        }
-    };
+    let mut tx = pool.begin().await.map_err(|e| {
+        eprintln!("❌ Failed to start transaction: {}", e);
+        AppError::InternalServerError("Failed to start transaction".to_string())
+    })?;
 
     // Hash the password using bcrypt
-    let password_hash = match bcrypt::hash(&payload.admin_password, bcrypt::DEFAULT_COST) {
-        Ok(hash) => hash,
-        Err(e) => {
+    let password_hash = bcrypt::hash(&payload.admin_password, bcrypt::DEFAULT_COST)
+        .map_err(|e| {
             eprintln!("❌ Password hashing failed: {}", e);
-            let error = serde_json::json!({
-                "success": false,
-                "error": "Password hashing failed"
-            });
-            let _ = tx.rollback().await;
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
-        }
-    };
+            AppError::InternalServerError("Password hashing failed".to_string())
+        })?;
 
     // Use admin_username directly
     let username = payload.admin_username.clone();
 
     // Insert admin user into the database
     // Use username for uniqueness check (unique index on username should exist)
-    let user_id = match sqlx::query_scalar::<_, uuid::Uuid>(
+    let user_id = sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
         INSERT INTO users (username, national_id, national_id_hash, password_hash, first_name, last_name, user_type, status)
         VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6)
@@ -150,23 +111,10 @@ pub async fn provision_tenant(
     .bind("active")
     .fetch_one(&mut *tx)
     .await
-    {
-        Ok(id) => {
-            println!("✅ Admin user created successfully");
-            println!("   User ID: {}", id);
-            println!("   Username: {}", username);
-            id
-        }
-        Err(e) => {
-            eprintln!("❌ Failed to create admin user: {}", e);
-            let error = serde_json::json!({
-                "success": false,
-                "error": format!("Failed to create admin user: {}", e)
-            });
-            let _ = tx.rollback().await;
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Failed to create admin user: {}", e);
+        AppError::InternalServerError(format!("Failed to create admin user: {}", e))
+    })?;
 
     // Assign admin role to the user
     println!("🔑 Assigning admin role to user...");
@@ -189,22 +137,14 @@ pub async fn provision_tenant(
         Err(e) => {
             eprintln!("⚠️  Warning: Failed to assign admin role: {}", e);
             let _ = tx.rollback().await;
-            let error = serde_json::json!({
-                "success": false,
-                "error": format!("Failed to assign admin role: {}", e)
-            });
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+            return Err(AppError::InternalServerError(format!("Failed to assign admin role: {}", e)));
         }
     }
 
     // Commit transaction
     if let Err(e) = tx.commit().await {
         eprintln!("❌ Failed to commit transaction: {}", e);
-        let error = serde_json::json!({
-            "success": false,
-            "error": "Failed to commit transaction"
-        });
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
+        return Err(AppError::InternalServerError("Failed to commit transaction".to_string()));
     }
 
     println!("🎉 Tenant provisioning completed for school: {}", payload.school_id);
@@ -215,5 +155,5 @@ pub async fn provision_tenant(
         school_id: payload.school_id,
     };
 
-    (StatusCode::OK, Json(response)).into_response()
+    Ok((StatusCode::OK, Json(response)))
 }

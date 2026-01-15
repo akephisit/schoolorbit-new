@@ -5,10 +5,11 @@ use crate::modules::auth::models::User;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
 use crate::AppState;
+use crate::error::AppError;
 use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 
@@ -90,7 +91,7 @@ async fn check_user_permission(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
     required_permission: &str,
-) -> Result<User, Response> {
+) -> Result<User, AppError> {
     use crate::modules::auth::permissions::UserPermissions;
     
     // Try to extract token from Authorization header first
@@ -114,36 +115,16 @@ async fn check_user_permission(
         .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
 
     // Use Authorization header first, then cookie
-    let token = match token_from_header.or(token_from_cookie) {
-        Some(t) => t,
-        None => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "success": false,
-                    "error": "กรุณาเข้าสู่ระบบ"
-                })),
-            ).into_response());
-        }
-    };
+    let token = token_from_header.or(token_from_cookie)
+        .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
 
     
     // Verify token
-    let claims = match crate::utils::jwt::JwtService::verify_token(&token) {
-        Ok(c) => c,
-        Err(_) => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "success": false,
-                    "error": "Token ไม่ถูกต้อง"
-                })),
-            ).into_response());
-        }
-    };
+    let claims = crate::utils::jwt::JwtService::verify_token(&token)
+        .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
     
     // Get user from database
-    let mut user: User = match sqlx::query_as(
+    let mut user: User = sqlx::query_as(
         "SELECT 
             id,
             national_id,
@@ -170,22 +151,13 @@ async fn check_user_permission(
          FROM users 
          WHERE id = $1"
     )
-        .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
-        .fetch_one(pool)
-        .await
-    {
-        Ok(u) => u,
-        Err(e) => {
-            eprintln!("❌ Failed to get user: {}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถดึงข้อมูลผู้ใช้ได้"
-                })),
-            ).into_response());
-        }
-    };
+    .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
+    .fetch_one(pool)
+    .await
+    .map_err(|e| {
+        eprintln!("❌ Failed to get user: {}", e);
+        AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string())
+    })?;
     
     // Decrypt national_id
     if let Some(encrypted_national_id) = user.national_id {
@@ -200,24 +172,10 @@ async fn check_user_permission(
     // Check permission
     match user.has_permission(pool, required_permission).await {
         Ok(true) => Ok(user),
-        Ok(false) => {
-            Err((
-                StatusCode::FORBIDDEN,
-                Json(json!({
-                    "success": false,
-                    "error": format!("คุณไม่มีสิทธิ์ (ต้องการ {} permission)", required_permission)
-                })),
-            ).into_response())
-        },
+        Ok(false) => Err(AppError::Forbidden(format!("คุณไม่มีสิทธิ์ (ต้องการ {} permission)", required_permission))),
         Err(e) => {
             eprintln!("❌ Permission check error: {}", e);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์"
-                })),
-            ).into_response())
+            Err(AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string()))
         }
     }
 }
@@ -234,51 +192,30 @@ pub async fn list_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(filter): Query<StaffListFilter>,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
+        })?;
     
     // Check permission
     let auth_result = check_user_permission(&headers, &pool, "staff.read.all").await;
-    let _user = match auth_result {
-        Ok(u) => u,
+    match auth_result {
+        Ok(_) => {},
         Err(_) => {
-            match check_user_permission(&headers, &pool, "achievement.create.all").await {
-                Ok(u) => u,
-                Err(response) => return response,
-            }
+            check_user_permission(&headers, &pool, "achievement.create.all").await?;
         }
     };
 
@@ -313,29 +250,16 @@ pub async fn list_staff(
         page_size, offset
     ));
 
-    let staff_rows = match sqlx::query_as::<_, (Uuid, String, String, String)>(&query)
+    let staff_rows = sqlx::query_as::<_, (Uuid, String, String, String)>(&query)
         .fetch_all(&pool)
         .await
-    {
-        Ok(rows) => rows,
-        Err(e) => {
+        .map_err(|e| {
             eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการดึงข้อมูล"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+        })?;
 
     let count_query = "SELECT COUNT(DISTINCT u.id) FROM users u WHERE u.user_type = 'staff'";
-    let total: i64 = match sqlx::query_scalar(count_query).fetch_one(&pool).await {
-        Ok(count) => count,
-        Err(_) => 0,
-    };
+    let total: i64 = sqlx::query_scalar(count_query).fetch_one(&pool).await.unwrap_or(0);
 
     let total_pages = (total as f64 / page_size as f64).ceil() as i64;
 
@@ -360,7 +284,7 @@ pub async fn list_staff(
         total_pages,
     };
 
-    (StatusCode::OK, Json(response)).into_response()
+    Ok((StatusCode::OK, Json(response)))
 }
 
 // ===================================================================
@@ -371,50 +295,29 @@ pub async fn get_staff_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(staff_id): Path<Uuid>,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
+        })?;
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.read.all").await {
-        Ok(u) => u,
-        Err(response) => return response,
-    };
+    check_user_permission(&headers, &pool, "staff.read.all").await?;
 
     // Get user basic info (encryption key auto-set by pool)
-    let mut user = match sqlx::query_as::<_, UserBasicRow>(
+    let mut user = sqlx::query_as::<_, UserBasicRow>(
         "SELECT id, national_id, email, title, first_name, last_name, nickname, phone, 
                 emergency_contact, line_id, date_of_birth, gender, address, hired_date,
                 user_type, status, profile_image_url
@@ -424,30 +327,11 @@ pub async fn get_staff_profile(
     .bind(staff_id)
     .fetch_optional(&pool)
     .await
-    {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบบุคลากร"
-                })),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?
+    .ok_or(AppError::NotFound("ไม่พบบุคลากร".to_string()))?;
     
     // Decrypt national_id
     if let Some(ref nid) = user.national_id {
@@ -570,14 +454,13 @@ pub async fn get_staff_profile(
         permissions: vec![],
     };
 
-    (
+    Ok((
         StatusCode::OK,
         Json(json!({
             "success": true,
             "data": profile
         })),
-    )
-        .into_response()
+    ))
 }
 
 // ===================================================================
@@ -588,87 +471,45 @@ pub async fn create_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<CreateStaffRequest>,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
+        })?;
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.create.all").await {
-        Ok(u) => u,
-        Err(response) => return response,
-    };
+    check_user_permission(&headers, &pool, "staff.create.all").await?;
 
     // Hash password (encryption key auto-set by pool)
-    let password_hash = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
-        Ok(hash) => hash,
-        Err(e) => {
+    let password_hash = bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST)
+        .map_err(|e| {
             eprintln!("❌ Password hashing failed: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการสร้างรหัสผ่าน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
+        })?;
 
-    let mut tx = match pool.begin().await {
-        Ok(tx) => tx,
-        Err(e) => {
-            eprintln!("❌ Failed to start transaction: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let mut tx = pool.begin().await.map_err(|e| {
+        eprintln!("❌ Failed to start transaction: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
     // Encrypt national_id
-    let encrypted_national_id = match field_encryption::encrypt_optional(payload.national_id.as_deref()) {
-        Ok(enc) => enc,
-        Err(e) => {
+    let encrypted_national_id = field_encryption::encrypt_optional(payload.national_id.as_deref())
+        .map_err(|e| {
              eprintln!("Encryption failed: {}", e);
-             return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "error": "Encryption error"}))).into_response();
-        }
-    };
+             AppError::InternalServerError("Encryption error".to_string())
+        })?;
 
     // Hash national_id for search
     let national_id_hash = payload.national_id.as_deref().map(|s| field_encryption::hash_for_search(s));
@@ -690,14 +531,8 @@ pub async fn create_staff(
          format!("T{}{:04}", thai_year, count + 1)
     };
 
-    // Check if user already exists (by username or national_id if provided)
-    // Simplified: Just insert, if fail let unique constraint handle it or check username specifically.
-    // For "Reactivation" logic, we might need to check if we want to support it still.
-    // Given the prompt "don't care about old data", we can probably simplify this.
-    // But let's try to keep it robust.
-
     // Create new user
-    let user_id: Uuid = match sqlx::query_scalar(
+    let user_id: Uuid = sqlx::query_scalar(
         "INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash, title, first_name, last_name, nickname,
             phone, emergency_contact, line_id, date_of_birth, gender, address,
@@ -724,27 +559,14 @@ pub async fn create_staff(
     .bind(&payload.profile_image_url)
     .fetch_one(&mut *tx)
     .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            eprintln!("❌ Failed to create user: {}", e);
-            let _ = tx.rollback().await;
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถสร้างบุคลากรได้ (Username อาจซ้ำ)"
-                })),
-            )
-            .into_response();
-        }
-    };
-
-
+    .map_err(|e| {
+        eprintln!("❌ Failed to create user: {}", e);
+        AppError::InternalServerError("ไม่สามารถสร้างบุคลากรได้ (Username อาจซ้ำ)".to_string())
+    })?;
 
     // Create staff info (if provided)
     if let Some(staff_info) = &payload.staff_info {
-        match sqlx::query(
+        sqlx::query(
             "INSERT INTO staff_info (
                 user_id, education_level, major, university,
                 teaching_license_number, teaching_license_expiry, metadata
@@ -758,24 +580,11 @@ pub async fn create_staff(
         .bind(&staff_info.teaching_license_expiry)
         .execute(&mut *tx)
         .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("❌ Failed to create staff info: {}", e);
-                let _ = tx.rollback().await;
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({
-                        "success": false,
-                        "error": "ไม่สามารถสร้างข้อมูลบุคลากรได้"
-                    })),
-                )
-                    .into_response();
-            }
-        };
+        .map_err(|e| {
+            eprintln!("❌ Failed to create staff info: {}", e);
+            AppError::InternalServerError("ไม่สามารถสร้างข้อมูลบุคลากรได้".to_string())
+        })?;
     }
-
-
 
     // ===================================================================
     // Validate: All roles must have user_type = 'staff'
@@ -799,18 +608,7 @@ pub async fn create_staff(
                 "❌ Role validation failed for staff: invalid roles = {:?}",
                 invalid_roles
             );
-            let _ = tx.rollback().await;
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "success": false,
-                    "error": format!(
-                        "บทบาทต่อไปนี้ไม่สามารถใช้กับบุคลากรได้: {}",
-                        invalid_roles.join(", ")
-                    )
-                })),
-            )
-                .into_response();
+            return Err(AppError::BadRequest(format!("มีบทบาทที่ไม่ถูกต้องสำหรับบุคลากร: {:?}", invalid_roles)));
         }
     }
 
@@ -818,7 +616,7 @@ pub async fn create_staff(
     for role_id in &payload.role_ids {
         let is_primary = payload.primary_role_id.as_ref() == Some(role_id);
 
-        let _ = sqlx::query(
+        sqlx::query(
             "INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
              VALUES ($1, $2, $3, CURRENT_DATE)",
         )
@@ -826,13 +624,17 @@ pub async fn create_staff(
         .bind(role_id)
         .bind(is_primary)
         .execute(&mut *tx)
-        .await;
+        .await
+        .map_err(|e| {
+            eprintln!("❌ Failed to assign role: {}", e);
+             AppError::InternalServerError("ไม่สามารถบันทึกบทบาทได้".to_string())
+        })?;
     }
 
     // Assign departments
     if let Some(dept_assignments) = &payload.department_assignments {
         for assignment in dept_assignments {
-            let _ = sqlx::query(
+            sqlx::query(
                 "INSERT INTO department_members (
                     user_id, department_id, position, is_primary_department, 
                     responsibilities, started_at
@@ -844,37 +646,30 @@ pub async fn create_staff(
             .bind(assignment.is_primary.unwrap_or(false))
             .bind(&assignment.responsibilities)
             .execute(&mut *tx)
-            .await;
+            .await
+            .map_err(|e| {
+                eprintln!("❌ Failed to assign department: {}", e);
+                 AppError::InternalServerError("ไม่สามารถบันทึกแผนกได้".to_string())
+            })?;
         }
     }
 
-    match tx.commit().await {
-        Ok(_) => {
-            println!("✅ Staff created successfully: {}", user_id);
-            (
-                StatusCode::CREATED,
-                Json(json!({
-                    "success": true,
-                    "message": "สร้างบุคลากรสำเร็จ",
-                    "data": {
-                        "id": user_id
-                    }
-                })),
-            )
-                .into_response()
-        }
-        Err(e) => {
-            eprintln!("❌ Failed to commit transaction: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการบันทึกข้อมูล"
-                })),
-            )
-                .into_response()
-        }
-    }
+    tx.commit().await.map_err(|e| {
+        eprintln!("❌ Failed to commit transaction: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการบันทึกข้อมูล".to_string())
+    })?;
+
+    println!("✅ Staff created successfully: {}", user_id);
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "success": true,
+            "message": "สร้างบุคลากรสำเร็จ",
+            "data": {
+                "id": user_id
+            }
+        })),
+    ))
 }
 
 // ===================================================================
@@ -886,62 +681,31 @@ pub async fn update_staff(
     headers: HeaderMap,
     Path(staff_id): Path<Uuid>,
     Json(payload): Json<UpdateStaffRequest>,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
+        })?;
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.update.all").await {
-        Ok(u) => u,
-        Err(response) => return response,
-    };
+    check_user_permission(&headers, &pool, "staff.update.all").await?;
 
-    let mut tx = match pool.begin().await {
-        Ok(tx) => tx,
-        Err(e) => {
-            eprintln!("❌ Failed to start transaction: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let mut tx = pool.begin().await.map_err(|e| {
+        eprintln!("❌ Failed to start transaction: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
     // Update user table
     let result = sqlx::query(
@@ -997,7 +761,7 @@ pub async fn update_staff(
 
                 if exists {
                     // Update existing record
-                    let _ = sqlx::query(
+                    sqlx::query(
                         "UPDATE staff_info 
                          SET 
                             education_level = COALESCE($2, education_level),
@@ -1011,10 +775,14 @@ pub async fn update_staff(
                     .bind(&staff_info.major)
                     .bind(&staff_info.university)
                     .execute(&mut *tx)
-                    .await;
+                    .await
+                    .map_err(|e| {
+                        eprintln!("❌ Failed to update staff_info: {}", e);
+                        AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลบุคลากรได้".to_string())
+                    })?;
                 } else {
                     // Create new record
-                    let _ = sqlx::query(
+                    sqlx::query(
                         "INSERT INTO staff_info (user_id, education_level, major, university, metadata)
                          VALUES ($1, $2, $3, $4, '{}'::jsonb)",
                     )
@@ -1023,23 +791,31 @@ pub async fn update_staff(
                     .bind(&staff_info.major)
                     .bind(&staff_info.university)
                     .execute(&mut *tx)
-                    .await;
+                    .await
+                    .map_err(|e| {
+                        eprintln!("❌ Failed to create staff_info: {}", e);
+                        AppError::InternalServerError("ไม่สามารถสร้างข้อมูลบุคลากรได้".to_string())
+                    })?;
                 }
             }
 
             // Update roles if provided
             if let Some(role_ids) = &payload.role_ids {
                 // Delete existing roles
-                let _ = sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
+                sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
                     .bind(staff_id)
                     .execute(&mut *tx)
-                    .await;
+                    .await
+                    .map_err(|e| {
+                        eprintln!("❌ Failed to delete roles: {}", e);
+                        AppError::InternalServerError("ไม่สามารถอัพเดตบทบาทได้".to_string())
+                    })?;
 
                 // Insert new roles
                 for role_id in role_ids {
                     let is_primary = payload.primary_role_id.as_ref() == Some(role_id);
 
-                    let _ = sqlx::query(
+                    sqlx::query(
                         "INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
                          VALUES ($1, $2, $3, CURRENT_DATE)",
                     )
@@ -1047,21 +823,29 @@ pub async fn update_staff(
                     .bind(role_id)
                     .bind(is_primary)
                     .execute(&mut *tx)
-                    .await;
+                    .await
+                    .map_err(|e| {
+                        eprintln!("❌ Failed to insert role: {}", e);
+                        AppError::InternalServerError("ไม่สามารถเพิ่มบทบาทได้".to_string())
+                    })?;
                 }
             }
 
             // Update departments if provided
             if let Some(dept_assignments) = &payload.department_assignments {
                 // Delete existing department assignments
-                let _ = sqlx::query("DELETE FROM department_members WHERE user_id = $1")
+                sqlx::query("DELETE FROM department_members WHERE user_id = $1")
                     .bind(staff_id)
                     .execute(&mut *tx)
-                    .await;
+                    .await
+                    .map_err(|e| {
+                        eprintln!("❌ Failed to delete department members: {}", e);
+                        AppError::InternalServerError("ไม่สามารถอัพเดตแผนกได้".to_string())
+                    })?;
 
                 // Insert new department assignments
                 for assignment in dept_assignments {
-                    let _ = sqlx::query(
+                    sqlx::query(
                         "INSERT INTO department_members (
                             user_id, department_id, position, is_primary_department, 
                             responsibilities, started_at
@@ -1073,54 +857,35 @@ pub async fn update_staff(
                     .bind(assignment.is_primary.unwrap_or(false))
                     .bind(&assignment.responsibilities)
                     .execute(&mut *tx)
-                    .await;
+                    .await
+                    .map_err(|e| {
+                       eprintln!("❌ Failed to insert department member: {}", e);
+                       AppError::InternalServerError("ไม่สามารถเพิ่มแผนกได้".to_string())
+                    })?;
                 }
             }
 
-            match tx.commit().await {
-                Ok(_) => (
-                    StatusCode::OK,
-                    Json(json!({
-                        "success": true,
-                        "message": "อัปเดตข้อมูลสำเร็จ"
-                    })),
-                )
-                    .into_response(),
-                Err(e) => {
-                    eprintln!("❌ Failed to commit transaction: {}", e);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({
-                            "success": false,
-                            "error": "เกิดข้อผิดพลาดในการบันทึกข้อมูล"
-                        })),
-                    )
-                        .into_response()
-                }
-            }
+            tx.commit().await.map_err(|e| {
+                eprintln!("❌ Failed to commit transaction: {}", e);
+                AppError::InternalServerError("เกิดข้อผิดพลาดในการบันทึกข้อมูล".to_string())
+            })?;
+            
+            Ok((
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "message": "อัปเดตข้อมูลสำเร็จ"
+                })),
+            ))
         }
         Ok(_) => {
             let _ = tx.rollback().await;
-            (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบบุคลากร"
-                })),
-            )
-                .into_response()
+            Err(AppError::NotFound("ไม่พบบุคลากร".to_string()))
         }
         Err(e) => {
             eprintln!("❌ Database error: {}", e);
             let _ = tx.rollback().await;
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการอัปเดตข้อมูล"
-                })),
-            )
-                .into_response()
+            Err(AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string()))
         }
     }
 }
@@ -1133,47 +898,26 @@ pub async fn delete_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(staff_id): Path<Uuid>,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
+        })?;
     
     // Check permission
-    let _user = match check_user_permission(&headers, &pool, "staff.delete.all").await {
-        Ok(u) => u,
-        Err(response) => return response,
-    };
+    check_user_permission(&headers, &pool, "staff.delete.all").await?;
 
     let result = sqlx::query(
         "UPDATE users 
@@ -1182,36 +926,22 @@ pub async fn delete_staff(
     )
     .bind(staff_id)
     .execute(&pool)
-    .await;
+    .await
+    .map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการลบบุคลากร".to_string())
+    })?;
 
-    match result {
-        Ok(result) if result.rows_affected() > 0 => (
+    if result.rows_affected() > 0 {
+        Ok((
             StatusCode::OK,
             Json(json!({
                 "success": true,
                 "message": "ลบบุคลากรสำเร็จ"
             })),
-        )
-            .into_response(),
-        Ok(_) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({
-                "success": false,
-                "error": "ไม่พบบุคลากร"
-            })),
-        )
-            .into_response(),
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการลบบุคลากร"
-                })),
-            )
-                .into_response()
-        }
+        ))
+    } else {
+        Err(AppError::NotFound("ไม่พบบุคลากร".to_string()))
     }
 }
 
@@ -1219,52 +949,34 @@ pub async fn get_public_staff_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(staff_id): Path<Uuid>,
-) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            ).into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
-            ).into_response();
-        }
-    };
+            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
+        })?;
 
     // Authentication Only
     let auth_header = headers.get(header::AUTHORIZATION).and_then(|h| h.to_str().ok());
     let token_from_header = auth_header.and_then(|h| if h.starts_with("Bearer ") { Some(h[7..].to_string()) } else { None });
     let token_from_cookie = headers.get(header::COOKIE).and_then(|h| h.to_str().ok()).and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
     
-    let token = match token_from_header.or(token_from_cookie) {
-        Some(t) => t,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false,"error": "กรุณาเข้าสู่ระบบ"}))).into_response(),
-    };
+    let token = token_from_header.or(token_from_cookie)
+        .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
     
     if let Err(_) = crate::utils::jwt::JwtService::verify_token(&token) {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"success": false,"error": "Token ไม่ถูกต้อง"}))).into_response();
+        return Err(AppError::AuthError("Token ไม่ถูกต้อง".to_string()));
     }
 
     // Helper Structs for Public Profile
@@ -1284,28 +996,25 @@ pub async fn get_public_staff_profile(
     }
 
     // 1. Get User Basic Info
-    // Note: Alias phone_number no longer needed if we map to 'phone' field in struct
-    let user_rec = match sqlx::query_as::<_, PublicUserRow>(
+    let user_rec = sqlx::query_as::<_, PublicUserRow>(
         "SELECT id, first_name, last_name, nickname, email, user_type, status, profile_image_url, title, phone, hired_date
          FROM users WHERE id = $1 AND user_type = 'staff'"
     )
     .bind(staff_id)
     .fetch_optional(&pool)
-    .await {
-         Ok(Some(u)) => u,
-         Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({ "success": false, "error": "ไม่พบบุคลากร" }))).into_response(),
-         Err(e) => {
-             eprintln!("❌ Database error (user): {}", e);
-             return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "success": false, "error": "เกิดข้อผิดพลาดในการดึงข้อมูล" }))).into_response();
-         }
-    };
+    .await
+    .map_err(|e| {
+        eprintln!("❌ Database error (user): {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+    })?
+    .ok_or(AppError::NotFound("ไม่พบบุคลากร".to_string()))?;
 
     #[derive(sqlx::FromRow)]
     struct PublicRoleRow {
         id: Uuid,
         code: String,
         name: String,
-        level: Option<i32>, // level in roles is i32
+        level: Option<i32>,
     }
 
     // 2. Get Roles
@@ -1367,5 +1076,5 @@ pub async fn get_public_staff_profile(
         })).collect::<Vec<_>>()
     });
 
-    (StatusCode::OK, Json(json!({ "success": true, "data": response_data }))).into_response()
+    Ok((StatusCode::OK, Json(json!({ "success": true, "data": response_data }))))
 }

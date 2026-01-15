@@ -1,8 +1,9 @@
 use crate::AppState;
+use crate::error::AppError;
 use axum::{
     extract::State,
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 use serde::Serialize;
@@ -59,28 +60,17 @@ struct SchoolRow {
 }
 
 /// Migrate all active schools
-pub async fn migrate_all_schools(State(state): State<AppState>) -> Response {
+pub async fn migrate_all_schools(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     println!("🔄 Starting migration for all active schools...");
 
     // Get latest migration version
-    let latest_version = match get_latest_migration_version().await {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("❌ Failed to get latest version: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": format!("Failed to determine latest migration version: {}", e)
-                })),
-            )
-                .into_response();
-        }
-    };
+    let latest_version = get_latest_migration_version().await
+        .map_err(|e| AppError::InternalServerError(format!("Failed to determine latest migration version: {}", e)))?;
 
     println!("📊 Latest migration version: {}", latest_version);
 
     // Get all active schools from admin database
-    let schools = match sqlx::query_as::<_, SchoolRow>(
+    let schools = sqlx::query_as::<_, SchoolRow>(
         "SELECT subdomain, db_connection_string, migration_version, migration_status, 
                 last_migrated_at, migration_error
          FROM schools 
@@ -88,19 +78,10 @@ pub async fn migrate_all_schools(State(state): State<AppState>) -> Response {
     )
     .fetch_all(&state.admin_pool)
     .await
-    {
-        Ok(schools) => schools,
-        Err(e) => {
-            eprintln!("❌ Failed to fetch schools: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "Failed to fetch schools from admin database"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Failed to fetch schools: {}", e);
+        AppError::InternalServerError("Failed to fetch schools from admin database".to_string())
+    })?;
 
     println!("📊 Found {} active schools", schools.len());
 
@@ -148,7 +129,7 @@ pub async fn migrate_all_schools(State(state): State<AppState>) -> Response {
         success_count, failed_count
     );
 
-    (
+    Ok((
         StatusCode::OK,
         Json(MigrateAllResponse {
             total: results.len(),
@@ -157,20 +138,16 @@ pub async fn migrate_all_schools(State(state): State<AppState>) -> Response {
             latest_version,
             results,
         }),
-    )
-        .into_response()
+    ))
 }
 
 /// Get migration status for all schools
-pub async fn migration_status(State(state): State<AppState>) -> Response {
+pub async fn migration_status(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     // Get latest version
-    let latest_version = match get_latest_migration_version().await {
-        Ok(v) => v,
-        Err(_) => 0,
-    };
+    let latest_version = get_latest_migration_version().await.unwrap_or(0);
 
     // Get all schools with migration info
-    let schools = match sqlx::query_as::<_, SchoolRow>(
+    let schools = sqlx::query_as::<_, SchoolRow>(
         "SELECT subdomain, db_connection_string, migration_version, migration_status,
                 last_migrated_at, migration_error
          FROM schools 
@@ -179,19 +156,10 @@ pub async fn migration_status(State(state): State<AppState>) -> Response {
     )
     .fetch_all(&state.admin_pool)
     .await
-    {
-        Ok(schools) => schools,
-        Err(e) => {
-            eprintln!("❌ Failed to fetch schools: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "Failed to fetch migration status"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .map_err(|e| {
+        eprintln!("❌ Failed to fetch schools: {}", e);
+         AppError::InternalServerError("Failed to fetch migration status".to_string())
+    })?;
 
     let total = schools.len();
     let mut migrated = 0;
@@ -234,7 +202,7 @@ pub async fn migration_status(State(state): State<AppState>) -> Response {
 
     let active_pools = state.pool_manager.pool_count().await;
 
-    (
+    Ok((
         StatusCode::OK,
         Json(MigrationStatusResponse {
             total_schools: total,
@@ -246,8 +214,7 @@ pub async fn migration_status(State(state): State<AppState>) -> Response {
             latest_version,
             schools: school_statuses,
         }),
-    )
-        .into_response()
+    ))
 }
 
 /// Helper: Migrate a single school
