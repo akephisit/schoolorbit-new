@@ -1,5 +1,5 @@
 # Base stage with cargo-chef
-FROM rustlang/rust:nightly-slim AS base
+FROM rustlang/rust:nightly-bookworm-slim AS base
 # Install OpenSSL and pkg-config for all build stages
 RUN apt-get update && apt-get install -y \
     pkg-config \
