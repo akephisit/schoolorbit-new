@@ -5,6 +5,7 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
 use crate::utils::file_url::get_file_url_from_string;
 use crate::AppState;
+use crate::error::AppError;
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
@@ -20,49 +21,31 @@ pub async fn login(
     headers: HeaderMap,
     cookies: Cookies,
     Json(payload): Json<LoginRequest>,
-) -> Response {
+) -> Result<impl IntoResponse, AppError> {
     // Extract subdomain from Origin header (secure, cannot be spoofed)
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     println!("🔐 Login attempt for school: {}, username: {}", subdomain, payload.username);
 
     // Get school database URL from mapping
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียนหรือโรงเรียนไม่ได้เปิดใช้งาน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียนหรือโรงเรียนไม่ได้เปิดใช้งาน".to_string())
+        })?;
 
     // Connect to school database
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to connect to school database: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
+        })?;
 
     // Find user by username
-    let user = match sqlx::query_as::<_, LoginUser>(
+    let user = sqlx::query_as::<_, LoginUser>(
         r#"
         SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
         FROM users
@@ -71,65 +54,25 @@ pub async fn login(
     )
     .bind(&payload.username)
     .fetch_optional(&pool)
-    .await
-    {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": "ไม่พบผู้ใช้หรือบัญชีถูกระงับ"
-                })),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการเข้าสู่ระบบ"
-                })),
-            )
-                .into_response();
-        }
-    };
+    .await?
+    .ok_or(AppError::AuthError("ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string()))?;
 
     // Verify password
     let is_valid = bcrypt::verify(&payload.password, &user.password_hash).unwrap_or(false);
 
     if !is_valid {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "success": false,
-                "error": "รหัสผ่านไม่ถูกต้อง"
-            })),
-        )
-            .into_response();
+        return Err(AppError::AuthError("รหัสผ่านไม่ถูกต้อง".to_string()));
     }
 
     // Generate JWT token
-    let token = match JwtService::generate_token(
+    let token = JwtService::generate_token(
         &user.id.to_string(),
         &user.username,
         &user.user_type,
-    ) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("❌ Failed to generate token: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": "ไม่สามารถสร้าง token ได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+    ).map_err(|e| {
+        eprintln!("❌ Failed to generate token: {}", e);
+        AppError::InternalServerError("ไม่สามารถสร้าง token ได้".to_string())
+    })?;
 
     // Fetch primary role name
     let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
@@ -144,8 +87,7 @@ pub async fn login(
     .bind(&user.id)
     .fetch_optional(&pool)
     .await
-    .ok()
-    .flatten();
+    .unwrap_or(None);
 
     // Fetch all user permissions from normalized schema
     let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
@@ -194,19 +136,18 @@ pub async fn login(
     
     cookies.add(cookie);
 
-    (
+    Ok((
         StatusCode::OK,
         Json(LoginResponse {
             success: true,
             message: "เข้าสู่ระบบสำเร็จ".to_string(),
             user: user_response,
         }),
-    )
-        .into_response()
+    ))
 }
 
 /// Logout handler
-pub async fn logout(cookies: Cookies) -> Response {
+pub async fn logout(cookies: Cookies) -> Result<impl IntoResponse, AppError> {
     // Remove auth token cookie
     let mut cookie = Cookie::new("auth_token", "");
     cookie.set_path("/");
@@ -214,14 +155,13 @@ pub async fn logout(cookies: Cookies) -> Response {
     
     cookies.add(cookie);
 
-    (
+    Ok((
         StatusCode::OK,
         Json(serde_json::json!({
             "success": true,
             "message": "ออกจากระบบสำเร็จ"
         })),
-    )
-        .into_response()
+    ))
 }
 
 /// Get current user handler (protected)
@@ -229,59 +169,34 @@ pub async fn me(
     State(state): State<AppState>,
     headers: HeaderMap,
     req: Request,
-) -> Response {
+) -> Result<impl IntoResponse, AppError> {
     // Extract subdomain from Origin header (secure)
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     // Extract claims from middleware
-    let claims = match req.extensions().get::<Claims>() {
-        Some(c) => c.clone(),
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": "ไม่พบข้อมูลผู้ใช้"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let claims = req.extensions().get::<Claims>()
+        .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
+        .clone();
 
     // Get school database URL
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
     // Get pool
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string())
+        })?;
 
     // Fetch user from database
-    let mut user = match sqlx::query_as::<_, User>(
+    let mut user = sqlx::query_as::<_, User>(
         "SELECT 
             id,
             username,
@@ -311,29 +226,8 @@ pub async fn me(
     )
         .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
         .fetch_optional(&pool)
-        .await
-    {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบผู้ใช้"
-                })),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+        .await?
+        .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
 
     // Decrypt national_id
     if let Some(ref nid) = user.national_id {
@@ -356,8 +250,7 @@ pub async fn me(
     .bind(&user.id)
     .fetch_optional(&pool)
     .await
-    .ok()
-    .flatten();
+    .unwrap_or(None);
 
     // Fetch all user permissions from normalized schema
     let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
@@ -380,93 +273,50 @@ pub async fn me(
     // Always send permissions array (even if empty) so frontend can check
     user_response.permissions = Some(permissions);
 
-    (StatusCode::OK, Json(user_response)).into_response()
+    Ok((StatusCode::OK, Json(user_response)))
 }
 
+/// Get full profile handler (GET /me/profile)
+/// Returns complete user profile with all fields
 /// Get full profile handler (GET /me/profile)
 /// Returns complete user profile with all fields
 pub async fn get_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
     req: Request,
-) -> Response {
+) -> Result<impl IntoResponse, AppError> {
     // Extract subdomain from Origin header (secure)
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     // Extract claims from middleware
-    let claims = match req.extensions().get::<Claims>() {
-        Some(c) => c.clone(),
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": "ไม่พบข้อมูลผู้ใช้"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let claims = req.extensions().get::<Claims>()
+        .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
+        .clone();
 
     // Get school database URL
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
     // Get pool
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     // Fetch user from database
-    let mut user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+    let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
         .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
         .fetch_optional(&pool)
-        .await
-    {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบผู้ใช้"
-                })),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            eprintln!("❌ Database error: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+        .await?
+        .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
+
     if let Some(ref nid) = user.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
             user.national_id = Some(dec);
@@ -486,28 +336,29 @@ pub async fn get_profile(
     .bind(&user.id)
     .fetch_optional(&pool)
     .await
-    .ok()
-    .flatten();
+    .unwrap_or(None);
 
     // Create full profile response with primary role name
     let mut profile_response = ProfileResponse::from(user);
     profile_response.primary_role_name = primary_role_name;
 
-    (StatusCode::OK, Json(profile_response)).into_response()
+    Ok((StatusCode::OK, Json(profile_response)))
 }
 
+/// Update profile handler (PUT /me/profile)
+/// Updates user's editable fields only
+/// Update profile handler (PUT /me/profile)
+/// Updates user's editable fields only
 /// Update profile handler (PUT /me/profile)
 /// Updates user's editable fields only
 pub async fn update_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<UpdateProfileRequest>,
-) -> Response {
+) -> Result<impl IntoResponse, AppError> {
     // Extract subdomain from Origin header (secure)
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     // Extract token from Authorization header or cookie
     let token = headers
@@ -524,78 +375,34 @@ pub async fn update_profile(
                         .split(';')
                         .find_map(|c| c.trim().strip_prefix("auth_token="))
                 })
-        });
-
-    let token = match token {
-        Some(t) => t,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": "Missing authentication token"
-                })),
-            )
-                .into_response();
-        }
-    };
+        })
+        .ok_or(AppError::AuthError("Missing authentication token".to_string()))?;
 
     // Validate JWT
-    let claims = match JwtService::verify_token(token) {
-        Ok(claims) => claims,
-        Err(_) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": "Invalid or expired token"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let claims = JwtService::verify_token(token)
+        .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
 
     // Get school database URL
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
     // Get pool
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
-    let user_id = match uuid::Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(e) => {
+    let user_id = uuid::Uuid::parse_str(&claims.sub)
+        .map_err(|e| {
             eprintln!("❌ Invalid user ID: {}", e);
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "Invalid user ID"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::BadRequest("Invalid user ID".to_string())
+        })?;
 
     // Parse date_of_birth if provided
     let date_of_birth = payload.date_of_birth.as_ref().and_then(|dob| {
@@ -603,7 +410,7 @@ pub async fn update_profile(
     });
 
     // Update user profile
-    let result = sqlx::query(
+    sqlx::query(
         "UPDATE users 
          SET title = COALESCE($1, title),
              nickname = COALESCE($2, nickname),
@@ -630,90 +437,59 @@ pub async fn update_profile(
     .bind(&payload.profile_image_url)
     .bind(user_id)
     .execute(&pool)
-    .await;
+    .await
+    .map_err(|e| {
+        eprintln!("❌ Failed to update profile: {}", e);
+        AppError::InternalServerError("ไม่สามารถอัพเดทข้อมูลได้".to_string())
+    })?;
 
-    match result {
-        Ok(_) => {
-            // Fetch updated user
-            let mut user = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
-                .bind(user_id)
-                .fetch_optional(&pool)
-                .await
-            {
-                Ok(Some(user)) => user,
-                Ok(None) => {
-                    return (
-                        StatusCode::NOT_FOUND,
-                        Json(serde_json::json!({
-                            "error": "ไม่พบผู้ใช้"
-                        })),
-                    )
-                        .into_response();
-                }
-                Err(e) => {
-                    eprintln!("❌ Database error: {}", e);
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(serde_json::json!({
-                            "error": "เกิดข้อผิดพลาด"
-                        })),
-                    )
-                        .into_response();
-                }
-            };
-            if let Some(ref nid) = user.national_id {
-                if let Ok(dec) = field_encryption::decrypt(nid) {
-                    user.national_id = Some(dec);
-                }
-            }
+    // Fetch updated user
+    let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await?
+        .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
 
-            // Fetch primary role name
-            let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
-                "SELECT r.name 
-                 FROM user_roles ur
-                 JOIN roles r ON ur.role_id = r.id
-                 WHERE ur.user_id = $1 
-                   AND ur.is_primary = true 
-                   AND ur.ended_at IS NULL
-                 LIMIT 1"
-            )
-            .bind(&user.id)
-            .fetch_optional(&pool)
-            .await
-            .ok()
-            .flatten();
-
-            // Return updated profile
-            let mut profile_response = ProfileResponse::from(user);
-            profile_response.primary_role_name = primary_role_name;
-
-            (StatusCode::OK, Json(profile_response)).into_response()
-        }
-        Err(e) => {
-            eprintln!("❌ Failed to update profile: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "ไม่สามารถอัพเดทข้อมูลได้"
-                })),
-            )
-                .into_response()
+    if let Some(ref nid) = user.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            user.national_id = Some(dec);
         }
     }
+
+    // Fetch primary role name
+    let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
+        "SELECT r.name 
+            FROM user_roles ur
+            JOIN roles r ON ur.role_id = r.id
+            WHERE ur.user_id = $1 
+            AND ur.is_primary = true 
+            AND ur.ended_at IS NULL
+            LIMIT 1"
+    )
+    .bind(&user.id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    // Return updated profile
+    let mut profile_response = ProfileResponse::from(user);
+    profile_response.primary_role_name = primary_role_name;
+
+    Ok((StatusCode::OK, Json(profile_response)))
 }
 
+/// Change password handler (POST /me/change-password)
+/// Changes user's password after verifying current password
 /// Change password handler (POST /me/change-password)
 /// Changes user's password after verifying current password
 pub async fn change_password(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<ChangePasswordRequest>,
-) -> Response {
+) -> Result<impl IntoResponse, AppError> {
     // Extract subdomain from Origin header (secure)
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     // Extract token from Authorization header or cookie
     let token = headers
@@ -730,153 +506,78 @@ pub async fn change_password(
                         .split(';')
                         .find_map(|c| c.trim().strip_prefix("auth_token="))
                 })
-        });
-
-    let token = match token {
-        Some(t) => t,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": "Missing authentication token"
-                })),
-            )
-                .into_response();
-        }
-    };
+        })
+        .ok_or(AppError::AuthError("Missing authentication token".to_string()))?;
 
     // Validate JWT
-    let claims = match JwtService::verify_token(token) {
-        Ok(claims) => claims,
-        Err(_) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": "Invalid or expired token"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let claims = JwtService::verify_token(token)
+        .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
 
     // Get school database URL
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบโรงเรียน"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+        })?;
 
     // Get pool
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "เกิดข้อผิดพลาด"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
-    let user_id = match uuid::Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(e) => {
+    let user_id = uuid::Uuid::parse_str(&claims.sub)
+        .map_err(|e| {
             eprintln!("❌ Invalid user ID: {}", e);
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "Invalid user ID"
-                })),
-            )
-                .into_response();
-        }
-    };
+            AppError::BadRequest("Invalid user ID".to_string())
+        })?;
 
-    // Verify current password
-    // Get current password hash
-    let stored_hash: Option<String> = sqlx::query_scalar(
-        "SELECT password_hash FROM users WHERE id = $1"
+    // Find user by id to verify current password
+    let user = sqlx::query_as::<_, LoginUser>(
+        r#"
+        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
+        FROM users
+        WHERE id = $1 AND status = 'active'
+        "#
     )
     .bind(user_id)
     .fetch_optional(&pool)
-    .await
-    .unwrap_or(None);
+    .await?
+    .ok_or(AppError::NotFound("ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string()))?;
 
-    match stored_hash {
-        Some(hash) => {
-            // Verify
-            if !bcrypt::verify(&payload.current_password, &hash).unwrap_or(false) {
-                return (
-                    StatusCode::UNAUTHORIZED,
-                    Json(serde_json::json!({
-                        "error": "รหัสผ่านปัจจุบันไม่ถูกต้อง"
-                    })),
-                )
-                    .into_response();
-            }
-        },
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "ไม่พบผู้ใช้"
-                })),
-            )
-                .into_response();
-        }
+    // Verify current (old) password
+    let is_valid = bcrypt::verify(&payload.current_password, &user.password_hash).unwrap_or(false);
+
+    if !is_valid {
+        return Err(AppError::AuthError("รหัสผ่านปัจจุบันไม่ถูกต้อง".to_string()));
     }
 
     // Hash new password
-    let new_hash = match bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST) {
-        Ok(h) => h,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "ไม่สามารถเปลี่ยนรหัสผ่านได้"
-                })),
-            )
-                .into_response();
-        }
-    };
+    let new_password_hash = bcrypt::hash(&payload.new_password, 10)
+        .map_err(|e| {
+            eprintln!("❌ Failed to hash password: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     // Update password
-    match sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
-        .bind(new_hash)
+    sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
+        .bind(new_password_hash)
         .bind(user_id)
         .execute(&pool)
         .await
-    {
-        Ok(_) => {
-            (
-                StatusCode::OK,
-                Json(serde_json::json!({
-                    "success": true,
-                    "message": "เปลี่ยนรหัสผ่านสำเร็จ"
-                })),
-            )
-                .into_response()
-        },
-        Err(e) => {
-            eprintln!("❌ Failed to change password: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "มีบางอย่างผิดพลาด"
-                })),
-            )
-                .into_response()
-        }
-    }
+        .map_err(|e| {
+            eprintln!("❌ Failed to update password: {}", e);
+            AppError::InternalServerError("ไม่สามารถเปลี่ยนรหัสผ่านได้".to_string())
+        })?;
+
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "message": "เปลี่ยนรหัสผ่านสำเร็จ"
+        })),
+    ))
 }

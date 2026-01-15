@@ -610,6 +610,7 @@ dependencies = [
  "sha2",
  "sha256",
  "sqlx",
+ "thiserror",
  "time",
  "tokio",
  "tokio-cron-scheduler",
