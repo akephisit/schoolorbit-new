@@ -211,17 +211,22 @@ nano /opt/stack/nginx/conf.d/schoolorbit.conf
 
 ```nginx
 # --------------------------------------------------------
-# 1. MAP SECTION: ประกาศกฎ CORS ที่นี่
+# 1. MAP SECTION: ประกาศกฎการอนุญาตที่นี่ที่เดียว
 # --------------------------------------------------------
 map $http_origin $allow_origin {
-    default "";
+    default ""; # ค่าเริ่มต้นคือ "ไม่ให้เข้า"
+
+    # ✅ กฎที่ 1: อนุญาต *.schoolorbit.app ทั้งหมด (Regex) และยอมรับ port อะไรก็ได้
     "~^https://([\w-]+\.)?schoolorbit\.app(:[0-9]+)?$" $http_origin;
+
+    # ✅ กฎที่ 2: อนุญาต Localhost (เผื่อ Dev ในเครื่องตัวเอง)
     "http://localhost:3000" $http_origin;
+    "http://127.0.0.1:3000" $http_origin;
 }
 
-# ========================================================
+# --------------------------------------------------------
 # SERVER 1: SCHOOL API (backend-school)
-# ========================================================
+# --------------------------------------------------------
 server {
     listen 80;
     server_name school-api.schoolorbit.app;
@@ -236,75 +241,159 @@ server {
     ssl_certificate /etc/letsencrypt/live/school-api.schoolorbit.app/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/school-api.schoolorbit.app/privkey.pem;
 
-    # 🔥 Global Settings for Performance
-    client_max_body_size 20M; # รองรับ Upload ไฟล์ใหญ่
+    # Global Performance Settings
+    client_max_body_size 20M;
     proxy_read_timeout 300s;
 
-    # ----------------------------------------------------
-    # SSE ENDPOINTS (Real-time Stream)
-    # ----------------------------------------------------
+    # 🆕 SSE ENDPOINTS (backend-school)
     location ~ ^/api/v1/.*/stream$ {
-        proxy_pass http://schoolorbit-backend-school:8081; # ชื่อ container
+        proxy_pass http://schoolorbit-backend-school:8081;
         
-        # ปิด buffering เพื่อให้ stream ไหลทันที
+        # SSE Handlers
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 24h;
         chunked_transfer_encoding on;
+        proxy_set_header Connection "";
         
-        # CORS & Headers
+        # Proxy Headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # CORS
         add_header 'Access-Control-Allow-Origin' $allow_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' $allow_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain; charset=utf-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
     }
 
-    # ----------------------------------------------------
-    # FILE UPLOAD (เพิ่ม Timeout พิเศษ)
-    # ----------------------------------------------------
+    # 🆕 FILE UPLOAD (backend-school)
     location /api/files/ {
         proxy_pass http://schoolorbit-backend-school:8081;
-        client_max_body_size 50M; # ให้มากกว่าปกติ
-        proxy_request_buffering off; # stream upload เข้า backend เลย
+        client_max_body_size 50M;
+        proxy_request_buffering off;
         
         add_header 'Access-Control-Allow-Origin' $allow_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
     }
 
-    # ----------------------------------------------------
-    # NORMAL API
-    # ----------------------------------------------------
+    # NORMAL API (backend-school)
     location / {
         proxy_pass http://schoolorbit-backend-school:8081;
-        
+
         add_header 'Access-Control-Allow-Origin' $allow_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Authorization,Content-Type' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+        add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
 
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' $allow_origin always;
             add_header 'Access-Control-Allow-Credentials' 'true' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'Authorization,Content-Type' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain; charset=utf-8';
+            add_header 'Content-Length' 0;
             return 204;
         }
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 
 # ========================================================
-# SERVER 2: ADMIN API (backend-admin) - เพิ่มถ้ามี
+# SERVER 2: ADMIN API (backend-admin)
 # ========================================================
-# server {
-#     listen 80;
-#     server_name admin-api.schoolorbit.app;
-#     ... (ทำเหมือนข้างบน แต่เปลี่ยน port เป็น 8080) ...
-# }
+server {
+    listen 80;
+    server_name admin-api.schoolorbit.app;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    server_name admin-api.schoolorbit.app;
+
+    ssl_certificate /etc/letsencrypt/live/admin-api.schoolorbit.app/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/admin-api.schoolorbit.app/privkey.pem;
+
+    # Global Timeouts
+    proxy_read_timeout 300s;
+
+    # 🆕 SSE ENDPOINTS (backend-admin)
+    location ~ /stream$ {
+        proxy_pass http://schoolorbit-backend-admin:8080;
+        
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 24h;
+        chunked_transfer_encoding on;
+        proxy_set_header Connection "";
+        
+        # CORS Headers from Map
+        add_header 'Access-Control-Allow-Origin' $allow_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' $allow_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+            return 204;
+        }
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # NORMAL API (backend-admin)
+    location / {
+        proxy_pass http://schoolorbit-backend-admin:8080;
+        
+        add_header 'Access-Control-Allow-Origin' $allow_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' $allow_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain; charset=utf-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 ```
 
 บันทึกไฟล์ แล้วสั่ง Reload Nginx:
