@@ -70,7 +70,18 @@ jobs:
           script: |
             echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /opt/stack
-            # Only pull and update backend-school
-            podman-compose pull backend-school
-            podman-compose up -d --remove-orphans backend-school
+            
+            # 1. Pull latest image specifically
+            podman pull ghcr.io/akephisit/schoolorbit-backend-school:latest
+            
+            # 2. Force Stop & Remove old container
+            podman stop schoolorbit-backend-school || true
+            podman rm schoolorbit-backend-school || true
+            
+            # 3. Start new container using podman-compose (it will recreate because container is gone)
+            # We don't specify service name argument if it causes issues, 
+            # or we rely on the fact that missing container forces recreation.
+            podman-compose up -d backend-school
+            
+            # 4. Clean up
             podman image prune -f

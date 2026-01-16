@@ -70,7 +70,16 @@ jobs:
           script: |
             echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /opt/stack
-            # Only pull and update backend-admin
-            podman-compose pull backend-admin
-            podman-compose up -d --remove-orphans backend-admin
+            
+            # 1. Pull latest image specifically
+            podman pull ghcr.io/akephisit/schoolorbit-backend-admin:latest
+            
+            # 2. Force Stop & Remove old container
+            podman stop schoolorbit-backend-admin || true
+            podman rm schoolorbit-backend-admin || true
+            
+            # 3. Start new container using podman-compose
+            podman-compose up -d backend-admin
+            
+            # 4. Clean up
             podman image prune -f
