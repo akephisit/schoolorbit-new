@@ -127,6 +127,7 @@ async fn check_user_permission(
     let mut user: User = sqlx::query_as(
         "SELECT 
             id,
+            username,
             national_id,
             email,
             password_hash,

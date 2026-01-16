@@ -68,6 +68,7 @@ pub async fn get_user_menu(
     let mut user: User = sqlx::query_as(
         "SELECT 
             id,
+            username,
             national_id,
             email,
             password_hash,

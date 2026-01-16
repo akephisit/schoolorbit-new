@@ -69,6 +69,7 @@ pub async fn check_permission(
     let mut user: User = match sqlx::query_as(
         "SELECT 
             id,
+            username,
             national_id,
             email,
             password_hash,

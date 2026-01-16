@@ -276,6 +276,7 @@ async fn authenticate_user(
     let mut user = sqlx::query_as::<_, User>(
         "SELECT 
             id,
+            username,
             national_id,
             email,
             password_hash,
