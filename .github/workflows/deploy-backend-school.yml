@@ -85,3 +85,6 @@ jobs:
             
             # 4. Clean up
             podman image prune -f
+            
+            # 5. Reload Nginx to update DNS/IPs
+            podman exec schoolorbit-nginx nginx -s reload || true
