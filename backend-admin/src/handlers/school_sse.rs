@@ -21,6 +21,8 @@ pub async fn create_school_sse(
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::ReceiverStream;
     use crate::utils::sse::SseLogger;
+    use axum::response::sse::KeepAlive;
+    use std::time::Duration;
 
     let (tx, rx) = mpsc::channel(100);
     let logger = SseLogger::new(tx);
@@ -43,6 +45,7 @@ pub async fn create_school_sse(
     });
 
     axum::response::Sse::new(ReceiverStream::new(rx))
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(5)))
 }
 
 // SSE endpoint for deleting school with real-time logs
@@ -52,6 +55,8 @@ pub async fn delete_school_sse(
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::ReceiverStream;
     use crate::utils::sse::SseLogger;
+    use axum::response::sse::KeepAlive;
+    use std::time::Duration;
 
     let (tx, rx) = mpsc::channel(100);
     let logger = SseLogger::new(tx);
@@ -73,4 +78,5 @@ pub async fn delete_school_sse(
     });
 
     axum::response::Sse::new(ReceiverStream::new(rx))
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(5)))
 }
