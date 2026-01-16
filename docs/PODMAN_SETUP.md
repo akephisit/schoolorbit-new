@@ -253,6 +253,8 @@ server {
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 24h;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 24h;
         chunked_transfer_encoding on;
         proxy_set_header Connection "";
         
@@ -346,6 +348,8 @@ server {
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 24h;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 24h;
         chunked_transfer_encoding on;
         proxy_set_header Connection "";
         
