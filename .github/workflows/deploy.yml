@@ -1,0 +1,88 @@
+name: Deploy System
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'backend-school/**'
+      - 'backend-admin/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service: [backend-school, backend-admin]
+        include:
+          - service: backend-school
+            context: ./backend-school
+            image_suffix: -school
+          - service: backend-admin
+            context: ./backend-admin
+            image_suffix: -admin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/akephisit/schoolorbit-${{ matrix.service }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=long
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # 1. Login to GHCR (if repo is private)
+            echo ${{ secrets.GITHUB_TOKEN }} | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # 2. Go to stack directory
+            cd /opt/stack
+            
+            # 3. Pull latest images
+            podman-compose pull
+            
+            # 4. Update services (Zero downtime restart)
+            podman-compose up -d
+            
+            # 5. Clean up old images
+            podman image prune -f
