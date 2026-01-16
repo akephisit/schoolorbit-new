@@ -91,7 +91,7 @@ async fn main() {
     println!("  School Management (Protected):");
     println!("  /api/v1/schools/*               - CRUD Schools");
     println!("  /api/v1/schools/stream          - Create School with SSE Logs");
-    println!("  /api/v1/schools/{id}/deploy     - Trigger Deployment");
+    println!("  /api/v1/schools/{{id}}/deploy     - Trigger Deployment");
 
     // Run server
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
