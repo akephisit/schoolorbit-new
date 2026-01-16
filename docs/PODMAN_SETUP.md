@@ -333,8 +333,8 @@ server {
     listen 443 ssl;
     server_name admin-api.schoolorbit.app;
 
-    ssl_certificate /etc/letsencrypt/live/admin-api.schoolorbit.app/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/admin-api.schoolorbit.app/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/school-api.schoolorbit.app/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/school-api.schoolorbit.app/privkey.pem;
 
     # Global Timeouts
     proxy_read_timeout 300s;
