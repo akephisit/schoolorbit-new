@@ -284,7 +284,7 @@ async fn main() {
     tracing::info!("\n  Internal APIs:");
     tracing::info!("  POST /internal/provision  - Provision tenant database (internal only)");
     tracing::info!("  POST /internal/migrate-all - Migrate all school databases (internal only)");
-    tracing::info!("  GET  /internal/migration-status - Get migration status (internal only)");
+    tracing::info!("  GET  /internal/migration-status - Get migration status (internal only).");
 
 
     // Run server

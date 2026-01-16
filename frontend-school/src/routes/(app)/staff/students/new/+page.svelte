@@ -13,7 +13,7 @@
 
 	// Form data
 	let formData = $state({
-        username: '',
+		username: '',
 		national_id: '',
 		email: '',
 		password: '',
