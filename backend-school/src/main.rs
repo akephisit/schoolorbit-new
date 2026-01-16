@@ -269,22 +269,19 @@ async fn main() {
 
     let addr = format!("{}:{}", host, port);
     tracing::info!("🌐 Server starting on http://{}", addr);
-    tracing::info!("\nAvailable endpoints:");
-    tracing::info!("  GET  /                    - API info");
-    tracing::info!("  GET  /health              - Health check");
-    tracing::info!("  POST /api/auth/login      - Login");
-    tracing::info!("  POST /api/auth/logout     - Logout");
-    tracing::info!("  GET  /api/auth/me         - Get current user (protected)");
-    tracing::info!("\n  Staff Management:");
-    tracing::info!("  GET    /api/staff         - List all staff (protected)");
-    tracing::info!("  GET    /api/staff/{{id}}    - Get staff profile (protected)");
-    tracing::info!("  POST   /api/staff         - Create staff (protected)");
-    tracing::info!("  PUT    /api/staff/{{id}}    - Update staff (protected)");
-    tracing::info!("  DELETE /api/staff/{{id}}    - Delete staff (protected)");
-    tracing::info!("\n  Internal APIs:");
-    tracing::info!("  POST /internal/provision  - Provision tenant database (internal only)");
-    tracing::info!("  POST /internal/migrate-all - Migrate all school databases (internal only)");
-    tracing::info!("  GET  /internal/migration-status - Get migration status (internal only).");
+    tracing::info!("\n✅ Available endpoints:");
+    tracing::info!("  GET  /                          - API info");
+    tracing::info!("  GET  /health                    - Health check");
+    tracing::info!("  POST /api/auth/login            - Login");
+    tracing::info!("  POST /api/auth/logout           - Logout");
+    tracing::info!("  GET  /api/auth/me               - Get current user (protected)\n");
+    tracing::info!("  Staff & Student Management:");
+    tracing::info!("  /api/staff/*                    - Staff, Roles, Departments");
+    tracing::info!("  /api/students/*                 - Student Management\n");
+    tracing::info!("  Internal Admin APIs (Protected by Secret):");
+    tracing::info!("  POST /internal/provision        - Provision tenant database");
+    tracing::info!("  POST /internal/migrate-all      - Migrate all school databases");
+    tracing::info!("  GET  /internal/migration-status - Get migration status");
 
 
     // Run server

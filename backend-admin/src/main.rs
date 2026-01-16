@@ -80,21 +80,18 @@ async fn main() {
         .layer(CookieManagerLayer::new());
 
     println!("🌐 Server starting on http://0.0.0.0:8080");
-    println!("\nAvailable endpoints:");
-    println!("  GET  /              - API info");
-    println!("  GET  /health        - Health check");
-    println!("  POST /api/v1/auth/login - Login with national ID");
-    println!("  POST /api/v1/auth/logout - Logout");
-    println!("  GET  /api/v1/auth/me - Get current user");
-    println!("\n  School Management:");
-    println!("  POST   /api/v1/schools       - Create school");
-    println!("  GET    /api/v1/schools       - List schools (paginated)");
-    println!("  GET    /api/v1/schools/{{id}}  - Get school by ID");
-    println!("  PUT    /api/v1/schools/{{id}}  - Update school");
-    println!("  DELETE /api/v1/schools/{{id}}  - Delete school");
-    println!("\n📝 Test credentials:");
-    println!("  National ID: 1234567890123");
-    println!("  Password: test123");
+    println!("\n✅ Available endpoints:");
+    println!("  GET  /                          - API info");
+    println!("  GET  /health                    - Health check");
+    println!("  POST /api/v1/auth/login         - Login with national ID");
+    println!("  POST /api/v1/auth/logout        - Logout");
+    println!("  GET  /api/v1/auth/me            - Get current user");
+    println!("  Internal APIs (Protected by Internal Secret):");
+    println!("  GET  /internal/schools          - List all schools (internal use)\n");
+    println!("  School Management (Protected):");
+    println!("  /api/v1/schools/*               - CRUD Schools");
+    println!("  /api/v1/schools/stream          - Create School with SSE Logs");
+    println!("  /api/v1/schools/{id}/deploy     - Trigger Deployment");
 
     // Run server
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
