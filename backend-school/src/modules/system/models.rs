@@ -6,7 +6,7 @@ pub struct ProvisionRequest {
     pub school_id: String,
     pub db_connection_string: String,
     pub subdomain: String,
-    pub admin_username: String,
+    pub admin_username: Option<String>,
     pub admin_password: String,
 }
 

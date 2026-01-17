@@ -37,9 +37,7 @@
 		subdomain: z.string()
 			.min(1, 'กรุณากรอก subdomain')
 			.regex(/^[a-z0-9\-]+$/, 'ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น'),
-		adminUsername: z.string()
-			.min(4, 'ชื่อผู้ใช้ต้องมีอย่างน้อย 4 ตัวอักษร')
-			.regex(/^[a-zA-Z0-9_\-]+$/, 'ใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ ตัวเลข _ และ -'),
+		// adminUsername removed - auto generated
 		adminPassword: z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร')
 	});
 	
@@ -301,18 +299,7 @@
 					{/if}
 				</div>
 
-				<div class="form-group">
-					<label for="adminUsername">ชื่อผู้ใช้ผู้ดูแล (Admin Username)</label>
-					<input
-						type="text"
-						id="adminUsername"
-						bind:value={createData.adminUsername}
-						placeholder="admin"
-					/>
-					{#if validationErrors.adminUsername}
-						<span class="error-text">{validationErrors.adminUsername}</span>
-					{/if}
-				</div>
+				<!-- Admin Username removed - auto generated -->
 
 				<div class="form-group">
 					<label for="password">รหัสผ่านผู้ดูแล</label>

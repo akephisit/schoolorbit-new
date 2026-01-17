@@ -107,7 +107,7 @@ impl SchoolService {
                 &school_id.to_string(),
                 &db_connection_string,
                 &data.subdomain,
-                &data.admin_username,
+                data.admin_username.as_deref(),
                 &data.admin_password,
             )
             .await
