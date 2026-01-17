@@ -10,6 +10,9 @@ pub struct ProvisionRequest {
     pub subdomain: String,
     pub admin_username: Option<String>,
     pub admin_password: String,
+    pub admin_title: String,
+    pub admin_first_name: String,
+    pub admin_last_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +50,9 @@ impl BackendSchoolClient {
         subdomain: &str,
         admin_username: Option<&str>,
         admin_password: &str,
+        admin_title: &str,
+        admin_first_name: &str,
+        admin_last_name: &str,
     ) -> Result<ProvisionResponse, String> {
         let url = format!("{}/internal/provision", self.base_url);
 
@@ -56,6 +62,9 @@ impl BackendSchoolClient {
             subdomain: subdomain.to_string(),
             admin_username: admin_username.map(|s| s.to_string()),
             admin_password: admin_password.to_string(),
+            admin_title: admin_title.to_string(),
+            admin_first_name: admin_first_name.to_string(),
+            admin_last_name: admin_last_name.to_string(),
         };
 
         let response = self

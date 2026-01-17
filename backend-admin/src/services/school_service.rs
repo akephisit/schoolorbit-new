@@ -109,6 +109,9 @@ impl SchoolService {
                 &data.subdomain,
                 data.admin_username.as_deref(),
                 &data.admin_password,
+                &data.admin_title,
+                &data.admin_first_name,
+                &data.admin_last_name,
             )
             .await
         {
@@ -634,6 +637,9 @@ impl SchoolService {
                 "subdomain": data.subdomain,
                 "adminUsername": data.admin_username,
                 "adminPassword": data.admin_password,
+                "adminTitle": data.admin_title,
+                "adminFirstName": data.admin_first_name,
+                "adminLastName": data.admin_last_name,
             }))
             .send()
             .await

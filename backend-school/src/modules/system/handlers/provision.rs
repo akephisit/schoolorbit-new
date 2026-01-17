@@ -109,8 +109,8 @@ pub async fn provision_tenant(
     // Use username for uniqueness check (unique index on username should exist)
     let user_id = sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
-        INSERT INTO users (username, national_id, national_id_hash, password_hash, first_name, last_name, user_type, status)
-        VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6)
+        INSERT INTO users (username, national_id, national_id_hash, password_hash, title, first_name, last_name, user_type, status)
+        VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (username) DO UPDATE SET 
             password_hash = EXCLUDED.password_hash
         RETURNING id
@@ -118,8 +118,9 @@ pub async fn provision_tenant(
     )
     .bind(&username)
     .bind(&password_hash)
-    .bind("ผู้ดูแลระบบ") // Default first name
-    .bind(&payload.subdomain) // Use subdomain as last name initially
+    .bind(&payload.admin_title)
+    .bind(&payload.admin_first_name)
+    .bind(&payload.admin_last_name)
     .bind("staff") // user_type is 'staff'
     .bind("active")
     .fetch_one(&mut *tx)

@@ -226,7 +226,7 @@ pub async fn list_staff(
     let offset = (page - 1) * page_size;
 
     let mut query = String::from(
-        "SELECT DISTINCT u.id, u.first_name, u.last_name, u.status
+        "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status
          FROM users u
          WHERE u.user_type = 'staff'",
     );
@@ -242,8 +242,8 @@ pub async fn list_staff(
 
     if let Some(search) = &filter.search {
         query.push_str(&format!(
-            " AND (u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%')",
-            search, search
+            " AND (u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%' OR u.username ILIKE '%{}%')",
+            search, search, search
         ));
     }
 
@@ -252,7 +252,7 @@ pub async fn list_staff(
         page_size, offset
     ));
 
-    let staff_rows = sqlx::query_as::<_, (Uuid, String, String, String)>(&query)
+    let staff_rows = sqlx::query_as::<_, (Uuid, String, Option<String>, String, String, String)>(&query)
         .fetch_all(&pool)
         .await
         .map_err(|e| {
@@ -267,8 +267,10 @@ pub async fn list_staff(
 
     let items: Vec<StaffListItem> = staff_rows
         .into_iter()
-        .map(|(id, first_name, last_name, status)| StaffListItem {
+        .map(|(id, username, title, first_name, last_name, status)| StaffListItem {
             id,
+            username,
+            title: title.unwrap_or_default(),
             first_name,
             last_name,
             roles: vec![],

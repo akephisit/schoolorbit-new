@@ -8,6 +8,10 @@ pub struct ProvisionRequest {
     pub subdomain: String,
     pub admin_username: Option<String>,
     pub admin_password: String,
+    // Admin Profile
+    pub admin_title: String,
+    pub admin_first_name: String,
+    pub admin_last_name: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -7,6 +7,8 @@ const API_BASE_URL = PUBLIC_BACKEND_URL || 'http://localhost:8081';
 
 export interface StaffListItem {
 	id: string;
+	username: string;
+	title: string;
 	first_name: string;
 	last_name: string;
 	roles: string[];

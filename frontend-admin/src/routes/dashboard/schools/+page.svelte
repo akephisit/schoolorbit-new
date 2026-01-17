@@ -26,7 +26,10 @@
 		name: '',
 		subdomain: '',
 		adminUsername: '',
-		adminPassword: ''
+		adminPassword: '',
+		adminTitle: '',
+		adminFirstName: '',
+		adminLastName: ''
 	});
 	let creating = $state(false);
 	let validationErrors = $state<Record<string, string>>({});
@@ -38,6 +41,9 @@
 			.min(1, 'กรุณากรอก subdomain')
 			.regex(/^[a-z0-9\-]+$/, 'ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น'),
 		// adminUsername removed - auto generated
+		adminTitle: z.string().min(1, 'กรุณาเลือกคำนำหน้า'),
+		adminFirstName: z.string().min(1, 'กรุณากรอกชื่อจริง'),
+		adminLastName: z.string().min(1, 'กรุณากรอกนามสกุล'),
 		adminPassword: z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร')
 	});
 	
@@ -128,7 +134,10 @@
 							name: '',
 							subdomain: '',
 							adminUsername: '',
-							adminPassword: ''
+							adminPassword: '',
+							adminTitle: '',
+							adminFirstName: '',
+							adminLastName: ''
 						};
 					},
 					
@@ -299,7 +308,51 @@
 					{/if}
 				</div>
 
-				<!-- Admin Username removed - auto generated -->
+				<!-- Admin Username - auto generated -->
+				<div class="form-section-title">ข้อมูลผู้ดูแลระบบ (Admin)</div>
+
+				<div class="form-row">
+					<div class="form-group flex-1">
+						<label for="adminTitle">คำนำหน้า</label>
+						<select id="adminTitle" bind:value={createData.adminTitle} class="input-select">
+							<option value="">เลือกคำนำหน้า</option>
+							<option value="นาย">นาย</option>
+							<option value="นาง">นาง</option>
+							<option value="นางสาว">นางสาว</option>
+							<option value="ดร.">ดร.</option>
+							<option value="ผอ.">ผอ.</option>
+						</select>
+						{#if validationErrors.adminTitle}
+							<span class="error-text">{validationErrors.adminTitle}</span>
+						{/if}
+					</div>
+
+					<div class="form-group flex-2">
+						<label for="adminFirstName">ชื่อจริง</label>
+						<input
+							type="text"
+							id="adminFirstName"
+							bind:value={createData.adminFirstName}
+							placeholder="สมชาย"
+						/>
+						{#if validationErrors.adminFirstName}
+							<span class="error-text">{validationErrors.adminFirstName}</span>
+						{/if}
+					</div>
+
+					<div class="form-group flex-2">
+						<label for="adminLastName">นามสกุล</label>
+						<input
+							type="text"
+							id="adminLastName"
+							bind:value={createData.adminLastName}
+							placeholder="ใจดี"
+						/>
+						{#if validationErrors.adminLastName}
+							<span class="error-text">{validationErrors.adminLastName}</span>
+						{/if}
+					</div>
+				</div>
 
 				<div class="form-group">
 					<label for="password">รหัสผ่านผู้ดูแล</label>

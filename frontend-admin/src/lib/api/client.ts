@@ -162,6 +162,9 @@ export interface CreateSchool {
 	subdomain: string;
 	adminUsername?: string;
 	adminPassword: string;
+	adminTitle: string;
+	adminFirstName: string;
+	adminLastName: string;
 }
 
 export interface UpdateSchool {

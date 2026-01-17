@@ -15,7 +15,8 @@
 		ArrowLeft,
 		Pencil,
 		Award,
-		Plus
+		Plus,
+		IdCard
 	} from 'lucide-svelte';
 	import type { Achievement } from '$lib/types/achievement';
 	import {
@@ -140,7 +141,14 @@
 				<ArrowLeft class="w-4 h-4" />
 			</Button>
 			<div>
-				<h1 class="text-3xl font-bold text-foreground">ข้อมูลบุคลากร</h1>
+				<div class="flex items-baseline gap-3">
+					<h1 class="text-3xl font-bold text-foreground">ข้อมูลบุคลากร</h1>
+					{#if staff?.username}
+						<span class="text-lg font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
+							{staff.username}
+						</span>
+					{/if}
+				</div>
 				<p class="text-muted-foreground mt-1">รายละเอียดบุคลากร</p>
 			</div>
 		</div>
@@ -190,9 +198,17 @@
 							{staff.first_name}
 							{staff.last_name}
 						</h2>
-						{#if staff.nickname}
-							<p class="text-muted-foreground mt-1">({staff.nickname})</p>
-						{/if}
+						<div class="flex flex-col items-center mt-1 space-y-1">
+							{#if staff.nickname}
+								<p class="text-muted-foreground">({staff.nickname})</p>
+							{/if}
+							<div
+								class="flex items-center gap-1.5 text-sm text-muted-foreground bg-muted/50 px-3 py-1 rounded-full"
+							>
+								<IdCard class="w-3.5 h-3.5" />
+								<span>{staff.username}</span>
+							</div>
+						</div>
 
 						<!-- Status Badge -->
 						<div class="mt-4">

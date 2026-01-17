@@ -157,8 +157,12 @@
 							<!-- Name -->
 							<div class="col-span-4">
 								<p class="font-medium text-foreground">
+									{staff.title}
 									{staff.first_name}
 									{staff.last_name}
+								</p>
+								<p class="text-xs text-muted-foreground">
+									{staff.username}
 								</p>
 							</div>
 

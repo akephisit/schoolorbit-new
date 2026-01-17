@@ -23,6 +23,9 @@ pub struct CreateSchool {
     pub subdomain: String,
     pub admin_username: Option<String>,
     pub admin_password: String,
+    pub admin_title: String,
+    pub admin_first_name: String,
+    pub admin_last_name: String,
 }
 
 #[derive(Debug, Deserialize)]

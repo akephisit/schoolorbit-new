@@ -454,6 +454,8 @@ pub struct StaffListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaffListItem {
     pub id: Uuid,
+    pub username: String,
+    pub title: String,
     pub first_name: String,
     pub last_name: String,
     pub roles: Vec<String>,
