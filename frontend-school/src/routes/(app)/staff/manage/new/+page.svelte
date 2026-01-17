@@ -303,12 +303,10 @@
 			} else {
 				// Show error toast
 				toast.error(result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร');
-				errors.submit = result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
 			}
 		} catch (e) {
 			const errorMsg = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
 			toast.error(errorMsg);
-			errors.submit = errorMsg;
 		} finally {
 			loading = false;
 		}
