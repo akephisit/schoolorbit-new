@@ -436,9 +436,22 @@ pub async fn create_student(
     .bind(&payload.gender)
     .fetch_one(&mut *tx)
     .await
+
     .map_err(|e| {
         eprintln!("❌ Failed to create user: {}", e);
-        AppError::InternalServerError("ไม่สามารถสร้างผู้ใช้งานได้".to_string())
+        if e.to_string().contains("duplicate key value violates unique constraint") {
+             if e.to_string().contains("users_username_key") {
+                AppError::BadRequest("รหัสผู้ใช้งาน (Username) นี้มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น".to_string())
+             } else if e.to_string().contains("users_national_id_hash_key") {
+                 AppError::BadRequest("รหัสบัตรประชาชนนี้มีอยู่ในระบบแล้ว".to_string())
+             } else if e.to_string().contains("users_email_key") {
+                  AppError::BadRequest("อีเมลนี้มีอยู่ในระบบแล้ว".to_string())
+             } else {
+                 AppError::BadRequest("ข้อมูลบางอย่างซ้ำกับที่มีในระบบ".to_string())
+             }
+        } else {
+            AppError::InternalServerError("ไม่สามารถสร้างผู้ใช้งานได้".to_string())
+        }
     })?;
     
     // 3. Create student_info

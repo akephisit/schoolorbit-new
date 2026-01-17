@@ -5,6 +5,7 @@
 	import { createSchoolSSE, deleteSchoolSSE, type LogMessage, type Progress } from '$lib/utils/sse';
 	import InlineConsole from '$lib/components/InlineConsole.svelte';
 	import { PUBLIC_API_URL } from '$env/static/public';
+	import { toast } from 'svelte-sonner';
 	
 	interface SchoolWithLogs extends School {
 		logs?: LogMessage[];
@@ -18,7 +19,7 @@
 	let page = $state(1);
 	let totalPages = $state(0);
 	let loading = $state(true);
-	let error = $state('');
+
 	
 	// Create school form
 	let showCreateForm = $state(false);
@@ -53,7 +54,6 @@
 	
 	async function loadSchools() {
 		loading = true;
-		error = '';
 		
 		try {
 			const response = await apiClient.listSchools(page, 10);
@@ -61,11 +61,12 @@
 				schools = response.data.schools;
 				total = response.data.total;
 				totalPages = response.data.totalPages;
+				totalPages = response.data.totalPages;
 			} else {
-				error = response.error || 'Failed to load schools';
+				toast.error(response.error || 'Failed to load schools');
 			}
 		} catch (e: any) {
-			error = e.message || 'Failed to load schools';
+			toast.error(e.message || 'Failed to load schools');
 		} finally {
 			loading = false;
 		}
@@ -74,7 +75,6 @@
 	async function handleCreateSchool(e: Event) {
 		e.preventDefault();
 		creating = true;
-		error = '';
 		validationErrors = {};
 		
 		try {
@@ -128,6 +128,9 @@
 								: s
 						);
 						
+						// Show success toast
+						toast.success('สร้างโรงเรียนสำเร็จ');
+						
 						// Reset form
 						showCreateForm = false;
 						createData = {
@@ -147,7 +150,8 @@
 								? { ...s, logs: [...(s.logs || []), { level: 'error', message: errorMsg, timestamp: new Date() }], isDeploying: false }
 								: s
 						);
-						error = errorMsg;
+						errorMsg = errorMsg.includes('Subdomain') ? 'Subdomain นี้มีในระบบแล้ว' : errorMsg;
+						toast.error(errorMsg);
 					}
 				}
 			);
@@ -159,9 +163,9 @@
 						validationErrors[err.path[0] as string] = err.message;
 					}
 				});
-				error = 'กรุณาตรวจสอบข้อมูลที่กรอก';
+				toast.error('กรุณาตรวจสอบข้อมูลที่กรอก');
 			} else {
-				error = e.message || 'Failed to create school';
+				toast.error(e.message || 'Failed to create school');
 			}
 		} finally {
 			creating = false;
@@ -204,6 +208,7 @@
 					onComplete: () => {
 						// Remove school from list
 						schools = schools.filter(s => s.id !== id);
+						toast.success('ลบโรงเรียนสำเร็จ');
 					},
 					
 					onError: (errorMsg) => {
@@ -212,7 +217,7 @@
 								? { ...s, logs: [...(s.logs || []), { level: 'error', message: errorMsg, timestamp: new Date() }], isDeleting: false }
 								: s
 						);
-						error = errorMsg;
+						toast.error(errorMsg);
 					}
 				}
 			);
@@ -222,7 +227,7 @@
 					? { ...s, isDeleting: false, logs: undefined }
 					: s
 			);
-			error = e.message || 'Failed to delete school';
+			toast.error(e.message || 'Failed to delete school');
 		}
 	}
 	
@@ -231,19 +236,17 @@
 	
 	async function handleDeploy(schoolId: string, schoolName: string) {
 		deploying = schoolId;
-		error = '';
 		
 		try {
 			const response = await apiClient.deploySchool(schoolId);
 			if (response.success && response.data) {
-				const githubUrl = response.data.githubActionsUrl || 'GitHub Actions';
-				alert(`✅ Deployment triggered for ${schoolName}!\n\n${response.data.message}\n\nCheck progress: ${githubUrl}`);
+				toast.success(`Deployment triggered for ${schoolName}`);
 				await loadSchools();
 			} else {
-				error = response.error || 'Deployment failed';
+				toast.error(response.error || 'Deployment failed');
 			}
 		} catch (e: any) {
-			error = e.message || 'Deployment failed';
+			toast.error(e.message || 'Deployment failed');
 		} finally {
 			deploying = null;
 		}
@@ -271,10 +274,6 @@
 			{showCreateForm ? 'ยกเลิก' : '+ เพิ่มโรงเรียน'}
 		</button>
 	</div>
-
-	{#if error}
-		<div class="alert alert-error">{error}</div>
-	{/if}
 
 	{#if showCreateForm}
 		<div class="create-form-card">
@@ -547,17 +546,7 @@
 		width: 100%;
 	}
 	
-	.alert {
-		padding: 1rem;
-		border-radius: 8px;
-		margin-bottom: 1rem;
-	}
-	
-	.alert-error {
-		background: #fed7d7;
-		color: #c53030;
-		border: 1px solid #fc8181;
-	}
+
 	
 	.create-form-card {
 		background: white;

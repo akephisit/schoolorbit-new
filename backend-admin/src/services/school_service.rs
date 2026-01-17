@@ -31,7 +31,7 @@ impl SchoolService {
 
         if exists {
             return Err(AppError::ValidationError(
-                "Subdomain already exists".to_string()
+                "Subdomain นี้มีในระบบแล้ว กรุณาใช้ชื่ออื่น".to_string()
             ));
         }
 
