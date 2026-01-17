@@ -13,7 +13,7 @@
 
 	// Form data
 	let formData = $state({
-		username: '',
+
 		national_id: '',
 		email: '',
 		password: '',
@@ -132,26 +132,6 @@
 			</div>
 
 			<div class="space-y-4">
-				<!-- Username Input -->
-				<div>
-					<Label for="username">ชื่อผู้ใช้งาน (Username)</Label>
-					<Input
-						id="username"
-						type="text"
-						bind:value={formData.username}
-						placeholder="ใส่ชื่อผู้ใช้งาน (หากไม่ระบุระบบจะสร้างให้อัตโนมัติ)"
-						class={errors.username ? 'border-destructive' : ''}
-						disabled={loading}
-					/>
-					{#if errors.username}
-						<p class="text-xs text-destructive mt-1">{errors.username}</p>
-					{:else}
-						<p class="text-xs text-muted-foreground mt-1">
-							ชื่อผู้ใช้งานสำหรับเข้าสู่ระบบ (เว้นว่างได้เพื่อให้ระบบสร้างอัตโนมัติ)
-						</p>
-					{/if}
-				</div>
-
 				<div>
 					<Label for="national_id">เลขบัตรประชาชน</Label>
 					<Input

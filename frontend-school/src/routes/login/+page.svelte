@@ -137,7 +137,7 @@
 							type="text"
 							id="username"
 							bind:value={username}
-							placeholder="e.g. T670001, S12345"
+							placeholder="เช่น T670001, 66001"
 							autocomplete="username"
 							required
 						/>

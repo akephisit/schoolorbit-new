@@ -406,11 +406,11 @@ pub async fn create_student(
     };
     
     // Determine Username
-    // Priority: Supplied Username > 'S' + Student ID > 'S' + Random
+    // Priority: Supplied Username > Student ID
     let username = if let Some(u) = &payload.username {
-         if !u.is_empty() { u.clone() } else { format!("S{}", payload.student_id) }
+         if !u.is_empty() { u.clone() } else { payload.student_id.clone() }
     } else {
-         format!("S{}", payload.student_id)
+         payload.student_id.clone()
     };
 
     // 2. Create user
