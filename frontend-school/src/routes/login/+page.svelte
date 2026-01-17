@@ -8,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	import { authStore } from '$lib/stores/auth';
 
@@ -15,7 +16,6 @@
 	let password = $state('');
 	let rememberMe = $state(false);
 	let isLoading = $state(false);
-	let errorMessage = $state('');
 	let isCheckingAuth = $state(true);
 	let redirectUrl = $state<string | null>(null);
 
@@ -45,12 +45,11 @@
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		isLoading = true;
-		errorMessage = '';
 
         // Username validation (if any specific rule is needed, add here).
         // For now, just non-empty.
         if (!username.trim()) {
-            errorMessage = 'กรุณากรอกชื่อผู้ใช้งาน';
+            toast.error('กรุณากรอกชื่อผู้ใช้งาน');
             isLoading = false;
             return;
         }
@@ -81,7 +80,8 @@
 			}
 		} catch (error) {
 			// Error already shown via toast in authAPI
-			errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			const msg = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+			toast.error(msg);
 		} finally {
 			isLoading = false;
 		}
@@ -127,13 +127,6 @@
 					<h1 class="text-2xl font-bold text-foreground mb-2">เข้าสู่ระบบ</h1>
 					<p class="text-sm text-muted-foreground">SchoolOrbit - ระบบบริหารจัดการโรงเรียน</p>
 				</div>
-
-				<!-- Error Message -->
-				{#if errorMessage}
-					<div class="mb-6 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-						<p class="text-sm text-destructive text-center">{errorMessage}</p>
-					</div>
-				{/if}
 
 				<!-- Login Form -->
 				<form onsubmit={handleSubmit} class="space-y-6">

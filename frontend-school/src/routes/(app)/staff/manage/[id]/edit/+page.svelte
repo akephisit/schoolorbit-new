@@ -79,7 +79,7 @@
 
 	// Validation errors
 	let errors = $state<Record<string, string>>({});
-	let successMessage = $state('');
+
 
 	// Load staff profile
 	async function loadStaffProfile() {
@@ -290,7 +290,7 @@
 
 		saving = true;
 		errors = {};
-		successMessage = '';
+
 
 		try {
 			const payload = {
@@ -321,16 +321,16 @@
 			const result = await updateStaff(staffId, payload);
 
 			if (result.success) {
-				successMessage = 'บันทึกข้อมูลสำเร็จ';
+				toast.success('บันทึกข้อมูลสำเร็จ');
 				setTimeout(async () => {
 					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					await goto(resolve(`/staff/${staffId}` as any), { invalidateAll: true });
 				}, 1500);
 			} else {
-				errors.submit = result.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล';
+				toast.error(result.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
 			}
 		} catch (e) {
-			errors.submit = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการบันทึกข้อมูล';
+			toast.error(e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
 		} finally {
 			saving = false;
 		}
@@ -903,20 +903,6 @@
 						{/if}
 					{/if}
 				</div>
-
-				<!-- Success Message -->
-				{#if successMessage}
-					<div class="mt-6 p-4 bg-green-100 border border-green-200 rounded-lg">
-						<p class="text-sm text-green-800">{successMessage}</p>
-					</div>
-				{/if}
-
-				<!-- Error Message -->
-				{#if errors.submit}
-					<div class="mt-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-						<p class="text-sm text-destructive">{errors.submit}</p>
-					</div>
-				{/if}
 
 				<!-- Navigation Buttons -->
 				<div class="flex justify-between mt-6">

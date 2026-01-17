@@ -288,6 +288,20 @@ pub async fn create_role(
         Err(e) => {
             eprintln!("❌ Failed to create role: {}", e);
             let _ = tx.rollback().await;
+            
+            let err_msg = e.to_string();
+            if err_msg.contains("duplicate key value") {
+                 if err_msg.contains("code") {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({
+                            "success": false,
+                            "error": "รหัสบทบาทนี้มีอยู่ในระบบแล้ว"
+                        })),
+                    ).into_response();
+                }
+            }
+
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -469,6 +483,20 @@ pub async fn update_role(
     if let Err(e) = result {
          eprintln!("❌ Failed to update role: {}", e);
          let _ = tx.rollback().await;
+
+         let err_msg = e.to_string();
+         if err_msg.contains("duplicate key value") {
+             if err_msg.contains("code") {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "success": false,
+                        "error": "รหัสบทบาทนี้มีอยู่ในระบบแล้ว"
+                    })),
+                ).into_response();
+            }
+         }
+
          return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({
@@ -822,6 +850,20 @@ pub async fn create_department(
         Ok(id) => id,
         Err(e) => {
             eprintln!("❌ Failed to create department: {}", e);
+            
+            let err_msg = e.to_string();
+            if err_msg.contains("duplicate key value") {
+                 if err_msg.contains("code") {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({
+                            "success": false,
+                            "error": "รหัสฝ่ายนี้มีอยู่ในระบบแล้ว"
+                        })),
+                    ).into_response();
+                }
+            }
+
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -942,6 +984,20 @@ pub async fn update_department(
             .into_response(),
         Err(e) => {
             eprintln!("❌ Database error: {}", e);
+            
+            let err_msg = e.to_string();
+            if err_msg.contains("duplicate key value") {
+                 if err_msg.contains("code") {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({
+                            "success": false,
+                            "error": "รหัสฝ่ายนี้มีอยู่ในระบบแล้ว"
+                        })),
+                    ).into_response();
+                }
+            }
+
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({

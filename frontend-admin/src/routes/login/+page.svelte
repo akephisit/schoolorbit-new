@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
 
 	let nationalId = $state('');
 	let password = $state('');
-	let validationError = $state('');
+
 
 	// Redirect if already authenticated (after initialization)
 	$effect(() => {
@@ -19,7 +20,6 @@
 	}
 
 	function handleInput() {
-		validationError = '';
 		authStore.clearError();
 	}
 
@@ -28,20 +28,20 @@
 
 		// Validation
 		if (!nationalId || !password) {
-			validationError = 'กรุณากรอกข้อมูลให้ครบถ้วน';
+			toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
 			return;
 		}
 
 		if (!validateNationalId(nationalId)) {
-			validationError = 'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก';
+			toast.error('เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก');
 			return;
 		}
 
-		// Clear validation error
-		validationError = '';
-
 		// Attempt login
 		await authStore.login({ nationalId, password });
+		if (authStore.error) {
+			toast.error(authStore.error);
+		}
 	}
 </script>
 
@@ -88,19 +88,6 @@
 					disabled={authStore.isLoading}
 				/>
 			</div>
-
-			<!-- Error Messages -->
-			{#if validationError}
-				<div class="p-3 bg-red-50 border border-red-200 rounded-md">
-					<p class="text-sm text-red-600">{validationError}</p>
-				</div>
-			{/if}
-
-			{#if authStore.error}
-				<div class="p-3 bg-red-50 border border-red-200 rounded-md">
-					<p class="text-sm text-red-600">{authStore.error}</p>
-				</div>
-			{/if}
 
 			<!-- Submit Button -->
 			<button
