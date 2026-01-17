@@ -6,3 +6,4 @@ pub mod consent;
 pub mod achievement;
 pub mod menu;
 pub mod system;
+pub mod academic;

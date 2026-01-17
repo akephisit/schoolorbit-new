@@ -234,6 +234,10 @@ async fn main() {
         .route("/api/files/{id}", axum::routing::delete(modules::files::handlers::delete_file)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
+        // Academic Management routes (Protected)
+        .nest("/api/academic", modules::academic::academic_routes()
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+
         // Route registration (no auth - uses deploy key)
         .route("/api/admin/routes/register", post(modules::system::handlers::register_routes::register_routes))
         
