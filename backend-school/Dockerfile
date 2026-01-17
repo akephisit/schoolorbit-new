@@ -1,5 +1,6 @@
 # Base stage with cargo-chef
-FROM rustlang/rust:nightly-bookworm-slim AS base
+# Use STABLE version to prevent daily cache invalidation
+FROM rust:1-slim-bookworm AS base
 # Install OpenSSL and pkg-config for all build stages
 RUN apt-get update && apt-get install -y \
     pkg-config \
