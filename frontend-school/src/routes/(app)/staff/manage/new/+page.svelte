@@ -7,6 +7,7 @@
 		type Role,
 		type Department
 	} from '$lib/api/staff';
+	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -293,13 +294,21 @@
 			if (result.success && result.data) {
 				// Clear draft
 				localStorage.removeItem('staff-create-draft');
+				
+				// Show success toast
+				toast.success('เพิ่มบุคลากรเรียบร้อยแล้ว');
+				
 				// Redirect to profile
 				await goto('/staff/manage', { invalidateAll: true });
 			} else {
+				// Show error toast
+				toast.error(result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร');
 				errors.submit = result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
 			}
 		} catch (e) {
-			errors.submit = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
+			const errorMsg = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
+			toast.error(errorMsg);
+			errors.submit = errorMsg;
 		} finally {
 			loading = false;
 		}
@@ -852,11 +861,5 @@
 				</Button>
 			{/if}
 		</div>
-
-		{#if errors.submit}
-			<div class="mt-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-				<p class="text-sm text-destructive">{errors.submit}</p>
-			</div>
-		{/if}
 	</div>
 </div>
