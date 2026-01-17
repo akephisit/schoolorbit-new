@@ -12,7 +12,7 @@ pub fn academic_routes() -> Router<AppState> {
         
         // Academic Years
         .route("/years", post(handlers::create_academic_year))
-        .route("/years/:id/active", put(handlers::toggle_active_year))
+        .route("/years/{id}/active", put(handlers::toggle_active_year))
 
         // Classrooms
         .route("/classrooms", get(handlers::list_classrooms).post(handlers::create_classroom))
