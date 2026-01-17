@@ -194,8 +194,7 @@
 							{/if}
 						</div>
 						<h2 class="text-2xl font-bold text-foreground">
-							{staff.title || ''}
-							{staff.first_name}
+							{staff.title || ''}{staff.first_name}
 							{staff.last_name}
 						</h2>
 						<div class="flex flex-col items-center mt-1 space-y-1">
