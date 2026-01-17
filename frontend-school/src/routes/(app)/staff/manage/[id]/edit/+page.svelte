@@ -44,6 +44,7 @@
 	let formData = $state({
 		// Personal Information
 		profile_image_url: '',
+		username: '',
 		title: '',
 		first_name: '',
 		last_name: '',
@@ -94,6 +95,7 @@
 				// Populate form
 				formData = {
 					profile_image_url: staff.profile_image_url || '',
+					username: staff.username || '',
 					title: staff.title || 'นาย',
 					first_name: staff.first_name,
 					last_name: staff.last_name,
@@ -523,6 +525,21 @@
 						</div>
 
 						<div class="space-y-4">
+							<div class="grid grid-cols-2 gap-4">
+								<div>
+									<Label class="mb-2">รหัสบุคลากร (Username)</Label>
+									<Input
+										type="text"
+										value={formData.username}
+										readonly
+										class="bg-muted text-muted-foreground w-full px-3 py-2 border border-border rounded-md"
+									/>
+								</div>
+								<div>
+									<!-- Spacer -->
+								</div>
+							</div>
+
 							<div class="grid grid-cols-2 gap-4">
 								<div>
 									<Label class="mb-2">

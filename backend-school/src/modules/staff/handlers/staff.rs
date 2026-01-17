@@ -22,6 +22,7 @@ use chrono::Datelike;
 #[derive(Debug, FromRow)]
 struct UserBasicRow {
     id: Uuid,
+    username: String,
     national_id: Option<String>,
     email: Option<String>,
     title: Option<String>,
@@ -319,7 +320,7 @@ pub async fn get_staff_profile(
 
     // Get user basic info (encryption key auto-set by pool)
     let mut user = sqlx::query_as::<_, UserBasicRow>(
-        "SELECT id, national_id, email, title, first_name, last_name, nickname, phone, 
+        "SELECT id, username, national_id, email, title, first_name, last_name, nickname, phone, 
                 emergency_contact, line_id, date_of_birth, gender, address, hired_date,
                 user_type, status, profile_image_url
          FROM users 
@@ -428,6 +429,7 @@ pub async fn get_staff_profile(
 
     let profile = StaffProfileResponse {
         id: user.id,
+        username: user.username,
         national_id: user.national_id,
         email: user.email,
         title: user.title,

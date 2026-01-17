@@ -312,6 +312,7 @@ pub struct TeachingAssignmentResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaffProfileResponse {
     pub id: Uuid,
+    pub username: String,
     pub national_id: Option<String>,
     pub email: Option<String>,
     pub title: Option<String>,

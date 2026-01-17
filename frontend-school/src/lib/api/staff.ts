@@ -63,6 +63,7 @@ export interface StaffInfoResponse {
 
 export interface StaffProfileResponse {
 	id: string;
+	username: string;
 	national_id?: string;
 	email?: string;
 	title?: string;
