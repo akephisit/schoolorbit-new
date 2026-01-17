@@ -66,6 +66,24 @@ pub mod codes {
     pub const ACHIEVEMENT_UPDATE_ALL: &str = "achievement.update.all";
     pub const ACHIEVEMENT_DELETE_OWN: &str = "achievement.delete.own";
     pub const ACHIEVEMENT_DELETE_ALL: &str = "achievement.delete.all";
+
+    // Academic Structure
+    pub const ACADEMIC_STRUCTURE_READ_ALL: &str = "academic_structure.read.all";
+    pub const ACADEMIC_STRUCTURE_MANAGE_ALL: &str = "academic_structure.manage.all";
+
+    // Academic Classroom
+    pub const ACADEMIC_CLASSROOM_READ_ALL: &str = "academic_classroom.read.all";
+    pub const ACADEMIC_CLASSROOM_CREATE_ALL: &str = "academic_classroom.create.all";
+    pub const ACADEMIC_CLASSROOM_UPDATE_ALL: &str = "academic_classroom.update.all";
+    pub const ACADEMIC_CLASSROOM_DELETE_ALL: &str = "academic_classroom.delete.all";
+
+    // Academic Enrollment
+    pub const ACADEMIC_ENROLLMENT_READ_ALL: &str = "academic_enrollment.read.all";
+    pub const ACADEMIC_ENROLLMENT_UPDATE_ALL: &str = "academic_enrollment.update.all";
+
+    // Academic Promotion
+    pub const ACADEMIC_PROMOTION_READ_ALL: &str = "academic_promotion.read.all";
+    pub const ACADEMIC_PROMOTION_EXECUTE_ALL: &str = "academic_promotion.execute.all";
 }
 
 /// Complete list of all permissions in the system
@@ -351,5 +369,94 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "delete",
         scope: "all",
         description: "ลบผลงานของบุคคลากรอื่น",
+    },
+
+    // Academic Structure Permissions
+    PermissionDef {
+        code: codes::ACADEMIC_STRUCTURE_READ_ALL,
+        name: "ดูโครงสร้างวิชาการ",
+        module: "academic_structure",
+        action: "read",
+        scope: "all",
+        description: "ดูโครงสร้างวิชาการ (ปีการศึกษา, ห้องเรียน, ระดับชั้น)",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_STRUCTURE_MANAGE_ALL,
+        name: "จัดการโครงสร้างวิชาการ",
+        module: "academic_structure",
+        action: "manage",
+        scope: "all",
+        description: "สร้าง/แก้ไข/ลบ โครงสร้างวิชาการ",
+    },
+
+    // Academic Classroom Permissions
+    PermissionDef {
+        code: codes::ACADEMIC_CLASSROOM_READ_ALL,
+        name: "ดูข้อมูลห้องเรียน",
+        module: "academic_classroom",
+        action: "read",
+        scope: "all",
+        description: "ดูรายชื่อห้องเรียนและนักเรียนในห้อง",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_CLASSROOM_CREATE_ALL,
+        name: "สร้างห้องเรียน",
+        module: "academic_classroom",
+        action: "create",
+        scope: "all",
+        description: "สร้างห้องเรียนใหม่",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_CLASSROOM_UPDATE_ALL,
+        name: "แก้ไขห้องเรียน",
+        module: "academic_classroom",
+        action: "update",
+        scope: "all",
+        description: "แก้ไขข้อมูลห้อง/ครูประจำชั้น",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_CLASSROOM_DELETE_ALL,
+        name: "ลบห้องเรียน",
+        module: "academic_classroom",
+        action: "delete",
+        scope: "all",
+        description: "ลบห้องเรียน",
+    },
+
+    // Academic Enrollment Configuration
+    PermissionDef {
+        code: codes::ACADEMIC_ENROLLMENT_READ_ALL,
+        name: "ดูข้อมูลการเข้าห้องเรียน",
+        module: "academic_enrollment",
+        action: "read",
+        scope: "all",
+        description: "ดูรายชื่อนักเรียนในห้องเรียน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_ENROLLMENT_UPDATE_ALL,
+        name: "จัดการนักเรียนในห้อง",
+        module: "academic_enrollment",
+        action: "update",
+        scope: "all",
+        description: "ย้ายนักเรียนเข้า/ออก ห้องเรียน",
+    },
+
+
+    // Academic Promotion Permissions
+    PermissionDef {
+        code: codes::ACADEMIC_PROMOTION_READ_ALL,
+        name: "ดูการเลื่อนชั้น",
+        module: "academic_promotion",
+        action: "read",
+        scope: "all",
+        description: "ดูสถานะการเลื่อนชั้นเรียนประจำปี",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_PROMOTION_EXECUTE_ALL,
+        name: "ดำเนินการเลื่อนชั้น",
+        module: "academic_promotion",
+        action: "execute",
+        scope: "all",
+        description: "ประมวลผลการเลื่อนชั้นเรียน (End of Year)",
     },
 ];
