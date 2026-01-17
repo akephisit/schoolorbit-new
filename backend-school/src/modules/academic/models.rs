@@ -172,3 +172,11 @@ pub struct StudentEnrollment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub student_code: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct EnrollStudentRequest {
+    pub student_ids: Vec<Uuid>,
+    pub class_room_id: Uuid,
+    pub enrollment_date: Option<NaiveDate>,
+}
+

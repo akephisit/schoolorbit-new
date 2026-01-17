@@ -3,7 +3,7 @@ use crate::error::AppError;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 use axum::{
-    extract::{Path, Query, Request, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
@@ -250,4 +250,177 @@ pub async fn create_classroom(
     })?;
 
     Ok((StatusCode::CREATED, Json(json!({"success": true, "data": classroom}))))
+}
+
+// ==========================================
+// Enrollment Handlers
+// ==========================================
+
+pub async fn enroll_students(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<EnrollStudentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    // Validate Classroom
+    let classroom = sqlx::query_as::<_, Classroom>(
+        "SELECT * FROM class_rooms WHERE id = $1"
+    )
+    .bind(payload.class_room_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+    .ok_or(AppError::NotFound("Classroom not found".to_string()))?;
+
+    let enroll_date = payload.enrollment_date.unwrap_or(chrono::Local::now().date_naive());
+
+    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    let mut enrolled_count = 0;
+    
+    for student_id in payload.student_ids {
+        // Deactivate old active enrollments for this student (if any)
+        sqlx::query(
+            "UPDATE student_class_enrollments SET status = 'moved_out', updated_at = NOW() 
+             WHERE student_id = $1 AND status = 'active'"
+        )
+        .bind(student_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to update old enrollment: {}", e);
+            AppError::InternalServerError("Failed to process enrollment".to_string())
+        })?;
+
+        // Create new enrollment
+        sqlx::query(
+            "INSERT INTO student_class_enrollments (student_id, class_room_id, enrollment_date, status)
+             VALUES ($1, $2, $3, 'active')
+             ON CONFLICT (student_id, class_room_id) 
+             DO UPDATE SET status = 'active', enrollment_date = $3, updated_at = NOW()"
+        )
+        .bind(student_id)
+        .bind(payload.class_room_id)
+        .bind(enroll_date)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to enroll: {}", e);
+            AppError::InternalServerError("Failed to enroll student".to_string())
+        })?;
+
+        // Update student record to reflect current grade/classroom
+        sqlx::query(
+            "UPDATE student_info SET grade_level = $2, class_room = $3, updated_at = NOW() 
+             WHERE id = $1"
+        )
+        .bind(student_id)
+        .bind(&classroom.grade_level_name.clone().unwrap_or_default()) // Denormalize
+        .bind(&classroom.name) // Denormalize
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to update student info".to_string()))?;
+
+        enrolled_count += 1;
+    }
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": format!("Enrolled {} students successfully", enrolled_count)
+    })))
+}
+
+pub async fn get_class_enrollments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(class_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let enrollments = sqlx::query_as::<_, StudentEnrollment>(
+        "SELECT ske.*, 
+                CONCAT(u.first_name, ' ', u.last_name) as student_name,
+                c.name as class_name,
+                s.student_id as student_code
+         FROM student_class_enrollments ske
+         JOIN student_info s ON ske.student_id = s.id
+         JOIN users u ON s.user_id = u.id
+         JOIN class_rooms c ON ske.class_room_id = c.id
+         WHERE ske.class_room_id = $1 AND ske.status = 'active'
+         ORDER BY s.student_id ASC"
+    )
+    .bind(class_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    Ok(Json(json!({
+        "success": true,
+        "data": enrollments
+    })))
+}
+
+pub async fn remove_enrollment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    // Define temporary struct for fetching student_id
+    #[derive(sqlx::FromRow)]
+    struct EnrollmentRecord {
+        student_id: Uuid,
+    }
+
+    // Get student ID before deleting to update denormalized data
+    let enrollment = sqlx::query_as::<_, EnrollmentRecord>(
+        "SELECT student_id FROM student_class_enrollments WHERE id = $1"
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+    if let Some(record) = enrollment {
+        // Soft delete (set status to removed or just delete?) -> Let's hard delete for mistaken enrollment, 
+        // OR better: set status to 'cancelled' so we keep history?
+        // Let's hard delete for now if it's "removing from class" without moving to another
+        sqlx::query("DELETE FROM student_class_enrollments WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| AppError::InternalServerError("Failed to delete enrollment".to_string()))?;
+
+        // Reset student info
+        sqlx::query("UPDATE student_info SET grade_level = NULL, class_room = NULL WHERE id = $1")
+            .bind(record.student_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| AppError::InternalServerError("Failed to update student info".to_string()))?;
+    }
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({"success": true, "message": "Enrollment removed"})))
 }
