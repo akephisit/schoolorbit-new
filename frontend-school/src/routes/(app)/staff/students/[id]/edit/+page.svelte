@@ -124,7 +124,7 @@
 	</title>
 </svelte:head>
 
-<div class="container mx-auto p-6 max-w-4xl space-y-6">
+<div class="space-y-6">
 	<!-- Header -->
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-4">

@@ -103,7 +103,7 @@
 	<title>เพิ่มนักเรียนใหม่ - SchoolOrbit</title>
 </svelte:head>
 
-<div class="container mx-auto p-6 max-w-4xl space-y-6">
+<div class="space-y-6">
 	<!-- Header -->
 	<div class="flex items-center gap-4">
 		<Button href="/staff/students" variant="ghost" size="sm">
