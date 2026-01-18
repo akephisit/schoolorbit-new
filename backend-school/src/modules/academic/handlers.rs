@@ -370,7 +370,14 @@ pub async fn enroll_students(
 
     // Validate Classroom
     let classroom = sqlx::query_as::<_, Classroom>(
-        "SELECT * FROM class_rooms WHERE id = $1"
+        "SELECT c.*, 
+                gl.short_name as grade_level_name,
+                NULL::text as academic_year_label,
+                NULL::text as advisor_name,
+                NULL::bigint as student_count
+         FROM class_rooms c
+         JOIN grade_levels gl ON c.grade_level_id = gl.id
+         WHERE c.id = $1"
     )
     .bind(payload.class_room_id)
     .fetch_optional(&pool)
