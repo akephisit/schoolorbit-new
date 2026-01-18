@@ -118,3 +118,35 @@ export const createClassroom = async (data: {
         body: JSON.stringify(data)
     });
 };
+
+export interface StudentEnrollment {
+    id: string;
+    student_id: string;
+    class_room_id: string;
+    enrollment_date: string;
+    status: string;
+    student_name?: string;
+    class_name?: string;
+    student_code?: string;
+}
+
+export const getEnrollments = async (classId: string): Promise<{ data: StudentEnrollment[] }> => {
+    return await fetchApi(`/api/academic/enrollments/class/${classId}`);
+};
+
+export const enrollStudents = async (data: {
+    student_ids: string[];
+    class_room_id: string;
+    enrollment_date?: string;
+}) => {
+    return await fetchApi('/api/academic/enrollments', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const removeEnrollment = async (id: string) => {
+    return await fetchApi(`/api/academic/enrollments/${id}`, {
+        method: 'DELETE'
+    });
+};
