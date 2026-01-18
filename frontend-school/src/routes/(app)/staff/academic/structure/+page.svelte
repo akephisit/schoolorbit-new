@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getAcademicStructure, createAcademicYear, toggleActiveYear } from '$lib/api/academic';
-	import type { AcademicStructureData } from '$lib/api/academic';
+	import {
+		getAcademicStructure,
+		createAcademicYear,
+		toggleActiveYear,
+		createGradeLevel,
+		deleteGradeLevel
+	} from '$lib/api/academic';
+	import type { AcademicStructureData, GradeLevel } from '$lib/api/academic';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -14,11 +20,19 @@
 	import CalendarDays from 'lucide-svelte/icons/calendar-days';
 	import School from 'lucide-svelte/icons/school';
 	import Layers from 'lucide-svelte/icons/layers';
+	import Plus from 'lucide-svelte/icons/plus';
+	import Trash2 from 'lucide-svelte/icons/trash-2';
 
 	let loading = true;
 	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
+	
+	// Year state
 	let showCreateYearDialog = false;
 	let isSubmitting = false;
+
+	// Level state
+	let showCreateLevelDialog = false;
+	let isSubmittingLevel = false;
 
 	// New Year Form
 	let newYear = {
@@ -27,6 +41,14 @@
 		start_date: '',
 		end_date: '',
 		is_active: false
+	};
+
+	// New Level Form
+	let newLevel = {
+		code: '',
+		name: '',
+		short_name: '',
+		level_order: 1
 	};
 
 	async function loadData() {
@@ -80,6 +102,47 @@
 		}
 	}
 
+	async function handleCreateLevel() {
+		if (!newLevel.code || !newLevel.name || !newLevel.short_name) {
+			toast.error('กรุณากรอกข้อมูลระดับชั้นให้ครบ');
+			return;
+		}
+		
+		isSubmittingLevel = true;
+		try {
+			await createGradeLevel(newLevel);
+			toast.success('เพิ่มระดับชั้นเรียบร้อย');
+			showCreateLevelDialog = false;
+			await loadData();
+			
+			// Reset form (increment order)
+			newLevel = {
+				code: '',
+				name: '',
+				short_name: '',
+				level_order: newLevel.level_order + 1
+			};
+		} catch (error) {
+			console.error(error);
+			toast.error('เพิ่มระดับชั้นไม่สำเร็จ (รหัสซ้ำหรือไม่ถูกต้อง)');
+		} finally {
+			isSubmittingLevel = false;
+		}
+	}
+
+	async function handleDeleteLevel(id: string) {
+		if (!confirm('ยืนยันลบระดับชั้นนี้? (หากมีการใช้งานอยู่จะไม่สามารถลบได้)')) return;
+
+		try {
+			await deleteGradeLevel(id);
+			toast.success('ลบระดับชั้นเรียบร้อย');
+			await loadData();
+		} catch (error) {
+			console.error(error);
+			toast.error(error instanceof Error ? error.message : 'ลบระดับชั้นไม่สำเร็จ');
+		}
+	}
+
 	onMount(loadData);
 </script>
 
@@ -89,10 +152,16 @@
 			<h2 class="text-2xl font-bold tracking-tight">โครงสร้างวิชาการ</h2>
 			<p class="text-muted-foreground">จัดการปีการศึกษา ภาคเรียน และระดับชั้น</p>
 		</div>
-		<Button onclick={() => (showCreateYearDialog = true)}>
-			<CalendarDays class="mr-2 h-4 w-4" />
-			เพิ่มปีการศึกษา
-		</Button>
+		<div class="flex gap-2">
+			<Button variant="outline" onclick={() => (showCreateLevelDialog = true)}>
+				<Layers class="mr-2 h-4 w-4" />
+				เพิ่มระดับชั้น
+			</Button>
+			<Button onclick={() => (showCreateYearDialog = true)}>
+				<CalendarDays class="mr-2 h-4 w-4" />
+				เพิ่มปีการศึกษา
+			</Button>
+		</div>
 	</div>
 
 	{#if loading}
@@ -163,26 +232,55 @@
 				</Card.Content>
 			</Card.Root>
 
-			<!-- Grade Levels Card (Read-only summary for now) -->
+			<!-- Grade Levels Card -->
 			<Card.Root>
 				<Card.Header>
 					<Card.Title class="flex items-center gap-2">
 						<Layers class="h-5 w-5" />
 						ระดับชั้นที่เปิดสอน
 					</Card.Title>
-					<Card.Description>ข้อมูลระดับชั้นมาตรฐาน</Card.Description>
+					<Card.Description>ระดับชั้นมาตรฐานเรียงตามลำดับ</Card.Description>
 				</Card.Header>
 				<Card.Content>
-					<div class="space-y-4">
+					<div class="space-y-2">
 						{#each structure.levels as level}
-							<div class="flex items-center justify-between border-b pb-2 last:border-0">
-								<div>
-									<p class="font-medium">{level.name}</p>
-									<p class="text-xs text-muted-foreground">{level.code}</p>
+							<div
+								class="flex items-center justify-between rounded-md border p-3 hover:bg-muted/50"
+							>
+								<div class="flex gap-3">
+									<div
+										class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-bold"
+									>
+										{level.level_order}
+									</div>
+									<div>
+										<p class="font-medium">{level.name}</p>
+										<p class="text-xs text-muted-foreground">{level.code} • {level.short_name}</p>
+									</div>
 								</div>
-								<Badge variant="secondary">{level.short_name}</Badge>
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-8 w-8 text-muted-foreground hover:text-red-500"
+									onclick={() => handleDeleteLevel(level.id)}
+								>
+									<Trash2 class="h-4 w-4" />
+								</Button>
 							</div>
 						{/each}
+
+						{#if structure.levels.length === 0}
+							<div class="text-center py-6 text-muted-foreground text-sm">ยังไม่กำหนดระดับชั้น</div>
+						{/if}
+
+						<Button
+							variant="outline"
+							class="w-full mt-4"
+							onclick={() => (showCreateLevelDialog = true)}
+						>
+							<Plus class="mr-2 h-4 w-4" />
+							เพิ่มระดับชั้นใหม่
+						</Button>
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -229,6 +327,45 @@
 				<Button variant="outline" onclick={() => (showCreateYearDialog = false)}>ยกเลิก</Button>
 				<Button onclick={handleCreateYear} disabled={isSubmitting}>
 					{#if isSubmitting}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					บันทึก
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Create Level Dialog -->
+	<Dialog.Root bind:open={showCreateLevelDialog}>
+		<Dialog.Content class="sm:max-w-[425px]">
+			<Dialog.Header>
+				<Dialog.Title>เพิ่มระดับชั้นใหม่</Dialog.Title>
+				<Dialog.Description>เช่น มัธยมศึกษาปีที่ 1</Dialog.Description>
+			</Dialog.Header>
+			<div class="grid gap-4 py-4">
+				<div class="grid gap-2">
+					<Label>ลำดับ (Order)</Label>
+					<Input type="number" bind:value={newLevel.level_order} />
+					<p class="text-xs text-muted-foreground">ใช้สำหรับเรียงลำดับชั้นเรียน 1, 2, 3...</p>
+				</div>
+				<div class="grid gap-2">
+					<Label>รหัสระบบ (Code)</Label>
+					<Input placeholder="M1" bind:value={newLevel.code} />
+					<p class="text-xs text-muted-foreground">ภาษาอังกฤษสั้นๆ เช่น P1, M1, KG1</p>
+				</div>
+				<div class="grid gap-2">
+					<Label>ชื่อเต็ม</Label>
+					<Input placeholder="มัธยมศึกษาปีที่ 1" bind:value={newLevel.name} />
+				</div>
+				<div class="grid gap-2">
+					<Label>ชื่อย่อ (แสดงผล)</Label>
+					<Input placeholder="ม.1" bind:value={newLevel.short_name} />
+				</div>
+			</div>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showCreateLevelDialog = false)}>ยกเลิก</Button>
+				<Button onclick={handleCreateLevel} disabled={isSubmittingLevel}>
+					{#if isSubmittingLevel}
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 					{/if}
 					บันทึก

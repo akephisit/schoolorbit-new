@@ -98,6 +98,25 @@ export const toggleActiveYear = async (id: string) => {
     });
 };
 
+export const createGradeLevel = async (data: {
+    code: string;
+    name: string;
+    short_name: string;
+    level_order: number;
+    next_grade_level_id?: string;
+}) => {
+    return await fetchApi('/api/academic/levels', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const deleteGradeLevel = async (id: string) => {
+    return await fetchApi(`/api/academic/levels/${id}`, {
+        method: 'DELETE'
+    });
+};
+
 export const listClassrooms = async (filters?: { year_id?: string }): Promise<{ data: Classroom[] }> => {
     const params = new URLSearchParams();
     if (filters?.year_id) params.append('year_id', filters.year_id);

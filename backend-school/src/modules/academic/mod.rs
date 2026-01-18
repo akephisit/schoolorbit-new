@@ -9,6 +9,8 @@ pub fn academic_routes() -> Router<AppState> {
     Router::new()
         // Structure (Years, Levels, Semesters)
         .route("/structure", get(handlers::list_academic_structure))
+        .route("/levels", post(handlers::create_grade_level))
+        .route("/levels/{id}", axum::routing::delete(handlers::delete_grade_level))
         
         // Academic Years
         .route("/years", post(handlers::create_academic_year))

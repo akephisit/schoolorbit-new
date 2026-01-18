@@ -244,12 +244,100 @@ pub async fn create_classroom(
         // Handle duplicate
         if e.to_string().contains("unique constraint") {
             AppError::BadRequest("ห้องเรียนนี้มีอยู่แล้วในระบบ".to_string())
+        } else if e.to_string().contains("violates foreign key constraint") {
+            if e.to_string().contains("advisor_id") {
+                AppError::BadRequest("ไม่พบข้อมูลครูที่ปรึกษาที่ระบุ".to_string())
+            } else {
+                AppError::BadRequest("ข้อมูลอ้างอิงไม่ถูกต้อง (FK Violation)".to_string())
+            }
         } else {
             AppError::InternalServerError("Failed to create classroom".to_string())
         }
     })?;
 
     Ok((StatusCode::CREATED, Json(json!({"success": true, "data": classroom}))))
+}
+
+// ==========================================
+// Grade Level Handlers
+// ==========================================
+
+pub async fn create_grade_level(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateGradeLevelRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let result = sqlx::query_as::<_, GradeLevel>(
+        "INSERT INTO grade_levels (code, name, short_name, level_order, next_grade_level_id, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *"
+    )
+    .bind(payload.code)
+    .bind(payload.name)
+    .bind(payload.short_name)
+    .bind(payload.level_order)
+    .bind(payload.next_grade_level_id)
+    .bind(payload.is_active.unwrap_or(true))
+    .fetch_one(&pool)
+    .await;
+
+    match result {
+        Ok(level) => Ok((StatusCode::CREATED, Json(json!({"success": true, "data": level})))),
+        Err(e) => {
+            eprintln!("Failed to create grade level: {}", e);
+            if e.to_string().contains("unique") {
+                Err(AppError::BadRequest("ระดับชั้นนี้มีอยู่แล้ว".to_string()))
+            } else {
+                Err(AppError::InternalServerError("Failed to create grade level".to_string()))
+            }
+        }
+    }
+}
+
+pub async fn delete_grade_level(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    // Check usage
+    let usage_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM class_rooms WHERE grade_level_id = $1"
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    if usage_count > 0 {
+        return Err(AppError::BadRequest(format!("ไม่สามารถลบระดับชั้นได้เนื่องจากมีการใช้งานอยู่ {} ห้องเรียน", usage_count)));
+    }
+
+    let result = sqlx::query("DELETE FROM grade_levels WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await;
+
+    match result {
+        Ok(_) => Ok(Json(json!({"success": true, "message": "Grade level deleted"}))),
+        Err(e) => {
+            eprintln!("Failed to delete grade level: {}", e);
+            Err(AppError::InternalServerError("Failed to delete grade level".to_string()))
+        }
+    }
 }
 
 // ==========================================
