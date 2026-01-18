@@ -147,7 +147,7 @@
 </script>
 
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
+	<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 		<div>
 			<h2 class="text-2xl font-bold tracking-tight">โครงสร้างวิชาการ</h2>
 			<p class="text-muted-foreground">จัดการปีการศึกษา ภาคเรียน และระดับชั้น</p>
@@ -180,54 +180,56 @@
 					<Card.Description>รายการปีการศึกษาทั้งหมดในระบบ</Card.Description>
 				</Card.Header>
 				<Card.Content>
-					<div class="rounded-md border">
-						<Table.Root>
-							<Table.Header>
-								<Table.Row>
-									<Table.Head>ปีการศึกษา</Table.Head>
-									<Table.Head>ช่วงเวลา</Table.Head>
-									<Table.Head>สถานะ</Table.Head>
-									<Table.Head class="text-right">จัดการ</Table.Head>
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{#each structure.years as year}
+					<div class="rounded-md border overflow-x-auto">
+						<div class="min-w-[600px]">
+							<Table.Root>
+								<Table.Header>
 									<Table.Row>
-										<Table.Cell class="font-medium">{year.name}</Table.Cell>
-										<Table.Cell>
-											{new Date(year.start_date).toLocaleDateString('th-TH')} - {new Date(
-												year.end_date
-											).toLocaleDateString('th-TH')}
-										</Table.Cell>
-										<Table.Cell>
-											{#if year.is_active}
-												<Badge variant="default" class="bg-green-500">ปัจจุบัน</Badge>
-											{:else}
-												<Badge variant="outline">ประวัติ</Badge>
-											{/if}
-										</Table.Cell>
-										<Table.Cell class="text-right">
-											{#if !year.is_active}
-												<Button
-													variant="ghost"
-													size="sm"
-													onclick={() => handleToggleActive(year.id)}
-												>
-													ตั้งเป็นปีปัจจุบัน
-												</Button>
-											{/if}
-										</Table.Cell>
+										<Table.Head>ปีการศึกษา</Table.Head>
+										<Table.Head>ช่วงเวลา</Table.Head>
+										<Table.Head>สถานะ</Table.Head>
+										<Table.Head class="text-right">จัดการ</Table.Head>
 									</Table.Row>
-								{/each}
-								{#if structure.years.length === 0}
-									<Table.Row>
-										<Table.Cell colspan={4} class="h-24 text-center">
-											ไม่พบข้อมูลปีการศึกษา
-										</Table.Cell>
-									</Table.Row>
-								{/if}
-							</Table.Body>
-						</Table.Root>
+								</Table.Header>
+								<Table.Body>
+									{#each structure.years as year}
+										<Table.Row>
+											<Table.Cell class="font-medium">{year.name}</Table.Cell>
+											<Table.Cell>
+												{new Date(year.start_date).toLocaleDateString('th-TH')} - {new Date(
+													year.end_date
+												).toLocaleDateString('th-TH')}
+											</Table.Cell>
+											<Table.Cell>
+												{#if year.is_active}
+													<Badge variant="default" class="bg-green-500">ปัจจุบัน</Badge>
+												{:else}
+													<Badge variant="outline">ประวัติ</Badge>
+												{/if}
+											</Table.Cell>
+											<Table.Cell class="text-right">
+												{#if !year.is_active}
+													<Button
+														variant="ghost"
+														size="sm"
+														onclick={() => handleToggleActive(year.id)}
+													>
+														ตั้งเป็นปีปัจจุบัน
+													</Button>
+												{/if}
+											</Table.Cell>
+										</Table.Row>
+									{/each}
+									{#if structure.years.length === 0}
+										<Table.Row>
+											<Table.Cell colspan={4} class="h-24 text-center">
+												ไม่พบข้อมูลปีการศึกษา
+											</Table.Cell>
+										</Table.Row>
+									{/if}
+								</Table.Body>
+							</Table.Root>
+						</div>
 					</div>
 				</Card.Content>
 			</Card.Root>
