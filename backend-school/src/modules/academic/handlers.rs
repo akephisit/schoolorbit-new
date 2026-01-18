@@ -425,7 +425,7 @@ pub async fn enroll_students(
         // Update student record to reflect current grade/classroom
         sqlx::query(
             "UPDATE student_info SET grade_level = $2, class_room = $3, updated_at = NOW() 
-             WHERE id = $1"
+             WHERE user_id = $1"
         )
         .bind(student_id)
         .bind(&classroom.grade_level_name.clone().unwrap_or_default()) // Denormalize
@@ -463,8 +463,8 @@ pub async fn get_class_enrollments(
                 c.name as class_name,
                 s.student_id as student_code
          FROM student_class_enrollments ske
-         LEFT JOIN student_info s ON ske.student_id = s.id
-         LEFT JOIN users u ON s.user_id = u.id
+         LEFT JOIN users u ON ske.student_id = u.id
+         LEFT JOIN student_info s ON u.id = s.user_id
          LEFT JOIN class_rooms c ON ske.class_room_id = c.id
          WHERE ske.class_room_id = $1 AND ske.status = 'active'
          ORDER BY s.student_id ASC"
@@ -520,7 +520,7 @@ pub async fn remove_enrollment(
             .map_err(|_| AppError::InternalServerError("Failed to delete enrollment".to_string()))?;
 
         // Reset student info
-        sqlx::query("UPDATE student_info SET grade_level = NULL, class_room = NULL WHERE id = $1")
+        sqlx::query("UPDATE student_info SET grade_level = NULL, class_room = NULL WHERE user_id = $1")
             .bind(record.student_id)
             .execute(&mut *tx)
             .await
