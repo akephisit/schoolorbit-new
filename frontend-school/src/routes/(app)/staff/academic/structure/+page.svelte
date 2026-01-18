@@ -180,8 +180,8 @@
 					<Card.Description>รายการปีการศึกษาทั้งหมดในระบบ</Card.Description>
 				</Card.Header>
 				<Card.Content>
-					<div class="rounded-md border bg-card">
-						<Table.Root>
+					<div class="rounded-md border overflow-x-auto max-w-[85vw] md:max-w-full">
+						<Table.Root class="min-w-[600px]">
 							<Table.Header>
 								<Table.Row>
 									<Table.Head>ปีการศึกษา</Table.Head>
