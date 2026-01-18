@@ -463,9 +463,9 @@ pub async fn get_class_enrollments(
                 c.name as class_name,
                 s.student_id as student_code
          FROM student_class_enrollments ske
-         JOIN student_info s ON ske.student_id = s.id
-         JOIN users u ON s.user_id = u.id
-         JOIN class_rooms c ON ske.class_room_id = c.id
+         LEFT JOIN student_info s ON ske.student_id = s.id
+         LEFT JOIN users u ON s.user_id = u.id
+         LEFT JOIN class_rooms c ON ske.class_room_id = c.id
          WHERE ske.class_room_id = $1 AND ske.status = 'active'
          ORDER BY s.student_id ASC"
     )
