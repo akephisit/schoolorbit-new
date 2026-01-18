@@ -171,7 +171,7 @@
 	{:else}
 		<div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
 			<!-- Academic Years Card -->
-			<Card.Root class="md:col-span-2">
+			<Card.Root class="md:col-span-2 min-w-0">
 				<Card.Header>
 					<Card.Title class="flex items-center gap-2">
 						<School class="h-5 w-5" />
@@ -180,8 +180,8 @@
 					<Card.Description>รายการปีการศึกษาทั้งหมดในระบบ</Card.Description>
 				</Card.Header>
 				<Card.Content class="pt-6">
-					<div class="rounded-md border bg-card">
-						<Table.Root>
+					<div class="rounded-md border bg-card overflow-x-auto">
+						<Table.Root class="min-w-[600px]">
 							<Table.Header>
 								<Table.Row>
 									<Table.Head>ปีการศึกษา</Table.Head>
