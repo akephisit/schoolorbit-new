@@ -160,8 +160,7 @@ pub async fn list_classrooms(
          FROM class_rooms c
          JOIN grade_levels gl ON c.grade_level_id = gl.id
          JOIN academic_years ay ON c.academic_year_id = ay.id
-         LEFT JOIN staff_info si ON c.advisor_id = si.id
-         LEFT JOIN users u ON si.user_id = u.id
+         LEFT JOIN users u ON c.advisor_id = u.id
          WHERE 1=1"
     );
 
@@ -212,7 +211,20 @@ pub async fn create_classroom(
     .await
     .map_err(|_| AppError::BadRequest("Invalid academic year".to_string()))?;
 
-    // 3. Generate Name and Code
+    // 3. Optional: Validate Advisor (Check if user exists and is staff)
+    if let Some(advisor_id) = payload.advisor_id {
+        let is_staff: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND user_type = 'staff')") 
+            .bind(advisor_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
+        
+        if !is_staff {
+            return Err(AppError::BadRequest("ครูที่ปรึกษาต้องเป็นบุคลากร (Staff)".to_string()));
+        }
+    }
+
+    // 4. Generate Name and Code
     // Name: "ม.1/2" or "ม.1/EP"
     let full_name = format!("{}/{}", grade_level.short_name, payload.room_number);
     
@@ -220,7 +232,7 @@ pub async fn create_classroom(
     let short_year = year.year % 100;
     let code = format!("{}-{}-{}", short_year, grade_level.code, payload.room_number.replace(" ", ""));
 
-    // 4. Insert
+    // 5. Insert
     let classroom = sqlx::query_as::<_, Classroom>(
         "INSERT INTO class_rooms (code, name, academic_year_id, grade_level_id, room_number, advisor_id, co_advisor_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
