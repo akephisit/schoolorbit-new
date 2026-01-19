@@ -22,8 +22,6 @@
 	let studentToDelete: StudentListItem | null = $state(null);
 	let searchQuery = $state('');
 	let gradeFilter = $state('');
-	let searchQuery = $state('');
-	let gradeFilter = $state('');
 	let classFilter = $state('');
 	let statusFilter = $state('active');
 	let currentPage = $state(1);
