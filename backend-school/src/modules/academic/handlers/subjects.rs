@@ -1,33 +1,32 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, Extension},
     http::StatusCode,
     Json,
     response::IntoResponse,
 };
 use serde_json::json;
-use crate::AppState;
+use sqlx::PgPool;
 use crate::middleware::permission::check_permission;
 use crate::modules::academic::models::curriculum::{
     Subject, SubjectGroup, CreateSubjectRequest, UpdateSubjectRequest, SubjectFilter
 };
 use uuid::Uuid;
-
 use crate::permissions::registry::codes;
 
 /// List all subject groups (Learning Areas)
 pub async fn list_subject_groups(
-    headers: axum::http::HeaderMap, // Need headers for permission check? Usually yes for protected routes
-    State(state): State<AppState>,
+    headers: axum::http::HeaderMap, 
+    Extension(pool): Extension<PgPool>,
 ) -> impl IntoResponse {
     // Check READ permission
-    if let Err(e) = check_permission(&headers, &state.pool, codes::ACADEMIC_CURRICULUM_READ_ALL).await {
+    if let Err(e) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_READ_ALL).await {
         return e;
     }
 
     let groups = sqlx::query_as::<_, SubjectGroup>(
         "SELECT * FROM subject_groups WHERE is_active = true ORDER BY display_order ASC"
     )
-    .fetch_all(&state.pool)
+    .fetch_all(&pool)
     .await;
 
     match groups {
@@ -45,11 +44,11 @@ pub async fn list_subject_groups(
 /// List subjects with filtering
 pub async fn list_subjects(
     headers: axum::http::HeaderMap,
-    State(state): State<AppState>,
+    Extension(pool): Extension<PgPool>,
     Query(filter): Query<SubjectFilter>,
 ) -> impl IntoResponse {
     // Check READ permission
-    if let Err(e) = check_permission(&headers, &state.pool, codes::ACADEMIC_CURRICULUM_READ_ALL).await {
+    if let Err(e) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_READ_ALL).await {
         return e;
     }
 
@@ -93,7 +92,7 @@ pub async fn list_subjects(
     query.push_str(" ORDER BY s.code ASC");
 
     let subjects = sqlx::query_as::<_, Subject>(&query)
-        .fetch_all(&state.pool)
+        .fetch_all(&pool)
         .await;
 
     match subjects {
@@ -111,11 +110,11 @@ pub async fn list_subjects(
 /// Create a new subject
 pub async fn create_subject(
     headers: axum::http::HeaderMap,
-    State(state): State<AppState>,
+    Extension(pool): Extension<PgPool>,
     Json(payload): Json<CreateSubjectRequest>,
 ) -> impl IntoResponse {
     // 1. Check Permission
-    if let Err(e) = check_permission(&headers, &state.pool, codes::ACADEMIC_CURRICULUM_CREATE_ALL).await {
+    if let Err(e) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_CREATE_ALL).await {
         return e;
     }
 
@@ -124,7 +123,7 @@ pub async fn create_subject(
         "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1)"
     )
     .bind(&payload.code)
-    .fetch_one(&state.pool)
+    .fetch_one(&pool)
     .await
     .unwrap_or(Some(false));
 
@@ -150,13 +149,13 @@ pub async fn create_subject(
     .bind(payload.academic_year_start)
     .bind(&payload.name_th)
     .bind(&payload.name_en)
-    .bind(rust_decimal::Decimal::from_f64_retain(payload.credit).unwrap_or_default()) 
+    .bind(payload.credit) 
     .bind(payload.hours_per_semester)
     .bind(&payload.subject_type)
     .bind(payload.group_id)
     .bind(&payload.level_scope)
     .bind(&payload.description)
-    .fetch_one(&state.pool)
+    .fetch_one(&pool)
     .await;
 
     match result {
@@ -175,21 +174,15 @@ pub async fn create_subject(
 pub async fn update_subject(
     headers: axum::http::HeaderMap,
     Path(id): Path<Uuid>,
-    State(state): State<AppState>,
+    Extension(pool): Extension<PgPool>,
     Json(payload): Json<UpdateSubjectRequest>,
 ) -> impl IntoResponse {
     // 1. Check Permission
-    if let Err(e) = check_permission(&headers, &state.pool, codes::ACADEMIC_CURRICULUM_UPDATE_ALL).await {
+    if let Err(e) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_UPDATE_ALL).await {
         return e;
     }
 
-    // 2. Construct Query dynamically
-    // Note: In real production code, we might use a query builder, but for now simple manual construction
-    // Actually, SQLx doesn't support dynamic query building easily without query builder crate.
-    // Let's use a simple update with all fields (null if not provided logic is tricky here)
-    // For simplicity, we'll fetch existing first, update in memory, then save back? No, race condition.
-    // Let's use COALESCE in SQL.
-
+    // 2. Update
     let result = sqlx::query_as::<_, Subject>(
         r#"
         UPDATE subjects SET 
@@ -213,8 +206,7 @@ pub async fn update_subject(
     .bind(payload.academic_year_start)
     .bind(&payload.name_th)
     .bind(&payload.name_en)
-    // Handle Option<f64> -> Option<Decimal>
-    .bind(payload.credit.map(|c| rust_decimal::Decimal::from_f64_retain(c).unwrap_or_default()))
+    .bind(payload.credit)
     .bind(payload.hours_per_semester)
     .bind(&payload.subject_type)
     .bind(payload.group_id)
@@ -222,7 +214,7 @@ pub async fn update_subject(
     .bind(&payload.description)
     .bind(payload.is_active)
     .bind(id)
-    .fetch_one(&state.pool)
+    .fetch_one(&pool)
     .await;
 
     match result {
@@ -237,31 +229,26 @@ pub async fn update_subject(
     }
 }
 
-/// Delete subject (Soft delete or Hard delete?)
-/// Let's do Soft Delete by setting active=false (or actually delete if unused?)
-/// For now, let's do REAL delete but check foreign keys constraints will stop it if used.
-/// Actually, safe practice is check usage first. 
-/// Let's stick to Soft Delete via update is_active in real usage, but here providing a delete endpoint usually means DELETE.
+/// Delete subject
 pub async fn delete_subject(
     headers: axum::http::HeaderMap,
     Path(id): Path<Uuid>,
-    State(state): State<AppState>,
+    Extension(pool): Extension<PgPool>,
 ) -> impl IntoResponse {
     // 1. Check Permission
-    if let Err(e) = check_permission(&headers, &state.pool, codes::ACADEMIC_CURRICULUM_DELETE_ALL).await {
+    if let Err(e) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_DELETE_ALL).await {
         return e;
     }
 
     let result = sqlx::query("DELETE FROM subjects WHERE id = $1")
         .bind(id)
-        .execute(&state.pool)
+        .execute(&pool)
         .await;
 
     match result {
         Ok(_) => (StatusCode::OK, Json(json!({ "success": true }))).into_response(),
         Err(e) => {
             eprintln!("Failed to delete subject {}: {}", id, e);
-            // Likely Foreign Key violation
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "success": false, "error": "ไม่สามารถลบรายวิชาได้ (อาจมีการใช้งานอยู่)" })),

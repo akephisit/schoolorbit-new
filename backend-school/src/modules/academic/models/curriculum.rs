@@ -30,7 +30,7 @@ pub struct Subject {
     pub academic_year_start: Option<i32>,
     pub name_th: String,
     pub name_en: Option<String>,
-    pub credit: rust_decimal::Decimal, // Using rust_decimal for better precision
+    pub credit: f64, // Changed from Decimal to f64 to avoid extra dependency
     pub hours_per_semester: Option<i32>,
     #[serde(rename = "type")]
     pub subject_type: String, // 'type' is a reserved keyword in Rust
@@ -52,7 +52,7 @@ pub struct CreateSubjectRequest {
     pub academic_year_start: Option<i32>,
     pub name_th: String,
     pub name_en: Option<String>,
-    pub credit: f64, // Input as float, convert to Decimal
+    pub credit: f64,
     pub hours_per_semester: Option<i32>,
     #[serde(rename = "type")]
     pub subject_type: String,
