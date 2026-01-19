@@ -51,7 +51,7 @@ pub async fn list_subject_groups(
         AppError::InternalServerError("Failed to fetch subject groups".to_string())
     })?;
 
-    Ok(Json(json!({ "success": true, "data": groups })))
+    Ok(Json(json!({ "success": true, "data": groups })).into_response())
 }
 
 /// List subjects with filtering
@@ -114,7 +114,7 @@ pub async fn list_subjects(
             AppError::InternalServerError("Failed to fetch subjects".to_string())
         })?;
 
-    Ok(Json(json!({ "success": true, "data": subjects })))
+    Ok(Json(json!({ "success": true, "data": subjects })).into_response())
 }
 
 /// Create a new subject
@@ -171,7 +171,7 @@ pub async fn create_subject(
         AppError::InternalServerError("Failed to create subject".to_string())
     })?;
 
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": subject }))))
+    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": subject }))).into_response())
 }
 
 /// Update a subject
@@ -227,7 +227,7 @@ pub async fn update_subject(
         AppError::InternalServerError("Failed to update subject".to_string())
     })?;
 
-    Ok(Json(json!({ "success": true, "data": subject })))
+    Ok(Json(json!({ "success": true, "data": subject })).into_response())
 }
 
 /// Delete subject
@@ -252,5 +252,5 @@ pub async fn delete_subject(
             AppError::BadRequest("ไม่สามารถลบรายวิชาได้ (อาจมีการใช้งานอยู่)".to_string())
         })?;
 
-    Ok(Json(json!({ "success": true })))
+    Ok(Json(json!({ "success": true })).into_response())
 }
