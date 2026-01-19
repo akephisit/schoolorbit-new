@@ -238,6 +238,23 @@ async fn main() {
         .nest("/api/academic", modules::academic::academic_routes()
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
+        // Lookup endpoints (Protected - only requires authentication, no specific permission)
+        // These return minimal data for dropdowns (id, name only)
+        .route("/api/lookup/staff", get(modules::lookup::handlers::lookup_staff)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/lookup/students", get(modules::lookup::handlers::lookup_students)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/lookup/roles", get(modules::lookup::handlers::lookup_roles)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/lookup/departments", get(modules::lookup::handlers::lookup_departments)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/lookup/grade-levels", get(modules::lookup::handlers::lookup_grade_levels)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/lookup/classrooms", get(modules::lookup::handlers::lookup_classrooms)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/lookup/academic-years", get(modules::lookup::handlers::lookup_academic_years)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+
         // Route registration (no auth - uses deploy key)
         .route("/api/admin/routes/register", post(modules::system::handlers::register_routes::register_routes))
         
