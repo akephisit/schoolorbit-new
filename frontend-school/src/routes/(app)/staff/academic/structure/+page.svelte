@@ -36,6 +36,9 @@
 	// Level state
 	let showCreateLevelDialog = false;
 	let isSubmittingLevel = false;
+	let showDeleteLevelDialog = false;
+	let levelToDelete: GradeLevel | null = null;
+	let isDeletingLevel = false;
 
 	// New Year Form
 	let newYear = {
@@ -150,16 +153,26 @@
 		}
 	}
 
-	async function handleDeleteLevel(id: string) {
-		if (!confirm('ยืนยันลบระดับชั้นนี้? (หากมีการใช้งานอยู่จะไม่สามารถลบได้)')) return;
+	function openDeleteLevelDialog(level: GradeLevel) {
+		levelToDelete = level;
+		showDeleteLevelDialog = true;
+	}
 
+	async function confirmDeleteLevel() {
+		if (!levelToDelete) return;
+
+		isDeletingLevel = true;
 		try {
-			await deleteGradeLevel(id);
+			await deleteGradeLevel(levelToDelete.id);
 			toast.success('ลบระดับชั้นเรียบร้อย');
+			showDeleteLevelDialog = false;
+			levelToDelete = null;
 			await loadData();
 		} catch (error) {
 			console.error(error);
 			toast.error(error instanceof Error ? error.message : 'ลบระดับชั้นไม่สำเร็จ');
+		} finally {
+			isDeletingLevel = false;
 		}
 	}
 
@@ -289,7 +302,7 @@
 									variant="ghost"
 									size="icon"
 									class="h-8 w-8 text-muted-foreground hover:text-red-500"
-									onclick={() => handleDeleteLevel(level.id)}
+									onclick={() => openDeleteLevelDialog(level)}
 								>
 									<Trash2 class="h-4 w-4" />
 								</Button>
@@ -411,6 +424,60 @@
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 					{/if}
 					บันทึก
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Delete Level Confirmation Dialog -->
+	<Dialog.Root bind:open={showDeleteLevelDialog}>
+		<Dialog.Content class="sm:max-w-[400px]">
+			<Dialog.Header>
+				<Dialog.Title class="flex items-center gap-2 text-red-600">
+					<Trash2 class="h-5 w-5" />
+					ยืนยันการลบระดับชั้น
+				</Dialog.Title>
+				<Dialog.Description>
+					การลบระดับชั้นจะไม่สามารถย้อนกลับได้
+					หากมีห้องเรียนหรือนักเรียนเชื่อมโยงอยู่จะไม่สามารถลบได้
+				</Dialog.Description>
+			</Dialog.Header>
+
+			{#if levelToDelete}
+				<div class="py-4">
+					<div
+						class="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg dark:bg-red-950/20 dark:border-red-900"
+					>
+						<div
+							class="flex h-10 w-10 items-center justify-center rounded-full bg-red-500 text-white text-sm font-bold"
+						>
+							{levelToDelete.year}
+						</div>
+						<div>
+							<p class="font-semibold text-red-800 dark:text-red-200">{levelToDelete.name}</p>
+							<p class="text-sm text-red-600 dark:text-red-400">
+								{levelToDelete.code} • {levelToDelete.short_name}
+							</p>
+						</div>
+					</div>
+				</div>
+			{/if}
+
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showDeleteLevelDialog = false;
+						levelToDelete = null;
+					}}
+				>
+					ยกเลิก
+				</Button>
+				<Button variant="destructive" onclick={confirmDeleteLevel} disabled={isDeletingLevel}>
+					{#if isDeletingLevel}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					ยืนยันลบ
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
