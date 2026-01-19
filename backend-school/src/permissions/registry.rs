@@ -84,6 +84,12 @@ pub mod codes {
     // Academic Promotion
     pub const ACADEMIC_PROMOTION_READ_ALL: &str = "academic_promotion.read.all";
     pub const ACADEMIC_PROMOTION_EXECUTE_ALL: &str = "academic_promotion.execute.all";
+
+    // Academic Curriculum (Subjects)
+    pub const ACADEMIC_CURRICULUM_READ_ALL: &str = "academic_curriculum.read.all";
+    pub const ACADEMIC_CURRICULUM_CREATE_ALL: &str = "academic_curriculum.create.all";
+    pub const ACADEMIC_CURRICULUM_UPDATE_ALL: &str = "academic_curriculum.update.all";
+    pub const ACADEMIC_CURRICULUM_DELETE_ALL: &str = "academic_curriculum.delete.all";
 }
 
 /// Complete list of all permissions in the system
@@ -458,5 +464,39 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "execute",
         scope: "all",
         description: "ประมวลผลการเลื่อนชั้นเรียน (End of Year)",
+    },
+
+    // Academic Curriculum Permissions
+    PermissionDef {
+        code: codes::ACADEMIC_CURRICULUM_READ_ALL,
+        name: "ดูหลักสูตร/รายวิชา",
+        module: "academic_curriculum",
+        action: "read",
+        scope: "all",
+        description: "ดูข้อมูลรายวิชาและหลักสูตรทั้งหมด",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_CURRICULUM_CREATE_ALL,
+        name: "สร้างรายวิชา",
+        module: "academic_curriculum",
+        action: "create",
+        scope: "all",
+        description: "สร้างรายวิชาใหม่ในระบบ",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
+        name: "แก้ไขรายวิชา",
+        module: "academic_curriculum",
+        action: "update",
+        scope: "all",
+        description: "แก้ไขรายละเอียดรายวิชา",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_CURRICULUM_DELETE_ALL,
+        name: "ลบรายวิชา",
+        module: "academic_curriculum",
+        action: "delete",
+        scope: "all",
+        description: "ลบรายวิชาออกจากระบบ",
     },
 ];
