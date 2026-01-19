@@ -75,5 +75,22 @@ function menuRegistryPlugin() {
 }
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit(), menuRegistryPlugin()]
+	plugins: [tailwindcss(), sveltekit(), menuRegistryPlugin()],
+	build: {
+		target: 'esnext',
+		sourcemap: false, // Save time generating maps
+		reportCompressedSize: false, // Save time on summary
+		chunkSizeWarningLimit: 1000,
+		rollupOptions: {
+			output: {
+				manualChunks: (id) => {
+					if (id.includes('node_modules')) {
+						if (id.includes('lucide-svelte')) {
+							return 'icons';
+						}
+					}
+				}
+			}
+		}
+	}
 });
