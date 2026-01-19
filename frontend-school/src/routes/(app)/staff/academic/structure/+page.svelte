@@ -22,6 +22,7 @@
 	import Layers from 'lucide-svelte/icons/layers';
 	import Plus from 'lucide-svelte/icons/plus';
 	import Trash2 from 'lucide-svelte/icons/trash-2';
+	import BookOpen from 'lucide-svelte/icons/book-open';
 
 	let loading = true;
 	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
@@ -149,8 +150,11 @@
 <div class="space-y-6">
 	<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 		<div>
-			<h2 class="text-2xl font-bold tracking-tight">โครงสร้างวิชาการ</h2>
-			<p class="text-muted-foreground">จัดการปีการศึกษา ภาคเรียน และระดับชั้น</p>
+			<h2 class="text-3xl font-bold text-foreground flex items-center gap-2">
+				<BookOpen class="w-8 h-8" />
+				โครงสร้างวิชาการ
+			</h2>
+			<p class="text-muted-foreground mt-1">จัดการปีการศึกษา ภาคเรียน และระดับชั้น</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
 			<Button variant="outline" onclick={() => (showCreateLevelDialog = true)}>

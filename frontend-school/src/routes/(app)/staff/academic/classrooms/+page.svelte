@@ -22,6 +22,8 @@
 	import Filter from 'lucide-svelte/icons/filter';
 	import Plus from 'lucide-svelte/icons/plus';
 	import Users from 'lucide-svelte/icons/users';
+	import School from 'lucide-svelte/icons/school';
+	import Pencil from 'lucide-svelte/icons/pencil';
 
 	let loading = true;
 	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
@@ -119,11 +121,14 @@
 	<!-- Header -->
 	<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 		<div>
-			<h2 class="text-2xl font-bold tracking-tight">จัดการห้องเรียน</h2>
-			<p class="text-muted-foreground">สร้างห้องเรียนและกำหนดครูที่ปรึกษา</p>
+			<h2 class="text-3xl font-bold text-foreground flex items-center gap-2">
+				<School class="w-8 h-8" />
+				จัดการห้องเรียน
+			</h2>
+			<p class="text-muted-foreground mt-1">สร้างห้องเรียนและกำหนดครูที่ปรึกษา</p>
 		</div>
-		<Button onclick={() => (showCreateDialog = true)}>
-			<Plus class="mr-2 h-4 w-4" />
+		<Button onclick={() => (showCreateDialog = true)} class="flex items-center gap-2">
+			<Plus class="w-4 h-4" />
 			สร้างห้องเรียนใหม่
 		</Button>
 	</div>
@@ -191,7 +196,9 @@
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-right">
-								<Button variant="ghost" size="sm">แก้ไข</Button>
+								<Button variant="ghost" size="sm">
+									<Pencil class="h-4 w-4" />
+								</Button>
 							</Table.Cell>
 						</Table.Row>
 					{/each}
