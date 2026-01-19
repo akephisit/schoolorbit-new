@@ -16,6 +16,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import Loader2 from 'lucide-svelte/icons/loader-2';
 	import CalendarDays from 'lucide-svelte/icons/calendar-days';
 	import School from 'lucide-svelte/icons/school';
@@ -322,11 +323,10 @@
 					</div>
 				</div>
 				<div class="flex items-center space-x-2">
-					<input
-						type="checkbox"
+					<Checkbox
 						id="active"
-						bind:checked={newYear.is_active}
-						class="h-4 w-4 rounded border-gray-300"
+						checked={newYear.is_active}
+						onCheckedChange={(checked) => (newYear.is_active = checked === true)}
 					/>
 					<Label for="active">ตั้งเป็นปีการศึกษาปัจจุบันทันที</Label>
 				</div>

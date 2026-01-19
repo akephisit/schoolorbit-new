@@ -19,6 +19,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
 	import Loader2 from 'lucide-svelte/icons/loader-2';
 	import UserPlus from 'lucide-svelte/icons/user-plus';
 	import Trash2 from 'lucide-svelte/icons/trash-2';
@@ -195,30 +196,41 @@
 			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 				<div class="space-y-2">
 					<Label>ปีการศึกษา</Label>
-					<select
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-						bind:value={selectedYearId}
-						onchange={handleYearChange}
-					>
-						<option value="" disabled>เลือกปีการศึกษา</option>
-						{#each structure.years as year}
-							<option value={year.id}>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</option>
-						{/each}
-					</select>
+					<Select.Root type="single" bind:value={selectedYearId} onValueChange={handleYearChange}>
+						<Select.Trigger class="w-full">
+							{structure.years.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+							{#if structure.years.find((y) => y.id === selectedYearId)?.is_active}
+								(ปัจจุบัน)
+							{/if}
+						</Select.Trigger>
+						<Select.Content>
+							{#each structure.years as year}
+								<Select.Item value={year.id}
+									>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</Select.Item
+								>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="space-y-2">
 					<Label>ห้องเรียน</Label>
-					<select
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+					<Select.Root
+						type="single"
 						bind:value={selectedClassroomId}
-						onchange={handleClassroomChange}
+						onValueChange={handleClassroomChange}
 						disabled={!selectedYearId}
 					>
-						<option value="">เลือกห้องเรียน</option>
-						{#each classrooms as room}
-							<option value={room.id}>{room.grade_level_name} - {room.name}</option>
-						{/each}
-					</select>
+						<Select.Trigger class="w-full">
+							{classrooms.find((r) => r.id === selectedClassroomId)
+								? `${classrooms.find((r) => r.id === selectedClassroomId)?.grade_level_name} - ${classrooms.find((r) => r.id === selectedClassroomId)?.name}`
+								: 'เลือกห้องเรียน'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each classrooms as room}
+								<Select.Item value={room.id}>{room.grade_level_name} - {room.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 		</Card.Content>

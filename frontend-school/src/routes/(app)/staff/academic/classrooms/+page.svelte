@@ -139,15 +139,21 @@
 			<div class="flex flex-col gap-4 md:flex-row md:items-end">
 				<div class="grid w-full max-w-sm gap-1.5">
 					<Label>ปีการศึกษา</Label>
-					<select
-						class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-						bind:value={selectedYearId}
-						onchange={fetchClassrooms}
-					>
-						{#each structure.years as year}
-							<option value={year.id}>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</option>
-						{/each}
-					</select>
+					<Select.Root type="single" bind:value={selectedYearId} onValueChange={fetchClassrooms}>
+						<Select.Trigger class="w-full">
+							{structure.years.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+							{#if structure.years.find((y) => y.id === selectedYearId)?.is_active}
+								(ปัจจุบัน)
+							{/if}
+						</Select.Trigger>
+						<Select.Content>
+							{#each structure.years as year}
+								<Select.Item value={year.id}
+									>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</Select.Item
+								>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 		</Card.Content>
@@ -228,15 +234,17 @@
 				<div class="grid grid-cols-2 gap-4">
 					<div class="grid gap-2">
 						<Label>ระดับชั้น <span class="text-red-500">*</span></Label>
-						<select
-							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-							bind:value={newClassroom.grade_level_id}
-						>
-							<option value="" disabled>เลือกชั้น</option>
-							{#each structure.levels as level}
-								<option value={level.id}>{level.name} ({level.short_name})</option>
-							{/each}
-						</select>
+						<Select.Root type="single" bind:value={newClassroom.grade_level_id}>
+							<Select.Trigger class="w-full">
+								{structure.levels.find((l) => l.id === newClassroom.grade_level_id)?.name ||
+									'เลือกชั้น'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each structure.levels as level}
+									<Select.Item value={level.id}>{level.name} ({level.short_name})</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<div class="grid gap-2">
 						<Label>ชื่อห้อง/เลขห้อง <span class="text-red-500">*</span></Label>
@@ -246,15 +254,19 @@
 
 				<div class="grid gap-2">
 					<Label>ครูที่ปรึกษาหลัก</Label>
-					<select
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-						bind:value={newClassroom.advisor_id}
-					>
-						<option value="">- ไม่ระบุ -</option>
-						{#each staffList as staff}
-							<option value={staff.id}>{staff.first_name} {staff.last_name}</option>
-						{/each}
-					</select>
+					<Select.Root type="single" bind:value={newClassroom.advisor_id}>
+						<Select.Trigger class="w-full">
+							{staffList.find((s) => s.id === newClassroom.advisor_id)
+								? `${staffList.find((s) => s.id === newClassroom.advisor_id)?.first_name} ${staffList.find((s) => s.id === newClassroom.advisor_id)?.last_name}`
+								: '- ไม่ระบุ -'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">- ไม่ระบุ -</Select.Item>
+							{#each staffList as staff}
+								<Select.Item value={staff.id}>{staff.first_name} {staff.last_name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 
 				<div class="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground">
