@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { scanRoutes } from './scripts/menu-helpers';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 /**
  * Auto-register menu items during build
@@ -75,7 +76,16 @@ function menuRegistryPlugin() {
 }
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit(), menuRegistryPlugin()],
+	plugins: [
+		tailwindcss(),
+		sveltekit(),
+		menuRegistryPlugin(),
+		visualizer({
+			emitFile: true,
+			filename: 'stats.html',
+			open: false
+		})
+	],
 	build: {
 		target: 'esnext',
 		sourcemap: false, // Save time generating maps
@@ -85,8 +95,19 @@ export default defineConfig({
 			output: {
 				manualChunks: (id) => {
 					if (id.includes('node_modules')) {
+						// Split icons (used everywhere but update frequently independently)
 						if (id.includes('lucide-svelte')) {
 							return 'icons';
+						}
+
+						// Split Heavy image processing libraries (only used in specific components)
+						if (id.includes('heic2any') || id.includes('compressorjs') || id.includes('svelte-easy-crop')) {
+							return 'image-processing';
+						}
+
+						// Date formatting (date-fns)
+						if (id.includes('date-fns') || id.includes('internationalized/date')) {
+							return 'date-utils';
 						}
 					}
 				}
