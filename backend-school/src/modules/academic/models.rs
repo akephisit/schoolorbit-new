@@ -82,30 +82,87 @@ pub struct UpdateSemesterRequest {
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct GradeLevel {
     pub id: Uuid,
-    pub code: String,
-    pub name: String,
-    pub short_name: String,
-    pub level_order: i32,
+    pub level_type: String,  // "kindergarten", "primary", "secondary"
+    pub year: i32,           // 1, 2, 3...
     pub next_grade_level_id: Option<Uuid>,
     pub is_active: bool,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct CreateGradeLevelRequest {
+impl GradeLevel {
+    /// Get the code like "K1", "P1", "M1"
+    pub fn code(&self) -> String {
+        let prefix = match self.level_type.as_str() {
+            "kindergarten" => "K",
+            "primary" => "P",
+            "secondary" => "M",
+            _ => "X",
+        };
+        format!("{}{}", prefix, self.year)
+    }
+
+    /// Get the short name like "อ.1", "ป.1", "ม.1"
+    pub fn short_name(&self) -> String {
+        let prefix = match self.level_type.as_str() {
+            "kindergarten" => "อ.",
+            "primary" => "ป.",
+            "secondary" => "ม.",
+            _ => "?.",
+        };
+        format!("{}{}", prefix, self.year)
+    }
+
+    /// Get the full name like "อนุบาลศึกษาปีที่ 1", "ประถมศึกษาปีที่ 1", "มัธยมศึกษาปีที่ 1"
+    pub fn full_name(&self) -> String {
+        let prefix = match self.level_type.as_str() {
+            "kindergarten" => "อนุบาลศึกษาปีที่",
+            "primary" => "ประถมศึกษาปีที่",
+            "secondary" => "มัธยมศึกษาปีที่",
+            _ => "ระดับชั้นปีที่",
+        };
+        format!("{} {}", prefix, self.year)
+    }
+}
+
+/// Serializable version with computed fields for API responses
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GradeLevelResponse {
+    pub id: Uuid,
+    pub level_type: String,
+    pub year: i32,
     pub code: String,
     pub name: String,
     pub short_name: String,
-    pub level_order: i32,
+    pub next_grade_level_id: Option<Uuid>,
+    pub is_active: bool,
+}
+
+impl From<GradeLevel> for GradeLevelResponse {
+    fn from(level: GradeLevel) -> Self {
+        GradeLevelResponse {
+            id: level.id,
+            code: level.code(),
+            name: level.full_name(),
+            short_name: level.short_name(),
+            level_type: level.level_type,
+            year: level.year,
+            next_grade_level_id: level.next_grade_level_id,
+            is_active: level.is_active,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateGradeLevelRequest {
+    pub level_type: String,  // "kindergarten", "primary", "secondary"
+    pub year: i32,           // 1, 2, 3...
     pub next_grade_level_id: Option<Uuid>,
     pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateGradeLevelRequest {
-    pub code: Option<String>,
-    pub name: Option<String>,
-    pub short_name: Option<String>,
-    pub level_order: Option<i32>,
+    pub level_type: Option<String>,
+    pub year: Option<i32>,
     pub next_grade_level_id: Option<Uuid>,
     pub is_active: Option<bool>,
 }

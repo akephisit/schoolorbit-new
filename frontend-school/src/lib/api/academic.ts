@@ -25,10 +25,11 @@ export interface Semester {
 
 export interface GradeLevel {
     id: string;
-    code: string;
-    name: string;
-    short_name: string;
-    level_order: number;
+    level_type: 'kindergarten' | 'primary' | 'secondary';  // Type of education level
+    year: number;           // Year within the level (1, 2, 3...)
+    code: string;           // Computed: K1, P1, M1
+    name: string;           // Computed: อนุบาลศึกษาปีที่ 1, ประถมศึกษาปีที่ 1, etc.
+    short_name: string;     // Computed: อ.1, ป.1, ม.1
     is_active: boolean;
 }
 
@@ -99,10 +100,8 @@ export const toggleActiveYear = async (id: string) => {
 };
 
 export const createGradeLevel = async (data: {
-    code: string;
-    name: string;
-    short_name: string;
-    level_order: number;
+    level_type: 'kindergarten' | 'primary' | 'secondary';
+    year: number;
     next_grade_level_id?: string;
 }) => {
     return await fetchApi('/api/academic/levels', {

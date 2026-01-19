@@ -44,13 +44,23 @@ pub async fn list_academic_structure(
     .await
     .unwrap_or_default();
 
-    // Fetch Grade Levels
-    let levels = sqlx::query_as::<_, GradeLevel>(
-        "SELECT * FROM grade_levels ORDER BY level_order ASC"
+    // Fetch Grade Levels (with computed fields)
+    let levels_raw = sqlx::query_as::<_, GradeLevel>(
+        "SELECT * FROM grade_levels ORDER BY 
+         CASE level_type 
+            WHEN 'kindergarten' THEN 1 
+            WHEN 'primary' THEN 2 
+            WHEN 'secondary' THEN 3 
+            ELSE 4 
+         END, 
+         year ASC"
     )
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
+    
+    // Convert to response format with computed fields
+    let levels: Vec<GradeLevelResponse> = levels_raw.into_iter().map(|l| l.into()).collect();
 
     Ok(Json(json!({
         "success": true,
@@ -153,7 +163,12 @@ pub async fn list_classrooms(
 
     let mut query = String::from(
         "SELECT c.*, 
-                gl.short_name as grade_level_name,
+                CASE gl.level_type 
+                    WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                    WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                    WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                    ELSE CONCAT('?.', gl.year)
+                END as grade_level_name,
                 ay.name as academic_year_label,
                 CONCAT(u.first_name, ' ', u.last_name) as advisor_name,
                 (SELECT COUNT(*) FROM student_class_enrollments ske WHERE ske.class_room_id = c.id AND ske.status = 'active') as student_count
@@ -168,7 +183,15 @@ pub async fn list_classrooms(
         query.push_str(&format!(" AND c.academic_year_id = '{}'", yid));
     }
 
-    query.push_str(" ORDER BY gl.level_order ASC, c.room_number ASC");
+    query.push_str(" ORDER BY 
+         CASE gl.level_type 
+            WHEN 'kindergarten' THEN 1 
+            WHEN 'primary' THEN 2 
+            WHEN 'secondary' THEN 3 
+            ELSE 4 
+         END, 
+         gl.year ASC, 
+         c.room_number ASC");
 
     let classrooms = sqlx::query_as::<_, Classroom>(&query)
         .fetch_all(&pool)
@@ -226,18 +249,23 @@ pub async fn create_classroom(
 
     // 4. Generate Name and Code
     // Name: "ม.1/2" or "ม.1/EP"
-    let full_name = format!("{}/{}", grade_level.short_name, payload.room_number);
+    let full_name = format!("{}/{}", grade_level.short_name(), payload.room_number);
     
     // Code: "67-M1-2" (Year-Level-Room)
     let short_year = year.year % 100;
-    let code = format!("{}-{}-{}", short_year, grade_level.code, payload.room_number.replace(" ", ""));
+    let code = format!("{}-{}-{}", short_year, grade_level.code(), payload.room_number.replace(" ", ""));
 
     // 5. Insert
     let classroom = sqlx::query_as::<_, Classroom>(
         "INSERT INTO class_rooms (code, name, academic_year_id, grade_level_id, room_number, advisor_id, co_advisor_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *, 
-            (SELECT short_name FROM grade_levels WHERE id = $4) as grade_level_name,
+            (SELECT CASE level_type 
+                WHEN 'kindergarten' THEN CONCAT('อ.', year)
+                WHEN 'primary' THEN CONCAT('ป.', year)
+                WHEN 'secondary' THEN CONCAT('ม.', year)
+                ELSE CONCAT('?.', year)
+            END FROM grade_levels WHERE id = $4) as grade_level_name,
             (SELECT name FROM academic_years WHERE id = $3) as academic_year_label,
             NULL::text as advisor_name,
             0::bigint as student_count"
@@ -286,22 +314,28 @@ pub async fn create_grade_level(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
+    // Validate level_type
+    if !["kindergarten", "primary", "secondary"].contains(&payload.level_type.as_str()) {
+        return Err(AppError::BadRequest("ประเภทระดับชั้นไม่ถูกต้อง".to_string()));
+    }
+
     let result = sqlx::query_as::<_, GradeLevel>(
-        "INSERT INTO grade_levels (code, name, short_name, level_order, next_grade_level_id, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO grade_levels (level_type, year, next_grade_level_id, is_active)
+         VALUES ($1, $2, $3, $4)
          RETURNING *"
     )
-    .bind(payload.code)
-    .bind(payload.name)
-    .bind(payload.short_name)
-    .bind(payload.level_order)
+    .bind(&payload.level_type)
+    .bind(payload.year)
     .bind(payload.next_grade_level_id)
     .bind(payload.is_active.unwrap_or(true))
     .fetch_one(&pool)
     .await;
 
     match result {
-        Ok(level) => Ok((StatusCode::CREATED, Json(json!({"success": true, "data": level})))),
+        Ok(level) => {
+            let response: GradeLevelResponse = level.into();
+            Ok((StatusCode::CREATED, Json(json!({"success": true, "data": response}))))
+        },
         Err(e) => {
             eprintln!("Failed to create grade level: {}", e);
             if e.to_string().contains("unique") {
@@ -371,7 +405,12 @@ pub async fn enroll_students(
     // Validate Classroom
     let classroom = sqlx::query_as::<_, Classroom>(
         "SELECT c.*, 
-                gl.short_name as grade_level_name,
+                CASE gl.level_type 
+                    WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                    WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                    WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                    ELSE CONCAT('?.', gl.year)
+                END as grade_level_name,
                 NULL::text as academic_year_label,
                 NULL::text as advisor_name,
                 NULL::bigint as student_count

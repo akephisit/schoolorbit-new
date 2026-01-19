@@ -16,6 +16,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import Loader2 from 'lucide-svelte/icons/loader-2';
 	import CalendarDays from 'lucide-svelte/icons/calendar-days';
@@ -45,13 +46,29 @@
 		is_active: false
 	};
 
-	// New Level Form
+	// New Level Form (year stored as string for Select compatibility)
 	let newLevel = {
-		code: '',
-		name: '',
-		short_name: '',
-		level_order: 1
+		level_type: '' as 'kindergarten' | 'primary' | 'secondary' | '',
+		year: '1'
 	};
+
+	// Level type options for dropdown
+	const levelTypeOptions = [
+		{ value: 'kindergarten', label: 'อนุบาลศึกษา', prefix: 'อ.' },
+		{ value: 'primary', label: 'ประถมศึกษา', prefix: 'ป.' },
+		{ value: 'secondary', label: 'มัธยมศึกษา', prefix: 'ม.' }
+	];
+
+	// Get max years based on level type
+	function getMaxYears(levelType: string): number {
+		if (levelType === 'kindergarten') return 3;
+		return 6; // primary and secondary
+	}
+
+	// Preview the generated name
+	$: previewName = newLevel.level_type
+		? `${levelTypeOptions.find((o) => o.value === newLevel.level_type)?.prefix}${newLevel.year}`
+		: '';
 
 	async function loadData() {
 		try {
@@ -105,28 +122,29 @@
 	}
 
 	async function handleCreateLevel() {
-		if (!newLevel.code || !newLevel.name || !newLevel.short_name) {
-			toast.error('กรุณากรอกข้อมูลระดับชั้นให้ครบ');
+		if (!newLevel.level_type || !newLevel.year) {
+			toast.error('กรุณาเลือกประเภทและปีที่');
 			return;
 		}
-		
+
 		isSubmittingLevel = true;
 		try {
-			await createGradeLevel(newLevel);
+			await createGradeLevel({
+				level_type: newLevel.level_type as 'kindergarten' | 'primary' | 'secondary',
+				year: parseInt(newLevel.year, 10)
+			});
 			toast.success('เพิ่มระดับชั้นเรียบร้อย');
 			showCreateLevelDialog = false;
 			await loadData();
-			
-			// Reset form (increment order)
+
+			// Reset form
 			newLevel = {
-				code: '',
-				name: '',
-				short_name: '',
-				level_order: newLevel.level_order + 1
+				level_type: '',
+				year: '1'
 			};
 		} catch (error) {
 			console.error(error);
-			toast.error('เพิ่มระดับชั้นไม่สำเร็จ (รหัสซ้ำหรือไม่ถูกต้อง)');
+			toast.error('เพิ่มระดับชั้นไม่สำเร็จ (ระดับชั้นนี้มีอยู่แล้ว)');
 		} finally {
 			isSubmittingLevel = false;
 		}
@@ -260,7 +278,7 @@
 									<div
 										class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-bold"
 									>
-										{level.level_order}
+										{level.year}
 									</div>
 									<div>
 										<p class="font-medium">{level.name}</p>
@@ -348,31 +366,47 @@
 		<Dialog.Content class="sm:max-w-[425px]">
 			<Dialog.Header>
 				<Dialog.Title>เพิ่มระดับชั้นใหม่</Dialog.Title>
-				<Dialog.Description>เช่น มัธยมศึกษาปีที่ 1</Dialog.Description>
+				<Dialog.Description>เลือกประเภทและปีที่ของระดับชั้นที่ต้องการ</Dialog.Description>
 			</Dialog.Header>
 			<div class="grid gap-4 py-4">
 				<div class="grid gap-2">
-					<Label>ลำดับ (Order)</Label>
-					<Input type="number" bind:value={newLevel.level_order} />
-					<p class="text-xs text-muted-foreground">ใช้สำหรับเรียงลำดับชั้นเรียน 1, 2, 3...</p>
+					<Label>ประเภทการศึกษา <span class="text-red-500">*</span></Label>
+					<Select.Root type="single" bind:value={newLevel.level_type}>
+						<Select.Trigger class="w-full">
+							{levelTypeOptions.find((o) => o.value === newLevel.level_type)?.label ||
+								'เลือกประเภท'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each levelTypeOptions as opt}
+								<Select.Item value={opt.value}>{opt.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="grid gap-2">
-					<Label>รหัสระบบ (Code)</Label>
-					<Input placeholder="M1" bind:value={newLevel.code} />
-					<p class="text-xs text-muted-foreground">ภาษาอังกฤษสั้นๆ เช่น P1, M1, KG1</p>
+					<Label>ปีที่ <span class="text-red-500">*</span></Label>
+					<Select.Root type="single" bind:value={newLevel.year}>
+						<Select.Trigger class="w-full">
+							{`ปีที่ ${newLevel.year}`}
+						</Select.Trigger>
+						<Select.Content>
+							{#each Array.from( { length: getMaxYears(newLevel.level_type) }, (_, i) => String(i + 1) ) as yr}
+								<Select.Item value={yr}>ปีที่ {yr}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
-				<div class="grid gap-2">
-					<Label>ชื่อเต็ม</Label>
-					<Input placeholder="มัธยมศึกษาปีที่ 1" bind:value={newLevel.name} />
-				</div>
-				<div class="grid gap-2">
-					<Label>ชื่อย่อ (แสดงผล)</Label>
-					<Input placeholder="ม.1" bind:value={newLevel.short_name} />
-				</div>
+
+				{#if previewName}
+					<div class="bg-muted/50 p-3 rounded-md text-sm">
+						<p class="text-muted-foreground">ตัวอย่างชื่อที่จะสร้าง:</p>
+						<p class="font-bold text-lg">{previewName}</p>
+					</div>
+				{/if}
 			</div>
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (showCreateLevelDialog = false)}>ยกเลิก</Button>
-				<Button onclick={handleCreateLevel} disabled={isSubmittingLevel}>
+				<Button onclick={handleCreateLevel} disabled={isSubmittingLevel || !newLevel.level_type}>
 					{#if isSubmittingLevel}
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 					{/if}
