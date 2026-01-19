@@ -491,7 +491,7 @@ struct StudentRow {
 }
 
 /// GET /api/lookup/students
-/// Returns minimal student data for dropdowns
+/// Returns minimal student data for dropdowns (with student_id and class_room)
 pub async fn lookup_students(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -513,26 +513,43 @@ pub async fn lookup_students(
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
     
+    // Query with student_id from student_info and current classroom from enrollments
     let mut sql = String::from(
-        "SELECT id, first_name, last_name, username 
-         FROM users 
-         WHERE user_type = 'student'"
+        "SELECT u.id, u.first_name, u.last_name, u.username,
+                si.student_id,
+                c.name as class_room
+         FROM users u
+         LEFT JOIN student_info si ON u.id = si.user_id
+         LEFT JOIN enrollments e ON u.id = e.student_id AND e.is_active = true
+         LEFT JOIN classrooms c ON e.classroom_id = c.id
+         WHERE u.user_type = 'student'"
     );
     
     if active_only {
-        sql.push_str(" AND status = 'active'");
+        sql.push_str(" AND u.status = 'active'");
     }
     
     if let Some(ref search) = query.search {
         sql.push_str(&format!(
-            " AND (first_name ILIKE '%{}%' OR last_name ILIKE '%{}%' OR username ILIKE '%{}%')",
-            search, search, search
+            " AND (u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%' OR u.username ILIKE '%{}%' OR si.student_id ILIKE '%{}%')",
+            search, search, search, search
         ));
     }
     
-    sql.push_str(&format!(" ORDER BY first_name, last_name LIMIT {}", limit));
+    sql.push_str(&format!(" ORDER BY u.first_name, u.last_name LIMIT {}", limit));
     
-    let rows = sqlx::query_as::<_, StudentRow>(&sql)
+    #[derive(Debug, FromRow)]
+    struct StudentWithInfoRow {
+        id: Uuid,
+        first_name: String,
+        last_name: String,
+        #[allow(dead_code)]
+        username: String,
+        student_id: Option<String>,
+        class_room: Option<String>,
+    }
+    
+    let rows = sqlx::query_as::<_, StudentWithInfoRow>(&sql)
         .fetch_all(&pool)
         .await
         .map_err(|e| {
@@ -540,15 +557,16 @@ pub async fn lookup_students(
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
     
-    let data: Vec<StaffLookupItem> = rows.into_iter().map(|r| {
+    let data: Vec<StudentLookupItem> = rows.into_iter().map(|r| {
         let name = format!("{} {}", r.first_name, r.last_name);
-        StaffLookupItem {
+        StudentLookupItem {
             id: r.id,
             name,
-            title: None,
-            username: Some(r.username),
+            student_id: r.student_id,
+            class_room: r.class_room,
         }
     }).collect();
     
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
 }
+

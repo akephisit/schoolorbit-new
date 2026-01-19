@@ -10,7 +10,7 @@
 		type Classroom,
 		type StudentEnrollment
 	} from '$lib/api/academic';
-	import { listStudents, type StudentListItem } from '$lib/api/students'; // We'll need a way to list unassigned students or search all
+	import { lookupStudents, type StudentLookupItem } from '$lib/api/lookup';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -42,7 +42,7 @@
 
 	// Add Student Dialog State
 	let showAddDialog = false;
-	let studentCandidates: StudentListItem[] = [];
+	let studentCandidates: StudentLookupItem[] = [];
 	let selectedCandidateIds: string[] = [];
 	let loadingCandidates = false;
 	let searchQuery = '';
@@ -119,12 +119,11 @@
 			// Ideal: Filter only students not in this year? Or just search all.
 			// Currently listStudents doesn't support complex "not in" filters easily without backend modification.
 			// Let's just list all and maybe visually indicate? Or rely on user to search.
-			const res = await listStudents({ 
-				page: 1, 
-				page_size: 20, 
-				search: searchQuery 
+			const data = await lookupStudents({ 
+				search: searchQuery,
+				limit: 20
 			});
-			studentCandidates = res.data;
+			studentCandidates = data;
 		} catch (error) {
 			console.error(error);
 			toast.error('ค้นหานักเรียนไม่สำเร็จ');
@@ -359,7 +358,7 @@
 										/>
 									</Table.Cell>
 									<Table.Cell class="font-mono text-xs">{student.student_id || '-'}</Table.Cell>
-									<Table.Cell>{student.first_name} {student.last_name}</Table.Cell>
+									<Table.Cell>{student.name}</Table.Cell>
 									<Table.Cell>
 										{#if student.class_room}
 											<Badge variant="outline">{student.class_room}</Badge>

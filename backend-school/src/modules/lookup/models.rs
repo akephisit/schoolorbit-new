@@ -64,6 +64,17 @@ pub struct AcademicYearLookupItem {
     pub is_current: bool,
 }
 
+/// Student lookup item with student_id and class_room for enrollment
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudentLookupItem {
+    pub id: Uuid,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub student_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_room: Option<String>,
+}
+
 /// Lookup response wrapper
 #[derive(Debug, Serialize)]
 pub struct LookupResponse<T> {

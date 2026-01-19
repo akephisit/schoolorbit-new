@@ -55,6 +55,13 @@ export interface AcademicYearLookupItem {
     is_current: boolean;
 }
 
+export interface StudentLookupItem {
+    id: string;
+    name: string;
+    student_id?: string;
+    class_room?: string;
+}
+
 export interface LookupResponse<T> {
     success: boolean;
     data: T[];
@@ -120,10 +127,10 @@ export async function lookupStaff(options?: LookupOptions): Promise<StaffLookupI
 
 /**
  * Fetch students list for dropdowns
- * Returns: id, name, username
+ * Returns: id, name, student_id, class_room
  */
-export async function lookupStudents(options?: LookupOptions): Promise<StaffLookupItem[]> {
-    return fetchLookup<StaffLookupItem>('students', options);
+export async function lookupStudents(options?: LookupOptions): Promise<StudentLookupItem[]> {
+    return fetchLookup<StudentLookupItem>('students', options);
 }
 
 /**
