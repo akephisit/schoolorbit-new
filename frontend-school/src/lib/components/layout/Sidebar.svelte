@@ -165,15 +165,19 @@
 			{:else}
 				<!-- Dynamic Menu Groups -->
 				{#each menuGroups as group, groupIndex (group.code)}
-					<!-- Group separator (except first group) -->
+					<!-- Group Header (except first group) -->
 					{#if groupIndex > 0}
-						<div class="my-3 border-t border-border"></div>
-					{/if}
-
-					<!-- Group Name (only when expanded) -->
-					{#if !isCollapsed && group.name}
-						<div class="px-3 py-2 mb-1">
-							<p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+						<div class="my-3 h-5 flex items-center px-3">
+							<!-- Divider line (visible when collapsed) -->
+							<div
+								class="flex-1 border-t border-border transition-opacity duration-300
+								{isCollapsed ? 'opacity-100' : 'opacity-0'}"
+							></div>
+							<!-- Group name (visible when expanded) -->
+							<p
+								class="absolute text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap transition-opacity duration-300
+								{isCollapsed ? 'opacity-0' : 'opacity-100'}"
+							>
 								{group.name}
 							</p>
 						</div>
