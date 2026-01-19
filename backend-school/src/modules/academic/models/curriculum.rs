@@ -33,6 +33,7 @@ pub struct Subject {
     pub credit: f64, // Changed from Decimal to f64 to avoid extra dependency
     pub hours_per_semester: Option<i32>,
     #[serde(rename = "type")]
+    #[sqlx(rename = "type")]
     pub subject_type: String, // 'type' is a reserved keyword in Rust
     pub group_id: Option<Uuid>,
     pub level_scope: Option<String>,
@@ -43,6 +44,7 @@ pub struct Subject {
     
     // Joined Fields (Optional)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
     pub group_name_th: Option<String>,
 }
 
