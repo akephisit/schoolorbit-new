@@ -118,7 +118,7 @@
 				email: payload.email || undefined,
 				date_of_birth: payload.date_of_birth || undefined,
 				grade_level: formData.grade_level || undefined,
-				class_room: formData.class_room ? formData.class_room.replace(`${formData.grade_level}/`, '') : undefined,
+				class_room: formData.class_room || undefined,
 				student_number: undefined, // Force undefined to match API type (removing null)
 				title: formData.title || undefined
 			};

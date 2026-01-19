@@ -28,11 +28,26 @@
 	let totalPages = $state(1);
 	let total = $state(0);
 
-	function formatFullClassRoom(name: string) {
+	function formatFullClassRoom(name: string, gradeLevel?: string) {
 		if (!name) return '-';
-		if (name.startsWith('อ.')) return name.replace('อ.', 'อนุบาลปีที่ ');
-		if (name.startsWith('ป.')) return name.replace('ป.', 'ประถมศึกษาปีที่ ');
-		if (name.startsWith('ม.')) return name.replace('ม.', 'มัธยมศึกษาปีที่ ');
+		
+		// If name has prefix/format
+		if (name.startsWith('อ.') || name.startsWith('ป.') || name.startsWith('ม.') || name.includes('/')) {
+			if (name.startsWith('อ.')) return name.replace('อ.', 'อนุบาลปีที่ ');
+			if (name.startsWith('ป.')) return name.replace('ป.', 'ประถมศึกษาปีที่ ');
+			if (name.startsWith('ม.')) return name.replace('ม.', 'มัธยมศึกษาปีที่ ');
+			return name;
+		}
+
+		// If just number/code, prepend grade
+		if (gradeLevel) {
+			let fullGrade = gradeLevel;
+			if (gradeLevel.startsWith('อ.')) fullGrade = gradeLevel.replace('อ.', 'อนุบาลปีที่ ');
+			else if (gradeLevel.startsWith('ป.')) fullGrade = gradeLevel.replace('ป.', 'ประถมศึกษาปีที่ ');
+			else if (gradeLevel.startsWith('ม.')) fullGrade = gradeLevel.replace('ม.', 'มัธยมศึกษาปีที่ ');
+			return `${fullGrade}/${name}`;
+		}
+
 		return name;
 	}
 
@@ -226,9 +241,15 @@
 							<!-- Grade/Class -->
 							<div class="col-span-2">
 								{#if student.class_room}
-									<span class="text-sm md:hidden">{student.class_room}</span>
+									<span class="text-sm md:hidden">
+										{#if student.class_room.includes('/') || student.class_room.startsWith('อ.') || student.class_room.startsWith('ป.') || student.class_room.startsWith('ม.')}
+											{student.class_room}
+										{:else}
+											{student.grade_level}/{student.class_room}
+										{/if}
+									</span>
 									<span class="hidden md:inline text-sm"
-										>{formatFullClassRoom(student.class_room)}</span
+										>{formatFullClassRoom(student.class_room, student.grade_level)}</span
 									>
 								{:else}
 									<span class="text-sm text-muted-foreground">-</span>
