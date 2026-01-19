@@ -164,7 +164,21 @@
 				{/if}
 			{:else}
 				<!-- Dynamic Menu Groups -->
-				{#each menuGroups as group (group.code)}
+				{#each menuGroups as group, groupIndex (group.code)}
+					<!-- Group separator (except first group) -->
+					{#if groupIndex > 0}
+						<div class="my-3 border-t border-border"></div>
+					{/if}
+
+					<!-- Group Name (only when expanded) -->
+					{#if !isCollapsed && group.name}
+						<div class="px-3 py-2 mb-1">
+							<p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+								{group.name}
+							</p>
+						</div>
+					{/if}
+
 					{#each group.items as item (item.id)}
 						{@const Icon = getIconComponent(item.icon)}
 						<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
