@@ -168,3 +168,74 @@ export const removeEnrollment = async (id: string) => {
         method: 'DELETE'
     });
 };
+
+// ==========================================
+// Curriculum API
+// ==========================================
+
+export interface SubjectGroup {
+    id: string;
+    code: string;
+    name_th: string;
+    name_en: string;
+    display_order: number;
+    is_active: boolean;
+}
+
+export interface Subject {
+    id: string;
+    code: string;
+    academic_year_start?: number;
+    name_th: string;
+    name_en?: string;
+    credit: number;
+    hours_per_semester?: number;
+    type: 'BASIC' | 'ADDITIONAL' | 'ACTIVITY';
+    group_id?: string;
+    level_scope?: string;
+    description?: string;
+    is_active: boolean;
+    group_name_th?: string;
+}
+
+export const listSubjectGroups = async (): Promise<{ data: SubjectGroup[] }> => {
+    return await fetchApi('/api/academic/subjects/groups');
+};
+
+export const listSubjects = async (filters: {
+    group_id?: string;
+    level_scope?: string;
+    subject_type?: string;
+    search?: string;
+    active_only?: boolean;
+} = {}): Promise<{ data: Subject[] }> => {
+    const params = new URLSearchParams();
+    if (filters.group_id) params.append('group_id', filters.group_id);
+    if (filters.level_scope) params.append('level_scope', filters.level_scope);
+    if (filters.subject_type) params.append('subject_type', filters.subject_type);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return await fetchApi(`/api/academic/subjects${queryString}`);
+};
+
+export const createSubject = async (data: Partial<Subject>) => {
+    return await fetchApi('/api/academic/subjects', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const updateSubject = async (id: string, data: Partial<Subject>) => {
+    return await fetchApi(`/api/academic/subjects/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};
+
+export const deleteSubject = async (id: string) => {
+    return await fetchApi(`/api/academic/subjects/${id}`, {
+        method: 'DELETE'
+    });
+};
