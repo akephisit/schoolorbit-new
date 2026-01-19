@@ -2,7 +2,6 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { scanRoutes } from './scripts/menu-helpers';
-import { visualizer } from 'rollup-plugin-visualizer';
 
 /**
  * Auto-register menu items during build
@@ -76,16 +75,7 @@ function menuRegistryPlugin() {
 }
 
 export default defineConfig({
-	plugins: [
-		tailwindcss(),
-		sveltekit(),
-		menuRegistryPlugin(),
-		visualizer({
-			emitFile: true,
-			filename: 'stats.html',
-			open: false
-		})
-	],
+	plugins: [tailwindcss(), sveltekit(), menuRegistryPlugin()],
 	build: {
 		target: 'esnext',
 		sourcemap: false, // Save time generating maps
