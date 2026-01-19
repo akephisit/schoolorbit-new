@@ -32,6 +32,7 @@ export interface Student {
 
 export interface StudentListItem {
 	id: string;
+	title?: string;
 	first_name: string;
 	last_name: string;
 	student_id?: string;

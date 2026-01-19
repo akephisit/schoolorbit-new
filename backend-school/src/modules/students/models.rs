@@ -58,6 +58,7 @@ pub struct StudentProfile {
 pub struct StudentListItem {
     pub id: Uuid,
     pub username: String,
+    pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
     pub student_id: Option<String>,

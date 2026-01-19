@@ -514,14 +514,15 @@ pub async fn lookup_students(
     let active_only = query.active_only.unwrap_or(true);
     
     // Query with student_id from student_info and current classroom from enrollments
+    // Fix: Table name is 'student_class_enrollments' and 'class_rooms'
     let mut sql = String::from(
-        "SELECT u.id, u.first_name, u.last_name, u.username,
+        "SELECT u.id, u.title, u.first_name, u.last_name, u.username,
                 si.student_id,
                 c.name as class_room
          FROM users u
          LEFT JOIN student_info si ON u.id = si.user_id
-         LEFT JOIN enrollments e ON u.id = e.student_id AND e.is_active = true
-         LEFT JOIN classrooms c ON e.classroom_id = c.id
+         LEFT JOIN student_class_enrollments e ON u.id = e.student_id AND e.status = 'active'
+         LEFT JOIN class_rooms c ON e.class_room_id = c.id
          WHERE u.user_type = 'student'"
     );
     
@@ -541,6 +542,7 @@ pub async fn lookup_students(
     #[derive(Debug, FromRow)]
     struct StudentWithInfoRow {
         id: Uuid,
+        title: Option<String>,
         first_name: String,
         last_name: String,
         #[allow(dead_code)]
@@ -562,6 +564,7 @@ pub async fn lookup_students(
         StudentLookupItem {
             id: r.id,
             name,
+            title: r.title,
             student_id: r.student_id,
             class_room: r.class_room,
         }

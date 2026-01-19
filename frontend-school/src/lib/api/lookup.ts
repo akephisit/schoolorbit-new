@@ -58,6 +58,7 @@ export interface AcademicYearLookupItem {
 export interface StudentLookupItem {
     id: string;
     name: string;
+    title?: string;
     student_id?: string;
     class_room?: string;
 }

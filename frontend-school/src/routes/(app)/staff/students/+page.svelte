@@ -26,6 +26,14 @@
 	let totalPages = $state(1);
 	let total = $state(0);
 
+	function getFullGradeName(shortName: string) {
+		if (!shortName) return '';
+		if (shortName.startsWith('อ.')) return shortName.replace('อ.', 'อนุบาลปีที่ ');
+		if (shortName.startsWith('ป.')) return shortName.replace('ป.', 'ประถมศึกษาปีที่ ');
+		if (shortName.startsWith('ม.')) return shortName.replace('ม.', 'มัธยมศึกษาปีที่ ');
+		return shortName;
+	}
+
 	async function loadStudents() {
 		try {
 			loading = true;
@@ -185,7 +193,7 @@
 							<!-- Name -->
 							<div class="col-span-4">
 								<p class="font-medium text-foreground">
-									{student.first_name}
+									{student.title || ''}{student.first_name}
 									{student.last_name}
 								</p>
 							</div>
@@ -193,7 +201,10 @@
 							<!-- Grade/Class -->
 							<div class="col-span-2">
 								{#if student.grade_level && student.class_room}
-									<span class="text-sm">{student.grade_level}/{student.class_room}</span>
+									<span class="text-sm md:hidden">{student.grade_level}/{student.class_room}</span>
+									<span class="hidden md:inline text-sm"
+										>{getFullGradeName(student.grade_level)}/{student.class_room}</span
+									>
 								{:else}
 									<span class="text-sm text-muted-foreground">-</span>
 								{/if}

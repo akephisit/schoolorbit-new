@@ -48,6 +48,11 @@
 	let searchQuery = '';
 	let isSubmitting = false;
 
+	// Remove Confirm Dialog State
+	let showRemoveDialog = false;
+	let enrollmentToRemove: StudentEnrollment | null = null;
+	let isRemoving = false;
+
 	async function loadInitData() {
 		try {
 			const res = await getAcademicStructure();
@@ -161,16 +166,26 @@
 		}
 	}
 
-	async function handleRemoveStudent(enrollmentId: string) {
-		if (!confirm('ยืนยันลบนักเรียนออกจากห้องเรียนนี้?')) return;
+	function openRemoveDialog(enrollment: StudentEnrollment) {
+		enrollmentToRemove = enrollment;
+		showRemoveDialog = true;
+	}
 
+	async function confirmRemoveStudent() {
+		if (!enrollmentToRemove) return;
+
+		isRemoving = true;
 		try {
-			await removeEnrollment(enrollmentId);
+			await removeEnrollment(enrollmentToRemove.id);
 			toast.success('ลบนักเรียนเรียบร้อยแล้ว');
+			showRemoveDialog = false;
+			enrollmentToRemove = null;
 			await fetchEnrollments();
 		} catch (error) {
 			console.error(error);
 			toast.error('ลบไม่สำเร็จ');
+		} finally {
+			isRemoving = false;
 		}
 	}
 
@@ -284,7 +299,7 @@
 										variant="ghost"
 										size="icon"
 										class="text-red-500 hover:text-red-700 hover:bg-red-50"
-										onclick={() => handleRemoveStudent(item.id)}
+										onclick={() => openRemoveDialog(item)}
 									>
 										<Trash2 class="h-4 w-4" />
 									</Button>
@@ -358,7 +373,7 @@
 										/>
 									</Table.Cell>
 									<Table.Cell class="font-mono text-xs">{student.student_id || '-'}</Table.Cell>
-									<Table.Cell>{student.name}</Table.Cell>
+									<Table.Cell>{student.title || ''}{student.name}</Table.Cell>
 									<Table.Cell>
 										{#if student.class_room}
 											<Badge variant="outline">{student.class_room}</Badge>
@@ -388,6 +403,61 @@
 					</Button>
 				</div>
 			</div>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Remove Student Confirmation Dialog -->
+	<Dialog.Root bind:open={showRemoveDialog}>
+		<Dialog.Content class="sm:max-w-[400px]">
+			<Dialog.Header>
+				<Dialog.Title class="flex items-center gap-2 text-red-600">
+					<Trash2 class="h-5 w-5" />
+					ยืนยันการลบนักเรียน
+				</Dialog.Title>
+				<Dialog.Description>
+					นักเรียนจะถูกลบออกจากห้องเรียนนี้ แต่ข้อมูลนักเรียนในระบบจะยังอยู่
+				</Dialog.Description>
+			</Dialog.Header>
+
+			{#if enrollmentToRemove}
+				<div class="py-4">
+					<div
+						class="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg dark:bg-red-950/20 dark:border-red-900"
+					>
+						<div
+							class="flex h-10 w-10 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold"
+						>
+							{enrollmentToRemove.student_code || '?'}
+						</div>
+						<div>
+							<p class="font-semibold text-red-800 dark:text-red-200">
+								{enrollmentToRemove.student_name}
+							</p>
+							<p class="text-sm text-red-600 dark:text-red-400">
+								ห้อง {currentClassroom?.name || ''}
+							</p>
+						</div>
+					</div>
+				</div>
+			{/if}
+
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showRemoveDialog = false;
+						enrollmentToRemove = null;
+					}}
+				>
+					ยกเลิก
+				</Button>
+				<Button variant="destructive" onclick={confirmRemoveStudent} disabled={isRemoving}>
+					{#if isRemoving}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					ยืนยันลบ
+				</Button>
+			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
 </div>

@@ -70,6 +70,8 @@ pub struct StudentLookupItem {
     pub id: Uuid,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub student_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_room: Option<String>,

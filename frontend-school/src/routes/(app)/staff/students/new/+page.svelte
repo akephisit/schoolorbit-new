@@ -7,9 +7,16 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Card } from '$lib/components/ui/card';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, User, Save } from 'lucide-svelte';
+	import { ArrowLeft, User, Save, GraduationCap } from 'lucide-svelte';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { createStudent } from '$lib/api/students';
+	import { 
+		lookupGradeLevels, 
+		lookupClassrooms,
+		type GradeLevelLookupItem,
+		type ClassroomLookupItem 
+	} from '$lib/api/lookup';
+	import { onMount } from 'svelte';
 
 	// Form data
 	let formData = $state({
@@ -31,6 +38,28 @@
 
 	let errors = $state<Record<string, string>>({});
 	let loading = $state(false);
+	
+	// Dropdown Options
+	let gradeLevels: GradeLevelLookupItem[] = $state([]);
+	let classrooms: ClassroomLookupItem[] = $state([]);
+	let filteredClassrooms = $derived(
+		formData.grade_level 
+			? classrooms.filter(c => c.grade_level === formData.grade_level || c.name.startsWith(formData.grade_level))
+			: classrooms
+	);
+
+	onMount(async () => {
+		try {
+			const [gl, cr] = await Promise.all([
+				lookupGradeLevels(),
+				lookupClassrooms()
+			]);
+			gradeLevels = gl.sort((a, b) => a.level_order - b.level_order);
+			classrooms = cr;
+		} catch (e) {
+			console.error('Failed to load options', e);
+		}
+	});
 
 	function validateForm(): boolean {
 		errors = {};
@@ -79,10 +108,10 @@
 				...payload,
 				email: payload.email || undefined,
 				date_of_birth: payload.date_of_birth || undefined,
-				grade_level: payload.grade_level || undefined,
-				class_room: payload.class_room || undefined,
-				student_number: payload.student_number || undefined,
-				title: payload.title || undefined
+				grade_level: formData.grade_level || undefined,
+				class_room: formData.class_room ? formData.class_room.replace(`${formData.grade_level}/`, '') : undefined,
+				student_number: undefined, // Force undefined to match API type (removing null)
+				title: formData.title || undefined
 			};
 
 			const result = await createStudent(cleanedPayload);
@@ -122,36 +151,82 @@
 		}}
 		class="space-y-6"
 	>
+		<!-- Student ID (First priority) -->
+		<Card class="p-6">
+			<div class="flex items-center gap-3 mb-6">
+				<div class="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+					<GraduationCap class="w-5 h-5 text-primary" />
+				</div>
+				<h2 class="text-xl font-semibold">ข้อมูลการศึกษา</h2>
+			</div>
+
+			<div class="space-y-4">
+				<div>
+					<Label for="student_id">
+						รหัสนักเรียน <span class="text-destructive">*</span>
+					</Label>
+					<Input
+						id="student_id"
+						type="text"
+						bind:value={formData.student_id}
+						placeholder="66001"
+						class={errors.student_id ? 'border-destructive font-mono text-lg' : 'font-mono text-lg'}
+						disabled={loading}
+						required
+					/>
+					{#if errors.student_id}
+						<p class="text-xs text-destructive mt-1">{errors.student_id}</p>
+					{/if}
+				</div>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<Label for="grade_level">ระดับชั้น</Label>
+						<Select.Root type="single" bind:value={formData.grade_level}>
+							<Select.Trigger class="w-full">
+								{gradeLevels.find(
+									(g) => g.name === formData.grade_level || g.code === formData.grade_level
+								)?.name ||
+									formData.grade_level ||
+									'เลือกระดับชั้น'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each gradeLevels as level}
+									<Select.Item value={level.name}>{level.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+
+					<div>
+						<Label for="class_room">ห้องเรียน</Label>
+						<Select.Root type="single" bind:value={formData.class_room}>
+							<Select.Trigger class="w-full">
+								{classrooms.find((c) => c.name === formData.class_room)?.name ||
+									formData.class_room ||
+									'เลือกห้อง'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each filteredClassrooms as room}
+									<Select.Item value={room.name}>{room.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+				</div>
+			</div>
+		</Card>
+
 		<!-- Login Credentials -->
 		<Card class="p-6">
 			<div class="flex items-center gap-3 mb-6">
 				<div class="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
 					<User class="w-5 h-5 text-primary" />
 				</div>
-				<h2 class="text-xl font-semibold">ข้อมูลสำหรับเข้าสู่ระบบ</h2>
+				<h2 class="text-xl font-semibold">บัญชีผู้ใช้งาน</h2>
 			</div>
 
 			<div class="space-y-4">
-				<div>
-					<Label for="national_id">เลขบัตรประชาชน</Label>
-					<Input
-						id="national_id"
-						type="text"
-						bind:value={formData.national_id}
-						placeholder="1234567890123 (ไม่บังคับ)"
-						maxlength={13}
-						class={errors.national_id ? 'border-destructive' : ''}
-						disabled={loading}
-					/>
-					{#if errors.national_id}
-						<p class="text-xs text-destructive mt-1">{errors.national_id}</p>
-					{:else}
-						<p class="text-xs text-muted-foreground mt-1">
-							เลขบัตรประชาชนสำหรับใช้ในระบบตรวจสอบสิทธิ์อื่นๆ (ถ้ามี)
-						</p>
-					{/if}
-				</div>
-
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<Label for="password">
@@ -197,6 +272,26 @@
 			<h2 class="text-xl font-semibold mb-6">ข้อมูลส่วนตัว</h2>
 
 			<div class="space-y-4">
+				<div>
+					<Label for="national_id">เลขบัตรประชาชน</Label>
+					<Input
+						id="national_id"
+						type="text"
+						bind:value={formData.national_id}
+						placeholder="1234567890123 (ไม่บังคับ)"
+						maxlength={13}
+						class={errors.national_id ? 'border-destructive' : ''}
+						disabled={loading}
+					/>
+					{#if errors.national_id}
+						<p class="text-xs text-destructive mt-1">{errors.national_id}</p>
+					{:else}
+						<p class="text-xs text-muted-foreground mt-1">
+							เลขบัตรประชาชนสำหรับใช้ในระบบตรวจสอบสิทธิ์อื่นๆ (ถ้ามี)
+						</p>
+					{/if}
+				</div>
+
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<Label for="title">คำนำหน้า</Label>
@@ -286,66 +381,6 @@
 						{#if errors.email}
 							<p class="text-xs text-destructive mt-1">{errors.email}</p>
 						{/if}
-					</div>
-				</div>
-			</div>
-		</Card>
-
-		<!-- Student Information-->
-		<Card class="p-6">
-			<h2 class="text-xl font-semibold mb-6">ข้อมูลนักเรียน</h2>
-
-			<div class="space-y-4">
-				<div>
-					<Label for="student_id">
-						รหัสนักเรียน <span class="text-destructive">*</span>
-					</Label>
-					<Input
-						id="student_id"
-						type="text"
-						bind:value={formData.student_id}
-						placeholder="66001"
-						class={errors.student_id ? 'border-destructive' : ''}
-						disabled={loading}
-						required
-					/>
-					{#if errors.student_id}
-						<p class="text-xs text-destructive mt-1">{errors.student_id}</p>
-					{/if}
-				</div>
-
-				<div class="grid grid-cols-3 gap-4">
-					<div>
-						<Label for="grade_level">ระดับชั้น</Label>
-						<Input
-							id="grade_level"
-							type="text"
-							bind:value={formData.grade_level}
-							placeholder="ม.1"
-							disabled={loading}
-						/>
-					</div>
-
-					<div>
-						<Label for="class_room">ห้อง</Label>
-						<Input
-							id="class_room"
-							type="text"
-							bind:value={formData.class_room}
-							placeholder="1"
-							disabled={loading}
-						/>
-					</div>
-
-					<div>
-						<Label for="student_number">เลขที่</Label>
-						<Input
-							id="student_number"
-							type="number"
-							bind:value={formData.student_number}
-							placeholder="1"
-							disabled={loading}
-						/>
 					</div>
 				</div>
 			</div>

@@ -285,7 +285,7 @@ pub async fn list_students(
     let mut query = String::from(
         r#"
         SELECT 
-            u.id, u.username, u.first_name, u.last_name,
+            u.id, u.username, u.title, u.first_name, u.last_name,
             s.student_id, s.grade_level, s.class_room,
             u.status
         FROM users u
