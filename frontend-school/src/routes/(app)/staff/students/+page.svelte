@@ -11,6 +11,7 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
 	import { GraduationCap, Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -21,7 +22,10 @@
 	let studentToDelete: StudentListItem | null = $state(null);
 	let searchQuery = $state('');
 	let gradeFilter = $state('');
+	let searchQuery = $state('');
+	let gradeFilter = $state('');
 	let classFilter = $state('');
+	let statusFilter = $state('active');
 	let currentPage = $state(1);
 	let totalPages = $state(1);
 	let total = $state(0);
@@ -41,6 +45,7 @@
 				search: searchQuery || undefined,
 				grade_level: gradeFilter || undefined,
 				class_room: classFilter || undefined,
+				status: statusFilter === 'all' ? undefined : statusFilter,
 				page: currentPage,
 				page_size: 20
 			});
@@ -89,6 +94,7 @@
 		searchQuery = '';
 		gradeFilter = '';
 		classFilter = '';
+		statusFilter = 'active';
 		currentPage = 1;
 		loadStudents();
 	}
@@ -120,8 +126,8 @@
 
 	<!-- Search and Filter -->
 	<div class="bg-card border border-border rounded-lg p-4">
-		<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-			<div class="md:col-span-2 relative">
+		<div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+			<div class="md:col-span-5 relative">
 				<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
 				<Input
 					type="text"
@@ -132,9 +138,30 @@
 				/>
 			</div>
 
-			<Input type="text" bind:value={gradeFilter} placeholder="ระดับชั้น (เช่น ม.1)" />
+			<div class="md:col-span-2">
+				<Input type="text" bind:value={gradeFilter} placeholder="ระดับชั้น (เช่น ม.1)" />
+			</div>
 
-			<Input type="text" bind:value={classFilter} placeholder="ห้อง (เช่น 1, 2)" />
+			<div class="md:col-span-2">
+				<Input type="text" bind:value={classFilter} placeholder="ห้อง (เช่น 1, 2)" />
+			</div>
+
+			<div class="md:col-span-3">
+				<Select.Root type="single" bind:value={statusFilter} onValueChange={handleSearch}>
+					<Select.Trigger>
+						{statusFilter === 'active'
+							? 'ใช้งาน (Active)'
+							: statusFilter === 'inactive'
+								? 'ไม่ใช้งาน (Inactive)'
+								: 'ทั้งหมด'}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="active">ใช้งาน (Active)</Select.Item>
+						<Select.Item value="inactive">ไม่ใช้งาน (Inactive)</Select.Item>
+						<Select.Item value="all">ทั้งหมด</Select.Item>
+					</Select.Content>
+				</Select.Root>
+			</div>
 		</div>
 
 		<div class="flex gap-2 mt-4">

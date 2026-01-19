@@ -110,4 +110,5 @@ pub struct ListStudentsQuery {
     pub grade_level: Option<String>,
     pub class_room: Option<String>,
     pub search: Option<String>,
+    pub status: Option<String>,
 }

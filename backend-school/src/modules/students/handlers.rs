@@ -303,6 +303,10 @@ pub async fn list_students(
     if let Some(ref class_room) = filter.class_room {
         conditions.push(format!("s.class_room = '{}'", class_room));
     }
+
+    if let Some(ref status) = filter.status {
+        conditions.push(format!("u.status = '{}'", status));
+    }
     
     if let Some(ref search) = filter.search {
         conditions.push(format!(

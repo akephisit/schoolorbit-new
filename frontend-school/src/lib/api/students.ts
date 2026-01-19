@@ -47,6 +47,7 @@ export interface ListStudentsParams {
 	grade_level?: string;
 	class_room?: string;
 	search?: string;
+	status?: string;
 }
 
 export interface ListStudentsResponse {
@@ -101,6 +102,7 @@ export async function listStudents(params?: ListStudentsParams): Promise<ListStu
 	if (params?.grade_level) queryParams.append('grade_level', params.grade_level);
 	if (params?.class_room) queryParams.append('class_room', params.class_room);
 	if (params?.search) queryParams.append('search', params.search);
+	if (params?.status) queryParams.append('status', params.status);
 
 	const response = await fetch(`${BACKEND_URL}/api/students?${queryParams.toString()}`, {
 		credentials: 'include'
