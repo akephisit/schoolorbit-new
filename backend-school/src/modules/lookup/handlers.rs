@@ -289,9 +289,8 @@ pub async fn lookup_departments(
 #[derive(Debug, FromRow)]
 struct GradeLevelRow {
     id: Uuid,
-    code: String,
-    name: String,
-    level_order: i32,
+    level_type: String,
+    year: i32,
 }
 
 /// GET /api/lookup/grade-levels
@@ -315,19 +314,27 @@ pub async fn lookup_grade_levels(
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
-    let active_only = query.active_only.unwrap_or(true);
+    // let active_only = query.active_only.unwrap_or(true); // grade_levels has is_active
     
-    let mut sql = String::from("SELECT id, code, name, level_order FROM grade_levels WHERE 1=1");
+    // Correct query for new schema: level_type, year (no name/code columns)
+    let mut sql = String::from("SELECT id, level_type, year FROM grade_levels WHERE 1=1");
     
-    if active_only {
+    if query.active_only.unwrap_or(true) {
         sql.push_str(" AND is_active = true");
     }
     
-    if let Some(ref search) = query.search {
-        sql.push_str(&format!(" AND (name ILIKE '%{}%' OR code ILIKE '%{}%')", search, search));
-    }
+    // Search logic is tricky without calculated fields in DB. 
+    // For now, if search provided, we might skip search or try simple logic?
+    // Since we construct name in app, we can't easily ILIKE name in DB.
+    // Let's skip search filtering on name for now, or match user to exact year?
+    // User rarely searches grade levels by typing "M.1", usually just lists all.
     
-    sql.push_str(&format!(" ORDER BY level_order LIMIT {}", limit));
+    sql.push_str(" ORDER BY CASE level_type 
+            WHEN 'kindergarten' THEN 1 
+            WHEN 'primary' THEN 2 
+            WHEN 'secondary' THEN 3 
+            ELSE 4 
+         END, year ASC LIMIT 500");
     
     let rows = sqlx::query_as::<_, GradeLevelRow>(&sql)
         .fetch_all(&pool)
@@ -337,14 +344,37 @@ pub async fn lookup_grade_levels(
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
     
-    let data: Vec<GradeLevelLookupItem> = rows.into_iter().map(|r| GradeLevelLookupItem {
-        id: r.id,
-        code: r.code,
-        name: r.name,
-        level_order: r.level_order,
+    let data: Vec<GradeLevelLookupItem> = rows.into_iter().map(|r| {
+        let (name, code) = match r.level_type.as_str() {
+            "kindergarten" => (format!("อนุบาลปีที่ {}", r.year), format!("K{}", r.year)),
+            "primary" => (format!("ประถมศึกษาปีที่ {}", r.year), format!("P{}", r.year)),
+            "secondary" => (format!("มัธยมศึกษาปีที่ {}", r.year), format!("M{}", r.year)),
+            _ => (format!("Other {}", r.year), format!("O{}", r.year)),
+        };
+        
+        let order_base = match r.level_type.as_str() {
+            "kindergarten" => 1,
+            "primary" => 2,
+            "secondary" => 3,
+            _ => 4,
+        };
+        
+        GradeLevelLookupItem {
+            id: r.id,
+            code,
+            name,
+            level_order: order_base * 100 + r.year,
+        }
     }).collect();
     
-    Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+    // Filter by search in memory if needed
+    let final_data = if let Some(search) = query.search {
+         data.into_iter().filter(|i| i.name.contains(&search) || i.code.contains(&search)).take(limit as usize).collect()
+    } else {
+         data
+    };
+    
+    Ok((StatusCode::OK, Json(LookupResponse { success: true, data: final_data })))
 }
 
 // ===================================================================
@@ -355,7 +385,8 @@ pub async fn lookup_grade_levels(
 struct ClassroomRow {
     id: Uuid,
     name: String,
-    grade_level_name: Option<String>,
+    level_type: Option<String>,
+    year: Option<i32>,
 }
 
 /// GET /api/lookup/classrooms
@@ -379,24 +410,24 @@ pub async fn lookup_classrooms(
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
-    let active_only = query.active_only.unwrap_or(true);
+    // let active_only = query.active_only.unwrap_or(true); // class_rooms might not have is_active
     
     let mut sql = String::from(
-        "SELECT c.id, c.name, g.name as grade_level_name 
-         FROM classrooms c
+        "SELECT c.id, c.name, g.level_type, g.year
+         FROM class_rooms c
          LEFT JOIN grade_levels g ON c.grade_level_id = g.id
          WHERE 1=1"
     );
     
-    if active_only {
-        sql.push_str(" AND c.is_active = true");
-    }
+    // Check if class_rooms has is_active? Assuming not for now based on create handler.
+    // If it does, uncomment below:
+    // if active_only { sql.push_str(" AND c.is_active = true"); }
     
     if let Some(ref search) = query.search {
         sql.push_str(&format!(" AND c.name ILIKE '%{}%'", search));
     }
     
-    sql.push_str(&format!(" ORDER BY g.level_order, c.name LIMIT {}", limit));
+    sql.push_str(&format!(" ORDER BY g.year, c.name LIMIT {}", limit));
     
     let rows = sqlx::query_as::<_, ClassroomRow>(&sql)
         .fetch_all(&pool)
@@ -406,10 +437,19 @@ pub async fn lookup_classrooms(
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
     
-    let data: Vec<ClassroomLookupItem> = rows.into_iter().map(|r| ClassroomLookupItem {
-        id: r.id,
-        name: r.name,
-        grade_level: r.grade_level_name,
+    let data: Vec<ClassroomLookupItem> = rows.into_iter().map(|r| {
+        let grade_level_name = match (r.level_type.as_deref(), r.year) {
+            (Some("kindergarten"), Some(y)) => Some(format!("อ.{}", y)),
+            (Some("primary"), Some(y)) => Some(format!("ป.{}", y)),
+            (Some("secondary"), Some(y)) => Some(format!("ม.{}", y)),
+            _ => None,
+        };
+        
+        ClassroomLookupItem {
+            id: r.id,
+            name: r.name,
+            grade_level: grade_level_name,
+        }
     }).collect();
     
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))

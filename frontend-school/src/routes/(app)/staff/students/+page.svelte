@@ -26,12 +26,12 @@
 	let totalPages = $state(1);
 	let total = $state(0);
 
-	function getFullGradeName(shortName: string) {
-		if (!shortName) return '';
-		if (shortName.startsWith('อ.')) return shortName.replace('อ.', 'อนุบาลปีที่ ');
-		if (shortName.startsWith('ป.')) return shortName.replace('ป.', 'ประถมศึกษาปีที่ ');
-		if (shortName.startsWith('ม.')) return shortName.replace('ม.', 'มัธยมศึกษาปีที่ ');
-		return shortName;
+	function formatFullClassRoom(name: string) {
+		if (!name) return '-';
+		if (name.startsWith('อ.')) return name.replace('อ.', 'อนุบาลปีที่ ');
+		if (name.startsWith('ป.')) return name.replace('ป.', 'ประถมศึกษาปีที่ ');
+		if (name.startsWith('ม.')) return name.replace('ม.', 'มัธยมศึกษาปีที่ ');
+		return name;
 	}
 
 	async function loadStudents() {
@@ -200,10 +200,10 @@
 
 							<!-- Grade/Class -->
 							<div class="col-span-2">
-								{#if student.grade_level && student.class_room}
-									<span class="text-sm md:hidden">{student.grade_level}/{student.class_room}</span>
+								{#if student.class_room}
+									<span class="text-sm md:hidden">{student.class_room}</span>
 									<span class="hidden md:inline text-sm"
-										>{getFullGradeName(student.grade_level)}/{student.class_room}</span
+										>{formatFullClassRoom(student.class_room)}</span
 									>
 								{:else}
 									<span class="text-sm text-muted-foreground">-</span>
@@ -296,7 +296,7 @@
 				คุณแน่ใจหรือไม่ว่าต้องการลบนักเรียน
 				{#if studentToDelete}
 					<strong>
-						{studentToDelete.first_name}
+						{studentToDelete.title || ''}{studentToDelete.first_name}
 						{studentToDelete.last_name}
 					</strong>
 				{/if}? การกระทำนี้จะทำให้นักเรียนถูกปิดการใช้งาน

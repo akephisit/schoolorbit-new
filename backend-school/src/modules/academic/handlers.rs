@@ -170,7 +170,7 @@ pub async fn list_classrooms(
                     ELSE CONCAT('?.', gl.year)
                 END as grade_level_name,
                 ay.name as academic_year_label,
-                CONCAT(u.first_name, ' ', u.last_name) as advisor_name,
+                CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name) as advisor_name,
                 (SELECT COUNT(*) FROM student_class_enrollments ske WHERE ske.class_room_id = c.id AND ske.status = 'active') as student_count
          FROM class_rooms c
          JOIN grade_levels gl ON c.grade_level_id = gl.id

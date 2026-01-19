@@ -256,7 +256,10 @@
 					<Label>ครูที่ปรึกษาหลัก</Label>
 					<Select.Root type="single" bind:value={newClassroom.advisor_id}>
 						<Select.Trigger class="w-full">
-							{staffList.find((s) => s.id === newClassroom.advisor_id)?.name || '- ไม่ระบุ -'}
+							{(() => {
+								const s = staffList.find((s) => s.id === newClassroom.advisor_id);
+								return s ? `${s.title || ''}${s.name}` : '- ไม่ระบุ -';
+							})()}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="">- ไม่ระบุ -</Select.Item>
