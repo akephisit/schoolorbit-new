@@ -11,7 +11,6 @@
 	} from '$lib/api/academic';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-    // Native select for filters is simpler for now, later upgrade to Select component
 	import {
 		Dialog,
 		DialogContent,
@@ -20,26 +19,27 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
-	import { BookOpen, Plus, Search, Pencil, Trash2, Filter } from 'lucide-svelte';
+	import { BookOpen, Plus, Search, Pencil, Trash2 } from 'lucide-svelte';
 
-	let subjects: Subject[] = [];
-	let groups: SubjectGroup[] = [];
-	let loading = true;
-	let error = '';
-	
+	// Data States
+	let subjects: Subject[] = $state([]);
+	let groups: SubjectGroup[] = $state([]);
+	let loading = $state(true);
+	let error = $state('');
+
 	// Filter States
-	let searchQuery = '';
-	let selectedGroupId = '';
-	let selectedSubjectType = '';
-	let selectedLevelScope = '';
+	let searchQuery = $state('');
+	let selectedGroupId = $state('');
+	let selectedSubjectType = $state('');
+	let selectedLevelScope = $state('');
 
 	// Modal States
-	let showDialog = false;
-	let showDeleteDialog = false;
-	let isEditing = false;
-	let submitting = false;
-    let deleting = false;
-	let currentSubject: Partial<Subject> = getInitialSubjectState();
+	let showDialog = $state(false);
+	let showDeleteDialog = $state(false);
+	let isEditing = $state(false);
+	let submitting = $state(false);
+    let deleting = $state(false);
+	let currentSubject: Partial<Subject> = $state(getInitialSubjectState());
 
 	function getInitialSubjectState(): Partial<Subject> {
 		return {
@@ -133,7 +133,6 @@
         }
 	}
 
-    // Auto-search on filter change (debounce could be added later)
     function clearFilters() {
         searchQuery = '';
         selectedGroupId = '';
