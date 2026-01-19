@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS subjects (
     name_en VARCHAR(200),
     
     -- Properties
-    credit DECIMAL(3,1) NOT NULL DEFAULT 0.0,
+    credit DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     hours_per_semester INTEGER,            -- 40, 60, 80
     
     -- Classification
