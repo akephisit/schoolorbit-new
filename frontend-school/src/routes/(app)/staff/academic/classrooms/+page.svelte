@@ -7,7 +7,7 @@
 		type AcademicStructureData,
 		type Classroom
 	} from '$lib/api/academic';
-	import { listStaff, type StaffListItem } from '$lib/api/staff';
+	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -28,7 +28,7 @@
 	let loading = true;
 	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
 	let classrooms: Classroom[] = [];
-	let staffList: StaffListItem[] = [];
+	let staffList: StaffLookupItem[] = [];
 
 	let showCreateDialog = false;
 	let isSubmitting = false;
@@ -48,12 +48,12 @@
 	async function loadInitData() {
 		try {
 			loading = true;
-			const [structureRes, staffRes] = await Promise.all([
+			const [structureRes, staffData] = await Promise.all([
 				getAcademicStructure(),
-				listStaff({ page: 1, page_size: 100 }) // Fetch teachers for dropdown
+				lookupStaff() // Lookup API - only requires authentication
 			]);
 			structure = structureRes.data;
-			staffList = staffRes.data;
+			staffList = staffData;
 
 			// Auto-select latest active year
 			const activeYear = structure.years.find((y) => y.is_active) || structure.years[0];
@@ -256,14 +256,14 @@
 					<Label>ครูที่ปรึกษาหลัก</Label>
 					<Select.Root type="single" bind:value={newClassroom.advisor_id}>
 						<Select.Trigger class="w-full">
-							{staffList.find((s) => s.id === newClassroom.advisor_id)
-								? `${staffList.find((s) => s.id === newClassroom.advisor_id)?.first_name} ${staffList.find((s) => s.id === newClassroom.advisor_id)?.last_name}`
-								: '- ไม่ระบุ -'}
+							{staffList.find((s) => s.id === newClassroom.advisor_id)?.name || '- ไม่ระบุ -'}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="">- ไม่ระบุ -</Select.Item>
 							{#each staffList as staff}
-								<Select.Item value={staff.id}>{staff.first_name} {staff.last_name}</Select.Item>
+								<Select.Item value={staff.id}
+									>{staff.title ? `${staff.title}` : ''}{staff.name}</Select.Item
+								>
 							{/each}
 						</Select.Content>
 					</Select.Root>
