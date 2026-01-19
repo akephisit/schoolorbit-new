@@ -42,11 +42,20 @@
 	// Dropdown Options
 	let gradeLevels: GradeLevelLookupItem[] = $state([]);
 	let classrooms: ClassroomLookupItem[] = $state([]);
+	let selectedGradeId = $state('');
+
 	let filteredClassrooms = $derived(
-		formData.grade_level 
-			? classrooms.filter(c => c.grade_level === formData.grade_level || c.name.startsWith(formData.grade_level))
+		selectedGradeId 
+			? classrooms.filter(c => c.grade_level_id === selectedGradeId)
 			: classrooms
 	);
+
+	function handleGradeChange(id: string) {
+		selectedGradeId = id;
+		const gl = gradeLevels.find(g => g.id === id);
+		formData.grade_level = gl?.short_name || '';
+		formData.class_room = ''; // Reset classroom when grade changes
+	}
 
 	onMount(async () => {
 		try {
@@ -181,30 +190,28 @@
 
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<Label for="grade_level">ระดับชั้น</Label>
-						<Select.Root type="single" bind:value={formData.grade_level}>
-							<Select.Trigger class="w-full">
-								{gradeLevels.find(
-									(g) => g.name === formData.grade_level || g.code === formData.grade_level
-								)?.name ||
-									formData.grade_level ||
-									'เลือกระดับชั้น'}
+						<Label>ระดับชั้น <span class="text-destructive">*</span></Label>
+						<Select.Root type="single" value={selectedGradeId} onValueChange={handleGradeChange}>
+							<Select.Trigger>
+								{gradeLevels.find((g) => g.id === selectedGradeId)?.name || 'เลือกระดับชั้น'}
 							</Select.Trigger>
 							<Select.Content>
-								{#each gradeLevels as level}
-									<Select.Item value={level.name}>{level.name}</Select.Item>
+								{#each gradeLevels as gl}
+									<Select.Item value={gl.id}>{gl.name}</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>
+						{#if errors.grade_level}
+							<p class="text-sm text-destructive">{errors.grade_level}</p>
+						{/if}
 					</div>
 
-					<div>
-						<Label for="class_room">ห้องเรียน</Label>
-						<Select.Root type="single" bind:value={formData.class_room}>
-							<Select.Trigger class="w-full">
-								{classrooms.find((c) => c.name === formData.class_room)?.name ||
-									formData.class_room ||
-									'เลือกห้อง'}
+					<!-- Classroom -->
+					<div class="space-y-2">
+						<Label>ห้องเรียน <span class="text-destructive">*</span></Label>
+						<Select.Root type="single" bind:value={formData.class_room} disabled={!selectedGradeId}>
+							<Select.Trigger>
+								{classrooms.find((c) => c.name === formData.class_room)?.name || 'เลือกห้องเรียน'}
 							</Select.Trigger>
 							<Select.Content>
 								{#each filteredClassrooms as room}

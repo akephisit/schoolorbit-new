@@ -40,6 +40,7 @@ export interface GradeLevelLookupItem {
     id: string;
     code: string;
     name: string;
+    short_name?: string;
     level_order: number;
 }
 
@@ -47,6 +48,7 @@ export interface ClassroomLookupItem {
     id: string;
     name: string;
     grade_level?: string;
+    grade_level_id?: string;
 }
 
 export interface AcademicYearLookupItem {

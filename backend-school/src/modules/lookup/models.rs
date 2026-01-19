@@ -44,6 +44,7 @@ pub struct GradeLevelLookupItem {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    pub short_name: Option<String>,
     pub level_order: i32,
 }
 
@@ -54,6 +55,8 @@ pub struct ClassroomLookupItem {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grade_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grade_level_id: Option<Uuid>,
 }
 
 /// Academic year lookup item

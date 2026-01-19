@@ -345,11 +345,11 @@ pub async fn lookup_grade_levels(
         })?;
     
     let data: Vec<GradeLevelLookupItem> = rows.into_iter().map(|r| {
-        let (name, code) = match r.level_type.as_str() {
-            "kindergarten" => (format!("อนุบาลปีที่ {}", r.year), format!("K{}", r.year)),
-            "primary" => (format!("ประถมศึกษาปีที่ {}", r.year), format!("P{}", r.year)),
-            "secondary" => (format!("มัธยมศึกษาปีที่ {}", r.year), format!("M{}", r.year)),
-            _ => (format!("Other {}", r.year), format!("O{}", r.year)),
+        let (name, code, short_name) = match r.level_type.as_str() {
+            "kindergarten" => (format!("อนุบาลปีที่ {}", r.year), format!("K{}", r.year), format!("อ.{}", r.year)),
+            "primary" => (format!("ประถมศึกษาปีที่ {}", r.year), format!("P{}", r.year), format!("ป.{}", r.year)),
+            "secondary" => (format!("มัธยมศึกษาปีที่ {}", r.year), format!("M{}", r.year), format!("ม.{}", r.year)),
+            _ => (format!("Other {}", r.year), format!("O{}", r.year), format!("?{}", r.year)),
         };
         
         let order_base = match r.level_type.as_str() {
@@ -363,6 +363,7 @@ pub async fn lookup_grade_levels(
             id: r.id,
             code,
             name,
+            short_name: Some(short_name),
             level_order: order_base * 100 + r.year,
         }
     }).collect();
@@ -387,6 +388,7 @@ struct ClassroomRow {
     name: String,
     level_type: Option<String>,
     year: Option<i32>,
+    grade_level_id: Option<Uuid>,
 }
 
 /// GET /api/lookup/classrooms
@@ -413,7 +415,7 @@ pub async fn lookup_classrooms(
     // let active_only = query.active_only.unwrap_or(true); // class_rooms might not have is_active
     
     let mut sql = String::from(
-        "SELECT c.id, c.name, g.level_type, g.year
+        "SELECT c.id, c.name, g.level_type, g.year, c.grade_level_id
          FROM class_rooms c
          LEFT JOIN grade_levels g ON c.grade_level_id = g.id
          WHERE 1=1"
@@ -449,6 +451,7 @@ pub async fn lookup_classrooms(
             id: r.id,
             name: r.name,
             grade_level: grade_level_name,
+            grade_level_id: r.grade_level_id,
         }
     }).collect();
     
