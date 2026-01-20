@@ -132,18 +132,28 @@ pub async fn create_subject(
 
     // 2. Validate Code + Year Uniqueness (same code can exist in different years)
     let exists: Option<bool> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1 AND academic_year_start = $2)"
+        "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1 AND academic_year_id = $2)"
     )
     .bind(&payload.code)
-    .bind(payload.academic_year_start)
+    .bind(payload.academic_year_id)
     .fetch_one(&pool)
     .await
     .unwrap_or(Some(false));
 
     if exists.unwrap_or(false) {
+        // Get year info for better error message
+        let year_name: Option<String> = sqlx::query_scalar(
+            "SELECT name FROM academic_years WHERE id = $1"
+        )
+        .bind(payload.academic_year_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap_or(None);
+        
         return Err(AppError::BadRequest(format!(
-            "รหัสวิชา {} ปีการศึกษา {} มีอยู่ในระบบแล้ว",
-            payload.code, payload.academic_year_start
+            "รหัสวิชา {} {} มีอยู่ในระบบแล้ว",
+            payload.code,
+            year_name.unwrap_or_else(|| "ในปีการศึกษานี้".to_string())
         )));
     }
 
@@ -151,7 +161,7 @@ pub async fn create_subject(
     let subject = sqlx::query_as::<_, Subject>(
         r#"
         INSERT INTO subjects (
-            code, academic_year_start, name_th, name_en, 
+            code, academic_year_id, name_th, name_en, 
             credit, hours_per_semester, type, group_id, level_scope, description
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -159,7 +169,7 @@ pub async fn create_subject(
         "#
     )
     .bind(&payload.code)
-    .bind(payload.academic_year_start)
+    .bind(payload.academic_year_id)
     .bind(&payload.name_th)
     .bind(&payload.name_en)
     .bind(payload.credit) 
@@ -197,7 +207,7 @@ pub async fn update_subject(
         r#"
         UPDATE subjects SET 
             code = COALESCE($1, code),
-            academic_year_start = COALESCE($2, academic_year_start),
+            academic_year_id = COALESCE($2, academic_year_id),
             name_th = COALESCE($3, name_th),
             name_en = COALESCE($4, name_en),
             credit = COALESCE($5, credit),
@@ -213,7 +223,7 @@ pub async fn update_subject(
         "#
     )
     .bind(&payload.code)
-    .bind(payload.academic_year_start)
+    .bind(payload.academic_year_id)
     .bind(&payload.name_th)
     .bind(&payload.name_en)
     .bind(payload.credit)

@@ -64,6 +64,7 @@ export interface LookupItem {
     description?: string;
     level_type?: string;
     year?: number;
+    is_current?: boolean; // For academic years
 }
 
 // API Functions
@@ -196,7 +197,7 @@ export interface SubjectGroup {
 export interface Subject {
     id: string;
     code: string;
-    academic_year_start: number; // Required for curriculum versioning
+    academic_year_id: string; // UUID FK to academic_years
     name_th: string;
     name_en?: string;
     credit: number;

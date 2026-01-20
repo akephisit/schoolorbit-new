@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS subjects (
     
     -- Identification
     code VARCHAR(20) NOT NULL,             -- รหัสวิชา (ท21101) - Can reuse across different years
-    academic_year_start INTEGER NOT NULL DEFAULT EXTRACT(YEAR FROM NOW())::INTEGER, -- ปีการศึกษาที่เริ่มใช้ (Required for versioning)
+    academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT, -- ปีการศึกษาที่เริ่มใช้ (FK for data integrity)
     
     -- Names
     name_th VARCHAR(200) NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS subjects (
     
     -- Constraints
     -- รหัสวิชาสามารถซ้ำได้ แต่ต้องคนละปีการศึกษา (เพื่อรองรับการปรับหลักสูตร)
-    CONSTRAINT subjects_code_year_key UNIQUE (code, academic_year_start) 
+    CONSTRAINT subjects_code_year_key UNIQUE (code, academic_year_id) 
 );
 
 -- Indices
@@ -68,6 +68,8 @@ CREATE INDEX idx_subjects_code ON subjects(code);
 CREATE INDEX idx_subjects_group ON subjects(group_id);
 CREATE INDEX idx_subjects_type ON subjects(type);
 CREATE INDEX idx_subjects_level ON subjects(level_scope);
+CREATE INDEX idx_subjects_year ON subjects(academic_year_id);
+CREATE INDEX idx_subjects_year_active ON subjects(academic_year_id, is_active);
 
 -- 3. Triggers for updated_at
 DROP TRIGGER IF EXISTS update_subject_groups_updated_at ON subject_groups;

@@ -47,9 +47,12 @@
 	let currentSubject: Partial<Subject> = $state(getInitialSubjectState());
 
 	function getInitialSubjectState(): Partial<Subject> {
+		// Find current/active academic year from the list, or use first one
+		const currentYear = academicYears.find(y => y.is_current) || academicYears[0];
+		
 		return {
 			code: '',
-			academic_year_start: new Date().getFullYear() + 543, // Default to current Thai year
+			academic_year_id: currentYear?.id || '', // Default to current year UUID
 			name_th: '',
 			name_en: '',
 			credit: 1.0,
@@ -346,17 +349,15 @@
 					>
 					<select
 						id="subject-year"
-						bind:value={currentSubject.academic_year_start}
+						bind:value={currentSubject.academic_year_id}
 						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
 					>
 						{#if academicYears.length > 0}
 							{#each academicYears as year}
-								<option value={year.year}>{year.name}</option>
+								<option value={year.id}>{year.name}</option>
 							{/each}
 						{:else}
-							<option value={new Date().getFullYear() + 543}
-								>{new Date().getFullYear() + 543}</option
-							>
+							<option value="" disabled>กรุณาสร้างปีการศึกษาก่อน</option>
 						{/if}
 					</select>
 				</div>
