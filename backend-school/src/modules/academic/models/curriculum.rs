@@ -27,7 +27,7 @@ pub struct SubjectGroup {
 pub struct Subject {
     pub id: Uuid,
     pub code: String,
-    pub academic_year_start: Option<i32>,
+    pub academic_year_start: i32, // Required: Which year this subject code version started
     pub name_th: String,
     pub name_en: Option<String>,
     pub credit: f64, // Changed from Decimal to f64 to avoid extra dependency
@@ -51,7 +51,7 @@ pub struct Subject {
 #[derive(Debug, Deserialize)]
 pub struct CreateSubjectRequest {
     pub code: String,
-    pub academic_year_start: Option<i32>,
+    pub academic_year_start: i32, // Required
     pub name_th: String,
     pub name_en: Option<String>,
     pub credit: f64,

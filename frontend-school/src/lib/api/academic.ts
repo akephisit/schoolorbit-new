@@ -196,7 +196,7 @@ export interface SubjectGroup {
 export interface Subject {
     id: string;
     code: string;
-    academic_year_start?: number;
+    academic_year_start: number; // Required for curriculum versioning
     name_th: string;
     name_en?: string;
     credit: number;
@@ -253,4 +253,8 @@ export const deleteSubject = async (id: string) => {
 
 export const lookupGradeLevels = async (): Promise<{ data: LookupItem[] }> => {
     return await fetchApi('/api/lookup/grade-levels');
+};
+
+export const lookupAcademicYears = async (): Promise<{ data: LookupItem[] }> => {
+    return await fetchApi('/api/lookup/academic-years');
 };

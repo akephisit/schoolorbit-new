@@ -130,17 +130,21 @@ pub async fn create_subject(
         return Ok(response);
     }
 
-    // 2. Validate Code Uniqueness
+    // 2. Validate Code + Year Uniqueness (same code can exist in different years)
     let exists: Option<bool> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1)"
+        "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1 AND academic_year_start = $2)"
     )
     .bind(&payload.code)
+    .bind(payload.academic_year_start)
     .fetch_one(&pool)
     .await
     .unwrap_or(Some(false));
 
     if exists.unwrap_or(false) {
-        return Err(AppError::BadRequest("รหัสวิชานี้มีอยู่ในระบบแล้ว".to_string()));
+        return Err(AppError::BadRequest(format!(
+            "รหัสวิชา {} ปีการศึกษา {} มีอยู่ในระบบแล้ว",
+            payload.code, payload.academic_year_start
+        )));
     }
 
     // 3. Insert

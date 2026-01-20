@@ -7,6 +7,7 @@
 		updateSubject, 
 		deleteSubject,
         lookupGradeLevels,
+        lookupAcademicYears,
 		type Subject, 
 		type SubjectGroup,
         type LookupItem
@@ -27,6 +28,7 @@
 	let subjects: Subject[] = $state([]);
 	let groups: SubjectGroup[] = $state([]);
     let gradeLevels: LookupItem[] = $state([]);
+    let academicYears: LookupItem[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -47,6 +49,7 @@
 	function getInitialSubjectState(): Partial<Subject> {
 		return {
 			code: '',
+			academic_year_start: new Date().getFullYear() + 543, // Default to current Thai year
 			name_th: '',
 			name_en: '',
 			credit: 1.0,
@@ -63,7 +66,7 @@
 		try {
 			loading = true;
 			// Parallel fetch
-			const [subjectsRes, groupsRes, levelsRes] = await Promise.all([
+			const [subjectsRes, groupsRes, levelsRes, yearsRes] = await Promise.all([
 				listSubjects({
 					search: searchQuery,
 					group_id: selectedGroupId || undefined,
@@ -71,12 +74,14 @@
                     level_scope: selectedLevelScope || undefined
 				}),
 				listSubjectGroups(),
-                lookupGradeLevels()
+                lookupGradeLevels(),
+                lookupAcademicYears()
 			]);
 
 			subjects = subjectsRes.data;
 			groups = groupsRes.data;
             gradeLevels = levelsRes.data;
+            academicYears = yearsRes.data;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการโหลดข้อมูล';
 			console.error(e);
@@ -336,26 +341,47 @@
 					<Input id="subject-code" bind:value={currentSubject.code} placeholder="e.g. ท21101" />
 				</div>
 				<div class="space-y-2">
-					<label for="subject-level" class="text-sm font-medium">ระดับชั้น</label>
+					<label for="subject-year" class="text-sm font-medium"
+						>ปีการศึกษาที่เริ่มใช้ <span class="text-destructive">*</span></label
+					>
 					<select
-						id="subject-level"
-						bind:value={currentSubject.level_scope}
+						id="subject-year"
+						bind:value={currentSubject.academic_year_start}
 						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
 					>
-						<optgroup label="ช่วงชั้น">
-							<option value="JUNIOR">มัธยมต้น</option>
-							<option value="SENIOR">มัธยมปลาย</option>
-							<option value="ALL">ทุกระดับชั้น</option>
-						</optgroup>
-						{#if gradeLevels.length > 0}
-							<optgroup label="ระดับชั้นเรียน">
-								{#each gradeLevels as level}
-									<option value={level.code}>{level.name}</option>
-								{/each}
-							</optgroup>
+						{#if academicYears.length > 0}
+							{#each academicYears as year}
+								<option value={parseInt(year.name)}>{year.name}</option>
+							{/each}
+						{:else}
+							<option value={new Date().getFullYear() + 543}
+								>{new Date().getFullYear() + 543}</option
+							>
 						{/if}
 					</select>
 				</div>
+			</div>
+
+			<div class="space-y-2">
+				<label for="subject-level" class="text-sm font-medium">ระดับชั้น</label>
+				<select
+					id="subject-level"
+					bind:value={currentSubject.level_scope}
+					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+				>
+					<optgroup label="ช่วงชั้น">
+						<option value="JUNIOR">มัธยมต้น</option>
+						<option value="SENIOR">มัธยมปลาย</option>
+						<option value="ALL">ทุกระดับชั้น</option>
+					</optgroup>
+					{#if gradeLevels.length > 0}
+						<optgroup label="ระดับชั้นเรียน">
+							{#each gradeLevels as level}
+								<option value={level.code}>{level.name}</option>
+							{/each}
+						</optgroup>
+					{/if}
+				</select>
 			</div>
 
 			<div class="space-y-2">

@@ -34,8 +34,8 @@ CREATE TABLE IF NOT EXISTS subjects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Identification
-    code VARCHAR(20) NOT NULL,             -- รหัสวิชา (ท21101) - *Not unique globally because diff years might reuse*
-    academic_year_start INTEGER,           -- ปีการศึกษาที่เริ่มใช้หลักสูตรนี้ (optional, for versioning)
+    code VARCHAR(20) NOT NULL,             -- รหัสวิชา (ท21101) - Can reuse across different years
+    academic_year_start INTEGER NOT NULL DEFAULT EXTRACT(YEAR FROM NOW())::INTEGER, -- ปีการศึกษาที่เริ่มใช้ (Required for versioning)
     
     -- Names
     name_th VARCHAR(200) NOT NULL,
@@ -59,9 +59,8 @@ CREATE TABLE IF NOT EXISTS subjects (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
     -- Constraints
-    -- รหัสวิชาควรไม่ซ้ำกัน (แต่อาจจะซ้ำได้ถ้าอยู่คนละหลักสูตร ในอนาคตอาจต้องเพิ่ม curriculum_id)
-    -- เบื้องต้นให้ Unique ไว้ก่อนเพื่อความง่าย ถ้าระบบซับซ้อนขึ้นค่อยปลด
-    CONSTRAINT subjects_code_key UNIQUE (code) 
+    -- รหัสวิชาสามารถซ้ำได้ แต่ต้องคนละปีการศึกษา (เพื่อรองรับการปรับหลักสูตร)
+    CONSTRAINT subjects_code_year_key UNIQUE (code, academic_year_start) 
 );
 
 -- Indices
