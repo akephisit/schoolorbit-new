@@ -466,7 +466,7 @@ pub async fn lookup_classrooms(
 struct AcademicYearRow {
     id: Uuid,
     name: String,
-    is_current: bool,
+    is_active: bool,
 }
 
 /// GET /api/lookup/academic-years
@@ -492,7 +492,7 @@ pub async fn lookup_academic_years(
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
     
-    let mut sql = String::from("SELECT id, name, is_current FROM academic_years WHERE 1=1");
+    let mut sql = String::from("SELECT id, name, is_active FROM academic_years WHERE 1=1");
     
     if active_only {
         sql.push_str(" AND is_active = true");
@@ -502,7 +502,8 @@ pub async fn lookup_academic_years(
         sql.push_str(&format!(" AND name ILIKE '%{}%'", search));
     }
     
-    sql.push_str(&format!(" ORDER BY is_current DESC, name DESC LIMIT {}", limit));
+    // Order by active first, then by name descending (latest year first)
+    sql.push_str(&format!(" ORDER BY is_active DESC, name DESC LIMIT {}", limit));
     
     let rows = sqlx::query_as::<_, AcademicYearRow>(&sql)
         .fetch_all(&pool)
@@ -515,7 +516,7 @@ pub async fn lookup_academic_years(
     let data: Vec<AcademicYearLookupItem> = rows.into_iter().map(|r| AcademicYearLookupItem {
         id: r.id,
         name: r.name,
-        is_current: r.is_current,
+        is_current: r.is_active, // Map is_active to is_current for API compatibility
     }).collect();
     
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
