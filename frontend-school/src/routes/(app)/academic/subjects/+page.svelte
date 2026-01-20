@@ -1,13 +1,15 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { 
+    import { onMount } from 'svelte';
+	import {  
 		listSubjects, 
 		listSubjectGroups, 
 		createSubject, 
 		updateSubject, 
 		deleteSubject,
+        lookupGradeLevels,
 		type Subject, 
-		type SubjectGroup 
+		type SubjectGroup,
+        type LookupItem
 	} from '$lib/api/academic';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -24,6 +26,7 @@
 	// Data States
 	let subjects: Subject[] = $state([]);
 	let groups: SubjectGroup[] = $state([]);
+    let gradeLevels: LookupItem[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -60,18 +63,20 @@
 		try {
 			loading = true;
 			// Parallel fetch
-			const [subjectsRes, groupsRes] = await Promise.all([
+			const [subjectsRes, groupsRes, levelsRes] = await Promise.all([
 				listSubjects({
 					search: searchQuery,
 					group_id: selectedGroupId || undefined,
 					subject_type: selectedSubjectType || undefined,
                     level_scope: selectedLevelScope || undefined
 				}),
-				listSubjectGroups()
+				listSubjectGroups(),
+                lookupGradeLevels()
 			]);
 
 			subjects = subjectsRes.data;
 			groups = groupsRes.data;
+            gradeLevels = levelsRes.data;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการโหลดข้อมูล';
 			console.error(e);
@@ -200,9 +205,18 @@
 			class="flex h-10 w-full md:w-[150px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
 		>
 			<option value="">ทุกระดับชั้น</option>
-			<option value="JUNIOR">มัธยมต้น (ม.1-3)</option>
-			<option value="SENIOR">มัธยมปลาย (ม.4-6)</option>
-			<option value="ALL">ทุกระดับ</option>
+			<optgroup label="ช่วงชั้น">
+				<option value="JUNIOR">มัธยมต้น (ม.1-3)</option>
+				<option value="SENIOR">มัธยมปลาย (ม.4-6)</option>
+				<option value="ALL">ทุกระดับ</option>
+			</optgroup>
+			{#if gradeLevels.length > 0}
+				<optgroup label="ระดับชั้นเรียน (Specific)">
+					{#each gradeLevels as level}
+						<option value={level.code}>{level.name}</option>
+					{/each}
+				</optgroup>
+			{/if}
 		</select>
 
 		<select
@@ -328,9 +342,18 @@
 						bind:value={currentSubject.level_scope}
 						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
 					>
-						<option value="JUNIOR">มัธยมต้น</option>
-						<option value="SENIOR">มัธยมปลาย</option>
-						<option value="ALL">ทุกระดับชั้น</option>
+						<optgroup label="ช่วงชั้น">
+							<option value="JUNIOR">มัธยมต้น</option>
+							<option value="SENIOR">มัธยมปลาย</option>
+							<option value="ALL">ทุกระดับชั้น</option>
+						</optgroup>
+						{#if gradeLevels.length > 0}
+							<optgroup label="ระดับชั้นเรียน">
+								{#each gradeLevels as level}
+									<option value={level.code}>{level.name}</option>
+								{/each}
+							</optgroup>
+						{/if}
 					</select>
 				</div>
 			</div>

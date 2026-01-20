@@ -53,6 +53,17 @@ export interface Classroom {
     academic_year_label?: string;
     advisor_name?: string;
     student_count?: number;
+    year?: number; // Optional year for grade levels
+}
+
+// Lookup Types
+export interface LookupItem {
+    id: string;
+    code: string;
+    name: string;
+    description?: string;
+    level_type?: string;
+    year?: number;
 }
 
 // API Functions
@@ -238,4 +249,8 @@ export const deleteSubject = async (id: string) => {
     return await fetchApi(`/api/academic/subjects/${id}`, {
         method: 'DELETE'
     });
+};
+
+export const lookupGradeLevels = async (): Promise<{ data: LookupItem[] }> => {
+    return await fetchApi('/api/lookup/grade-levels');
 };
