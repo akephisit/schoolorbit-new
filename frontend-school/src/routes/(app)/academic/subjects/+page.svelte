@@ -351,7 +351,7 @@
 					>
 						{#if academicYears.length > 0}
 							{#each academicYears as year}
-								<option value={parseInt(year.name)}>{year.name}</option>
+								<option value={year.year}>{year.name}</option>
 							{/each}
 						{:else}
 							<option value={new Date().getFullYear() + 543}

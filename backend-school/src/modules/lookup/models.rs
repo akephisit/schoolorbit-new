@@ -64,6 +64,7 @@ pub struct ClassroomLookupItem {
 pub struct AcademicYearLookupItem {
     pub id: Uuid,
     pub name: String,
+    pub year: i32, // Numeric year for easy filtering/selection
     pub is_current: bool,
 }
 
