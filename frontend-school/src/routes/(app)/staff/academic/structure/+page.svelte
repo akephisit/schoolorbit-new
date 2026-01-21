@@ -18,13 +18,15 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import Loader2 from 'lucide-svelte/icons/loader-2';
-	import CalendarDays from 'lucide-svelte/icons/calendar-days';
-	import School from 'lucide-svelte/icons/school';
-	import Layers from 'lucide-svelte/icons/layers';
-	import Plus from 'lucide-svelte/icons/plus';
-	import Trash2 from 'lucide-svelte/icons/trash-2';
-	import BookOpen from 'lucide-svelte/icons/book-open';
+	import { 
+		Loader2, 
+		CalendarDays, 
+		School, 
+		Layers, 
+		Plus, 
+		Trash2, 
+		BookOpen 
+	} from 'lucide-svelte';
 
 	let loading = true;
 	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
