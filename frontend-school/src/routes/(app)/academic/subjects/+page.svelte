@@ -247,7 +247,7 @@
 		<div
 			class="bg-muted/50 px-6 py-3 border-b border-border text-sm font-medium text-muted-foreground hidden md:grid md:grid-cols-12 md:gap-4"
 		>
-			<div class="col-span-2">รหัสวิชา</div>
+			<div class="col-span-2 font-mono">รหัสวิชา</div>
 			<div class="col-span-4">ชื่อรายวิชา</div>
 			<div class="col-span-2">กลุ่มสาระฯ</div>
 			<div class="col-span-2 text-center">หน่วยกิต</div>
