@@ -104,6 +104,10 @@ pub async fn list_subjects(
         }
     }
 
+    if let Some(year_id) = filter.academic_year_id {
+        query.push_str(&format!(" AND s.academic_year_id = '{}'", year_id));
+    }
+
     query.push_str(" ORDER BY s.code ASC");
 
     let subjects = sqlx::query_as::<_, Subject>(&query)

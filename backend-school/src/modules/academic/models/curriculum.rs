@@ -87,6 +87,7 @@ pub struct SubjectFilter {
     pub subject_type: Option<String>,
     pub search: Option<String>,
     pub active_only: Option<bool>,
+    pub academic_year_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

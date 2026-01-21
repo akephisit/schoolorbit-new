@@ -41,6 +41,7 @@
 	let selectedGroupId = $state('');
 	let selectedSubjectType = $state('');
 	let selectedLevelScope = $state('');
+	let selectedYearFilter = $state('');
 
 	// Modal States
 	let showDialog = $state(false);
@@ -72,26 +73,30 @@
 		};
 	}
 
-	async function loadData() {
+	async function initData() {
 		try {
 			loading = true;
-			// Parallel fetch
-			const [subjectsRes, groupsRes, levelsRes, yearsRes] = await Promise.all([
-				listSubjects({
-					search: searchQuery,
-					group_id: selectedGroupId || undefined,
-					subject_type: selectedSubjectType || undefined,
-                    level_scope: selectedLevelScope || undefined
-				}),
+			// Load lookups first
+			const [groupsRes, levelsRes, yearsRes] = await Promise.all([
 				listSubjectGroups(),
-                lookupGradeLevels(),
-                lookupAcademicYears()
+				lookupGradeLevels(),
+				lookupAcademicYears()
 			]);
 
-			subjects = subjectsRes.data;
 			groups = groupsRes.data;
-            gradeLevels = levelsRes.data;
-            academicYears = yearsRes.data;
+			gradeLevels = levelsRes.data;
+			academicYears = yearsRes.data;
+
+			// Set default year filter to current year
+			const current = academicYears.find(y => y.is_current);
+			if (current) {
+				selectedYearFilter = current.id;
+			} else if (academicYears.length > 0) {
+				selectedYearFilter = academicYears[0].id; // Fallback
+			}
+
+			// Then load subjects
+			await loadSubjects();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการโหลดข้อมูล';
 			console.error(e);
@@ -99,6 +104,28 @@
 			loading = false;
 		}
 	}
+
+	async function loadSubjects() {
+		try {
+			loading = true;
+			const subjectsRes = await listSubjects({
+				search: searchQuery,
+				group_id: selectedGroupId || undefined,
+				subject_type: selectedSubjectType || undefined,
+				level_scope: selectedLevelScope || undefined,
+				academic_year_id: selectedYearFilter || undefined
+			});
+			subjects = subjectsRes.data;
+		} catch (e) {
+			console.error('Error loading subjects:', e);
+			// Don't show global error here to avoid blocking UI actions
+		} finally {
+			loading = false;
+		}
+	}
+
+    // Alias for compatibility with existing calls
+    const loadData = loadSubjects;
 
 	function handleOpenCreate() {
 		currentSubject = getInitialSubjectState();
@@ -187,7 +214,7 @@
 	}
 
 	onMount(() => {
-		loadData();
+		initData();
 	});
 </script>
 
@@ -237,6 +264,17 @@
 		</div>
 
 		<!-- Filters -->
+		<select
+			bind:value={selectedYearFilter}
+			onchange={loadData}
+			class="flex h-10 w-full md:w-[150px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+		>
+			<option value="">ทุกปีการศึกษา</option>
+			{#each academicYears as year}
+				<option value={year.id}>{year.name} {year.is_current ? '(ปัจจุบัน)' : ''}</option>
+			{/each}
+		</select>
+
 		<select
 			bind:value={selectedGroupId}
 			onchange={loadData}
