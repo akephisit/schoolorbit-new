@@ -4,6 +4,7 @@
 		getAcademicStructure,
 		listClassrooms,
 		createClassroom,
+		getYearLevelConfig,
 		type AcademicStructureData,
 		type Classroom
 	} from '$lib/api/academic';
@@ -17,18 +18,21 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import Loader2 from 'lucide-svelte/icons/loader-2';
-	import Layers from 'lucide-svelte/icons/layers';
-	import Filter from 'lucide-svelte/icons/filter';
-	import Plus from 'lucide-svelte/icons/plus';
-	import Users from 'lucide-svelte/icons/users';
-	import School from 'lucide-svelte/icons/school';
-	import Pencil from 'lucide-svelte/icons/pencil';
+	import { 
+		Loader2, 
+		Layers, 
+		Filter, 
+		Plus, 
+		Users, 
+		School, 
+		Pencil 
+	} from 'lucide-svelte';
 
 	let loading = true;
 	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
 	let classrooms: Classroom[] = [];
 	let staffList: StaffLookupItem[] = [];
+	let activeLevelIds: string[] = [];
 
 	let showCreateDialog = false;
 	let isSubmitting = false;
@@ -74,8 +78,12 @@
 	async function fetchClassrooms() {
 		if (!selectedYearId) return;
 		try {
-			const res = await listClassrooms({ year_id: selectedYearId });
-			classrooms = res.data;
+			const [classroomRes, configRes] = await Promise.all([
+				listClassrooms({ year_id: selectedYearId }),
+				getYearLevelConfig(selectedYearId)
+			]);
+			classrooms = classroomRes.data;
+			activeLevelIds = configRes.data;
 		} catch (error) {
 			console.error(error);
 			toast.error('โหลดข้อมูลห้องเรียนไม่สำเร็จ');
@@ -240,7 +248,7 @@
 									'เลือกชั้น'}
 							</Select.Trigger>
 							<Select.Content>
-								{#each structure.levels as level}
+								{#each structure.levels.filter((l) => activeLevelIds.includes(l.id)) as level}
 									<Select.Item value={level.id}>{level.name} ({level.short_name})</Select.Item>
 								{/each}
 							</Select.Content>
