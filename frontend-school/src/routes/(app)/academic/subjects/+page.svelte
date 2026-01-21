@@ -23,7 +23,7 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
-	import { BookOpen, Plus, Search, Pencil, Trash2, Copy, CheckCircle } from 'lucide-svelte';
+	import { BookOpen, Plus, Search, Pencil, Trash2, Copy, CircleCheck } from 'lucide-svelte';
 
 	// Data States
 	let subjects: Subject[] = $state([]);
@@ -667,7 +667,7 @@
 	<DialogContent class="sm:max-w-md">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2 text-primary">
-				<CheckCircle class="w-6 h-6" />
+				<CircleCheck class="w-6 h-6" />
 				{successTitle}
 			</DialogTitle>
 			<DialogDescription>{successMessage}</DialogDescription>
