@@ -81,7 +81,7 @@
 			const [groupsRes, levelsRes, yearsRes] = await Promise.all([
 				listSubjectGroups(),
 				lookupGradeLevels(),
-				lookupAcademicYears()
+				lookupAcademicYears(false)
 			]);
 
 			groups = groupsRes.data;
