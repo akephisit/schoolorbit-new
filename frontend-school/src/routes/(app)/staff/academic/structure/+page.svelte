@@ -17,6 +17,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
+	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { 
 		Loader2, 
@@ -347,12 +348,12 @@
 				</div>
 				<div class="grid grid-cols-2 gap-4">
 					<div class="grid gap-2">
-						<Label for="start">วันเริ่มต้น</Label>
-						<Input id="start" type="date" bind:value={newYear.start_date} />
+						<Label>วันเริ่มต้น</Label>
+						<DatePicker bind:value={newYear.start_date} placeholder="วันเริ่มต้น" />
 					</div>
 					<div class="grid gap-2">
-						<Label for="end">วันสิ้นสุด</Label>
-						<Input id="end" type="date" bind:value={newYear.end_date} />
+						<Label>วันสิ้นสุด</Label>
+						<DatePicker bind:value={newYear.end_date} placeholder="วันสิ้นสุด" />
 					</div>
 				</div>
 				<div class="flex items-center space-x-2">
