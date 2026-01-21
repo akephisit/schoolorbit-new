@@ -247,7 +247,7 @@
 		<div
 			class="bg-muted/50 px-6 py-3 border-b border-border text-sm font-medium text-muted-foreground hidden md:grid md:grid-cols-12 md:gap-4"
 		>
-			<div class="col-span-2" style="font-family: 'Kanit', sans-serif;">รหัสวิชา</div>
+			<div class="col-span-2">รหัสวิชา</div>
 			<div class="col-span-4">ชื่อรายวิชา</div>
 			<div class="col-span-2">กลุ่มสาระฯ</div>
 			<div class="col-span-2 text-center">หน่วยกิต</div>
@@ -270,8 +270,8 @@
 						class="px-6 py-4 hover:bg-accent/50 transition-colors grid grid-cols-1 md:grid-cols-12 gap-4 items-center"
 					>
 						<!-- Code -->
-						<div class="col-span-2 font-bold text-primary" style="font-family: 'Kanit', sans-serif;">
-							{subject.code}
+						<div class="col-span-2">
+							<div class="font-bold text-primary">{subject.code}</div>
 							<span class="md:hidden text-xs text-muted-foreground font-normal ml-2"
 								>({subject.type})</span
 							>
