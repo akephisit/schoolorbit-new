@@ -287,3 +287,38 @@ export const saveYearLevelConfig = async (yearId: string, gradeLevelIds: string[
         body: JSON.stringify({ grade_level_ids: gradeLevelIds })
     });
 };
+
+export interface ClassroomCourse {
+    id: string;
+    classroom_id: string;
+    subject_id: string;
+    academic_semester_id: string;
+    primary_instructor_id?: string;
+    settings: any;
+    subject_code: string;
+    subject_name_th: string;
+    subject_name_en?: string;
+    subject_credit?: number;
+    instructor_name?: string;
+}
+
+export const listClassroomCourses = async (classroomId: string, semesterId?: string): Promise<{ data: ClassroomCourse[] }> => {
+    let url = `/api/academic/planning/courses?classroom_id=${classroomId}`;
+    if (semesterId) url += `&academic_semester_id=${semesterId}`;
+    return await fetchApi(url);
+};
+
+export const assignCourses = async (data: {
+    classroom_id: string;
+    academic_semester_id: string;
+    subject_ids: string[];
+}) => {
+    return await fetchApi('/api/academic/planning/courses', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const removeCourse = async (id: string) => {
+    return await fetchApi(`/api/academic/planning/courses/${id}`, { method: 'DELETE' });
+};

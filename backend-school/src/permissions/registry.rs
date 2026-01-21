@@ -90,6 +90,10 @@ pub mod codes {
     pub const ACADEMIC_CURRICULUM_CREATE_ALL: &str = "academic_curriculum.create.all";
     pub const ACADEMIC_CURRICULUM_UPDATE_ALL: &str = "academic_curriculum.update.all";
     pub const ACADEMIC_CURRICULUM_DELETE_ALL: &str = "academic_curriculum.delete.all";
+
+    // Course Planning (Assigning subjects to classrooms)
+    pub const ACADEMIC_COURSE_PLAN_READ_ALL: &str = "academic_course_plan.read.all";
+    pub const ACADEMIC_COURSE_PLAN_MANAGE_ALL: &str = "academic_course_plan.manage.all";
 }
 
 /// Complete list of all permissions in the system
@@ -498,5 +502,23 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "delete",
         scope: "all",
         description: "ลบรายวิชาออกจากระบบ",
+    },
+
+    // Course Plan Permissions
+    PermissionDef {
+        code: codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        name: "ดูแผนการเรียนรายห้อง",
+        module: "academic_course_plan",
+        action: "read",
+        scope: "all",
+        description: "ดูวิชาที่เปิดสอนในแต่ละห้องเรียน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        name: "จัดแผนการเรียน",
+        module: "academic_course_plan",
+        action: "manage",
+        scope: "all",
+        description: "เพิ่ม/ลบ/แก้ไข วิชาที่เปิดสอนในห้องเรียน",
     },
 ];

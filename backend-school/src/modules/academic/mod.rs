@@ -30,4 +30,8 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/subjects/bulk-copy", post(handlers::subjects::bulk_copy_subjects))
         .route("/subjects", get(handlers::subjects::list_subjects).post(handlers::subjects::create_subject))
         .route("/subjects/{id}", put(handlers::subjects::update_subject).delete(handlers::subjects::delete_subject))
+
+        // Course Planning
+        .route("/planning/courses", get(handlers::course_planning::list_classroom_courses).post(handlers::course_planning::assign_courses))
+        .route("/planning/courses/{id}", put(handlers::course_planning::update_course).delete(handlers::course_planning::remove_course))
 }

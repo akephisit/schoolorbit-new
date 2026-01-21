@@ -7,6 +7,7 @@ use chrono::NaiveDate;
 // Curriculum Models
 // ==========================================
 pub mod curriculum;
+pub mod course_planning;
 
 // ==========================================
 // Academic Year Models
