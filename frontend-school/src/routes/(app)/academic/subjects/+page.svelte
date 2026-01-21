@@ -23,7 +23,7 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
-	import { BookOpen, Plus, Search, Pencil, Trash2, Copy } from 'lucide-svelte';
+	import { BookOpen, Plus, Search, Pencil, Trash2, Copy, CheckCircle } from 'lucide-svelte';
 
 	// Data States
 	let subjects: Subject[] = $state([]);
@@ -48,6 +48,9 @@
 	let showDialog = $state(false);
 	let showDeleteDialog = $state(false);
 	let showCopyDialog = $state(false);
+    let showSuccessDialog = $state(false);
+    let successTitle = $state('');
+    let successMessage = $state('');
 	let selectedSourceYear = $state('');
 	let copying = $state(false);
 	let isEditing = $state(false);
@@ -215,8 +218,12 @@
 		copying = true;
 		try {
 			const result = await bulkCopySubjects(selectedSourceYear, targetId);
-			alert(result.data.message);
 			showCopyDialog = false;
+            
+            successTitle = 'คัดลอกรายวิชาสำเร็จ';
+            successMessage = result.data.message;
+            showSuccessDialog = true;
+            
 			await loadData(); // Reload subjects
 		} catch (e) {
 			alert(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด');
@@ -651,6 +658,22 @@
 			>
 				{copying ? 'กำลังคัดลอก...' : 'คัดลอก'}
 			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Success Alert Dialog -->
+<Dialog bind:open={showSuccessDialog}>
+	<DialogContent class="sm:max-w-md">
+		<DialogHeader>
+			<DialogTitle class="flex items-center gap-2 text-primary">
+				<CheckCircle class="w-6 h-6" />
+				{successTitle}
+			</DialogTitle>
+			<DialogDescription>{successMessage}</DialogDescription>
+		</DialogHeader>
+		<DialogFooter>
+			<Button onclick={() => (showSuccessDialog = false)}>ตกลง</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
