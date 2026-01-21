@@ -314,27 +314,49 @@ pub async fn lookup_grade_levels(
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
-    // let active_only = query.active_only.unwrap_or(true); // grade_levels has is_active
     
-    // Correct query for new schema: level_type, year (no name/code columns)
-    let mut sql = String::from("SELECT id, level_type, year FROM grade_levels WHERE 1=1");
+    // Determine target year for filtering
+    let mut target_year_id = query.academic_year_id;
     
-    if query.active_only.unwrap_or(true) {
-        sql.push_str(" AND is_active = true");
+    // Default to current active year if not specified and current_year is not explicitly false
+    // (This ensures dropdowns show only configured levels by default)
+    if target_year_id.is_none() && query.current_year.unwrap_or(true) {
+         let active_year_id: Option<Uuid> = sqlx::query_scalar(
+             "SELECT id FROM academic_years WHERE is_active = true LIMIT 1"
+         )
+         .fetch_optional(&pool)
+         .await
+         .unwrap_or(None);
+         
+         target_year_id = active_year_id;
+    }
+
+    // Build SQL
+    let mut sql = String::from("SELECT gl.id, gl.level_type, gl.year FROM grade_levels gl");
+    
+    // Apply Year Filter via Join
+    if let Some(yid) = target_year_id {
+        sql.push_str(" JOIN academic_year_grade_levels aygl ON gl.id = aygl.grade_level_id");
+        // Use WHERE 1=1 trick to handle subsequent ANDs easily, but here update condition
+        sql.push_str(&format!(" WHERE aygl.academic_year_id = '{}'", yid));
+    } else {
+        sql.push_str(" WHERE 1=1");
     }
     
-    // Search logic is tricky without calculated fields in DB. 
-    // For now, if search provided, we might skip search or try simple logic?
-    // Since we construct name in app, we can't easily ILIKE name in DB.
-    // Let's skip search filtering on name for now, or match user to exact year?
-    // User rarely searches grade levels by typing "M.1", usually just lists all.
+    if query.active_only.unwrap_or(true) {
+        sql.push_str(" AND gl.is_active = true");
+    }
+
+    if let Some(ltype) = &query.level_type {
+        sql.push_str(&format!(" AND gl.level_type = '{}'", ltype));
+    }
     
-    sql.push_str(" ORDER BY CASE level_type 
+    sql.push_str(" ORDER BY CASE gl.level_type 
             WHEN 'kindergarten' THEN 1 
             WHEN 'primary' THEN 2 
             WHEN 'secondary' THEN 3 
             ELSE 4 
-         END, year ASC LIMIT 500");
+         END, gl.year ASC LIMIT 500");
     
     let rows = sqlx::query_as::<_, GradeLevelRow>(&sql)
         .fetch_all(&pool)

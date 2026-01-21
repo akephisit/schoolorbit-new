@@ -97,4 +97,10 @@ pub struct LookupQuery {
     pub search: Option<String>,
     /// Maximum items to return (default: 100)
     pub limit: Option<i32>,
+    /// Filter by specific Academic Year ID (for grade_levels, classrooms)
+    pub academic_year_id: Option<Uuid>,
+    /// Filter by current active Academic Year (default: false unless specified)
+    pub current_year: Option<bool>,
+    /// Filter by level type (kindergarten, primary, secondary)
+    pub level_type: Option<String>,
 }
