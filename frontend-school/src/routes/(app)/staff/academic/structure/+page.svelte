@@ -34,6 +34,7 @@
 
 	let loading = true;
 	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
+	let activeYearLevelIds: string[] = [];
 	
 	// Year state
 	let showCreateYearDialog = false;
@@ -75,6 +76,10 @@
 			await saveYearLevelConfig(configYear.id, configLevelIds);
 			toast.success(`บันทึกชั้นเรียนสำหรับ ${configYear.name} เรียบร้อย`);
 			showConfigDialog = false;
+			// Reload data to update UI badges if we just edited the active year
+			if (configYear.is_active) {
+				await loadData();
+			}
 		} catch (error) {
 			console.error(error);
 			toast.error('บันทึกข้อมูลไม่สำเร็จ');
@@ -128,6 +133,15 @@
 		try {
 			const res = await getAcademicStructure();
 			structure = res.data;
+
+			// Fetch active levels for current active year
+			const activeYear = structure.years.find((y) => y.is_active);
+			if (activeYear) {
+				const configRes = await getYearLevelConfig(activeYear.id);
+				activeYearLevelIds = configRes.data;
+			} else {
+				activeYearLevelIds = [];
+			}
 		} catch (error) {
 			console.error(error);
 			toast.error('ไม่สามารถโหลดข้อมูลโครงสร้างวิชาการได้');
@@ -355,7 +369,17 @@
 										{level.year}
 									</div>
 									<div>
-										<p class="font-medium">{level.name}</p>
+										<div class="flex items-center gap-2">
+											<p class="font-medium">{level.name}</p>
+											{#if activeYearLevelIds.includes(level.id)}
+												<Badge
+													variant="outline"
+													class="h-5 px-1.5 text-[10px] bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800 pointer-events-none"
+												>
+													เปิดสอน
+												</Badge>
+											{/if}
+										</div>
 										<p class="text-xs text-muted-foreground">{level.code} • {level.short_name}</p>
 									</div>
 								</div>
