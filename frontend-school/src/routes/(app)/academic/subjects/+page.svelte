@@ -27,7 +27,8 @@
     import { Badge } from '$lib/components/ui/badge';
     import { Label } from '$lib/components/ui/label';
     import { Textarea } from '$lib/components/ui/textarea';
-    import * as Select from '$lib/components/ui/select'; // For Batch 2
+    import * as Select from '$lib/components/ui/select';
+    import { Checkbox } from '$lib/components/ui/checkbox';
 	import { BookOpen, Plus, Search, Pencil, Trash2, Copy, CircleCheck } from 'lucide-svelte';
 
 	// Data States
@@ -76,7 +77,8 @@
 			hours_per_semester: 40,
 			type: 'BASIC',
 			group_id: '',
-			level_scope: 'ALL',
+			level_scope: undefined,
+			grade_level_ids: [],
 			description: '',
 			is_active: true
 		};
@@ -88,7 +90,7 @@
 			// Load lookups first
 			const [groupsRes, levelsRes, yearsRes] = await Promise.all([
 				listSubjectGroups(),
-				lookupGradeLevels(),
+				lookupGradeLevels({ current_year: false }),
 				lookupAcademicYears(false)
 			]);
 
@@ -516,35 +518,38 @@
 				</div>
 
 				<div class="space-y-2">
-					<Label>ระดับชั้น</Label>
-					<Select.Root type="single" bind:value={currentSubject.level_scope}>
-						<Select.Trigger>
-							{#if currentSubject.level_scope === 'JUNIOR'}มัธยมต้น
-							{:else if currentSubject.level_scope === 'SENIOR'}มัธยมปลาย
-							{:else if currentSubject.level_scope === 'ALL'}ทุกระดับชั้น
-							{:else if currentSubject.level_scope}
-								{gradeLevels.find((l) => l.code === currentSubject.level_scope)?.name ||
-									currentSubject.level_scope}
-							{:else}เลือกระดับชั้น{/if}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Group>
-								<Select.Label>ช่วงชั้น</Select.Label>
-								<Select.Item value="JUNIOR">มัธยมต้น</Select.Item>
-								<Select.Item value="SENIOR">มัธยมปลาย</Select.Item>
-								<Select.Item value="ALL">ทุกระดับชั้น</Select.Item>
-							</Select.Group>
-							{#if gradeLevels.length > 0}
-								<Select.Separator />
-								<Select.Group>
-									<Select.Label>ระดับชั้นเรียน</Select.Label>
-									{#each gradeLevels as level}
-										<Select.Item value={level.code}>{level.name}</Select.Item>
-									{/each}
-								</Select.Group>
-							{/if}
-						</Select.Content>
-					</Select.Root>
+					<Label>ระดับชั้นที่เปิดสอน</Label>
+					<div class="border rounded-md p-4 bg-muted/20 max-h-[200px] overflow-y-auto">
+						{#if gradeLevels.length > 0}
+							<div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+								{#each gradeLevels as level}
+									<div class="flex items-center space-x-2">
+										<Checkbox
+											id={`assign-level-${level.id}`}
+											checked={currentSubject.grade_level_ids?.includes(level.id)}
+											onCheckedChange={(v) => {
+												const checked = v === true;
+												const ids = currentSubject.grade_level_ids || [];
+												if (checked) {
+													currentSubject.grade_level_ids = [...ids, level.id];
+												} else {
+													currentSubject.grade_level_ids = ids.filter((id) => id !== level.id);
+												}
+											}}
+										/>
+										<Label
+											for={`assign-level-${level.id}`}
+											class="font-normal cursor-pointer text-sm select-none"
+										>
+											{level.name}
+										</Label>
+									</div>
+								{/each}
+							</div>
+						{:else}
+							<div class="text-sm text-muted-foreground text-center py-4">ไม่พบข้อมูลระดับชั้น</div>
+						{/if}
+					</div>
 				</div>
 			</div>
 

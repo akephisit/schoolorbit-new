@@ -69,7 +69,10 @@ pub async fn list_subjects(
 
     let mut query = String::from(
         r#"
-        SELECT s.*, sg.name_th as group_name_th 
+        SELECT s.*, sg.name_th as group_name_th,
+               (SELECT COALESCE(array_agg(sgl.grade_level_id), '{}') 
+                FROM subject_grade_levels sgl 
+                WHERE sgl.subject_id = s.id) as grade_level_ids
         FROM subjects s
         LEFT JOIN subject_groups sg ON s.group_id = sg.id
         WHERE 1=1
@@ -161,8 +164,10 @@ pub async fn create_subject(
         )));
     }
 
-    // 3. Insert
-    let subject = sqlx::query_as::<_, Subject>(
+    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    // 3. Insert Subject
+    let mut subject = sqlx::query_as::<_, Subject>(
         r#"
         INSERT INTO subjects (
             code, academic_year_id, name_th, name_en, 
@@ -183,12 +188,31 @@ pub async fn create_subject(
     .bind(&payload.level_scope)
     .bind(&payload.description)
     .bind(payload.start_academic_year_id)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         eprintln!("Failed to create subject: {}", e);
         AppError::InternalServerError("Failed to create subject".to_string())
     })?;
+
+    // 4. Insert Grade Level Relations
+    if let Some(level_ids) = &payload.grade_level_ids {
+        for lid in level_ids {
+            sqlx::query("INSERT INTO subject_grade_levels (subject_id, grade_level_id) VALUES ($1, $2)")
+                .bind(subject.id)
+                .bind(lid)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    eprintln!("Failed to link grade level: {}", e);
+                    AppError::InternalServerError("Failed to save grade level links".to_string())
+                })?;
+        }
+        // Update response object
+        subject.grade_level_ids = Some(level_ids.clone());
+    }
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": subject }))).into_response())
 }
@@ -207,8 +231,10 @@ pub async fn update_subject(
         return Ok(response);
     }
 
+    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    
     // 2. Update
-    let subject = sqlx::query_as::<_, Subject>(
+    let mut subject = sqlx::query_as::<_, Subject>(
         r#"
         UPDATE subjects SET 
             code = COALESCE($1, code),
@@ -241,12 +267,36 @@ pub async fn update_subject(
     .bind(payload.is_active)
     .bind(payload.start_academic_year_id)
     .bind(id)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         eprintln!("Failed to update subject {}: {}", id, e);
         AppError::InternalServerError("Failed to update subject".to_string())
     })?;
+
+    // 3. Update Grade Levels if provided
+    if let Some(level_ids) = &payload.grade_level_ids {
+        // Clear existing
+        sqlx::query("DELETE FROM subject_grade_levels WHERE subject_id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to clear links: {}", e)))?;
+            
+        // Insert new
+        for lid in level_ids {
+            sqlx::query("INSERT INTO subject_grade_levels (subject_id, grade_level_id) VALUES ($1, $2)")
+                .bind(id)
+                .bind(lid)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| AppError::InternalServerError(format!("Failed to link grade level: {}", e)))?;
+        }
+        
+        subject.grade_level_ids = Some(level_ids.clone());
+    }
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok(Json(json!({ "success": true, "data": subject })).into_response())
 }

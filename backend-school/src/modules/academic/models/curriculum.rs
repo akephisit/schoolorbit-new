@@ -47,6 +47,10 @@ pub struct Subject {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
     pub group_name_th: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub grade_level_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +67,7 @@ pub struct CreateSubjectRequest {
     pub level_scope: Option<String>,
     pub description: Option<String>,
     pub start_academic_year_id: Option<Uuid>,
+    pub grade_level_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,6 +85,7 @@ pub struct UpdateSubjectRequest {
     pub description: Option<String>,
     pub is_active: Option<bool>,
     pub start_academic_year_id: Option<Uuid>,
+    pub grade_level_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]

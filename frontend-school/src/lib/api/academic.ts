@@ -209,6 +209,7 @@ export interface Subject {
     is_active: boolean;
     group_name_th?: string;
     start_academic_year_id?: string;
+    grade_level_ids?: string[];
 }
 
 export const listSubjectGroups = async (): Promise<{ data: SubjectGroup[] }> => {
@@ -255,8 +256,9 @@ export const deleteSubject = async (id: string) => {
     });
 };
 
-export const lookupGradeLevels = async (): Promise<{ data: LookupItem[] }> => {
-    return await fetchApi('/api/lookup/grade-levels');
+export const lookupGradeLevels = async (params: any = {}): Promise<{ data: LookupItem[] }> => {
+    const queryString = new URLSearchParams(params).toString();
+    return await fetchApi(`/api/lookup/grade-levels?${queryString}`);
 };
 
 export const lookupAcademicYears = async (active_only: boolean = true): Promise<{ data: LookupItem[] }> => {
