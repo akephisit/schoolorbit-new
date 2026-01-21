@@ -42,6 +42,7 @@
 	let selectedSubjectType = $state('');
 	let selectedLevelScope = $state('');
 	let selectedYearFilter = $state('');
+	let selectedYearObj = $derived(academicYears.find(y => y.id === selectedYearFilter));
 
 	// Modal States
 	let showDialog = $state(false);
@@ -189,20 +190,31 @@
     }
 
 	function handleOpenCopy() {
-		// Find previous year (or first non-current year)
-		const otherYears = academicYears.filter(y => !y.is_current);
+		// Target is the selected year (or current active year if no filter selected, though filter usually selected)
+		const targetId = selectedYearFilter || currentAcademicYear?.id;
+        const targetObj = academicYears.find(y => y.id === targetId);
+		
+        if (!targetObj) return;
+
+		// Find potential source years (exclude target AND newer years)
+        // Assume 'year' field exists and is number. If missing, assume 0.
+		const otherYears = academicYears.filter(y => y.id !== targetId && (y.year || 0) < (targetObj.year || 0));
+
 		if (otherYears.length > 0) {
 			selectedSourceYear = otherYears[0].id;
-		}
+		} else {
+             selectedSourceYear = '';
+        }
 		showCopyDialog = true;
 	}
 
 	async function handleBulkCopy() {
-		if (!selectedSourceYear || !currentAcademicYear) return;
+		const targetId = selectedYearFilter || currentAcademicYear?.id;
+		if (!selectedSourceYear || !targetId) return;
 		
 		copying = true;
 		try {
-			const result = await bulkCopySubjects(selectedSourceYear, currentAcademicYear.id);
+			const result = await bulkCopySubjects(selectedSourceYear, targetId);
 			alert(result.data.message);
 			showCopyDialog = false;
 			await loadData(); // Reload subjects
@@ -570,18 +582,27 @@
 		<DialogHeader>
 			<DialogTitle>คัดลอกรายวิชาจากปีก่อน</DialogTitle>
 			<DialogDescription>
-				เลือกปีการศึกษาต้นทางที่ต้องการคัดลอกรายวิชามายังปีปัจจุบัน ({currentAcademicYear?.name})
+				{#if selectedYearObj}
+					เลือกปีการศึกษาต้นทางที่ต้องการคัดลอกรายวิชามายังปี <strong>{selectedYearObj.name}</strong
+					>
+				{:else}
+					กรุณาเลือกปีการศึกษาปลายทางก่อน
+				{/if}
 			</DialogDescription>
 		</DialogHeader>
 
 		<div class="space-y-4 py-4">
 			<div class="space-y-2">
 				<label for="source-year" class="text-sm font-medium">ปีการศึกษาต้นทาง</label>
-				{#if academicYears.filter((y) => y.id !== currentAcademicYear?.id).length === 0}
+				{#if !selectedYearObj}
+					<div class="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
+						โปรดเลือกปีการศึกษาที่ต้องการจัดการจากตัวกรองด้านบนก่อน
+					</div>
+				{:else if academicYears.filter((y) => y.id !== selectedYearObj.id && (y.year || 0) < (selectedYearObj.year || 0)).length === 0}
 					<div
 						class="flex h-10 w-full items-center justify-center rounded-md border border-dashed text-muted-foreground text-sm"
 					>
-						ไม่พบปีการศึกษาอื่นให้คัดลอก
+						ไม่พบปีการศึกษาที่เก่ากว่าให้คัดลอก
 					</div>
 				{:else}
 					<select
@@ -590,7 +611,7 @@
 						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 					>
 						<option value="" disabled selected>-- เลือกปีการศึกษา --</option>
-						{#each academicYears.filter((y) => y.id !== currentAcademicYear?.id) as year}
+						{#each academicYears.filter((y) => y.id !== selectedYearObj.id && (y.year || 0) < (selectedYearObj.year || 0)) as year}
 							<option value={year.id}>{year.name}</option>
 						{/each}
 					</select>
@@ -606,7 +627,10 @@
 			<Button variant="outline" onclick={() => (showCopyDialog = false)} disabled={copying}>
 				ยกเลิก
 			</Button>
-			<Button onclick={handleBulkCopy} disabled={copying || !selectedSourceYear}>
+			<Button
+				onclick={handleBulkCopy}
+				disabled={copying || !selectedSourceYear || !selectedYearObj}
+			>
 				{copying ? 'กำลังคัดลอก...' : 'คัดลอก'}
 			</Button>
 		</DialogFooter>

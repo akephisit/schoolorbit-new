@@ -287,6 +287,26 @@ pub async fn bulk_copy_subjects(
         return Ok(response);
     }
 
+    // 1.5 Validate Years (Source must be older than Target)
+    let source_year: Option<i32> = sqlx::query_scalar("SELECT year FROM academic_years WHERE id = $1")
+        .bind(payload.source_academic_year_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    
+    let target_year: Option<i32> = sqlx::query_scalar("SELECT year FROM academic_years WHERE id = $1")
+        .bind(payload.target_academic_year_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let source_year = source_year.ok_or_else(|| AppError::BadRequest("ไม่พบปีการศึกษาต้นทาง".to_string()))?;
+    let target_year = target_year.ok_or_else(|| AppError::BadRequest("ไม่พบปีการศึกษาปลายทาง".to_string()))?;
+
+    if source_year >= target_year {
+        return Err(AppError::BadRequest("ไม่สามารถคัดลอกรายวิชาจากปีที่ใหม่กว่าหรือปีเดียวกันได้".to_string()));
+    }
+
     // 2. Fetch all subjects from source year
     let source_subjects = sqlx::query_as::<_, Subject>(
         "SELECT * FROM subjects WHERE academic_year_id = $1 AND is_active = true"
