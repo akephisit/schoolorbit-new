@@ -237,14 +237,16 @@
 				</span>
 			{/if}
 		</div>
-		<Button variant="outline" onclick={handleOpenCopy} class="flex items-center gap-2">
-			<Copy class="w-4 h-4" />
-			คัดลอกจากปีก่อน
-		</Button>
-		<Button onclick={handleOpenCreate} class="flex items-center gap-2">
-			<Plus class="w-4 h-4" />
-			เพิ่มรายวิชา
-		</Button>
+		<div class="flex items-center gap-2">
+			<Button variant="outline" onclick={handleOpenCopy} class="flex items-center gap-2">
+				<Copy class="w-4 h-4" />
+				คัดลอกจากปีก่อน
+			</Button>
+			<Button onclick={handleOpenCreate} class="flex items-center gap-2">
+				<Plus class="w-4 h-4" />
+				เพิ่มรายวิชา
+			</Button>
+		</div>
 	</div>
 
 	<!-- Filters & Search -->
@@ -575,15 +577,24 @@
 		<div class="space-y-4 py-4">
 			<div class="space-y-2">
 				<label for="source-year" class="text-sm font-medium">ปีการศึกษาต้นทาง</label>
-				<select
-					id="source-year"
-					bind:value={selectedSourceYear}
-					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-				>
-					{#each academicYears.filter((y) => !y.is_current) as year}
-						<option value={year.id}>{year.name}</option>
-					{/each}
-				</select>
+				{#if academicYears.filter((y) => y.id !== currentAcademicYear?.id).length === 0}
+					<div
+						class="flex h-10 w-full items-center justify-center rounded-md border border-dashed text-muted-foreground text-sm"
+					>
+						ไม่พบปีการศึกษาอื่นให้คัดลอก
+					</div>
+				{:else}
+					<select
+						id="source-year"
+						bind:value={selectedSourceYear}
+						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+					>
+						<option value="" disabled selected>-- เลือกปีการศึกษา --</option>
+						{#each academicYears.filter((y) => y.id !== currentAcademicYear?.id) as year}
+							<option value={year.id}>{year.name}</option>
+						{/each}
+					</select>
+				{/if}
 			</div>
 
 			<div class="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
