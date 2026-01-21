@@ -280,10 +280,10 @@
 	<!-- Filters & Search -->
 	<!-- Filters & Search -->
 	<div
-		class="bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row gap-4 items-end md:items-center flex-wrap"
+		class="bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row gap-3 items-end md:items-center flex-wrap"
 	>
 		<!-- Search -->
-		<div class="relative w-full md:w-auto md:flex-1 min-w-[200px]">
+		<div class="relative w-full md:w-[240px]">
 			<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
 			<Input
 				type="text"
@@ -295,7 +295,7 @@
 		</div>
 
 		<!-- Year Filter -->
-		<div class="w-full md:w-[200px]">
+		<div class="w-full md:w-[180px]">
 			<Select.Root type="single" bind:value={selectedYearFilter} onValueChange={() => loadData()}>
 				<Select.Trigger>
 					{academicYears.find((y) => y.id === selectedYearFilter)?.name || 'ทุกปีการศึกษา'}
@@ -327,7 +327,7 @@
 		</div>
 
 		<!-- Level Filter -->
-		<div class="w-full md:w-[180px]">
+		<div class="w-full md:w-[140px]">
 			<Select.Root type="single" bind:value={selectedLevelScope} onValueChange={() => loadData()}>
 				<Select.Trigger>
 					{#if selectedLevelScope === 'JUNIOR'}มัธยมต้น
