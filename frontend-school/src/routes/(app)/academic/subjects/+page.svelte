@@ -456,26 +456,44 @@
 				</div>
 			</div>
 
-			<div class="space-y-2">
-				<label for="subject-level" class="text-sm font-medium">ระดับชั้น</label>
-				<select
-					id="subject-level"
-					bind:value={currentSubject.level_scope}
-					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-				>
-					<optgroup label="ช่วงชั้น">
-						<option value="JUNIOR">มัธยมต้น</option>
-						<option value="SENIOR">มัธยมปลาย</option>
-						<option value="ALL">ทุกระดับชั้น</option>
-					</optgroup>
-					{#if gradeLevels.length > 0}
-						<optgroup label="ระดับชั้นเรียน">
-							{#each gradeLevels as level}
-								<option value={level.code}>{level.name}</option>
-							{/each}
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+				<div class="space-y-2">
+					<label for="start-year" class="text-sm font-medium text-muted-foreground"
+						>เริ่มใช้ตั้งแต่ (ปีหลักสูตร)</label
+					>
+					<select
+						id="start-year"
+						bind:value={currentSubject.start_academic_year_id}
+						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+					>
+						<option value="">(ไม่ระบุ)</option>
+						{#each academicYears as year}
+							<option value={year.id}>{year.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<div class="space-y-2">
+					<label for="subject-level" class="text-sm font-medium">ระดับชั้น</label>
+					<select
+						id="subject-level"
+						bind:value={currentSubject.level_scope}
+						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+					>
+						<optgroup label="ช่วงชั้น">
+							<option value="JUNIOR">มัธยมต้น</option>
+							<option value="SENIOR">มัธยมปลาย</option>
+							<option value="ALL">ทุกระดับชั้น</option>
 						</optgroup>
-					{/if}
-				</select>
+						{#if gradeLevels.length > 0}
+							<optgroup label="ระดับชั้นเรียน">
+								{#each gradeLevels as level}
+									<option value={level.code}>{level.name}</option>
+								{/each}
+							</optgroup>
+						{/if}
+					</select>
+				</div>
 			</div>
 
 			<div class="space-y-2">

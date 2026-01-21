@@ -41,6 +41,7 @@ pub struct Subject {
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub start_academic_year_id: Option<Uuid>,
     
     // Joined Fields (Optional)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,6 +62,7 @@ pub struct CreateSubjectRequest {
     pub group_id: Option<Uuid>,
     pub level_scope: Option<String>,
     pub description: Option<String>,
+    pub start_academic_year_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,6 +79,7 @@ pub struct UpdateSubjectRequest {
     pub level_scope: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
+    pub start_academic_year_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -166,9 +166,9 @@ pub async fn create_subject(
         r#"
         INSERT INTO subjects (
             code, academic_year_id, name_th, name_en, 
-            credit, hours_per_semester, type, group_id, level_scope, description
+            credit, hours_per_semester, type, group_id, level_scope, description, start_academic_year_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
         "#
     )
@@ -182,6 +182,7 @@ pub async fn create_subject(
     .bind(payload.group_id)
     .bind(&payload.level_scope)
     .bind(&payload.description)
+    .bind(payload.start_academic_year_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -221,8 +222,9 @@ pub async fn update_subject(
             level_scope = COALESCE($9, level_scope),
             description = COALESCE($10, description),
             is_active = COALESCE($11, is_active),
+            start_academic_year_id = COALESCE($12, start_academic_year_id),
             updated_at = NOW()
-        WHERE id = $12
+        WHERE id = $13
         RETURNING *
         "#
     )
@@ -237,6 +239,7 @@ pub async fn update_subject(
     .bind(&payload.level_scope)
     .bind(&payload.description)
     .bind(payload.is_active)
+    .bind(payload.start_academic_year_id)
     .bind(id)
     .fetch_one(&pool)
     .await
@@ -358,9 +361,10 @@ pub async fn bulk_copy_subjects(
             r#"
             INSERT INTO subjects (
                 code, academic_year_id, name_th, name_en,
-                credit, hours_per_semester, type, group_id, level_scope, description
+                credit, hours_per_semester, type, group_id, level_scope, description,
+                start_academic_year_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             "#
         )
         .bind(&subject.code)
@@ -373,6 +377,7 @@ pub async fn bulk_copy_subjects(
         .bind(subject.group_id)
         .bind(&subject.level_scope)
         .bind(&subject.description)
+        .bind(subject.start_academic_year_id)
         .execute(&pool)
         .await;
 

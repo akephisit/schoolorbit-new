@@ -208,6 +208,7 @@ export interface Subject {
     description?: string;
     is_active: boolean;
     group_name_th?: string;
+    start_academic_year_id?: string;
 }
 
 export const listSubjectGroups = async (): Promise<{ data: SubjectGroup[] }> => {
