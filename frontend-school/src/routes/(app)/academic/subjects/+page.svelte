@@ -31,6 +31,9 @@
     let academicYears: LookupItem[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
+	
+	// Computed: Current Academic Year
+	let currentAcademicYear = $derived(academicYears.find(y => y.is_current) || academicYears[0]);
 
 	// Filter States
 	let searchQuery = $state('');
@@ -172,6 +175,11 @@
 				คลังรายวิชา
 			</h1>
 			<p class="text-muted-foreground mt-1">จัดการรายชื่อวิชาและกลุ่มสาระการเรียนรู้</p>
+				{#if currentAcademicYear}
+					<span class="ml-2 text-primary font-medium">
+						• {currentAcademicYear.name}
+					</span>
+				{/if}
 		</div>
 		<Button onclick={handleOpenCreate} class="flex items-center gap-2">
 			<Plus class="w-4 h-4" />
