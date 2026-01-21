@@ -341,7 +341,7 @@
 					<label for="subject-code" class="text-sm font-medium"
 						>รหัสวิชา <span class="text-destructive">*</span></label
 					>
-					<Input id="subject-code" bind:value={currentSubject.code} placeholder="e.g. ท21101" />
+					<Input id="subject-code" class="font-mono" bind:value={currentSubject.code} placeholder="e.g. ท21101" />
 				</div>
 				<div class="space-y-2">
 					<label for="subject-year" class="text-sm font-medium"
