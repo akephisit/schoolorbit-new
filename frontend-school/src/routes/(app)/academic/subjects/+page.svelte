@@ -438,7 +438,7 @@
 				</div>
 				<div class="space-y-2">
 					<label for="subject-year" class="text-sm font-medium"
-						>ปีการศึกษาที่เริ่มใช้ <span class="text-destructive">*</span></label
+						>ปีการศึกษา <span class="text-destructive">*</span></label
 					>
 					<select
 						id="subject-year"
