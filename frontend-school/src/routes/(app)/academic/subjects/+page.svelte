@@ -29,7 +29,9 @@
     import { Textarea } from '$lib/components/ui/textarea';
     import * as Select from '$lib/components/ui/select';
     import { Checkbox } from '$lib/components/ui/checkbox';
-	import { BookOpen, Plus, Search, Pencil, Trash2, Copy, CircleCheck } from 'lucide-svelte';
+    import * as Popover from '$lib/components/ui/popover';
+    import * as Command from '$lib/components/ui/command';
+	import { BookOpen, Plus, Search, Pencil, Trash2, Copy, CircleCheck, Check, ChevronsUpDown } from 'lucide-svelte';
 
 	// Data States
 	let subjects: Subject[] = $state([]);
@@ -519,37 +521,80 @@
 
 				<div class="space-y-2">
 					<Label>ระดับชั้นที่เปิดสอน</Label>
-					<div class="border rounded-md p-4 bg-muted/20 max-h-[200px] overflow-y-auto">
-						{#if gradeLevels.length > 0}
-							<div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
-								{#each gradeLevels as level}
-									<div class="flex items-center space-x-2">
-										<Checkbox
-											id={`assign-level-${level.id}`}
-											checked={currentSubject.grade_level_ids?.includes(level.id)}
-											onCheckedChange={(v) => {
-												const checked = v === true;
-												const ids = currentSubject.grade_level_ids || [];
-												if (checked) {
-													currentSubject.grade_level_ids = [...ids, level.id];
-												} else {
-													currentSubject.grade_level_ids = ids.filter((id) => id !== level.id);
-												}
+					<Popover.Root>
+						<Popover.Trigger asChild let:builder>
+							<Button
+								builders={[builder]}
+								variant="outline"
+								class="w-full justify-between font-normal"
+							>
+								{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
+									<span class="truncate">
+										{currentSubject.grade_level_ids
+											.map((id) => gradeLevels.find((l) => l.id === id)?.name)
+											.filter(Boolean)
+											.join(', ')}
+									</span>
+								{:else}
+									<span class="text-muted-foreground">เลือกระดับชั้น...</span>
+								{/if}
+								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						</Popover.Trigger>
+						<Popover.Content class="w-[300px] p-0" align="start">
+							<Command.Root>
+								<Command.Input placeholder="ค้นหาระดับชั้น..." />
+								<Command.Empty>ไม่พบระดับชั้น</Command.Empty>
+								<Command.List class="max-h-[200px]">
+									<Command.Group>
+										{#each gradeLevels as level}
+											<Command.Item
+												value={level.name}
+												onSelect={() => {
+													const ids = currentSubject.grade_level_ids || [];
+													if (ids.includes(level.id)) {
+														currentSubject.grade_level_ids = ids.filter((id) => id !== level.id);
+													} else {
+														currentSubject.grade_level_ids = [...ids, level.id];
+													}
+												}}
+											>
+												<Check
+													class="mr-2 h-4 w-4 {currentSubject.grade_level_ids?.includes(level.id)
+														? 'opacity-100'
+														: 'opacity-0'}"
+												/>
+												{level.name}
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.List>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
+					{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
+						<div class="flex flex-wrap gap-1 mt-2">
+							{#each currentSubject.grade_level_ids as levelId}
+								{@const level = gradeLevels.find((l) => l.id === levelId)}
+								{#if level}
+									<Badge variant="secondary" class="text-xs">
+										{level.name}
+										<button
+											type="button"
+											class="ml-1 hover:text-destructive"
+											onclick={() => {
+												currentSubject.grade_level_ids = currentSubject.grade_level_ids?.filter(
+													(id) => id !== levelId
+												);
 											}}
-										/>
-										<Label
-											for={`assign-level-${level.id}`}
-											class="font-normal cursor-pointer text-sm select-none"
 										>
-											{level.name}
-										</Label>
-									</div>
-								{/each}
-							</div>
-						{:else}
-							<div class="text-sm text-muted-foreground text-center py-4">ไม่พบข้อมูลระดับชั้น</div>
-						{/if}
-					</div>
+											×
+										</button>
+									</Badge>
+								{/if}
+							{/each}
+						</div>
+					{/if}
 				</div>
 			</div>
 
