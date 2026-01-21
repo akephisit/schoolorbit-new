@@ -575,3 +575,71 @@ pub async fn remove_enrollment(
 
     Ok(Json(json!({"success": true, "message": "Enrollment removed"})))
 }
+
+// ==========================================
+// Year-Level Configuration Handlers
+// ==========================================
+
+pub async fn get_year_levels(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(year_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    // Return list of grade_level_ids that are active for this year
+    let level_ids = sqlx::query_scalar::<_, Uuid>(
+        "SELECT grade_level_id FROM academic_year_grade_levels WHERE academic_year_id = $1"
+    )
+    .bind(year_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    Ok(Json(json!({
+        "success": true,
+        "data": level_ids
+    })))
+}
+
+pub async fn update_year_levels(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(year_id): Path<Uuid>,
+    Json(payload): Json<UpdateYearLevelsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    // 1. Clear existing mappings for this year
+    sqlx::query("DELETE FROM academic_year_grade_levels WHERE academic_year_id = $1")
+        .bind(year_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to clear existing mappings".to_string()))?;
+
+    // 2. Insert new mappings
+    for level_id in payload.grade_level_ids {
+        sqlx::query("INSERT INTO academic_year_grade_levels (academic_year_id, grade_level_id) VALUES ($1, $2)")
+            .bind(year_id)
+            .bind(level_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| AppError::InternalServerError("Failed to insert mapping".to_string()))?;
+    }
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({"success": true, "message": "Year levels updated"})))
+}

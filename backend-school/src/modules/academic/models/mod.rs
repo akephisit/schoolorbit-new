@@ -242,3 +242,18 @@ pub struct EnrollStudentRequest {
     pub enrollment_date: Option<NaiveDate>,
 }
 
+// ==========================================
+// Year-Level Configuration Models
+// ==========================================
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateYearLevelsRequest {
+    pub grade_level_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct YearLevelMapping {
+    pub academic_year_id: Uuid,
+    pub grade_level_id: Uuid,
+}
+

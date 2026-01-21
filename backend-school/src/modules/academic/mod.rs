@@ -15,6 +15,7 @@ pub fn academic_routes() -> Router<AppState> {
         // Academic Years
         .route("/years", post(handlers::create_academic_year))
         .route("/years/{id}/active", put(handlers::toggle_active_year))
+        .route("/years/{id}/levels", get(handlers::get_year_levels).put(handlers::update_year_levels))
 
         // Classrooms
         .route("/classrooms", get(handlers::list_classrooms).post(handlers::create_classroom))

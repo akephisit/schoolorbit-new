@@ -272,3 +272,16 @@ export const bulkCopySubjects = async (sourceYearId: string, targetYearId: strin
         })
     });
 };
+
+// Year-Level Configuration
+export const getYearLevelConfig = async (yearId: string): Promise<{ data: string[] }> => {
+    // Returns array of grade_level_ids
+    return await fetchApi(`/api/academic/years/${yearId}/levels`);
+};
+
+export const saveYearLevelConfig = async (yearId: string, gradeLevelIds: string[]) => {
+    return await fetchApi(`/api/academic/years/${yearId}/levels`, {
+        method: 'PUT',
+        body: JSON.stringify({ grade_level_ids: gradeLevelIds })
+    });
+};

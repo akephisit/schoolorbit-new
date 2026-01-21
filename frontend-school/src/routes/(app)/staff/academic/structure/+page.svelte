@@ -1,11 +1,12 @@
-<script lang="ts">
 	import { onMount } from 'svelte';
 	import {
 		getAcademicStructure,
 		createAcademicYear,
 		toggleActiveYear,
 		createGradeLevel,
-		deleteGradeLevel
+		deleteGradeLevel,
+		getYearLevelConfig,
+		saveYearLevelConfig
 	} from '$lib/api/academic';
 	import type { AcademicStructureData, GradeLevel } from '$lib/api/academic';
 	import { toast } from 'svelte-sonner';
@@ -26,7 +27,8 @@
 		Layers, 
 		Plus, 
 		Trash2, 
-		BookOpen 
+		BookOpen,
+		Settings
 	} from 'lucide-svelte';
 
 	let loading = true;
@@ -42,6 +44,51 @@
 	let showDeleteLevelDialog = false;
 	let levelToDelete: GradeLevel | null = null;
 	let isDeletingLevel = false;
+
+	// Year Config State
+	let showConfigDialog = false;
+	let configYear: AcademicStructureData['years'][0] | null = null;
+	let configLevelIds: string[] = [];
+	let isSavingConfig = false;
+
+	async function openConfigDialog(year: AcademicStructureData['years'][0]) {
+		configYear = year;
+		isSavingConfig = false;
+		configLevelIds = [];
+		// Open first then load data (can show loading inside dialog)
+		showConfigDialog = true;
+		
+		try {
+			const res = await getYearLevelConfig(year.id);
+			configLevelIds = res.data;
+		} catch (error) {
+			console.error(error);
+			toast.error('ไม่สามารถโหลดข้อมูลการตั้งค่าระดับชั้นได้');
+		}
+	}
+
+	async function saveConfig() {
+		if (!configYear) return;
+		isSavingConfig = true;
+		try {
+			await saveYearLevelConfig(configYear.id, configLevelIds);
+			toast.success(`บันทึกชั้นเรียนสำหรับ ${configYear.name} เรียบร้อย`);
+			showConfigDialog = false;
+		} catch (error) {
+			console.error(error);
+			toast.error('บันทึกข้อมูลไม่สำเร็จ');
+		} finally {
+			isSavingConfig = false;
+		}
+	}
+
+	function toggleConfigLevel(levelId: string, checked: boolean) {
+		if (checked) {
+			configLevelIds = [...configLevelIds, levelId];
+		} else {
+			configLevelIds = configLevelIds.filter((id) => id !== levelId);
+		}
+	}
 
 	// New Year Form
 	let newYear = {
@@ -250,15 +297,25 @@
 											{/if}
 										</Table.Cell>
 										<Table.Cell class="text-right">
-											{#if !year.is_active}
+											<div class="flex items-center justify-end gap-2">
 												<Button
-													variant="outline"
-													size="sm"
-													onclick={() => handleToggleActive(year.id)}
+													variant="ghost"
+													size="icon"
+													onclick={() => openConfigDialog(year)}
+													title="กำหนดชั้นเรียนที่เปิดสอน"
 												>
-													ตั้งเป็นปีปัจจุบัน
+													<Settings class="h-4 w-4" />
 												</Button>
-											{/if}
+												{#if !year.is_active}
+													<Button
+														variant="outline"
+														size="sm"
+														onclick={() => handleToggleActive(year.id)}
+													>
+														ตั้งเป็นปีปัจจุบัน
+													</Button>
+												{/if}
+											</div>
 										</Table.Cell>
 									</Table.Row>
 								{/each}
@@ -481,6 +538,51 @@
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 					{/if}
 					ยืนยันลบ
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+	<!-- Year Config Dialog -->
+	<Dialog.Root bind:open={showConfigDialog}>
+		<Dialog.Content class="sm:max-w-[500px]">
+			<Dialog.Header>
+				<Dialog.Title>กำหนดชั้นเรียนที่เปิดสอน</Dialog.Title>
+				<Dialog.Description>
+					เลือกชั้นเรียนที่จะเปิดสอนในปีการศึกษา <strong>{configYear?.name}</strong>
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="py-4">
+				{#if !configYear}
+					<div class="flex justify-center p-4"><Loader2 class="animate-spin" /></div>
+				{:else}
+					<div class="grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-2">
+						{#each structure.levels as level}
+							<div
+								class="flex items-center space-x-2 border p-2 rounded-md hover:bg-muted/50 transition-colors"
+							>
+								<Checkbox
+									id={`level-${level.id}`}
+									checked={configLevelIds.includes(level.id)}
+									onCheckedChange={(c) => toggleConfigLevel(level.id, c === true)}
+								/>
+								<Label for={`level-${level.id}`} class="cursor-pointer flex-1 user-select-none">
+									<span class="font-bold">{level.short_name}</span>
+									<span class="text-muted-foreground text-xs ml-1">({level.name})</span>
+								</Label>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showConfigDialog = false)}>ยกเลิก</Button>
+				<Button onclick={saveConfig} disabled={isSavingConfig}>
+					{#if isSavingConfig}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					บันทึกการเปลี่ยนแปลง
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
