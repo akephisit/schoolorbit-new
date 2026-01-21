@@ -522,24 +522,20 @@
 				<div class="space-y-2">
 					<Label>ระดับชั้นที่เปิดสอน</Label>
 					<Popover.Root>
-						<Popover.Trigger asChild let:builder>
-							<Button
-								builders={[builder]}
-								variant="outline"
-								class="w-full justify-between font-normal"
-							>
-								{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
-									<span class="truncate">
-										{currentSubject.grade_level_ids
-											.map((id) => gradeLevels.find((l) => l.id === id)?.name)
-											.filter(Boolean)
-											.join(', ')}
-									</span>
-								{:else}
-									<span class="text-muted-foreground">เลือกระดับชั้น...</span>
-								{/if}
-								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-							</Button>
+						<Popover.Trigger
+							class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+						>
+							{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
+								<span class="truncate text-left">
+									{currentSubject.grade_level_ids
+										.map((id) => gradeLevels.find((l) => l.id === id)?.name)
+										.filter(Boolean)
+										.join(', ')}
+								</span>
+							{:else}
+								<span class="text-muted-foreground">เลือกระดับชั้น...</span>
+							{/if}
+							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
 						</Popover.Trigger>
 						<Popover.Content class="w-[300px] p-0" align="start">
 							<Command.Root>
