@@ -23,6 +23,11 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
+    import * as Table from '$lib/components/ui/table';
+    import { Badge } from '$lib/components/ui/badge';
+    import { Label } from '$lib/components/ui/label';
+    import { Textarea } from '$lib/components/ui/textarea';
+    import * as Select from '$lib/components/ui/select'; // For Batch 2
 	import { BookOpen, Plus, Search, Pencil, Trash2, Copy, CircleCheck } from 'lucide-svelte';
 
 	// Data States
@@ -269,167 +274,199 @@
 	</div>
 
 	<!-- Filters & Search -->
+	<!-- Filters & Search -->
 	<div
-		class="bg-card border border-border rounded-lg p-4 grid gap-4 md:grid-cols-[1fr_auto_auto_auto_auto]"
+		class="bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row gap-4 items-end md:items-center flex-wrap"
 	>
 		<!-- Search -->
-		<div class="relative">
+		<div class="relative w-full md:w-auto md:flex-1 min-w-[200px]">
 			<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
 			<Input
 				type="text"
 				bind:value={searchQuery}
 				onkeydown={(e) => e.key === 'Enter' && loadData()}
 				placeholder="ค้นหารหัส หรือ ชื่อวิชา..."
-				class="pl-10 w-full"
+				class="pl-10"
 			/>
 		</div>
 
-		<!-- Filters -->
-		<select
-			bind:value={selectedYearFilter}
-			onchange={loadData}
-			class="flex h-10 w-full md:w-[150px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-		>
-			<option value="">ทุกปีการศึกษา</option>
-			{#each academicYears as year}
-				<option value={year.id}>{year.name} {year.is_current ? '(ปัจจุบัน)' : ''}</option>
-			{/each}
-		</select>
-
-		<select
-			bind:value={selectedGroupId}
-			onchange={loadData}
-			class="flex h-10 w-full md:w-[200px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-		>
-			<option value="">ทุกกลุ่มสาระฯ</option>
-			{#each groups as group}
-				<option value={group.id}>{group.name_th}</option>
-			{/each}
-		</select>
-
-		<select
-			bind:value={selectedLevelScope}
-			onchange={loadData}
-			class="flex h-10 w-full md:w-[150px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-		>
-			<option value="">ทุกระดับชั้น</option>
-			<optgroup label="ช่วงชั้น">
-				<option value="JUNIOR">มัธยมต้น (ม.1-3)</option>
-				<option value="SENIOR">มัธยมปลาย (ม.4-6)</option>
-				<option value="ALL">ทุกระดับ</option>
-			</optgroup>
-			{#if gradeLevels.length > 0}
-				<optgroup label="ระดับชั้นเรียน (Specific)">
-					{#each gradeLevels as level}
-						<option value={level.code}>{level.name}</option>
+		<!-- Year Filter -->
+		<div class="w-full md:w-[200px]">
+			<Select.Root type="single" bind:value={selectedYearFilter} onValueChange={() => loadData()}>
+				<Select.Trigger>
+					{academicYears.find((y) => y.id === selectedYearFilter)?.name || 'ทุกปีการศึกษา'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="">ทุกปีการศึกษา</Select.Item>
+					{#each academicYears as year}
+						<Select.Item value={year.id}
+							>{year.name} {year.is_current ? '(ปัจจุบัน)' : ''}</Select.Item
+						>
 					{/each}
-				</optgroup>
-			{/if}
-		</select>
+				</Select.Content>
+			</Select.Root>
+		</div>
 
-		<select
-			bind:value={selectedSubjectType}
-			onchange={loadData}
-			class="flex h-10 w-full md:w-[150px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-		>
-			<option value="">ทุกประเภท</option>
-			<option value="BASIC">วิชาพื้นฐาน</option>
-			<option value="ADDITIONAL">วิชาเพิ่มเติม</option>
-			<option value="ACTIVITY">กิจกรรมฯ</option>
-		</select>
+		<!-- Group Filter -->
+		<div class="w-full md:w-[220px]">
+			<Select.Root type="single" bind:value={selectedGroupId} onValueChange={() => loadData()}>
+				<Select.Trigger class="truncate">
+					{groups.find((g) => g.id === selectedGroupId)?.name_th || 'ทุกกลุ่มสาระฯ'}
+				</Select.Trigger>
+				<Select.Content class="max-h-[300px]">
+					<Select.Item value="">ทุกกลุ่มสาระฯ</Select.Item>
+					{#each groups as group}
+						<Select.Item value={group.id}>{group.name_th}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
+
+		<!-- Level Filter -->
+		<div class="w-full md:w-[180px]">
+			<Select.Root type="single" bind:value={selectedLevelScope} onValueChange={() => loadData()}>
+				<Select.Trigger>
+					{#if selectedLevelScope === 'JUNIOR'}มัธยมต้น
+					{:else if selectedLevelScope === 'SENIOR'}มัธยมปลาย
+					{:else if selectedLevelScope === 'ALL'}ทุกระดับ
+					{:else if selectedLevelScope}
+						{gradeLevels.find((l) => l.code === selectedLevelScope)?.name || selectedLevelScope}
+					{:else}ทุกระดับชั้น{/if}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="">ทุกระดับชั้น</Select.Item>
+					<Select.Group>
+						<Select.Label>ช่วงชั้น</Select.Label>
+						<Select.Item value="JUNIOR">มัธยมต้น (ม.1-3)</Select.Item>
+						<Select.Item value="SENIOR">มัธยมปลาย (ม.4-6)</Select.Item>
+						<Select.Item value="ALL">ทุกระดับ</Select.Item>
+					</Select.Group>
+					{#if gradeLevels.length > 0}
+						<Select.Separator />
+						<Select.Group>
+							<Select.Label>ระดับชั้นเรียน</Select.Label>
+							{#each gradeLevels as level}
+								<Select.Item value={level.code}>{level.name}</Select.Item>
+							{/each}
+						</Select.Group>
+					{/if}
+				</Select.Content>
+			</Select.Root>
+		</div>
+
+		<!-- Type Filter -->
+		<div class="w-full md:w-[150px]">
+			<Select.Root type="single" bind:value={selectedSubjectType} onValueChange={() => loadData()}>
+				<Select.Trigger>
+					{#if selectedSubjectType === 'BASIC'}วิชาพื้นฐาน
+					{:else if selectedSubjectType === 'ADDITIONAL'}วิชาเพิ่มเติม
+					{:else if selectedSubjectType === 'ACTIVITY'}กิจกรรมฯ
+					{:else}ทุกประเภท{/if}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="">ทุกประเภท</Select.Item>
+					<Select.Item value="BASIC">วิชาพื้นฐาน</Select.Item>
+					<Select.Item value="ADDITIONAL">วิชาเพิ่มเติม</Select.Item>
+					<Select.Item value="ACTIVITY">กิจกรรมฯ</Select.Item>
+				</Select.Content>
+			</Select.Root>
+		</div>
 
 		<Button variant="secondary" onclick={loadData}>ค้นหา</Button>
 	</div>
 
 	<!-- List Table -->
 	<div class="bg-card border border-border rounded-lg overflow-hidden">
-		<!-- Table Header -->
-		<div
-			class="bg-muted/50 px-6 py-3 border-b border-border text-sm font-medium text-muted-foreground hidden md:grid md:grid-cols-12 md:gap-4"
-		>
-			<div class="col-span-2">รหัสวิชา</div>
-			<div class="col-span-4">ชื่อรายวิชา</div>
-			<div class="col-span-2">กลุ่มสาระฯ</div>
-			<div class="col-span-2 text-center">หน่วยกิต</div>
-			<div class="col-span-2 text-right">จัดการ</div>
-		</div>
-
-		<!-- Table Body -->
-		<div class="divide-y divide-border">
-			{#if loading}
-				<div class="p-8 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
-			{:else if subjects.length === 0}
-				<div class="p-8 text-center text-muted-foreground">
-					ไม่พบรายวิชา <Button variant="link" onclick={clearFilters} class="p-0 h-auto font-normal"
-						>ล้างตัวกรอง</Button
-					>
-				</div>
-			{:else}
-				{#each subjects as subject (subject.id)}
-					<div
-						class="px-6 py-4 hover:bg-accent/50 transition-colors grid grid-cols-1 md:grid-cols-12 gap-4 items-center"
-					>
-						<!-- Code -->
-						<div class="col-span-2">
-							<div class="font-bold text-primary">{subject.code}</div>
-							<span class="md:hidden text-xs text-muted-foreground font-normal ml-2"
-								>({subject.type})</span
+		<Table.Root>
+			<Table.Header>
+				<Table.Row>
+					<Table.Head class="w-[120px]">รหัสวิชา</Table.Head>
+					<Table.Head>ชื่อรายวิชา</Table.Head>
+					<Table.Head>กลุ่มสาระฯ</Table.Head>
+					<Table.Head class="text-center w-[120px]">หน่วยกิต</Table.Head>
+					<Table.Head class="text-right w-[100px]">จัดการ</Table.Head>
+				</Table.Row>
+			</Table.Header>
+			<Table.Body>
+				{#if loading}
+					<Table.Row>
+						<Table.Cell colspan={5} class="text-center h-24 text-muted-foreground">
+							กำลังโหลดข้อมูล...
+						</Table.Cell>
+					</Table.Row>
+				{:else if subjects.length === 0}
+					<Table.Row>
+						<Table.Cell colspan={5} class="text-center h-24 text-muted-foreground">
+							ไม่พบรายวิชา <Button
+								variant="link"
+								onclick={clearFilters}
+								class="p-0 h-auto font-normal">ล้างตัวกรอง</Button
 							>
-						</div>
-
-						<!-- Name -->
-						<div class="col-span-4">
-							<div class="font-medium">{subject.name_th}</div>
-							{#if subject.name_en}<div class="text-xs text-muted-foreground">
-									{subject.name_en}
-								</div>{/if}
-						</div>
-
-						<!-- Group -->
-						<div class="col-span-2 text-sm">
-							{#if subject.group_name_th}
-								<span
-									class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary text-secondary-foreground"
-								>
-									{subject.group_name_th}
-								</span>
-							{:else}
-								<span class="text-muted-foreground">-</span>
-							{/if}
-						</div>
-
-						<!-- Credit & Hours -->
-						<div class="col-span-2 text-sm text-center">
-							<div class="font-bold">{subject.credit} นก.</div>
-							<div class="text-xs text-muted-foreground">
-								{subject.hours_per_semester || '-'} ชม./เทอม
-							</div>
-						</div>
-
-						<!-- Actions -->
-						<div class="col-span-2 flex justify-end gap-2">
-							<Button onclick={() => handleOpenEdit(subject)} variant="ghost" size="sm">
-								<Pencil class="w-4 h-4" />
-							</Button>
-							<Button
-								onclick={() => handleOpenDelete(subject)}
-								variant="ghost"
-								size="sm"
-								class="text-destructive hover:text-destructive"
-							>
-								<Trash2 class="w-4 h-4" />
-							</Button>
-						</div>
-					</div>
-				{/each}
-			{/if}
-		</div>
+						</Table.Cell>
+					</Table.Row>
+				{:else}
+					{#each subjects as subject (subject.id)}
+						<Table.Row>
+							<Table.Cell class="font-medium">
+								<div class="font-bold text-primary">{subject.code}</div>
+								{#if subject.type !== 'BASIC'}
+									<Badge variant="outline" class="mt-1 text-[10px] px-1 py-0 h-auto"
+										>{subject.type}</Badge
+									>
+								{/if}
+							</Table.Cell>
+							<Table.Cell>
+								<div class="font-medium">{subject.name_th}</div>
+								{#if subject.name_en}
+									<div class="text-xs text-muted-foreground">{subject.name_en}</div>
+								{/if}
+							</Table.Cell>
+							<Table.Cell>
+								{#if subject.group_name_th}
+									<Badge variant="secondary" class="font-normal whitespace-nowrap">
+										{subject.group_name_th}
+									</Badge>
+								{:else}
+									<span class="text-muted-foreground">-</span>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-center">
+								<div class="font-bold">{subject.credit} นก.</div>
+								<div class="text-xs text-muted-foreground">
+									{subject.hours_per_semester || '-'} ชม./เทอม
+								</div>
+							</Table.Cell>
+							<Table.Cell class="text-right">
+								<div class="flex justify-end gap-1">
+									<Button
+										onclick={() => handleOpenEdit(subject)}
+										variant="ghost"
+										size="icon"
+										class="h-8 w-8"
+									>
+										<Pencil class="w-4 h-4" />
+									</Button>
+									<Button
+										onclick={() => handleOpenDelete(subject)}
+										variant="ghost"
+										size="icon"
+										class="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+									>
+										<Trash2 class="w-4 h-4" />
+									</Button>
+								</div>
+							</Table.Cell>
+						</Table.Row>
+					{/each}
+				{/if}
+			</Table.Body>
+		</Table.Root>
 	</div>
 </div>
 
 <!-- Create/Edit Dialog -->
 <Dialog bind:open={showDialog}>
-	<DialogContent class="sm:max-w-[600px]">
+	<DialogContent class="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
 		<DialogHeader>
 			<DialogTitle>{isEditing ? 'แก้ไขรายวิชา' : 'เพิ่มรายวิชาใหม่'}</DialogTitle>
 			<DialogDescription>กรอกข้อมูลรายวิชาให้ครบถ้วน รหัสวิชาห้ามซ้ำกัน</DialogDescription>
@@ -438,80 +475,88 @@
 		<div class="grid gap-4 py-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<label for="subject-code" class="text-sm font-medium"
-						>รหัสวิชา <span class="text-destructive">*</span></label
-					>
+					<Label for="subject-code">รหัสวิชา <span class="text-destructive">*</span></Label>
 					<Input id="subject-code" bind:value={currentSubject.code} placeholder="e.g. ท21101" />
 				</div>
 				<div class="space-y-2">
-					<label for="subject-year" class="text-sm font-medium"
-						>ปีการศึกษา <span class="text-destructive">*</span></label
-					>
-					<select
-						id="subject-year"
-						bind:value={currentSubject.academic_year_id}
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-					>
-						{#if academicYears.length > 0}
-							{#each academicYears as year}
-								<option value={year.id}>{year.name}</option>
-							{/each}
-						{:else}
-							<option value="" disabled>กรุณาสร้างปีการศึกษาก่อน</option>
-						{/if}
-					</select>
+					<Label>สำหรับปีการศึกษา <span class="text-destructive">*</span></Label>
+					<Select.Root type="single" bind:value={currentSubject.academic_year_id}>
+						<Select.Trigger>
+							{academicYears.find((y) => y.id === currentSubject.academic_year_id)?.name ||
+								'เลือกปีการศึกษา'}
+						</Select.Trigger>
+						<Select.Content>
+							{#if academicYears.length > 0}
+								{#each academicYears as year}
+									<Select.Item value={year.id}>{year.name}</Select.Item>
+								{/each}
+							{:else}
+								<Select.Item value="" disabled>กรุณาสร้างปีการศึกษาก่อน</Select.Item>
+							{/if}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<label for="start-year" class="text-sm font-medium text-muted-foreground"
-						>เริ่มใช้ตั้งแต่ (ปีหลักสูตร)</label
-					>
-					<select
-						id="start-year"
-						bind:value={currentSubject.start_academic_year_id}
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-					>
-						<option value="">(ไม่ระบุ)</option>
-						{#each academicYears as year}
-							<option value={year.id}>{year.name}</option>
-						{/each}
-					</select>
+					<Label class="text-muted-foreground">เริ่มใช้ตั้งแต่ (ปีหลักสูตร)</Label>
+					<Select.Root type="single" bind:value={currentSubject.start_academic_year_id}>
+						<Select.Trigger>
+							{academicYears.find((y) => y.id === currentSubject.start_academic_year_id)?.name ||
+								'(ไม่ระบุ)'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">(ไม่ระบุ)</Select.Item>
+							{#each academicYears as year}
+								<Select.Item value={year.id}>{year.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 
 				<div class="space-y-2">
-					<label for="subject-level" class="text-sm font-medium">ระดับชั้น</label>
-					<select
-						id="subject-level"
-						bind:value={currentSubject.level_scope}
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-					>
-						<optgroup label="ช่วงชั้น">
-							<option value="JUNIOR">มัธยมต้น</option>
-							<option value="SENIOR">มัธยมปลาย</option>
-							<option value="ALL">ทุกระดับชั้น</option>
-						</optgroup>
-						{#if gradeLevels.length > 0}
-							<optgroup label="ระดับชั้นเรียน">
-								{#each gradeLevels as level}
-									<option value={level.code}>{level.name}</option>
-								{/each}
-							</optgroup>
-						{/if}
-					</select>
+					<Label>ระดับชั้น</Label>
+					<Select.Root type="single" bind:value={currentSubject.level_scope}>
+						<Select.Trigger>
+							{#if currentSubject.level_scope === 'JUNIOR'}มัธยมต้น
+							{:else if currentSubject.level_scope === 'SENIOR'}มัธยมปลาย
+							{:else if currentSubject.level_scope === 'ALL'}ทุกระดับชั้น
+							{:else if currentSubject.level_scope}
+								{gradeLevels.find((l) => l.code === currentSubject.level_scope)?.name ||
+									currentSubject.level_scope}
+							{:else}เลือกระดับชั้น{/if}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Group>
+								<Select.Label>ช่วงชั้น</Select.Label>
+								<Select.Item value="JUNIOR">มัธยมต้น</Select.Item>
+								<Select.Item value="SENIOR">มัธยมปลาย</Select.Item>
+								<Select.Item value="ALL">ทุกระดับชั้น</Select.Item>
+							</Select.Group>
+							{#if gradeLevels.length > 0}
+								<Select.Separator />
+								<Select.Group>
+									<Select.Label>ระดับชั้นเรียน</Select.Label>
+									{#each gradeLevels as level}
+										<Select.Item value={level.code}>{level.name}</Select.Item>
+									{/each}
+								</Select.Group>
+							{/if}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 
 			<div class="space-y-2">
-				<label for="subject-name-th" class="text-sm font-medium"
-					>ชื่อวิชา (ภาษาไทย) <span class="text-destructive">*</span></label
+				<Label for="subject-name-th"
+					>ชื่อวิชา (ภาษาไทย) <span class="text-destructive">*</span></Label
 				>
 				<Input id="subject-name-th" bind:value={currentSubject.name_th} placeholder="ภาษาไทย 1" />
 			</div>
 
 			<div class="space-y-2">
-				<label for="subject-name-en" class="text-sm font-medium">ชื่อวิชา (English)</label>
+				<Label for="subject-name-en">ชื่อวิชา (English)</Label>
 				<Input
 					id="subject-name-en"
 					bind:value={currentSubject.name_en}
@@ -521,55 +566,55 @@
 
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<label for="subject-type" class="text-sm font-medium"
-						>ประเภทวิชา <span class="text-destructive">*</span></label
-					>
-					<select
-						id="subject-type"
-						bind:value={currentSubject.type}
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-					>
-						<option value="BASIC">พื้นฐาน (Basic)</option>
-						<option value="ADDITIONAL">เพิ่มเติม (Additional)</option>
-						<option value="ACTIVITY">กิจกรรม (Activity)</option>
-					</select>
+					<Label>ประเภทวิชา <span class="text-destructive">*</span></Label>
+					<Select.Root type="single" bind:value={currentSubject.type}>
+						<Select.Trigger>
+							{#if currentSubject.type === 'BASIC'}พื้นฐาน (Basic)
+							{:else if currentSubject.type === 'ADDITIONAL'}เพิ่มเติม (Additional)
+							{:else if currentSubject.type === 'ACTIVITY'}กิจกรรม (Activity)
+							{:else}เลือกประเภท{/if}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="BASIC">พื้นฐาน (Basic)</Select.Item>
+							<Select.Item value="ADDITIONAL">เพิ่มเติม (Additional)</Select.Item>
+							<Select.Item value="ACTIVITY">กิจกรรม (Activity)</Select.Item>
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="space-y-2">
-					<label for="subject-group" class="text-sm font-medium"
-						>กลุ่มสาระฯ <span class="text-destructive">*</span></label
-					>
-					<select
-						id="subject-group"
-						bind:value={currentSubject.group_id}
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-					>
-						<option value="" disabled>-- เลือกกลุ่มสาระ --</option>
-						{#each groups as group}
-							<option value={group.id}>{group.code} - {group.name_th}</option>
-						{/each}
-					</select>
+					<Label>กลุ่มสาระฯ <span class="text-destructive">*</span></Label>
+					<Select.Root type="single" bind:value={currentSubject.group_id}>
+						<Select.Trigger class="truncate">
+							{groups.find((g) => g.id === currentSubject.group_id)?.name_th || 'เลือกกลุ่มสาระ'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[300px]">
+							{#each groups as group}
+								<Select.Item value={group.id}>{group.code} - {group.name_th}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<label for="subject-credit" class="text-sm font-medium">หน่วยกิต (Credit)</label>
+					<Label for="subject-credit">หน่วยกิต (Credit)</Label>
 					<Input id="subject-credit" type="number" step="0.5" bind:value={currentSubject.credit} />
 				</div>
 				<div class="space-y-2">
-					<label for="subject-hours" class="text-sm font-medium">ชั่วโมง/เทอม</label>
+					<Label for="subject-hours">ชั่วโมง/เทอม</Label>
 					<Input id="subject-hours" type="number" bind:value={currentSubject.hours_per_semester} />
 				</div>
 			</div>
 
 			<div class="space-y-2">
-				<label for="subject-desc" class="text-sm font-medium">คำอธิบายรายวิชา (สังเขป)</label>
-				<textarea
+				<Label for="subject-desc">คำอธิบายรายวิชา (สังเขป)</Label>
+				<Textarea
 					id="subject-desc"
 					bind:value={currentSubject.description}
-					class="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 					placeholder="คำอธิบายรายวิชาย่อๆ..."
-				></textarea>
+					class="min-h-[80px]"
+				/>
 			</div>
 		</div>
 
@@ -618,28 +663,33 @@
 
 		<div class="space-y-4 py-4">
 			<div class="space-y-2">
-				<label for="source-year" class="text-sm font-medium">ปีการศึกษาต้นทาง</label>
+				<Label>ปีการศึกษาต้นทาง</Label>
 				{#if !selectedYearObj}
 					<div class="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
 						โปรดเลือกปีการศึกษาที่ต้องการจัดการจากตัวกรองด้านบนก่อน
 					</div>
-				{:else if academicYears.filter((y) => y.id !== selectedYearObj.id && (y.year || 0) < (selectedYearObj.year || 0)).length === 0}
-					<div
-						class="flex h-10 w-full items-center justify-center rounded-md border border-dashed text-muted-foreground text-sm"
-					>
-						ไม่พบปีการศึกษาที่เก่ากว่าให้คัดลอก
-					</div>
 				{:else}
-					<select
-						id="source-year"
-						bind:value={selectedSourceYear}
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-					>
-						<option value="" disabled selected>-- เลือกปีการศึกษา --</option>
-						{#each academicYears.filter((y) => y.id !== selectedYearObj.id && (y.year || 0) < (selectedYearObj.year || 0)) as year}
-							<option value={year.id}>{year.name}</option>
-						{/each}
-					</select>
+					{@const filteredYears = academicYears.filter(
+						(y) => y.id !== selectedYearObj.id && (y.year || 0) < (selectedYearObj.year || 0)
+					)}
+					{#if filteredYears.length === 0}
+						<div
+							class="flex h-10 w-full items-center justify-center rounded-md border border-dashed text-muted-foreground text-sm"
+						>
+							ไม่พบปีการศึกษาที่เก่ากว่าให้คัดลอก
+						</div>
+					{:else}
+						<Select.Root type="single" bind:value={selectedSourceYear}>
+							<Select.Trigger>
+								{academicYears.find((y) => y.id === selectedSourceYear)?.name || 'เลือกปีการศึกษา'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each filteredYears as year}
+									<Select.Item value={year.id}>{year.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{/if}
 				{/if}
 			</div>
 
