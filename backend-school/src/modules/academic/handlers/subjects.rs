@@ -268,3 +268,105 @@ pub async fn delete_subject(
 
     Ok(Json(json!({ "success": true })).into_response())
 }
+
+/// POST /api/academic/subjects/bulk-copy
+/// Copy all subjects from one academic year to another
+pub async fn bulk_copy_subjects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<crate::modules::academic::models::curriculum::BulkCopySubjectsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    // 1. Check Permission
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_CREATE_ALL).await {
+        return Ok(response);
+    }
+
+    // 2. Fetch all subjects from source year
+    let source_subjects = sqlx::query_as::<_, Subject>(
+        "SELECT * FROM subjects WHERE academic_year_id = $1 AND is_active = true"
+    )
+    .bind(payload.source_academic_year_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to fetch source subjects: {}", e);
+        AppError::InternalServerError("Failed to fetch source subjects".to_string())
+    })?;
+
+    if source_subjects.is_empty() {
+        return Ok((
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "data": {
+                    "copied_count": 0,
+                    "skipped_count": 0,
+                    "message": "ไม่พบรายวิชาในปีต้นทาง"
+                }
+            }))
+        ).into_response());
+    }
+
+    // 3. Copy subjects one by one (skip if code already exists in target year)
+    let mut copied_count = 0;
+    let mut skipped_count = 0;
+
+    for subject in source_subjects {
+        // Check if code already exists in target year
+        let exists: Option<bool> = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1 AND academic_year_id = $2)"
+        )
+        .bind(&subject.code)
+        .bind(payload.target_academic_year_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(Some(false));
+
+        if exists.unwrap_or(false) {
+            skipped_count += 1;
+            continue;
+        }
+
+        // Insert new subject with target year
+        let _result = sqlx::query(
+            r#"
+            INSERT INTO subjects (
+                code, academic_year_id, name_th, name_en,
+                credit, hours_per_semester, type, group_id, level_scope, description
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            "#
+        )
+        .bind(&subject.code)
+        .bind(payload.target_academic_year_id)
+        .bind(&subject.name_th)
+        .bind(&subject.name_en)
+        .bind(subject.credit)
+        .bind(subject.hours_per_semester)
+        .bind(&subject.subject_type)
+        .bind(subject.group_id)
+        .bind(&subject.level_scope)
+        .bind(&subject.description)
+        .execute(&pool)
+        .await;
+
+        match _result {
+            Ok(_) => copied_count += 1,
+            Err(_) => skipped_count += 1,
+        }
+    }
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "success": true,
+            "data": {
+                "copied_count": copied_count,
+                "skipped_count": skipped_count,
+                "message": format!("คัดลอกสำเร็จ {} รายวิชา (ข้าม {} รายการ)", copied_count, skipped_count)
+            }
+        }))
+    ).into_response())
+}

@@ -259,3 +259,13 @@ export const lookupGradeLevels = async (): Promise<{ data: LookupItem[] }> => {
 export const lookupAcademicYears = async (): Promise<{ data: LookupItem[] }> => {
     return await fetchApi('/api/lookup/academic-years');
 };
+
+export const bulkCopySubjects = async (sourceYearId: string, targetYearId: string) => {
+    return await fetchApi('/api/academic/subjects/bulk-copy', {
+        method: 'POST',
+        body: JSON.stringify({
+            source_academic_year_id: sourceYearId,
+            target_academic_year_id: targetYearId
+        })
+    });
+};

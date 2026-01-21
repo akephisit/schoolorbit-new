@@ -88,3 +88,16 @@ pub struct SubjectFilter {
     pub search: Option<String>,
     pub active_only: Option<bool>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct BulkCopySubjectsRequest {
+    pub source_academic_year_id: Uuid,
+    pub target_academic_year_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkCopySubjectsResponse {
+    pub copied_count: i32,
+    pub skipped_count: i32,
+    pub message: String,
+}

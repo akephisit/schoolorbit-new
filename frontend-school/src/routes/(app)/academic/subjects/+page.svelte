@@ -8,6 +8,7 @@
 		deleteSubject,
         lookupGradeLevels,
         lookupAcademicYears,
+        bulkCopySubjects,
 		type Subject, 
 		type SubjectGroup,
         type LookupItem
@@ -22,7 +23,7 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
-	import { BookOpen, Plus, Search, Pencil, Trash2 } from 'lucide-svelte';
+	import { BookOpen, Plus, Search, Pencil, Trash2, Copy } from 'lucide-svelte';
 
 	// Data States
 	let subjects: Subject[] = $state([]);
@@ -44,6 +45,9 @@
 	// Modal States
 	let showDialog = $state(false);
 	let showDeleteDialog = $state(false);
+	let showCopyDialog = $state(false);
+	let selectedSourceYear = $state('');
+	let copying = $state(false);
 	let isEditing = $state(false);
 	let submitting = $state(false);
     let deleting = $state(false);
@@ -157,6 +161,31 @@
         loadData();
     }
 
+	function handleOpenCopy() {
+		// Find previous year (or first non-current year)
+		const otherYears = academicYears.filter(y => !y.is_current);
+		if (otherYears.length > 0) {
+			selectedSourceYear = otherYears[0].id;
+		}
+		showCopyDialog = true;
+	}
+
+	async function handleBulkCopy() {
+		if (!selectedSourceYear || !currentAcademicYear) return;
+		
+		copying = true;
+		try {
+			const result = await bulkCopySubjects(selectedSourceYear, currentAcademicYear.id);
+			alert(result.data.message);
+			showCopyDialog = false;
+			await loadData(); // Reload subjects
+		} catch (e) {
+			alert(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด');
+		} finally {
+			copying = false;
+		}
+	}
+
 	onMount(() => {
 		loadData();
 	});
@@ -175,12 +204,16 @@
 				คลังรายวิชา
 			</h1>
 			<p class="text-muted-foreground mt-1">จัดการรายชื่อวิชาและกลุ่มสาระการเรียนรู้</p>
-				{#if currentAcademicYear}
-					<span class="ml-2 text-primary font-medium">
-						• {currentAcademicYear.name}
-					</span>
-				{/if}
+			{#if currentAcademicYear}
+				<span class="ml-2 text-primary font-medium">
+					• {currentAcademicYear.name}
+				</span>
+			{/if}
 		</div>
+		<Button variant="outline" onclick={handleOpenCopy} class="flex items-center gap-2">
+			<Copy class="w-4 h-4" />
+			คัดลอกจากปีก่อน
+		</Button>
 		<Button onclick={handleOpenCreate} class="flex items-center gap-2">
 			<Plus class="w-4 h-4" />
 			เพิ่มรายวิชา
@@ -486,6 +519,46 @@
 			<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
 			<Button variant="destructive" onclick={handleConfirmDelete} disabled={deleting}>
 				{deleting ? 'กำลังลบ...' : 'ลบรายวิชา'}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Copy Dialog -->
+<Dialog bind:open={showCopyDialog}>
+	<DialogContent class="sm:max-w-[500px]">
+		<DialogHeader>
+			<DialogTitle>คัดลอกรายวิชาจากปีก่อน</DialogTitle>
+			<DialogDescription>
+				เลือกปีการศึกษาต้นทางที่ต้องการคัดลอกรายวิชามายังปีปัจจุบัน ({currentAcademicYear?.name})
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="space-y-4 py-4">
+			<div class="space-y-2">
+				<label for="source-year" class="text-sm font-medium">ปีการศึกษาต้นทาง</label>
+				<select
+					id="source-year"
+					bind:value={selectedSourceYear}
+					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+				>
+					{#each academicYears.filter((y) => !y.is_current) as year}
+						<option value={year.id}>{year.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+				<strong>หมายเหตุ:</strong> ระบบจะคัดลอกรายวิชาทั้งหมดจากปีที่เลือก รายวิชาที่มีรหัสซ้ำกันจะถูกข้ามไป
+			</div>
+		</div>
+
+		<DialogFooter>
+			<Button variant="outline" onclick={() => (showCopyDialog = false)} disabled={copying}>
+				ยกเลิก
+			</Button>
+			<Button onclick={handleBulkCopy} disabled={copying || !selectedSourceYear}>
+				{copying ? 'กำลังคัดลอก...' : 'คัดลอก'}
 			</Button>
 		</DialogFooter>
 	</DialogContent>

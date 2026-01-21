@@ -26,6 +26,7 @@ pub fn academic_routes() -> Router<AppState> {
 
         // Curriculum: Subjects
         .route("/subjects/groups", get(handlers::subjects::list_subject_groups))
+        .route("/subjects/bulk-copy", post(handlers::subjects::bulk_copy_subjects))
         .route("/subjects", get(handlers::subjects::list_subjects).post(handlers::subjects::create_subject))
         .route("/subjects/{id}", put(handlers::subjects::update_subject).delete(handlers::subjects::delete_subject))
 }
