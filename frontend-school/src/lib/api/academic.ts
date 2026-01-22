@@ -337,6 +337,7 @@ export interface ClassroomCourse {
     subject_name_th: string;
     subject_name_en?: string;
     subject_credit?: number;
+    subject_type?: string;
     instructor_name?: string;
 }
 

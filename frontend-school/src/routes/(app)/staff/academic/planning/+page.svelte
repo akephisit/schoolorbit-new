@@ -59,6 +59,8 @@
 	// Edit Dialog
 	let showEditDialog = $state(false);
 	let editingCourse = $state<ClassroomCourse | null>(null);
+    let deletingCourse = $state<ClassroomCourse | null>(null);
+    let showDeleteDialog = $state(false);
 	let teachers = $state<StaffLookupItem[]>([]);
 	let selectedTeacherId = $state<string>(''); // For dropdown
 	let teachersLoaded = $state(false);
@@ -83,6 +85,44 @@
 			);
 		})
 	);
+
+    // Summary Statistics
+    let summaryStats = $derived.by(() => {
+        let basicCredit = 0;
+        let basicHours = 0; // Assuming 40 hours per credit roughly, but usually stored in subject
+        let additionalCredit = 0;
+        let additionalHours = 0;
+        let activityHours = 0;
+
+        courses.forEach(c => {
+             const credit = c.subject_credit || 0;
+             // Calculate hours: usually credit * 20 (for half-semester) or * 40 (for full). 
+             // Standard Thai curriculum often uses 40 hrs/semester per 1.0 credit ? 
+             // Or 0.5 credit = 20 hours. Let's assume standard 40 hrs per 1.0 credit if hours not provided.
+             // But we don't have hours in ClassroomCourse yet, only credit.
+             // Use 40 * credit for estimate hours if not available.
+             const estimatedHours = credit * 40; 
+             
+             if (c.subject_type === 'BASIC') {
+                 basicCredit += credit;
+                 basicHours += estimatedHours;
+             } else if (c.subject_type === 'ADDITIONAL') {
+                 additionalCredit += credit;
+                 additionalHours += estimatedHours;
+             } else if (c.subject_type === 'ACTIVITY') {
+                 // Activities usually don't have credits but have hours. 
+                 // If credit is 0, we can't est hours.
+                 activityHours += estimatedHours; 
+             }
+        });
+
+        return {
+            basic: { credit: basicCredit, hours: basicHours },
+            additional: { credit: additionalCredit, hours: additionalHours },
+            activity: { hours: activityHours },
+            total: { credit: basicCredit + additionalCredit, hours: basicHours + additionalHours + activityHours }
+        };
+    });
 
 	// Effects / Loaders
 	async function initData() {
@@ -184,16 +224,26 @@
 		}
 	}
 
-	async function handleRemove(id: string) {
-		if (!confirm('ยืนยันลบวิชานี้ออกจากห้องเรียน?')) return;
+	function openDeleteDialog(course: ClassroomCourse) {
+        deletingCourse = course;
+        showDeleteDialog = true;
+    }
+
+	async function handleRemove() {
+		if (!deletingCourse) return;
+        
+        submitting = true;
 		try {
-			await removeCourse(id);
+			await removeCourse(deletingCourse.id);
 			toast.success('ลบวิชาสำเร็จ');
+            showDeleteDialog = false;
 			await fetchCourses();
 		} catch (e) {
 			console.error(e);
 			toast.error('ลบไม่สำเร็จ');
-		}
+		} finally {
+            submitting = false;
+        }
 	}
 
 	async function loadTeachers() {
@@ -329,6 +379,47 @@
 		</div>
 	{:else}
 		<div class="space-y-4">
+			<!-- Summary Statistic Cards -->
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+				<Card.Root>
+					<Card.Content class="p-4 flex flex-col items-center justify-center text-center">
+						<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาพื้นฐาน</h4>
+						<div class="text-2xl font-bold">
+							{summaryStats.basic.credit.toFixed(1)}
+							<span class="text-xs font-normal text-muted-foreground">นก.</span>
+						</div>
+						<div class="text-xs text-muted-foreground">{summaryStats.basic.hours} ชม.</div>
+					</Card.Content>
+				</Card.Root>
+				<Card.Root>
+					<Card.Content class="p-4 flex flex-col items-center justify-center text-center">
+						<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาเพิ่มเติม</h4>
+						<div class="text-2xl font-bold">
+							{summaryStats.additional.credit.toFixed(1)}
+							<span class="text-xs font-normal text-muted-foreground">นก.</span>
+						</div>
+						<div class="text-xs text-muted-foreground">{summaryStats.additional.hours} ชม.</div>
+					</Card.Content>
+				</Card.Root>
+				<Card.Root>
+					<Card.Content class="p-4 flex flex-col items-center justify-center text-center">
+						<h4 class="text-sm font-medium text-muted-foreground mb-1">กิจกรรมฯ</h4>
+						<div class="text-2xl font-bold">-</div>
+						<div class="text-xs text-muted-foreground">{summaryStats.activity.hours} ชม.</div>
+					</Card.Content>
+				</Card.Root>
+				<Card.Root class="bg-primary/5 border-primary/20">
+					<Card.Content class="p-4 flex flex-col items-center justify-center text-center">
+						<h4 class="text-sm font-medium text-primary mb-1">รวมทั้งสิ้น</h4>
+						<div class="text-2xl font-bold text-primary">
+							{summaryStats.total.credit.toFixed(1)}
+							<span class="text-xs font-normal opacity-70">นก.</span>
+						</div>
+						<div class="text-xs text-muted-foreground">{summaryStats.total.hours} ชม.</div>
+					</Card.Content>
+				</Card.Root>
+			</div>
+
 			<div class="flex justify-between items-center">
 				<h3 class="text-xl font-semibold">
 					รายวิชาของห้อง {currentClassroom?.name}
@@ -348,6 +439,7 @@
 						<Table.Row>
 							<Table.Head class="w-[120px]">รหัสวิชา</Table.Head>
 							<Table.Head>ชื่อวิชา</Table.Head>
+							<Table.Head class="w-[100px]">ประเภท</Table.Head>
 							<Table.Head class="text-center w-[100px]">หน่วยกิต</Table.Head>
 							<Table.Head>ครูผู้สอน</Table.Head>
 							<Table.Head class="text-right w-[80px]"></Table.Head>
@@ -376,6 +468,21 @@
 											<div class="text-xs text-muted-foreground">{course.subject_name_en}</div>
 										{/if}
 									</Table.Cell>
+									<Table.Cell>
+										{#if course.subject_type === 'BASIC'}
+											<Badge variant="outline">พื้นฐาน</Badge>
+										{:else if course.subject_type === 'ADDITIONAL'}
+											<Badge variant="secondary">เพิ่มเติม</Badge>
+										{:else if course.subject_type === 'ACTIVITY'}
+											<Badge
+												variant="secondary"
+												class="bg-green-100 text-green-800 hover:bg-green-100 hover:text-green-800 border-green-200"
+												>กิจกรรม</Badge
+											>
+										{:else}
+											<span class="text-muted-foreground text-xs">-</span>
+										{/if}
+									</Table.Cell>
 									<Table.Cell class="text-center">{course.subject_credit}</Table.Cell>
 									<Table.Cell>
 										{#if course.instructor_name}
@@ -392,7 +499,7 @@
 											variant="ghost"
 											size="icon"
 											class="text-destructive hover:bg-destructive/10"
-											onclick={() => handleRemove(course.id)}
+											onclick={() => openDeleteDialog(course)}
 										>
 											<Trash2 class="w-4 h-4" />
 										</Button>
@@ -537,6 +644,28 @@
 						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
 					{/if}
 					บันทึกการเปลี่ยนแปลง
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+	<!-- Delete Dialog -->
+	<Dialog.Root bind:open={showDeleteDialog}>
+		<Dialog.Content class="sm:max-w-[425px]">
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการลบวิชา</Dialog.Title>
+				<Dialog.Description>
+					คุณต้องการลบวิชา <strong
+						>{deletingCourse?.subject_code} {deletingCourse?.subject_name_th}</strong
+					> ออกจากห้องเรียนนี้ใช่หรือไม่?
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
+				<Button variant="destructive" onclick={handleRemove} disabled={submitting}>
+					{#if submitting}
+						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+					{/if}
+					ยืนยันลบ
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>

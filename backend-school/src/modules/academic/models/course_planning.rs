@@ -23,6 +23,9 @@ pub struct ClassroomCourse {
     pub subject_credit: Option<f64>,
     #[sqlx(default)]
     pub instructor_name: Option<String>,
+    #[sqlx(default)]
+    #[serde(rename = "subject_type")]
+    pub subject_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -49,6 +49,7 @@ pub async fn list_classroom_courses(
             s.name_th as subject_name_th,
             s.name_en as subject_name_en,
             s.credit as subject_credit,
+            s.type as subject_type,
             concat(u.first_name, ' ', u.last_name) as instructor_name
         FROM classroom_courses cc
         JOIN subjects s ON cc.subject_id = s.id
