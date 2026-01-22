@@ -13,7 +13,7 @@
 		type Subject,
 		type ClassroomCourse
 	} from '$lib/api/academic';
-	import { listStaff, type StaffListItem } from '$lib/api/staff';
+	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -43,6 +43,7 @@
 	let selectedYearId = $state('');
 	let selectedTermId = $state('');
 	let selectedClassroomId = $state('');
+    let selectedTermFilter = $state('');
 
 	// Data
 	let classrooms = $state<Classroom[]>([]);
@@ -58,7 +59,7 @@
 	// Edit Dialog
 	let showEditDialog = $state(false);
 	let editingCourse = $state<ClassroomCourse | null>(null);
-	let teachers = $state<StaffListItem[]>([]);
+	let teachers = $state<StaffLookupItem[]>([]);
 	let selectedTeacherId = $state<string>(''); // For dropdown
 	let teachersLoaded = $state(false);
 
@@ -132,19 +133,29 @@
 		}
 	}
 
+	async function loadModalSubjects() {
+        try {
+            const res = await listSubjects({ 
+                academic_year_id: selectedYearId,
+                term: selectedTermFilter || undefined
+            });
+            allSubjects = res.data;
+        } catch (e) {
+            toast.error('โหลดรายวิชาไม่สำเร็จ');
+        }
+    }
+
 	async function openAddDialog() {
-		if (allSubjects.length === 0) {
-			// Load subjects if not loaded (filtered by year ideally, but simple listSubjects filters by active year usually?)
-            // We should list ALL subjects for that year.
-            // listSubjects accepts { academic_year_id: ... }
-			try {
-				const res = await listSubjects({ academic_year_id: selectedYearId });
-				allSubjects = res.data;
-			} catch (e) {
-				toast.error('โหลดรายวิชาไม่สำเร็จ');
-				return;
-			}
-		}
+        // Auto-set filter based on current term
+        const activeTerm = filteredSemesters.find(s => s.id === selectedTermId);
+        if (activeTerm) {
+             selectedTermFilter = activeTerm.term;
+        } else {
+             selectedTermFilter = '';
+        }
+        
+        await loadModalSubjects();
+        
 		selectedSubjectIds = [];
 		subjectSearchTerm = '';
 		showAddDialog = true;
@@ -188,8 +199,8 @@
 	async function loadTeachers() {
 		if (teachersLoaded) return;
 		try {
-			const res = await listStaff({ user_type: 'staff', status: 'active', page_size: 1000 });
-			teachers = res.data;
+			const res = await lookupStaff({ activeOnly: true, limit: 1000 });
+			teachers = res;
 			teachersLoaded = true;
 		} catch (e) {
 			console.error("Failed to load teachers", e);
@@ -403,14 +414,36 @@
 			</Dialog.Header>
 
 			<div class="p-1">
-				<div class="relative mb-4">
-					<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-					<Input
-						type="search"
-						placeholder="ค้นหารหัส หรือ ชื่อวิชา..."
-						class="pl-8"
-						bind:value={subjectSearchTerm}
-					/>
+				<div class="flex gap-2 mb-4">
+					<div class="relative flex-1">
+						<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+						<Input
+							type="search"
+							placeholder="ค้นหารหัส หรือ ชื่อวิชา..."
+							class="pl-8"
+							bind:value={subjectSearchTerm}
+						/>
+					</div>
+					<div class="w-[140px]">
+						<Select.Root
+							type="single"
+							bind:value={selectedTermFilter}
+							onValueChange={loadModalSubjects}
+						>
+							<Select.Trigger>
+								{#if selectedTermFilter === '1'}เทอม 1
+								{:else if selectedTermFilter === '2'}เทอม 2
+								{:else if selectedTermFilter === 'SUMMER'}ซัมเมอร์
+								{:else}ทุกเทอม{/if}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="">ทุกเทอม</Select.Item>
+								<Select.Item value="1">เทอม 1</Select.Item>
+								<Select.Item value="2">เทอม 2</Select.Item>
+								<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
 				</div>
 
 				<div class="border rounded-md overflow-hidden h-[300px] md:h-[400px]">
@@ -482,16 +515,14 @@
 							{#if selectedTeacherId === 'unassigned'}
 								<span class="text-muted-foreground">- ไม่ระบุ -</span>
 							{:else}
-								{teachers.find((t) => t.id === selectedTeacherId)?.first_name}
-								{teachers.find((t) => t.id === selectedTeacherId)?.last_name}
+								{teachers.find((t) => t.id === selectedTeacherId)?.name}
 							{/if}
 						</Select.Trigger>
 						<Select.Content class="max-h-[300px]">
 							<Select.Item value="unassigned">- ไม่ระบุ -</Select.Item>
 							{#each teachers as teacher}
 								<Select.Item value={teacher.id}>
-									{teacher.first_name}
-									{teacher.last_name}
+									{teacher.name}
 								</Select.Item>
 							{/each}
 						</Select.Content>

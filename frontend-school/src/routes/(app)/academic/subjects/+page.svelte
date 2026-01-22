@@ -13,6 +13,7 @@
 		type SubjectGroup,
         type LookupItem
 	} from '$lib/api/academic';
+    import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import {
@@ -38,6 +39,7 @@
 	let groups: SubjectGroup[] = $state([]);
     let gradeLevels: LookupItem[] = $state([]);
     let academicYears: LookupItem[] = $state([]);
+    let staffList: StaffLookupItem[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
 	
@@ -90,15 +92,17 @@
 		try {
 			loading = true;
 			// Load lookups first
-			const [groupsRes, levelsRes, yearsRes] = await Promise.all([
+			const [groupsRes, levelsRes, yearsRes, staffRes] = await Promise.all([
 				listSubjectGroups(),
 				lookupGradeLevels({ current_year: false }),
-				lookupAcademicYears(false)
+				lookupAcademicYears(false),
+                lookupStaff({ activeOnly: true, limit: 1000 })
 			]);
 
 			groups = groupsRes.data;
 			gradeLevels = levelsRes.data;
 			academicYears = yearsRes.data;
+            staffList = staffRes;
 
 			// Set default year filter to current year
 			const current = academicYears.find(y => y.is_current);
@@ -636,6 +640,43 @@
 						<Select.Content class="max-h-[300px]">
 							{#each groups as group}
 								<Select.Item value={group.id}>{group.code} - {group.name_th}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-2 gap-4">
+				<div class="space-y-2">
+					<Label>ภาคเรียนที่เปิดสอน</Label>
+					<Select.Root type="single" bind:value={currentSubject.term}>
+						<Select.Trigger>
+							{#if currentSubject.term === '1'}ภาคเรียนที่ 1
+							{:else if currentSubject.term === '2'}ภาคเรียนที่ 2
+							{:else if currentSubject.term === 'SUMMER'}ซัมเมอร์
+							{:else}ทุกภาคเรียน{/if}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">ทุกภาคเรียน</Select.Item>
+							<Select.Item value="1">ภาคเรียนที่ 1</Select.Item>
+							<Select.Item value="2">ภาคเรียนที่ 2</Select.Item>
+							<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="space-y-2">
+					<Label>ครูผู้สอนหลัก (Default)</Label>
+					<Select.Root type="single" bind:value={currentSubject.default_instructor_id}>
+						<Select.Trigger class="truncate">
+							{(() => {
+								const st = staffList.find((s) => s.id === currentSubject.default_instructor_id);
+								return st ? st.name : 'เลือกครูผู้สอน';
+							})()}
+						</Select.Trigger>
+						<Select.Content class="max-h-[300px]">
+							<Select.Item value="">(ไม่ระบุ)</Select.Item>
+							{#each staffList as staff}
+								<Select.Item value={staff.id}>{staff.name}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>

@@ -243,6 +243,9 @@ export interface Subject {
     group_name_th?: string;
     start_academic_year_id?: string;
     grade_level_ids?: string[];
+    term?: string;
+    default_instructor_id?: string;
+    default_instructor_name?: string;
 }
 
 export const listSubjectGroups = async (): Promise<{ data: SubjectGroup[] }> => {
@@ -256,6 +259,7 @@ export const listSubjects = async (filters: {
     search?: string;
     active_only?: boolean;
     academic_year_id?: string;
+    term?: string;
 } = {}): Promise<{ data: Subject[] }> => {
     const params = new URLSearchParams();
     if (filters.group_id) params.append('group_id', filters.group_id);
@@ -264,6 +268,7 @@ export const listSubjects = async (filters: {
     if (filters.search) params.append('search', filters.search);
     if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
     if (filters.academic_year_id) params.append('academic_year_id', filters.academic_year_id);
+    if (filters.term) params.append('term', filters.term);
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return await fetchApi(`/api/academic/subjects${queryString}`);

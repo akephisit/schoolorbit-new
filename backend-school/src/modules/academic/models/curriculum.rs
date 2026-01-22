@@ -41,6 +41,8 @@ pub struct Subject {
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub term: Option<String>,
+    pub default_instructor_id: Option<Uuid>,
     pub start_academic_year_id: Option<Uuid>,
     
     // Joined Fields (Optional)
@@ -51,6 +53,9 @@ pub struct Subject {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
     pub grade_level_ids: Option<Vec<Uuid>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub default_instructor_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +73,8 @@ pub struct CreateSubjectRequest {
     pub description: Option<String>,
     pub start_academic_year_id: Option<Uuid>,
     pub grade_level_ids: Option<Vec<Uuid>>,
+    pub term: Option<String>,
+    pub default_instructor_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,6 +93,8 @@ pub struct UpdateSubjectRequest {
     pub is_active: Option<bool>,
     pub start_academic_year_id: Option<Uuid>,
     pub grade_level_ids: Option<Vec<Uuid>>,
+    pub term: Option<String>,
+    pub default_instructor_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +106,7 @@ pub struct SubjectFilter {
     pub search: Option<String>,
     pub active_only: Option<bool>,
     pub academic_year_id: Option<Uuid>,
+    pub term: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

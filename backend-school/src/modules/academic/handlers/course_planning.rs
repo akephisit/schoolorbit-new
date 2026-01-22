@@ -104,8 +104,12 @@ pub async fn assign_courses(
         // Insert if not exists
         let result = sqlx::query(
             r#"
-            INSERT INTO classroom_courses (classroom_id, academic_semester_id, subject_id)
-            VALUES ($1, $2, $3)
+            INSERT INTO classroom_courses (
+                classroom_id, academic_semester_id, subject_id, primary_instructor_id
+            )
+            SELECT $1, $2, s.id, s.default_instructor_id
+            FROM subjects s
+            WHERE s.id = $3
             ON CONFLICT (classroom_id, academic_semester_id, subject_id) DO NOTHING
             "#
         )

@@ -72,9 +72,11 @@ pub async fn list_subjects(
         SELECT s.*, sg.name_th as group_name_th,
                (SELECT COALESCE(array_agg(sgl.grade_level_id), '{}') 
                 FROM subject_grade_levels sgl 
-                WHERE sgl.subject_id = s.id) as grade_level_ids
+                WHERE sgl.subject_id = s.id) as grade_level_ids,
+               concat(u.first_name, ' ', u.last_name) as default_instructor_name
         FROM subjects s
         LEFT JOIN subject_groups sg ON s.group_id = sg.id
+        LEFT JOIN users u ON s.default_instructor_id = u.id
         WHERE 1=1
         "#
     );
@@ -109,6 +111,10 @@ pub async fn list_subjects(
 
     if let Some(year_id) = filter.academic_year_id {
         query.push_str(&format!(" AND s.academic_year_id = '{}'", year_id));
+    }
+
+    if let Some(term) = &filter.term {
+        query.push_str(&format!(" AND (s.term = '{}' OR s.term IS NULL)", term));
     }
 
     query.push_str(" ORDER BY s.code ASC");
@@ -171,9 +177,10 @@ pub async fn create_subject(
         r#"
         INSERT INTO subjects (
             code, academic_year_id, name_th, name_en, 
-            credit, hours_per_semester, type, group_id, level_scope, description, start_academic_year_id
+            credit, hours_per_semester, type, group_id, level_scope, description, start_academic_year_id,
+            term, default_instructor_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *
         "#
     )
@@ -188,6 +195,8 @@ pub async fn create_subject(
     .bind(&payload.level_scope)
     .bind(&payload.description)
     .bind(payload.start_academic_year_id)
+    .bind(&payload.term)
+    .bind(payload.default_instructor_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
@@ -249,6 +258,8 @@ pub async fn update_subject(
             description = COALESCE($10, description),
             is_active = COALESCE($11, is_active),
             start_academic_year_id = COALESCE($12, start_academic_year_id),
+            term = COALESCE($14, term),
+            default_instructor_id = COALESCE($15, default_instructor_id),
             updated_at = NOW()
         WHERE id = $13
         RETURNING *
@@ -267,6 +278,8 @@ pub async fn update_subject(
     .bind(payload.is_active)
     .bind(payload.start_academic_year_id)
     .bind(id)
+    .bind(&payload.term)
+    .bind(payload.default_instructor_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
@@ -412,9 +425,9 @@ pub async fn bulk_copy_subjects(
             INSERT INTO subjects (
                 code, academic_year_id, name_th, name_en,
                 credit, hours_per_semester, type, group_id, level_scope, description,
-                start_academic_year_id
+                start_academic_year_id, term, default_instructor_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             "#
         )
         .bind(&subject.code)
@@ -428,6 +441,8 @@ pub async fn bulk_copy_subjects(
         .bind(&subject.level_scope)
         .bind(&subject.description)
         .bind(subject.start_academic_year_id)
+        .bind(&subject.term)
+        .bind(subject.default_instructor_id)
         .execute(&pool)
         .await;
 
