@@ -89,18 +89,13 @@
     // Summary Statistics
     let summaryStats = $derived.by(() => {
         let basicCredit = 0;
-        let basicHours = 0; // Assuming 40 hours per credit roughly, but usually stored in subject
+        let basicHours = 0; 
         let additionalCredit = 0;
         let additionalHours = 0;
         let activityHours = 0;
 
         courses.forEach(c => {
              const credit = c.subject_credit || 0;
-             // Calculate hours: usually credit * 20 (for half-semester) or * 40 (for full). 
-             // Standard Thai curriculum often uses 40 hrs/semester per 1.0 credit ? 
-             // Or 0.5 credit = 20 hours. Let's assume standard 40 hrs per 1.0 credit if hours not provided.
-             // But we don't have hours in ClassroomCourse yet, only credit.
-             // Use 40 * credit for estimate hours if not available.
              const estimatedHours = credit * 40; 
              
              if (c.subject_type === 'BASIC') {
@@ -110,8 +105,12 @@
                  additionalCredit += credit;
                  additionalHours += estimatedHours;
              } else if (c.subject_type === 'ACTIVITY') {
-                 // Activities usually don't have credits but have hours. 
-                 // If credit is 0, we can't est hours.
+                 // Activity hours might need better logic if credit is 0. 
+                 // Assuming activities have 20-40 hours regardless of credit if we had hours fields.
+                 // For now, keep using estimate or if 0 credit, maybe count as 1 unit of activity time?
+                 // But sticking to credit-based for consistency with existing logic unless field available.
+                 // If credit is 0, let's treat as 20 hours (0.5 equivalent) as fallback for visible stats?
+                 // Or just keep 0 if no credit.
                  activityHours += estimatedHours; 
              }
         });
@@ -123,6 +122,18 @@
             total: { credit: basicCredit + additionalCredit, hours: basicHours + additionalHours + activityHours }
         };
     });
+
+    // Sorted courses: Basic -> Additional -> Activity -> Others
+    let sortedCourses = $derived(
+        [...courses].sort((a, b) => {
+            const typeOrder: Record<string, number> = { 'BASIC': 1, 'ADDITIONAL': 2, 'ACTIVITY': 3 };
+            const orderA = typeOrder[a.subject_type || ''] || 4;
+            const orderB = typeOrder[b.subject_type || ''] || 4;
+            
+            if (orderA !== orderB) return orderA - orderB;
+            return (a.subject_code || '').localeCompare(b.subject_code || '');
+        })
+    );
 
 	// Effects / Loaders
 	async function initData() {
@@ -459,7 +470,7 @@
 								</Table.Cell>
 							</Table.Row>
 						{:else}
-							{#each courses as course}
+							{#each sortedCourses as course}
 								<Table.Row>
 									<Table.Cell class="font-medium">{course.subject_code}</Table.Cell>
 									<Table.Cell>
