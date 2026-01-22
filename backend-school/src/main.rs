@@ -237,6 +237,10 @@ async fn main() {
         // Academic Management routes (Protected)
         .nest("/api/academic", modules::academic::academic_routes()
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        
+        // Facility Management routes (Protected)
+        .nest("/api/facilities", modules::facility::facility_routes()
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
         // Lookup endpoints (Protected - only requires authentication, no specific permission)
         // These return minimal data for dropdowns (id, name only)

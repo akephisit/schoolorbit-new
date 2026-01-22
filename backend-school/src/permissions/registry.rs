@@ -94,6 +94,12 @@ pub mod codes {
     // Course Planning (Assigning subjects to classrooms)
     pub const ACADEMIC_COURSE_PLAN_READ_ALL: &str = "academic_course_plan.read.all";
     pub const ACADEMIC_COURSE_PLAN_MANAGE_ALL: &str = "academic_course_plan.manage.all";
+
+    // Facility permissions
+    pub const FACILITY_READ_ALL: &str = "facility.read.all";
+    pub const FACILITY_CREATE_ALL: &str = "facility.create.all";
+    pub const FACILITY_UPDATE_ALL: &str = "facility.update.all";
+    pub const FACILITY_DELETE_ALL: &str = "facility.delete.all";
 }
 
 /// Complete list of all permissions in the system
@@ -520,5 +526,39 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "manage",
         scope: "all",
         description: "เพิ่ม/ลบ/แก้ไข วิชาที่เปิดสอนในห้องเรียน",
+    },
+
+    // Facility Permissions
+    PermissionDef {
+        code: codes::FACILITY_READ_ALL,
+        name: "ดูข้อมูลอาคารสถานที่",
+        module: "facility",
+        action: "read",
+        scope: "all",
+        description: "ดูรายชื่ออาคารและห้อง",
+    },
+    PermissionDef {
+        code: codes::FACILITY_CREATE_ALL,
+        name: "สร้างอาคารสถานที่",
+        module: "facility",
+        action: "create",
+        scope: "all",
+        description: "เพิ่มข้อมูลอาคารและห้องใหม่",
+    },
+    PermissionDef {
+        code: codes::FACILITY_UPDATE_ALL,
+        name: "แก้ไขอาคารสถานที่",
+        module: "facility",
+        action: "update",
+        scope: "all",
+        description: "แก้ไขข้อมูลอาคารและห้อง",
+    },
+    PermissionDef {
+        code: codes::FACILITY_DELETE_ALL,
+        name: "ลบอาคารสถานที่",
+        module: "facility",
+        action: "delete",
+        scope: "all",
+        description: "ลบข้อมูลอาคารและห้อง",
     },
 ];
