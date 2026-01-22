@@ -2,9 +2,9 @@
 
 CREATE TABLE classroom_courses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    classroom_id UUID NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
+    classroom_id UUID NOT NULL REFERENCES class_rooms(id) ON DELETE CASCADE,
     subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE RESTRICT,
-    academic_semester_id UUID NOT NULL REFERENCES academic_semesters(id) ON DELETE RESTRICT,
+    academic_semester_id UUID NOT NULL REFERENCES semesters(id) ON DELETE RESTRICT,
     
     -- Optional override instructor (if different from global subject assignment or for specific class)
     primary_instructor_id UUID REFERENCES users(id) ON DELETE SET NULL,

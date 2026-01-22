@@ -88,7 +88,7 @@ pub async fn assign_courses(
     }
 
     // Verify classroom exists
-    let _exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM classrooms WHERE id = $1)")
+    let _exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM class_rooms WHERE id = $1)")
         .bind(payload.classroom_id)
         .fetch_one(&pool)
         .await
