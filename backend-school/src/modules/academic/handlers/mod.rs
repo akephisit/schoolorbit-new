@@ -44,7 +44,7 @@ pub async fn list_academic_structure(
 
     // Fetch Semesters
     let semesters = sqlx::query_as::<_, Semester>(
-        "SELECT * FROM semesters ORDER BY start_date DESC"
+        "SELECT * FROM academic_semesters ORDER BY start_date DESC"
     )
     .fetch_all(&pool)
     .await

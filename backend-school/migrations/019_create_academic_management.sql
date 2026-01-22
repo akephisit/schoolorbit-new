@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS academic_years (
 CREATE UNIQUE INDEX idx_academic_years_active ON academic_years(is_active) WHERE is_active = true;
 
 -- 2. Semesters (ภาคเรียน)
-CREATE TABLE IF NOT EXISTS semesters (
+CREATE TABLE IF NOT EXISTS academic_semesters (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE CASCADE,
     term VARCHAR(20) NOT NULL, -- e.g., "1", "2", "Summer"
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS semesters (
 );
 
 -- Ensure only one active semester
-CREATE UNIQUE INDEX idx_semesters_active ON semesters(is_active) WHERE is_active = true;
+CREATE UNIQUE INDEX idx_academic_semesters_active ON academic_semesters(is_active) WHERE is_active = true;
 
 -- 3. Grade Levels (ระดับชั้น)
 CREATE TABLE IF NOT EXISTS grade_levels (
@@ -91,7 +91,7 @@ CREATE INDEX idx_enrollments_classroom ON student_class_enrollments(class_room_i
 
 -- Add updated_at triggers
 CREATE TRIGGER update_academic_years_updated_at BEFORE UPDATE ON academic_years FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_semesters_updated_at BEFORE UPDATE ON semesters FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_academic_semesters_updated_at BEFORE UPDATE ON academic_semesters FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_grade_levels_updated_at BEFORE UPDATE ON grade_levels FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_class_rooms_updated_at BEFORE UPDATE ON class_rooms FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_student_class_enrollments_updated_at BEFORE UPDATE ON student_class_enrollments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
