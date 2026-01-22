@@ -7,6 +7,7 @@ use crate::AppState;
 // ==========================================
 pub mod subjects;
 pub mod course_planning;
+pub mod timetable;
 
 use axum::{
     extract::{Path, Query, State},

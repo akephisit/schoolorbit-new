@@ -66,3 +66,36 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
+/// Helper function to extract user ID from request headers
+pub async fn extract_user_id(headers: &axum::http::HeaderMap, _pool: &sqlx::PgPool) -> Result<uuid::Uuid, String> {
+    // Try to extract token from Authorization header first
+    let auth_header = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok());
+    
+    let token_from_header = auth_header
+        .and_then(|h| {
+            if h.starts_with("Bearer ") {
+                Some(h[7..].to_string())
+            } else {
+                None
+            }
+        });
+
+    // Fallback to cookie
+    let token_from_cookie = headers
+        .get(header::COOKIE)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|cookie| JwtService::extract_token_from_cookie(Some(cookie)));
+
+    // Use Authorization header first, then cookie
+    let token = token_from_header.or(token_from_cookie)
+        .ok_or("No authentication token found".to_string())?;
+    
+    // Verify token and extract user ID
+    let claims = JwtService::verify_token(&token)
+        .map_err(|e| format!("Invalid token: {}", e))?;
+    
+    uuid::Uuid::parse_str(&claims.sub)
+        .map_err(|e| format!("Invalid user ID in token: {}", e))
+}

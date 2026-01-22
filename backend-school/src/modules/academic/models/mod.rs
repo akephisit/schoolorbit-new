@@ -8,6 +8,7 @@ use chrono::NaiveDate;
 // ==========================================
 pub mod curriculum;
 pub mod course_planning;
+pub mod timetable;
 
 // ==========================================
 // Academic Year Models
