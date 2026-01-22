@@ -167,7 +167,7 @@
 				{#each menuGroups as group, groupIndex (group.code)}
 					<!-- Group Header (except first group) -->
 					{#if groupIndex > 0}
-						<div class="my-3 h-5 flex items-center px-3">
+						<div class="relative my-3 h-5 flex items-center px-3">
 							<!-- Divider line (visible when collapsed) -->
 							<div
 								class="flex-1 border-t border-border transition-opacity duration-300
