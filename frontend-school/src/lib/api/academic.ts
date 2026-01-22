@@ -111,6 +111,39 @@ export const toggleActiveYear = async (id: string) => {
     });
 };
 
+export const createSemester = async (data: {
+    academic_year_id: string;
+    term: string;
+    name: string;
+    start_date: string;
+    end_date: string;
+    is_active?: boolean;
+}) => {
+    return await fetchApi('/api/academic/semesters', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const updateSemester = async (id: string, data: {
+    term?: string;
+    name?: string;
+    start_date?: string;
+    end_date?: string;
+    is_active?: boolean;
+}) => {
+    return await fetchApi(`/api/academic/semesters/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};
+
+export const deleteSemester = async (id: string) => {
+    return await fetchApi(`/api/academic/semesters/${id}`, {
+        method: 'DELETE'
+    });
+};
+
 export const createGradeLevel = async (data: {
     level_type: 'kindergarten' | 'primary' | 'secondary';
     year: number;

@@ -150,6 +150,133 @@ pub async fn toggle_active_year(
 }
 
 // ==========================================
+// Semester Handlers
+// ==========================================
+
+pub async fn create_semester(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateSemesterRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    // If setting as active, deactivate others globally
+    if payload.is_active.unwrap_or(false) {
+        sqlx::query("UPDATE academic_semesters SET is_active = false")
+            .execute(&pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Failed to reset active semester".to_string()))?;
+    }
+
+    let result = sqlx::query_as::<_, Semester>(
+        "INSERT INTO academic_semesters (academic_year_id, term, name, start_date, end_date, is_active) 
+         VALUES ($1, $2, $3, $4, $5, $6) 
+         RETURNING *"
+    )
+    .bind(payload.academic_year_id)
+    .bind(payload.term)
+    .bind(payload.name)
+    .bind(payload.start_date)
+    .bind(payload.end_date)
+    .bind(payload.is_active.unwrap_or(false))
+    .fetch_one(&pool)
+    .await;
+
+    match result {
+        Ok(semester) => Ok((StatusCode::CREATED, Json(json!({"success": true, "data": semester})))),
+        Err(e) => {
+            eprintln!("Failed to create semester: {}", e);
+            Err(AppError::InternalServerError("Failed to create semester".to_string()))
+        }
+    }
+}
+
+pub async fn update_semester(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateSemesterRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    // If setting as active, deactivate others globally
+    if payload.is_active.unwrap_or(false) {
+        sqlx::query("UPDATE academic_semesters SET is_active = false")
+            .execute(&pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Failed to reset active semester".to_string()))?;
+    }
+
+    let result = sqlx::query_as::<_, Semester>(
+        "UPDATE academic_semesters SET 
+            term = COALESCE($1, term),
+            name = COALESCE($2, name),
+            start_date = COALESCE($3, start_date),
+            end_date = COALESCE($4, end_date),
+            is_active = COALESCE($5, is_active),
+            updated_at = NOW()
+         WHERE id = $6
+         RETURNING *"
+    )
+    .bind(payload.term)
+    .bind(payload.name)
+    .bind(payload.start_date)
+    .bind(payload.end_date)
+    .bind(payload.is_active)
+    .bind(id)
+    .fetch_one(&pool)
+    .await;
+
+    match result {
+        Ok(semester) => Ok(Json(json!({"success": true, "data": semester}))),
+        Err(e) => {
+             eprintln!("Failed to update semester: {}", e);
+             Err(AppError::InternalServerError("Failed to update semester".to_string()))
+        }
+    }
+}
+
+pub async fn delete_semester(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let result = sqlx::query("DELETE FROM academic_semesters WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await;
+
+    match result {
+        Ok(_) => Ok(Json(json!({"success": true, "message": "Semester deleted"}))),
+        Err(e) => {
+            eprintln!("Failed to delete semester: {}", e);
+             if e.to_string().contains("foreign key constraint") {
+                Err(AppError::BadRequest("ไม่สามารถลบภาคเรียนที่มีการใช้งานได้".to_string()))
+             } else {
+                Err(AppError::InternalServerError("Failed to delete semester".to_string()))
+             }
+        }
+    }
+}
+
+// ==========================================
 // Classrooms Handlers
 // ==========================================
 

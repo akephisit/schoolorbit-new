@@ -7,9 +7,12 @@
 		createGradeLevel,
 		deleteGradeLevel,
 		getYearLevelConfig,
-		saveYearLevelConfig
+		saveYearLevelConfig,
+		createSemester,
+		updateSemester,
+		deleteSemester
 	} from '$lib/api/academic';
-	import type { AcademicStructureData, GradeLevel } from '$lib/api/academic';
+	import type { AcademicStructureData, GradeLevel, Semester } from '$lib/api/academic';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -29,7 +32,8 @@
 		Plus, 
 		Trash2, 
 		BookOpen,
-		Settings
+		Settings,
+		CalendarClock
 	} from 'lucide-svelte';
 
 	let loading = true;
@@ -95,6 +99,98 @@
 			configLevelIds = configLevelIds.filter((id) => id !== levelId);
 		}
 	}
+
+	// ==========================================
+	// Semester Management
+	// ==========================================
+	let showSemestersDialog = false;
+	let selectedYearForSemesters: AcademicStructureData['years'][0] | null = null;
+	let showSemesterForm = false; // Create/Edit form dialog
+	let semesterToEdit: Semester | null = null;
+	let isSubmittingSemester = false;
+	
+	let newSemester = {
+		term: '1',
+		name: 'ภาคเรียนที่ 1',
+		start_date: '',
+		end_date: '',
+		is_active: false
+	};
+
+	function openSemestersDialog(year: AcademicStructureData['years'][0]) {
+		selectedYearForSemesters = year;
+		showSemestersDialog = true;
+	}
+
+	function openCreateSemester() {
+		semesterToEdit = null;
+		newSemester = {
+			term: '1',
+			name: 'ภาคเรียนที่ 1',
+			start_date: '',
+			end_date: '',
+			is_active: false
+		};
+		showSemesterForm = true;
+	}
+
+	function openEditSemester(semester: Semester) {
+		semesterToEdit = semester;
+		newSemester = {
+			term: semester.term,
+			name: semester.name,
+			start_date: semester.start_date,
+			end_date: semester.end_date,
+			is_active: semester.is_active
+		};
+		showSemesterForm = true;
+	}
+
+	async function handleSaveSemester() {
+		if (!selectedYearForSemesters) return;
+		if (!newSemester.term || !newSemester.name || !newSemester.start_date || !newSemester.end_date) {
+			toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
+			return;
+		}
+
+		isSubmittingSemester = true;
+		try {
+			if (semesterToEdit) {
+				await updateSemester(semesterToEdit.id, newSemester);
+				toast.success('แก้ไขภาคเรียนสำเร็จ');
+			} else {
+				await createSemester({
+					academic_year_id: selectedYearForSemesters.id,
+					...newSemester
+				});
+				toast.success('สร้างภาคเรียนสำเร็จ');
+			}
+			showSemesterForm = false;
+			await loadData(); // Reload to refresh list
+		} catch (error) {
+			console.error(error);
+			toast.error('บันทึกข้อมูลไม่สำเร็จ');
+		} finally {
+			isSubmittingSemester = false;
+		}
+	}
+
+	async function handleDeleteSemester(id: string) {
+		if (!confirm('ยืนยันลบภาคเรียนนี้? หากมีการใช้งานอยู่จะไม่สามารถลบได้')) return;
+		try {
+			await deleteSemester(id);
+			toast.success('ลบภาคเรียนสำเร็จ');
+			await loadData();
+		} catch (error) {
+			console.error(error);
+			toast.error('ลบภาคเรียนไม่สำเร็จ (อาจมีการใช้งานอยู่)');
+		}
+	}
+
+	// Filtered semesters for the selected year
+	$: displayedSemesters = selectedYearForSemesters 
+		? structure.semesters.filter(s => s.academic_year_id === selectedYearForSemesters!.id)
+		: [];
 
 	// New Year Form
 	let newYear = {
@@ -320,6 +416,14 @@
 													title="กำหนดชั้นเรียนที่เปิดสอน"
 												>
 													<Settings class="h-4 w-4" />
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon"
+													onclick={() => openSemestersDialog(year)}
+													title="จัดการภาคเรียน"
+												>
+													<CalendarClock class="h-4 w-4" />
 												</Button>
 												{#if !year.is_active}
 													<Button
@@ -608,6 +712,122 @@
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 					{/if}
 					บันทึกการเปลี่ยนแปลง
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+	<Dialog.Root bind:open={showSemestersDialog}>
+		<Dialog.Content class="sm:max-w-[700px] max-h-[85vh] flex flex-col">
+			<Dialog.Header>
+				<Dialog.Title>จัดการภาคเรียน (Semesters)</Dialog.Title>
+				<Dialog.Description>
+					รายการภาคเรียนสำหรับ <strong>{selectedYearForSemesters?.name}</strong>
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="flex justify-end mb-2">
+				<Button size="sm" onclick={openCreateSemester}>
+					<Plus class="mr-2 h-4 w-4" /> เพิ่มภาคเรียน
+				</Button>
+			</div>
+
+			<div class="border rounded-md overflow-hidden flex-1 overflow-y-auto min-h-[300px]">
+				<Table.Root>
+					<Table.Header>
+						<Table.Row>
+							<Table.Head class="w-[100px]">เทอม</Table.Head>
+							<Table.Head>ชื่อภาคเรียน</Table.Head>
+							<Table.Head>ระยะเวลา</Table.Head>
+							<Table.Head>สถานะ</Table.Head>
+							<Table.Head class="text-right">จัดการ</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each displayedSemesters as sem}
+							<Table.Row>
+								<Table.Cell class="font-bold">{sem.term}</Table.Cell>
+								<Table.Cell>{sem.name}</Table.Cell>
+								<Table.Cell class="text-xs">
+									{new Date(sem.start_date).toLocaleDateString('th-TH')} -
+									{new Date(sem.end_date).toLocaleDateString('th-TH')}
+								</Table.Cell>
+								<Table.Cell>
+									{#if sem.is_active}
+										<Badge variant="default" class="bg-green-500">ปัจจุบัน</Badge>
+									{/if}
+								</Table.Cell>
+								<Table.Cell class="text-right">
+									<Button variant="ghost" size="icon" onclick={() => openEditSemester(sem)}>
+										<Settings class="h-3 w-3" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="text-destructive"
+										onclick={() => handleDeleteSemester(sem.id)}
+									>
+										<Trash2 class="h-3 w-3" />
+									</Button>
+								</Table.Cell>
+							</Table.Row>
+						{:else}
+							<Table.Row>
+								<Table.Cell colspan={5} class="h-24 text-center text-muted-foreground">
+									ไม่พบข้อมูลภาคเรียน
+								</Table.Cell>
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			</div>
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showSemestersDialog = false)}>ปิดหน้าต่าง</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Create/Edit Semester Form Dialog -->
+	<Dialog.Root bind:open={showSemesterForm}>
+		<Dialog.Content class="sm:max-w-[425px]">
+			<Dialog.Header>
+				<Dialog.Title>{semesterToEdit ? 'แก้ไขภาคเรียน' : 'เพิ่มภาคเรียนใหม่'}</Dialog.Title>
+			</Dialog.Header>
+			<div class="grid gap-4 py-4">
+				<div class="grid gap-2">
+					<Label>เทอมที่ <span class="text-red-500">*</span></Label>
+					<Input bind:value={newSemester.term} placeholder="1, 2, Summer" />
+				</div>
+				<div class="grid gap-2">
+					<Label>ชื่อเรียก <span class="text-red-500">*</span></Label>
+					<Input bind:value={newSemester.name} placeholder="ภาคเรียนที่ 1" />
+				</div>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="grid gap-2">
+						<Label>วันเปิดเทอม <span class="text-red-500">*</span></Label>
+						<DatePicker bind:value={newSemester.start_date} />
+					</div>
+					<div class="grid gap-2">
+						<Label>วันปิดเทอม <span class="text-red-500">*</span></Label>
+						<DatePicker bind:value={newSemester.end_date} />
+					</div>
+				</div>
+				<div class="flex items-center space-x-2">
+					<Checkbox
+						id="sem-active"
+						checked={newSemester.is_active}
+						onCheckedChange={(c) => (newSemester.is_active = c === true)}
+					/>
+					<Label for="sem-active">ตั้งเป็นภาคเรียนปัจจุบัน</Label>
+				</div>
+			</div>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showSemesterForm = false)}>ยกเลิก</Button>
+				<Button onclick={handleSaveSemester} disabled={isSubmittingSemester}>
+					{#if isSubmittingSemester}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					บันทึก
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
