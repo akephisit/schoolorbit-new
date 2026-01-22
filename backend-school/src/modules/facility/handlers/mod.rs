@@ -303,7 +303,7 @@ pub async fn delete_room(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/buildings", get(list_buildings).post(create_building))
-        .route("/buildings/:id", put(update_building).delete(delete_building))
+        .route("/buildings/{id}", put(update_building).delete(delete_building))
         .route("/rooms", get(list_rooms).post(create_room))
-        .route("/rooms/:id", put(update_room).delete(delete_room))
+        .route("/rooms/{id}", put(update_room).delete(delete_room))
 }
