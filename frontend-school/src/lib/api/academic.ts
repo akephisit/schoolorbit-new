@@ -355,3 +355,13 @@ export const assignCourses = async (data: {
 export const removeCourse = async (id: string) => {
     return await fetchApi(`/api/academic/planning/courses/${id}`, { method: 'DELETE' });
 };
+
+export const updateCourse = async (id: string, data: {
+    primary_instructor_id?: string | null;
+    settings?: any;
+}) => {
+    return await fetchApi(`/api/academic/planning/courses/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};

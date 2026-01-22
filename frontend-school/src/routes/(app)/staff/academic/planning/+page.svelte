@@ -7,11 +7,13 @@
 		listClassroomCourses,
 		assignCourses,
 		removeCourse,
+		updateCourse,
 		type AcademicStructureData,
 		type Classroom,
 		type Subject,
 		type ClassroomCourse
 	} from '$lib/api/academic';
+	import { listStaff, type StaffListItem } from '$lib/api/staff';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -29,7 +31,8 @@
 		Search, 
 		Trash2, 
 		Save,
-        Calendar
+        Calendar,
+		Settings
 	} from 'lucide-svelte';
 
 	// State
@@ -51,6 +54,13 @@
 	let selectedSubjectIds = $state<string[]>([]);
 	let subjectSearchTerm = $state('');
 	let submitting = $state(false);
+
+	// Edit Dialog
+	let showEditDialog = $state(false);
+	let editingCourse = $state<ClassroomCourse | null>(null);
+	let teachers = $state<StaffListItem[]>([]);
+	let selectedTeacherId = $state<string>(''); // For dropdown
+	let teachersLoaded = $state(false);
 
 	// Derived
 	let filteredSemesters = $derived(
@@ -85,7 +95,9 @@
 			if (activeYear) {
 				selectedYearId = activeYear.id;
 				await fetchClassrooms();
+				await fetchClassrooms();
 			}
+			loadTeachers(); // Preload teachers
 		} catch (e) {
 			console.error(e);
 			toast.error('โหลดข้อมูลตั้งต้นไม่สำเร็จ');
@@ -170,6 +182,43 @@
 		} catch (e) {
 			console.error(e);
 			toast.error('ลบไม่สำเร็จ');
+		}
+	}
+
+	async function loadTeachers() {
+		if (teachersLoaded) return;
+		try {
+			const res = await listStaff({ user_type: 'staff', status: 'active', page_size: 1000 });
+			teachers = res.data;
+			teachersLoaded = true;
+		} catch (e) {
+			console.error("Failed to load teachers", e);
+		}
+	}
+
+	async function openEditDialog(course: ClassroomCourse) {
+		editingCourse = course;
+		selectedTeacherId = course.primary_instructor_id || 'unassigned';
+		if (!teachersLoaded) await loadTeachers();
+		showEditDialog = true;
+	}
+
+	async function handleUpdateCourse() {
+		if (!editingCourse) return;
+		submitting = true;
+		try {
+			const teacherId = selectedTeacherId === 'unassigned' ? null : selectedTeacherId;
+			await updateCourse(editingCourse.id, {
+				primary_instructor_id: teacherId
+			});
+			toast.success('บันทึกข้อมูลสำเร็จ');
+			showEditDialog = false;
+			await fetchCourses();
+		} catch (e) {
+			console.error(e);
+			toast.error('อัปเดตข้อมูลไม่สำเร็จ');
+		} finally {
+			submitting = false;
 		}
 	}
 	
@@ -325,6 +374,9 @@
 										{/if}
 									</Table.Cell>
 									<Table.Cell class="text-right">
+										<Button variant="ghost" size="icon" onclick={() => openEditDialog(course)}>
+											<Settings class="w-4 h-4" />
+										</Button>
 										<Button
 											variant="ghost"
 											size="icon"
@@ -403,6 +455,57 @@
 						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
 					{/if}
 					บันทึก ({selectedSubjectIds.length})
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+	<!-- Edit Dialog -->
+	<Dialog.Root bind:open={showEditDialog}>
+		<Dialog.Content class="sm:max-w-[500px]">
+			<Dialog.Header>
+				<Dialog.Title>แก้ไขรายวิชา</Dialog.Title>
+			</Dialog.Header>
+
+			<div class="grid gap-4 py-4">
+				<div class="space-y-2">
+					<Label>วิชา</Label>
+					<div class="font-medium p-2 border rounded bg-muted/20">
+						{editingCourse?.subject_code}
+						{editingCourse?.subject_name_th}
+					</div>
+				</div>
+
+				<div class="space-y-2">
+					<Label>ครูผู้สอน (Primary Instructor)</Label>
+					<Select.Root type="single" bind:value={selectedTeacherId}>
+						<Select.Trigger class="w-full">
+							{#if selectedTeacherId === 'unassigned'}
+								<span class="text-muted-foreground">- ไม่ระบุ -</span>
+							{:else}
+								{teachers.find((t) => t.id === selectedTeacherId)?.first_name}
+								{teachers.find((t) => t.id === selectedTeacherId)?.last_name}
+							{/if}
+						</Select.Trigger>
+						<Select.Content class="max-h-[300px]">
+							<Select.Item value="unassigned">- ไม่ระบุ -</Select.Item>
+							{#each teachers as teacher}
+								<Select.Item value={teacher.id}>
+									{teacher.first_name}
+									{teacher.last_name}
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showEditDialog = false)}>ยกเลิก</Button>
+				<Button onclick={handleUpdateCourse} disabled={submitting}>
+					{#if submitting}
+						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+					{/if}
+					บันทึกการเปลี่ยนแปลง
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
