@@ -393,9 +393,9 @@
 			<!-- Summary Statistic Cards -->
 			<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
 				<Card.Root>
-					<Card.Content class="p-4 flex flex-col items-center justify-center text-center">
+					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
 						<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาพื้นฐาน</h4>
-						<div class="text-2xl font-bold">
+						<div class="text-xl font-bold">
 							{summaryStats.basic.credit.toFixed(1)}
 							<span class="text-xs font-normal text-muted-foreground">นก.</span>
 						</div>
@@ -403,9 +403,9 @@
 					</Card.Content>
 				</Card.Root>
 				<Card.Root>
-					<Card.Content class="p-4 flex flex-col items-center justify-center text-center">
+					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
 						<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาเพิ่มเติม</h4>
-						<div class="text-2xl font-bold">
+						<div class="text-xl font-bold">
 							{summaryStats.additional.credit.toFixed(1)}
 							<span class="text-xs font-normal text-muted-foreground">นก.</span>
 						</div>
@@ -413,16 +413,16 @@
 					</Card.Content>
 				</Card.Root>
 				<Card.Root>
-					<Card.Content class="p-4 flex flex-col items-center justify-center text-center">
+					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
 						<h4 class="text-sm font-medium text-muted-foreground mb-1">กิจกรรมฯ</h4>
-						<div class="text-2xl font-bold">-</div>
+						<div class="text-xl font-bold">-</div>
 						<div class="text-xs text-muted-foreground">{summaryStats.activity.hours} ชม.</div>
 					</Card.Content>
 				</Card.Root>
 				<Card.Root class="bg-primary/5 border-primary/20">
-					<Card.Content class="p-4 flex flex-col items-center justify-center text-center">
+					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
 						<h4 class="text-sm font-medium text-primary mb-1">รวมทั้งสิ้น</h4>
-						<div class="text-2xl font-bold text-primary">
+						<div class="text-xl font-bold text-primary">
 							{summaryStats.total.credit.toFixed(1)}
 							<span class="text-xs font-normal opacity-70">นก.</span>
 						</div>
