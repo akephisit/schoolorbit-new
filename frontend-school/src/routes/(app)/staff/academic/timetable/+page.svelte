@@ -180,9 +180,17 @@
 	
 	// Room Selection State
 	let showRoomModal = $state(false);
-	let pendingDropData = $state<{day: string, periodId: string} | null>(null);
-	let selectedRoomId = $state<string>(''); // empty string = no room (default)
+	// Store all necessary context because drag state is cleared on dragend
+	let pendingDropContext = $state<{
+		day: string;
+		periodId: string;
+		dragType: 'NEW' | 'MOVE';
+		course: any;      // The item being dragged
+		entryId: string | null;
+	} | null>(null);
 	
+	let selectedRoomId = $state<string>(''); // empty string = no room (default)
+
 	// Availability State
 	let occupiedSlots = $state<Set<string>>(new Set()); // Format: "DAY_PERIODID"
 	
@@ -226,11 +234,7 @@
 		} else {
 			draggedCourse = item; 
 			draggedEntryId = item.id;
-			// For existing entry, we might need to find the full course object or use what's in entry
-			// Fortunately, entry has joined fields potentially, but better to check course list if possible
-			// Or rely on what we have. Let's assume item has instructor_id or similar.
-			// Actually TimetableEntry doesn't guarantee instructor_id is top level, 
-			// let's try to find it in 'courses' list by classroom_course_id
+			
 			const originalCourse = courses.find(c => c.id === item.classroom_course_id);
 			courseToCheck = originalCourse || item; 
 		}
@@ -276,22 +280,29 @@
 		}
 
         // Open Room Selection Modal instead of saving immediately
-        pendingDropData = { day, periodId };
+        // Store context because drag state (draggedCourse) will be cleared by ondragend
+        pendingDropContext = {
+            day,
+            periodId,
+            dragType,
+            course: draggedCourse,
+            entryId: draggedEntryId
+        };
         
         // Pre-select room if moving existing entry
         if (dragType === 'MOVE' && draggedCourse.room_id) {
             selectedRoomId = draggedCourse.room_id;
         } else {
-            selectedRoomId = 'none'; // Default to 'no room' or specifically none
+            selectedRoomId = 'none'; // Default to 'no room'
         }
         
         showRoomModal = true;
 	}
 
     async function confirmDropWithRoom() {
-        if (!pendingDropData || !draggedCourse) return;
+        if (!pendingDropContext) return;
         
-        const { day, periodId } = pendingDropData;
+        const { day, periodId, dragType, course, entryId } = pendingDropContext;
         // Use undefined instead of null to match interface
         const roomId = selectedRoomId === 'none' ? undefined : selectedRoomId;
         
@@ -302,9 +313,9 @@
 
 			if (dragType === 'NEW') {
 				// CREATE NEW
-				const courseCode = draggedCourse.subject_code;
-				const payload: any = { // Use any or proper type if strict
-					classroom_course_id: draggedCourse.id,
+				const courseCode = course.subject_code;
+				const payload: any = { 
+					classroom_course_id: course.id,
 					day_of_week: day,
 					period_id: periodId,
                     room_id: roomId
@@ -313,9 +324,9 @@
 				const res = await createTimetableEntry(payload);
 				handleResponse(res, `ลงตาราง ${courseCode} สำเร็จ`);
 
-			} else if (dragType === 'MOVE' && draggedEntryId) {
+			} else if (dragType === 'MOVE' && entryId) {
 				// UPDATE EXISTING (MOVE)
-				const courseCode = draggedCourse.subject_code;
+				const courseCode = course.subject_code;
 
 				const payload = {
 					day_of_week: day,
@@ -323,7 +334,7 @@
                     room_id: roomId
 				};
 
-				const res = await updateTimetableEntry(draggedEntryId, payload);
+				const res = await updateTimetableEntry(entryId, payload);
 				handleResponse(res, `ย้าย ${courseCode} สำเร็จ`);
 			}
 
@@ -331,8 +342,8 @@
 			toast.error(e.message || 'บันทึกไม่สำเร็จ');
 		} finally {
 			submitting = false;
-			handleDragEnd();
-            pendingDropData = null;
+			// handleDragEnd(); // already called by system
+            pendingDropContext = null;
 		}
     }
 
