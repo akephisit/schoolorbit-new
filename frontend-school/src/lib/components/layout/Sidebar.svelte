@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { GraduationCap } from 'lucide-svelte';
+	import { ChevronLeft, GraduationCap } from 'lucide-svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { authStore } from '$lib/stores/auth';
@@ -123,15 +123,25 @@
   lg:translate-x-0 flex flex-col"
 >
 	<!-- Header -->
-	<div class="flex items-center justify-center p-4 border-b border-border h-16">
+	<div class="flex items-center justify-between p-4 border-b border-border h-16">
 		{#if !isCollapsed}
 			<div class="flex items-center gap-2 overflow-hidden">
 				<GraduationCap class="w-8 h-8 text-primary flex-shrink-0" />
 				<h1 class="text-lg font-bold text-foreground whitespace-nowrap">SchoolOrbit</h1>
 			</div>
-		{:else}
-			<GraduationCap class="w-8 h-8 text-primary flex-shrink-0" />
 		{/if}
+
+		<!-- Toggle Button (Desktop) -->
+		<button
+			onclick={toggleSidebar}
+			class="hidden lg:flex p-2 rounded-lg hover:bg-accent transition-colors
+      {isCollapsed ? 'mx-auto' : ''}"
+			aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+		>
+			<div class="transition-transform duration-300 {isCollapsed ? 'rotate-180' : ''}">
+				<ChevronLeft class="w-5 h-5" />
+			</div>
+		</button>
 	</div>
 
 	<!-- Navigation -->
