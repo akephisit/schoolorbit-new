@@ -146,6 +146,13 @@ export const listTimetableEntries = async (filters: {
     return await fetchApi(`/api/academic/timetable${queryString}`);
 };
 
+export interface UpdateTimetableEntryRequest {
+    day_of_week?: string;
+    period_id?: string;
+    room_id?: string;
+    note?: string;
+}
+
 export const createTimetableEntry = async (data: CreateTimetableEntryRequest) => {
     const response = await fetch(`${BACKEND_URL}/api/academic/timetable`, {
         method: 'POST',
@@ -158,7 +165,7 @@ export const createTimetableEntry = async (data: CreateTimetableEntryRequest) =>
 
     const result = await response.json();
 
-    // Handle 409 Conflict specially (return conflicts without throwing)
+    // Handle 409 Conflict specially
     if (response.status === 409) {
         return {
             success: false,
@@ -167,7 +174,34 @@ export const createTimetableEntry = async (data: CreateTimetableEntryRequest) =>
         };
     }
 
-    // Handle other errors
+    if (!response.ok) {
+        throw new Error(result.error || `Request failed with status ${response.status}`);
+    }
+
+    return result;
+};
+
+export const updateTimetableEntry = async (id: string, data: UpdateTimetableEntryRequest) => {
+    const response = await fetch(`${BACKEND_URL}/api/academic/timetable/${id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    });
+
+    const result = await response.json();
+
+    // Handle 409 Conflict specially
+    if (response.status === 409) {
+        return {
+            success: false,
+            conflicts: result.conflicts || [],
+            message: result.message || 'พบข้อขัดแย้งในตาราง'
+        };
+    }
+
     if (!response.ok) {
         throw new Error(result.error || `Request failed with status ${response.status}`);
     }

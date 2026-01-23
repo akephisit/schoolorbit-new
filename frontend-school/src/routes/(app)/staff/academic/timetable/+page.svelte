@@ -6,6 +6,7 @@
 		type AcademicPeriod,
 		listTimetableEntries,
 		createTimetableEntry,
+		updateTimetableEntry,
 		deleteTimetableEntry,
 		listPeriods
 	} from '$lib/api/timetable';
@@ -153,23 +154,43 @@
 	// Drag & Drop Handlers (Native API)
 	// ============================================
 
-	function handleDragStart(event: DragEvent, course: any) {
-		draggedCourse = course;
+	// Drag & Drop Handlers (Native API)
+	// ============================================
+
+	// Identify what is being dragged
+	// type: 'NEW' (from list) | 'MOVE' (from grid)
+	let dragType = $state<'NEW' | 'MOVE'>('NEW');
+	let draggedEntryId = $state<string | null>(null);
+
+	function handleDragStart(event: DragEvent, item: any, type: 'NEW' | 'MOVE') {
+		dragType = type;
+		
+		if (type === 'NEW') {
+			draggedCourse = item;
+			draggedEntryId = null;
+		} else {
+			draggedCourse = item; // For moving, item is the TimetableEntry (or object with same shape)
+			draggedEntryId = item.id;
+		}
+
 		if (event.dataTransfer) {
-			event.dataTransfer.effectAllowed = 'copy'; // Use copy to indicate original stays
-			event.dataTransfer.setData('text/plain', course.id);
-            // Set drag image locally if needed, but browser default is usually fine
+			event.dataTransfer.effectAllowed = type === 'NEW' ? 'copy' : 'move';
+			event.dataTransfer.setData('text/plain', JSON.stringify({ 
+				type,
+				id: type === 'NEW' ? item.id : item.id
+			}));
 		}
 	}
 
 	function handleDragEnd() {
 		draggedCourse = null;
+		draggedEntryId = null;
 	}
 
 	function handleDragOver(event: DragEvent) {
 		event.preventDefault(); // Necessary to allow dropping
 		if (event.dataTransfer) {
-			event.dataTransfer.dropEffect = 'copy';
+			event.dataTransfer.dropEffect = dragType === 'NEW' ? 'copy' : 'move';
 		}
 	}
 
@@ -182,40 +203,63 @@
         const existingEntry = getEntryForSlot(day, periodId);
 		if (existingEntry) {
 			toast.error('ช่องนี้มีรายการอยู่แล้ว');
-            draggedCourse = null;
+            // reset
+            handleDragEnd();
 			return;
 		}
 
-		// Store course info before clearing (to avoid null reference in toast)
-		const courseCode = draggedCourse.subject_code;
-		const courseId = draggedCourse.id;
-
-		const payload = {
-			classroom_course_id: courseId,
-			day_of_week: day,
-			period_id: periodId
-		};
-
 		try {
 			submitting = true;
-			const res = await createTimetableEntry(payload);
 
-			if (res.success === false) {
-				toast.error(res.message || 'พบข้อขัดแย้งในตาราง');
-				if (res.conflicts && res.conflicts.length > 0) {
-					res.conflicts.forEach((c: any) => {
-						toast.error(c.message);
-					});
+			if (dragType === 'NEW') {
+				// CREATE NEW
+				const courseCode = draggedCourse.subject_code;
+				const payload = {
+					classroom_course_id: draggedCourse.id,
+					day_of_week: day,
+					period_id: periodId
+				};
+				
+				const res = await createTimetableEntry(payload);
+				handleResponse(res, `ลงตาราง ${courseCode} สำเร็จ`);
+
+			} else if (dragType === 'MOVE' && draggedEntryId) {
+				// UPDATE EXISTING (MOVE)
+				const courseCode = draggedCourse.subject_code;
+				
+				// Optional: Check if dropped in same slot
+				if (draggedCourse.day_of_week === day && draggedCourse.period_id === periodId) {
+					return; // No change
 				}
-			} else {
-				await loadTimetable();
-				toast.success(`ลงตาราง ${courseCode} สำเร็จ`);
+
+				const payload = {
+					day_of_week: day,
+					period_id: periodId
+				};
+
+				const res = await updateTimetableEntry(draggedEntryId, payload);
+				handleResponse(res, `ย้าย ${courseCode} สำเร็จ`);
 			}
+
 		} catch (e: any) {
-			toast.error(e.message || 'เพิ่มลงตารางไม่สำเร็จ');
+			toast.error(e.message || 'บันทึกไม่สำเร็จ');
 		} finally {
 			submitting = false;
-			draggedCourse = null;
+			handleDragEnd();
+		}
+	}
+
+	async function handleResponse(res: any, successMessage: string) {
+		if (res.success === false) {
+			toast.error(res.message || 'พบข้อขัดแย้งในตาราง');
+			if (res.conflicts && res.conflicts.length > 0) {
+				res.conflicts.forEach((c: any) => {
+					toast.error(c.message);
+				});
+			}
+		} else {
+			await loadTimetable();
+			toast.success(successMessage);
 		}
 	}
 
@@ -349,7 +393,7 @@
 							role="button"
 							tabindex="0"
 							draggable="true"
-							ondragstart={(e) => handleDragStart(e, course)}
+							ondragstart={(e) => handleDragStart(e, course, 'NEW')}
 							ondragend={handleDragEnd}
 							class="mb-2 p-3 bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing w-full flex items-start gap-2 group mobile-draggable"
 						>
@@ -420,7 +464,12 @@
 												{#if entry}
 													<!-- Filled Slot -->
 													<div
-														class="h-full w-full bg-blue-50 border border-blue-200 rounded p-2 relative group flex flex-col"
+														draggable="true"
+														ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
+														ondragend={handleDragEnd}
+														class="h-full w-full bg-blue-50 border border-blue-200 rounded p-2 relative group flex flex-col cursor-move hover:shadow-md transition-all mobile-draggable"
+														role="button"
+														tabindex="0"
 													>
 														<div class="font-bold text-blue-900">{entry.subject_code}</div>
 														<div class="text-xs text-blue-700 line-clamp-2 mt-1 flex-1">

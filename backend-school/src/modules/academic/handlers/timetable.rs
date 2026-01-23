@@ -451,3 +451,127 @@ async fn validate_timetable_entry(
         conflicts,
     })
 }
+
+/// PUT /api/academic/timetable/{id}
+pub async fn update_timetable_entry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateTimetableEntryRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL).await {
+        return Ok(response);
+    }
+    
+    // Get current user ID for audit
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+
+    // 1. Fetch existing entry to get classroom_course_id for validation
+    let existing_entry = sqlx::query_as::<_, TimetableEntry>(
+        r#"
+        SELECT te.*, NULL as subject_code, NULL as subject_name_th, NULL as instructor_name,
+               NULL as classroom_name, NULL as room_code, NULL as period_name,
+               NULL as start_time, NULL as end_time
+        FROM academic_timetable_entries te WHERE id = $1
+        "#
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|_| AppError::NotFound("Entry not found".to_string()))?;
+
+    // 2. Prepare mock CreateRequest for validation (using new values or fallback to existing)
+    let validation_payload = CreateTimetableEntryRequest {
+        classroom_course_id: existing_entry.classroom_course_id,
+        day_of_week: payload.day_of_week.clone().unwrap_or(existing_entry.day_of_week),
+        period_id: payload.period_id.unwrap_or(existing_entry.period_id),
+        room_id: payload.room_id.or(existing_entry.room_id),
+        note: payload.note.clone().or(existing_entry.note),
+    };
+
+    // 3. Validate conflicts (BUT need to exclude current entry ID)
+    // NOTE: validation logic needs to support exclusion or we check manually
+    // For now, let's implement a manual check specific for update to avoid big refactor
+    
+    // Check Instructor Conflict (Manual)
+    let course_info: Option<(Uuid, Option<Uuid>)> = sqlx::query_as(
+        "SELECT classroom_id, primary_instructor_id FROM classroom_courses WHERE id = $1"
+    )
+    .bind(existing_entry.classroom_course_id)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten();
+
+    if let Some((_, Some(instr_id))) = course_info {
+        let has_conflict: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM academic_timetable_entries te
+                JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+                WHERE cc.primary_instructor_id = $1
+                  AND te.day_of_week = $2
+                  AND te.period_id = $3
+                  AND te.is_active = true
+                  AND te.id != $4  -- Exclude current entry
+            )
+            "#
+        )
+        .bind(instr_id)
+        .bind(&validation_payload.day_of_week)
+        .bind(validation_payload.period_id)
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(false);
+
+        if has_conflict {
+            return Ok((
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "success": false,
+                    "message": "Instructor conflict detected",
+                    "conflicts": [{
+                        "conflict_type": "INSTRUCTOR_CONFLICT",
+                        "message": "ครูมีตารางสอนในคาบนี้อยู่แล้ว"
+                    }]
+                }))
+            ).into_response());
+        }
+    }
+
+    // 4. Update Entry
+    let updated_entry = sqlx::query_as::<_, TimetableEntry>(
+        r#"
+        UPDATE academic_timetable_entries SET
+            day_of_week = COALESCE($2, day_of_week),
+            period_id = COALESCE($3, period_id),
+            room_id = COALESCE($4, room_id),
+            note = COALESCE($5, note),
+            updated_at = NOW(),
+            updated_by = $6
+        WHERE id = $1
+        RETURNING *
+        "#
+    )
+    .bind(id)
+    .bind(payload.day_of_week)
+    .bind(payload.period_id)
+    .bind(payload.room_id)
+    .bind(payload.note)
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to update entry: {}", e);
+        if e.to_string().contains("unique_entry_per_slot") {
+            AppError::BadRequest("This slot is already occupied".to_string())
+        } else {
+            AppError::InternalServerError("Failed to update entry".to_string())
+        }
+    })?;
+
+    Ok(Json(json!({ "success": true, "data": updated_entry })).into_response())
+}
