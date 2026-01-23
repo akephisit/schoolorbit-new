@@ -32,7 +32,8 @@
 		Clock,
 		School,
 		GripVertical,
-		BookOpen
+		BookOpen,
+		MapPin
 	} from 'lucide-svelte';
 
 	// Mobile drag & drop support
@@ -276,6 +277,13 @@
 		if (existingEntry) {
 			toast.error('ช่องนี้มีรายการอยู่แล้ว');
             handleDragEnd();
+			return;
+		}
+
+		// Check instructor availability
+		if (isSlotOccupiedByInstructor(day, periodId)) {
+			toast.error('ครูติดสอนในคาบนี้แล้ว');
+			handleDragEnd();
 			return;
 		}
 
@@ -592,6 +600,21 @@
 																<span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
 																{entry.instructor_name}
 															</div>
+														{/if}
+
+														<!-- Room Display -->
+														{#if entry.room_id}
+															{@const roomName =
+																entry.room_code ||
+																rooms.find((r) => r.id === entry.room_id)?.name_th}
+															{#if roomName}
+																<div
+																	class="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium bg-white/60 px-1.5 py-0.5 rounded border border-slate-100 w-fit max-w-full truncate"
+																>
+																	<MapPin class="w-3 h-3 flex-shrink-0" />
+																	<span class="truncate">{roomName}</span>
+																</div>
+															{/if}
 														{/if}
 
 														<button
