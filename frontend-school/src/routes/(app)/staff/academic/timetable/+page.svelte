@@ -32,6 +32,17 @@
 		BookOpen
 	} from 'lucide-svelte';
 
+	// Mobile drag & drop support
+	import { polyfill } from 'mobile-drag-drop';
+	import { scrollBehaviourDragImageTranslateOverride } from 'mobile-drag-drop/scroll-behaviour';
+
+	// Initialize polyfill on mount (client-side only)
+	if (typeof window !== 'undefined') {
+		polyfill({
+			dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride
+		});
+	}
+
 	const DAYS = [
 		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
 		{ value: 'TUE', label: 'อังคาร', shortLabel: 'อ' },
@@ -236,6 +247,14 @@
 	onMount(loadInitialData);
 </script>
 
+<svelte:head>
+	<!-- Mobile drag & drop CSS -->
+	<link
+		rel="stylesheet"
+		href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@3.0.0-rc.0/default.css"
+	/>
+</svelte:head>
+
 <div class="h-full flex flex-col space-y-4">
 	<div class="flex flex-col gap-2">
 		<h2 class="text-3xl font-bold flex items-center gap-2">
@@ -437,3 +456,24 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* Mobile drag & drop enhancements */
+	@media (max-width: 768px) {
+		[draggable="true"] {
+			touch-action: none;
+			-webkit-user-select: none;
+			user-select: none;
+		}
+
+		.dnd-poly-drag-image {
+			opacity: 0.8;
+			transform: scale(1.1);
+		}
+	}
+
+	/* Prevent text selection during drag */
+	.dragging {
+		cursor: move !important;
+	}
+</style>
