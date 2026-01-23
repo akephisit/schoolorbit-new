@@ -221,34 +221,43 @@
 </aside>
 
 <style>
-	/* Custom minimal scrollbar styling */
+	/* Ultra minimal scrollbar styling */
 	.sidebar-nav {
+		/* Smooth scrolling */
+		scroll-behavior: smooth;
+		
 		/* Firefox */
 		scrollbar-width: thin;
-		scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+		scrollbar-color: transparent transparent;
+	}
+
+	/* Show scrollbar on hover (Firefox) */
+	.sidebar-nav:hover {
+		scrollbar-color: hsl(var(--muted-foreground) / 0.15) transparent;
 	}
 
 	/* Webkit browsers (Chrome, Safari, Edge) */
 	.sidebar-nav::-webkit-scrollbar {
-		width: 6px;
+		width: 4px;
 	}
 
 	.sidebar-nav::-webkit-scrollbar-track {
 		background: transparent;
 	}
 
+	/* Hide scrollbar by default */
 	.sidebar-nav::-webkit-scrollbar-thumb {
-		background-color: hsl(var(--muted-foreground) / 0.2);
-		border-radius: 3px;
-		transition: background-color 0.2s ease;
+		background-color: transparent;
+		border-radius: 2px;
+		transition: background-color 0.3s ease;
 	}
 
-	.sidebar-nav::-webkit-scrollbar-thumb:hover {
-		background-color: hsl(var(--muted-foreground) / 0.4);
+	/* Show scrollbar only on hover */
+	.sidebar-nav:hover::-webkit-scrollbar-thumb {
+		background-color: hsl(var(--muted-foreground) / 0.15);
 	}
 
-	/* Show scrollbar on hover */
-	.sidebar-nav:not(:hover)::-webkit-scrollbar-thumb {
-		background-color: hsl(var(--muted-foreground) / 0.1);
+	.sidebar-nav:hover::-webkit-scrollbar-thumb:hover {
+		background-color: hsl(var(--muted-foreground) / 0.3);
 	}
 </style>
