@@ -169,6 +169,10 @@
         
         if (!draggedCourse) return;
 
+        // Store course info before clearing (to avoid null reference in toast)
+        const courseCode = draggedCourse.subject_code;
+        const courseId = draggedCourse.id;
+
         // Check if slot is already occupied
         const existingEntry = getEntryForSlot(day, periodId);
         if (existingEntry) {
@@ -178,7 +182,7 @@
         }
 
         const payload = {
-            classroom_course_id: draggedCourse.id,
+            classroom_course_id: courseId,
             day_of_week: day,
             period_id: periodId
         };
@@ -196,8 +200,9 @@
                     });
                 }
             } else {
-                toast.success(`เพิ่ม ${draggedCourse.subject_code} ลงตารางสำเร็จ`);
-                loadTimetable();
+                // Success - reload timetable first, then show toast
+                await loadTimetable();
+                toast.success(`เพิ่ม ${courseCode} ลงตารางสำเร็จ`);
             }
         } catch (e: any) {
             toast.error(e.message || 'เพิ่มลงตารางไม่สำเร็จ');
