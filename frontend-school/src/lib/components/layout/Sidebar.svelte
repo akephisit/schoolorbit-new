@@ -146,7 +146,7 @@
 
 	<!-- Navigation -->
 	<Tooltip.Provider>
-		<nav class="flex-1 overflow-y-auto p-4 space-y-1">
+		<nav class="flex-1 overflow-y-auto p-4 space-y-1 sidebar-nav">
 			{#if menuLoading}
 				<!-- Loading skeleton -->
 				<div class="space-y-2">
@@ -219,3 +219,36 @@
 		</nav>
 	</Tooltip.Provider>
 </aside>
+
+<style>
+	/* Custom minimal scrollbar styling */
+	.sidebar-nav {
+		/* Firefox */
+		scrollbar-width: thin;
+		scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+	}
+
+	/* Webkit browsers (Chrome, Safari, Edge) */
+	.sidebar-nav::-webkit-scrollbar {
+		width: 6px;
+	}
+
+	.sidebar-nav::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	.sidebar-nav::-webkit-scrollbar-thumb {
+		background-color: hsl(var(--muted-foreground) / 0.2);
+		border-radius: 3px;
+		transition: background-color 0.2s ease;
+	}
+
+	.sidebar-nav::-webkit-scrollbar-thumb:hover {
+		background-color: hsl(var(--muted-foreground) / 0.4);
+	}
+
+	/* Show scrollbar on hover */
+	.sidebar-nav:not(:hover)::-webkit-scrollbar-thumb {
+		background-color: hsl(var(--muted-foreground) / 0.1);
+	}
+</style>
