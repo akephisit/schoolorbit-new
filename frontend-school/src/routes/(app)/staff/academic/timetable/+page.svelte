@@ -1,247 +1,241 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { toast } from 'svelte-sonner';
-    import {
-        type TimetableEntry,
-        type AcademicPeriod,
-        listTimetableEntries,
-        createTimetableEntry,
-        deleteTimetableEntry,
-        listPeriods
-    } from '$lib/api/timetable';
-    import {
-        lookupAcademicYears,
-        listClassrooms,
-        listClassroomCourses,
-        type Classroom
-    } from '$lib/api/academic';
-    
-    import * as Card from '$lib/components/ui/card';
-    import * as Table from '$lib/components/ui/table';
-    import { Button } from '$lib/components/ui/button';
-    import * as Select from '$lib/components/ui/select';
-    import { Badge } from '$lib/components/ui/badge';
-    
-    import {
-        CalendarDays,
-        Trash2,
-        Loader2,
-        Clock,
-        School,
-        GripVertical,
-        BookOpen
-    } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
+	import {
+		type TimetableEntry,
+		type AcademicPeriod,
+		listTimetableEntries,
+		createTimetableEntry,
+		deleteTimetableEntry,
+		listPeriods
+	} from '$lib/api/timetable';
+	import {
+		lookupAcademicYears,
+		listClassrooms,
+		listClassroomCourses,
+		type Classroom
+	} from '$lib/api/academic';
 
-    const DAYS = [
-        { value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
-        { value: 'TUE', label: 'อังคาร', shortLabel: 'อ' },
-        { value: 'WED', label: 'พุธ', shortLabel: 'พ' },
-        { value: 'THU', label: 'พฤหัสบดี', shortLabel: 'พฤ' },
-        { value: 'FRI', label: 'ศุกร์', shortLabel: 'ศ' }
-    ];
+	import * as Card from '$lib/components/ui/card';
+	import * as Table from '$lib/components/ui/table';
+	import { Button } from '$lib/components/ui/button';
+	import * as Select from '$lib/components/ui/select';
+	import { Badge } from '$lib/components/ui/badge';
 
-    // State
-    let loading = $state(true);
-    let timetableEntries = $state<TimetableEntry[]>([]);
-    let periods = $state<AcademicPeriod[]>([]);
-    let classrooms = $state<Classroom[]>([]);
-    let courses = $state<any[]>([]);
-    let academicYears = $state<any[]>([]);
-    
-    let selectedYearId = $state('');
-    let selectedClassroomId = $state('');
-    
-    // Drag & Drop state
-    let draggedCourse = $state<any>(null);
-    let submitting = $state(false);
+	import {
+		CalendarDays,
+		Trash2,
+		Loader2,
+		Clock,
+		School,
+		GripVertical,
+		BookOpen
+	} from 'lucide-svelte';
 
-    async function loadInitialData() {
-        try {
-            loading = true;
-            const [yearsRes] = await Promise.all([
-                lookupAcademicYears(false)
-            ]);
-            
-            academicYears = yearsRes.data;
-            
-            if (academicYears.length > 0) {
-                const activeYear = academicYears.find(y => y.is_current) || academicYears[0];
-                selectedYearId = activeYear.id;
-                await loadClassrooms();
-            }
-        } catch (e) {
-            toast.error('โหลดข้อมูลไม่สำเร็จ');
-        } finally {
-            loading = false;
-        }
-    }
+	const DAYS = [
+		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
+		{ value: 'TUE', label: 'อังคาร', shortLabel: 'อ' },
+		{ value: 'WED', label: 'พุธ', shortLabel: 'พ' },
+		{ value: 'THU', label: 'พฤหัสบดี', shortLabel: 'พฤ' },
+		{ value: 'FRI', label: 'ศุกร์', shortLabel: 'ศ' }
+	];
 
-    async function loadClassrooms() {
-        if (!selectedYearId) return;
-        try {
-            const res = await listClassrooms({ year_id: selectedYearId });
-            classrooms = res.data;
-        } catch (e) {
-            console.error(e);
-        }
-    }
+	// State
+	let loading = $state(true);
+	let timetableEntries = $state<TimetableEntry[]>([]);
+	let periods = $state<AcademicPeriod[]>([]);
+	let classrooms = $state<Classroom[]>([]);
+	let courses = $state<any[]>([]);
+	let academicYears = $state<any[]>([]);
 
-    async function loadPeriods() {
-        if (!selectedYearId) return;
-        try {
-            const res = await listPeriods({ academic_year_id: selectedYearId, active_only: true });
-            periods = res.data.filter(p => p.type === 'TEACHING');
-        } catch (e) {
-            console.error(e);
-        }
-    }
+	let selectedYearId = $state('');
+	let selectedClassroomId = $state('');
 
-    async function loadCoursesForClassroom() {
-        if (!selectedClassroomId) return;
-        try {
-            const res = await listClassroomCourses(selectedClassroomId);
-            courses = res.data;
-        } catch (e) {
-            console.error(e);
-        }
-    }
+	// Drag & Drop state
+	let draggedCourse = $state<any>(null);
+	let submitting = $state(false);
 
-    async function loadTimetable() {
-        if (!selectedClassroomId) {
-            timetableEntries = [];
-            return;
-        }
-        
-        try {
-            const res = await listTimetableEntries({ classroom_id: selectedClassroomId });
-            timetableEntries = res.data;
-        } catch (e) {
-            toast.error('โหลดตารางสอนไม่สำเร็จ');
-        }
-    }
+	async function loadInitialData() {
+		try {
+			loading = true;
+			const [yearsRes] = await Promise.all([lookupAcademicYears(false)]);
 
-    async function handleDeleteEntry(entryId: string) {
-        if (!confirm('คุณต้องการลบรายการนี้ออกจากตารางใช่หรือไม่?')) return;
-        
-        try {
-            await deleteTimetableEntry(entryId);
-            toast.success('ลบออกจากตารางสำเร็จ');
-            loadTimetable();
-        } catch (e: any) {
-            toast.error(e.message || 'ลบไม่สำเร็จ');
-        }
-    }
+			academicYears = yearsRes.data;
 
-    function getEntryForSlot(day: string, periodId: string): TimetableEntry | undefined {
-        return timetableEntries.find(e => e.day_of_week === day && e.period_id === periodId);
-    }
+			if (academicYears.length > 0) {
+				const activeYear = academicYears.find((y) => y.is_current) || academicYears[0];
+				selectedYearId = activeYear.id;
+				await loadClassrooms();
+			}
+		} catch (e) {
+			toast.error('โหลดข้อมูลไม่สำเร็จ');
+		} finally {
+			loading = false;
+		}
+	}
 
-    function formatTime(time?: string): string {
-        if (!time) return '';
-        return time.substring(0, 5);
-    }
+	async function loadClassrooms() {
+		if (!selectedYearId) return;
+		try {
+			const res = await listClassrooms({ year_id: selectedYearId });
+			classrooms = res.data;
+		} catch (e) {
+			console.error(e);
+		}
+	}
 
-    // ============================================
-    // Drag & Drop Handlers
-    // ============================================
+	async function loadPeriods() {
+		if (!selectedYearId) return;
+		try {
+			const res = await listPeriods({ academic_year_id: selectedYearId, active_only: true });
+			periods = res.data.filter((p) => p.type === 'TEACHING');
+		} catch (e) {
+			console.error(e);
+		}
+	}
 
-    function handleDragStart(event: DragEvent, course: any) {
-        draggedCourse = course;
-        if (event.dataTransfer) {
-            event.dataTransfer.effectAllowed = 'move';
-            event.dataTransfer.setData('text/plain', course.id);
-        }
-    }
+	async function loadCoursesForClassroom() {
+		if (!selectedClassroomId) return;
+		try {
+			const res = await listClassroomCourses(selectedClassroomId);
+			courses = res.data;
+		} catch (e) {
+			console.error(e);
+		}
+	}
 
-    function handleDragEnd() {
-        draggedCourse = null;
-    }
+	async function loadTimetable() {
+		if (!selectedClassroomId) {
+			timetableEntries = [];
+			return;
+		}
 
-    function handleDragOver(event: DragEvent) {
-        event.preventDefault();
-        if (event.dataTransfer) {
-            event.dataTransfer.dropEffect = 'move';
-        }
-    }
+		try {
+			const res = await listTimetableEntries({ classroom_id: selectedClassroomId });
+			timetableEntries = res.data;
+		} catch (e) {
+			toast.error('โหลดตารางสอนไม่สำเร็จ');
+		}
+	}
 
-    async function handleDrop(event: DragEvent, day: string, periodId: string) {
-        event.preventDefault();
-        
-        if (!draggedCourse) return;
+	async function handleDeleteEntry(entryId: string) {
+		if (!confirm('คุณต้องการลบรายการนี้ออกจากตารางใช่หรือไม่?')) return;
 
-        // Store course info before clearing (to avoid null reference in toast)
-        const courseCode = draggedCourse.subject_code;
-        const courseId = draggedCourse.id;
+		try {
+			await deleteTimetableEntry(entryId);
+			toast.success('ลบออกจากตารางสำเร็จ');
+			loadTimetable();
+		} catch (e: any) {
+			toast.error(e.message || 'ลบไม่สำเร็จ');
+		}
+	}
 
-        // Check if slot is already occupied
-        const existingEntry = getEntryForSlot(day, periodId);
-        if (existingEntry) {
-            toast.error('ช่องนี้มีรายการอยู่แล้ว กรุณาลบรายการเดิมออกก่อน');
-            draggedCourse = null;
-            return;
-        }
+	function getEntryForSlot(day: string, periodId: string): TimetableEntry | undefined {
+		return timetableEntries.find((e) => e.day_of_week === day && e.period_id === periodId);
+	}
 
-        const payload = {
-            classroom_course_id: courseId,
-            day_of_week: day,
-            period_id: periodId
-        };
+	function formatTime(time?: string): string {
+		if (!time) return '';
+		return time.substring(0, 5);
+	}
 
-        try {
-            submitting = true;
-            const res = await createTimetableEntry(payload);
-            
-            if (res.success === false) {
-                // Conflict detected
-                toast.error(res.message || 'พบข้อขัดแย้งในตาราง');
-                if (res.conflicts && res.conflicts.length > 0) {
-                    res.conflicts.forEach((c: any) => {
-                        toast.error(c.message);
-                    });
-                }
-            } else {
-                // Success - reload timetable first, then show toast
-                await loadTimetable();
-                toast.success(`เพิ่ม ${courseCode} ลงตารางสำเร็จ`);
-            }
-        } catch (e: any) {
-            toast.error(e.message || 'เพิ่มลงตารางไม่สำเร็จ');
-        } finally {
-            submitting = false;
-            draggedCourse = null;
-        }
-    }
+	// ============================================
+	// Drag & Drop Handlers
+	// ============================================
 
-    // Get courses that are not yet fully scheduled
-    let unscheduledCourses = $derived.by(() => {
-        // Count how many periods each course is already in timetable
-        const courseCounts = new Map<string, number>();
-        timetableEntries.forEach(entry => {
-            const count = courseCounts.get(entry.classroom_course_id) || 0;
-            courseCounts.set(entry.classroom_course_id, count + 1);
-        });
+	function handleDragStart(event: DragEvent, course: any) {
+		draggedCourse = course;
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'move';
+			event.dataTransfer.setData('text/plain', course.id);
+		}
+	}
 
-        return courses.map(course => ({
-            ...course,
-            scheduled_count: courseCounts.get(course.id) || 0
-        }));
-    });
+	function handleDragEnd() {
+		draggedCourse = null;
+	}
 
-    $effect(() => {
-        if (selectedYearId) {
-            loadClassrooms();
-            loadPeriods();
-        }
-    });
+	function handleDragOver(event: DragEvent) {
+		event.preventDefault();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'move';
+		}
+	}
 
-    $effect(() => {
-        if (selectedClassroomId) {
-            loadCoursesForClassroom();
-            loadTimetable();
-        }
-    });
+	async function handleDrop(event: DragEvent, day: string, periodId: string) {
+		event.preventDefault();
 
-    onMount(loadInitialData);
+		if (!draggedCourse) return;
+
+		// Store course info before clearing (to avoid null reference in toast)
+		const courseCode = draggedCourse.subject_code;
+		const courseId = draggedCourse.id;
+
+		// Check if slot is already occupied
+		const existingEntry = getEntryForSlot(day, periodId);
+		if (existingEntry) {
+			toast.error('ช่องนี้มีรายการอยู่แล้ว กรุณาลบรายการเดิมออกก่อน');
+			draggedCourse = null;
+			return;
+		}
+
+		const payload = {
+			classroom_course_id: courseId,
+			day_of_week: day,
+			period_id: periodId
+		};
+
+		try {
+			submitting = true;
+			const res = await createTimetableEntry(payload);
+
+			if (res.success === false) {
+				toast.error(res.message || 'พบข้อขัดแย้งในตาราง');
+				if (res.conflicts && res.conflicts.length > 0) {
+					res.conflicts.forEach((c: any) => {
+						toast.error(c.message);
+					});
+				}
+			} else {
+				await loadTimetable();
+				toast.success(`เพิ่ม ${courseCode} ลงตารางสำเร็จ`);
+			}
+		} catch (e: any) {
+			toast.error(e.message || 'เพิ่มลงตารางไม่สำเร็จ');
+		} finally {
+			submitting = false;
+			draggedCourse = null;
+		}
+	}
+
+	let unscheduledCourses = $derived.by(() => {
+		const courseCounts = new Map<string, number>();
+		timetableEntries.forEach((entry) => {
+			const count = courseCounts.get(entry.classroom_course_id) || 0;
+			courseCounts.set(entry.classroom_course_id, count + 1);
+		});
+
+		return courses.map((course) => ({
+			...course,
+			scheduled_count: courseCounts.get(course.id) || 0
+		}));
+	});
+
+	$effect(() => {
+		if (selectedYearId) {
+			loadClassrooms();
+			loadPeriods();
+		}
+	});
+
+	$effect(() => {
+		if (selectedClassroomId) {
+			loadCoursesForClassroom();
+			loadTimetable();
+		}
+	});
+
+	onMount(loadInitialData);
 </script>
 
 <div class="h-full flex flex-col space-y-4">
@@ -365,11 +359,14 @@
 						<Table.Root>
 							<Table.Header>
 								<Table.Row>
-									<Table.Head class="w-[120px] sticky left-0 bg-background z-10">คาบ/วัน</Table.Head
+									<Table.Head class="w-[100px] sticky left-0 bg-background z-10">วัน/คาบ</Table.Head
 									>
-									{#each DAYS as day}
+									{#each periods as period}
 										<Table.Head class="text-center min-w-[140px]">
-											<div class="font-bold">{day.label}</div>
+											<div class="font-bold text-sm">{period.name}</div>
+											<div class="text-xs text-muted-foreground">
+												{formatTime(period.start_time)}-{formatTime(period.end_time)}
+											</div>
 										</Table.Head>
 									{/each}
 								</Table.Row>
@@ -377,7 +374,7 @@
 							<Table.Body>
 								{#if loading}
 									<Table.Row>
-										<Table.Cell colspan={6} class="h-24 text-center">
+										<Table.Cell colspan={periods.length + 1} class="h-24 text-center">
 											<Loader2 class="animate-spin mx-auto" />
 										</Table.Cell>
 									</Table.Row>
@@ -386,9 +383,6 @@
 										<Table.Row>
 											<Table.Cell class="sticky left-0 bg-background z-10 border-r">
 												<div class="font-bold text-sm">{day.label}</div>
-												<div class="text-xs text-muted-foreground">
-													{day.shortLabel}
-												</div>
 											</Table.Cell>
 											{#each periods as period}
 												{@const entry = getEntryForSlot(day.value, period.id)}
