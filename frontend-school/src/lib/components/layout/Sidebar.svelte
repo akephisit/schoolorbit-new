@@ -221,96 +221,51 @@
 </aside>
 
 <style>
-	/* Modern minimal scrollbar with gradient and glow */
+	/* Ultra-minimal scrollbar - no arrows, no glow, just clean */
 	.sidebar-nav {
 		/* Smooth scrolling */
 		scroll-behavior: smooth;
 		
-		/* Firefox - minimal style */
-		scrollbar-width: thin;
-		scrollbar-color: transparent transparent;
+		/* Firefox - hide scrollbar by default */
+		scrollbar-width: none;
 	}
 
-	/* Show gradient scrollbar on hover (Firefox) */
+	/* Show minimal scrollbar on hover (Firefox) */
 	.sidebar-nav:hover {
-		scrollbar-color: oklch(0.5 0.02 240 / 0.3) transparent;
+		scrollbar-width: thin;
+		scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
 	}
 
 	/* Webkit browsers (Chrome, Safari, Edge) */
 	.sidebar-nav::-webkit-scrollbar {
-		width: 2px;
+		width: 4px;
 	}
 
 	.sidebar-nav::-webkit-scrollbar-track {
 		background: transparent;
 	}
 
-	/* Hide scrollbar arrows/buttons */
+	/* Completely hide scrollbar arrows/buttons */
 	.sidebar-nav::-webkit-scrollbar-button {
-		display: none;
-		height: 0;
-		width: 0;
+		display: none !important;
+		height: 0 !important;
+		width: 0 !important;
 	}
 
-	/* Scrollbar thumb - hidden by default with fade transition */
+	/* Scrollbar thumb - hidden by default */
 	.sidebar-nav::-webkit-scrollbar-thumb {
 		background: transparent;
-		border-radius: 10px;
-		transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-		opacity: 0;
+		border-radius: 2px;
+		transition: background 0.2s ease;
 	}
 
-	/* Show scrollbar with gray gradient and glow on hover */
+	/* Show simple scrollbar on hover */
 	.sidebar-nav:hover::-webkit-scrollbar-thumb {
-		background: linear-gradient(
-			180deg,
-			oklch(0.5 0.02 240 / 0.4) 0%,
-			oklch(0.45 0.02 240 / 0.5) 50%,
-			oklch(0.5 0.02 240 / 0.4) 100%
-		);
-		box-shadow: 
-			0 0 8px oklch(0.5 0.02 240 / 0.25),
-			0 0 4px oklch(0.5 0.02 240 / 0.4);
-		opacity: 1;
+		background: hsl(var(--muted-foreground) / 0.2);
 	}
 
-	/* Enhanced glow when hovering directly on scrollbar */
-	.sidebar-nav:hover::-webkit-scrollbar-thumb:hover {
-		background: linear-gradient(
-			180deg,
-			oklch(0.55 0.02 240 / 0.6) 0%,
-			oklch(0.5 0.02 240 / 0.7) 50%,
-			oklch(0.55 0.02 240 / 0.6) 100%
-		);
-		box-shadow: 
-			0 0 12px oklch(0.5 0.02 240 / 0.4),
-			0 0 6px oklch(0.5 0.02 240 / 0.6),
-			0 0 2px oklch(0.5 0.02 240 / 0.8);
-	}
-
-	/* Dark mode adjustments */
-	:global(.dark) .sidebar-nav:hover::-webkit-scrollbar-thumb {
-		background: linear-gradient(
-			180deg,
-			oklch(0.65 0.02 240 / 0.5) 0%,
-			oklch(0.7 0.02 240 / 0.6) 50%,
-			oklch(0.65 0.02 240 / 0.5) 100%
-		);
-		box-shadow: 
-			0 0 10px oklch(0.65 0.02 240 / 0.35),
-			0 0 5px oklch(0.65 0.02 240 / 0.5);
-	}
-
-	:global(.dark) .sidebar-nav:hover::-webkit-scrollbar-thumb:hover {
-		background: linear-gradient(
-			180deg,
-			oklch(0.7 0.02 240 / 0.7) 0%,
-			oklch(0.75 0.02 240 / 0.8) 50%,
-			oklch(0.7 0.02 240 / 0.7) 100%
-		);
-		box-shadow: 
-			0 0 15px oklch(0.65 0.02 240 / 0.5),
-			0 0 8px oklch(0.65 0.02 240 / 0.7),
-			0 0 3px oklch(0.7 0.02 240 / 0.9);
+	/* Slightly more visible when hovering on scrollbar itself */
+	.sidebar-nav::-webkit-scrollbar-thumb:hover {
+		background: hsl(var(--muted-foreground) / 0.3);
 	}
 </style>
