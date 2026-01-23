@@ -221,43 +221,89 @@
 </aside>
 
 <style>
-	/* Ultra minimal scrollbar styling */
+	/* Modern minimal scrollbar with gradient and glow */
 	.sidebar-nav {
 		/* Smooth scrolling */
 		scroll-behavior: smooth;
 		
-		/* Firefox */
+		/* Firefox - minimal style */
 		scrollbar-width: thin;
 		scrollbar-color: transparent transparent;
 	}
 
-	/* Show scrollbar on hover (Firefox) */
+	/* Show gradient scrollbar on hover (Firefox) */
 	.sidebar-nav:hover {
-		scrollbar-color: hsl(var(--muted-foreground) / 0.15) transparent;
+		scrollbar-color: oklch(0.6 0.2 250 / 0.3) transparent;
 	}
 
 	/* Webkit browsers (Chrome, Safari, Edge) */
 	.sidebar-nav::-webkit-scrollbar {
-		width: 4px;
+		width: 2px;
 	}
 
 	.sidebar-nav::-webkit-scrollbar-track {
 		background: transparent;
 	}
 
-	/* Hide scrollbar by default */
+	/* Scrollbar thumb - hidden by default with fade transition */
 	.sidebar-nav::-webkit-scrollbar-thumb {
-		background-color: transparent;
-		border-radius: 2px;
-		transition: background-color 0.3s ease;
+		background: transparent;
+		border-radius: 10px;
+		transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+		opacity: 0;
 	}
 
-	/* Show scrollbar only on hover */
+	/* Show scrollbar with gradient and glow on hover */
 	.sidebar-nav:hover::-webkit-scrollbar-thumb {
-		background-color: hsl(var(--muted-foreground) / 0.15);
+		background: linear-gradient(
+			180deg,
+			oklch(0.6 0.2 250 / 0.4) 0%,
+			oklch(0.55 0.2 250 / 0.5) 50%,
+			oklch(0.6 0.2 250 / 0.4) 100%
+		);
+		box-shadow: 
+			0 0 8px oklch(0.6 0.2 250 / 0.3),
+			0 0 4px oklch(0.6 0.2 250 / 0.5);
+		opacity: 1;
 	}
 
+	/* Enhanced glow when hovering directly on scrollbar */
 	.sidebar-nav:hover::-webkit-scrollbar-thumb:hover {
-		background-color: hsl(var(--muted-foreground) / 0.3);
+		background: linear-gradient(
+			180deg,
+			oklch(0.6 0.2 250 / 0.6) 0%,
+			oklch(0.55 0.2 250 / 0.7) 50%,
+			oklch(0.6 0.2 250 / 0.6) 100%
+		);
+		box-shadow: 
+			0 0 12px oklch(0.6 0.2 250 / 0.5),
+			0 0 6px oklch(0.6 0.2 250 / 0.7),
+			0 0 2px oklch(0.6 0.2 250 / 0.9);
+	}
+
+	/* Dark mode adjustments */
+	:global(.dark) .sidebar-nav:hover::-webkit-scrollbar-thumb {
+		background: linear-gradient(
+			180deg,
+			oklch(0.6 0.2 250 / 0.5) 0%,
+			oklch(0.65 0.22 250 / 0.6) 50%,
+			oklch(0.6 0.2 250 / 0.5) 100%
+		);
+		box-shadow: 
+			0 0 10px oklch(0.6 0.22 250 / 0.4),
+			0 0 5px oklch(0.6 0.22 250 / 0.6);
+	}
+
+	:global(.dark) .sidebar-nav:hover::-webkit-scrollbar-thumb:hover {
+		background: linear-gradient(
+			180deg,
+			oklch(0.65 0.22 250 / 0.7) 0%,
+			oklch(0.7 0.24 250 / 0.8) 50%,
+			oklch(0.65 0.22 250 / 0.7) 100%
+		);
+		box-shadow: 
+			0 0 15px oklch(0.6 0.22 250 / 0.6),
+			0 0 8px oklch(0.6 0.22 250 / 0.8),
+			0 0 3px oklch(0.65 0.24 250);
 	}
 </style>
