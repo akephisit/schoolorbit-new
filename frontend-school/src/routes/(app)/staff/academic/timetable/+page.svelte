@@ -229,9 +229,12 @@
 		return courses
 			.map((course) => {
 				const scheduled = courseCounts.get(course.id) || 0;
-				// Calculate max periods per week based on credits (0.5 credit = 1 period, 1.0 = 2 periods, etc.)
-				// Or use raw hours if available. Default to 99 if unknown.
-				const maxPeriods = course.credits ? Math.ceil(course.credits * 2) : 99;
+				// Calculate max periods per week based on credits 
+				// 1.0 credit = 2 periods/week (approx 40 hours/term)
+				// 1.5 credit = 3 periods/week (approx 60 hours/term)
+				// Formula: credit * 2
+				const credit = course.subject_credit || 0;
+				const maxPeriods = credit > 0 ? Math.ceil(credit * 2) : 3; // Default 3 if unknown
 				
 				return {
 					...course,
