@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-    import { dndzone } from 'svelte-dnd-action';
-    import { flip } from 'svelte/animate';
 	import {
 		type TimetableEntry,
 		type AcademicPeriod,
@@ -19,7 +17,6 @@
 	} from '$lib/api/academic';
 
 	import * as Card from '$lib/components/ui/card';
-	import * as Table from '$lib/components/ui/table';
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import { Badge } from '$lib/components/ui/badge';
@@ -33,6 +30,19 @@
 		GripVertical,
 		BookOpen
 	} from 'lucide-svelte';
+
+	// Mobile drag & drop support
+	// @ts-ignore
+	import { polyfill } from 'mobile-drag-drop';
+	// @ts-ignore
+	import { scrollBehaviourDragImageTranslateOverride } from 'mobile-drag-drop/scroll-behaviour';
+
+	// Initialize polyfill on mount (client-side only)
+	if (typeof window !== 'undefined') {
+		polyfill({
+			dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride
+		});
+	}
 
 	const DAYS = [
 		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
@@ -53,13 +63,8 @@
 	let selectedYearId = $state('');
 	let selectedClassroomId = $state('');
 
-    // Dnd State
-    // We need to maintain a copy of the draggable list for dnd-action
-    let draggableCourses = $state<any[]>([]); 
-    // We don't really drag items *out* of cells in this version, only *into* cells
-    // So cells don't need full dndzone state in the same way, but dnd-action requires array
-    // We'll handle drops manually via handleDndConsider/Finalize
-
+	// Drag & Drop state
+	let draggedCourse = $state<any>(null);
 	let submitting = $state(false);
 
 	async function loadInitialData() {
@@ -106,7 +111,6 @@
 		try {
 			const res = await listClassroomCourses(selectedClassroomId);
 			courses = res.data;
-            updateDraggableCourses(); // Sync for dnd
 		} catch (e) {
 			console.error(e);
 		}
@@ -121,7 +125,6 @@
 		try {
 			const res = await listTimetableEntries({ classroom_id: selectedClassroomId });
 			timetableEntries = res.data;
-            updateDraggableCourses(); // Sync updated counts
 		} catch (e) {
 			toast.error('โหลดตารางสอนไม่สำเร็จ');
 		}
@@ -146,86 +149,88 @@
 		return time.substring(0, 5);
 	}
 
-    // ============================================
-    // Dnd Action Handlers
-    // ============================================
-    
-    // Prepare draggable items (add unique ID for dnd-action if needed, though they have IDs)
-    function updateDraggableCourses() {
-        const courseCounts = new Map<string, number>();
+	// ============================================
+	// Drag & Drop Handlers (Native API)
+	// ============================================
+
+	function handleDragStart(event: DragEvent, course: any) {
+		draggedCourse = course;
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'copy'; // Use copy to indicate original stays
+			event.dataTransfer.setData('text/plain', course.id);
+            // Set drag image locally if needed, but browser default is usually fine
+		}
+	}
+
+	function handleDragEnd() {
+		draggedCourse = null;
+	}
+
+	function handleDragOver(event: DragEvent) {
+		event.preventDefault(); // Necessary to allow dropping
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'copy';
+		}
+	}
+
+	async function handleDrop(event: DragEvent, day: string, periodId: string) {
+		event.preventDefault();
+
+		if (!draggedCourse) return;
+        
+        // Prevent drop if slot occupied (double check)
+        const existingEntry = getEntryForSlot(day, periodId);
+		if (existingEntry) {
+			toast.error('ช่องนี้มีรายการอยู่แล้ว');
+            draggedCourse = null;
+			return;
+		}
+
+		// Store course info before clearing (to avoid null reference in toast)
+		const courseCode = draggedCourse.subject_code;
+		const courseId = draggedCourse.id;
+
+		const payload = {
+			classroom_course_id: courseId,
+			day_of_week: day,
+			period_id: periodId
+		};
+
+		try {
+			submitting = true;
+			const res = await createTimetableEntry(payload);
+
+			if (res.success === false) {
+				toast.error(res.message || 'พบข้อขัดแย้งในตาราง');
+				if (res.conflicts && res.conflicts.length > 0) {
+					res.conflicts.forEach((c: any) => {
+						toast.error(c.message);
+					});
+				}
+			} else {
+				await loadTimetable();
+				toast.success(`ลงตาราง ${courseCode} สำเร็จ`);
+			}
+		} catch (e: any) {
+			toast.error(e.message || 'เพิ่มลงตารางไม่สำเร็จ');
+		} finally {
+			submitting = false;
+			draggedCourse = null;
+		}
+	}
+
+	let unscheduledCourses = $derived.by(() => {
+		const courseCounts = new Map<string, number>();
 		timetableEntries.forEach((entry) => {
 			const count = courseCounts.get(entry.classroom_course_id) || 0;
 			courseCounts.set(entry.classroom_course_id, count + 1);
 		});
 
-		draggableCourses = courses.map((course) => ({
+		return courses.map((course) => ({
 			...course,
-            // dnd-action needs a unique 'id' property, which we have
 			scheduled_count: courseCounts.get(course.id) || 0
 		}));
-    }
-
-    // Source List Handlers
-    function handleSourceConsider(e: CustomEvent) {
-        draggableCourses = e.detail.items;
-    }
-    function handleSourceFinalize(e: CustomEvent) {
-        // When dragging out, we don't accidentally remove it from source
-        // Just reload original list to "snap back" if dropped elsewhere, 
-        // or keep current if dnd-action handles the copy correctly (but dnd-action moves by default)
-        
-        // Actually, since we want "Copy" behavior, the standard pattern is:
-        // On drop elsewhere, we refresh the source list to bring the item back.
-        updateDraggableCourses();
-    }
-
-    // Drop Zone Handlers (The Grid Cells)
-    // Since each cell is a separate drop zone, we need to handle drops per cell
-    async function handleCellFinalize(e: CustomEvent, day: string, periodId: string) {
-        const items = e.detail.items;
-        
-        // Only accept if an item was dropped (items.length > currentItems.length)
-        // But here the "cell" usually has 0 or 1 item.
-        // If we dropped something into an empty cell, items.length will be 1.
-        
-        if (items.length > 0) {
-            const droppedItem = items[items.length - 1]; // The new item
-            
-            // Should verify it's not a duplicate within the cell (logic handled below)
-            const existingEntry = getEntryForSlot(day, periodId);
-            if (existingEntry) {
-                 toast.error('ช่องนี้มีรายการอยู่แล้ว กรุณาลบรายการเดิมออกก่อน');
-                 return; // Do nothing, dndzone will revert visually if we don't update state
-            }
-
-            // Create Entry
-            const courseCode = droppedItem.subject_code;
-            const courseId = droppedItem.id;
-            
-            const payload = {
-                classroom_course_id: courseId,
-                day_of_week: day,
-                period_id: periodId
-            };
-
-            try {
-                // Determine if we need to show loading state locally? 
-                // Creating entry...
-                const res = await createTimetableEntry(payload);
-                if (res.success === false) {
-                     toast.error(res.message || 'พบข้อขัดแย้งในตาราง');
-                     if (res.conflicts) {
-                         res.conflicts.forEach((c: any) => toast.error(c.message));
-                     }
-                } else {
-                     await loadTimetable();
-                     toast.success(`เพิ่ม ${courseCode} ลงตารางสำเร็จ`);
-                }
-            } catch(e: any) {
-                toast.error(e.message);
-            }
-        }
-    }
+	});
 
 	$effect(() => {
 		if (selectedYearId) {
@@ -243,6 +248,14 @@
 
 	onMount(loadInitialData);
 </script>
+
+<svelte:head>
+	<!-- Mobile drag & drop CSS -->
+	<link
+		rel="stylesheet"
+		href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@3.0.0-rc.0/default.css"
+	/>
+</svelte:head>
 
 <div class="h-full flex flex-col space-y-4">
 	<div class="flex flex-col gap-2">
@@ -316,19 +329,19 @@
 					</h3>
 					<p class="text-xs text-muted-foreground mt-1">ลากวิชาไปวางในตาราง</p>
 				</div>
-				<div
-					class="flex-1 overflow-y-auto p-2"
-					use:dndzone={{ items: draggableCourses, flipDurationMs: 300, dropTargetStyle: {} }}
-					onconsider={handleSourceConsider}
-					onfinalize={handleSourceFinalize}
-				>
-					{#each draggableCourses as course (course.id)}
+				<div class="flex-1 overflow-y-auto p-2">
+					{#each unscheduledCourses as course (course.id)}
 						<div
-							class="mb-2 p-3 bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing w-full flex items-start gap-2 group"
-							animate:flip={{ duration: 300 }}
+							role="button"
+							tabindex="0"
+							draggable="true"
+							ondragstart={(e) => handleDragStart(e, course)}
+							ondragend={handleDragEnd}
+							class="mb-2 p-3 bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing w-full flex items-start gap-2 group mobile-draggable"
 						>
 							<GripVertical class="w-4 h-4 text-muted-foreground mt-0.5" />
-							<div class="min-w-0">
+							<div class="min-w-0 pointer-events-none">
+								<!-- Pointer events none ensures drag catches container -->
 								<div class="font-medium text-sm text-blue-900 truncate">{course.subject_code}</div>
 								<div class="text-xs text-muted-foreground truncate">{course.subject_name_th}</div>
 								{#if course.instructor_name}
@@ -382,6 +395,7 @@
 											{@const entry = getEntryForSlot(day.value, period.id)}
 
 											<!-- Cell Area -->
+											<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 											<td
 												class="border p-1 align-top h-[110px] min-w-[140px] relative transition-colors hover:bg-muted/10"
 											>
@@ -403,7 +417,7 @@
 
 														<button
 															onclick={() => handleDeleteEntry(entry.id)}
-															class="absolute top-1 right-1 opacity-100 sm:opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded text-red-500 transition-all"
+															class="absolute top-1 right-1 opacity-100 sm:opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded text-red-500 transition-all cursor-pointer z-10"
 															title="ลบ"
 														>
 															<Trash2 class="w-3.5 h-3.5" />
@@ -411,23 +425,16 @@
 													</div>
 												{:else}
 													<!-- Empty Drop Zone -->
-													<!-- Note: dndzone requires a list. We create a temporary list for this cell -->
 													<div
+														role="region"
+														aria-label="Drop zone"
+														ondragover={handleDragOver}
+														ondrop={(e) => handleDrop(e, day.value, period.id)}
 														class="h-full w-full flex items-center justify-center border-2 border-dashed border-transparent hover:border-blue-300 rounded transition-all"
-														use:dndzone={{
-															items: [],
-															flipDurationMs: 0,
-															dropTargetStyle: {
-																outline: '2px solid #3b82f6',
-																background: '#eff6ff'
-															}
-														}}
-														onconsider={() => {}}
-														onfinalize={(e) => handleCellFinalize(e, day.value, period.id)}
 													>
 														<span
-															class="text-xs text-muted-foreground opacity-50 pointer-events-none"
-															>วางที่นี่</span
+															class="text-xs text-muted-foreground opacity-20 pointer-events-none"
+															>ว่าง</span
 														>
 													</div>
 												{/if}
@@ -445,7 +452,7 @@
 </div>
 
 <style>
-    /* Custom Scrollbar for better look */
+    /* Custom Scrollbar */
     ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
@@ -460,4 +467,19 @@
     ::-webkit-scrollbar-thumb:hover {
         background: #cbd5e1;
     }
+
+    /* Mobile handling */
+    @media (max-width: 768px) {
+		.mobile-draggable {
+			touch-action: none;
+			-webkit-user-select: none;
+			user-select: none;
+		}
+
+		/* Helper class added by polyfill */
+		:global(.dnd-poly-drag-image) {
+			opacity: 0.8 !important;
+            transform: scale(1.05);
+		}
+	}
 </style>
