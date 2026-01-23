@@ -382,15 +382,15 @@
 										</Table.Cell>
 									</Table.Row>
 								{:else}
-									{#each DAYS as day}
+									{#each periods as period}
 										<Table.Row>
 											<Table.Cell class="sticky left-0 bg-background z-10 border-r">
-												<div class="font-bold text-sm">{day.label}</div>
+												<div class="font-medium text-sm">{period.name}</div>
 												<div class="text-xs text-muted-foreground">
-													{day.shortLabel}
+													{formatTime(period.start_time)}-{formatTime(period.end_time)}
 												</div>
 											</Table.Cell>
-											{#each periods as period}
+											{#each DAYS as day}
 												{@const entry = getEntryForSlot(day.value, period.id)}
 												<Table.Cell class="p-2">
 													{#if entry}
