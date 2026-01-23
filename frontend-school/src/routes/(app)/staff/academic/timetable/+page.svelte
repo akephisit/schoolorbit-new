@@ -16,6 +16,9 @@
 		listClassroomCourses,
 		type Classroom
 	} from '$lib/api/academic';
+	import { listRooms, type Room } from '$lib/api/facility';
+    import * as Dialog from '$lib/components/ui/dialog';
+    import * as Label from '$lib/components/ui/label';
 
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
@@ -60,6 +63,7 @@
 	let classrooms = $state<Classroom[]>([]);
 	let courses = $state<any[]>([]);
 	let academicYears = $state<any[]>([]);
+	let rooms = $state<Room[]>([]);
 
 	let selectedYearId = $state('');
 	let selectedClassroomId = $state('');
@@ -78,7 +82,10 @@
 			if (academicYears.length > 0) {
 				const activeYear = academicYears.find((y) => y.is_current) || academicYears[0];
 				selectedYearId = activeYear.id;
-				await loadClassrooms();
+				await Promise.all([
+                    loadClassrooms(),
+                    loadRooms()
+                ]);
 			}
 		} catch (e) {
 			toast.error('โหลดข้อมูลไม่สำเร็จ');
@@ -106,6 +113,15 @@
 			console.error(e);
 		}
 	}
+
+    async function loadRooms() {
+        try {
+            const res = await listRooms();
+            rooms = res.data;
+        } catch (e) {
+            console.error('Failed to load rooms', e);
+        }
+    }
 
 	async function loadCoursesForClassroom() {
 		if (!selectedClassroomId) return;
@@ -161,16 +177,67 @@
 	// type: 'NEW' (from list) | 'MOVE' (from grid)
 	let dragType = $state<'NEW' | 'MOVE'>('NEW');
 	let draggedEntryId = $state<string | null>(null);
+	
+	// Room Selection State
+	let showRoomModal = $state(false);
+	let pendingDropData = $state<{day: string, periodId: string} | null>(null);
+	let selectedRoomId = $state<string>(''); // empty string = no room (default)
+	
+	// Availability State
+	let occupiedSlots = $state<Set<string>>(new Set()); // Format: "DAY_PERIODID"
+	
+	function getSlotKey(day: string, periodId: string) {
+		return `${day}_${periodId}`;
+	}
+
+	function isSlotOccupiedByInstructor(day: string, periodId: string) {
+		return occupiedSlots.has(getSlotKey(day, periodId));
+	}
+
+	async function fetchInstructorConflicts(course: any) {
+		const instructorId = course.primary_instructor_id;
+		if (!instructorId) return;
+
+		try {
+			const res = await listTimetableEntries({ instructor_id: instructorId });
+			const conflicts = new Set<string>();
+			res.data.forEach(entry => {
+				// Don't mark as conflict if it's the entry being moved itself
+				if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
+				
+				conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
+			});
+			occupiedSlots = conflicts;
+		} catch (e) {
+			console.error('Failed to check conflicts', e);
+		}
+	}
 
 	function handleDragStart(event: DragEvent, item: any, type: 'NEW' | 'MOVE') {
 		dragType = type;
 		
+		// Determine course object to check instructor
+		let courseToCheck: any = null;
+
 		if (type === 'NEW') {
 			draggedCourse = item;
 			draggedEntryId = null;
+			courseToCheck = item;
 		} else {
-			draggedCourse = item; // For moving, item is the TimetableEntry (or object with same shape)
+			draggedCourse = item; 
 			draggedEntryId = item.id;
+			// For existing entry, we might need to find the full course object or use what's in entry
+			// Fortunately, entry has joined fields potentially, but better to check course list if possible
+			// Or rely on what we have. Let's assume item has instructor_id or similar.
+			// Actually TimetableEntry doesn't guarantee instructor_id is top level, 
+			// let's try to find it in 'courses' list by classroom_course_id
+			const originalCourse = courses.find(c => c.id === item.classroom_course_id);
+			courseToCheck = originalCourse || item; 
+		}
+
+		// Fetch availability
+		if (courseToCheck) {
+			fetchInstructorConflicts(courseToCheck);
 		}
 
 		if (event.dataTransfer) {
@@ -185,6 +252,7 @@
 	function handleDragEnd() {
 		draggedCourse = null;
 		draggedEntryId = null;
+		occupiedSlots = new Set(); // Clear highlights
 	}
 
 	function handleDragOver(event: DragEvent) {
@@ -203,10 +271,31 @@
         const existingEntry = getEntryForSlot(day, periodId);
 		if (existingEntry) {
 			toast.error('ช่องนี้มีรายการอยู่แล้ว');
-            // reset
             handleDragEnd();
 			return;
 		}
+
+        // Open Room Selection Modal instead of saving immediately
+        pendingDropData = { day, periodId };
+        
+        // Pre-select room if moving existing entry
+        if (dragType === 'MOVE' && draggedCourse.room_id) {
+            selectedRoomId = draggedCourse.room_id;
+        } else {
+            selectedRoomId = 'none'; // Default to 'no room' or specifically none
+        }
+        
+        showRoomModal = true;
+	}
+
+    async function confirmDropWithRoom() {
+        if (!pendingDropData || !draggedCourse) return;
+        
+        const { day, periodId } = pendingDropData;
+        // Use undefined instead of null to match interface
+        const roomId = selectedRoomId === 'none' ? undefined : selectedRoomId;
+        
+        showRoomModal = false; // Close modal
 
 		try {
 			submitting = true;
@@ -214,10 +303,11 @@
 			if (dragType === 'NEW') {
 				// CREATE NEW
 				const courseCode = draggedCourse.subject_code;
-				const payload = {
+				const payload: any = { // Use any or proper type if strict
 					classroom_course_id: draggedCourse.id,
 					day_of_week: day,
-					period_id: periodId
+					period_id: periodId,
+                    room_id: roomId
 				};
 				
 				const res = await createTimetableEntry(payload);
@@ -226,15 +316,11 @@
 			} else if (dragType === 'MOVE' && draggedEntryId) {
 				// UPDATE EXISTING (MOVE)
 				const courseCode = draggedCourse.subject_code;
-				
-				// Optional: Check if dropped in same slot
-				if (draggedCourse.day_of_week === day && draggedCourse.period_id === periodId) {
-					return; // No change
-				}
 
 				const payload = {
 					day_of_week: day,
-					period_id: periodId
+					period_id: periodId,
+                    room_id: roomId
 				};
 
 				const res = await updateTimetableEntry(draggedEntryId, payload);
@@ -246,8 +332,9 @@
 		} finally {
 			submitting = false;
 			handleDragEnd();
+            pendingDropData = null;
 		}
-	}
+    }
 
 	async function handleResponse(res: any, successMessage: string) {
 		if (res.success === false) {
@@ -455,12 +542,26 @@
 										</td>
 										{#each periods as period}
 											{@const entry = getEntryForSlot(day.value, period.id)}
+											{@const isOccupied = isSlotOccupiedByInstructor(day.value, period.id)}
 
 											<!-- Cell Area -->
 											<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 											<td
-												class="border p-1 align-top h-[110px] min-w-[140px] relative transition-colors hover:bg-muted/10"
+												class="border p-1 align-top h-[110px] min-w-[140px] relative transition-colors {isOccupied
+													? 'bg-gray-50'
+													: 'hover:bg-muted/10'}"
 											>
+												{#if isOccupied && draggedCourse}
+													<div
+														class="absolute inset-0 z-20 flex items-center justify-center bg-gray-200/50 cursor-not-allowed pointer-events-none border border-red-200 m-1 rounded-lg"
+													>
+														<span
+															class="text-[10px] text-red-600 font-bold bg-white/90 px-1.5 py-0.5 rounded shadow-sm border border-red-100"
+														>
+															ครูติดสอน
+														</span>
+													</div>
+												{/if}
 												{#if entry}
 													<!-- Filled Slot -->
 													<div
@@ -517,6 +618,55 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Room Selection Modal -->
+<Dialog.Root bind:open={showRoomModal}>
+	<Dialog.Content class="sm:max-w-[425px]">
+		<Dialog.Header>
+			<Dialog.Title>เลือกห้องเรียน (สถานที่เรียน)</Dialog.Title>
+			<Dialog.Description>
+				กรุณาเลือกห้องที่ใช้สอนสำหรับคาบนี้ (สามารถเว้นว่างได้)
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="grid gap-4 py-4">
+			<div class="grid grid-cols-4 items-center gap-4">
+				<Label.Root for="room" class="text-right">ห้อง</Label.Root>
+				<div class="col-span-3">
+					<Select.Root type="single" bind:value={selectedRoomId}>
+						<Select.Trigger class="w-full">
+							{rooms.find((r) => r.id === selectedRoomId)?.name_th ||
+								(selectedRoomId === 'none' ? 'ไม่ระบุห้อง' : 'เลือกห้อง')}
+						</Select.Trigger>
+						<Select.Content class="max-h-[200px] overflow-y-auto">
+							<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
+							{#each rooms as room}
+								<Select.Item value={room.id}
+									>{room.name_th} {room.room_type ? `(${room.room_type})` : ''}</Select.Item
+								>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+			{#if rooms.length === 0}
+				<div class="bg-yellow-50 text-yellow-800 text-xs p-2 rounded border border-yellow-200">
+					<span class="font-bold">คำแนะนำ:</span> ยังไม่มีข้อมูลห้องเรียนในระบบ คุณสามารถไปเพิ่มห้องเรียนได้ที่เมนู
+					"ข้อมูลอาคารสถานที่"
+				</div>
+			{/if}
+		</div>
+		<Dialog.Footer>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showRoomModal = false;
+					handleDragEnd();
+				}}>ยกเลิก</Button
+			>
+			<Button onclick={confirmDropWithRoom}>ยืนยัน</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <style>
     /* Custom Scrollbar */
