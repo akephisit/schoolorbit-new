@@ -318,6 +318,8 @@
 						{:else}
 							{#each unscheduledCourses as course}
 								<div
+									role="button"
+									tabindex="0"
 									draggable="true"
 									ondragstart={(e) => handleDragStart(e, course)}
 									ondragend={handleDragEnd}
@@ -412,6 +414,8 @@
 														</div>
 													{:else}
 														<div
+															role="region"
+															aria-label="Drop zone"
 															ondragover={handleDragOver}
 															ondrop={(e) => handleDrop(e, day.value, period.id)}
 															class="h-24 border-2 border-dashed border-muted rounded-lg hover:border-blue-300 hover:bg-blue-50/50 transition-colors flex items-center justify-center"

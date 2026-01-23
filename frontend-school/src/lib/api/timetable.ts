@@ -147,10 +147,32 @@ export const listTimetableEntries = async (filters: {
 };
 
 export const createTimetableEntry = async (data: CreateTimetableEntryRequest) => {
-    return await fetchApi('/api/academic/timetable', {
+    const response = await fetch(`${BACKEND_URL}/api/academic/timetable`, {
         method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+        },
         body: JSON.stringify(data)
     });
+
+    const result = await response.json();
+
+    // Handle 409 Conflict specially (return conflicts without throwing)
+    if (response.status === 409) {
+        return {
+            success: false,
+            conflicts: result.conflicts || [],
+            message: result.message || 'พบข้อขัดแย้งในตาราง'
+        };
+    }
+
+    // Handle other errors
+    if (!response.ok) {
+        throw new Error(result.error || `Request failed with status ${response.status}`);
+    }
+
+    return result;
 };
 
 export const deleteTimetableEntry = async (id: string) => {
