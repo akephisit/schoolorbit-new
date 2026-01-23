@@ -226,10 +226,21 @@
 			courseCounts.set(entry.classroom_course_id, count + 1);
 		});
 
-		return courses.map((course) => ({
-			...course,
-			scheduled_count: courseCounts.get(course.id) || 0
-		}));
+		return courses
+			.map((course) => {
+				const scheduled = courseCounts.get(course.id) || 0;
+				// Calculate max periods per week based on credits (0.5 credit = 1 period, 1.0 = 2 periods, etc.)
+				// Or use raw hours if available. Default to 99 if unknown.
+				const maxPeriods = course.credits ? Math.ceil(course.credits * 2) : 99;
+				
+				return {
+					...course,
+					scheduled_count: scheduled,
+					max_periods: maxPeriods,
+					is_completed: scheduled >= maxPeriods
+				};
+			})
+			.filter(course => !course.is_completed); // Only show courses that are not yet fully scheduled
 	});
 
 	$effect(() => {
@@ -347,14 +358,18 @@
 								{#if course.instructor_name}
 									<div class="text-xs text-blue-600 mt-1">ครู: {course.instructor_name}</div>
 								{/if}
-								{#if course.scheduled_count > 0}
-									<Badge
-										variant="outline"
-										class="mt-1 text-[10px] px-1 h-5 bg-green-50 text-green-700 border-green-200"
-									>
-										จัดแล้ว {course.scheduled_count}
-									</Badge>
-								{/if}
+
+								<div class="mt-2 flex items-center justify-between gap-2">
+									<div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+										<div
+											class="h-full bg-blue-500 rounded-full transition-all"
+											style="width: {(course.scheduled_count / course.max_periods) * 100}%"
+										></div>
+									</div>
+									<span class="text-[10px] whitespace-nowrap text-muted-foreground font-medium">
+										{course.scheduled_count}/{course.max_periods} คาบ
+									</span>
+								</div>
 							</div>
 						</div>
 					{/each}
