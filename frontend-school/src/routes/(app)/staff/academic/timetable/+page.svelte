@@ -119,8 +119,6 @@
 	}
 
 	async function handleDeleteEntry(entryId: string) {
-		if (!confirm('คุณต้องการลบรายการนี้ออกจากตารางใช่หรือไม่?')) return;
-
 		try {
 			await deleteTimetableEntry(entryId);
 			toast.success('ลบออกจากตารางสำเร็จ');
