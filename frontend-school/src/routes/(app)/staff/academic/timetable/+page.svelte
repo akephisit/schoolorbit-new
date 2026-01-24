@@ -275,6 +275,13 @@
 				// Don't mark as conflict if it's the entry being moved itself
 				if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
 				
+                // Don't mark as conflict if it's a course from the current classroom
+                // (It's already shown in the grid as a schedule, not an external conflict)
+                if (viewMode === 'CLASSROOM') {
+                    const isCurrentClassroomEntry = courses.some(c => c.id === entry.classroom_course_id);
+                    if (isCurrentClassroomEntry) return;
+                }
+
 				conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
 			});
 			occupiedSlots = conflicts;
