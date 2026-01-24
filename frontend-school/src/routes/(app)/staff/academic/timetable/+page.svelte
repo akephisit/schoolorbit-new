@@ -148,7 +148,7 @@
 		if (!selectedYearId) return;
 		try {
 			const res = await listPeriods({ academic_year_id: selectedYearId, active_only: true });
-			periods = res.data.filter((p) => p.type === 'TEACHING');
+			periods = res.data;
 		} catch (e) {
 			console.error(e);
 		}
