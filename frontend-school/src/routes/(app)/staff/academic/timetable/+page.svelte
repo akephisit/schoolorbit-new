@@ -262,19 +262,43 @@
 	}
 
 	async function fetchInstructorConflicts(course: any) {
-        // In Instructor View, we already see the instructor's full schedule.
-        // No need to check for conflicts specifically (visual redundancy).
+        let conflicts = new Set<string>();
+
+        // 1. INSTRUCTOR VIEW: Check if the Student Group (Classroom) is busy
         if (viewMode === 'INSTRUCTOR') {
+            const classroomId = course.classroom_id;
+            if (!classroomId) return;
+
+            try {
+                const res = await listTimetableEntries({ classroom_id: classroomId, academic_semester_id: selectedSemesterId });
+                res.data.forEach(entry => {
+                    // Don't mark as conflict if it's the entry being moved itself
+                    if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
+                    
+                    // Don't mark if it belongs to current instructor (already shown on grid)
+                    // In Instructor View, 'courses' contains only courses taught by this instructor.
+                    // If the entry's course is in our list, it's our class.
+                    const isMyCourse = courses.some(c => c.id === entry.classroom_course_id);
+                    if (isMyCourse) return;
+
+                    conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
+                });
+                occupiedSlots = conflicts;
+            } catch (e) {
+                console.error('Failed to check classroom conflicts', e);
+            }
+            return;
+        }
+
+        // 2. CLASSROOM VIEW: Check if the Instructor is busy
+		const instructorId = course.primary_instructor_id;
+		if (!instructorId) {
             occupiedSlots = new Set();
             return;
         }
 
-		const instructorId = course.primary_instructor_id;
-		if (!instructorId) return;
-
 		try {
-			const res = await listTimetableEntries({ instructor_id: instructorId });
-			const conflicts = new Set<string>();
+			const res = await listTimetableEntries({ instructor_id: instructorId, academic_semester_id: selectedSemesterId });
 			res.data.forEach(entry => {
 				// Don't mark as conflict if it's the entry being moved itself
 				if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
@@ -282,8 +306,9 @@
                 // Don't mark as conflict if it's a course from the current classroom
                 // (It's already shown in the grid as a schedule, not an external conflict)
                 if (viewMode === 'CLASSROOM') {
-                    const isCurrentClassroomEntry = courses.some(c => c.id === entry.classroom_course_id);
-                    if (isCurrentClassroomEntry) return;
+                    // Check if entry belongs to the current classroom we are viewing
+                    // If so, it's just a regular scheduled class, not a "busy instructor conflict" from another room
+                    if (entry.classroom_id === selectedClassroomId) return;
                 }
 
 				conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
