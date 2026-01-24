@@ -339,6 +339,7 @@ export interface ClassroomCourse {
     subject_credit?: number;
     subject_type?: string;
     instructor_name?: string;
+    classroom_name?: string;
 }
 
 // Supports both old signature (string, string?) and new signature (object) for backward compatibility if needed, 

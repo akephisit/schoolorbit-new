@@ -598,7 +598,17 @@
 								<!-- Pointer events none ensures drag catches container -->
 								<div class="font-medium text-sm text-blue-900 truncate">{course.subject_code}</div>
 								<div class="text-xs text-muted-foreground truncate">{course.subject_name_th}</div>
-								{#if course.instructor_name}
+
+								{#if viewMode === 'INSTRUCTOR' && course.classroom_name}
+									<div
+										class="text-[10px] items-center gap-1 flex text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 mt-1 w-fit"
+									>
+										<School class="w-3 h-3" />
+										{course.classroom_name}
+									</div>
+								{/if}
+
+								{#if course.instructor_name && viewMode === 'CLASSROOM'}
 									<div class="text-xs text-blue-600 mt-1">ครู: {course.instructor_name}</div>
 								{/if}
 

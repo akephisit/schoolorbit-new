@@ -26,6 +26,8 @@ pub struct ClassroomCourse {
     #[sqlx(default)]
     #[serde(rename = "subject_type")]
     pub subject_type: Option<String>,
+    #[sqlx(default)]
+    pub classroom_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
