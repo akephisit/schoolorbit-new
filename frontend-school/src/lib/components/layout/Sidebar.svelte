@@ -191,7 +191,7 @@
 									href={resolve(item.path as any)}
 									onclick={handleNavClick}
 									class="relative flex items-center h-[40px] rounded-lg transition-all duration-300 group px-0 {isCollapsed
-										? 'w-[40px] justify-center'
+										? 'w-[40px]'
 										: 'w-full'} {isActive(item.path)
 										? 'bg-primary text-primary-foreground'
 										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
