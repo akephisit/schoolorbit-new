@@ -36,7 +36,9 @@
 		MapPin,
 		Users
 	} from 'lucide-svelte';
-
+    
+    import { getAcademicStructure } from '$lib/api/academic';
+    import type { AcademicYear, Semester } from '$lib/api/academic';
     import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 
 	// Mobile drag & drop support
@@ -66,7 +68,8 @@
 	let periods = $state<AcademicPeriod[]>([]);
 	let classrooms = $state<Classroom[]>([]);
 	let courses = $state<any[]>([]);
-	let academicYears = $state<any[]>([]);
+	let academicYears = $state<AcademicYear[]>([]);
+    let allSemesters = $state<Semester[]>([]);
 	let rooms = $state<Room[]>([]);
     let instructors = $state<StaffLookupItem[]>([]);
 
@@ -74,8 +77,12 @@
     let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
 
 	let selectedYearId = $state('');
+    let selectedSemesterId = $state('');
 	let selectedClassroomId = $state('');
     let selectedInstructorId = $state('');
+    
+    // Derived Semesters based on selected year
+    let semesters = $derived(allSemesters.filter(s => s.academic_year_id === selectedYearId));
 
 	// Drag & Drop state
 	let draggedCourse = $state<any>(null);
@@ -84,13 +91,21 @@
 	async function loadInitialData() {
 		try {
 			loading = true;
-			const [yearsRes] = await Promise.all([lookupAcademicYears(false)]);
+			const structureRes = await getAcademicStructure();
+            academicYears = structureRes.data.years;
+            allSemesters = structureRes.data.semesters;
 
-			academicYears = yearsRes.data;
-
-			if (academicYears.length > 0) {
-				const activeYear = academicYears.find((y) => y.is_current) || academicYears[0];
+            // Find active year
+            const activeYear = academicYears.find((y) => y.is_active) || academicYears[0];
+            
+			if (activeYear) {
 				selectedYearId = activeYear.id;
+                
+                // Active semester
+                const yearSemesters = allSemesters.filter(s => s.academic_year_id === activeYear.id);
+                const activeSemester = yearSemesters.find(s => s.is_active) || yearSemesters[0];
+                if (activeSemester) selectedSemesterId = activeSemester.id;
+
 				await Promise.all([
                     loadClassrooms(),
                     loadRooms(),
@@ -98,6 +113,7 @@
                 ]);
 			}
 		} catch (e) {
+            console.error(e);
 			toast.error('โหลดข้อมูลไม่สำเร็จ');
 		} finally {
 			loading = false;
@@ -152,9 +168,9 @@
 		try {
             let res;
             if (viewMode === 'CLASSROOM') {
-			    res = await listClassroomCourses(selectedClassroomId);
+			    res = await listClassroomCourses({ classroomId: selectedClassroomId, semesterId: selectedSemesterId });
             } else {
-                res = await listClassroomCourses({ instructorId: selectedInstructorId });
+                res = await listClassroomCourses({ instructorId: selectedInstructorId, semesterId: selectedSemesterId });
             }
 			courses = res.data;
 		} catch (e) {
@@ -176,9 +192,9 @@
 		try {
             let res;
             if (viewMode === 'CLASSROOM') {
-			    res = await listTimetableEntries({ classroom_id: selectedClassroomId });
+			    res = await listTimetableEntries({ classroom_id: selectedClassroomId, academic_semester_id: selectedSemesterId });
             } else {
-                res = await listTimetableEntries({ instructor_id: selectedInstructorId });
+                res = await listTimetableEntries({ instructor_id: selectedInstructorId, academic_semester_id: selectedSemesterId });
             }
 			timetableEntries = res.data;
 		} catch (e) {
@@ -438,10 +454,18 @@
 		if (selectedYearId) {
 			loadClassrooms();
 			loadPeriods();
+            
+            // Auto-select semester when year changes (and clear if none)
+            const yearSemesters = allSemesters.filter(s => s.academic_year_id === selectedYearId);
+            if (!yearSemesters.find(s => s.id === selectedSemesterId)) {
+                 const activeOrFirst = yearSemesters.find(s => s.is_active) || yearSemesters[0];
+                 selectedSemesterId = activeOrFirst ? activeOrFirst.id : '';
+            }
 		}
 	});
 
 	$effect(() => {
+        // Reload when semester changes or view selection changes
 		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
 			loadCourses();
 			loadTimetable();
@@ -450,6 +474,19 @@
             loadTimetable();
         }
 	});
+    
+    // Add semester reload effect
+    $effect(() => {
+        if (selectedSemesterId) {
+             // Just triggering the above effect is enough if dependencies are correct. 
+             // But above effect only listens on viewMode/selection IDs (and implicitly functions closure?)
+             // In Svelte 5, we should include all dependencies or call load directly
+             if ((viewMode === 'CLASSROOM' && selectedClassroomId) || (viewMode === 'INSTRUCTOR' && selectedInstructorId)) {
+                 loadCourses();
+                 loadTimetable();
+             }
+        }
+    });
 
 	onMount(loadInitialData);
 </script>
@@ -476,7 +513,7 @@
 	<!-- Filters & View Mode -->
 	<div class="flex flex-col gap-4">
 		<!-- View Mode Switcher -->
-		<div class="flex bg-muted p-1 rounded-lg w-fit">
+		<div class="flex bg-muted p-1 rounded-lg w-fit transition-colors">
 			<button
 				class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
 				'CLASSROOM'
@@ -484,9 +521,9 @@
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => {
 					viewMode = 'CLASSROOM';
-					selectedInstructorId = '';
 					courses = [];
 					timetableEntries = [];
+					// Do not reset selectedInstructorId so we can return to it
 				}}
 			>
 				<School class="w-4 h-4" /> ห้องเรียน
@@ -498,9 +535,9 @@
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => {
 					viewMode = 'INSTRUCTOR';
-					selectedClassroomId = '';
 					courses = [];
 					timetableEntries = [];
+					// Do not reset selectedClassroomId so we can return to it
 				}}
 			>
 				<Users class="w-4 h-4" /> ครูผู้สอน
@@ -516,6 +553,19 @@
 					<Select.Content>
 						{#each academicYears as year}
 							<Select.Item value={year.id}>{year.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+
+			<div class="w-[200px]">
+				<Select.Root type="single" bind:value={selectedSemesterId} disabled={!selectedYearId}>
+					<Select.Trigger class="w-full">
+						{semesters.find((s) => s.id === selectedSemesterId)?.name || 'เลือกภาคเรียน'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each semesters as semester}
+							<Select.Item value={semester.id}>{semester.name}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
