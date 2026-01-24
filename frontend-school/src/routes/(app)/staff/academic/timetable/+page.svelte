@@ -882,7 +882,7 @@
 													? 'bg-gray-50'
 													: 'hover:bg-muted/10'}"
 											>
-												{#if isOccupied && draggedCourse}
+												{#if isOccupied && draggedCourse && !entry}
 													<div
 														class="absolute inset-0 z-20 flex items-center justify-center bg-gray-200/50 cursor-not-allowed pointer-events-none border border-red-200 m-1 rounded-lg"
 													>
