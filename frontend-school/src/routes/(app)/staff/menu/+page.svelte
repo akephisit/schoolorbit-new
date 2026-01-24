@@ -186,7 +186,7 @@
                  containers[targetGroupIndex].nesteds = targetList;
              }
              
-             handleDragEnd(e);
+             // handleDragEnd(e); // Removed: let the source's natural dragend event handle the commit
         } else if (dragType === 'group' && draggedGroup) {
             // Group reordering drop (optional, handled via dragEnter usually)
         }

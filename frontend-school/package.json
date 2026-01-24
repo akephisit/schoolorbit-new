@@ -44,9 +44,6 @@
 		"vite": "^7.2.2"
 	},
 	"dependencies": {
-		"@dnd-kit-svelte/core": "^0.0.11",
-		"@dnd-kit-svelte/sortable": "^0.0.11",
-		"@dnd-kit-svelte/utilities": "^0.0.11",
 		"bits-ui": "^2.14.4",
 		"compressorjs": "^1.2.1",
 		"date-fns": "^4.1.0",
