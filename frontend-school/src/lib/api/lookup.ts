@@ -177,3 +177,20 @@ export async function lookupAcademicYears(
 ): Promise<AcademicYearLookupItem[]> {
     return fetchLookup<AcademicYearLookupItem>('academic-years', options);
 }
+
+export interface RoomLookupItem {
+    id: string;
+    name_th: string;
+    name_en?: string;
+    code?: string;
+    room_type: string;
+    building_name?: string;
+}
+
+/**
+ * Fetch active rooms list for dropdowns
+ * Returns active rooms with basic info
+ */
+export async function lookupRooms(options?: LookupOptions): Promise<RoomLookupItem[]> {
+    return fetchLookup<RoomLookupItem>('rooms', options);
+}

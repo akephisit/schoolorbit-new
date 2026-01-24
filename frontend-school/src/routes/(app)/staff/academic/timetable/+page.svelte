@@ -17,7 +17,7 @@
 		listClassroomCourses,
 		type Classroom
 	} from '$lib/api/academic';
-	import { lookupRooms, type Room } from '$lib/api/facility';
+	import { lookupRooms, type RoomLookupItem } from '$lib/api/lookup';
     import * as Dialog from '$lib/components/ui/dialog';
     import * as Label from '$lib/components/ui/label';
 
@@ -74,7 +74,7 @@
 	let courses = $state<any[]>([]);
 	let academicYears = $state<AcademicYear[]>([]);
     let allSemesters = $state<Semester[]>([]);
-	let rooms = $state<Room[]>([]);
+	let rooms = $state<RoomLookupItem[]>([]);
     let instructors = $state<StaffLookupItem[]>([]);
 
     // View Mode: 'CLASSROOM' or 'INSTRUCTOR'
@@ -157,7 +157,7 @@
     async function loadRooms() {
         try {
             const res = await lookupRooms();
-            rooms = res.data;
+            rooms = res;
         } catch (e) {
             console.error('Failed to load rooms', e);
         }

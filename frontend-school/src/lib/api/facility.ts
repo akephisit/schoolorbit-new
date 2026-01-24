@@ -123,7 +123,3 @@ export const updateRoom = async (id: string, data: Partial<CreateRoomRequest>) =
 export const deleteRoom = async (id: string) => {
     return await fetchApi(`${BASE}/rooms/${id}`, { method: 'DELETE' });
 };
-
-export const lookupRooms = async (): Promise<{ data: Room[] }> => {
-    return await fetchApi(`${BASE}/lookup/rooms`);
-};
