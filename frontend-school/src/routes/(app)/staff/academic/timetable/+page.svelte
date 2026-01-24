@@ -708,7 +708,9 @@
 					<table class="w-full text-sm border-collapse">
 						<thead class="bg-muted/50 sticky top-0 z-20 shadow-sm">
 							<tr>
-								<th class="p-2 border sticky left-0 z-30 bg-background w-[100px]">วัน/คาบ</th>
+								<th class="p-2 border sticky left-0 z-30 bg-background w-[100px] text-center"
+									>วัน/คาบ</th
+								>
 								{#each periods as period}
 									<th class="p-2 border min-w-[140px] text-center">
 										<div class="font-bold">{period.name}</div>
@@ -729,7 +731,9 @@
 							{:else}
 								{#each DAYS as day}
 									<tr>
-										<td class="p-2 border font-bold sticky left-0 z-10 bg-background">
+										<td
+											class="p-2 border font-bold sticky left-0 z-10 bg-background text-center align-middle"
+										>
 											{day.label}
 										</td>
 										{#each periods as period}
