@@ -414,8 +414,9 @@ async fn validate_timetable_entry(
              return Err(AppError::NotFound("Classroom course not found".to_string()));
         }
 
-        if let Some((_, Some(instr_id))) = course_info {
-            let has_conflict: bool = sqlx::query_scalar(
+        if let Some((cls_id, Some(instr_id))) = course_info {
+            // 1.1 Check INSTRUCTOR conflict
+            let instructor_conflict: bool = sqlx::query_scalar(
                 r#"
                 SELECT EXISTS(
                     SELECT 1 FROM academic_timetable_entries te
@@ -434,10 +435,72 @@ async fn validate_timetable_entry(
             .await
             .unwrap_or(false);
 
-            if has_conflict {
+            if instructor_conflict {
                 conflicts.push(ConflictInfo {
                     conflict_type: "INSTRUCTOR_CONFLICT".to_string(),
                     message: "ครูมีตารางสอนในคาบนี้อยู่แล้ว".to_string(),
+                    existing_entry: None,
+                });
+            }
+
+            // 1.2 Check CLASSROOM (Student) conflict
+            // Check if this classroom already has a class (course, activity, etc) in this slot
+            // Note: entry can be COURSE (linked to classroom_course -> classroom_id) 
+            // OR explicit classroom_id (for non-course entries).
+            // Our DB schema update ensures all entries usually have classroom_id populated.
+            // But let's check robustly.
+            
+            let classroom_conflict: bool = sqlx::query_scalar(
+                r#"
+                SELECT EXISTS(
+                    SELECT 1 FROM academic_timetable_entries te
+                    LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+                    WHERE (te.classroom_id = $1 OR cc.classroom_id = $1)
+                      AND te.day_of_week = $2
+                      AND te.period_id = $3
+                      AND te.is_active = true
+                )
+                "#
+            )
+            .bind(cls_id)
+            .bind(&payload.day_of_week)
+            .bind(payload.period_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(false);
+
+            if classroom_conflict {
+                conflicts.push(ConflictInfo {
+                    conflict_type: "CLASSROOM_CONFLICT".to_string(),
+                    message: "ห้องเรียนนี้มีตารางในคาบนี้อยู่แล้ว".to_string(),
+                    existing_entry: None,
+                });
+            }
+        } else if let Some((cls_id, None)) = course_info {
+             // Case: Course has no instructor, but we stil need to check Classroom Conflict
+            let classroom_conflict: bool = sqlx::query_scalar(
+                r#"
+                SELECT EXISTS(
+                    SELECT 1 FROM academic_timetable_entries te
+                    LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+                    WHERE (te.classroom_id = $1 OR cc.classroom_id = $1)
+                      AND te.day_of_week = $2
+                      AND te.period_id = $3
+                      AND te.is_active = true
+                )
+                "#
+            )
+            .bind(cls_id)
+            .bind(&payload.day_of_week)
+            .bind(payload.period_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(false);
+
+            if classroom_conflict {
+                conflicts.push(ConflictInfo {
+                    conflict_type: "CLASSROOM_CONFLICT".to_string(),
+                    message: "ห้องเรียนนี้มีตารางในคาบนี้อยู่แล้ว".to_string(),
                     existing_entry: None,
                 });
             }
