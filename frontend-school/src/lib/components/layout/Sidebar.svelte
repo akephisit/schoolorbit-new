@@ -146,7 +146,7 @@
 
 	<!-- Navigation -->
 	<Tooltip.Provider>
-		<nav class="flex-1 overflow-y-auto py-4 space-y-1 sidebar-nav px-3">
+		<nav class="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-1 sidebar-nav px-3">
 			{#if menuLoading}
 				<!-- Loading skeleton -->
 				<div class="space-y-2">
