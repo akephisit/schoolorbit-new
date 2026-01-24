@@ -258,6 +258,13 @@
 	}
 
 	async function fetchInstructorConflicts(course: any) {
+        // In Instructor View, we already see the instructor's full schedule.
+        // No need to check for conflicts specifically (visual redundancy).
+        if (viewMode === 'INSTRUCTOR') {
+            occupiedSlots = new Set();
+            return;
+        }
+
 		const instructorId = course.primary_instructor_id;
 		if (!instructorId) return;
 
