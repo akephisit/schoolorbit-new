@@ -373,7 +373,38 @@
         }
         
         showRoomModal = true;
+        // Check availability for this slot
+        updateUnavailableRooms(day, periodId);
 	}
+
+    let unavailableRooms = $state<Set<string>>(new Set());
+    let loadingRoomsAvailability = $state(false);
+
+    async function updateUnavailableRooms(day: string, periodId: string) {
+        loadingRoomsAvailability = true;
+        unavailableRooms = new Set(); // Reset (reactivity fix: assign new Set)
+        try {
+            // Fetch schedule for the whole day across the school to check room usage
+            const res = await listTimetableEntries({ 
+                day_of_week: day, 
+                academic_semester_id: selectedSemesterId 
+            });
+            
+            const busyRooms = new Set<string>();
+            res.data.forEach(entry => {
+                if (entry.period_id === periodId && entry.room_id) {
+                    // If moving existing entry, don't count itself as busy
+                    if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
+                    busyRooms.add(entry.room_id);
+                }
+            });
+            unavailableRooms = busyRooms;
+        } catch(e) {
+            console.error("Failed to check room availability", e);
+        } finally {
+            loadingRoomsAvailability = false;
+        }
+    }
 
     async function confirmDropWithRoom() {
         if (!pendingDropContext) return;
@@ -860,9 +891,11 @@
 						<Select.Content class="max-h-[200px] overflow-y-auto">
 							<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
 							{#each rooms as room}
-								<Select.Item value={room.id}
-									>{room.name_th} {room.room_type ? `(${room.room_type})` : ''}</Select.Item
-								>
+								<Select.Item value={room.id} disabled={unavailableRooms.has(room.id)}>
+									{room.name_th}
+									{room.room_type ? `(${room.room_type})` : ''}
+									{unavailableRooms.has(room.id) ? '(ไม่ว่าง)' : ''}
+								</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
