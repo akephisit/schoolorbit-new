@@ -33,8 +33,11 @@
 		School,
 		GripVertical,
 		BookOpen,
-		MapPin
+		MapPin,
+		Users
 	} from 'lucide-svelte';
+
+    import { listStaff, type StaffListItem } from '$lib/api/staff';
 
 	// Mobile drag & drop support
 	// @ts-ignore
@@ -65,9 +68,14 @@
 	let courses = $state<any[]>([]);
 	let academicYears = $state<any[]>([]);
 	let rooms = $state<Room[]>([]);
+    let instructors = $state<StaffListItem[]>([]);
+
+    // View Mode: 'CLASSROOM' or 'INSTRUCTOR'
+    let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
 
 	let selectedYearId = $state('');
 	let selectedClassroomId = $state('');
+    let selectedInstructorId = $state('');
 
 	// Drag & Drop state
 	let draggedCourse = $state<any>(null);
@@ -85,7 +93,8 @@
 				selectedYearId = activeYear.id;
 				await Promise.all([
                     loadClassrooms(),
-                    loadRooms()
+                    loadRooms(),
+                    loadInstructors()
                 ]);
 			}
 		} catch (e) {
@@ -94,6 +103,16 @@
 			loading = false;
 		}
 	}
+    
+    async function loadInstructors() {
+        try {
+            // Fetch all staff who are teachers (filtering logic depends on API, for now fetch all)
+            const res = await listStaff({ page_size: 1000 }); 
+            instructors = res.data;
+        } catch(e) {
+            console.error('Failed to load instructors', e);
+        }
+    }
 
 	async function loadClassrooms() {
 		if (!selectedYearId) return;
@@ -124,13 +143,23 @@
         }
     }
 
-	async function loadCoursesForClassroom() {
-		if (!selectedClassroomId) return;
+	async function loadCourses() {
+        // Mode: CLASSROOM
+		if (viewMode === 'CLASSROOM' && !selectedClassroomId) return;
+        // Mode: INSTRUCTOR
+        if (viewMode === 'INSTRUCTOR' && !selectedInstructorId) return;
+
 		try {
-			const res = await listClassroomCourses(selectedClassroomId);
+            let res;
+            if (viewMode === 'CLASSROOM') {
+			    res = await listClassroomCourses(selectedClassroomId);
+            } else {
+                res = await listClassroomCourses({ instructorId: selectedInstructorId });
+            }
 			courses = res.data;
 		} catch (e) {
 			console.error(e);
+            toast.error('โหลดรายวิชาไม่สำเร็จ');
 		}
 	}
 
@@ -404,10 +433,13 @@
 	});
 
 	$effect(() => {
-		if (selectedClassroomId) {
-			loadCoursesForClassroom();
+		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
+			loadCourses();
 			loadTimetable();
-		}
+		} else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
+            loadCourses();
+            loadTimetable();
+        }
 	});
 
 	onMount(loadInitialData);
@@ -432,41 +464,102 @@
 		</p>
 	</div>
 
-	<!-- Filters -->
-	<div class="flex items-center gap-4 flex-wrap">
-		<div class="w-[200px]">
-			<Select.Root type="single" bind:value={selectedYearId}>
-				<Select.Trigger class="w-full">
-					{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each academicYears as year}
-						<Select.Item value={year.id}>{year.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+	<!-- Filters & View Mode -->
+	<div class="flex flex-col gap-4">
+		<!-- View Mode Switcher -->
+		<div class="flex bg-muted p-1 rounded-lg w-fit">
+			<button
+				class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
+				'CLASSROOM'
+					? 'bg-background shadow-sm text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => {
+					viewMode = 'CLASSROOM';
+					selectedInstructorId = '';
+					courses = [];
+					timetableEntries = [];
+				}}
+			>
+				<School class="w-4 h-4" /> ห้องเรียน
+			</button>
+			<button
+				class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
+				'INSTRUCTOR'
+					? 'bg-background shadow-sm text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => {
+					viewMode = 'INSTRUCTOR';
+					selectedClassroomId = '';
+					courses = [];
+					timetableEntries = [];
+				}}
+			>
+				<Users class="w-4 h-4" /> ครูผู้สอน
+			</button>
 		</div>
 
-		<div class="w-[250px]">
-			<Select.Root type="single" bind:value={selectedClassroomId}>
-				<Select.Trigger class="w-full">
-					<School class="w-4 h-4 mr-2" />
-					{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each classrooms as classroom}
-						<Select.Item value={classroom.id}>{classroom.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+		<div class="flex items-center gap-4 flex-wrap">
+			<div class="w-[200px]">
+				<Select.Root type="single" bind:value={selectedYearId}>
+					<Select.Trigger class="w-full">
+						{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each academicYears as year}
+							<Select.Item value={year.id}>{year.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+
+			<div class="w-[280px]">
+				{#if viewMode === 'CLASSROOM'}
+					<Select.Root type="single" bind:value={selectedClassroomId}>
+						<Select.Trigger class="w-full">
+							<School class="w-4 h-4 mr-2" />
+							{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[300px] overflow-y-auto">
+							{#each classrooms as classroom}
+								<Select.Item value={classroom.id}>{classroom.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				{:else}
+					<Select.Root type="single" bind:value={selectedInstructorId}>
+						<Select.Trigger class="w-full">
+							<Users class="w-4 h-4 mr-2" />
+							{instructors.find((i) => i.id === selectedInstructorId)
+								? `${instructors.find((i) => i.id === selectedInstructorId)?.first_name} ${instructors.find((i) => i.id === selectedInstructorId)?.last_name}`
+								: 'เลือกครูผู้สอน'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[300px] overflow-y-auto">
+							<div class="p-2 sticky top-0 bg-background z-10 border-b mb-1">
+								<span class="text-xs text-muted-foreground font-medium">รายชื่อบุคลากรทั้งหมด</span>
+							</div>
+							{#each instructors as staff}
+								<Select.Item value={staff.id} label={`${staff.first_name} ${staff.last_name}`}>
+									{staff.title}{staff.first_name}
+									{staff.last_name}
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				{/if}
+			</div>
 		</div>
 	</div>
 
-	{#if !selectedClassroomId}
+	{#if (!selectedClassroomId && viewMode === 'CLASSROOM') || (!selectedInstructorId && viewMode === 'INSTRUCTOR')}
 		<Card.Root>
 			<Card.Content class="py-12 text-center">
-				<School class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-				<p class="text-muted-foreground">กรุณาเลือกห้องเรียนเพื่อดูและจัดตารางสอน</p>
+				{#if viewMode === 'CLASSROOM'}
+					<School class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+					<p class="text-muted-foreground">กรุณาเลือกห้องเรียนเพื่อดูและจัดตารางสอน</p>
+				{:else}
+					<Users class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+					<p class="text-muted-foreground">กรุณาเลือกครูผู้สอนเพื่อดูภาระงานและจัดการสอน</p>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 	{:else if periods.length === 0}

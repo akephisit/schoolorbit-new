@@ -30,7 +30,8 @@ pub struct ClassroomCourse {
 
 #[derive(Debug, Deserialize)]
 pub struct PlanQuery {
-    pub classroom_id: Uuid,
+    pub classroom_id: Option<Uuid>,
+    pub instructor_id: Option<Uuid>,
     pub academic_semester_id: Option<Uuid>, // Optional if filtering all terms
 }
 

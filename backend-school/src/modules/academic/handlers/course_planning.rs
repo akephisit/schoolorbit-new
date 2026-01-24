@@ -54,18 +54,36 @@ pub async fn list_classroom_courses(
         FROM classroom_courses cc
         JOIN subjects s ON cc.subject_id = s.id
         LEFT JOIN users u ON cc.primary_instructor_id = u.id
-        WHERE cc.classroom_id = $1
+        WHERE 1=1
         "#
     );
 
+    let mut conditions = Vec::new();
+
+    if let Some(classroom_id) = query.classroom_id {
+        conditions.push(format!("cc.classroom_id = '{}'", classroom_id));
+    }
+    
+    if let Some(instructor_id) = query.instructor_id {
+        conditions.push(format!("cc.primary_instructor_id = '{}'", instructor_id));
+    }
+
     if let Some(term_id) = query.academic_semester_id {
-        sql.push_str(&format!(" AND cc.academic_semester_id = '{}'", term_id));
+        conditions.push(format!("cc.academic_semester_id = '{}'", term_id));
+    }
+
+    if !conditions.is_empty() {
+        sql.push_str(&format!(" AND {}", conditions.join(" AND ")));
+    } else {
+        // Prevent loading absolutely everything if no filter provided?
+        // Or default to 'false' to return nothing?
+        // For safety, let's return nothing if no main filter.
+        return Ok(Json(json!({ "success": true, "data": [] })).into_response());
     }
 
     sql.push_str(" ORDER BY s.code ASC");
 
     let courses = sqlx::query_as::<_, ClassroomCourse>(&sql)
-        .bind(query.classroom_id)
         .fetch_all(&pool)
         .await
         .map_err(|e| {

@@ -341,10 +341,28 @@ export interface ClassroomCourse {
     instructor_name?: string;
 }
 
-export const listClassroomCourses = async (classroomId: string, semesterId?: string): Promise<{ data: ClassroomCourse[] }> => {
-    let url = `/api/academic/planning/courses?classroom_id=${classroomId}`;
-    if (semesterId) url += `&academic_semester_id=${semesterId}`;
-    return await fetchApi(url);
+// Supports both old signature (string, string?) and new signature (object) for backward compatibility if needed, 
+// but here we will change to object based to support instructorId
+export const listClassroomCourses = async (
+    param1: string | { classroomId?: string; instructorId?: string; semesterId?: string },
+    param2?: string
+): Promise<{ data: ClassroomCourse[] }> => {
+    let url = '/api/academic/planning/courses';
+    const params = new URLSearchParams();
+
+    if (typeof param1 === 'string') {
+        // Old usage: listClassroomCourses(classroomId, semesterId)
+        params.append('classroom_id', param1);
+        if (param2) params.append('academic_semester_id', param2);
+    } else {
+        // New usage: object
+        if (param1.classroomId) params.append('classroom_id', param1.classroomId);
+        if (param1.instructorId) params.append('instructor_id', param1.instructorId);
+        if (param1.semesterId) params.append('academic_semester_id', param1.semesterId);
+    }
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return await fetchApi(url + queryString);
 };
 
 export const assignCourses = async (data: {
