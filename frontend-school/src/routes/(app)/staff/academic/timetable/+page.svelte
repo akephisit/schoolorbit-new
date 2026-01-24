@@ -8,7 +8,8 @@
 		createTimetableEntry,
 		updateTimetableEntry,
 		deleteTimetableEntry,
-		listPeriods
+		listPeriods,
+        createBatchTimetableEntries
 	} from '$lib/api/timetable';
 	import {
 		lookupAcademicYears,
@@ -34,8 +35,11 @@
 		GripVertical,
 		BookOpen,
 		MapPin,
-		Users
+		Users,
+        PlusCircle
 	} from 'lucide-svelte';
+    
+    import { Checkbox } from '$lib/components/ui/checkbox';
     
     import { getAcademicStructure } from '$lib/api/academic';
     import type { AcademicYear, Semester } from '$lib/api/academic';
@@ -433,7 +437,7 @@
 
 			} else if (dragType === 'MOVE' && entryId) {
 				// UPDATE EXISTING (MOVE)
-				const courseCode = course.subject_code;
+				const courseName = course.subject_code || course.title || 'รายการ';
 
 				const payload = {
 					day_of_week: day,
@@ -442,7 +446,7 @@
 				};
 
 				const res = await updateTimetableEntry(entryId, payload);
-				handleResponse(res, `ย้าย ${courseCode} สำเร็จ`);
+				handleResponse(res, `ย้าย ${courseName} สำเร็จ`);
 			}
 
 		} catch (e: any) {
@@ -471,8 +475,10 @@
 	let unscheduledCourses = $derived.by(() => {
 		const courseCounts = new Map<string, number>();
 		timetableEntries.forEach((entry) => {
-			const count = courseCounts.get(entry.classroom_course_id) || 0;
-			courseCounts.set(entry.classroom_course_id, count + 1);
+            if (entry.classroom_course_id) {
+			    const count = courseCounts.get(entry.classroom_course_id) || 0;
+			    courseCounts.set(entry.classroom_course_id, count + 1);
+            }
 		});
 
 		return courses
@@ -533,6 +539,73 @@
         }
     });
 
+    // Batch Assign State
+    let showBatchModal = $state(false);
+    let batchClassrooms = $state<string[]>([]);
+    let batchDay = $state('MON');
+    let batchPeriodId = $state('');
+    let batchType = $state('ACTIVITY');
+    let batchTitle = $state('');
+    let batchRoomId = $state('none');
+
+    function toggleBatchClassroom(id: string) {
+        if (batchClassrooms.includes(id)) {
+            batchClassrooms = batchClassrooms.filter(c => c !== id);
+        } else {
+            batchClassrooms = [...batchClassrooms, id];
+        }
+    }
+    
+    function selectAllBatchClassrooms() {
+        if (batchClassrooms.length === classrooms.length) {
+            batchClassrooms = [];
+        } else {
+            batchClassrooms = classrooms.map(c => c.id);
+        }
+    }
+
+    async function handleBatchSubmit() {
+        if (batchClassrooms.length === 0) {
+            toast.error('กรุณาเลือกห้องเรียนอย่างน้อย 1 ห้อง');
+            return;
+        }
+        if (!batchPeriodId) {
+            toast.error('กรุณาเลือกคาบเวลา');
+            return;
+        }
+        if (!batchTitle) {
+            toast.error('กรุณาระบุชื่อกิจกรรม');
+            return;
+        }
+
+        try {
+            submitting = true;
+            await createBatchTimetableEntries({
+                classroom_ids: batchClassrooms,
+                day_of_week: batchDay,
+                period_id: batchPeriodId,
+                academic_semester_id: selectedSemesterId,
+                entry_type: batchType as any,
+                title: batchTitle,
+                room_id: batchRoomId === 'none' ? undefined : batchRoomId
+            });
+            
+            toast.success('บันทึกกิจกรรมเรียบร้อย');
+            showBatchModal = false;
+            // Reset minimal fields
+            batchTitle = '';
+            
+            // Reload if current view is affected
+            if (viewMode === 'CLASSROOM' && selectedClassroomId && batchClassrooms.includes(selectedClassroomId)) {
+                loadTimetable();
+            }
+        } catch(e: any) {
+            toast.error(e.message || 'บันทึกไม่สำเร็จ');
+        } finally {
+            submitting = false;
+        }
+    }
+
 	onMount(loadInitialData);
 </script>
 
@@ -557,36 +630,42 @@
 
 	<!-- Filters & View Mode -->
 	<div class="flex flex-col gap-4">
-		<!-- View Mode Switcher -->
-		<div class="flex bg-muted p-1 rounded-lg w-fit transition-colors">
-			<button
-				class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
-				'CLASSROOM'
-					? 'bg-background shadow-sm text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => {
-					viewMode = 'CLASSROOM';
-					courses = [];
-					timetableEntries = [];
-					// Do not reset selectedInstructorId so we can return to it
-				}}
-			>
-				<School class="w-4 h-4" /> ห้องเรียน
-			</button>
-			<button
-				class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
-				'INSTRUCTOR'
-					? 'bg-background shadow-sm text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => {
-					viewMode = 'INSTRUCTOR';
-					courses = [];
-					timetableEntries = [];
-					// Do not reset selectedClassroomId so we can return to it
-				}}
-			>
-				<Users class="w-4 h-4" /> ครูผู้สอน
-			</button>
+		<!-- View Mode Switcher & Tools -->
+		<div class="flex items-center justify-between">
+			<div class="flex bg-muted p-1 rounded-lg w-fit transition-colors">
+				<button
+					class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
+					'CLASSROOM'
+						? 'bg-background shadow-sm text-foreground'
+						: 'text-muted-foreground hover:text-foreground'}"
+					onclick={() => {
+						viewMode = 'CLASSROOM';
+						courses = [];
+						timetableEntries = [];
+						// Do not reset selectedInstructorId so we can return to it
+					}}
+				>
+					<School class="w-4 h-4" /> ห้องเรียน
+				</button>
+				<button
+					class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
+					'INSTRUCTOR'
+						? 'bg-background shadow-sm text-foreground'
+						: 'text-muted-foreground hover:text-foreground'}"
+					onclick={() => {
+						viewMode = 'INSTRUCTOR';
+						courses = [];
+						timetableEntries = [];
+						// Do not reset selectedClassroomId so we can return to it
+					}}
+				>
+					<Users class="w-4 h-4" /> ครูผู้สอน
+				</button>
+			</div>
+
+			<Button variant="outline" size="sm" onclick={() => (showBatchModal = true)}>
+				<PlusCircle class="w-4 h-4 mr-2" /> เพิ่มกิจกรรมพิเศษ (Batch)
+			</Button>
 		</div>
 
 		<div class="flex items-center gap-4 flex-wrap">
@@ -799,38 +878,69 @@
 														role="button"
 														tabindex="0"
 													>
-														<div class="font-bold text-blue-900">{entry.subject_code}</div>
-														<div class="text-xs text-blue-700 line-clamp-2 mt-1 flex-1">
-															{entry.subject_name_th}
-														</div>
-
-														{#if viewMode === 'INSTRUCTOR' && entry.classroom_name}
+														{#if entry.entry_type && entry.entry_type !== 'COURSE'}
 															<div
-																class="text-[10px] text-orange-600 font-medium mt-1 bg-orange-50 px-1 rounded border border-orange-100 w-fit truncate max-w-full"
+																class="flex-1 flex flex-col items-center justify-center p-1 text-center w-full"
 															>
-																สอน: {entry.classroom_name}
-															</div>
-														{/if}
-
-														{#if entry.instructor_name && viewMode === 'CLASSROOM'}
-															<div class="text-xs text-blue-600 mt-1 flex items-center gap-1">
-																<span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-																{entry.instructor_name}
-															</div>
-														{/if}
-
-														<!-- Room Display -->
-														{#if entry.room_id}
-															{@const roomName =
-																entry.room_code ||
-																rooms.find((r) => r.id === entry.room_id)?.name_th}
-															{#if roomName}
 																<div
-																	class="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium bg-white/60 px-1.5 py-0.5 rounded border border-slate-100 w-fit max-w-full truncate"
+																	class="font-bold text-sm mb-1 px-2 py-0.5 rounded-md w-full truncate
+                                                                    {entry.entry_type === 'BREAK'
+																		? 'bg-pink-50 text-pink-700 border border-pink-100'
+																		: entry.entry_type === 'HOMEROOM'
+																			? 'bg-purple-50 text-purple-700 border border-purple-100'
+																			: 'bg-green-50 text-green-700 border border-green-100'}"
 																>
-																	<MapPin class="w-3 h-3 flex-shrink-0" />
-																	<span class="truncate">{roomName}</span>
+																	{entry.title || entry.entry_type}
 																</div>
+
+																{#if entry.room_id}
+																	{@const roomName =
+																		entry.room_code ||
+																		rooms.find((r) => r.id === entry.room_id)?.name_th}
+																	{#if roomName}
+																		<div
+																			class="text-[10px] text-slate-500 mt-1 flex items-center justify-center gap-1 font-medium w-full truncate"
+																		>
+																			<MapPin class="w-3 h-3 flex-shrink-0" />
+																			<span class="truncate">{roomName}</span>
+																		</div>
+																	{/if}
+																{/if}
+															</div>
+														{:else}
+															<div class="font-bold text-blue-900">{entry.subject_code}</div>
+															<div class="text-xs text-blue-700 line-clamp-2 mt-1 flex-1">
+																{entry.subject_name_th}
+															</div>
+
+															{#if viewMode === 'INSTRUCTOR' && entry.classroom_name}
+																<div
+																	class="text-[10px] text-orange-600 font-medium mt-1 bg-orange-50 px-1 rounded border border-orange-100 w-fit truncate max-w-full"
+																>
+																	สอน: {entry.classroom_name}
+																</div>
+															{/if}
+
+															{#if entry.instructor_name && viewMode === 'CLASSROOM'}
+																<div class="text-xs text-blue-600 mt-1 flex items-center gap-1">
+																	<span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+																	{entry.instructor_name}
+																</div>
+															{/if}
+
+															<!-- Room Display -->
+															{#if entry.room_id}
+																{@const roomName =
+																	entry.room_code ||
+																	rooms.find((r) => r.id === entry.room_id)?.name_th}
+																{#if roomName}
+																	<div
+																		class="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium bg-white/60 px-1.5 py-0.5 rounded border border-slate-100 w-fit max-w-full truncate"
+																	>
+																		<MapPin class="w-3 h-3 flex-shrink-0" />
+																		<span class="truncate">{roomName}</span>
+																	</div>
+																{/if}
 															{/if}
 														{/if}
 
@@ -918,6 +1028,138 @@
 				}}>ยกเลิก</Button
 			>
 			<Button onclick={confirmDropWithRoom}>ยืนยัน</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Batch Assign Modal -->
+<Dialog.Root bind:open={showBatchModal}>
+	<Dialog.Content class="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+		<Dialog.Header>
+			<Dialog.Title>เพิ่มกิจกรรมพิเศษ (Batch)</Dialog.Title>
+			<Dialog.Description>
+				กำหนดกิจกรรม (เช่น พัก, โฮมรูม) ให้กับหลายห้องเรียนพร้อมกัน
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="grid gap-4 py-4">
+			<!-- Details -->
+			<div class="grid grid-cols-4 items-center gap-4">
+				<Label.Root class="text-right">หัวข้อ *</Label.Root>
+				<div class="col-span-3">
+					<input
+						class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+						bind:value={batchTitle}
+						placeholder="เช่น พักเที่ยง, กิจกรรมพัฒนาผู้เรียน"
+					/>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-4 items-center gap-4">
+				<Label.Root class="text-right">ประเภท</Label.Root>
+				<div class="col-span-3">
+					<Select.Root type="single" bind:value={batchType}>
+						<Select.Trigger class="w-full">
+							{batchType === 'BREAK' ? 'พัก' : batchType === 'HOMEROOM' ? 'โฮมรูม' : 'กิจกรรม'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="ACTIVITY">กิจกรรม</Select.Item>
+							<Select.Item value="BREAK">พักเบรค/พักเที่ยง</Select.Item>
+							<Select.Item value="HOMEROOM">โฮมรูม</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
+			<!-- Time -->
+			<div class="grid grid-cols-4 items-center gap-4">
+				<Label.Root class="text-right">วัน/คาบ *</Label.Root>
+				<div class="col-span-3 flex gap-2">
+					<Select.Root type="single" bind:value={batchDay}>
+						<Select.Trigger class="w-[100px]">
+							{DAYS.find((d) => d.value === batchDay)?.label || batchDay}
+						</Select.Trigger>
+						<Select.Content>
+							{#each DAYS as d}
+								<Select.Item value={d.value}>{d.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+
+					<Select.Root type="single" bind:value={batchPeriodId}>
+						<Select.Trigger class="flex-1">
+							{periods.find((p) => p.id === batchPeriodId)?.name || 'เลือกคาบ'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[200px] overflow-y-auto">
+							{#each periods as p}
+								<Select.Item value={p.id}
+									>{p.name} ({formatTime(p.start_time)}-{formatTime(p.end_time)})</Select.Item
+								>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
+			<!-- Room (Optional) -->
+			<div class="grid grid-cols-4 items-center gap-4">
+				<Label.Root class="text-right">ห้อง (ถ้ามี)</Label.Root>
+				<div class="col-span-3">
+					<Select.Root type="single" bind:value={batchRoomId}>
+						<Select.Trigger class="w-full">
+							{rooms.find((r) => r.id === batchRoomId)?.name_th ||
+								(batchRoomId === 'none' ? 'ไม่ระบุห้อง' : 'เลือกห้อง')}
+						</Select.Trigger>
+						<Select.Content class="max-h-[200px] overflow-y-auto">
+							<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
+							{#each rooms as room}
+								<Select.Item value={room.id}>
+									{room.name_th}
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
+			<!-- Classrooms Selection -->
+			<div class="border-t pt-4 mt-2">
+				<div class="flex justify-between items-center mb-2">
+					<Label.Root>เลือกห้องเรียน ({batchClassrooms.length})</Label.Root>
+					<Button variant="ghost" size="sm" class="h-6 text-xs" onclick={selectAllBatchClassrooms}>
+						{batchClassrooms.length === classrooms.length ? 'ยกเลิกทั้งหมด' : 'เลือกทั้งหมด'}
+					</Button>
+				</div>
+				<div
+					class="border rounded-md max-h-[200px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-2"
+				>
+					{#each classrooms as classroom}
+						<div class="flex items-center space-x-2">
+							<Checkbox
+								id="batch-class-{classroom.id}"
+								checked={batchClassrooms.includes(classroom.id)}
+								onCheckedChange={() => toggleBatchClassroom(classroom.id)}
+							/>
+							<label
+								for="batch-class-{classroom.id}"
+								class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+							>
+								{classroom.name}
+							</label>
+						</div>
+					{/each}
+				</div>
+			</div>
+		</div>
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showBatchModal = false)}>ยกเลิก</Button>
+			<Button onclick={handleBatchSubmit} disabled={submitting}>
+				{#if submitting}
+					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+				{/if}
+				บันทึก
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

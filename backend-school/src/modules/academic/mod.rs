@@ -45,5 +45,6 @@ pub fn academic_routes() -> Router<AppState> {
 
         // Timetable: Entries
         .route("/timetable", get(handlers::timetable::list_timetable_entries).post(handlers::timetable::create_timetable_entry))
+        .route("/timetable/batch", post(handlers::timetable::create_batch_timetable_entries))
         .route("/timetable/{id}", axum::routing::put(handlers::timetable::update_timetable_entry).delete(handlers::timetable::delete_timetable_entry))
 }

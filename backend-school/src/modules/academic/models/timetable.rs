@@ -64,11 +64,18 @@ pub struct PeriodQuery {
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct TimetableEntry {
     pub id: Uuid,
-    pub classroom_course_id: Uuid,
-    pub day_of_week: String, // MON, TUE, WED, THU, FRI
+    pub classroom_course_id: Option<Uuid>, // Nullable for activities
+    pub day_of_week: String,
     pub period_id: Uuid,
     pub room_id: Option<Uuid>,
     pub note: Option<String>,
+    
+    // New fields
+    pub entry_type: String, // COURSE, BREAK, ACTIVITY
+    pub title: Option<String>,
+    pub classroom_id: Uuid,
+    pub academic_semester_id: Uuid,
+
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -106,7 +113,7 @@ pub struct TimetableEntry {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTimetableEntryRequest {
-    pub classroom_course_id: Uuid,
+    pub classroom_course_id: Option<Uuid>,
     pub day_of_week: String,
     pub period_id: Uuid,
     pub room_id: Option<Uuid>,
@@ -122,12 +129,25 @@ pub struct UpdateTimetableEntryRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CreateBatchTimetableEntriesRequest {
+    pub classroom_ids: Vec<Uuid>,
+    pub day_of_week: String,
+    pub period_id: Uuid,
+    pub academic_semester_id: Uuid,
+    pub entry_type: String, // ACTIVITY, BREAK, HOMEROOM
+    pub title: String,
+    pub room_id: Option<Uuid>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct TimetableQuery {
     pub classroom_id: Option<Uuid>,
     pub instructor_id: Option<Uuid>,
     pub room_id: Option<Uuid>,
     pub academic_semester_id: Option<Uuid>,
     pub day_of_week: Option<String>,
+    pub entry_type: Option<String>,
 }
 
 // ============================================

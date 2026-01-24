@@ -41,12 +41,18 @@ export interface AcademicPeriod {
 
 export interface TimetableEntry {
     id: string;
-    classroom_course_id: string;
+    classroom_course_id?: string;
     day_of_week: 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
     period_id: string;
     room_id?: string;
     note?: string;
     is_active: boolean;
+
+    // New fields
+    entry_type: 'COURSE' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM';
+    title?: string;
+    classroom_id: string;
+    academic_semester_id: string;
 
     // Joined fields
     subject_code?: string;
@@ -73,6 +79,17 @@ export interface CreateTimetableEntryRequest {
     classroom_course_id: string;
     day_of_week: string;
     period_id: string;
+    room_id?: string;
+    note?: string;
+}
+
+export interface CreateBatchTimetableEntriesRequest {
+    classroom_ids: string[];
+    day_of_week: string;
+    period_id: string;
+    academic_semester_id: string;
+    entry_type: 'ACTIVITY' | 'BREAK' | 'HOMEROOM';
+    title: string;
     room_id?: string;
     note?: string;
 }
@@ -134,6 +151,7 @@ export const listTimetableEntries = async (filters: {
     room_id?: string;
     academic_semester_id?: string;
     day_of_week?: string;
+    entry_type?: string;
 } = {}): Promise<{ data: TimetableEntry[] }> => {
     const params = new URLSearchParams();
     if (filters.classroom_id) params.append('classroom_id', filters.classroom_id);
@@ -141,9 +159,17 @@ export const listTimetableEntries = async (filters: {
     if (filters.room_id) params.append('room_id', filters.room_id);
     if (filters.academic_semester_id) params.append('academic_semester_id', filters.academic_semester_id);
     if (filters.day_of_week) params.append('day_of_week', filters.day_of_week);
+    if (filters.entry_type) params.append('entry_type', filters.entry_type);
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return await fetchApi(`/api/academic/timetable${queryString}`);
+};
+
+export const createBatchTimetableEntries = async (data: CreateBatchTimetableEntriesRequest) => {
+    return await fetchApi('/api/academic/timetable/batch', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
 };
 
 export interface UpdateTimetableEntryRequest {

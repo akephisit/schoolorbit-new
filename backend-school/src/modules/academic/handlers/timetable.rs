@@ -234,9 +234,9 @@ pub async fn list_timetable_entries(
             ap.start_time,
             ap.end_time
         FROM academic_timetable_entries te
-        JOIN classroom_courses cc ON te.classroom_course_id = cc.id
-        JOIN subjects s ON cc.subject_id = s.id
-        JOIN class_rooms cr ON cc.classroom_id = cr.id
+        LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+        LEFT JOIN subjects s ON cc.subject_id = s.id
+        JOIN class_rooms cr ON te.classroom_id = cr.id
         JOIN academic_periods ap ON te.period_id = ap.id
         LEFT JOIN users u ON cc.primary_instructor_id = u.id
         LEFT JOIN rooms r ON te.room_id = r.id
@@ -247,7 +247,7 @@ pub async fn list_timetable_entries(
     let mut conditions = Vec::new();
 
     if let Some(classroom_id) = query.classroom_id {
-        conditions.push(format!("cc.classroom_id = '{}'", classroom_id));
+        conditions.push(format!("te.classroom_id = '{}'", classroom_id));
     }
 
     if let Some(instructor_id) = query.instructor_id {
@@ -259,11 +259,15 @@ pub async fn list_timetable_entries(
     }
 
     if let Some(semester_id) = query.academic_semester_id {
-        conditions.push(format!("cc.academic_semester_id = '{}'", semester_id));
+        conditions.push(format!("te.academic_semester_id = '{}'", semester_id));
     }
 
     if let Some(ref day) = query.day_of_week {
         conditions.push(format!("te.day_of_week = '{}'", day));
+    }
+
+    if let Some(ref entry_type) = query.entry_type {
+        conditions.push(format!("te.entry_type = '{}'", entry_type));
     }
 
     if !conditions.is_empty() {
@@ -371,49 +375,49 @@ async fn validate_timetable_entry(
 ) -> Result<TimetableValidationResponse, AppError> {
     let mut conflicts = Vec::new();
 
-    // Get classroom_course info
-    let course_info: Option<(Uuid, Option<Uuid>)> = sqlx::query_as(
-        "SELECT classroom_id, primary_instructor_id FROM classroom_courses WHERE id = $1"
-    )
-    .bind(payload.classroom_course_id)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-
-    if course_info.is_none() {
-        return Err(AppError::NotFound("Classroom course not found".to_string()));
-    }
-
-    let (classroom_id, instructor_id) = course_info.unwrap();
-
-    // 1. Check instructor conflict
-    if let Some(instr_id) = instructor_id {
-        let has_conflict: bool = sqlx::query_scalar(
-            r#"
-            SELECT EXISTS(
-                SELECT 1 FROM academic_timetable_entries te
-                JOIN classroom_courses cc ON te.classroom_course_id = cc.id
-                WHERE cc.primary_instructor_id = $1
-                  AND te.day_of_week = $2
-                  AND te.period_id = $3
-                  AND te.is_active = true
-            )
-            "#
+    // 1. Check instructor conflict (only if attached to a course)
+    if let Some(course_id) = payload.classroom_course_id {
+        // Get classroom_course info
+        let course_info: Option<(Uuid, Option<Uuid>)> = sqlx::query_as(
+            "SELECT classroom_id, primary_instructor_id FROM classroom_courses WHERE id = $1"
         )
-        .bind(instr_id)
-        .bind(&payload.day_of_week)
-        .bind(payload.period_id)
-        .fetch_one(pool)
+        .bind(course_id)
+        .fetch_optional(pool)
         .await
-        .unwrap_or(false);
+        .ok()
+        .flatten();
 
-        if has_conflict {
-            conflicts.push(ConflictInfo {
-                conflict_type: "INSTRUCTOR_CONFLICT".to_string(),
-                message: "ครูมีตารางสอนในคาบนี้อยู่แล้ว".to_string(),
-                existing_entry: None,
-            });
+        if course_info.is_none() {
+             return Err(AppError::NotFound("Classroom course not found".to_string()));
+        }
+
+        if let Some((_, Some(instr_id))) = course_info {
+            let has_conflict: bool = sqlx::query_scalar(
+                r#"
+                SELECT EXISTS(
+                    SELECT 1 FROM academic_timetable_entries te
+                    JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+                    WHERE cc.primary_instructor_id = $1
+                      AND te.day_of_week = $2
+                      AND te.period_id = $3
+                      AND te.is_active = true
+                )
+                "#
+            )
+            .bind(instr_id)
+            .bind(&payload.day_of_week)
+            .bind(payload.period_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(false);
+
+            if has_conflict {
+                conflicts.push(ConflictInfo {
+                    conflict_type: "INSTRUCTOR_CONFLICT".to_string(),
+                    message: "ครูมีตารางสอนในคาบนี้อยู่แล้ว".to_string(),
+                    existing_entry: None,
+                });
+            }
         }
     }
 
@@ -574,4 +578,56 @@ pub async fn update_timetable_entry(
     })?;
 
     Ok(Json(json!({ "success": true, "data": updated_entry })).into_response())
+}
+
+/// POST /api/academic/timetable/batch
+pub async fn create_batch_timetable_entries(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateBatchTimetableEntriesRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL).await {
+        return Ok(response);
+    }
+
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    for classroom_id in payload.classroom_ids {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO academic_timetable_entries (
+                id, classroom_id, academic_semester_id, day_of_week, period_id, room_id, 
+                entry_type, title, is_active, created_by, updated_by
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9)
+            ON CONFLICT DO NOTHING
+            "#
+        )
+        .bind(Uuid::new_v4())
+        .bind(classroom_id)
+        .bind(payload.academic_semester_id)
+        .bind(&payload.day_of_week)
+        .bind(payload.period_id)
+        .bind(payload.room_id)
+        .bind(&payload.entry_type)
+        .bind(&payload.title)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await;
+
+        if let Err(e) = result {
+             eprintln!("Failed to batch insert for classroom {}: {}", classroom_id, e);
+             return Err(AppError::InternalServerError("Failed to batch create entries".to_string()));
+        }
+    }
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ 
+        "success": true, 
+        "message": "Batch entries created successfully" 
+    })).into_response())
 }
