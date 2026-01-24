@@ -118,7 +118,7 @@
 <!-- Sidebar Container -->
 <aside
 	class="fixed left-0 top-0 z-50 h-screen bg-card border-r border-border transition-all duration-300 ease-in-out
-  {isCollapsed ? 'w-[80px]' : 'w-64'}
+  {isCollapsed ? 'w-[72px]' : 'w-64'}
   {isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
   lg:translate-x-0 flex flex-col"
 >
@@ -148,7 +148,7 @@
 	<Tooltip.Provider>
 		<nav
 			class="flex-1 overflow-y-auto space-y-1 sidebar-nav transition-all duration-300 {isCollapsed
-				? 'pl-3 pr-1.5 py-4'
+				? 'px-2 py-4'
 				: 'p-4'}"
 		>
 			{#if menuLoading}
@@ -201,8 +201,8 @@
 								>
 									<Icon
 										class="absolute top-1/2 -translate-y-1/2 transition-all duration-300 w-5 h-5 {isCollapsed
-											? 'left-[18px]'
-											: 'left-[14px]'} {isActive(item.path)
+											? 'left-1/2 -translate-x-1/2'
+											: 'left-[10px]'} {isActive(item.path)
 											? 'text-primary-foreground'
 											: 'text-muted-foreground group-hover:text-accent-foreground'}"
 									/>
