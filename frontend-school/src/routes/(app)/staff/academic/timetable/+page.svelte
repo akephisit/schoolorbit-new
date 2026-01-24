@@ -889,7 +889,7 @@
 														<span
 															class="text-[10px] text-red-600 font-bold bg-white/90 px-1.5 py-0.5 rounded shadow-sm border border-red-100"
 														>
-															ครูติดสอน
+															{viewMode === 'CLASSROOM' ? 'ครูติดสอน' : 'นักเรียนไม่ว่าง'}
 														</span>
 													</div>
 												{/if}
