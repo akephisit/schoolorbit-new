@@ -19,8 +19,28 @@
 	// Check authentication for protected routes
 	onMount(async () => {
 		await authAPI.checkAuth();
+
+		// Mobile drag & drop support (Global Init)
+		// @ts-ignore
+		const { polyfill } = await import('mobile-drag-drop');
+		// @ts-ignore
+		const { scrollBehaviourDragImageTranslateOverride } = await import(
+			'mobile-drag-drop/scroll-behaviour'
+		);
+
+		polyfill({
+			dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
+			holdToDrag: 200 // Press and hold to drag, otherwise scroll
+		});
 	});
 </script>
+
+<svelte:head>
+	<link
+		rel="stylesheet"
+		href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@3.0.0-rc.0/default.css"
+	/>
+</svelte:head>
 
 <div class="h-screen flex flex-col bg-background overflow-hidden">
 	<Sidebar bind:this={sidebarRef} bind:isCollapsed={isSidebarCollapsed} />

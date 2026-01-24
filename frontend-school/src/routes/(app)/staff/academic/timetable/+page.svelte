@@ -45,18 +45,7 @@
     import type { AcademicYear, Semester } from '$lib/api/academic';
     import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 
-	// Mobile drag & drop support
-	// @ts-ignore
-	import { polyfill } from 'mobile-drag-drop';
-	// @ts-ignore
-	import { scrollBehaviourDragImageTranslateOverride } from 'mobile-drag-drop/scroll-behaviour';
 
-	// Initialize polyfill on mount (client-side only)
-	if (typeof window !== 'undefined') {
-		polyfill({
-			dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride
-		});
-	}
 
 	const DAYS = [
 		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
@@ -633,14 +622,6 @@
 
 	onMount(loadInitialData);
 </script>
-
-<svelte:head>
-	<!-- Mobile drag & drop CSS -->
-	<link
-		rel="stylesheet"
-		href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@3.0.0-rc.0/default.css"
-	/>
-</svelte:head>
 
 <div class="h-full flex flex-col space-y-4">
 	<div class="flex flex-col gap-2">
