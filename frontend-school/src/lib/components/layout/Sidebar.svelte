@@ -190,21 +190,23 @@
 								<a
 									href={resolve(item.path as any)}
 									onclick={handleNavClick}
-									class="relative flex items-center h-[40px] rounded-lg transition-all duration-300 group {isCollapsed
-										? 'w-[40px] justify-center px-0'
-										: 'w-full px-3'} {isActive(item.path)
+									class="relative flex items-center h-[40px] rounded-lg transition-all duration-300 group px-0 {isCollapsed
+										? 'w-[40px] justify-center'
+										: 'w-full'} {isActive(item.path)
 										? 'bg-primary text-primary-foreground'
 										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 								>
-									<Icon
-										class="flex-shrink-0 w-5 h-5 transition-colors {isActive(item.path)
-											? 'text-primary-foreground'
-											: 'text-muted-foreground group-hover:text-accent-foreground'}"
-									/>
+									<div class="w-[40px] h-[40px] flex items-center justify-center flex-shrink-0">
+										<Icon
+											class="w-5 h-5 transition-colors {isActive(item.path)
+												? 'text-primary-foreground'
+												: 'text-muted-foreground group-hover:text-accent-foreground'}"
+										/>
+									</div>
 									<span
-										class="ml-3 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 {isCollapsed
+										class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300 {isCollapsed
 											? 'w-0 opacity-0 hidden'
-											: 'w-auto opacity-100'}"
+											: 'w-auto opacity-100 ml-1'}"
 									>
 										{item.name}
 									</span>
