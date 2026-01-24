@@ -704,7 +704,16 @@
 														<div class="text-xs text-blue-700 line-clamp-2 mt-1 flex-1">
 															{entry.subject_name_th}
 														</div>
-														{#if entry.instructor_name}
+
+														{#if viewMode === 'INSTRUCTOR' && entry.classroom_name}
+															<div
+																class="text-[10px] text-orange-600 font-medium mt-1 bg-orange-50 px-1 rounded border border-orange-100 w-fit truncate max-w-full"
+															>
+																สอน: {entry.classroom_name}
+															</div>
+														{/if}
+
+														{#if entry.instructor_name && viewMode === 'CLASSROOM'}
 															<div class="text-xs text-blue-600 mt-1 flex items-center gap-1">
 																<span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
 																{entry.instructor_name}
