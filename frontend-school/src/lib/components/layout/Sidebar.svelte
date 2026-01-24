@@ -146,7 +146,7 @@
 
 	<!-- Navigation -->
 	<Tooltip.Provider>
-		<nav class="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-1 sidebar-nav px-3">
+		<nav class="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-1 sidebar-nav px-4">
 			{#if menuLoading}
 				<!-- Loading skeleton -->
 				<div class="space-y-2">
@@ -190,9 +190,9 @@
 								<a
 									href={resolve(item.path as any)}
 									onclick={handleNavClick}
-									class="relative flex items-center h-[40px] rounded-lg transition-colors group {isCollapsed
-										? 'justify-center px-0 w-[40px] mx-auto'
-										: 'px-3 w-full'} {isActive(item.path)
+									class="relative flex items-center h-[40px] rounded-lg transition-all duration-300 group {isCollapsed
+										? 'w-[40px] justify-center px-0'
+										: 'w-full px-3'} {isActive(item.path)
 										? 'bg-primary text-primary-foreground'
 										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 								>
