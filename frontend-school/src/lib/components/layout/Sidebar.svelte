@@ -146,7 +146,7 @@
 
 	<!-- Navigation -->
 	<Tooltip.Provider>
-		<nav class="flex-1 overflow-y-auto p-4 space-y-1 sidebar-nav">
+		<nav class="flex-1 overflow-y-auto py-4 space-y-1 sidebar-nav px-3">
 			{#if menuLoading}
 				<!-- Loading skeleton -->
 				<div class="space-y-2">
@@ -190,23 +190,24 @@
 								<a
 									href={resolve(item.path as any)}
 									onclick={handleNavClick}
-									class="relative flex items-center px-3 py-2.5 rounded-lg transition-colors group
-									{isActive(item.path)
+									class="relative flex items-center h-[40px] rounded-lg transition-colors group {isCollapsed
+										? 'justify-center px-0 w-[40px] mx-auto'
+										: 'px-3 w-full'} {isActive(item.path)
 										? 'bg-primary text-primary-foreground'
 										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 								>
 									<Icon
-										class="absolute top-1/2 -translate-y-1/2 left-[10px] w-5 h-5 transition-colors duration-300 {isActive(
-											item.path
-										)
+										class="flex-shrink-0 w-5 h-5 transition-colors {isActive(item.path)
 											? 'text-primary-foreground'
 											: 'text-muted-foreground group-hover:text-accent-foreground'}"
 									/>
 									<span
-										class="ml-[50px] font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 {isCollapsed
-											? 'opacity-0'
-											: 'opacity-100'}">{item.name}</span
+										class="ml-3 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 {isCollapsed
+											? 'w-0 opacity-0 hidden'
+											: 'w-auto opacity-100'}"
 									>
+										{item.name}
+									</span>
 								</a>
 							</Tooltip.Trigger>
 							{#if isCollapsed}
