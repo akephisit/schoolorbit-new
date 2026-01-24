@@ -146,7 +146,11 @@
 
 	<!-- Navigation -->
 	<Tooltip.Provider>
-		<nav class="flex-1 overflow-y-auto p-4 space-y-1 sidebar-nav">
+		<nav
+			class="flex-1 overflow-y-auto py-4 space-y-1 sidebar-nav transition-[padding] duration-300 {isCollapsed
+				? 'px-2'
+				: 'px-4'}"
+		>
 			{#if menuLoading}
 				<!-- Loading skeleton -->
 				<div class="space-y-2">
@@ -196,7 +200,9 @@
 										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 								>
 									<Icon
-										class="absolute left-[14px] w-5 h-5 {isActive(item.path)
+										class="absolute top-1/2 -translate-y-1/2 transition-all duration-300 w-5 h-5 {isCollapsed
+											? 'left-1/2 -translate-x-1/2'
+											: 'left-[14px]'} {isActive(item.path)
 											? 'text-primary-foreground'
 											: 'text-muted-foreground group-hover:text-accent-foreground'}"
 									/>
