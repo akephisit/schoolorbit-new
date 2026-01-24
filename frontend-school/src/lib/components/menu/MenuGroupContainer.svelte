@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { MenuGroup } from '$lib/api/menu-admin';
-	import { useSortable } from '@dnd-kit-svelte/sortable';
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { GripVertical, AlertCircle } from 'lucide-svelte';
@@ -8,40 +7,44 @@
 
 	interface Props {
 		data: MenuGroup;
-		type: 'group';
-		accepts: string[]; // ['item']
 		children: Snippet;
 		itemCount?: number;
 		class?: string;
+        // Group Drag Events
+        onDragStart?: (e: DragEvent, group: MenuGroup) => void;
+        onDragEnter?: (e: DragEvent, group: MenuGroup) => void;
+        // Drop on Group (for items)
+        onDragOver?: (e: DragEvent) => void;
+        onDrop?: (e: DragEvent, group: MenuGroup) => void;
 	}
 
-	let { data: group, type, accepts, children, itemCount = 0, class: className }: Props = $props();
+	let { 
+        data: group, 
+        children, 
+        itemCount = 0, 
+        class: className,
+        onDragStart,
+        onDragEnter,
+        onDragOver,
+        onDrop 
+    }: Props = $props();
 
-	const sortable = useSortable({
-		id: group.id,
-		data: { type, accepts }
-	});
 </script>
 
 <div
-	use:sortable.setNodeRef
+	role="group"
+	draggable={true}
+	ondragstart={(e) => onDragStart?.(e, group)}
+	ondragenter={(e) => onDragEnter?.(e, group)}
+	ondragover={onDragOver}
+	ondrop={(e) => onDrop?.(e, group)}
 	class="relative {className || ''}"
-	style:transform={sortable.transform.current
-		? `translate3d(${Math.round(sortable.transform.current.x)}px, ${Math.round(sortable.transform.current.y)}px, 0)`
-		: undefined}
-	style:transition={sortable.transition.current}
-	style:opacity={sortable.isDragging.current ? 0.5 : 1}
 >
-	<Card class="p-4">
+	<Card class="p-4 bg-muted/40 hover:bg-muted/60 transition-colors">
 		<div class="flex items-center gap-2 mb-3">
-			<button
-				use:sortable.setDraggableNodeRef
-				class="cursor-grab active:cursor-grabbing touch-none"
-				{...sortable.attributes.current}
-				{...sortable.listeners.current}
-			>
-				<GripVertical class="h-5 w-5 text-muted-foreground" />
-			</button>
+			<div class="cursor-grab active:cursor-grabbing text-muted-foreground mr-2">
+				<GripVertical class="h-5 w-5" />
+			</div>
 
 			<h3 class="text-lg font-semibold flex-1">{group.name}</h3>
 
@@ -57,7 +60,9 @@
 			{/if}
 		</div>
 
-		<div class="min-h-[100px]">
+		<div
+			class="min-h-[60px] space-y-2 p-2 rounded-lg transition-all border-2 border-transparent border-dashed hover:border-muted-foreground/20"
+		>
 			{@render children()}
 		</div>
 	</Card>
