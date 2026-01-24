@@ -164,13 +164,22 @@
 	}
 
 	async function loadTimetable() {
-		if (!selectedClassroomId) {
+        if (viewMode === 'CLASSROOM' && !selectedClassroomId) {
+			timetableEntries = [];
+			return;
+		}
+        if (viewMode === 'INSTRUCTOR' && !selectedInstructorId) {
 			timetableEntries = [];
 			return;
 		}
 
 		try {
-			const res = await listTimetableEntries({ classroom_id: selectedClassroomId });
+            let res;
+            if (viewMode === 'CLASSROOM') {
+			    res = await listTimetableEntries({ classroom_id: selectedClassroomId });
+            } else {
+                res = await listTimetableEntries({ instructor_id: selectedInstructorId });
+            }
 			timetableEntries = res.data;
 		} catch (e) {
 			toast.error('โหลดตารางสอนไม่สำเร็จ');
