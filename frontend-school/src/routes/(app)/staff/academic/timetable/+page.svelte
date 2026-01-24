@@ -891,11 +891,12 @@
 						<Select.Content class="max-h-[200px] overflow-y-auto">
 							<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
 							{#each rooms as room}
-								<Select.Item value={room.id} disabled={unavailableRooms.has(room.id)}>
-									{room.name_th}
-									{room.room_type ? `(${room.room_type})` : ''}
-									{unavailableRooms.has(room.id) ? '(ไม่ว่าง)' : ''}
-								</Select.Item>
+								{#if !unavailableRooms.has(room.id)}
+									<Select.Item value={room.id}>
+										{room.name_th}
+										{room.room_type ? `(${room.room_type})` : ''}
+									</Select.Item>
+								{/if}
 							{/each}
 						</Select.Content>
 					</Select.Root>
