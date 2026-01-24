@@ -649,7 +649,7 @@
 			<!-- Fixed height for scrolling -->
 
 			<!-- Left Sidebar: Draggable Courses -->
-			<div class="col-span-3 flex flex-col h-full bg-background rounded-lg border overflow-hidden">
+			<div class="col-span-2 flex flex-col h-full bg-background rounded-lg border overflow-hidden">
 				<div class="p-4 border-b bg-muted/30">
 					<h3 class="font-semibold flex items-center gap-2">
 						<BookOpen class="w-4 h-4" /> รายวิชา
@@ -703,7 +703,7 @@
 			</div>
 
 			<!-- Right: Timetable Grid -->
-			<div class="col-span-9 flex flex-col h-full overflow-hidden border rounded-lg">
+			<div class="col-span-10 flex flex-col h-full overflow-hidden border rounded-lg">
 				<div class="overflow-auto h-full relative">
 					<table class="w-full text-sm border-collapse">
 						<thead class="bg-muted/50 sticky top-0 z-20 shadow-sm">
