@@ -37,7 +37,7 @@
 		Users
 	} from 'lucide-svelte';
 
-    import { listStaff, type StaffListItem } from '$lib/api/staff';
+    import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 
 	// Mobile drag & drop support
 	// @ts-ignore
@@ -68,7 +68,7 @@
 	let courses = $state<any[]>([]);
 	let academicYears = $state<any[]>([]);
 	let rooms = $state<Room[]>([]);
-    let instructors = $state<StaffListItem[]>([]);
+    let instructors = $state<StaffLookupItem[]>([]);
 
     // View Mode: 'CLASSROOM' or 'INSTRUCTOR'
     let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
@@ -106,9 +106,9 @@
     
     async function loadInstructors() {
         try {
-            // Fetch all staff who are teachers (filtering logic depends on API, for now fetch all)
-            const res = await listStaff({ page_size: 1000 }); 
-            instructors = res.data;
+            // Fetch staff for dropdown (safer, only needs authenticated user)
+            const data = await lookupStaff({ limit: 500 }); 
+            instructors = data;
         } catch(e) {
             console.error('Failed to load instructors', e);
         }
@@ -529,18 +529,15 @@
 					<Select.Root type="single" bind:value={selectedInstructorId}>
 						<Select.Trigger class="w-full">
 							<Users class="w-4 h-4 mr-2" />
-							{instructors.find((i) => i.id === selectedInstructorId)
-								? `${instructors.find((i) => i.id === selectedInstructorId)?.first_name} ${instructors.find((i) => i.id === selectedInstructorId)?.last_name}`
-								: 'เลือกครูผู้สอน'}
+							{instructors.find((i) => i.id === selectedInstructorId)?.name || 'เลือกครูผู้สอน'}
 						</Select.Trigger>
 						<Select.Content class="max-h-[300px] overflow-y-auto">
 							<div class="p-2 sticky top-0 bg-background z-10 border-b mb-1">
 								<span class="text-xs text-muted-foreground font-medium">รายชื่อบุคลากรทั้งหมด</span>
 							</div>
 							{#each instructors as staff}
-								<Select.Item value={staff.id} label={`${staff.first_name} ${staff.last_name}`}>
-									{staff.title}{staff.first_name}
-									{staff.last_name}
+								<Select.Item value={staff.id} label={staff.name}>
+									{staff.title || ''}{staff.name}
 								</Select.Item>
 							{/each}
 						</Select.Content>
