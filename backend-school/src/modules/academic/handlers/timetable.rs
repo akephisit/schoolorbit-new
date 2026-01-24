@@ -315,20 +315,43 @@ pub async fn create_timetable_entry(
         ).into_response());
     }
 
+    // Lookup classroom_id and semester_id from course
+    let (classroom_id, academic_semester_id) = if let Some(course_id) = payload.classroom_course_id {
+         let info: Option<(Uuid, Uuid)> = sqlx::query_as(
+            "SELECT classroom_id, academic_semester_id FROM classroom_courses WHERE id = $1"
+         )
+         .bind(course_id)
+         .fetch_optional(&pool)
+         .await
+         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+         
+         match info {
+             Some(i) => i,
+             None => return Err(AppError::NotFound("Classroom course not found".to_string()))
+         }
+    } else {
+         return Err(AppError::BadRequest("Course ID is required for regular timetable entry".to_string()));
+    };
+
     let entry = sqlx::query_as::<_, TimetableEntry>(
         r#"
         INSERT INTO academic_timetable_entries (
-            classroom_course_id, day_of_week, period_id, room_id, note, created_by, updated_by
+            id, classroom_course_id, day_of_week, period_id, room_id, note, 
+            classroom_id, academic_semester_id, entry_type, is_active,
+            created_by, updated_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'COURSE', true, $9, $9)
         RETURNING *
         "#
     )
+    .bind(Uuid::new_v4())
     .bind(payload.classroom_course_id)
     .bind(payload.day_of_week)
     .bind(payload.period_id)
     .bind(payload.room_id)
     .bind(payload.note)
+    .bind(classroom_id)
+    .bind(academic_semester_id)
     .bind(user_id)
     .fetch_one(&pool)
     .await
