@@ -17,7 +17,7 @@
 		listClassroomCourses,
 		type Classroom
 	} from '$lib/api/academic';
-	import { listRooms, type Room } from '$lib/api/facility';
+	import { lookupRooms, type Room } from '$lib/api/facility';
     import * as Dialog from '$lib/components/ui/dialog';
     import * as Label from '$lib/components/ui/label';
 
@@ -156,7 +156,7 @@
 
     async function loadRooms() {
         try {
-            const res = await listRooms();
+            const res = await lookupRooms();
             rooms = res.data;
         } catch (e) {
             console.error('Failed to load rooms', e);

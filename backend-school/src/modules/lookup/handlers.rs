@@ -13,7 +13,9 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use serde_json::json;
 use sqlx::FromRow;
+
 use uuid::Uuid;
 
 // ===================================================================
@@ -639,5 +641,51 @@ pub async fn lookup_students(
     }).collect();
     
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+}
+
+// ===================================================================
+// Room Lookup
+// ===================================================================
+
+/// GET /api/lookup/rooms
+/// Returns active rooms with building info
+pub async fn lookup_rooms(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
+
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+
+    // 1. Check authentication
+    verify_authenticated(&headers, &pool).await?;
+
+    // 2. Query
+    use crate::modules::facility::models::Room;
+
+    let rooms = sqlx::query_as::<_, Room>(
+        r#"
+        SELECT r.*, b.name_th as building_name
+        FROM rooms r
+        LEFT JOIN buildings b ON r.building_id = b.id
+        WHERE r.status = 'ACTIVE'
+        ORDER BY b.code NULLS LAST, r.floor NULLS FIRST, r.code ASC
+        "#
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Lookup Rooms Error: {}", e);
+        AppError::InternalServerError("Failed to fetch rooms".to_string())
+    })?;
+
+    Ok(Json(json!({ "success": true, "data": rooms })).into_response())
 }
 
