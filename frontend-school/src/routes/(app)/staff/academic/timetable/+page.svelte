@@ -904,7 +904,7 @@
 	<!-- Main Content Grid -->
 	<div class="grid grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[600px]">
 		<!-- Left Sidebar: Courses -->
-		<Card.Root class="col-span-3 flex flex-col h-full overflow-hidden">
+		<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden">
 			<Card.Header class="py-3 px-4 border-b">
 				<Card.Title class="text-base flex items-center gap-2">
 					<BookOpen class="w-4 h-4" /> รายวิชา
@@ -940,13 +940,13 @@
 						{/if}
 
 						<div class="flex justify-between items-start mb-1">
-							<Badge variant="outline" class="font-mono text-xs">{course.subject_code}</Badge>
+							<Badge variant="outline" class="text-xs">{course.subject_code}</Badge>
 							<Badge variant={course.is_completed ? 'secondary' : 'default'} class="text-[10px]">
 								{course.scheduled_count}/{course.max_periods} คาบ
 							</Badge>
 						</div>
 						<h4 class="font-medium text-sm line-clamp-2 leading-tight mb-1">
-							{course.title_th || course.title || 'ไม่มีชื่อวิชา'}
+							{course.subject_name_th || course.title_th || course.title || 'ไม่มีชื่อวิชา'}
 						</h4>
 						<div class="flex flex-col gap-0.5 text-[10px] text-muted-foreground mt-2">
 							{#if viewMode === 'CLASSROOM'}
@@ -986,7 +986,7 @@
 		</Card.Root>
 
 		<!-- Right Content: Timetable Grid -->
-		<Card.Root class="col-span-9 flex flex-col h-full overflow-hidden border-2 shadow-none">
+		<Card.Root class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none">
 			<div class="overflow-auto flex-1">
 				<div class="min-w-[800px] h-full flex flex-col">
 					<!-- Header Row (Periods) -->
