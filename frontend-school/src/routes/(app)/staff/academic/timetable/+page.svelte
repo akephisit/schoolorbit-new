@@ -674,12 +674,20 @@
         const now = Date.now();
         if (now - lastCursorSend > 50 && $authStore.user) { // 20fps cap
              lastCursorSend = now;
+             
+             // Dynamic Context
+             const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
+             
              sendTimetableEvent({
                  type: 'CursorMove',
                  payload: {
                      user_id: $authStore.user.id,
                      x: e.clientX,
-                     y: e.clientY
+                     y: e.clientY,
+                     context: {
+                         view_mode: viewMode,
+                         view_id: currentViewId
+                     }
                  }
              });
         }
@@ -698,9 +706,11 @@
 	onMount(loadInitialData);
 </script>
 
-<svelte:window onmousemove={handleMouseMove} />
-
-<div class="h-full flex flex-col space-y-4">
+<div
+	class="h-full flex flex-col space-y-4 relative"
+	role="application"
+	onmousemove={handleMouseMove}
+>
 	<div class="flex items-start justify-between gap-4">
 		<div class="flex flex-col gap-2">
 			<h2 class="text-3xl font-bold flex items-center gap-2">
@@ -731,13 +741,30 @@
 				<div class="w-px h-4 bg-border mx-1"></div>
 				<div class="flex -space-x-1.5">
 					{#each $activeUsers.slice(0, 4) as user (user.user_id)}
-						<div
-							class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm"
+						<!-- Interactive Avatar -->
+						<button
+							class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm transition-transform hover:scale-110 hover:z-10 cursor-pointer"
 							style="background-color: {user.color}"
-							title={user.name}
+							title="{user.name} {user.context?.view_id
+								? `(อยู่ที่ ${user.context.view_mode === 'CLASSROOM' ? 'ม.' : 'อ.'} ${user.context.view_id})`
+								: ''}"
+							onclick={() => {
+								if (
+									user.context?.view_mode &&
+									(user.context.view_mode === 'CLASSROOM' ||
+										user.context.view_mode === 'INSTRUCTOR')
+								) {
+									viewMode = user.context.view_mode;
+									if (user.context.view_id) {
+										if (viewMode === 'CLASSROOM') selectedClassroomId = user.context.view_id;
+										else selectedInstructorId = user.context.view_id;
+										toast.info(`ย้ายไปดูหน้าจอของ ${user.name}`);
+									}
+								}
+							}}
 						>
 							{user.name.charAt(0).toUpperCase()}
-						</div>
+						</button>
 					{/each}
 					{#if $activeUsers.length > 4}
 						<div
@@ -1301,34 +1328,55 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- Remote Cursors Overlay -->
-{#each Object.entries($remoteCursors) as [userId, cursor] (userId)}
-	{@const user = $activeUsers.find((u) => u.user_id === userId)}
-	{#if user}
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="fixed w-4 h-4 rounded-full border-2 border-white shadow-sm z-[100] pointer-events-none flex items-center justify-center transition-all duration-75 ease-out"
-			style="left: {cursor.x}px; top: {cursor.y}px; background-color: {user.color};"
-		>
-			<div
-				class="absolute -top-6 left-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-[101]"
-			>
-				{user.name}
-			</div>
+<!-- GHOST UI OVERLAY -->
+<div class="pointer-events-none fixed inset-0 z-[9999] overflow-hidden">
+	{#each $activeUsers as user (user.user_id)}
+		{@const cursor = $remoteCursors[user.user_id]}
 
-			<!-- Cursor Arrow -->
-			<svg
-				class="absolute -top-1 -left-1 w-4 h-4 text-white drop-shadow-sm"
-				viewBox="0 0 24 24"
-				fill={user.color}
-				stroke="white"
-				stroke-width="2"
-			>
-				<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-			</svg>
-		</div>
-	{/if}
-{/each}
+		{#if cursor && user.user_id !== $authStore.user?.id}
+			<!-- Context Check: Only show if in same view -->
+			{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
+				<div
+					class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
+					style="transform: translate({cursor.x}px, {cursor.y}px);"
+				>
+					<!-- Cursor Icon -->
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class="h-5 w-5 drop-shadow-md"
+						fill={user.color}
+						viewBox="0 0 24 24"
+						stroke="white"
+						stroke-width="2"
+					>
+						<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+					</svg>
+
+					<!-- Name Tag -->
+					<div
+						class="px-2 py-0.5 rounded text-[10px] text-white font-bold whitespace-nowrap shadow-sm"
+						style="background-color: {user.color}"
+					>
+						{user.name}
+					</div>
+
+					<!-- GHOST DRAG ITEM -->
+					{#if $userDrags[user.user_id]}
+						<div
+							class="bg-background border rounded shadow-lg p-2 flex items-center gap-2 mt-2 opacity-90 scale-90 origin-top-left animate-in fade-in zoom-in duration-200"
+						>
+							<BookOpen class="w-4 h-4 text-primary" />
+							<div class="flex flex-col">
+								<span class="text-xs font-bold">กำลังลาก...</span>
+								<span class="text-[10px] text-muted-foreground">ไปยังช่องว่าง</span>
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		{/if}
+	{/each}
+</div>
 
 <style>
     /* Custom Scrollbar */

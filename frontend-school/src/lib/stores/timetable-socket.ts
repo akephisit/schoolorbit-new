@@ -2,23 +2,30 @@ import { writable, type Writable } from 'svelte/store';
 import { PUBLIC_BACKEND_URL } from '$env/static/public';
 
 // Types matching backend
+export interface UserContext {
+    view_mode: string;
+    view_id?: string;
+}
+
 export interface UserPresence {
     user_id: string;
     name: string;
     color: string;
+    context?: UserContext;
 }
 
 export type TimetableEvent =
+    | { type: 'StateSync', payload: { users: UserPresence[], drags: Record<string, { course_id?: string, entry_id?: string }> } }
     | { type: 'UserJoined', payload: UserPresence }
     | { type: 'UserLeft', payload: { user_id: string } }
-    | { type: 'CursorMove', payload: { user_id: string, x: number, y: number, day?: string, period_id?: string } }
+    | { type: 'CursorMove', payload: { user_id: string, x: number, y: number, context?: UserContext } }
     // Locking
     | { type: 'DragStart', payload: { user_id: string, course_id?: string, entry_id?: string } }
     | { type: 'DragEnd', payload: { user_id: string } };
 
 // Stores
 export const activeUsers: Writable<UserPresence[]> = writable([]);
-export const remoteCursors: Writable<Record<string, { x: number, y: number, day?: string, period_id?: string }>> = writable({});
+export const remoteCursors: Writable<Record<string, { x: number, y: number, context?: UserContext }>> = writable({});
 // Key: user_id -> What they are dragging
 export const userDrags: Writable<Record<string, { course_id?: string, entry_id?: string }>> = writable({});
 export const isConnected: Writable<boolean> = writable(false);
@@ -95,6 +102,19 @@ function handleMessage(msg: any) {
     const { type, payload } = msg;
 
     switch (type) {
+        case 'StateSync': {
+            const { users, drags } = payload;
+            // Filter out self
+            const others = users.filter((u: UserPresence) => u.user_id !== currentUserId);
+            activeUsers.set(others);
+
+            // Sync drags (filter self if necessary, but usually drag store is by user_id ok)
+            if (currentUserId && drags[currentUserId]) {
+                delete drags[currentUserId];
+            }
+            userDrags.set(drags);
+            break;
+        }
         case 'UserJoined': {
             const user = payload as UserPresence;
             if (user.user_id === currentUserId) return; // Ignore reflection if any
@@ -125,12 +145,17 @@ function handleMessage(msg: any) {
             break;
         }
         case 'CursorMove': {
-            const { user_id, x, y, day, period_id } = payload;
+            const { user_id, x, y, context } = payload;
             if (user_id === currentUserId) return;
+
+            // Update user context in activeUsers list too?
+            activeUsers.update(users => users.map(u =>
+                u.user_id === user_id ? { ...u, context } : u
+            ));
 
             remoteCursors.update(cursors => ({
                 ...cursors,
-                [user_id]: { x, y, day, period_id }
+                [user_id]: { x, y, context }
             }));
             break;
         }
