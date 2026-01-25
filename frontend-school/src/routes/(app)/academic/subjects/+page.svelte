@@ -169,10 +169,30 @@
 
 		submitting = true;
 		try {
-			if (isEditing && currentSubject.id) {
-				await updateSubject(currentSubject.id, currentSubject);
+            // Sanitize payload: convert empty strings to null for UUID fields to avoid 422 errors
+            // Sanitize all UUID & Optional fields
+            const payload = { ...currentSubject };
+            
+            // Helper: Convert empty string to null. 
+            // Note: Keep 0 for numbers!
+            const nullify = (val: any) => (val === '' || val === undefined) ? null : val;
+            
+            payload.group_id = nullify(payload.group_id);
+            payload.start_academic_year_id = nullify(payload.start_academic_year_id);
+            payload.default_instructor_id = nullify(payload.default_instructor_id);
+            payload.level_scope = nullify(payload.level_scope);
+            payload.description = nullify(payload.description);
+            payload.term = nullify(payload.term);
+            
+            if (payload.credit === '' as any) payload.credit = null as any;
+            if (payload.hours_per_semester === '' as any) payload.hours_per_semester = null as any;
+
+            console.log('Submitting Subject Payload:', payload);
+
+			if (isEditing && payload.id) {
+				await updateSubject(payload.id, payload as any);
 			} else {
-				await createSubject(currentSubject);
+				await createSubject(payload as any);
 			}
 			showDialog = false;
 			await loadData();

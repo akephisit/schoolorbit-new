@@ -188,7 +188,7 @@ pub async fn create_subject(
     .bind(payload.academic_year_id)
     .bind(&payload.name_th)
     .bind(&payload.name_en)
-    .bind(payload.credit) 
+    .bind(payload.credit.unwrap_or(0.0)) 
     .bind(payload.hours_per_semester)
     .bind(&payload.subject_type)
     .bind(payload.group_id)

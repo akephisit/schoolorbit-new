@@ -64,7 +64,7 @@ pub struct CreateSubjectRequest {
     pub academic_year_id: Uuid, // Required FK
     pub name_th: String,
     pub name_en: Option<String>,
-    pub credit: f64,
+    pub credit: Option<f64>,
     pub hours_per_semester: Option<i32>,
     #[serde(rename = "type")]
     pub subject_type: String,
