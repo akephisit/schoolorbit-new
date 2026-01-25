@@ -21,6 +21,7 @@ export const activeUsers: Writable<UserPresence[]> = writable([]);
 export const remoteCursors: Writable<Record<string, { x: number, y: number, day?: string, period_id?: string }>> = writable({});
 // Key: user_id -> What they are dragging
 export const userDrags: Writable<Record<string, { course_id?: string, entry_id?: string }>> = writable({});
+export const isConnected: Writable<boolean> = writable(false);
 
 let socket: WebSocket | null = null;
 let currentUserId: string | null = null;
@@ -55,6 +56,7 @@ export function connectTimetableSocket(params: {
 
     socket.onopen = () => {
         console.log('WS Connected');
+        isConnected.set(true);
     };
 
     socket.onmessage = (event) => {
@@ -66,6 +68,7 @@ export function connectTimetableSocket(params: {
 
     socket.onclose = () => {
         console.log('WS Disconnected');
+        isConnected.set(false);
         // Clear state
         activeUsers.set([]);
         remoteCursors.set({});
