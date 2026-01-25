@@ -98,14 +98,16 @@
     
     // --- 1. MENU ITEMS REORDERING ---
 
+    let originalItemGroupId = $state<string | null>(null);
+
     function handleItemDragStart(e: DragEvent, item: MenuItem) {
         if(activeTab !== 'items') return;
         
         e.dataTransfer!.effectAllowed = 'move';
-        // Provide data for potential other drops, though we use local state mostly
         e.dataTransfer!.setData('application/json', JSON.stringify(item));
         
         draggedItem = item;
+        originalItemGroupId = item.group_id; // Capture original group
         dragType = 'item';
     }
 
@@ -148,7 +150,7 @@
             containers[targetGroupIndex].nesteds = targetList;
         }
     }
-    
+
     // Handle dropping on an empty group or specific group area
     function handleGroupDragOver(e: DragEvent) {
         // Allow dropping items into group
@@ -157,7 +159,7 @@
             e.dataTransfer!.dropEffect = 'move';
         }
     }
-    
+
     function handleGroupDrop(e: DragEvent, targetGroup: MenuGroup) {
         if(dragType === 'item' && draggedItem) {
              e.preventDefault();
@@ -185,10 +187,48 @@
                  containers[sourceGroupIndex].nesteds = sourceList;
                  containers[targetGroupIndex].nesteds = targetList;
              }
-             
-             // handleDragEnd(e); // Removed: let the source's natural dragend event handle the commit
         } else if (dragType === 'group' && draggedGroup) {
             // Group reordering drop (optional, handled via dragEnter usually)
+        }
+    }
+
+    async function commitItemReorder() {
+        // Save current state to backend
+        try {
+            const promises: Promise<any>[] = [];
+            
+            // 1. Check if the dragged item moved to a new group
+            if (draggedItem && originalItemGroupId && draggedItem.group_id !== originalItemGroupId) {
+                 // Explicitly call moveItemToGroup because reorderMenuItems might not handle group change
+                 // or we want to be safe.
+                 promises.push(moveItemToGroup(draggedItem.id, draggedItem.group_id));
+            }
+            
+            // 2. Reorder all items (updates display_order)
+            // We batch this.
+            const reorderPayload: {id: string, display_order: number}[] = [];
+            for(const container of containers) {
+                container.nesteds.forEach((item, idx) => {
+                     reorderPayload.push({
+                         id: item.id,
+                         display_order: idx + 1
+                     });
+                });
+            }
+            
+            if(reorderPayload.length > 0) {
+                 promises.push(reorderMenuItems(reorderPayload));
+            }
+            
+            if (promises.length > 0) {
+                await Promise.all(promises);
+                toast.success('บันทึกลำดับสำเร็จ');
+            }
+            
+        } catch (e) {
+            console.error(e);
+            toast.error('บันทึกไม่สำเร็จ');
+            await loadData(); // Revert
         }
     }
 
@@ -205,85 +245,9 @@
         draggedGroup = null;
         dragType = null;
     }
-    
-    async function commitItemReorder() {
-        // Save current state to backend
-        try {
-            // Flatten all items with updated display_order
-            let allUpdates: { id: string, display_order: number, group_id: string }[] = [];
             
-            for(const container of containers) {
-                container.nesteds.forEach((item, index) => {
-                    allUpdates.push({
-                        id: item.id,
-                        group_id: container.data.id, 
-                        display_order: index + 1
-                    });
-                });
-            }
-            
-            // We need to efficiently call API
-            // Current API: moveItemToGroup (one by one) and reorderMenuItems (batch order)
-            // It's safer to just re-save everything or identify changes.
-            // For simplicity in this demo, we assume the backend reorder API can handle minimal updates or we send all.
-            // But verify: reorderMenuItems takes {id, display_order}. It DOES NOT update group_id usually.
-            
-            // 1. Identify Group Moves first? 
-            // The user API `moveItemToGroup` moves one item.
-            // The user API `reorderMenuItems` reorders.
-            
-            // This is complex to batch properly without a dedicated batch endpoint.
-            // We'll iterate and find diffs.
-            
-            const promises: Promise<any>[] = [];
-            
-            // Check for Group changes
-            // We need to compare with 'items' (original state)
-            const changes = [];
-            
-            // To properly track, we should just send a "Reorder All" if supported,
-            // but since we only have `reorderMenuItems` and `moveItemToGroup`:
-            
-            // Step 1: Detect Group Changes
-            for(const container of containers) {
-               for(const item of container.nesteds) {
-                   const original = items.find(i => i.id === item.id);
-                   if(original && original.group_id !== container.data.id) {
-                       await moveItemToGroup(item.id, container.data.id);
-                       // Update local original reference to avoid re-moving if we fail later
-                       original.group_id = container.data.id; 
-                   }
-               }
-            }
-            
-            // Step 2: Reorder within groups (globally unique display_order or per group?)
-            // Usually reorderMenuItems updates display_order for specified IDs.
-            // We just dump the new orders.
-            const reorderPayload: {id: string, display_order: number}[] = [];
-            for(const container of containers) {
-                container.nesteds.forEach((item, idx) => {
-                     reorderPayload.push({
-                         id: item.id,
-                         display_order: idx + 1
-                     });
-                });
-            }
-            
-            if(reorderPayload.length > 0) {
-                await reorderMenuItems(reorderPayload);
-            }
-            
-            toast.success('บันทึกลำดับสำเร็จ');
-            // Reload raw data to ensure sync
-            // await loadData(); 
-            // (Skip reload to prevent jump, assuming optimistic worked)
-            
-        } catch (e) {
-            console.error(e);
-            toast.error('บันทึกไม่สำเร็จ');
-            await loadData(); // Revert
-        }
-    }
+
+
     
     // --- 2. MENU GROUPS REORDERING ---
     
@@ -398,6 +362,7 @@
 						<MenuGroupContainer
 							{data}
 							itemCount={nesteds.length}
+							draggable={false}
 							onDragOver={handleGroupDragOver}
 							onDrop={handleGroupDrop}
 						>
