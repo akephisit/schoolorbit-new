@@ -92,6 +92,7 @@ export interface CreateBatchTimetableEntriesRequest {
     title: string;
     room_id?: string;
     note?: string;
+    subject_id?: string;
 }
 
 export interface ConflictInfo {

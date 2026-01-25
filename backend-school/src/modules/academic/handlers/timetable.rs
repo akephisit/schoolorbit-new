@@ -682,13 +682,39 @@ pub async fn create_batch_timetable_entries(
     let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     for classroom_id in payload.classroom_ids {
+        let mut entry_type = payload.entry_type.clone();
+        let mut classroom_course_id: Option<Uuid> = None;
+        let mut title = payload.title.clone();
+
+        // If subject_id is provided, try to find matching course mapping for this classroom
+        if let Some(subject_id) = payload.subject_id {
+            let course_info: Option<(Uuid, String)> = sqlx::query_as(
+               "SELECT cc.id, s.name_th FROM classroom_courses cc 
+                JOIN subjects s ON cc.subject_id = s.id
+                WHERE cc.classroom_id = $1 AND cc.subject_id = $2"
+            )
+            .bind(classroom_id)
+            .bind(subject_id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap_or(None);
+
+            if let Some((cc_id, s_name)) = course_info {
+                classroom_course_id = Some(cc_id);
+                entry_type = "COURSE".to_string();
+                // Use subject name as title just in case (though frontend might ignore it for COURSE type)
+                title = s_name;
+            }
+        }
+
         let result = sqlx::query(
             r#"
             INSERT INTO academic_timetable_entries (
                 id, classroom_id, academic_semester_id, day_of_week, period_id, room_id, 
-                entry_type, title, is_active, created_by, updated_by
+                entry_type, title, is_active, created_by, updated_by,
+                classroom_course_id, note
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9, $10, $11)
             ON CONFLICT DO NOTHING
             "#
         )
@@ -698,9 +724,11 @@ pub async fn create_batch_timetable_entries(
         .bind(&payload.day_of_week)
         .bind(payload.period_id)
         .bind(payload.room_id)
-        .bind(&payload.entry_type)
-        .bind(&payload.title)
+        .bind(&entry_type)
+        .bind(&title)
         .bind(user_id)
+        .bind(classroom_course_id)
+        .bind(&payload.note)
         .execute(&mut *tx)
         .await;
 

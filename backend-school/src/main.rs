@@ -263,6 +263,8 @@ async fn main() {
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/lookup/academic-years", get(modules::lookup::handlers::lookup_academic_years)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/lookup/subjects", get(modules::lookup::handlers::lookup_subjects)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
         // Route registration (no auth - uses deploy key)
         .route("/api/admin/routes/register", post(modules::system::handlers::register_routes::register_routes))

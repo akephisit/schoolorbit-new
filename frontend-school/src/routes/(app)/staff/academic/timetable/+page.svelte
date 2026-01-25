@@ -20,7 +20,7 @@
         type AcademicYear, 
         type Semester
 	} from '$lib/api/academic';
-	import { lookupRooms, type RoomLookupItem, lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
+	import { lookupRooms, type RoomLookupItem, lookupStaff, type StaffLookupItem, lookupSubjects, type LookupItem } from '$lib/api/lookup';
     import * as Dialog from '$lib/components/ui/dialog';
     import * as Label from '$lib/components/ui/label';
 
@@ -602,6 +602,25 @@
     let batchType = $state('ACTIVITY');
     let batchTitle = $state('');
     let batchRoomId = $state('none');
+    
+    // Batch Mode State
+    let batchMode = $state<'TEXT' | 'COURSE'>('TEXT');
+    let subjectOptions = $state<LookupItem[]>([]);
+	let batchSubjectId = $state('');
+    let loadingSubjects = $state(false);
+
+    async function ensureSubjectsLoaded() {
+        if (subjectOptions.length > 0) return;
+        loadingSubjects = true;
+        try {
+            subjectOptions = await lookupSubjects({ limit: 500, activeOnly: true });
+        } catch(e) {
+            console.error(e);
+            toast.error('โหลดรายวิชาไม่สำเร็จ');
+        } finally {
+            loadingSubjects = false;
+        }
+    }
 
     function toggleBatchClassroom(id: string) {
         if (batchClassrooms.includes(id)) {
@@ -628,27 +647,50 @@
             toast.error('กรุณาเลือกคาบเวลา');
             return;
         }
-        if (!batchTitle) {
+        
+        // Validate based on mode
+        if (batchMode === 'TEXT' && !batchTitle) {
             toast.error('กรุณาระบุชื่อกิจกรรม');
+            return;
+        }
+        if (batchMode === 'COURSE' && !batchSubjectId) {
+            toast.error('กรุณาเลือกรายวิชา');
             return;
         }
 
         try {
             submitting = true;
+            
+            let titleToSend = batchTitle;
+            let entryTypeToSend = batchType;
+            let subjectIdToSend = undefined;
+
+            if (batchMode === 'COURSE') {
+                const subj = subjectOptions.find(s => s.id === batchSubjectId);
+                titleToSend = subj?.name || ''; 
+                // We send ACTIVITY first, backend might auto-convert to COURSE if it finds a mapping.
+                // Or we can send ACTIVITY and let backend handle it as per our new logic.
+                entryTypeToSend = 'ACTIVITY'; 
+                subjectIdToSend = batchSubjectId;
+            }
+
             await createBatchTimetableEntries({
                 classroom_ids: batchClassrooms,
                 day_of_week: batchDay,
                 period_id: batchPeriodId,
                 academic_semester_id: selectedSemesterId,
-                entry_type: batchType as any,
-                title: batchTitle,
-                room_id: batchRoomId === 'none' ? undefined : batchRoomId
+                entry_type: entryTypeToSend as any,
+                title: titleToSend,
+                room_id: batchRoomId === 'none' ? undefined : batchRoomId,
+                subject_id: subjectIdToSend
             });
             
             toast.success('บันทึกกิจกรรมเรียบร้อย');
             showBatchModal = false;
-            // Reset minimal fields
+            
+            // Reset fields
             batchTitle = '';
+            batchSubjectId = '';
             
             // Reload if current view is affected
             if (viewMode === 'CLASSROOM' && selectedClassroomId && batchClassrooms.includes(selectedClassroomId)) {
@@ -1248,36 +1290,107 @@
 		</Dialog.Header>
 
 		<div class="grid gap-4 py-4">
+			<!-- Mode Selection -->
 			<div class="grid grid-cols-4 items-center gap-4">
-				<Label.Root class="text-right">ชื่อกิจกรรม</Label.Root>
-				<div class="col-span-3">
-					<input
-						type="text"
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-						bind:value={batchTitle}
-						placeholder="เช่น ประชุมระดับ, กิจกรรมพัฒนาผู้เรียน"
-					/>
+				<Label.Root class="text-right">รูปแบบ</Label.Root>
+				<div class="col-span-3 flex gap-2">
+					<Button
+						variant={batchMode === 'TEXT' ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => (batchMode = 'TEXT')}
+					>
+						ระบุชื่อเอง
+					</Button>
+					<Button
+						variant={batchMode === 'COURSE' ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => {
+							batchMode = 'COURSE';
+							ensureSubjectsLoaded();
+						}}
+					>
+						เลือกจากรายวิชา
+					</Button>
 				</div>
 			</div>
 
-			<div class="grid grid-cols-4 items-center gap-4">
-				<Label.Root class="text-right">ประเภท</Label.Root>
-				<div class="col-span-3">
-					<Select.Root type="single" bind:value={batchType}>
-						<Select.Trigger class="w-full">
-							{batchType === 'ACTIVITY'
-								? 'กิจกรรม'
-								: batchType === 'ACADEMIC'
-									? 'วิชาการ'
-									: 'อื่นๆ'}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="ACTIVITY">กิจกรรม</Select.Item>
-							<Select.Item value="ACADEMIC">วิชาการ</Select.Item>
-						</Select.Content>
-					</Select.Root>
+			{#if batchMode === 'TEXT'}
+				<div class="grid grid-cols-4 items-center gap-4">
+					<Label.Root class="text-right">ชื่อกิจกรรม</Label.Root>
+					<div class="col-span-3">
+						<input
+							type="text"
+							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+							bind:value={batchTitle}
+							placeholder="เช่น ประชุมระดับ, กิจกรรมพัฒนาผู้เรียน"
+						/>
+					</div>
 				</div>
-			</div>
+
+				<div class="grid grid-cols-4 items-center gap-4">
+					<Label.Root class="text-right">ประเภท</Label.Root>
+					<div class="col-span-3">
+						<Select.Root type="single" bind:value={batchType}>
+							<Select.Trigger class="w-full">
+								{batchType === 'ACTIVITY'
+									? 'กิจกรรม'
+									: batchType === 'ACADEMIC'
+										? 'วิชาการ'
+										: 'อื่นๆ'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="ACTIVITY">กิจกรรม</Select.Item>
+								<Select.Item value="ACADEMIC">วิชาการ</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+				</div>
+			{:else}
+				<div class="grid grid-cols-4 items-center gap-4">
+					<Label.Root class="text-right">รายวิชา</Label.Root>
+					<div class="col-span-3">
+						{#if loadingSubjects}
+							<div class="text-sm text-muted-foreground flex items-center gap-2">
+								<Loader2 class="w-3 h-3 animate-spin" /> กำลังโหลด...
+							</div>
+						{:else}
+							<Select.Root type="single" bind:value={batchSubjectId}>
+								<Select.Trigger class="w-full h-auto py-2">
+									<div class="flex flex-col items-start gap-0.5 text-left overflow-hidden">
+										<span class="truncate block w-full"
+											>{subjectOptions.find((s) => s.id === batchSubjectId)?.name ||
+												'เลือกรายวิชา'}</span
+										>
+										{#if batchSubjectId && subjectOptions.find((s) => s.id === batchSubjectId)?.code}
+											<span class="text-xs text-muted-foreground">
+												{subjectOptions.find((s) => s.id === batchSubjectId)?.code}
+											</span>
+										{/if}
+									</div>
+								</Select.Trigger>
+								<Select.Content class="max-h-[300px] w-[350px] overflow-y-auto">
+									{#each subjectOptions as subj}
+										<Select.Item
+											value={subj.id}
+											label={subj.name}
+											class="flex flex-col items-start py-2 border-b last:border-0"
+										>
+											<span class="font-medium text-sm">{subj.name}</span>
+											{#if subj.code}
+												<span class="text-xs text-muted-foreground">{subj.code}</span>
+											{/if}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{/if}
+						<p class="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+							*ระบบจะค้นหา <b>"โครงสร้างรายวิชา"</b> ของแต่ละห้องเรียนให้โดยอัตโนมัติ <br />
+							(หากห้องใดไม่ได้ลงทะเบียนวิชานี้ในโครงสร้าง ระบบจะข้ามไปหรือสร้างเป็นกิจกรรมแทน)
+						</p>
+					</div>
+				</div>
+			{/if}
 
 			<div class="grid grid-cols-4 items-center gap-4">
 				<Label.Root class="text-right">วัน/เวลา</Label.Root>

@@ -194,3 +194,11 @@ export interface RoomLookupItem {
 export async function lookupRooms(options?: LookupOptions): Promise<RoomLookupItem[]> {
     return fetchLookup<RoomLookupItem>('rooms', options);
 }
+
+/**
+ * Fetch subjects list for dropdowns
+ * Returns: id, name, code
+ */
+export async function lookupSubjects(options?: LookupOptions): Promise<LookupItem[]> {
+    return fetchLookup<LookupItem>('subjects', options);
+}

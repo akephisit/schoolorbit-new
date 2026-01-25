@@ -689,3 +689,66 @@ pub async fn lookup_rooms(
     Ok(Json(json!({ "success": true, "data": rooms })).into_response())
 }
 
+
+// ===================================================================
+// Subjects Lookup
+// ===================================================================
+
+#[derive(Debug, FromRow)]
+struct SubjectRow {
+    id: Uuid,
+    code: String,
+    name_th: String,
+}
+
+/// GET /api/lookup/subjects
+/// Returns minimal subject data for dropdowns
+pub async fn lookup_subjects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<LookupQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
+
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    
+    verify_authenticated(&headers, &pool).await?;
+
+    let limit = query.limit.unwrap_or(100).min(500);
+    let active_only = query.active_only.unwrap_or(true);
+    
+    let mut sql = String::from("SELECT id, code, name_th FROM subjects WHERE 1=1");
+    
+    if active_only {
+        sql.push_str(" AND is_active = true");
+    }
+    
+    if let Some(ref search) = query.search {
+        sql.push_str(&format!(" AND (name_th ILIKE '%{}%' OR code ILIKE '%{}%')", search, search));
+    }
+    
+    sql.push_str(&format!(" ORDER BY code, name_th LIMIT {}", limit));
+    
+    let rows = sqlx::query_as::<_, SubjectRow>(&sql)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
+    
+    let data: Vec<LookupItem> = rows.into_iter().map(|r| LookupItem {
+        id: r.id,
+        name: r.name_th,
+        code: Some(r.code),
+    }).collect();
+    
+    Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+}
