@@ -45,6 +45,7 @@
     import type { AcademicYear, Semester } from '$lib/api/academic';
     import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
     import { onDestroy } from 'svelte';
+    import { page } from '$app/stores';
     import { 
         connectTimetableSocket, 
         disconnectTimetableSocket, 
@@ -354,11 +355,11 @@
 
         // Notify others
         // Notify others
-        if (data.user) {
+        if ($page.data.user) {
             sendTimetableEvent({
                  type: 'DragStart',
                  payload: {
-                     user_id: data.user.id,
+                     user_id: $page.data.user.id,
                      entry_id: draggedEntryId || undefined,
                      course_id: item.classroom_course_id || item.id
                  }
@@ -367,8 +368,8 @@
     }
 
 	function handleDragEnd() {
-        if (data.user) {
-            sendTimetableEvent({ type: 'DragEnd', payload: { user_id: data.user.id } });
+        if ($page.data.user) {
+            sendTimetableEvent({ type: 'DragEnd', payload: { user_id: $page.data.user.id } });
         }
 		draggedCourse = null;
 		draggedEntryId = null;
@@ -650,10 +651,11 @@
     }
 
     // WebSocket Connection
+    // WebSocket Connection
     $effect(() => {
-        console.log('[DEBUG] WS Check:', { semester: selectedSemesterId, user: data?.user });
-        if (selectedSemesterId && data?.user) {
-             const user = data.user;
+        // console.log('[DEBUG] WS Check:', { semester: selectedSemesterId, user: $page.data.user });
+        if (selectedSemesterId && $page.data.user) {
+             const user = $page.data.user;
              connectTimetableSocket({
                  school_id: user.school_id || 'default',
                  semester_id: selectedSemesterId,
@@ -670,12 +672,12 @@
     let lastCursorSend = 0;
     function handleMouseMove(e: MouseEvent) {
         const now = Date.now();
-        if (now - lastCursorSend > 50 && data.user) { // 20fps cap
+        if (now - lastCursorSend > 50 && $page.data.user) { // 20fps cap
              lastCursorSend = now;
              sendTimetableEvent({
                  type: 'CursorMove',
                  payload: {
-                     user_id: data.user.id,
+                     user_id: $page.data.user.id,
                      x: e.clientX,
                      y: e.clientY
                  }
