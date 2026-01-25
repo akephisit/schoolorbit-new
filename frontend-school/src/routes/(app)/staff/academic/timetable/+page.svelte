@@ -653,7 +653,7 @@
     // WebSocket Connection
     // WebSocket Connection
     $effect(() => {
-        // console.log('[DEBUG] WS Check:', { semester: selectedSemesterId, user: $page.data.user });
+        console.log('[DEBUG] WS Check:', { semester: selectedSemesterId, user: $page.data.user });
         if (selectedSemesterId && $page.data.user) {
              const user = $page.data.user;
              connectTimetableSocket({
