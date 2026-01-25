@@ -605,66 +605,98 @@ pub async fn delete_menu_item(
     ))
 }
 
-/// Reorder menu items (requires module permission for each item)
+/// Reorder menu items (Optimized Batch Update)
 pub async fn reorder_menu_items(
     State(state): State<AppState>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<ReorderRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    if data.items.is_empty() {
+        return Ok((
+            StatusCode::OK,
+            JsonResponse(serde_json::json!({
+                "success": true, "message": "No items to reorder"
+            }))
+        ));
+    }
+
     let (pool, _, permissions) = get_pool_and_authenticate_with_perms(&state, &headers).await?;
 
-    // Update display_order for each item (with permission check)
-    for item in &data.items {
-        // Fetch item to check permission
-        let existing_item = match sqlx::query_as::<_, MenuItem>(
-            "SELECT id, code, name, name_en, path, icon, required_permission, user_type, 
-                    group_id, parent_id, display_order, is_active
-             FROM menu_items WHERE id = $1"
-        )
-        .bind(item.id)
-        .fetch_optional(&pool)
-        .await
-        {
-            Ok(Some(i)) => i,
-            Ok(None) => continue, // Skip if not found
-            Err(e) => return Err(AppError::InternalServerError(format!("Failed to fetch item: {}", e))),
-        };
+    // 1. Fetch all Valid Items in ONE Query to check permissions
+    let item_ids: Vec<Uuid> = data.items.iter().map(|i| i.id).collect();
+    let existing_items = sqlx::query_as::<_, MenuItem>(
+        "SELECT id, code, name, name_en, path, icon, required_permission, user_type, 
+                group_id, parent_id, display_order, is_active
+         FROM menu_items 
+         WHERE id = ANY($1)"
+    )
+    .bind(&item_ids)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch items batch: {}", e)))?;
 
-        // Check permission
-        if let Some(ref module) = existing_item.required_permission {
+    // 2. Permission Check (In-Memory)
+    for item in &existing_items {
+        if let Some(ref module) = item.required_permission {
             if !has_module_permission(&permissions, module) {
-                return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
+                return Err(AppError::Forbidden(format!("No permission for module '{}' on item '{}'", module, item.name)));
             }
         }
+    }
 
-        // Update order and group (if provided)
-        if let Some(group_id) = item.group_id {
-            sqlx::query(
-                "UPDATE menu_items SET display_order = $1, group_id = $2, updated_at = NOW() WHERE id = $3"
-            )
-            .bind(item.display_order)
-            .bind(group_id)
-            .bind(item.id)
-            .execute(&pool)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to reorder/move item: {}", e)))?;
+    // 3. Batch Update using Postgres UNNEST
+    // We separate items that need group updates vs simple reorders if necessary, 
+    // but logic suggests we can just update group_id for all if we have the data.
+    // However, the request might contain items without group_id change. 
+    // But our frontend now sends group_id for all. So we can update all.
+    
+    // Prepare vectors for unnest
+    let mut ids: Vec<Uuid> = Vec::with_capacity(data.items.len());
+    let mut orders: Vec<i32> = Vec::with_capacity(data.items.len());
+    let mut group_ids: Vec<Option<Uuid>> = Vec::with_capacity(data.items.len());
+    
+    // Map existing groups to fallback if not provided (though frontend sends it)
+    use std::collections::HashMap;
+    let current_groups: HashMap<Uuid, Option<Uuid>> = existing_items.iter().map(|i| (i.id, i.group_id)).collect();
+
+    for item in &data.items {
+        ids.push(item.id);
+        orders.push(item.display_order);
+        
+        if let Some(gid) = item.group_id {
+            group_ids.push(Some(gid)); // Explicit new group
         } else {
-            sqlx::query(
-                "UPDATE menu_items SET display_order = $1, updated_at = NOW() WHERE id = $2"
-            )
-            .bind(item.display_order)
-            .bind(item.id)
-            .execute(&pool)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to reorder item: {}", e)))?;
+             // Fallback to existing group if not provided in payload
+             let existing_gid = current_groups.get(&item.id).cloned().flatten();
+             group_ids.push(existing_gid);
         }
     }
+
+    // 4. Single Batch Update Query
+    // Note: We cast group_id array elements to uuid because they are nullable options
+    sqlx::query(
+        "UPDATE menu_items AS m
+         SET display_order = c.display_order,
+             group_id = c.group_id,
+             updated_at = NOW()
+         FROM (SELECT unnest($1::uuid[]) as id, 
+                      unnest($2::int[]) as display_order, 
+                      unnest($3::uuid[]) as group_id
+              ) as c
+         WHERE m.id = c.id"
+    )
+    .bind(&ids)
+    .bind(&orders)
+    .bind(&group_ids)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to batch reorder items: {}", e)))?;
 
     Ok((
         StatusCode::OK,
         JsonResponse(serde_json::json!({
             "success": true,
-            "message": "Menu items reordered successfully"
+            "message": format!("Reordered {} items successfully", ids.len())
         }))
     ))
 }
