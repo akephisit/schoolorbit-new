@@ -653,9 +653,11 @@
     // WebSocket Connection
     // WebSocket Connection
     $effect(() => {
-        console.log('[DEBUG] WS Check:', { semester: selectedSemesterId, user: $page.data.user });
-        if (selectedSemesterId && $page.data.user) {
-             const user = $page.data.user;
+        console.log('[DEBUG] Full Page Data:', $page.data);
+        const user = $page.data.user || $page.data.session?.user; // Try fallback
+        console.log('[DEBUG] Resolved User:', user);
+        
+        if (selectedSemesterId && user) {
              connectTimetableSocket({
                  school_id: user.school_id || 'default',
                  semester_id: selectedSemesterId,
