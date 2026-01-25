@@ -74,6 +74,10 @@ pub async fn list_classroom_courses(
         conditions.push(format!("cc.academic_semester_id = '{}'", term_id));
     }
 
+    if let Some(subject_id) = query.subject_id {
+        conditions.push(format!("cc.subject_id = '{}'", subject_id));
+    }
+
     if !conditions.is_empty() {
         sql.push_str(&format!(" AND {}", conditions.join(" AND ")));
     } else {

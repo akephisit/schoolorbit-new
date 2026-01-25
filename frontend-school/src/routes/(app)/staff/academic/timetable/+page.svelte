@@ -637,18 +637,56 @@
         }
     }
     
+    // Plan Validation State
+    let validBatchClassroomIds = $state<Set<string> | null>(null);
+    let loadingBatchValidClassrooms = $state(false);
+
+    $effect(() => {
+        const currentSubject = batchSubjectId;
+        // Only run validation if Modal is open to save resources
+        if (showBatchModal && batchMode === 'COURSE' && currentSubject && selectedSemesterId) {
+             loadingBatchValidClassrooms = true;
+             validBatchClassroomIds = new Set(); 
+             
+             // Check which classrooms have this subject in their plan
+             listClassroomCourses({ subjectId: currentSubject, semesterId: selectedSemesterId })
+                .then(res => {
+                    if (batchSubjectId !== currentSubject) return; // Stale check
+                    const ids = new Set(res.data.map((c: any) => c.classroom_id));
+                    validBatchClassroomIds = ids;
+                })
+                .catch(err => {
+                    console.error(err);
+                    toast.error('ตรวจสอบแผนการเรียนไม่สำเร็จ');
+                })
+                .finally(() => { 
+                    if (batchSubjectId === currentSubject) loadingBatchValidClassrooms = false; 
+                });
+        } else if (batchMode !== 'COURSE' || !batchSubjectId) {
+             validBatchClassroomIds = null;
+        }
+    });
+
     let filteredBatchClassroomsList = $derived.by(() => {
-        // Priority: Subject Grade Scope (Course Mode)
+        let list = classrooms;
+
+        // Priority: Course Plan Validation
         if (batchMode === 'COURSE' && batchSubjectId) {
-             const subj = subjectOptions.find(s => s.id === batchSubjectId);
-             if (subj?.grade_level_ids?.length) {
-                 return classrooms.filter(c => subj.grade_level_ids!.includes(c.grade_level_id));
+             const validSet = validBatchClassroomIds;
+             if (validSet) {
+                 list = list.filter(c => validSet.has(c.id));
+             } else {
+                 // Pending or Failed -> Empty list
+                 list = [];
              }
         }
         
-        // Fallback: Manual Filter
-        if (batchGradeFilterId === 'all') return classrooms;
-        return classrooms.filter(c => c.grade_level_id === batchGradeFilterId);
+        // Apply Manual Filter (Intersection with Plan)
+        if (batchGradeFilterId !== 'all') {
+             list = list.filter(c => c.grade_level_id === batchGradeFilterId);
+        }
+        
+        return list;
     });
 
     function toggleBatchClassroom(id: string) {
@@ -1509,7 +1547,7 @@
 					<div
 						class="flex items-center gap-2 mb-3 px-3 py-2 bg-blue-50/50 rounded border border-blue-100 text-xs text-blue-700"
 					>
-						<span class="font-bold">Info:</span> ระบบแสดงเฉพาะห้องเรียนในระดับชั้นที่เปิดสอนวิชานี้
+						<span class="font-bold">Info:</span> ระบบแสดงเฉพาะห้องเรียนที่มีวิชานี้ในแผนการเรียน
 					</div>
 				{/if}
 
@@ -1522,28 +1560,36 @@
 				<div
 					class="border rounded-md max-h-[200px] min-h-[100px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-2"
 				>
-					{#each filteredBatchClassroomsList as classroom}
-						<div class="flex items-center space-x-2 bg-background p-1.5 rounded border shadow-sm">
-							<Checkbox
-								id="batch-class-{classroom.id}"
-								checked={batchClassrooms.includes(classroom.id)}
-								onCheckedChange={() => toggleBatchClassroom(classroom.id)}
-							/>
-							<label
-								for="batch-class-{classroom.id}"
-								class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
-							>
-								{classroom.name}
-							</label>
+					{#if loadingBatchValidClassrooms}
+						<div
+							class="col-span-2 flex items-center justify-center py-8 text-muted-foreground text-sm"
+						>
+							<Loader2 class="w-4 h-4 mr-2 animate-spin" /> กำลังตรวจสอบแผนการเรียน...
 						</div>
 					{:else}
-						<div
-							class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-4 opacity-70"
-						>
-							<School class="w-8 h-8 mb-2 opacity-20" />
-							<span class="text-xs">ไม่พบห้องเรียนในระดับชั้นนี้</span>
-						</div>
-					{/each}
+						{#each filteredBatchClassroomsList as classroom}
+							<div class="flex items-center space-x-2 bg-background p-1.5 rounded border shadow-sm">
+								<Checkbox
+									id="batch-class-{classroom.id}"
+									checked={batchClassrooms.includes(classroom.id)}
+									onCheckedChange={() => toggleBatchClassroom(classroom.id)}
+								/>
+								<label
+									for="batch-class-{classroom.id}"
+									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+								>
+									{classroom.name}
+								</label>
+							</div>
+						{:else}
+							<div
+								class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-4 opacity-70"
+							>
+								<School class="w-8 h-8 mb-2 opacity-20" />
+								<span class="text-xs">ไม่พบห้องเรียนที่มีวิชานี้ในแผนการเรียน</span>
+							</div>
+						{/each}
+					{/if}
 				</div>
 
 				<!-- Override Option -->
