@@ -97,9 +97,9 @@ impl WebSocketManager {
 // ==========================================
 
 pub async fn timetable_websocket_handler(
-    ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Query(params): Query<WsParams>,
+    ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state, params))
 }
@@ -134,7 +134,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams) {
             
             // Serialize and send
             if let Ok(json) = serde_json::to_string(&msg) {
-                 if sender.send(Message::Text(json)).await.is_err() {
+                 if sender.send(Message::Text(json.into())).await.is_err() {
                      break;
                  }
             }
