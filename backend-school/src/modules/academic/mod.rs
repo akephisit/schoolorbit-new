@@ -1,5 +1,6 @@
 pub mod models;
 pub mod handlers;
+pub mod websockets;
 
 use axum::routing::{get, post, put};
 use axum::Router;

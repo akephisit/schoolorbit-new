@@ -29,6 +29,7 @@ use tower_cookies::CookieManagerLayer;
 pub struct AppState {
     pub admin_pool: sqlx::PgPool,  // Backend-admin database (for school mapping)
     pub pool_manager: Arc<PoolManager>,
+    pub websocket_manager: Arc<modules::academic::websockets::WebSocketManager>,
 }
 
 #[tokio::main]
@@ -64,6 +65,7 @@ async fn main() {
 
     // Create pool manager for tenant databases
     let pool_manager = Arc::new(PoolManager::new());
+    let websocket_manager = Arc::new(modules::academic::websockets::WebSocketManager::new());
     
     // Start cleanup task
     let pool_manager_cleanup = Arc::clone(&pool_manager);
@@ -83,6 +85,7 @@ async fn main() {
     let state = AppState {
         admin_pool,
         pool_manager,
+        websocket_manager,
     };
 
     // Build application
@@ -264,6 +267,10 @@ async fn main() {
         // Route registration (no auth - uses deploy key)
         .route("/api/admin/routes/register", post(modules::system::handlers::register_routes::register_routes))
         
+        // WebSocket Route (No standard middleware auth, uses Query Params)
+        .route("/ws/timetable", get(modules::academic::websockets::timetable_websocket_handler))
+        
+        
         
         // Internal routes (protected by internal auth middleware)
         .route(
@@ -308,7 +315,9 @@ async fn main() {
     tracing::info!("  Internal Admin APIs (Protected by Secret):");
     tracing::info!("  POST /internal/provision        - Provision tenant database");
     tracing::info!("  POST /internal/migrate-all      - Migrate all school databases");
+    tracing::info!("  POST /internal/migrate-all      - Migrate all school databases");
     tracing::info!("  GET  /internal/migration-status - Get migration status");
+    tracing::info!("  GET  /ws/timetable              - Real-time Timetable Collaboration");
 
 
     // Run server

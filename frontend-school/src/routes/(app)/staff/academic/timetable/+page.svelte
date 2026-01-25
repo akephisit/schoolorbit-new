@@ -44,6 +44,18 @@
     import { getAcademicStructure } from '$lib/api/academic';
     import type { AcademicYear, Semester } from '$lib/api/academic';
     import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
+    import { onDestroy } from 'svelte';
+    import { 
+        connectTimetableSocket, 
+        disconnectTimetableSocket, 
+        sendTimetableEvent,
+        activeUsers,
+        remoteCursors,
+        userDrags
+    } from '$lib/stores/timetable-socket';
+
+    let { data }: { data: any } = $props();
+
 
 
 
@@ -338,9 +350,25 @@
 				id: type === 'NEW' ? item.id : item.id
 			}));
 		}
-	}
+
+        // Notify others
+        // Notify others
+        if (data.user) {
+            sendTimetableEvent({
+                 type: 'DragStart',
+                 payload: {
+                     user_id: data.user.id,
+                     entry_id: draggedEntryId || undefined,
+                     course_id: item.classroom_course_id || item.id
+                 }
+            });
+        }
+    }
 
 	function handleDragEnd() {
+        if (data.user) {
+            sendTimetableEvent({ type: 'DragEnd', payload: { user_id: data.user.id } });
+        }
 		draggedCourse = null;
 		draggedEntryId = null;
 		occupiedSlots = new Set(); // Clear highlights
@@ -620,8 +648,53 @@
         }
     }
 
+    // WebSocket Connection
+    $effect(() => {
+        if (selectedSemesterId && data.user) {
+             const user = data.user;
+             connectTimetableSocket({
+                 school_id: user.school_id || 'default',
+                 semester_id: selectedSemesterId,
+                 user_id: user.id,
+                 name: (user.firstname && user.lastname) ? `${user.firstname} ${user.lastname}` : (user.name || user.username || 'Unknown')
+             });
+        }
+    });
+
+    onDestroy(() => {
+        disconnectTimetableSocket();
+    });
+
+    let lastCursorSend = 0;
+    function handleMouseMove(e: MouseEvent) {
+        const now = Date.now();
+        if (now - lastCursorSend > 50 && data.user) { // 20fps cap
+             lastCursorSend = now;
+             sendTimetableEvent({
+                 type: 'CursorMove',
+                 payload: {
+                     user_id: data.user.id,
+                     x: e.clientX,
+                     y: e.clientY
+                 }
+             });
+        }
+    }
+
+    function getDragOwner(entryId?: string, courseId?: string) {
+        if (!entryId && !courseId) return null;
+        for (const [userId, drag] of Object.entries($userDrags)) {
+             if ((entryId && drag.entry_id === entryId) || (courseId && drag.course_id === courseId)) {
+                 return $activeUsers.find(u => u.user_id === userId);
+             }
+        }
+        return null;
+    }
+
 	onMount(loadInitialData);
 </script>
+
+<svelte:window onmousemove={handleMouseMove} />
 
 <div class="h-full flex flex-col space-y-4">
 	<div class="flex flex-col gap-2">
@@ -875,15 +948,29 @@
 													</div>
 												{/if}
 												{#if entry}
+													{@const lockedBy = getDragOwner(entry.id, entry.classroom_course_id)}
 													<!-- Filled Slot -->
 													<div
-														draggable="true"
-														ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
+														draggable={!lockedBy}
+														ondragstart={(e) => !lockedBy && handleDragStart(e, entry, 'MOVE')}
 														ondragend={handleDragEnd}
-														class="h-full w-full bg-blue-50 border border-blue-200 rounded p-2 relative group flex flex-col cursor-move hover:shadow-md transition-all mobile-draggable"
+														class="h-full w-full bg-blue-50 border border-blue-200 rounded p-2 relative group flex flex-col cursor-move hover:shadow-md transition-all mobile-draggable {lockedBy
+															? 'opacity-60 grayscale-[0.5] cursor-not-allowed'
+															: ''}"
+														style={lockedBy
+															? `border-color: ${lockedBy.color}; box-shadow: 0 0 0 2px ${lockedBy.color};`
+															: ''}
 														role="button"
 														tabindex="0"
 													>
+														{#if lockedBy}
+															<div
+																class="absolute -top-3 right-[-4px] z-50 text-[9px] text-white px-1.5 py-0.5 rounded-full shadow-sm font-bold tracking-tight whitespace-nowrap"
+																style="background-color: {lockedBy.color}"
+															>
+																{lockedBy.name}
+															</div>
+														{/if}
 														{#if entry.entry_type && entry.entry_type !== 'COURSE'}
 															<div
 																class="flex-1 flex flex-col items-center justify-center p-1 text-center w-full"
@@ -1169,6 +1256,35 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+<!-- Remote Cursors Overlay -->
+{#each Object.entries($remoteCursors) as [userId, cursor] (userId)}
+	{@const user = $activeUsers.find((u) => u.user_id === userId)}
+	{#if user}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="fixed w-4 h-4 rounded-full border-2 border-white shadow-sm z-[100] pointer-events-none flex items-center justify-center transition-all duration-75 ease-out"
+			style="left: {cursor.x}px; top: {cursor.y}px; background-color: {user.color};"
+		>
+			<div
+				class="absolute -top-6 left-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-[101]"
+			>
+				{user.name}
+			</div>
+
+			<!-- Cursor Arrow -->
+			<svg
+				class="absolute -top-1 -left-1 w-4 h-4 text-white drop-shadow-sm"
+				viewBox="0 0 24 24"
+				fill={user.color}
+				stroke="white"
+				stroke-width="2"
+			>
+				<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+			</svg>
+		</div>
+	{/if}
+{/each}
 
 <style>
     /* Custom Scrollbar */
