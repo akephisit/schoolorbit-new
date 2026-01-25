@@ -139,6 +139,7 @@ pub struct CreateBatchTimetableEntriesRequest {
     pub room_id: Option<Uuid>,
     pub note: Option<String>,
     pub subject_id: Option<Uuid>,
+    pub force: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

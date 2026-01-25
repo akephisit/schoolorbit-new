@@ -20,7 +20,7 @@
         type AcademicYear, 
         type Semester
 	} from '$lib/api/academic';
-	import { lookupRooms, type RoomLookupItem, lookupStaff, type StaffLookupItem, lookupSubjects, type LookupItem } from '$lib/api/lookup';
+	import { lookupRooms, type RoomLookupItem, lookupStaff, type StaffLookupItem, lookupSubjects, type LookupItem, lookupGradeLevels, type GradeLevelLookupItem } from '$lib/api/lookup';
     import * as Dialog from '$lib/components/ui/dialog';
     import * as Label from '$lib/components/ui/label';
 
@@ -622,6 +622,26 @@
         }
     }
 
+    // Filter & Override State
+    let batchGradeLevels = $state<GradeLevelLookupItem[]>([]);
+	let batchGradeFilterId = $state('all');
+    let batchForce = $state(false);
+
+    async function loadBatchGradeLevels() {
+        if (batchGradeLevels.length > 0) return;
+        try {
+            // Need to pass academic_year_id if possible, or just list all
+            batchGradeLevels = await lookupGradeLevels({ limit: 100, activeOnly: true });
+        } catch(e) {
+             console.error(e);
+        }
+    }
+    
+    let filteredBatchClassroomsList = $derived.by(() => {
+        if (batchGradeFilterId === 'all') return classrooms;
+        return classrooms.filter(c => c.grade_level_id === batchGradeFilterId);
+    });
+
     function toggleBatchClassroom(id: string) {
         if (batchClassrooms.includes(id)) {
             batchClassrooms = batchClassrooms.filter(c => c !== id);
@@ -631,10 +651,18 @@
     }
     
     function selectAllBatchClassrooms() {
-        if (batchClassrooms.length === classrooms.length) {
-            batchClassrooms = [];
+        // Only select currently filtered items
+        const currentListIds = filteredBatchClassroomsList.map(c => c.id);
+        
+        // If all currently visible are selected -> Deselect All (visible)
+        const allVisibleSelected = currentListIds.every(id => batchClassrooms.includes(id));
+        
+        if (allVisibleSelected) {
+             batchClassrooms = batchClassrooms.filter(id => !currentListIds.includes(id));
         } else {
-            batchClassrooms = classrooms.map(c => c.id);
+             // Add missing ones
+             const newIds = currentListIds.filter(id => !batchClassrooms.includes(id));
+             batchClassrooms = [...batchClassrooms, ...newIds];
         }
     }
 
@@ -682,7 +710,8 @@
                 entry_type: entryTypeToSend as any,
                 title: titleToSend,
                 room_id: batchRoomId === 'none' ? undefined : batchRoomId,
-                subject_id: subjectIdToSend
+                subject_id: subjectIdToSend,
+                force: batchForce
             });
             
             toast.success('บันทึกกิจกรรมเรียบร้อย');
@@ -1448,17 +1477,32 @@
 
 			<!-- Classrooms Selection -->
 			<div class="border-t pt-4 mt-2">
+				<div class="flex items-center gap-2 mb-3">
+					<Label.Root>กรองระดับชั้น:</Label.Root>
+					<select
+						class="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+						value={batchGradeFilterId}
+						onchange={(e) => (batchGradeFilterId = e.currentTarget.value)}
+						onmouseenter={loadBatchGradeLevels}
+					>
+						<option value="all">ทุกระดับชั้น ({classrooms.length} ห้อง)</option>
+						{#each batchGradeLevels as gl}
+							<option value={gl.id}>{gl.name}</option>
+						{/each}
+					</select>
+				</div>
+
 				<div class="flex justify-between items-center mb-2">
-					<Label.Root>เลือกห้องเรียน ({batchClassrooms.length})</Label.Root>
+					<Label.Root>เลือกห้องที่ต้องการ ({batchClassrooms.length})</Label.Root>
 					<Button variant="ghost" size="sm" class="h-6 text-xs" onclick={selectAllBatchClassrooms}>
-						{batchClassrooms.length === classrooms.length ? 'ยกเลิกทั้งหมด' : 'เลือกทั้งหมด'}
+						เลือกทั้งหมด
 					</Button>
 				</div>
 				<div
-					class="border rounded-md max-h-[200px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-2"
+					class="border rounded-md max-h-[200px] min-h-[100px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-2"
 				>
-					{#each classrooms as classroom}
-						<div class="flex items-center space-x-2">
+					{#each filteredBatchClassroomsList as classroom}
+						<div class="flex items-center space-x-2 bg-background p-1.5 rounded border shadow-sm">
 							<Checkbox
 								id="batch-class-{classroom.id}"
 								checked={batchClassrooms.includes(classroom.id)}
@@ -1466,12 +1510,42 @@
 							/>
 							<label
 								for="batch-class-{classroom.id}"
-								class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+								class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
 							>
 								{classroom.name}
 							</label>
 						</div>
+					{:else}
+						<div
+							class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-4 opacity-70"
+						>
+							<School class="w-8 h-8 mb-2 opacity-20" />
+							<span class="text-xs">ไม่พบห้องเรียนในระดับชั้นนี้</span>
+						</div>
 					{/each}
+				</div>
+
+				<!-- Override Option -->
+				<div
+					class="flex items-start space-x-2 mt-4 p-3 rounded-md border border-red-200 bg-red-50/50"
+				>
+					<Checkbox
+						id="batch-force"
+						bind:checked={batchForce}
+						class="mt-0.5 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+					/>
+					<div class="grid gap-1.5 leading-none">
+						<label
+							for="batch-force"
+							class="text-sm font-medium leading-none text-red-600 cursor-pointer"
+						>
+							บังคับลงตาราง (Override)
+						</label>
+						<p class="text-xs text-muted-foreground">
+							หากเลือก: ระบบจะลบรายการเดิมที่เวลาชนกันออกโดยอัตโนมัติ (ทั้งตารางนักเรียน, ครู
+							และห้องเรียน) เพื่อให้กิจกรรมนี้ลงได้
+						</p>
+					</div>
 				</div>
 			</div>
 		</div>

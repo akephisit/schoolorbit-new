@@ -707,6 +707,58 @@ pub async fn create_batch_timetable_entries(
             }
         }
 
+        // FORCE OVERRIDE LOGIC
+        if payload.force.unwrap_or(false) {
+            // 1. Clear slot for this classroom
+            let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE classroom_id = $1 AND day_of_week = $2 AND period_id = $3")
+                .bind(classroom_id)
+                .bind(&payload.day_of_week)
+                .bind(payload.period_id)
+                .execute(&mut *tx)
+                .await;
+
+            // 2. Clear slot for target room (if specified)
+            if let Some(rid) = payload.room_id {
+                 let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE room_id = $1 AND day_of_week = $2 AND period_id = $3")
+                .bind(rid)
+                .bind(&payload.day_of_week)
+                .bind(payload.period_id)
+                .execute(&mut *tx)
+                .await;
+            }
+
+            // 3. Clear slot for instructor (if course mode)
+            if let Some(cc_id) = classroom_course_id {
+                 // We need to fetch instructor ID. Since we are inside a transaction, we can query.
+                 let instructor_id: Option<Uuid> = sqlx::query_scalar(
+                     "SELECT primary_instructor_id FROM classroom_courses WHERE id = $1"
+                 )
+                 .bind(cc_id)
+                 .fetch_optional(&mut *tx)
+                 .await
+                 .unwrap_or(None);
+
+                 if let Some(inst_id) = instructor_id {
+                      // Remove any entry this instructor is teaching at this time
+                      let _ = sqlx::query(r#"
+                        DELETE FROM academic_timetable_entries 
+                        WHERE id IN (
+                            SELECT te.id FROM academic_timetable_entries te
+                            JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+                            WHERE cc.primary_instructor_id = $1
+                              AND te.day_of_week = $2
+                              AND te.period_id = $3
+                        )
+                      "#)
+                      .bind(inst_id)
+                      .bind(&payload.day_of_week)
+                      .bind(payload.period_id)
+                      .execute(&mut *tx)
+                      .await;
+                 }
+            }
+        }
+
         let result = sqlx::query(
             r#"
             INSERT INTO academic_timetable_entries (
