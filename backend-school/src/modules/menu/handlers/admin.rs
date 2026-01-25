@@ -405,7 +405,7 @@ pub async fn create_menu_item(
             required_permission, display_order)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id, code, name, name_en, path, icon, required_permission, 
-                    group_id, parent_id, display_order, is_active"
+                    group_id, parent_id, user_type, display_order, is_active"
     )
     .bind(&data.code)
     .bind(&data.name)
@@ -507,7 +507,7 @@ pub async fn update_menu_item(
     let query = format!(
         "UPDATE menu_items SET {} WHERE id = $1
          RETURNING id, code, name, name_en, path, icon, required_permission,
-                   group_id, parent_id, display_order, is_active",
+                   group_id, parent_id, user_type, display_order, is_active",
         updates.join(", ")
     );
 
@@ -882,7 +882,7 @@ pub async fn move_item_to_group(
            SET group_id = $1 
            WHERE id = $2 
            RETURNING id, code, name, name_en, description, path, icon, 
-                     group_id, parent_id, required_permission, display_order, is_active"#
+                     group_id, parent_id, required_permission, user_type, display_order, is_active"#
     )
     .bind(group_id)
     .bind(id)
