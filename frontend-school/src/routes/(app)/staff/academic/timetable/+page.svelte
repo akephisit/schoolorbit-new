@@ -651,7 +651,8 @@
 
     // WebSocket Connection
     $effect(() => {
-        if (selectedSemesterId && data.user) {
+        console.log('[DEBUG] WS Check:', { semester: selectedSemesterId, user: data?.user });
+        if (selectedSemesterId && data?.user) {
              const user = data.user;
              connectTimetableSocket({
                  school_id: user.school_id || 'default',
