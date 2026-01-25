@@ -88,6 +88,7 @@
 	// Drag & Drop state
 	let draggedCourse = $state<any>(null);
 	let submitting = $state(false);
+	let isDropPending = $state(false);
     // Identify what is being dragged: 'NEW' (from list) | 'MOVE' (from grid)
 	let dragType = $state<'NEW' | 'MOVE'>('NEW');
 	let draggedEntryId = $state<string | null>(null);
@@ -308,6 +309,22 @@
 		}
 	}
 
+	function createDragImage(text: string, subtext: string) {
+        const div = document.createElement('div');
+        div.className = 'fixed top-[-1000px] left-[-1000px] bg-white border border-primary/50 shadow-xl rounded-lg p-3 w-[180px] z-[9999] flex flex-col gap-1';
+        div.innerHTML = `
+            <div class="flex items-center gap-2">
+                <div class="p-1 rounded bg-primary/10 text-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                </div>
+                <span class="font-bold text-sm truncate text-primary">${text}</span>
+            </div>
+            <div class="text-xs text-muted-foreground truncate pl-1">${subtext}</div>
+        `;
+        document.body.appendChild(div);
+        return div;
+    }
+
 	function handleDragStart(event: DragEvent, item: any, type: 'NEW' | 'MOVE') {
 		dragType = type;
 		
@@ -322,7 +339,13 @@
 			draggedEntryId = item.id;
 			
 			const originalCourse = courses.find(c => c.id === item.classroom_course_id);
-			courseToCheck = originalCourse || item; 
+			courseToCheck = originalCourse || {
+                ...item,
+                id: item.classroom_course_id,
+                subject_code: item.subject_code,
+                title: item.subject_name_th,
+                title_th: item.subject_name_th
+            }; 
 		}
 
 		if (courseToCheck) {
@@ -335,6 +358,14 @@
 				type,
 				id: type === 'NEW' ? item.id : item.id
 			}));
+            
+            // Custom Drag Image
+            const dragTitle = courseToCheck.subject_code || 'วิชา';
+            const dragSub = courseToCheck.title_th || courseToCheck.title || '...';
+            const dragElement = createDragImage(dragTitle, dragSub);
+            event.dataTransfer.setDragImage(dragElement, 10, 10);
+            
+            setTimeout(() => document.body.removeChild(dragElement), 0);
 		}
 
         // Notify others
@@ -356,6 +387,8 @@
     }
 
 	function handleDragEnd() {
+        if (isDropPending) return;
+
         if ($authStore.user) {
             sendTimetableEvent({ type: 'DragEnd', payload: { user_id: $authStore.user.id } });
         }
@@ -379,6 +412,8 @@
         const existingEntry = getEntryForSlot(day, periodId);
 		if (existingEntry) {
 			toast.error('ช่องนี้มีรายการอยู่แล้ว');
+            // Do not end drag yet if we want to retry? No, valid end if failed.
+            // But let's call standard end.
             handleDragEnd();
 			return;
 		}
@@ -404,6 +439,7 @@
         }
         
         showRoomModal = true;
+        isDropPending = true;
         updateUnavailableRooms(day, periodId);
 	}
 
@@ -441,7 +477,7 @@
         const roomId = selectedRoomId === 'none' ? undefined : selectedRoomId;
         
         showRoomModal = false;
-
+        
 		try {
 			submitting = true;
 
@@ -482,6 +518,8 @@
             
 			submitting = false;
             pendingDropContext = null;
+            isDropPending = false;
+            handleDragEnd();
 		}
     }
 
@@ -687,7 +725,7 @@
              // If this is a course list item
              else if (courseId) {
                  // Lock list item if someone is dragging this course
-                 if (drag.course_id === courseId) return $activeUsers.find(u => u.user_id === userId);
+                 if (drag.course_id === courseId && !drag.entry_id) return $activeUsers.find(u => u.user_id === userId);
              }
         }
         return null;
@@ -827,7 +865,7 @@
 					</Select.Trigger>
 					<Select.Content>
 						{#each semesters as term}
-							<Select.Item value={term.id}>เทอม {term.term}</Select.Item>
+							<Select.Item value={term.id}>ภาคเรียนที่ {term.term}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
@@ -907,20 +945,22 @@
 								{course.scheduled_count}/{course.max_periods} คาบ
 							</Badge>
 						</div>
-						<h4
-							class="font-medium text-sm line-clamp-2 leading-tight mb-1"
-							title={course.title_th || course.title}
-						>
-							{course.title_th || course.title}
+						<h4 class="font-medium text-sm line-clamp-2 leading-tight mb-1">
+							{course.title_th || course.title || 'ไม่มีชื่อวิชา'}
 						</h4>
-						<div class="flex flex-wrap gap-1 text-[10px] text-muted-foreground mt-2">
-							<div class="flex items-center gap-1 bg-muted px-1.5 py-0.5 rounded">
-								<Users class="w-3 h-3" />
-								{course.instructor_name || 'ไม่ระบุครู'}
-							</div>
-							<div class="bg-muted px-1.5 py-0.5 rounded">
-								{course.subject_credit} นก.
-							</div>
+						<div class="flex flex-col gap-0.5 text-[10px] text-muted-foreground mt-2">
+							{#if viewMode === 'CLASSROOM'}
+								<div class="flex items-center gap-1">
+									<Users class="w-3 h-3" />
+									{course.instructor_name || 'ไม่ระบุครู'}
+								</div>
+							{:else}
+								<div class="flex items-center gap-1">
+									<School class="w-3 h-3" />
+									{course.classroom_name || 'ไม่ระบุห้อง'} ({course.grade_level_code || ''})
+								</div>
+							{/if}
+							<div>{course.subject_credit} นก.</div>
 						</div>
 
 						<!-- Progress Bar -->
@@ -1009,7 +1049,8 @@
 
 								<!-- Drop Zone -->
 								<div
-									class="flex-1 border-r last:border-r-0 min-w-[100px] relative transition-colors {period.type === 'BREAK'
+									class="flex-1 border-r last:border-r-0 min-w-[100px] relative transition-colors {period.type ===
+									'BREAK'
 										? 'bg-muted/30'
 										: ''} {isOccupied
 										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
@@ -1053,26 +1094,37 @@
 												</div>
 											{/if}
 
-											<div
-												class="font-bold text-blue-900 truncate"
-												title={entry.subject_name_th}
-											>
+											<div class="font-bold text-blue-900 truncate mb-0.5">
 												{entry.subject_code}
 											</div>
-											<div class="line-clamp-2 text-blue-800 leading-tight">
+											<div
+												class="line-clamp-1 text-blue-800 text-[10px] mb-auto"
+												title={entry.subject_name_th}
+											>
 												{entry.subject_name_th || entry.subject_name_th}
 											</div>
 											<div
-												class="mt-auto pt-1 flex items-center justify-between text-blue-600/80 text-[10px]"
+												class="mt-1 pt-1 border-t border-blue-200/50 gap-0.5 flex flex-col text-[9px] text-blue-700"
 											>
-												<div class="flex items-center gap-1">
-													<Users class="w-3 h-3" />
-													{entry.instructor_name || '...'}
-												</div>
+												{#if viewMode === 'CLASSROOM'}
+													<div class="flex items-center gap-1 truncate">
+														<Users class="w-3 h-3 shrink-0" />
+														{entry.instructor_name || '-'}
+													</div>
+												{:else}
+													<div class="flex items-center gap-1 truncate">
+														<School class="w-3 h-3 shrink-0" />
+														{entry.classroom_name || '-'}
+													</div>
+												{/if}
+
 												{#if entry.room_id}
-													<div class="flex items-center gap-0.5" title={rooms.find((r) => r.id === entry.room_id)?.name_th}>
-														<MapPin class="w-3 h-3" />
-														<span class="max-w-[40px] truncate">{rooms.find((r) => r.id === entry.room_id)?.name_th}</span>
+													<div
+														class="flex items-center gap-1 truncate text-blue-600"
+														title={rooms.find((r) => r.id === entry.room_id)?.name_th}
+													>
+														<MapPin class="w-3 h-3 shrink-0" />
+														{rooms.find((r) => r.id === entry.room_id)?.name_th || '?'}
 													</div>
 												{/if}
 											</div>
@@ -1114,9 +1166,30 @@
 <Dialog.Root bind:open={showRoomModal}>
 	<Dialog.Content class="sm:max-w-[425px]">
 		<Dialog.Header>
-			<Dialog.Title>เลือกห้องเรียน</Dialog.Title>
+			<Dialog.Title>เลือกห้องเรียน ({draggedCourse?.subject_code})</Dialog.Title>
 			<Dialog.Description>
-				กรุณาระบุห้องสำหรับวิชา {draggedCourse?.subject_code}
+				<div class="flex flex-col gap-1 mt-1 text-foreground text-left">
+					<span class="font-medium text-sm text-primary"
+						>{draggedCourse?.subject_name_th ||
+							draggedCourse?.title_th ||
+							draggedCourse?.title}</span
+					>
+					<span class="text-xs text-muted-foreground flex items-center gap-2">
+						{#if viewMode === 'CLASSROOM'}
+							<span class="flex items-center gap-1"
+								><Users class="w-3 h-3" /> {draggedCourse?.instructor_name || '-'}</span
+							>
+							<span class="flex items-center gap-1"
+								><School class="w-3 h-3" />
+								{classrooms.find((c) => c.id === selectedClassroomId)?.name || ''}</span
+							>
+						{:else}
+							<span class="flex items-center gap-1"
+								><School class="w-3 h-3" /> {draggedCourse?.classroom_name || '-'}</span
+							>
+						{/if}
+					</span>
+				</div>
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -1125,8 +1198,7 @@
 				<div class="text-sm">
 					<span class="font-bold">วัน{pendingDropContext?.day}</span>,
 					<span class="text-muted-foreground"
-						>คาบที่ {periods.find((p) => p.id === pendingDropContext?.periodId)
-							?.order_index}</span
+						>คาบที่ {periods.find((p) => p.id === pendingDropContext?.periodId)?.order_index}</span
 					>
 				</div>
 				{#if loadingRoomsAvailability}
@@ -1148,16 +1220,12 @@
 						{#each rooms as room}
 							{@const isBusy = unavailableRooms.has(room.id)}
 							{@const displaySelected = selectedRoomId === room.id}
-							<Select.Item
-								value={room.id}
-								disabled={isBusy && !displaySelected}
-								class="flex justify-between"
-							>
-								<span>{room.name_th} ({room.building_name})</span>
-								{#if isBusy && !displaySelected}
-									<span class="text-xs text-red-500">(ไม่ว่าง)</span>
-								{/if}
-							</Select.Item>
+
+							{#if !isBusy || displaySelected}
+								<Select.Item value={room.id} class="flex justify-between">
+									<span>{room.name_th} ({room.building_name})</span>
+								</Select.Item>
+							{/if}
 						{/each}
 					</Select.Content>
 				</Select.Root>
@@ -1169,6 +1237,7 @@
 				variant="outline"
 				onclick={() => {
 					showRoomModal = false;
+					isDropPending = false;
 					handleDragEnd(); // Cancel drag
 				}}>ยกเลิก</Button
 			>
