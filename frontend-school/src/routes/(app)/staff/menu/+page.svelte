@@ -12,7 +12,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { LoaderCircle, FolderOpen, GripVertical } from 'lucide-svelte';
+	import { LoaderCircle, FolderOpen, GripVertical, CircleAlert } from 'lucide-svelte';
+	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
 	
     // Remove dnd-kit imports
@@ -313,17 +314,28 @@
 
 	<!-- Filter -->
 	<div class="flex items-center gap-3">
-		<label for="user-type-filter" class="text-sm font-medium">กรองตาม User Type:</label>
-		<select
-			id="user-type-filter"
-			bind:value={userTypeFilter}
-			class="px-3 py-2 border rounded-md bg-background text-sm"
-		>
-			<option value="all">ทั้งหมด</option>
-			<option value="staff">👔 Staff</option>
-			<option value="student">🎓 Student</option>
-			<option value="parent">👨‍👩‍👧 Parent</option>
-		</select>
+		<div class="flex items-center gap-2">
+			<span class="text-sm font-medium">กรองตาม User Type:</span>
+			<Select.Root type="single" bind:value={userTypeFilter}>
+				<Select.Trigger class="w-[180px]">
+					{userTypeFilter === 'all'
+						? 'ทั้งหมด'
+						: userTypeFilter === 'staff'
+							? '👔 บุคคลากร'
+							: userTypeFilter === 'student'
+								? '🎓 นักเรียน'
+								: userTypeFilter === 'parent'
+									? '👨‍👩‍👧 ผู้ปกครอง'
+									: 'เลือกประเภทผู้ใช้'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="all">ทั้งหมด</Select.Item>
+					<Select.Item value="staff">👔 บุคคลากร</Select.Item>
+					<Select.Item value="student">🎓 นักเรียน</Select.Item>
+					<Select.Item value="parent">👨‍👩‍👧 ผู้ปกครอง</Select.Item>
+				</Select.Content>
+			</Select.Root>
+		</div>
 	</div>
 
 	<!-- Tabs -->
