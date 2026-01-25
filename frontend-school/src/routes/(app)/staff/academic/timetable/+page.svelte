@@ -698,48 +698,55 @@
 <svelte:window onmousemove={handleMouseMove} />
 
 <div class="h-full flex flex-col space-y-4">
-    <div class="flex flex-col space-y-4">
-        <div class="flex items-start justify-between gap-4">
-            <div class="flex flex-col gap-2">
-                <h2 class="text-3xl font-bold flex items-center gap-2">
-                    <CalendarDays class="w-8 h-8" />
-                    จัดตารางสอน
-                </h2>
-                <p class="text-muted-foreground">
-                    ลากวิชาจากด้านซ้าย มาวางในช่องตารางด้านขวา (ระบบจะตรวจสอบการชนอัตโนมัติ)
-                </p>
-            </div>
-            
-             <!-- Status Indicator -->
-             <div class="flex items-center gap-3 bg-white/50 backdrop-blur px-3 py-1.5 rounded-full border shadow-sm">
-                <div class="flex items-center gap-2">
-                    <div class="w-2.5 h-2.5 rounded-full {$isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}"></div>
-                    <span class="text-xs font-semibold text-muted-foreground">
-                        {$isConnected ? `Online (${$activeUsers.length})` : 'Offline'}
-                    </span>
-                </div>
-                
-                {#if $isConnected && $activeUsers.length > 0}
-                    <div class="w-px h-4 bg-border mx-1"></div>
-                    <div class="flex -space-x-1.5">
-                        {#each $activeUsers.slice(0, 4) as user (user.user_id)}
-                             <div 
-                                class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm"
-                                style="background-color: {user.color}"
-                                title={user.name}
-                             >
-                                {user.name.charAt(0).toUpperCase()}
-                             </div>
-                        {/each}
-                        {#if $activeUsers.length > 4}
-                            <div class="w-6 h-6 rounded-full bg-muted border-2 border-white flex items-center justify-center text-[8px] font-bold shadow-sm">
-                                +{$activeUsers.length - 4}
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
-             </div>
-        </div>
+	<div class="flex items-start justify-between gap-4">
+		<div class="flex flex-col gap-2">
+			<h2 class="text-3xl font-bold flex items-center gap-2">
+				<CalendarDays class="w-8 h-8" />
+				จัดตารางสอน
+			</h2>
+			<p class="text-muted-foreground">
+				ลากวิชาจากด้านซ้าย มาวางในช่องตารางด้านขวา (ระบบจะตรวจสอบการชนอัตโนมัติ)
+			</p>
+		</div>
+
+		<!-- Status Indicator -->
+		<div
+			class="flex items-center gap-3 bg-white/50 backdrop-blur px-3 py-1.5 rounded-full border shadow-sm"
+		>
+			<div class="flex items-center gap-2">
+				<div
+					class="w-2.5 h-2.5 rounded-full {$isConnected
+						? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
+						: 'bg-red-500'}"
+				></div>
+				<span class="text-xs font-semibold text-muted-foreground">
+					{$isConnected ? `Online (${$activeUsers.length})` : 'Offline'}
+				</span>
+			</div>
+
+			{#if $isConnected && $activeUsers.length > 0}
+				<div class="w-px h-4 bg-border mx-1"></div>
+				<div class="flex -space-x-1.5">
+					{#each $activeUsers.slice(0, 4) as user (user.user_id)}
+						<div
+							class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm"
+							style="background-color: {user.color}"
+							title={user.name}
+						>
+							{user.name.charAt(0).toUpperCase()}
+						</div>
+					{/each}
+					{#if $activeUsers.length > 4}
+						<div
+							class="w-6 h-6 rounded-full bg-muted border-2 border-white flex items-center justify-center text-[8px] font-bold shadow-sm"
+						>
+							+{$activeUsers.length - 4}
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	</div>
 
 	<!-- Filters & View Mode -->
 	<div class="flex flex-col gap-4">
