@@ -27,7 +27,6 @@ let socket: WebSocket | null = null;
 let currentUserId: string | null = null;
 
 export function connectTimetableSocket(params: {
-    school_id: string,
     semester_id: string,
     user_id: string,
     name: string
@@ -43,7 +42,6 @@ export function connectTimetableSocket(params: {
     // Ensure school_id/semester_id are strings
     const safeParams = {
         ...params,
-        school_id: String(params.school_id),
         semester_id: String(params.semester_id),
         user_id: String(params.user_id)
     };

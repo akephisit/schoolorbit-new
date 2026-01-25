@@ -53,7 +53,6 @@ pub struct UserPresence {
 
 #[derive(Debug, Deserialize)]
 pub struct WsParams {
-    pub school_id: Uuid,
     pub semester_id: Uuid,
     pub user_id: Uuid,
     pub name: String,
@@ -75,11 +74,11 @@ impl WebSocketManager {
         }
     }
 
-    fn get_room_key(school_id: Uuid, semester_id: Uuid) -> String {
+    fn get_room_key(school_id: String, semester_id: Uuid) -> String {
         format!("{}:{}", school_id, semester_id)
     }
 
-    pub fn get_or_create_room(&self, school_id: Uuid, semester_id: Uuid) -> broadcast::Sender<TimetableEvent> {
+    pub fn get_or_create_room(&self, school_id: String, semester_id: Uuid) -> broadcast::Sender<TimetableEvent> {
         let key = Self::get_room_key(school_id, semester_id);
         
         if let Some(sender) = self.rooms.get(&key) {
@@ -98,13 +97,36 @@ impl WebSocketManager {
 
 pub async fn timetable_websocket_handler(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Query(params): Query<WsParams>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state, params))
+    // 1. Resolve Subdomain from Host
+    let host = headers
+        .get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("localhost");
+
+    // Simple subdomain extraction (excludes port)
+    let domain = host.split(':').next().unwrap_or(host);
+    let parts: Vec<&str> = domain.split('.').collect();
+    
+    // Logic: if "school.orbit.com", subdomain is "school". 
+    // If localhost, maybe "default" or handled differently.
+    let subdomain = if parts.len() >= 3 {
+        parts[0]
+    } else {
+        // Fallback for localhost or dev environments
+        "default" 
+    };
+
+    // No DB Query needed! Use subdomain as room identifier directly.
+    let school_key = subdomain.to_string();
+
+    ws.on_upgrade(move |socket| handle_socket(socket, state, params, school_key))
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams) {
+async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, school_id: String) {
     let (mut sender, mut receiver) = socket.split();
     
     // Assign a random color if not provided (or use hash of name/id)
@@ -119,7 +141,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams) {
     };
 
     // join room
-    let tx = state.websocket_manager.get_or_create_room(params.school_id, params.semester_id);
+    let tx = state.websocket_manager.get_or_create_room(school_id, params.semester_id);
     let mut rx = tx.subscribe();
 
     // Broadcast JOIN event

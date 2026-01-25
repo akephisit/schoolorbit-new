@@ -45,7 +45,7 @@
     import type { AcademicYear, Semester } from '$lib/api/academic';
     import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
     import { onDestroy } from 'svelte';
-    import { page } from '$app/stores';
+    import { authStore } from '$lib/stores/auth';
     import { 
         connectTimetableSocket, 
         disconnectTimetableSocket, 
@@ -355,11 +355,11 @@
 
         // Notify others
         // Notify others
-        if ($page.data.user) {
+        if ($authStore.user) {
             sendTimetableEvent({
                  type: 'DragStart',
                  payload: {
-                     user_id: $page.data.user.id,
+                     user_id: $authStore.user.id,
                      entry_id: draggedEntryId || undefined,
                      course_id: item.classroom_course_id || item.id
                  }
@@ -368,8 +368,8 @@
     }
 
 	function handleDragEnd() {
-        if ($page.data.user) {
-            sendTimetableEvent({ type: 'DragEnd', payload: { user_id: $page.data.user.id } });
+        if ($authStore.user) {
+            sendTimetableEvent({ type: 'DragEnd', payload: { user_id: $authStore.user.id } });
         }
 		draggedCourse = null;
 		draggedEntryId = null;
@@ -653,16 +653,14 @@
     // WebSocket Connection
     // WebSocket Connection
     $effect(() => {
-        console.log('[DEBUG] Full Page Data:', $page.data);
-        const user = $page.data.user || $page.data.session?.user; // Try fallback
-        console.log('[DEBUG] Resolved User:', user);
-        
-        if (selectedSemesterId && user) {
+        // console.log('[DEBUG] Auth Store:', $authStore);
+        if (selectedSemesterId && $authStore.user) {
+             const user = $authStore.user;
              connectTimetableSocket({
-                 school_id: user.school_id || 'default',
+
                  semester_id: selectedSemesterId,
                  user_id: user.id,
-                 name: (user.firstname && user.lastname) ? `${user.firstname} ${user.lastname}` : (user.name || user.username || 'Unknown')
+                 name: `${user.firstName} ${user.lastName}`
              });
         }
     });
@@ -674,12 +672,12 @@
     let lastCursorSend = 0;
     function handleMouseMove(e: MouseEvent) {
         const now = Date.now();
-        if (now - lastCursorSend > 50 && $page.data.user) { // 20fps cap
+        if (now - lastCursorSend > 50 && $authStore.user) { // 20fps cap
              lastCursorSend = now;
              sendTimetableEvent({
                  type: 'CursorMove',
                  payload: {
-                     user_id: $page.data.user.id,
+                     user_id: $authStore.user.id,
                      x: e.clientX,
                      y: e.clientY
                  }
