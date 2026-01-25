@@ -103,4 +103,5 @@ pub struct LookupQuery {
     pub current_year: Option<bool>,
     /// Filter by level type (kindergarten, primary, secondary)
     pub level_type: Option<String>,
+    pub subject_type: Option<String>,
 }

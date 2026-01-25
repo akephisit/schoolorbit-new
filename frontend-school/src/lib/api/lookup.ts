@@ -77,6 +77,7 @@ export interface LookupOptions {
     search?: string;
     /** Maximum items to return (default: 100, max: 500) */
     limit?: number;
+    subjectType?: string;
 }
 
 // ===================================================================
@@ -93,6 +94,9 @@ function buildQueryString(options?: LookupOptions): string {
     }
     if (options?.limit) {
         params.set('limit', String(options.limit));
+    }
+    if (options?.subjectType) {
+        params.set('subject_type', options.subjectType);
     }
     const queryString = params.toString();
     return queryString ? `?${queryString}` : '';

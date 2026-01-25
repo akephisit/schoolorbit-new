@@ -613,7 +613,7 @@
         if (subjectOptions.length > 0) return;
         loadingSubjects = true;
         try {
-            subjectOptions = await lookupSubjects({ limit: 500, activeOnly: true });
+            subjectOptions = await lookupSubjects({ limit: 500, activeOnly: true, subjectType: 'ACTIVITY' });
         } catch(e) {
             console.error(e);
             toast.error('โหลดรายวิชาไม่สำเร็จ');

@@ -730,6 +730,10 @@ pub async fn lookup_subjects(
         sql.push_str(" AND is_active = true");
     }
     
+    if let Some(ref stype) = query.subject_type {
+        sql.push_str(&format!(" AND type = '{}'", stype));
+    }
+
     if let Some(ref search) = query.search {
         sql.push_str(&format!(" AND (name_th ILIKE '%{}%' OR code ILIKE '%{}%')", search, search));
     }
