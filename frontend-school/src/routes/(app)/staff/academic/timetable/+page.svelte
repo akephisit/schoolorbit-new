@@ -1095,13 +1095,13 @@
 											{/if}
 
 											<div class="font-bold text-blue-900 truncate mb-0.5">
-												{entry.subject_code}
+												{entry.subject_code || (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : '')}
 											</div>
 											<div
 												class="line-clamp-1 text-blue-800 text-[10px] mb-auto"
-												title={entry.subject_name_th}
+												title={entry.subject_name_th || entry.title}
 											>
-												{entry.subject_name_th || entry.subject_name_th}
+												{entry.subject_name_th || entry.title || 'ไม่มีชื่อ'}
 											</div>
 											<div
 												class="mt-1 pt-1 border-t border-blue-200/50 gap-0.5 flex flex-col text-[9px] text-blue-700"
@@ -1131,10 +1131,10 @@
 
 											<!-- Delete Button -->
 											<button
-												class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 hover:text-red-500 rounded transition-all"
+												class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
 												onclick={(e) => {
 													e.stopPropagation();
-													if (confirm('ยืนยันลบรายการนี้?')) handleDeleteEntry(entry.id);
+													handleDeleteEntry(entry.id);
 												}}
 											>
 												<Trash2 class="w-3 h-3" />
@@ -1194,20 +1194,6 @@
 		</Dialog.Header>
 
 		<div class="py-4 space-y-4">
-			<div class="flex items-center justify-between bg-muted/30 p-2 rounded">
-				<div class="text-sm">
-					<span class="font-bold">วัน{pendingDropContext?.day}</span>,
-					<span class="text-muted-foreground"
-						>คาบที่ {periods.find((p) => p.id === pendingDropContext?.periodId)?.order_index}</span
-					>
-				</div>
-				{#if loadingRoomsAvailability}
-					<div class="flex items-center gap-2 text-xs text-muted-foreground">
-						<Loader2 class="w-3 h-3 animate-spin" /> กำลังตรวจสอบห้องว่าง
-					</div>
-				{/if}
-			</div>
-
 			<div class="space-y-2">
 				<Label.Root>ห้องเรียน</Label.Root>
 				<Select.Root type="single" bind:value={selectedRoomId}>
