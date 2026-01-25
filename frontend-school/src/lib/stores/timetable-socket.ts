@@ -7,6 +7,12 @@ export interface UserContext {
     view_id?: string;
 }
 
+export interface DragInfo {
+    code: string;
+    title: string;
+    color?: string;
+}
+
 export interface UserPresence {
     user_id: string;
     name: string;
@@ -15,19 +21,21 @@ export interface UserPresence {
 }
 
 export type TimetableEvent =
-    | { type: 'StateSync', payload: { users: UserPresence[], drags: Record<string, { course_id?: string, entry_id?: string }> } }
+    | { type: 'StateSync', payload: { users: UserPresence[], drags: Record<string, { course_id?: string, entry_id?: string, info?: DragInfo }> } }
+    | { type: 'TableRefresh', payload: { user_id: string } }
     | { type: 'UserJoined', payload: UserPresence }
     | { type: 'UserLeft', payload: { user_id: string } }
     | { type: 'CursorMove', payload: { user_id: string, x: number, y: number, context?: UserContext } }
     // Locking
-    | { type: 'DragStart', payload: { user_id: string, course_id?: string, entry_id?: string } }
+    | { type: 'DragStart', payload: { user_id: string, course_id?: string, entry_id?: string, info?: DragInfo } }
     | { type: 'DragEnd', payload: { user_id: string } };
 
 // Stores
 export const activeUsers: Writable<UserPresence[]> = writable([]);
 export const remoteCursors: Writable<Record<string, { x: number, y: number, context?: UserContext }>> = writable({});
 // Key: user_id -> What they are dragging
-export const userDrags: Writable<Record<string, { course_id?: string, entry_id?: string }>> = writable({});
+export const userDrags: Writable<Record<string, { course_id?: string, entry_id?: string, info?: DragInfo }>> = writable({});
+export const refreshTrigger: Writable<number> = writable(0);
 export const isConnected: Writable<boolean> = writable(false);
 
 let socket: WebSocket | null = null;
@@ -46,7 +54,7 @@ export function connectTimetableSocket(params: {
     let baseUrl = PUBLIC_BACKEND_URL || 'http://localhost:8081';
     let wsUrl = baseUrl.replace(/^http/, 'ws');
 
-    // Ensure school_id/semester_id are strings
+    // Ensure semester_id/user_id are strings
     const safeParams = {
         ...params,
         semester_id: String(params.semester_id),
@@ -160,12 +168,12 @@ function handleMessage(msg: any) {
             break;
         }
         case 'DragStart': {
-            const { user_id, course_id, entry_id } = payload;
+            const { user_id, course_id, entry_id, info } = payload;
             if (user_id === currentUserId) return;
 
             userDrags.update(drags => ({
                 ...drags,
-                [user_id]: { course_id, entry_id }
+                [user_id]: { course_id, entry_id, info }
             }));
             break;
         }
@@ -178,6 +186,13 @@ function handleMessage(msg: any) {
                 delete newDrags[user_id];
                 return newDrags;
             });
+            break;
+        }
+        case 'TableRefresh': {
+            const { user_id } = payload;
+            if (user_id === currentUserId) return; // Self already refreshed (usually)
+            console.log('Received TableRefresh signal');
+            refreshTrigger.update(n => n + 1);
             break;
         }
     }

@@ -32,6 +32,13 @@ pub struct UserPresence {
     pub context: Option<UserContext>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DragInfo {
+    pub code: String,
+    pub title: String,
+    pub color: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum TimetableEvent {
@@ -45,6 +52,11 @@ pub enum TimetableEvent {
     UserJoined(UserPresence),
     UserLeft { user_id: Uuid },
     
+    // Sync Data
+    TableRefresh {
+        user_id: Uuid
+    },
+    
     // Interactions
     CursorMove { 
         user_id: Uuid, 
@@ -56,7 +68,8 @@ pub enum TimetableEvent {
     DragStart { 
         user_id: Uuid, 
         course_id: Option<String>,
-        entry_id: Option<String> 
+        entry_id: Option<String>,
+        info: Option<DragInfo>
     },
     
     DragEnd { 
@@ -68,6 +81,7 @@ pub enum TimetableEvent {
 pub struct DragState {
     pub course_id: Option<String>,
     pub entry_id: Option<String>,
+    pub info: Option<DragInfo>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -269,15 +283,20 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
                             context: context.clone() 
                         });
                     },
-                    TimetableEvent::DragStart { course_id, entry_id, .. } => {
+                    TimetableEvent::DragStart { course_id, entry_id, info, .. } => {
                         // Update Drag in memory
-                        let drag_state = DragState { course_id: course_id.clone(), entry_id: entry_id.clone() };
+                        let drag_state = DragState { 
+                            course_id: course_id.clone(), 
+                            entry_id: entry_id.clone(),
+                            info: info.clone() 
+                        };
                         state.websocket_manager.update_drag(school_key.clone(), params.semester_id, params.user_id, Some(drag_state));
                         
                         valid_event = Some(TimetableEvent::DragStart { 
                             user_id: params.user_id, 
                             course_id: course_id.clone(), 
-                            entry_id: entry_id.clone() 
+                            entry_id: entry_id.clone(),
+                            info: info.clone()
                         });
                     },
                     TimetableEvent::DragEnd { .. } => {
@@ -285,6 +304,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
                         state.websocket_manager.update_drag(school_key.clone(), params.semester_id, params.user_id, None);
                         
                         valid_event = Some(TimetableEvent::DragEnd { user_id: params.user_id });
+                    },
+                    TimetableEvent::TableRefresh { .. } => {
+                        valid_event = Some(TimetableEvent::TableRefresh { user_id: params.user_id });
                     },
                     _ => {}
                 }

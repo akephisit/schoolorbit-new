@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import {
 		type TimetableEntry,
@@ -15,9 +15,12 @@
 		lookupAcademicYears,
 		listClassrooms,
 		listClassroomCourses,
-		type Classroom
+		type Classroom,
+        getAcademicStructure,
+        type AcademicYear, 
+        type Semester
 	} from '$lib/api/academic';
-	import { lookupRooms, type RoomLookupItem } from '$lib/api/lookup';
+	import { lookupRooms, type RoomLookupItem, lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
     import * as Dialog from '$lib/components/ui/dialog';
     import * as Label from '$lib/components/ui/label';
 
@@ -30,21 +33,14 @@
 		CalendarDays,
 		Trash2,
 		Loader2,
-		Clock,
 		School,
-		GripVertical,
 		BookOpen,
-		MapPin,
 		Users,
-        PlusCircle
+        PlusCircle, MapPin
 	} from 'lucide-svelte';
     
     import { Checkbox } from '$lib/components/ui/checkbox';
     
-    import { getAcademicStructure } from '$lib/api/academic';
-    import type { AcademicYear, Semester } from '$lib/api/academic';
-    import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
-    import { onDestroy } from 'svelte';
     import { authStore } from '$lib/stores/auth';
     import { 
         connectTimetableSocket, 
@@ -53,13 +49,11 @@
         activeUsers,
         remoteCursors,
         userDrags,
+        refreshTrigger,
         isConnected
     } from '$lib/stores/timetable-socket';
 
     let { data }: { data: any } = $props();
-
-
-
 
 	const DAYS = [
 		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
@@ -94,6 +88,9 @@
 	// Drag & Drop state
 	let draggedCourse = $state<any>(null);
 	let submitting = $state(false);
+    // Identify what is being dragged: 'NEW' (from list) | 'MOVE' (from grid)
+	let dragType = $state<'NEW' | 'MOVE'>('NEW');
+	let draggedEntryId = $state<string | null>(null);
 
 	async function loadInitialData() {
 		try {
@@ -129,7 +126,6 @@
     
     async function loadInstructors() {
         try {
-            // Fetch staff for dropdown (safer, only needs authenticated user)
             const data = await lookupStaff({ limit: 500 }); 
             instructors = data;
         } catch(e) {
@@ -213,6 +209,12 @@
 		try {
 			await deleteTimetableEntry(entryId);
 			toast.success('ลบออกจากตารางสำเร็จ');
+            
+            // Notify others to refresh
+            if ($authStore.user) {
+                sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+            }
+
 			loadTimetable();
 		} catch (e: any) {
 			toast.error(e.message || 'ลบไม่สำเร็จ');
@@ -229,25 +231,18 @@
 	}
 
 	// ============================================
-	// Drag & Drop Handlers (Native API)
+	// Drag & Drop Handlers
 	// ============================================
 
-	// Drag & Drop Handlers (Native API)
-	// ============================================
-
-	// Identify what is being dragged
-	// type: 'NEW' (from list) | 'MOVE' (from grid)
-	let dragType = $state<'NEW' | 'MOVE'>('NEW');
-	let draggedEntryId = $state<string | null>(null);
+	
 	
 	// Room Selection State
 	let showRoomModal = $state(false);
-	// Store all necessary context because drag state is cleared on dragend
 	let pendingDropContext = $state<{
 		day: string;
 		periodId: string;
 		dragType: 'NEW' | 'MOVE';
-		course: any;      // The item being dragged
+		course: any;
 		entryId: string | null;
 	} | null>(null);
 	
@@ -267,7 +262,7 @@
 	async function fetchInstructorConflicts(course: any) {
         let conflicts = new Set<string>();
 
-        // 1. INSTRUCTOR VIEW: Check if the Student Group (Classroom) is busy
+        // 1. INSTRUCTOR VIEW
         if (viewMode === 'INSTRUCTOR') {
             const classroomId = course.classroom_id;
             if (!classroomId) return;
@@ -275,12 +270,8 @@
             try {
                 const res = await listTimetableEntries({ classroom_id: classroomId, academic_semester_id: selectedSemesterId });
                 res.data.forEach(entry => {
-                    // Don't mark as conflict if it's the entry being moved itself
                     if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
                     
-                    // Don't mark if it belongs to current instructor (already shown on grid)
-                    // In Instructor View, 'courses' contains only courses taught by this instructor.
-                    // If the entry's course is in our list, it's our class.
                     const isMyCourse = courses.some(c => c.id === entry.classroom_course_id);
                     if (isMyCourse) return;
 
@@ -288,12 +279,12 @@
                 });
                 occupiedSlots = conflicts;
             } catch (e) {
-                console.error('Failed to check classroom conflicts', e);
+                console.error('Failed to check conflicts', e);
             }
             return;
         }
 
-        // 2. CLASSROOM VIEW: Check if the Instructor is busy
+        // 2. CLASSROOM VIEW
 		const instructorId = course.primary_instructor_id;
 		if (!instructorId) {
             occupiedSlots = new Set();
@@ -303,14 +294,9 @@
 		try {
 			const res = await listTimetableEntries({ instructor_id: instructorId, academic_semester_id: selectedSemesterId });
 			res.data.forEach(entry => {
-				// Don't mark as conflict if it's the entry being moved itself
 				if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
 				
-                // Don't mark as conflict if it's a course from the current classroom
-                // (It's already shown in the grid as a schedule, not an external conflict)
                 if (viewMode === 'CLASSROOM') {
-                    // Check if entry belongs to the current classroom we are viewing
-                    // If so, it's just a regular scheduled class, not a "busy instructor conflict" from another room
                     if (entry.classroom_id === selectedClassroomId) return;
                 }
 
@@ -325,7 +311,6 @@
 	function handleDragStart(event: DragEvent, item: any, type: 'NEW' | 'MOVE') {
 		dragType = type;
 		
-		// Determine course object to check instructor
 		let courseToCheck: any = null;
 
 		if (type === 'NEW') {
@@ -340,7 +325,6 @@
 			courseToCheck = originalCourse || item; 
 		}
 
-		// Fetch availability
 		if (courseToCheck) {
 			fetchInstructorConflicts(courseToCheck);
 		}
@@ -354,14 +338,18 @@
 		}
 
         // Notify others
-        // Notify others
         if ($authStore.user) {
             sendTimetableEvent({
                  type: 'DragStart',
                  payload: {
                      user_id: $authStore.user.id,
                      entry_id: draggedEntryId || undefined,
-                     course_id: item.classroom_course_id || item.id
+                     course_id: item.classroom_course_id || item.id,
+                     info: {
+                         code: courseToCheck.subject_code || '??',
+                         title: courseToCheck.title_th || courseToCheck.title_en || courseToCheck.title || 'รายวิชา',
+                         color: courseToCheck.color
+                     }
                  }
             });
         }
@@ -373,11 +361,11 @@
         }
 		draggedCourse = null;
 		draggedEntryId = null;
-		occupiedSlots = new Set(); // Clear highlights
+		occupiedSlots = new Set(); 
 	}
 
 	function handleDragOver(event: DragEvent) {
-		event.preventDefault(); // Necessary to allow dropping
+		event.preventDefault(); 
 		if (event.dataTransfer) {
 			event.dataTransfer.dropEffect = dragType === 'NEW' ? 'copy' : 'move';
 		}
@@ -388,7 +376,6 @@
 
 		if (!draggedCourse) return;
         
-        // Prevent drop if slot occupied (double check)
         const existingEntry = getEntryForSlot(day, periodId);
 		if (existingEntry) {
 			toast.error('ช่องนี้มีรายการอยู่แล้ว');
@@ -396,15 +383,12 @@
 			return;
 		}
 
-		// Check instructor availability
 		if (isSlotOccupiedByInstructor(day, periodId)) {
 			toast.error('ครูติดสอนในคาบนี้แล้ว');
 			handleDragEnd();
 			return;
 		}
 
-        // Open Room Selection Modal instead of saving immediately
-        // Store context because drag state (draggedCourse) will be cleared by ondragend
         pendingDropContext = {
             day,
             periodId,
@@ -413,15 +397,13 @@
             entryId: draggedEntryId
         };
         
-        // Pre-select room if moving existing entry
         if (dragType === 'MOVE' && draggedCourse.room_id) {
             selectedRoomId = draggedCourse.room_id;
         } else {
-            selectedRoomId = 'none'; // Default to 'no room'
+            selectedRoomId = 'none'; 
         }
         
         showRoomModal = true;
-        // Check availability for this slot
         updateUnavailableRooms(day, periodId);
 	}
 
@@ -430,9 +412,8 @@
 
     async function updateUnavailableRooms(day: string, periodId: string) {
         loadingRoomsAvailability = true;
-        unavailableRooms = new Set(); // Reset (reactivity fix: assign new Set)
+        unavailableRooms = new Set(); 
         try {
-            // Fetch schedule for the whole day across the school to check room usage
             const res = await listTimetableEntries({ 
                 day_of_week: day, 
                 academic_semester_id: selectedSemesterId 
@@ -441,14 +422,13 @@
             const busyRooms = new Set<string>();
             res.data.forEach(entry => {
                 if (entry.period_id === periodId && entry.room_id) {
-                    // If moving existing entry, don't count itself as busy
                     if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
                     busyRooms.add(entry.room_id);
                 }
             });
             unavailableRooms = busyRooms;
         } catch(e) {
-            console.error("Failed to check room availability", e);
+            console.error(e);
         } finally {
             loadingRoomsAvailability = false;
         }
@@ -458,10 +438,9 @@
         if (!pendingDropContext) return;
         
         const { day, periodId, dragType, course, entryId } = pendingDropContext;
-        // Use undefined instead of null to match interface
         const roomId = selectedRoomId === 'none' ? undefined : selectedRoomId;
         
-        showRoomModal = false; // Close modal
+        showRoomModal = false;
 
 		try {
 			submitting = true;
@@ -480,7 +459,7 @@
 				handleResponse(res, `ลงตาราง ${courseCode} สำเร็จ`);
 
 			} else if (dragType === 'MOVE' && entryId) {
-				// UPDATE EXISTING (MOVE)
+				// UPDATE EXISTING
 				const courseName = course.subject_code || course.title || 'รายการ';
 
 				const payload = {
@@ -496,8 +475,12 @@
 		} catch (e: any) {
 			toast.error(e.message || 'บันทึกไม่สำเร็จ');
 		} finally {
+            // Notify others
+            if ($authStore.user) {
+                sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+            }
+            
 			submitting = false;
-			// handleDragEnd(); // already called by system
             pendingDropContext = null;
 		}
     }
@@ -528,12 +511,8 @@
 		return courses
 			.map((course) => {
 				const scheduled = courseCounts.get(course.id) || 0;
-				// Calculate max periods per week based on credits 
-				// 1.0 credit = 2 periods/week (approx 40 hours/term)
-				// 1.5 credit = 3 periods/week (approx 60 hours/term)
-				// Formula: credit * 2
 				const credit = course.subject_credit || 0;
-				const maxPeriods = credit > 0 ? Math.ceil(credit * 2) : 3; // Default 3 if unknown
+				const maxPeriods = credit > 0 ? Math.ceil(credit * 2) : 3; 
 				
 				return {
 					...course,
@@ -542,7 +521,7 @@
 					is_completed: scheduled >= maxPeriods
 				};
 			})
-			.filter(course => !course.is_completed); // Only show courses that are not yet fully scheduled
+			.filter(course => !course.is_completed); 
 	});
 
 	$effect(() => {
@@ -550,7 +529,6 @@
 			loadClassrooms();
 			loadPeriods();
             
-            // Auto-select semester when year changes (and clear if none)
             const yearSemesters = allSemesters.filter(s => s.academic_year_id === selectedYearId);
             if (!yearSemesters.find(s => s.id === selectedSemesterId)) {
                  const activeOrFirst = yearSemesters.find(s => s.is_active) || yearSemesters[0];
@@ -560,7 +538,6 @@
 	});
 
 	$effect(() => {
-        // Reload when semester changes or view selection changes
 		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
 			loadCourses();
 			loadTimetable();
@@ -570,12 +547,8 @@
         }
 	});
     
-    // Add semester reload effect
     $effect(() => {
         if (selectedSemesterId) {
-             // Just triggering the above effect is enough if dependencies are correct. 
-             // But above effect only listens on viewMode/selection IDs (and implicitly functions closure?)
-             // In Svelte 5, we should include all dependencies or call load directly
              if ((viewMode === 'CLASSROOM' && selectedClassroomId) || (viewMode === 'INSTRUCTOR' && selectedInstructorId)) {
                  loadCourses();
                  loadTimetable();
@@ -651,9 +624,7 @@
     }
 
     // WebSocket Connection
-    // WebSocket Connection
     $effect(() => {
-        // console.log('[DEBUG] Auth Store:', $authStore);
         if (selectedSemesterId && $authStore.user) {
              const user = $authStore.user;
              connectTimetableSocket({
@@ -693,11 +664,30 @@
         }
     }
 
+    // Auto Refresh Listener
+    $effect(() => {
+        if ($refreshTrigger > 0) {
+            console.log('Auto-refreshing timetable...');
+            loadTimetable();
+            loadCourses(); 
+        }
+    });
+
     function getDragOwner(entryId?: string, courseId?: string) {
         if (!entryId && !courseId) return null;
         for (const [userId, drag] of Object.entries($userDrags)) {
-             if ((entryId && drag.entry_id === entryId) || (courseId && drag.course_id === courseId)) {
-                 return $activeUsers.find(u => u.user_id === userId);
+             // Strict check: Only lock if entry_id matches (Move)
+             // or if dragging NEW course (courseId matches, but only if we want to lock new drags?)
+             
+             // Request: Don't lock existing entries if dragging NEW course.
+             if (entryId) {
+                 // Only lock if someone is dragging THIS SPECIFIC entry (Move)
+                 if (drag.entry_id === entryId) return $activeUsers.find(u => u.user_id === userId);
+             } 
+             // If this is a course list item
+             else if (courseId) {
+                 // Lock list item if someone is dragging this course
+                 if (drag.course_id === courseId) return $activeUsers.find(u => u.user_id === userId);
              }
         }
         return null;
@@ -792,7 +782,6 @@
 						viewMode = 'CLASSROOM';
 						courses = [];
 						timetableEntries = [];
-						// Do not reset selectedInstructorId so we can return to it
 					}}
 				>
 					<School class="w-4 h-4" /> ห้องเรียน
@@ -806,7 +795,6 @@
 						viewMode = 'INSTRUCTOR';
 						courses = [];
 						timetableEntries = [];
-						// Do not reset selectedClassroomId so we can return to it
 					}}
 				>
 					<Users class="w-4 h-4" /> ครูผู้สอน
@@ -833,23 +821,22 @@
 			</div>
 
 			<div class="w-[200px]">
-				<Select.Root type="single" bind:value={selectedSemesterId} disabled={!selectedYearId}>
+				<Select.Root type="single" bind:value={selectedSemesterId}>
 					<Select.Trigger class="w-full">
-						{semesters.find((s) => s.id === selectedSemesterId)?.name || 'เลือกภาคเรียน'}
+						{semesters.find((s) => s.id === selectedSemesterId)?.term || 'เลือกเทอม'}
 					</Select.Trigger>
 					<Select.Content>
-						{#each semesters as semester}
-							<Select.Item value={semester.id}>{semester.name}</Select.Item>
+						{#each semesters as term}
+							<Select.Item value={term.id}>เทอม {term.term}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
 			</div>
 
-			<div class="w-[280px]">
-				{#if viewMode === 'CLASSROOM'}
+			{#if viewMode === 'CLASSROOM'}
+				<div class="w-[250px]">
 					<Select.Root type="single" bind:value={selectedClassroomId}>
 						<Select.Trigger class="w-full">
-							<School class="w-4 h-4 mr-2" />
 							{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
 						</Select.Trigger>
 						<Select.Content class="max-h-[300px] overflow-y-auto">
@@ -858,363 +845,362 @@
 							{/each}
 						</Select.Content>
 					</Select.Root>
-				{:else}
+				</div>
+			{:else}
+				<div class="w-[250px]">
 					<Select.Root type="single" bind:value={selectedInstructorId}>
 						<Select.Trigger class="w-full">
-							<Users class="w-4 h-4 mr-2" />
 							{instructors.find((i) => i.id === selectedInstructorId)?.name || 'เลือกครูผู้สอน'}
 						</Select.Trigger>
 						<Select.Content class="max-h-[300px] overflow-y-auto">
-							<div class="p-2 sticky top-0 bg-background z-10 border-b mb-1">
-								<span class="text-xs text-muted-foreground font-medium">รายชื่อบุคลากรทั้งหมด</span>
-							</div>
-							{#each instructors as staff}
-								<Select.Item value={staff.id} label={staff.name}>
-									{staff.title || ''}{staff.name}
-								</Select.Item>
+							{#each instructors as instructor}
+								<Select.Item value={instructor.id}>{instructor.name}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
-				{/if}
-			</div>
+				</div>
+			{/if}
 		</div>
 	</div>
 
-	{#if (!selectedClassroomId && viewMode === 'CLASSROOM') || (!selectedInstructorId && viewMode === 'INSTRUCTOR')}
-		<Card.Root>
-			<Card.Content class="py-12 text-center">
-				{#if viewMode === 'CLASSROOM'}
-					<School class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-					<p class="text-muted-foreground">กรุณาเลือกห้องเรียนเพื่อดูและจัดตารางสอน</p>
-				{:else}
-					<Users class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-					<p class="text-muted-foreground">กรุณาเลือกครูผู้สอนเพื่อดูภาระงานและจัดการสอน</p>
-				{/if}
-			</Card.Content>
-		</Card.Root>
-	{:else if periods.length === 0}
-		<Card.Root>
-			<Card.Content class="py-12 text-center">
-				<Clock class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-				<p class="text-muted-foreground">
-					ยังไม่มีคาบเวลาในปีนี้ กรุณาไปที่เมนู "ตั้งค่าคาบเวลา" ก่อน
-				</p>
-			</Card.Content>
-		</Card.Root>
-	{:else}
-		<div
-			class="grid grid-cols-12 gap-4 flex-1 overflow-hidden"
-			style="height: calc(100vh - 250px);"
-		>
-			<!-- Fixed height for scrolling -->
+	<!-- Main Content Grid -->
+	<div class="grid grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[600px]">
+		<!-- Left Sidebar: Courses -->
+		<Card.Root class="col-span-3 flex flex-col h-full overflow-hidden">
+			<Card.Header class="py-3 px-4 border-b">
+				<Card.Title class="text-base flex items-center gap-2">
+					<BookOpen class="w-4 h-4" /> รายวิชา
+					<span class="text-xs font-normal text-muted-foreground ml-auto">
+						ลากวิชาไปวางในตาราง
+					</span>
+				</Card.Title>
+			</Card.Header>
+			<div class="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/20">
+				{#each unscheduledCourses as course}
+					{@const lockedBy = getDragOwner(undefined, course.id)}
+					<div
+						class="bg-background border rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative {lockedBy
+							? 'opacity-50 pointer-events-none'
+							: ''}"
+						draggable={!lockedBy}
+						ondragstart={(e) => handleDragStart(e, course, 'NEW')}
+						ondragend={handleDragEnd}
+						role="button"
+						tabindex="0"
+					>
+						{#if lockedBy}
+							<div
+								class="absolute inset-0 flex items-center justify-center z-10 bg-white/50 backdrop-blur-[1px] rounded-lg"
+							>
+								<span
+									class="text-[10px] font-bold px-2 py-1 rounded text-white shadow-sm"
+									style="background-color: {lockedBy.color};"
+								>
+									{lockedBy.name} กำลังใช้
+								</span>
+							</div>
+						{/if}
 
-			<!-- Left Sidebar: Draggable Courses -->
-			<div class="col-span-2 flex flex-col h-full bg-background rounded-lg border overflow-hidden">
-				<div class="p-4 border-b bg-muted/30">
-					<h3 class="font-semibold flex items-center gap-2">
-						<BookOpen class="w-4 h-4" /> รายวิชา
-					</h3>
-					<p class="text-xs text-muted-foreground mt-1">ลากวิชาไปวางในตาราง</p>
-				</div>
-				<div class="flex-1 overflow-y-auto p-2">
-					{#each unscheduledCourses as course (course.id)}
-						<div
-							role="button"
-							tabindex="0"
-							draggable="true"
-							ondragstart={(e) => handleDragStart(e, course, 'NEW')}
-							ondragend={handleDragEnd}
-							class="mb-2 p-3 bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing w-full flex items-start gap-2 group mobile-draggable"
+						<div class="flex justify-between items-start mb-1">
+							<Badge variant="outline" class="font-mono text-xs">{course.subject_code}</Badge>
+							<Badge variant={course.is_completed ? 'secondary' : 'default'} class="text-[10px]">
+								{course.scheduled_count}/{course.max_periods} คาบ
+							</Badge>
+						</div>
+						<h4
+							class="font-medium text-sm line-clamp-2 leading-tight mb-1"
+							title={course.title_th || course.title}
 						>
-							<GripVertical class="w-4 h-4 text-muted-foreground mt-0.5" />
-							<div class="min-w-0 pointer-events-none">
-								<!-- Pointer events none ensures drag catches container -->
-								<div class="font-medium text-sm text-blue-900 truncate">{course.subject_code}</div>
-								<div class="text-xs text-muted-foreground truncate">{course.subject_name_th}</div>
+							{course.title_th || course.title}
+						</h4>
+						<div class="flex flex-wrap gap-1 text-[10px] text-muted-foreground mt-2">
+							<div class="flex items-center gap-1 bg-muted px-1.5 py-0.5 rounded">
+								<Users class="w-3 h-3" />
+								{course.instructor_name || 'ไม่ระบุครู'}
+							</div>
+							<div class="bg-muted px-1.5 py-0.5 rounded">
+								{course.subject_credit} นก.
+							</div>
+						</div>
 
-								{#if viewMode === 'INSTRUCTOR' && course.classroom_name}
-									<div
-										class="text-[10px] items-center gap-1 flex text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 mt-1 w-fit"
-									>
-										<School class="w-3 h-3" />
-										{course.classroom_name}
-									</div>
+						<!-- Progress Bar -->
+						<div class="mt-2 h-1 w-full bg-secondary rounded-full overflow-hidden">
+							<div
+								class="h-full bg-primary transition-all"
+								style="width: {(course.scheduled_count / course.max_periods) * 100}%"
+							></div>
+						</div>
+					</div>
+				{:else}
+					<div class="text-center text-muted-foreground py-8 text-sm">
+						{#if !selectedClassroomId && !selectedInstructorId}
+							กรุณาเลือก{viewMode === 'CLASSROOM' ? 'ห้องเรียน' : 'ครูผู้สอน'}
+						{:else if courses.length === 0}
+							ไม่พบรายวิชา
+						{:else}
+							จัดตารางครบแล้ว
+						{/if}
+					</div>
+				{/each}
+			</div>
+		</Card.Root>
+
+		<!-- Right Content: Timetable Grid -->
+		<Card.Root class="col-span-9 flex flex-col h-full overflow-hidden border-2 shadow-none">
+			<div class="overflow-auto flex-1">
+				<div class="min-w-[800px] h-full flex flex-col">
+					<!-- Header Row (Periods) -->
+					<div class="flex border-b sticky top-0 bg-background z-20 shadow-sm">
+						<div
+							class="w-24 shrink-0 p-3 border-r font-medium text-sm text-muted-foreground flex items-center justify-center bg-muted/30"
+						>
+							วัน/คาบ
+						</div>
+						{#each periods as period}
+							<div
+								class="flex-1 min-w-[100px] p-2 border-r last:border-r-0 text-center relative group"
+							>
+								<div class="text-sm font-bold">คาบที่ {period.order_index}</div>
+								<div class="text-xs text-muted-foreground">
+									{formatTime(period.start_time)}-{formatTime(period.end_time)}
+								</div>
+								{#if period.type === 'BREAK'}
+									<div class="absolute inset-x-0 bottom-0 h-0.5 bg-yellow-400"></div>
 								{/if}
+							</div>
+						{/each}
+					</div>
 
-								{#if course.instructor_name && viewMode === 'CLASSROOM'}
-									<div class="text-xs text-blue-600 mt-1">ครู: {course.instructor_name}</div>
-								{/if}
+					<!-- Days Rows -->
+					{#each DAYS as day}
+						<div class="flex flex-1 border-b last:border-b-0 min-h-[100px]">
+							<!-- Day Header -->
+							<div
+								class="w-24 shrink-0 border-r bg-muted/10 font-medium flex items-center justify-center relative"
+							>
+								<!-- Day Indicator Line -->
+								{#if day.value === 'MON'}<div
+										class="absolute left-0 inset-y-0 w-1 bg-yellow-400"
+									></div>{/if}
+								{#if day.value === 'TUE'}<div
+										class="absolute left-0 inset-y-0 w-1 bg-pink-400"
+									></div>{/if}
+								{#if day.value === 'WED'}<div
+										class="absolute left-0 inset-y-0 w-1 bg-green-400"
+									></div>{/if}
+								{#if day.value === 'THU'}<div
+										class="absolute left-0 inset-y-0 w-1 bg-orange-400"
+									></div>{/if}
+								{#if day.value === 'FRI'}<div
+										class="absolute left-0 inset-y-0 w-1 bg-blue-400"
+									></div>{/if}
 
-								<div class="mt-2 flex items-center justify-between gap-2">
-									<div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-										<div
-											class="h-full bg-blue-500 rounded-full transition-all"
-											style="width: {(course.scheduled_count / course.max_periods) * 100}%"
-										></div>
-									</div>
-									<span class="text-[10px] whitespace-nowrap text-muted-foreground font-medium">
-										{course.scheduled_count}/{course.max_periods} คาบ
-									</span>
+								<div class="text-center">
+									<div class="text-base font-bold">{day.label}</div>
 								</div>
 							</div>
+
+							<!-- Slots -->
+							{#each periods as period}
+								{@const entry = getEntryForSlot(day.value, period.id)}
+								{@const isOccupied = isSlotOccupiedByInstructor(day.value, period.id)}
+								{@const isUnavailableRoom = unavailableRooms.has(period.id)}
+								{@const lockedBy = entry ? getDragOwner(entry.id) : null}
+
+								<!-- Drop Zone -->
+								<div
+									class="flex-1 border-r last:border-r-0 min-w-[100px] relative transition-colors {period.type === 'BREAK'
+										? 'bg-muted/30'
+										: ''} {isOccupied
+										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
+										: 'hover:bg-accent/50'} {draggedCourse &&
+									!entry &&
+									!isOccupied &&
+									period.type !== 'BREAK'
+										? 'bg-blue-50/30'
+										: ''}"
+									ondragover={handleDragOver}
+									ondrop={(e) => handleDrop(e, day.value, period.id)}
+									role="application"
+								>
+									{#if period.type === 'BREAK'}
+										<div
+											class="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm font-medium select-none cursor-not-allowed"
+										>
+											พักเที่ยง
+										</div>
+									{:else if entry}
+										<!-- Timetable Entry Card -->
+										<div
+											class="absolute inset-1 bg-blue-50/80 border border-blue-200 rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md transition-all group cursor-grab active:cursor-grabbing hover:border-blue-300 hover:bg-blue-100/50 {lockedBy
+												? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
+													lockedBy.color
+												: ''}"
+											draggable={!lockedBy}
+											ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
+											ondragend={handleDragEnd}
+											role="button"
+											tabindex="0"
+										>
+											{#if lockedBy}
+												<div class="absolute -top-2 -right-2 z-20">
+													<span
+														class="text-[9px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm"
+														style="background-color: {lockedBy.color};"
+													>
+														{lockedBy.name}
+													</span>
+												</div>
+											{/if}
+
+											<div
+												class="font-bold text-blue-900 truncate"
+												title={entry.subject_name_th}
+											>
+												{entry.subject_code}
+											</div>
+											<div class="line-clamp-2 text-blue-800 leading-tight">
+												{entry.subject_name_th || entry.subject_name_th}
+											</div>
+											<div
+												class="mt-auto pt-1 flex items-center justify-between text-blue-600/80 text-[10px]"
+											>
+												<div class="flex items-center gap-1">
+													<Users class="w-3 h-3" />
+													{entry.instructor_name || '...'}
+												</div>
+												{#if entry.room_id}
+													<div class="flex items-center gap-0.5" title={rooms.find((r) => r.id === entry.room_id)?.name_th}>
+														<MapPin class="w-3 h-3" />
+														<span class="max-w-[40px] truncate">{rooms.find((r) => r.id === entry.room_id)?.name_th}</span>
+													</div>
+												{/if}
+											</div>
+
+											<!-- Delete Button -->
+											<button
+												class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 hover:text-red-500 rounded transition-all"
+												onclick={(e) => {
+													e.stopPropagation();
+													if (confirm('ยืนยันลบรายการนี้?')) handleDeleteEntry(entry.id);
+												}}
+											>
+												<Trash2 class="w-3 h-3" />
+											</button>
+										</div>
+									{:else if isOccupied}
+										<div
+											class="absolute inset-0 flex items-center justify-center p-2 text-center opacity-40 select-none"
+										>
+											<div class="text-xs text-red-500 font-medium">ครูติดสอน</div>
+										</div>
+									{:else if draggedCourse}
+										<div
+											class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none"
+										>
+											<div class="text-xs text-blue-500 font-medium">+ วางที่นี่</div>
+										</div>
+									{/if}
+								</div>
+							{/each}
 						</div>
 					{/each}
 				</div>
 			</div>
-
-			<!-- Right: Timetable Grid -->
-			<div class="col-span-10 flex flex-col h-full overflow-hidden border rounded-lg">
-				<div class="overflow-auto h-full relative">
-					<table class="w-full text-sm border-collapse">
-						<thead class="bg-muted/50 sticky top-0 z-20 shadow-sm">
-							<tr>
-								<th class="p-2 border sticky left-0 z-30 bg-background w-[100px] text-center"
-									>วัน/คาบ</th
-								>
-								{#each periods as period}
-									<th class="p-2 border min-w-[140px] text-center">
-										<div class="font-bold">{period.name}</div>
-										<div class="text-xs text-muted-foreground font-normal">
-											{formatTime(period.start_time)}-{formatTime(period.end_time)}
-										</div>
-									</th>
-								{/each}
-							</tr>
-						</thead>
-						<tbody>
-							{#if loading}
-								<tr
-									><td colspan={periods.length + 1} class="p-10 text-center"
-										><Loader2 class="animate-spin w-8 h-8 mx-auto" /></td
-									></tr
-								>
-							{:else}
-								{#each DAYS as day}
-									<tr>
-										<td
-											class="p-2 border font-bold sticky left-0 z-10 bg-background text-center align-middle"
-										>
-											{day.label}
-										</td>
-										{#each periods as period}
-											{@const entry = getEntryForSlot(day.value, period.id)}
-											{@const isOccupied = isSlotOccupiedByInstructor(day.value, period.id)}
-
-											<!-- Cell Area -->
-											<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-											<td
-												class="border p-1 align-top h-[110px] min-w-[140px] relative transition-colors {isOccupied
-													? 'bg-gray-50'
-													: 'hover:bg-muted/10'}"
-											>
-												{#if isOccupied && draggedCourse && !entry}
-													<div
-														class="absolute inset-0 z-20 flex items-center justify-center bg-gray-200/50 cursor-not-allowed pointer-events-none border border-red-200 m-1 rounded-lg"
-													>
-														<span
-															class="text-[10px] text-red-600 font-bold bg-white/90 px-1.5 py-0.5 rounded shadow-sm border border-red-100"
-														>
-															{viewMode === 'CLASSROOM' ? 'ครูติดสอน' : 'นักเรียนไม่ว่าง'}
-														</span>
-													</div>
-												{/if}
-												{#if entry}
-													{@const lockedBy = getDragOwner(entry.id, entry.classroom_course_id)}
-													<!-- Filled Slot -->
-													<div
-														draggable={!lockedBy}
-														ondragstart={(e) => !lockedBy && handleDragStart(e, entry, 'MOVE')}
-														ondragend={handleDragEnd}
-														class="h-full w-full bg-blue-50 border border-blue-200 rounded p-2 relative group flex flex-col cursor-move hover:shadow-md transition-all mobile-draggable {lockedBy
-															? 'opacity-60 grayscale-[0.5] cursor-not-allowed'
-															: ''}"
-														style={lockedBy
-															? `border-color: ${lockedBy.color}; box-shadow: 0 0 0 2px ${lockedBy.color};`
-															: ''}
-														role="button"
-														tabindex="0"
-													>
-														{#if lockedBy}
-															<div
-																class="absolute -top-3 right-[-4px] z-50 text-[9px] text-white px-1.5 py-0.5 rounded-full shadow-sm font-bold tracking-tight whitespace-nowrap"
-																style="background-color: {lockedBy.color}"
-															>
-																{lockedBy.name}
-															</div>
-														{/if}
-														{#if entry.entry_type && entry.entry_type !== 'COURSE'}
-															<div
-																class="flex-1 flex flex-col items-center justify-center p-1 text-center w-full"
-															>
-																<div
-																	class="font-bold text-sm mb-1 px-2 py-0.5 rounded-md w-full truncate
-                                                                    {entry.entry_type === 'BREAK'
-																		? 'bg-pink-50 text-pink-700 border border-pink-100'
-																		: entry.entry_type === 'HOMEROOM'
-																			? 'bg-purple-50 text-purple-700 border border-purple-100'
-																			: 'bg-green-50 text-green-700 border border-green-100'}"
-																>
-																	{entry.title || entry.entry_type}
-																</div>
-
-																{#if entry.room_id}
-																	{@const roomName =
-																		entry.room_code ||
-																		rooms.find((r) => r.id === entry.room_id)?.name_th}
-																	{#if roomName}
-																		<div
-																			class="text-[10px] text-slate-500 mt-1 flex items-center justify-center gap-1 font-medium w-full truncate"
-																		>
-																			<MapPin class="w-3 h-3 flex-shrink-0" />
-																			<span class="truncate">{roomName}</span>
-																		</div>
-																	{/if}
-																{/if}
-															</div>
-														{:else}
-															<div class="font-bold text-blue-900">{entry.subject_code}</div>
-															<div class="text-xs text-blue-700 line-clamp-2 mt-1 flex-1">
-																{entry.subject_name_th}
-															</div>
-
-															{#if viewMode === 'INSTRUCTOR' && entry.classroom_name}
-																<div
-																	class="text-[10px] text-orange-600 font-medium mt-1 bg-orange-50 px-1 rounded border border-orange-100 w-fit truncate max-w-full"
-																>
-																	สอน: {entry.classroom_name}
-																</div>
-															{/if}
-
-															{#if entry.instructor_name && viewMode === 'CLASSROOM'}
-																<div class="text-xs text-blue-600 mt-1 flex items-center gap-1">
-																	<span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-																	{entry.instructor_name}
-																</div>
-															{/if}
-
-															<!-- Room Display -->
-															{#if entry.room_id}
-																{@const roomName =
-																	entry.room_code ||
-																	rooms.find((r) => r.id === entry.room_id)?.name_th}
-																{#if roomName}
-																	<div
-																		class="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium bg-white/60 px-1.5 py-0.5 rounded border border-slate-100 w-fit max-w-full truncate"
-																	>
-																		<MapPin class="w-3 h-3 flex-shrink-0" />
-																		<span class="truncate">{roomName}</span>
-																	</div>
-																{/if}
-															{/if}
-														{/if}
-
-														<button
-															onclick={() => handleDeleteEntry(entry.id)}
-															class="absolute top-1 right-1 opacity-100 sm:opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded text-red-500 transition-all cursor-pointer z-10"
-															title="ลบ"
-														>
-															<Trash2 class="w-3.5 h-3.5" />
-														</button>
-													</div>
-												{:else}
-													<!-- Empty Drop Zone -->
-													<div
-														role="region"
-														aria-label="Drop zone"
-														ondragover={handleDragOver}
-														ondrop={(e) => handleDrop(e, day.value, period.id)}
-														class="h-full w-full flex items-center justify-center border-2 border-dashed border-transparent hover:border-blue-300 rounded transition-all"
-													>
-														<span
-															class="text-xs text-muted-foreground opacity-20 pointer-events-none"
-															>ว่าง</span
-														>
-													</div>
-												{/if}
-											</td>
-										{/each}
-									</tr>
-								{/each}
-							{/if}
-						</tbody>
-					</table>
-				</div>
-			</div>
-		</div>
-	{/if}
+		</Card.Root>
+	</div>
 </div>
 
-<!-- Room Selection Modal -->
 <Dialog.Root bind:open={showRoomModal}>
 	<Dialog.Content class="sm:max-w-[425px]">
 		<Dialog.Header>
-			<Dialog.Title>เลือกห้องเรียน (สถานที่เรียน)</Dialog.Title>
+			<Dialog.Title>เลือกห้องเรียน</Dialog.Title>
 			<Dialog.Description>
-				กรุณาเลือกห้องที่ใช้สอนสำหรับคาบนี้ (สามารถเว้นว่างได้)
+				กรุณาระบุห้องสำหรับวิชา {draggedCourse?.subject_code}
 			</Dialog.Description>
 		</Dialog.Header>
-		<div class="grid gap-4 py-4">
-			<div class="grid grid-cols-4 items-center gap-4">
-				<Label.Root for="room" class="text-right">ห้อง</Label.Root>
-				<div class="col-span-3">
-					<Select.Root type="single" bind:value={selectedRoomId}>
-						<Select.Trigger class="w-full">
-							{rooms.find((r) => r.id === selectedRoomId)?.name_th ||
-								(selectedRoomId === 'none' ? 'ไม่ระบุห้อง' : 'เลือกห้อง')}
-						</Select.Trigger>
-						<Select.Content class="max-h-[200px] overflow-y-auto">
-							<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
-							{#each rooms as room}
-								{#if !unavailableRooms.has(room.id)}
-									<Select.Item value={room.id}>
-										{room.name_th}
-										{room.room_type ? `(${room.room_type})` : ''}
-									</Select.Item>
-								{/if}
-							{/each}
-						</Select.Content>
-					</Select.Root>
+
+		<div class="py-4 space-y-4">
+			<div class="flex items-center justify-between bg-muted/30 p-2 rounded">
+				<div class="text-sm">
+					<span class="font-bold">วัน{pendingDropContext?.day}</span>,
+					<span class="text-muted-foreground"
+						>คาบที่ {periods.find((p) => p.id === pendingDropContext?.periodId)
+							?.order_index}</span
+					>
 				</div>
+				{#if loadingRoomsAvailability}
+					<div class="flex items-center gap-2 text-xs text-muted-foreground">
+						<Loader2 class="w-3 h-3 animate-spin" /> กำลังตรวจสอบห้องว่าง
+					</div>
+				{/if}
 			</div>
-			{#if rooms.length === 0}
-				<div class="bg-yellow-50 text-yellow-800 text-xs p-2 rounded border border-yellow-200">
-					<span class="font-bold">คำแนะนำ:</span> ยังไม่มีข้อมูลห้องเรียนในระบบ คุณสามารถไปเพิ่มห้องเรียนได้ที่เมนู
-					"ข้อมูลอาคารสถานที่"
-				</div>
-			{/if}
+
+			<div class="space-y-2">
+				<Label.Root>ห้องเรียน</Label.Root>
+				<Select.Root type="single" bind:value={selectedRoomId}>
+					<Select.Trigger class="w-full">
+						{rooms.find((r) => r.id === selectedRoomId)?.name_th ||
+							(selectedRoomId === 'none' ? 'ไม่ระบุห้อง' : 'เลือกห้อง')}
+					</Select.Trigger>
+					<Select.Content class="max-h-[300px] overflow-y-auto">
+						<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
+						{#each rooms as room}
+							{@const isBusy = unavailableRooms.has(room.id)}
+							{@const displaySelected = selectedRoomId === room.id}
+							<Select.Item
+								value={room.id}
+								disabled={isBusy && !displaySelected}
+								class="flex justify-between"
+							>
+								<span>{room.name_th} ({room.building_name})</span>
+								{#if isBusy && !displaySelected}
+									<span class="text-xs text-red-500">(ไม่ว่าง)</span>
+								{/if}
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
 		</div>
+
 		<Dialog.Footer>
 			<Button
 				variant="outline"
 				onclick={() => {
 					showRoomModal = false;
-					handleDragEnd();
+					handleDragEnd(); // Cancel drag
 				}}>ยกเลิก</Button
 			>
-			<Button onclick={confirmDropWithRoom}>ยืนยัน</Button>
+			<Button onclick={confirmDropWithRoom} disabled={submitting}>
+				{#if submitting}
+					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+				{/if}
+				ยืนยัน
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
 
 <!-- Batch Assign Modal -->
 <Dialog.Root bind:open={showBatchModal}>
-	<Dialog.Content class="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+	<Dialog.Content class="sm:max-w-[600px]">
 		<Dialog.Header>
 			<Dialog.Title>เพิ่มกิจกรรมพิเศษ (Batch)</Dialog.Title>
 			<Dialog.Description>
-				กำหนดกิจกรรม (เช่น พัก, โฮมรูม) ให้กับหลายห้องเรียนพร้อมกัน
+				เพิ่มกิจกรรมให้หลายห้องเรียนพร้อมกัน (เช่น กิจกรรมหน้าเสาธง, ประชุมระดับ)
 			</Dialog.Description>
 		</Dialog.Header>
 
 		<div class="grid gap-4 py-4">
-			<!-- Details -->
 			<div class="grid grid-cols-4 items-center gap-4">
-				<Label.Root class="text-right">หัวข้อ *</Label.Root>
+				<Label.Root class="text-right">ชื่อกิจกรรม</Label.Root>
 				<div class="col-span-3">
 					<input
-						class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+						type="text"
+						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 						bind:value={batchTitle}
-						placeholder="เช่น พักเที่ยง, กิจกรรมพัฒนาผู้เรียน"
+						placeholder="เช่น ประชุมระดับ, กิจกรรมพัฒนาผู้เรียน"
 					/>
 				</div>
 			</div>
@@ -1224,41 +1210,47 @@
 				<div class="col-span-3">
 					<Select.Root type="single" bind:value={batchType}>
 						<Select.Trigger class="w-full">
-							{batchType === 'BREAK' ? 'พัก' : batchType === 'HOMEROOM' ? 'โฮมรูม' : 'กิจกรรม'}
+							{batchType === 'ACTIVITY'
+								? 'กิจกรรม'
+								: batchType === 'ACADEMIC'
+									? 'วิชาการ'
+									: 'อื่นๆ'}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="ACTIVITY">กิจกรรม</Select.Item>
-							<Select.Item value="BREAK">พักเบรค/พักเที่ยง</Select.Item>
-							<Select.Item value="HOMEROOM">โฮมรูม</Select.Item>
+							<Select.Item value="ACADEMIC">วิชาการ</Select.Item>
 						</Select.Content>
 					</Select.Root>
 				</div>
 			</div>
 
-			<!-- Time -->
 			<div class="grid grid-cols-4 items-center gap-4">
-				<Label.Root class="text-right">วัน/คาบ *</Label.Root>
+				<Label.Root class="text-right">วัน/เวลา</Label.Root>
 				<div class="col-span-3 flex gap-2">
 					<Select.Root type="single" bind:value={batchDay}>
-						<Select.Trigger class="w-[100px]">
-							{DAYS.find((d) => d.value === batchDay)?.label || batchDay}
+						<Select.Trigger class="w-[120px]">
+							{DAYS.find((d) => d.value === batchDay)?.label}
 						</Select.Trigger>
 						<Select.Content>
-							{#each DAYS as d}
-								<Select.Item value={d.value}>{d.label}</Select.Item>
+							{#each DAYS as day}
+								<Select.Item value={day.value}>{day.label}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
 
 					<Select.Root type="single" bind:value={batchPeriodId}>
 						<Select.Trigger class="flex-1">
-							{periods.find((p) => p.id === batchPeriodId)?.name || 'เลือกคาบ'}
+							{periods.find((p) => p.id === batchPeriodId)
+								? `คาบ ${periods.find((p) => p.id === batchPeriodId)?.order_index} (${formatTime(periods.find((p) => p.id === batchPeriodId)?.start_time)})`
+								: 'เลือกคาบ'}
 						</Select.Trigger>
 						<Select.Content class="max-h-[200px] overflow-y-auto">
-							{#each periods as p}
-								<Select.Item value={p.id}
-									>{p.name} ({formatTime(p.start_time)}-{formatTime(p.end_time)})</Select.Item
-								>
+							{#each periods as period}
+								<Select.Item value={period.id}>
+									คาบ {period.order_index} ({formatTime(period.start_time)}-{formatTime(
+										period.end_time
+									)})
+								</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -1362,13 +1354,20 @@
 
 					<!-- GHOST DRAG ITEM -->
 					{#if $userDrags[user.user_id]}
+						{@const drag = $userDrags[user.user_id]}
 						<div
-							class="bg-background border rounded shadow-lg p-2 flex items-center gap-2 mt-2 opacity-90 scale-90 origin-top-left animate-in fade-in zoom-in duration-200"
+							class="bg-background border rounded shadow-lg p-2.5 flex items-center gap-3 mt-2 opacity-95 scale-90 origin-top-left animate-in fade-in zoom-in duration-200 min-w-[150px]"
 						>
-							<BookOpen class="w-4 h-4 text-primary" />
+							<div class="p-1.5 rounded bg-muted">
+								<BookOpen class="w-4 h-4 text-primary" />
+							</div>
 							<div class="flex flex-col">
-								<span class="text-xs font-bold">กำลังลาก...</span>
-								<span class="text-[10px] text-muted-foreground">ไปยังช่องว่าง</span>
+								<span class="text-xs font-bold leading-tight line-clamp-1"
+									>{drag.info?.code || 'วิชา'}</span
+								>
+								<span class="text-[10px] text-muted-foreground line-clamp-1"
+									>{drag.info?.title || 'กำลังลาก...'}</span
+								>
 							</div>
 						</div>
 					{/if}
