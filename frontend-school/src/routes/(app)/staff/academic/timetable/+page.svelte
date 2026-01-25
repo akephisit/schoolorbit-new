@@ -638,6 +638,15 @@
     }
     
     let filteredBatchClassroomsList = $derived.by(() => {
+        // Priority: Subject Grade Scope (Course Mode)
+        if (batchMode === 'COURSE' && batchSubjectId) {
+             const subj = subjectOptions.find(s => s.id === batchSubjectId);
+             if (subj?.grade_level_ids?.length) {
+                 return classrooms.filter(c => subj.grade_level_ids!.includes(c.grade_level_id));
+             }
+        }
+        
+        // Fallback: Manual Filter
         if (batchGradeFilterId === 'all') return classrooms;
         return classrooms.filter(c => c.grade_level_id === batchGradeFilterId);
     });
@@ -727,6 +736,10 @@
             }
         } catch(e: any) {
             toast.error(e.message || 'บันทึกไม่สำเร็จ');
+            // Notify others via WebSocket
+            if ($authStore.user) {
+                sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+            }
         } finally {
             submitting = false;
         }
@@ -1477,20 +1490,28 @@
 
 			<!-- Classrooms Selection -->
 			<div class="border-t pt-4 mt-2">
-				<div class="flex items-center gap-2 mb-3">
-					<Label.Root>กรองระดับชั้น:</Label.Root>
-					<select
-						class="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-						value={batchGradeFilterId}
-						onchange={(e) => (batchGradeFilterId = e.currentTarget.value)}
-						onmouseenter={loadBatchGradeLevels}
+				{#if !(batchMode === 'COURSE' && batchSubjectId)}
+					<div class="flex items-center gap-2 mb-3">
+						<Label.Root>กรองระดับชั้น:</Label.Root>
+						<select
+							class="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+							value={batchGradeFilterId}
+							onchange={(e) => (batchGradeFilterId = e.currentTarget.value)}
+							onmouseenter={loadBatchGradeLevels}
+						>
+							<option value="all">ทุกระดับชั้น ({classrooms.length} ห้อง)</option>
+							{#each batchGradeLevels as gl}
+								<option value={gl.id}>{gl.name}</option>
+							{/each}
+						</select>
+					</div>
+				{:else}
+					<div
+						class="flex items-center gap-2 mb-3 px-3 py-2 bg-blue-50/50 rounded border border-blue-100 text-xs text-blue-700"
 					>
-						<option value="all">ทุกระดับชั้น ({classrooms.length} ห้อง)</option>
-						{#each batchGradeLevels as gl}
-							<option value={gl.id}>{gl.name}</option>
-						{/each}
-					</select>
-				</div>
+						<span class="font-bold">Info:</span> ระบบแสดงเฉพาะห้องเรียนในระดับชั้นที่เปิดสอนวิชานี้
+					</div>
+				{/if}
 
 				<div class="flex justify-between items-center mb-2">
 					<Label.Root>เลือกห้องที่ต้องการ ({batchClassrooms.length})</Label.Root>

@@ -14,6 +14,7 @@ export interface LookupItem {
     id: string;
     name: string;
     code?: string;
+    grade_level_ids?: string[];
 }
 
 export interface StaffLookupItem {

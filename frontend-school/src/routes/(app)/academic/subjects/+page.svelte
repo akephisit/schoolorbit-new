@@ -544,77 +544,31 @@
 				</div>
 
 				<div class="space-y-2">
-					<Label>ระดับชั้นที่เปิดสอน</Label>
-					<Popover.Root>
-						<Popover.Trigger
-							class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-						>
+					<Label>ระดับชั้นที่เปิดสอน <span class="text-destructive">*</span></Label>
+					<Select.Root
+						type="single"
+						value={currentSubject.grade_level_ids?.[0] || ''}
+						onValueChange={(val) => (currentSubject.grade_level_ids = val ? [val] : [])}
+					>
+						<Select.Trigger>
 							{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
-								<span class="truncate text-left">
-									{currentSubject.grade_level_ids
-										.map((id) => gradeLevels.find((l) => l.id === id)?.name)
-										.filter(Boolean)
-										.join(', ')}
-								</span>
+								{@const selectedId = currentSubject.grade_level_ids[0]}
+								{gradeLevels.find((l) => l.id === selectedId)?.name || 'เลือกระดับชั้น'}
 							{:else}
-								<span class="text-muted-foreground">เลือกระดับชั้น...</span>
+								<span class="text-muted-foreground">เลือก 1 ระดับชั้น...</span>
 							{/if}
-							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-						</Popover.Trigger>
-						<Popover.Content class="w-[300px] p-0" align="start">
-							<Command.Root>
-								<Command.Input placeholder="ค้นหาระดับชั้น..." />
-								<Command.Empty>ไม่พบระดับชั้น</Command.Empty>
-								<Command.List class="max-h-[200px]">
-									<Command.Group>
-										{#each gradeLevels as level}
-											<Command.Item
-												value={level.name}
-												onSelect={() => {
-													const ids = currentSubject.grade_level_ids || [];
-													if (ids.includes(level.id)) {
-														currentSubject.grade_level_ids = ids.filter((id) => id !== level.id);
-													} else {
-														currentSubject.grade_level_ids = [...ids, level.id];
-													}
-												}}
-											>
-												<Check
-													class="mr-2 h-4 w-4 {currentSubject.grade_level_ids?.includes(level.id)
-														? 'opacity-100'
-														: 'opacity-0'}"
-												/>
-												{level.name}
-											</Command.Item>
-										{/each}
-									</Command.Group>
-								</Command.List>
-							</Command.Root>
-						</Popover.Content>
-					</Popover.Root>
-					{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
-						<div class="flex flex-wrap gap-1 mt-2">
-							{#each currentSubject.grade_level_ids as levelId}
-								{@const level = gradeLevels.find((l) => l.id === levelId)}
-								{#if level}
-									<Badge variant="secondary" class="text-xs">
-										{level.name}
-										<button
-											type="button"
-											class="ml-1 hover:text-destructive"
-											onclick={() => {
-												currentSubject.grade_level_ids = currentSubject.grade_level_ids?.filter(
-													(id) => id !== levelId
-												);
-											}}
-										>
-											×
-										</button>
-									</Badge>
-								{/if}
+						</Select.Trigger>
+						<Select.Content class="max-h-[300px]">
+							<Select.Item value="">(ไม่ระบุ)</Select.Item>
+							{#each gradeLevels as level}
+								<Select.Item value={level.id}>{level.name} ({level.code})</Select.Item>
 							{/each}
-						</div>
-					{/if}
+						</Select.Content>
+					</Select.Root>
+					<p class="text-[10px] text-muted-foreground">
+						* เลือกได้เพียง 1 ระดับชั้นต่อ 1 รหัสวิชา (หากวิชานี้เรียนหลายชั้น
+						ให้สร้างรหัส/วิชาใหม่แยกกัน)
+					</p>
 				</div>
 			</div>
 

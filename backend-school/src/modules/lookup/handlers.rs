@@ -699,6 +699,8 @@ struct SubjectRow {
     id: Uuid,
     code: String,
     name_th: String,
+    #[sqlx(default)]
+    grade_level_ids: Option<Vec<Uuid>>,
 }
 
 /// GET /api/lookup/subjects
@@ -724,7 +726,7 @@ pub async fn lookup_subjects(
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
     
-    let mut sql = String::from("SELECT id, code, name_th FROM subjects WHERE 1=1");
+    let mut sql = String::from("SELECT id, code, name_th, (SELECT array_agg(grade_level_id) FROM subject_grade_levels WHERE subject_id = subjects.id) as grade_level_ids FROM subjects WHERE 1=1");
     
     if active_only {
         sql.push_str(" AND is_active = true");
@@ -752,6 +754,7 @@ pub async fn lookup_subjects(
         id: r.id,
         name: r.name_th,
         code: Some(r.code),
+        grade_level_ids: r.grade_level_ids,
     }).collect();
     
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))

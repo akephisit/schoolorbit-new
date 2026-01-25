@@ -8,6 +8,9 @@ pub struct LookupItem {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub grade_level_ids: Option<Vec<Uuid>>,
 }
 
 /// Staff lookup item with title
