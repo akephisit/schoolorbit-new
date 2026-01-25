@@ -101,6 +101,7 @@ export interface UpdateMenuItemRequest {
 export interface ReorderItem {
 	id: string;
 	display_order: number;
+	group_id?: string;
 }
 
 // ==================== Menu Groups ====================

@@ -74,6 +74,7 @@ pub struct ReorderRequest {
 pub struct ReorderItem {
     pub id: Uuid,
     pub display_order: i32,
+    pub group_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -636,15 +637,27 @@ pub async fn reorder_menu_items(
             }
         }
 
-        // Update order
-        sqlx::query(
-            "UPDATE menu_items SET display_order = $1, updated_at = NOW() WHERE id = $2"
-        )
-        .bind(item.display_order)
-        .bind(item.id)
-        .execute(&pool)
-        .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to reorder items: {}", e)))?;
+        // Update order and group (if provided)
+        if let Some(group_id) = item.group_id {
+            sqlx::query(
+                "UPDATE menu_items SET display_order = $1, group_id = $2, updated_at = NOW() WHERE id = $3"
+            )
+            .bind(item.display_order)
+            .bind(group_id)
+            .bind(item.id)
+            .execute(&pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to reorder/move item: {}", e)))?;
+        } else {
+            sqlx::query(
+                "UPDATE menu_items SET display_order = $1, updated_at = NOW() WHERE id = $2"
+            )
+            .bind(item.display_order)
+            .bind(item.id)
+            .execute(&pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to reorder item: {}", e)))?;
+        }
     }
 
     Ok((

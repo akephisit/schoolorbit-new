@@ -195,34 +195,22 @@
     async function commitItemReorder() {
         // Save current state to backend
         try {
-            const promises: Promise<any>[] = [];
+            // Flatten all items with updated display_order AND group_id
+            const reorderPayload: {id: string, display_order: number, group_id: string}[] = [];
             
-            // 1. Check if the dragged item moved to a new group
-            if (draggedItem && originalItemGroupId && draggedItem.group_id !== originalItemGroupId) {
-                 // Explicitly call moveItemToGroup because reorderMenuItems might not handle group change
-                 // or we want to be safe.
-                 promises.push(moveItemToGroup(draggedItem.id, draggedItem.group_id));
-            }
-            
-            // 2. Reorder all items (updates display_order)
-            // We batch this.
-            const reorderPayload: {id: string, display_order: number}[] = [];
             for(const container of containers) {
-                container.nesteds.forEach((item, idx) => {
-                     reorderPayload.push({
-                         id: item.id,
-                         display_order: idx + 1
-                     });
+                container.nesteds.forEach((item, index) => {
+                    reorderPayload.push({
+                        id: item.id,
+                        display_order: index + 1,
+                        group_id: container.data.id // Must match the container it is in
+                    });
                 });
             }
             
             if(reorderPayload.length > 0) {
-                 promises.push(reorderMenuItems(reorderPayload));
-            }
-            
-            if (promises.length > 0) {
-                await Promise.all(promises);
-                toast.success('บันทึกลำดับสำเร็จ');
+                 await reorderMenuItems(reorderPayload);
+                 toast.success('บันทึกลำดับสำเร็จ');
             }
             
         } catch (e) {
