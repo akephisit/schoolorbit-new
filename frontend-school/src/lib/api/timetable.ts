@@ -59,6 +59,7 @@ export interface TimetableEntry {
     instructor_name?: string;
     classroom_name?: string;
     room_code?: string;
+    subject_name_en?: string;
     period_name?: string;
     start_time?: string;
     end_time?: string;

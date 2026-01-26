@@ -36,8 +36,11 @@
 		School,
 		BookOpen,
 		Users,
-        PlusCircle, MapPin
+        PlusCircle, MapPin, 
+        Download
 	} from 'lucide-svelte';
+    import { tick } from 'svelte';
+    import TimetableExportTemplate from '$lib/components/academic/TimetableExportTemplate.svelte';
     
     import { Checkbox } from '$lib/components/ui/checkbox';
     
@@ -91,7 +94,52 @@
 	let isDropPending = $state(false);
     // Identify what is being dragged: 'NEW' (from list) | 'MOVE' (from grid)
 	let dragType = $state<'NEW' | 'MOVE'>('NEW');
+
 	let draggedEntryId = $state<string | null>(null);
+
+    // Export State
+    let isExporting = $state(false);
+    let exportTemplateRef: HTMLElement;
+
+    async function handleExportPDF() {
+        if (isExporting || (!selectedClassroomId && !selectedInstructorId)) return;
+        
+        try {
+            isExporting = true;
+            toast.info('กำลังสร้างไฟล์ PDF...');
+            await tick(); // Wait for template to render with current data
+
+            // Lazy load html2pdf to avoid SSR issues
+            const html2pdf = (await import('html2pdf.js')).default;
+            
+            const element = document.getElementById('timetable-print-template');
+            if (!element) {
+                toast.error('ไม่พบ Template สำหรับพิมพ์');
+                isExporting = false;
+                return;
+            }
+
+            const targetName = viewMode === 'CLASSROOM' 
+                ? classrooms.find(c => c.id === selectedClassroomId)?.name 
+                : instructors.find(i => i.id === selectedInstructorId)?.name;
+            
+            const opt = {
+                margin: 10,
+                filename: `ตารางสอน_${targetName || 'export'}.pdf`,
+                image: { type: 'jpeg' as const, quality: 0.98 },
+                html2canvas: { scale: 2, logging: false },
+                jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
+            };
+
+            await html2pdf().set(opt).from(element).save();
+            toast.success('ดาวน์โหลดเรียบร้อย');
+        } catch (e) {
+            console.error(e);
+            toast.error('ไม่สามารถสร้าง PDF ได้');
+        } finally {
+            isExporting = false;
+        }
+    }
 
 	async function loadInitialData() {
 		try {
@@ -965,6 +1013,20 @@
 			<Button variant="outline" size="sm" onclick={() => (showBatchModal = true)}>
 				<PlusCircle class="w-4 h-4 mr-2" /> เพิ่มกิจกรรมพิเศษ (Batch)
 			</Button>
+
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={handleExportPDF}
+				disabled={isExporting || (!selectedClassroomId && !selectedInstructorId)}
+			>
+				{#if isExporting}
+					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+				{:else}
+					<Download class="w-4 h-4 mr-2" />
+				{/if}
+				Download PDF
+			</Button>
 		</div>
 
 		<div class="flex items-center gap-4 flex-wrap">
@@ -1344,6 +1406,25 @@
 </Dialog.Root>
 
 <!-- Batch Assign Modal -->
+<!-- Hidden Template for Print/Export -->
+<div class="fixed top-0 left-0 -z-50 opacity-0 pointer-events-none overflow-hidden h-0 w-0">
+	{#if selectedClassroomId || selectedInstructorId}
+		{@const targetName =
+			viewMode === 'CLASSROOM'
+				? 'ห้อง ' + (classrooms.find((c) => c.id === selectedClassroomId)?.name || '')
+				: 'ครู' + (instructors.find((i) => i.id === selectedInstructorId)?.name || '')}
+		{@const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || ''}
+		{@const yearName = academicYears.find((y) => y.id === selectedYearId)?.name || ''}
+
+		<TimetableExportTemplate
+			title={`ตารางเรียน ${targetName}`}
+			subTitle={`ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`}
+			{periods}
+			{timetableEntries}
+		/>
+	{/if}
+</div>
+
 <Dialog.Root bind:open={showBatchModal}>
 	<Dialog.Content class="sm:max-w-[600px]">
 		<Dialog.Header>
