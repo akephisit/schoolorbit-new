@@ -550,7 +550,12 @@
 			.map((course) => {
 				const scheduled = courseCounts.get(course.id) || 0;
 				const credit = course.subject_credit || 0;
-				const maxPeriods = credit > 0 ? Math.ceil(credit * 2) : 3; 
+				const hours = course.subject_hours || 0;
+				// Default 20 weeks per semester
+                // Priority: Hours > Credit > Default
+				const maxPeriods = hours > 0 
+                    ? Math.ceil(hours / 20)
+                    : (credit > 0 ? Math.ceil(credit * 2) : 3); 
 				
 				return {
 					...course,

@@ -49,6 +49,7 @@ pub async fn list_classroom_courses(
             s.name_th as subject_name_th,
             s.name_en as subject_name_en,
             s.credit as subject_credit,
+            s.hours_per_semester as subject_hours,
             s.type as subject_type,
             concat(u.first_name, ' ', u.last_name) as instructor_name,
             cr.name as classroom_name
