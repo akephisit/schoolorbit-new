@@ -1131,10 +1131,10 @@
 
 					<!-- Days Rows -->
 					{#each DAYS as day}
-						<div class="flex flex-1 border-b last:border-b-0 min-h-[100px]">
+						<div class="flex flex-1 min-h-[100px]">
 							<!-- Day Header -->
 							<div
-								class="w-24 shrink-0 border-r bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
+								class="w-24 shrink-0 border-r border-b bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
 							>
 								<!-- Day Indicator Line -->
 								{#if day.value === 'MON'}<div
@@ -1167,7 +1167,7 @@
 
 								<!-- Drop Zone -->
 								<div
-									class="flex-1 border-r min-w-[100px] relative transition-colors {isOccupied
+									class="flex-1 border-r border-b min-w-[100px] relative transition-colors {isOccupied
 										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
 										: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied
 										? 'bg-blue-50/30'
