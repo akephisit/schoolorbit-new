@@ -1120,7 +1120,7 @@
 							วัน/คาบ
 						</div>
 						{#each periods as period}
-							<div class="flex-1 min-w-[100px] p-2 border-r text-center relative group">
+							<div class="flex-1 min-w-[100px] p-2 border-r border-b text-center relative group">
 								<div class="text-sm font-bold">คาบที่ {period.order_index}</div>
 								<div class="text-xs text-muted-foreground">
 									{formatTime(period.start_time)}-{formatTime(period.end_time)}
