@@ -28,12 +28,7 @@
         Calendar
     } from 'lucide-svelte';
 
-    const PERIOD_TYPES = [
-        { value: 'TEACHING', label: 'เรียน', color: 'bg-blue-100 text-blue-800' },
-        { value: 'BREAK', label: 'พัก', color: 'bg-green-100 text-green-800' },
-        { value: 'ACTIVITY', label: 'กิจกรรม', color: 'bg-purple-100 text-purple-800' },
-        { value: 'HOMEROOM', label: 'โฮมรูม', color: 'bg-orange-100 text-orange-800' }
-    ];
+
 
     // State
     let loading = $state(true);
@@ -52,7 +47,7 @@
     
     // Form state for Select
     let formYearId = $state('');
-    let formPeriodType = $state('TEACHING');
+
 
     async function loadData() {
         try {
@@ -95,7 +90,6 @@
             name: formData.get('name') as string,
             start_time: formData.get('start_time') as string,
             end_time: formData.get('end_time') as string,
-            type: formData.get('type') as string,
             order_index: parseInt(formData.get('order_index') as string)
         };
 
@@ -135,14 +129,14 @@
     function openAddPeriod() {
         editingPeriod = null;
         formYearId = selectedYearId;
-        formPeriodType = 'TEACHING';
+
         showPeriodDialog = true;
     }
 
     function openEditPeriod(p: AcademicPeriod) {
         editingPeriod = p;
         formYearId = p.academic_year_id;
-        formPeriodType = p.type;
+
         showPeriodDialog = true;
     }
 
@@ -203,7 +197,6 @@
 				<Table.Row>
 					<Table.Head class="w-[60px]">ลำดับ</Table.Head>
 					<Table.Head>ชื่อคาบ</Table.Head>
-					<Table.Head>ประเภท</Table.Head>
 					<Table.Head>เวลาเริ่ม</Table.Head>
 					<Table.Head>เวลาจบ</Table.Head>
 					<Table.Head class="w-[100px]">สถานะ</Table.Head>
@@ -213,13 +206,13 @@
 			<Table.Body>
 				{#if loading}
 					<Table.Row
-						><Table.Cell colspan={7} class="h-24 text-center"
+						><Table.Cell colspan={6} class="h-24 text-center"
 							><Loader2 class="animate-spin mx-auto" /></Table.Cell
 						></Table.Row
 					>
 				{:else if periods.length === 0}
 					<Table.Row
-						><Table.Cell colspan={7} class="h-24 text-center text-muted-foreground">
+						><Table.Cell colspan={6} class="h-24 text-center text-muted-foreground">
 							{selectedYearId
 								? 'ยังไม่มีคาบเวลา กดปุ่ม "เพิ่มคาบเวลา" เพื่อเริ่มต้น'
 								: 'กรุณาเลือกปีการศึกษา'}
@@ -230,12 +223,6 @@
 						<Table.Row>
 							<Table.Cell class="font-bold text-center">{p.order_index}</Table.Cell>
 							<Table.Cell class="font-medium">{p.name}</Table.Cell>
-							<Table.Cell>
-								{@const typeInfo = PERIOD_TYPES.find((t) => t.value === p.type)}
-								<Badge variant="outline" class={typeInfo?.color || ''}>
-									{typeInfo?.label || p.type}
-								</Badge>
-							</Table.Cell>
 							<Table.Cell>{formatTime(p.start_time)}</Table.Cell>
 							<Table.Cell>{formatTime(p.end_time)}</Table.Cell>
 							<Table.Cell>
@@ -271,32 +258,16 @@
 			</Dialog.Header>
 			<form onsubmit={handleSavePeriod} class="space-y-4 py-4">
 				<input type="hidden" name="academic_year_id" value={formYearId} />
-				<input type="hidden" name="type" value={formPeriodType} />
 
-				<div class="grid grid-cols-2 gap-4">
-					<div class="col-span-1 space-y-2">
-						<Label>ลำดับคาบ <span class="text-red-500">*</span></Label>
-						<Input
-							type="number"
-							name="order_index"
-							value={editingPeriod?.order_index?.toString() || ''}
-							required
-							min="1"
-						/>
-					</div>
-					<div class="col-span-1 space-y-2">
-						<Label>ประเภท</Label>
-						<Select.Root type="single" bind:value={formPeriodType}>
-							<Select.Trigger class="w-full">
-								{PERIOD_TYPES.find((t) => t.value === formPeriodType)?.label}
-							</Select.Trigger>
-							<Select.Content>
-								{#each PERIOD_TYPES as t}
-									<Select.Item value={t.value}>{t.label}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
+				<div class="space-y-2">
+					<Label>ลำดับคาบ <span class="text-red-500">*</span></Label>
+					<Input
+						type="number"
+						name="order_index"
+						value={editingPeriod?.order_index?.toString() || ''}
+						required
+						min="1"
+					/>
 				</div>
 
 				<div class="space-y-2">

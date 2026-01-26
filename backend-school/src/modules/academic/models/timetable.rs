@@ -14,9 +14,7 @@ pub struct AcademicPeriod {
     pub name: String,
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
-    #[serde(rename = "type")]
-    #[sqlx(rename = "type")]
-    pub period_type: String, // TEACHING, BREAK, ACTIVITY, HOMEROOM
+
     pub order_index: i32,
     pub applicable_days: Option<String>, // "MON,TUE,WED" or null
     pub is_active: bool,
@@ -32,8 +30,7 @@ pub struct CreatePeriodRequest {
     pub name: String,
     pub start_time: String,  // Format: "HH:MM"
     pub end_time: String,    // Format: "HH:MM"
-    #[serde(rename = "type")]
-    pub period_type: String,
+
     pub order_index: i32,
     pub applicable_days: Option<String>,
 }
@@ -43,8 +40,7 @@ pub struct UpdatePeriodRequest {
     pub name: Option<String>,
     pub start_time: Option<String>,
     pub end_time: Option<String>,
-    #[serde(rename = "type")]
-    pub period_type: Option<String>,
+
     pub order_index: Option<i32>,
     pub applicable_days: Option<String>,
     pub is_active: Option<bool>,
@@ -53,7 +49,7 @@ pub struct UpdatePeriodRequest {
 #[derive(Debug, Deserialize)]
 pub struct PeriodQuery {
     pub academic_year_id: Option<Uuid>,
-    pub period_type: Option<String>,
+
     pub active_only: Option<bool>,
 }
 

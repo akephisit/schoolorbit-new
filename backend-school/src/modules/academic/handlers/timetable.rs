@@ -50,9 +50,7 @@ pub async fn list_periods(
         conditions.push(format!("academic_year_id = '{}'", year_id));
     }
 
-    if let Some(ptype) = &query.period_type {
-        conditions.push(format!("type = '{}'", ptype));
-    }
+
 
     if query.active_only.unwrap_or(false) {
         conditions.push("is_active = true".to_string());
@@ -97,9 +95,9 @@ pub async fn create_period(
     let period = sqlx::query_as::<_, AcademicPeriod>(
         r#"
         INSERT INTO academic_periods (
-            academic_year_id, name, start_time, end_time, type, order_index, applicable_days
+            academic_year_id, name, start_time, end_time, order_index, applicable_days
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
         "#
     )
@@ -107,7 +105,6 @@ pub async fn create_period(
     .bind(payload.name)
     .bind(start_time)
     .bind(end_time)
-    .bind(payload.period_type)
     .bind(payload.order_index)
     .bind(payload.applicable_days)
     .fetch_one(&pool)
@@ -154,10 +151,9 @@ pub async fn update_period(
             name = COALESCE($2, name),
             start_time = COALESCE($3, start_time),
             end_time = COALESCE($4, end_time),
-            type = COALESCE($5, type),
-            order_index = COALESCE($6, order_index),
-            applicable_days = COALESCE($7, applicable_days),
-            is_active = COALESCE($8, is_active),
+            order_index = COALESCE($5, order_index),
+            applicable_days = COALESCE($6, applicable_days),
+            is_active = COALESCE($7, is_active),
             updated_at = NOW()
         WHERE id = $1
         RETURNING *
@@ -167,7 +163,6 @@ pub async fn update_period(
     .bind(payload.name)
     .bind(start_time)
     .bind(end_time)
-    .bind(payload.period_type)
     .bind(payload.order_index)
     .bind(payload.applicable_days)
     .bind(payload.is_active)

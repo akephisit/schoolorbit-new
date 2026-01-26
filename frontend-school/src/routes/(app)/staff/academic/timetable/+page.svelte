@@ -1131,9 +1131,6 @@
 								<div class="text-xs text-muted-foreground">
 									{formatTime(period.start_time)}-{formatTime(period.end_time)}
 								</div>
-								{#if period.type === 'BREAK'}
-									<div class="absolute inset-x-0 bottom-0 h-0.5 bg-yellow-400"></div>
-								{/if}
 							</div>
 						{/each}
 					</div>
@@ -1176,28 +1173,16 @@
 
 								<!-- Drop Zone -->
 								<div
-									class="flex-1 border-r last:border-r-0 min-w-[100px] relative transition-colors {period.type ===
-									'BREAK'
-										? 'bg-muted/30'
-										: ''} {isOccupied
+									class="flex-1 border-r last:border-r-0 min-w-[100px] relative transition-colors {isOccupied
 										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
-										: 'hover:bg-accent/50'} {draggedCourse &&
-									!entry &&
-									!isOccupied &&
-									period.type !== 'BREAK'
+										: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied
 										? 'bg-blue-50/30'
 										: ''}"
 									ondragover={handleDragOver}
 									ondrop={(e) => handleDrop(e, day.value, period.id)}
 									role="application"
 								>
-									{#if period.type === 'BREAK'}
-										<div
-											class="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm font-medium select-none cursor-not-allowed"
-										>
-											พักเที่ยง
-										</div>
-									{:else if entry}
+									{#if entry}
 										<!-- Timetable Entry Card -->
 										<div
 											class="absolute inset-1 bg-blue-50/80 border border-blue-200 rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md transition-all group cursor-grab active:cursor-grabbing hover:border-blue-300 hover:bg-blue-100/50 {lockedBy

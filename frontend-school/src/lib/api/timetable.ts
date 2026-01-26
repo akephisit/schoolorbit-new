@@ -31,7 +31,6 @@ export interface AcademicPeriod {
     name: string;
     start_time: string;  // "HH:MM:SS"
     end_time: string;
-    type: 'TEACHING' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM';
     order_index: number;
     applicable_days?: string;
     is_active: boolean;
@@ -70,7 +69,7 @@ export interface CreatePeriodRequest {
     name: string;
     start_time: string;  // "HH:MM"
     end_time: string;
-    type: string;
+
     order_index: number;
     applicable_days?: string;
 }
@@ -113,12 +112,12 @@ export interface TimetableValidationResponse {
 
 export const listPeriods = async (filters: {
     academic_year_id?: string;
-    period_type?: string;
+
     active_only?: boolean;
 } = {}): Promise<{ data: AcademicPeriod[] }> => {
     const params = new URLSearchParams();
     if (filters.academic_year_id) params.append('academic_year_id', filters.academic_year_id);
-    if (filters.period_type) params.append('period_type', filters.period_type);
+
     if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
