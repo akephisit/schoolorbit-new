@@ -1084,7 +1084,7 @@
 							{:else}
 								<div class="flex items-center gap-1">
 									<School class="w-3 h-3" />
-									{course.classroom_name || 'ไม่ระบุห้อง'} ({course.grade_level_code || ''})
+									{course.classroom_name || 'ไม่ระบุห้อง'}
 								</div>
 							{/if}
 							<div>{course.subject_credit} นก.</div>
