@@ -1120,9 +1120,7 @@
 							วัน/คาบ
 						</div>
 						{#each periods as period}
-							<div
-								class="flex-1 min-w-[100px] p-2 border-r last:border-r-0 text-center relative group"
-							>
+							<div class="flex-1 min-w-[100px] p-2 border-r text-center relative group">
 								<div class="text-sm font-bold">คาบที่ {period.order_index}</div>
 								<div class="text-xs text-muted-foreground">
 									{formatTime(period.start_time)}-{formatTime(period.end_time)}
@@ -1169,7 +1167,7 @@
 
 								<!-- Drop Zone -->
 								<div
-									class="flex-1 border-r last:border-r-0 min-w-[100px] relative transition-colors {isOccupied
+									class="flex-1 border-r min-w-[100px] relative transition-colors {isOccupied
 										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
 										: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied
 										? 'bg-blue-50/30'
