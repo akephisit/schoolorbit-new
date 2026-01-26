@@ -779,10 +779,6 @@
             }
         } catch(e: any) {
             toast.error(e.message || 'บันทึกไม่สำเร็จ');
-            // Notify others via WebSocket
-            if ($authStore.user) {
-                sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
-            }
         } finally {
             submitting = false;
         }

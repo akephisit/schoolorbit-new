@@ -13,6 +13,7 @@ use crate::AppState;
 use crate::error::AppError;
 use crate::db::school_mapping::get_school_database_url;
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::modules::academic::websockets::TimetableEvent;
 use chrono::NaiveTime;
 
 /// Helper
@@ -786,6 +787,13 @@ pub async fn create_batch_timetable_entries(
     }
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Broadcast refresh event
+    let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    let event = TimetableEvent::TableRefresh { 
+        user_id: user_id.unwrap_or_default() 
+    };
+    let _ = state.ws_manager.get_or_create_room(subdomain, payload.academic_semester_id).send(event);
 
     Ok(Json(json!({ 
         "success": true, 
