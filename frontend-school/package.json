@@ -48,6 +48,7 @@
 		"compressorjs": "^1.2.1",
 		"date-fns": "^4.1.0",
 		"heic2any": "^0.0.4",
+		"html2pdf.js": "^0.14.0",
 		"lucide-svelte": "^0.561.0",
 		"mobile-drag-drop": "^3.0.0-rc.0",
 		"svelte-easy-crop": "^5.0.0",
