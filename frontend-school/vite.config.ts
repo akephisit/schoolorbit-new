@@ -80,7 +80,7 @@ export default defineConfig({
 		include: ['html2pdf.js']
 	},
 	ssr: {
-		noExternal: ['html2pdf.js']
+		external: ['html2pdf.js']
 	},
 	build: {
 		target: 'esnext',
