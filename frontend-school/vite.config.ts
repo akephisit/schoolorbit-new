@@ -76,6 +76,12 @@ function menuRegistryPlugin() {
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit(), menuRegistryPlugin()],
+	optimizeDeps: {
+		include: ['html2pdf.js']
+	},
+	ssr: {
+		noExternal: ['html2pdf.js']
+	},
 	build: {
 		target: 'esnext',
 		sourcemap: false, // Save time generating maps
