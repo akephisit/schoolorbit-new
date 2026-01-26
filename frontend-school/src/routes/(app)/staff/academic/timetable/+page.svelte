@@ -1115,7 +1115,7 @@
 					<!-- Header Row (Periods) -->
 					<div class="flex border-b sticky top-0 bg-background z-20 shadow-sm">
 						<div
-							class="w-24 shrink-0 p-3 border-r font-medium text-sm text-muted-foreground flex items-center justify-center bg-muted/30"
+							class="w-24 shrink-0 p-3 border-r font-medium text-sm text-muted-foreground flex items-center justify-center bg-background sticky left-0 z-30"
 						>
 							วัน/คาบ
 						</div>
@@ -1136,7 +1136,7 @@
 						<div class="flex flex-1 border-b last:border-b-0 min-h-[100px]">
 							<!-- Day Header -->
 							<div
-								class="w-24 shrink-0 border-r bg-muted/10 font-medium flex items-center justify-center relative"
+								class="w-24 shrink-0 border-r bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
 							>
 								<!-- Day Indicator Line -->
 								{#if day.value === 'MON'}<div
