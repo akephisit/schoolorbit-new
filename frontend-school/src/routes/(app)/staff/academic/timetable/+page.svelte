@@ -1113,7 +1113,7 @@
 			<div class="overflow-auto flex-1">
 				<div class="min-w-[800px] h-full flex flex-col">
 					<!-- Header Row (Periods) -->
-					<div class="flex sticky top-0 bg-background z-20 shadow-sm">
+					<div class="flex sticky top-0 bg-background z-20">
 						<div
 							class="w-24 shrink-0 p-3 border-r border-b font-medium text-sm text-muted-foreground flex items-center justify-center bg-background sticky left-0 z-30"
 						>
