@@ -793,7 +793,7 @@ pub async fn create_batch_timetable_entries(
     let event = TimetableEvent::TableRefresh { 
         user_id: user_id.unwrap_or_default() 
     };
-    let _ = state.ws_manager.get_or_create_room(subdomain, payload.academic_semester_id).send(event);
+    let _ = state.websocket_manager.get_or_create_room(subdomain, payload.academic_semester_id).send(event);
 
     Ok(Json(json!({ 
         "success": true, 

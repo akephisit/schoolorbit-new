@@ -89,6 +89,7 @@ pub struct WsParams {
     pub semester_id: Uuid,
     pub user_id: Uuid,
     pub name: String,
+    pub school_key: Option<String>,
 }
 
 // ==========================================
@@ -214,8 +215,13 @@ pub async fn timetable_websocket_handler(
         "default" 
     };
 
-    // No DB Query needed! Use subdomain as room identifier directly.
-    let school_key = subdomain.to_string();
+    // Priority: Query Param > Host Header
+    // This fixes the issue where Socket connects to API domain (school-api) but App is on Subdomain (snwsb)
+    let school_key = if let Some(key) = params.school_key.clone() {
+        key
+    } else {
+        subdomain.to_string()
+    };
 
     ws.on_upgrade(move |socket| handle_socket(socket, state, params, school_key))
 }

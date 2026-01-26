@@ -54,11 +54,21 @@ export function connectTimetableSocket(params: {
     let baseUrl = PUBLIC_BACKEND_URL || 'http://localhost:8081';
     let wsUrl = baseUrl.replace(/^http/, 'ws');
 
+    // Auto-detect school_key from hostname
+    let schoolKey = 'default';
+    if (typeof window !== 'undefined') {
+        const parts = window.location.hostname.split('.');
+        if (parts.length >= 3) {
+            schoolKey = parts[0];
+        }
+    }
+
     // Ensure semester_id/user_id are strings
     const safeParams = {
         ...params,
         semester_id: String(params.semester_id),
-        user_id: String(params.user_id)
+        user_id: String(params.user_id),
+        school_key: schoolKey
     };
 
     const qs = new URLSearchParams(safeParams).toString();
@@ -190,7 +200,7 @@ function handleMessage(msg: any) {
         }
         case 'TableRefresh': {
             const { user_id } = payload;
-            if (user_id === currentUserId) return; // Self already refreshed (usually)
+            // Always refresh to ensure consistent state across tabs/devices
             console.log('Received TableRefresh signal');
             refreshTrigger.update(n => n + 1);
             break;
