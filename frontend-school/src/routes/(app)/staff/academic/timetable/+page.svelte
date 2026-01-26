@@ -1010,23 +1010,25 @@
 				</button>
 			</div>
 
-			<Button variant="outline" size="sm" onclick={() => (showBatchModal = true)}>
-				<PlusCircle class="w-4 h-4 mr-2" /> เพิ่มกิจกรรมพิเศษ (Batch)
-			</Button>
+			<div class="flex items-center gap-2">
+				<Button variant="outline" size="sm" onclick={() => (showBatchModal = true)}>
+					<PlusCircle class="w-4 h-4 mr-2" /> เพิ่มกิจกรรมพิเศษ (Batch)
+				</Button>
 
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={handleExportPDF}
-				disabled={isExporting || (!selectedClassroomId && !selectedInstructorId)}
-			>
-				{#if isExporting}
-					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-				{:else}
-					<Download class="w-4 h-4 mr-2" />
-				{/if}
-				Download PDF
-			</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={handleExportPDF}
+					disabled={isExporting || (!selectedClassroomId && !selectedInstructorId)}
+				>
+					{#if isExporting}
+						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+					{:else}
+						<Download class="w-4 h-4 mr-2" />
+					{/if}
+					Download PDF
+				</Button>
+			</div>
 		</div>
 
 		<div class="flex items-center gap-4 flex-wrap">

@@ -42,21 +42,21 @@
 >
 	<!-- Header -->
 	<div class="text-center mb-6">
-		<h1 class="text-3xl font-bold mb-2 text-primary">{title}</h1>
+		<h1 class="text-3xl font-bold mb-2 text-[#1e3a8a]">{title}</h1>
 		{#if subTitle}
-			<p class="text-xl text-gray-600">{subTitle}</p>
+			<p class="text-xl text-[#4b5563]">{subTitle}</p>
 		{/if}
 	</div>
 
 	<!-- Grid -->
-	<table class="w-full border-collapse border border-gray-800">
+	<table class="w-full border-collapse border border-[#1f2937]">
 		<thead>
-			<tr class="bg-gray-100">
-				<th class="border border-gray-400 p-2 w-28 text-center text-lg">วัน / เวลา</th>
+			<tr class="bg-[#f3f4f6]">
+				<th class="border border-[#9ca3af] p-2 w-28 text-center text-lg">วัน / เวลา</th>
 				{#each periods as p}
-					<th class="border border-gray-400 p-2 text-center min-w-[80px]">
+					<th class="border border-[#9ca3af] p-2 text-center min-w-[80px]">
 						<div class="text-lg font-bold">คาบที่ {p.order_index}</div>
-						<div class="text-sm font-normal text-gray-600">
+						<div class="text-sm font-normal text-[#4b5563]">
 							{formatTime(p.start_time)} - {formatTime(p.end_time)}
 						</div>
 					</th>
@@ -69,7 +69,7 @@
 				<tr class="h-28">
 					<!-- Day Header -->
 					<td
-						class="border border-gray-400 p-4 font-bold text-center text-xl relative"
+						class="border border-[#9ca3af] p-4 font-bold text-center text-xl relative"
 						style="background-color: {day.color};"
 					>
 						{day.label}
@@ -78,23 +78,23 @@
 					<!-- Slots -->
 					{#each periods as p}
 						{@const entry = getEntry(day.value, p.id)}
-						<td class="border border-gray-400 p-1 text-center align-middle relative bg-white">
+						<td class="border border-[#9ca3af] p-1 text-center align-middle relative bg-white">
 							{#if entry}
 								<div
 									class="flex flex-col items-center justify-center gap-1 w-full h-full p-1 rounded"
 								>
 									<!-- Course Code & Name -->
-									<div class="font-bold text-lg text-blue-900 leading-tight">
+									<div class="font-bold text-lg text-[#1e3a8a] leading-tight">
 										{entry.subject_code || ''}
 									</div>
-									<div class="text-base text-gray-800 line-clamp-2 px-1">
+									<div class="text-base text-[#1f2937] line-clamp-2 px-1">
 										{entry.subject_name_th || entry.subject_name_en || 'วิชา'}
 									</div>
 
 									<!-- Detail (Room or Instructor depending on View) -->
 									{#if entry.room_code || entry.classroom_name}
 										<div
-											class="mt-1 text-sm bg-gray-100 px-2 py-0.5 rounded-full border border-gray-300"
+											class="mt-1 text-sm bg-[#f3f4f6] px-2 py-0.5 rounded-full border border-[#d1d5db]"
 										>
 											{#if entry.room_code}
 												ห้อง {entry.room_code}
@@ -106,7 +106,7 @@
 								</div>
 							{:else}
 								<!-- Empty Slot -->
-								<div class="text-gray-300 text-sm"></div>
+								<div class="text-[#d1d5db] text-sm"></div>
 							{/if}
 						</td>
 					{/each}
@@ -116,7 +116,7 @@
 	</table>
 
 	<!-- Footer / Metadata if needed -->
-	<div class="mt-4 flex justify-between text-xs text-gray-400">
+	<div class="mt-4 flex justify-between text-xs text-[#9ca3af]">
 		<div>ข้อมูล ณ วันที่ {new Date().toLocaleDateString('th-TH')}</div>
 		<div>SchoolOrbit TimeTable</div>
 	</div>
