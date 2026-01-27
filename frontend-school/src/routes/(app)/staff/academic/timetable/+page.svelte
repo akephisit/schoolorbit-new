@@ -600,7 +600,7 @@
                     const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
 
                     // Generate PDF
-                    await generateTimetablePDF(title, subTitle, periods, entries);
+                    await generateTimetablePDF(title, subTitle, periods, entries, exportType);
                     successCount++;
                     
                     // Small delay to prevent browser choking/blocking multiple downloads

@@ -52,7 +52,8 @@ export const generateTimetablePDF = async (
     title: string,
     subTitle: string,
     periods: any[],
-    timetableEntries: TimetableEntry[]
+    timetableEntries: TimetableEntry[],
+    viewMode: 'CLASSROOM' | 'INSTRUCTOR' = 'CLASSROOM'
 ) => {
     // 1. Configure Fonts
     pdfMake.fonts = fonts;
@@ -96,19 +97,53 @@ export const generateTimetablePDF = async (
         periods.forEach(p => {
             const entry = getEntry(timetableEntries, day.value, p.id);
             if (entry) {
-                row.push({
-                    stack: [
-                        { text: entry.subject_code || '', bold: true, fontSize: 10, color: '#1e3a8a' },
-                        { text: entry.subject_name_th || entry.subject_name_en || 'วิชา', fontSize: 9, margin: [0, 2] },
-                        (entry.room_code || entry.classroom_name) ? {
-                            text: entry.room_code ? `ห้อง ${entry.room_code}` : (entry.classroom_name || ''),
+                // Build Content Stack
+                const stack: any[] = [
+                    { text: entry.subject_code || '', bold: true, fontSize: 10, color: '#1e3a8a' },
+                    { text: entry.subject_name_th || entry.subject_name_en || 'วิชา', fontSize: 9, margin: [0, 0] }
+                ];
+
+                // Contextual Info based on View Mode
+                if (viewMode === 'CLASSROOM') {
+                    // For Student: Show Teacher
+                    if (entry.instructor_name) {
+                        stack.push({
+                            text: `ครู${entry.instructor_name}`,
                             fontSize: 8,
-                            background: '#f3f4f6',
-                            color: '#1f2937',
-                            margin: [0, 2],
-                            display: 'inline-block' // pdfmake doesn't strictly support inline-block like CSS, but we use stack
-                        } : ''
-                    ],
+                            color: '#4b5563',
+                            margin: [0, 1]
+                        });
+                    }
+                } else {
+                    // For Instructor: Show Class
+                    if (entry.classroom_name) {
+                        stack.push({
+                            text: entry.classroom_name,
+                            fontSize: 9,
+                            color: '#d97706', // Amber for distinction
+                            bold: true,
+                            margin: [0, 1]
+                        });
+                    }
+                }
+
+                // Room (Always show if available)
+                if (entry.room_code) {
+                    stack.push({
+                        text: `ห้อง ${entry.room_code}`,
+                        fontSize: 8,
+                        background: '#f3f4f6',
+                        color: '#1f2937',
+                        margin: [0, 2],
+                        // emulate padding with leading/trailing spaces if needed, but background works on text block
+                    });
+                } else if (viewMode === 'CLASSROOM' && entry.classroom_name && !entry.instructor_name) {
+                    // Fallback for classroom view if absolutely no other info, maybe show class name? 
+                    // Actually better to leave blank if no room to avoid confusion "Is M.1/1 a room?"
+                }
+
+                row.push({
+                    stack: stack,
                     alignment: 'center',
                     margin: [2, 5]
                 });
