@@ -1671,14 +1671,22 @@
 					<div class="col-span-3">
 						<Select.Root type="single" bind:value={batchType}>
 							<Select.Trigger class="w-full">
-								{batchType === 'ACTIVITY'
-									? 'กิจกรรม'
-									: batchType === 'ACADEMIC'
-										? 'วิชาการ'
-										: 'อื่นๆ'}
+								{#if batchType === 'ACTIVITY'}
+									กิจกรรม
+								{:else if batchType === 'BREAK'}
+									พักเบรค/พักเที่ยง
+								{:else if batchType === 'HOMEROOM'}
+									โฮมรูม
+								{:else if batchType === 'ACADEMIC'}
+									วิชาการ
+								{:else}
+									{batchType}
+								{/if}
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="ACTIVITY">กิจกรรม</Select.Item>
+								<Select.Item value="BREAK">พักเบรค/พักเที่ยง</Select.Item>
+								<Select.Item value="HOMEROOM">โฮมรูม</Select.Item>
 								<Select.Item value="ACADEMIC">วิชาการ</Select.Item>
 							</Select.Content>
 						</Select.Root>
