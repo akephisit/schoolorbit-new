@@ -28,6 +28,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import { Badge } from '$lib/components/ui/badge';
+    import * as Tooltip from '$lib/components/ui/tooltip';
 
 	import {
 		CalendarDays,
@@ -727,9 +728,42 @@
 		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
 			loadCourses();
 			loadTimetable();
+            
+            // Broadcast View Context
+            if ($authStore.user) {
+                sendTimetableEvent({
+                    type: 'CursorMove', 
+                    payload: {
+                        user_id: $authStore.user.id,
+                        x: 0, 
+                        y: 0,
+                        context: {
+                            view_mode: 'CLASSROOM',
+                            view_id: selectedClassroomId
+                        }
+                    }
+                });
+            }
+
 		} else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
             loadCourses();
             loadTimetable();
+
+            // Broadcast View Context
+             if ($authStore.user) {
+                sendTimetableEvent({
+                    type: 'CursorMove',
+                    payload: {
+                        user_id: $authStore.user.id,
+                        x: 0, 
+                        y: 0,
+                        context: {
+                            view_mode: 'INSTRUCTOR',
+                            view_id: selectedInstructorId
+                        }
+                    }
+                });
+            }
         }
 	});
     
@@ -1033,43 +1067,60 @@
 
 			{#if $isConnected && $activeUsers.length > 0}
 				<div class="w-px h-4 bg-border mx-1"></div>
-				<div class="flex -space-x-1.5">
-					{#each $activeUsers.slice(0, 4) as user (user.user_id)}
-						<!-- Interactive Avatar -->
-						<button
-							class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm transition-transform hover:scale-110 hover:z-10 cursor-pointer"
-							style="background-color: {user.color}"
-							title="{user.name} {user.context?.view_id && user.context?.view_mode === 'CLASSROOM'
-								? `(กำลังดูห้อง ${classrooms.find((c) => c.id === user.context?.view_id)?.name || '...'})`
-								: user.context?.view_id && user.context?.view_mode === 'INSTRUCTOR'
-									? `(กำลังดูตารางสอน ${instructors.find((i) => i.id === user.context?.view_id)?.name || '...'})`
-									: ''}"
-							onclick={() => {
-								if (
-									user.context?.view_mode &&
-									(user.context.view_mode === 'CLASSROOM' ||
-										user.context.view_mode === 'INSTRUCTOR')
-								) {
-									viewMode = user.context.view_mode;
-									if (user.context.view_id) {
-										if (viewMode === 'CLASSROOM') selectedClassroomId = user.context.view_id;
-										else selectedInstructorId = user.context.view_id;
-										toast.info(`ย้ายไปดูหน้าจอของ ${user.name}`);
-									}
-								}
-							}}
-						>
-							{user.name.charAt(0).toUpperCase()}
-						</button>
-					{/each}
-					{#if $activeUsers.length > 4}
-						<div
-							class="w-6 h-6 rounded-full bg-muted border-2 border-white flex items-center justify-center text-[8px] font-bold shadow-sm"
-						>
-							+{$activeUsers.length - 4}
-						</div>
-					{/if}
-				</div>
+				<Tooltip.Provider>
+					<div class="flex -space-x-1.5">
+						{#each $activeUsers.slice(0, 4) as user (user.user_id + (user.context?.view_id || ''))}
+							<!-- Interactive Avatar -->
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									<button
+										class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm transition-transform hover:scale-110 hover:z-10 cursor-pointer"
+										style="background-color: {user.color}"
+										onclick={() => {
+											if (
+												user.context?.view_mode &&
+												(user.context.view_mode === 'CLASSROOM' ||
+													user.context.view_mode === 'INSTRUCTOR')
+											) {
+												viewMode = user.context.view_mode;
+												if (user.context.view_id) {
+													if (viewMode === 'CLASSROOM') selectedClassroomId = user.context.view_id;
+													else selectedInstructorId = user.context.view_id;
+													toast.info(`ย้ายไปดูหน้าจอของ ${user.name}`);
+												}
+											}
+										}}
+									>
+										{user.name.charAt(0).toUpperCase()}
+									</button>
+								</Tooltip.Trigger>
+								<Tooltip.Content>
+									<p class="font-semibold">{user.name}</p>
+									{#if user.context?.view_id}
+										{#if user.context.view_mode === 'CLASSROOM'}
+											<p class="text-xs text-muted-foreground">
+												กำลังดูห้อง {classrooms.find((c) => c.id === user.context?.view_id)?.name ||
+													'(ไม่พบข้อมูลห้อง)'}
+											</p>
+										{:else if user.context.view_mode === 'INSTRUCTOR'}
+											<p class="text-xs text-muted-foreground">
+												กำลังดูตารางสอน {instructors.find((i) => i.id === user.context?.view_id)
+													?.name || '(ไม่พบข้อมูลครู)'}
+											</p>
+										{/if}
+									{/if}
+								</Tooltip.Content>
+							</Tooltip.Root>
+						{/each}
+						{#if $activeUsers.length > 4}
+							<div
+								class="w-6 h-6 rounded-full bg-muted border-2 border-white flex items-center justify-center text-[8px] font-bold shadow-sm"
+							>
+								+{$activeUsers.length - 4}
+							</div>
+						{/if}
+					</div>
+				</Tooltip.Provider>
 			{/if}
 		</div>
 	</div>
