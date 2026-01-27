@@ -595,7 +595,8 @@
 
                     // Prepare PDF Metadata
                     const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
-                    const yearName = academicYears.find((y) => y.id === selectedYearId)?.name || '';
+                    const yearObj = academicYears.find((y) => y.id === selectedYearId);
+                    const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
                     const title = `ตารางเรียน ${targetName}`;
                     const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
 
