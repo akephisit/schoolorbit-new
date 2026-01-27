@@ -58,6 +58,27 @@
 
     let { data }: { data: any } = $props();
 
+    // Helper: Generate consistent pastel color from string
+    function getSubjectColor(code: string): string {
+        if (!code) return '#eff6ff'; // default blue-50
+        let hash = 0;
+        for (let i = 0; i < code.length; i++) {
+            hash = code.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const h = Math.abs(hash) % 360;
+        return `hsl(${h}, 85%, 94%)`; // Light pastel
+    }
+
+    function getSubjectBorderColor(code: string): string {
+         if (!code) return '#bfdbfe'; // default blue-200
+        let hash = 0;
+        for (let i = 0; i < code.length; i++) {
+            hash = code.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const h = Math.abs(hash) % 360;
+        return `hsl(${h}, 60%, 80%)`; // Slightly darker for border
+    }
+
     // Export State
     let showExportModal = $state(false);
     let exportType = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
@@ -1171,9 +1192,12 @@
 				{#each unscheduledCourses as course}
 					{@const lockedBy = getDragOwner(undefined, course.id)}
 					<div
-						class="bg-background border rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative {lockedBy
+						class="border rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:brightness-95 transition-all group relative {lockedBy
 							? 'opacity-50 pointer-events-none'
 							: ''}"
+						style="background-color: {getSubjectColor(
+							course.subject_code
+						)}; border-color: {getSubjectBorderColor(course.subject_code)};"
 						draggable={!lockedBy}
 						ondragstart={(e) => handleDragStart(e, course, 'NEW')}
 						ondragend={handleDragEnd}
@@ -1310,10 +1334,15 @@
 									{#if entry}
 										<!-- Timetable Entry Card -->
 										<div
-											class="absolute inset-1 bg-blue-50/80 border border-blue-200 rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md transition-all group cursor-grab active:cursor-grabbing hover:border-blue-300 hover:bg-blue-100/50 {lockedBy
+											class="absolute inset-1 border rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group cursor-grab active:cursor-grabbing {lockedBy
 												? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
 													lockedBy.color
 												: ''}"
+											style="background-color: {getSubjectColor(
+												entry.subject_code || entry.title || ''
+											)}; border-color: {getSubjectBorderColor(
+												entry.subject_code || entry.title || ''
+											)};"
 											draggable={!lockedBy}
 											ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
 											ondragend={handleDragEnd}
