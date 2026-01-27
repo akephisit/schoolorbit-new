@@ -59,7 +59,10 @@
     let { data }: { data: any } = $props();
 
     // Helper: Generate consistent pastel color from string
-    function getSubjectColor(code: string): string {
+    function getSubjectColor(code: string, type?: string): string {
+        if (type === 'BREAK') return '#fef3c7'; // amber-100
+        if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#d1fae5'; // emerald-100
+        
         if (!code) return '#eff6ff'; // default blue-50
         let hash = 0;
         for (let i = 0; i < code.length; i++) {
@@ -69,8 +72,11 @@
         return `hsl(${h}, 85%, 94%)`; // Light pastel
     }
 
-    function getSubjectBorderColor(code: string): string {
-         if (!code) return '#bfdbfe'; // default blue-200
+    function getSubjectBorderColor(code: string, type?: string): string {
+        if (type === 'BREAK') return '#fcd34d'; // amber-300
+        if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#6ee7b7'; // emerald-300
+
+        if (!code) return '#bfdbfe'; // default blue-200
         let hash = 0;
         for (let i = 0; i < code.length; i++) {
             hash = code.charCodeAt(i) + ((hash << 5) - hash);
@@ -1339,9 +1345,11 @@
 													lockedBy.color
 												: ''}"
 											style="background-color: {getSubjectColor(
-												entry.subject_code || entry.title || ''
+												entry.subject_code || entry.title || '',
+												entry.entry_type
 											)}; border-color: {getSubjectBorderColor(
-												entry.subject_code || entry.title || ''
+												entry.subject_code || entry.title || '',
+												entry.entry_type
 											)};"
 											draggable={!lockedBy}
 											ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
