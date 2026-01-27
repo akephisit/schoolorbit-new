@@ -92,9 +92,7 @@ jobs:
             "name": "schoolorbit-school-${{ matrix.school.subdomain }}",
             "account_id": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
             "main": "build/index.js",
-            "build": {
-              "command": "npm run build"
-            },
+
             "compatibility_date": "2025-09-15",
             "compatibility_flags": ["nodejs_compat"],
             "assets": {
