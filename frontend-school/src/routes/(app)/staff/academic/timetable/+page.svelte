@@ -1039,9 +1039,11 @@
 						<button
 							class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm transition-transform hover:scale-110 hover:z-10 cursor-pointer"
 							style="background-color: {user.color}"
-							title="{user.name} {user.context?.view_id
-								? `(อยู่ที่ ${user.context.view_mode === 'CLASSROOM' ? 'ม.' : 'อ.'} ${user.context.view_id})`
-								: ''}"
+							title="{user.name} {user.context?.view_id && user.context?.view_mode === 'CLASSROOM'
+								? `(กำลังดูห้อง ${classrooms.find((c) => c.id === user.context?.view_id)?.name || '...'})`
+								: user.context?.view_id && user.context?.view_mode === 'INSTRUCTOR'
+									? `(กำลังดูตารางสอน ${instructors.find((i) => i.id === user.context?.view_id)?.name || '...'})`
+									: ''}"
 							onclick={() => {
 								if (
 									user.context?.view_mode &&
