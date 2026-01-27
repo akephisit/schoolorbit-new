@@ -1202,8 +1202,14 @@
 							? 'opacity-50 pointer-events-none'
 							: ''}"
 						style="background-color: {getSubjectColor(
-							course.subject_code
-						)}; border-color: {getSubjectBorderColor(course.subject_code)};"
+							viewMode === 'INSTRUCTOR'
+								? course.classroom_name || course.subject_code
+								: course.subject_code
+						)}; border-color: {getSubjectBorderColor(
+							viewMode === 'INSTRUCTOR'
+								? course.classroom_name || course.subject_code
+								: course.subject_code
+						)};"
 						draggable={!lockedBy}
 						ondragstart={(e) => handleDragStart(e, course, 'NEW')}
 						ondragend={handleDragEnd}
@@ -1345,10 +1351,14 @@
 													lockedBy.color
 												: ''}"
 											style="background-color: {getSubjectColor(
-												entry.subject_code || entry.title || '',
+												viewMode === 'INSTRUCTOR'
+													? entry.classroom_name || entry.subject_code || ''
+													: entry.subject_code || entry.title || '',
 												entry.entry_type
 											)}; border-color: {getSubjectBorderColor(
-												entry.subject_code || entry.title || '',
+												viewMode === 'INSTRUCTOR'
+													? entry.classroom_name || entry.subject_code || ''
+													: entry.subject_code || entry.title || '',
 												entry.entry_type
 											)};"
 											draggable={!lockedBy}
