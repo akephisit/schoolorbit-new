@@ -675,9 +675,10 @@
 					is_completed: scheduled >= maxPeriods
 				};
 			})
+			.filter((c) => !c.is_completed)
 			.sort((a, b) => {
-				if (a.is_completed === b.is_completed) return 0;
-				return a.is_completed ? 1 : -1;
+				// Sort by code?
+				return a.subject_code.localeCompare(b.subject_code);
 			});
 	});
 
