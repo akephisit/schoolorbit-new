@@ -1114,7 +1114,7 @@
 						{#if selectedSemesterId && semesters.find((s) => s.id === selectedSemesterId)}
 							ภาคเรียนที่ {semesters.find((s) => s.id === selectedSemesterId)?.term}
 						{:else}
-							เลือกเทอม
+							เลือกภาคเรียน
 						{/if}
 					</Select.Trigger>
 					<Select.Content>
