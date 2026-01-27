@@ -40,7 +40,7 @@
         Download
 	} from 'lucide-svelte';
     import { tick } from 'svelte';
-    import TimetableExportTemplate from '$lib/components/academic/TimetableExportTemplate.svelte';
+    import { generateTimetablePDF } from '$lib/utils/pdf';
     
     import { Checkbox } from '$lib/components/ui/checkbox';
     
@@ -57,6 +57,12 @@
     } from '$lib/stores/timetable-socket';
 
     let { data }: { data: any } = $props();
+
+    // Export State
+    let showExportModal = $state(false);
+    let exportType = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
+    let exportTargetIds = $state<string[]>([]);
+    let isExporting = $state(false);
 
 	const DAYS = [
 		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
@@ -97,49 +103,7 @@
 
 	let draggedEntryId = $state<string | null>(null);
 
-    // Export State
-    let isExporting = $state(false);
-    let exportTemplateRef: HTMLElement;
 
-    async function handleExportPDF() {
-        if (isExporting || (!selectedClassroomId && !selectedInstructorId)) return;
-        
-        try {
-            isExporting = true;
-            toast.info('กำลังสร้างไฟล์ PDF...');
-            await tick(); // Wait for template to render with current data
-
-            // Lazy load html2pdf to avoid SSR issues
-            const html2pdf = (await import('html2pdf.js')).default;
-            
-            const element = document.getElementById('timetable-print-template');
-            if (!element) {
-                toast.error('ไม่พบ Template สำหรับพิมพ์');
-                isExporting = false;
-                return;
-            }
-
-            const targetName = viewMode === 'CLASSROOM' 
-                ? classrooms.find(c => c.id === selectedClassroomId)?.name 
-                : instructors.find(i => i.id === selectedInstructorId)?.name;
-            
-            const opt = {
-                margin: 10,
-                filename: `ตารางสอน_${targetName || 'export'}.pdf`,
-                image: { type: 'jpeg' as const, quality: 0.98 },
-                html2canvas: { scale: 2, logging: false },
-                jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
-            };
-
-            await html2pdf().set(opt).from(element).save();
-            toast.success('ดาวน์โหลดเรียบร้อย');
-        } catch (e) {
-            console.error(e);
-            toast.error('ไม่สามารถสร้าง PDF ได้');
-        } finally {
-            isExporting = false;
-        }
-    }
 
 	async function loadInitialData() {
 		try {
@@ -585,6 +549,84 @@
 		}
 	}
 
+    async function handleExportPDF() {
+        showExportModal = true;
+        // Default to current view settings
+        exportType = viewMode;
+        exportTargetIds = [];
+        if (viewMode === 'CLASSROOM' && selectedClassroomId) {
+            exportTargetIds = [selectedClassroomId];
+        } else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
+            exportTargetIds = [selectedInstructorId];
+        }
+    }
+
+    async function confirmExport() {
+        if (exportTargetIds.length === 0) return;
+        
+        try {
+            isExporting = true;
+            let successCount = 0;
+            let failCount = 0;
+
+            const total = exportTargetIds.length;
+            
+            // Loop through each target
+            for (let i = 0; i < total; i++) {
+                const id = exportTargetIds[i];
+                try {
+                    // Fetch Data
+                    let entries: TimetableEntry[] = [];
+                    let targetName = '';
+                    
+                    if (exportType === 'CLASSROOM') {
+                        const room = classrooms.find(c => c.id === id);
+                        if (!room) continue;
+                        targetName = `ห้อง ${room.name}`;
+                        const res = await listTimetableEntries({ classroom_id: id, academic_semester_id: selectedSemesterId });
+                        entries = res.data;
+                    } else {
+                        const teacher = instructors.find(inst => inst.id === id);
+                        if (!teacher) continue;
+                        targetName = `ครู${teacher.name}`;
+                        const res = await listTimetableEntries({ instructor_id: id, academic_semester_id: selectedSemesterId });
+                        entries = res.data;
+                    }
+
+                    // Prepare PDF Metadata
+                    const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
+                    const yearName = academicYears.find((y) => y.id === selectedYearId)?.name || '';
+                    const title = `ตารางเรียน ${targetName}`;
+                    const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
+
+                    // Generate PDF
+                    await generateTimetablePDF(title, subTitle, periods, entries);
+                    successCount++;
+                    
+                    // Small delay to prevent browser choking/blocking multiple downloads
+                    if (i < total - 1) await new Promise(r => setTimeout(r, 500));
+
+                } catch (err) {
+                    console.error(`Failed to export ${id}`, err);
+                    failCount++;
+                }
+            }
+            
+            if (failCount === 0) {
+                toast.success(`ดาวน์โหลดเสร็จสิ้น ${successCount} รายการ`);
+                showExportModal = false;
+            } else {
+                toast.warning(`ดาวน์โหลดสำเร็จ ${successCount} รายการ, ล้มเหลว ${failCount} รายการ`);
+            }
+
+        } catch(e: any) {
+            toast.error('เกิดข้อผิดพลาดในการดาวน์โหลด');
+            console.error(e);
+        } finally {
+            isExporting = false;
+        }
+    }
+
 	let unscheduledCourses = $derived.by(() => {
 		const courseCounts = new Map<string, number>();
 		timetableEntries.forEach((entry) => {
@@ -612,8 +654,12 @@
 					is_completed: scheduled >= maxPeriods
 				};
 			})
-			.filter(course => !course.is_completed); 
+			.sort((a, b) => {
+				if (a.is_completed === b.is_completed) return 0;
+				return a.is_completed ? 1 : -1;
+			});
 	});
+
 
 	$effect(() => {
 		if (selectedYearId) {
@@ -1407,25 +1453,113 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- Batch Assign Modal -->
-<!-- Hidden Template for Print/Export -->
-<div class="fixed top-0 left-0 -z-50 opacity-0 pointer-events-none overflow-hidden h-0 w-0">
-	{#if selectedClassroomId || selectedInstructorId}
-		{@const targetName =
-			viewMode === 'CLASSROOM'
-				? 'ห้อง ' + (classrooms.find((c) => c.id === selectedClassroomId)?.name || '')
-				: 'ครู' + (instructors.find((i) => i.id === selectedInstructorId)?.name || '')}
-		{@const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || ''}
-		{@const yearName = academicYears.find((y) => y.id === selectedYearId)?.name || ''}
+<!-- Export Modal -->
+<Dialog.Root bind:open={showExportModal}>
+	<Dialog.Content class="sm:max-w-[500px]">
+		<Dialog.Header>
+			<Dialog.Title>Download PDF</Dialog.Title>
+			<Dialog.Description>เลือกข้อมูลที่ต้องการดาวน์โหลดตารางเรียน</Dialog.Description>
+		</Dialog.Header>
 
-		<TimetableExportTemplate
-			title={`ตารางเรียน ${targetName}`}
-			subTitle={`ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`}
-			{periods}
-			{timetableEntries}
-		/>
-	{/if}
-</div>
+		<div class="grid gap-4 py-4">
+			<div class="flex flex-col gap-2">
+				<Label.Root>ประเภท</Label.Root>
+				<div class="flex gap-2">
+					<Button
+						variant={exportType === 'CLASSROOM' ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => {
+							exportType = 'CLASSROOM';
+							exportTargetIds = [];
+						}}
+						class="flex-1"
+					>
+						<Users class="w-4 h-4 mr-2" /> ห้องเรียน
+					</Button>
+					<Button
+						variant={exportType === 'INSTRUCTOR' ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => {
+							exportType = 'INSTRUCTOR';
+							exportTargetIds = [];
+						}}
+						class="flex-1"
+					>
+						<School class="w-4 h-4 mr-2" /> ครูผู้สอน
+					</Button>
+				</div>
+			</div>
+
+			<div class="flex flex-col gap-2 max-h-[300px] overflow-y-auto border rounded p-2">
+				<div class="flex justify-between items-center mb-2 px-1">
+					<Label.Root>เลือกรายการ ({exportTargetIds.length})</Label.Root>
+					<Button
+						variant="ghost"
+						size="sm"
+						class="h-6 text-xs"
+						onclick={() => {
+							if (exportType === 'CLASSROOM') {
+								if (exportTargetIds.length === classrooms.length) exportTargetIds = [];
+								else exportTargetIds = classrooms.map((c) => c.id);
+							} else {
+								if (exportTargetIds.length === instructors.length) exportTargetIds = [];
+								else exportTargetIds = instructors.map((i) => i.id);
+							}
+						}}
+					>
+						{exportTargetIds.length > 0 ? 'ล้างการเลือก' : 'เลือกทั้งหมด'}
+					</Button>
+				</div>
+
+				{#if exportType === 'CLASSROOM'}
+					{#each classrooms as room}
+						<div class="flex items-center space-x-2 p-1 hover:bg-muted rounded">
+							<Checkbox
+								id="export-room-{room.id}"
+								checked={exportTargetIds.includes(room.id)}
+								onCheckedChange={(checked) => {
+									if (checked) exportTargetIds = [...exportTargetIds, room.id];
+									else exportTargetIds = exportTargetIds.filter((id) => id !== room.id);
+								}}
+							/>
+							<Label.Root for="export-room-{room.id}" class="flex-1 cursor-pointer">
+								{room.name}
+							</Label.Root>
+						</div>
+					{/each}
+				{:else}
+					{#each instructors as teacher}
+						<div class="flex items-center space-x-2 p-1 hover:bg-muted rounded">
+							<Checkbox
+								id="export-teacher-{teacher.id}"
+								checked={exportTargetIds.includes(teacher.id)}
+								onCheckedChange={(checked) => {
+									if (checked) exportTargetIds = [...exportTargetIds, teacher.id];
+									else exportTargetIds = exportTargetIds.filter((id) => id !== teacher.id);
+								}}
+							/>
+							<Label.Root for="export-teacher-{teacher.id}" class="flex-1 cursor-pointer">
+								{teacher.name}
+							</Label.Root>
+						</div>
+					{/each}
+				{/if}
+			</div>
+		</div>
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showExportModal = false)}>ยกเลิก</Button>
+			<Button onclick={confirmExport} disabled={isExporting || exportTargetIds.length === 0}>
+				{#if isExporting}
+					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+				{/if}
+				ดาวน์โหลด ({exportTargetIds.length})
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Batch Assign Modal -->
 
 <Dialog.Root bind:open={showBatchModal}>
 	<Dialog.Content class="sm:max-w-[600px]">
