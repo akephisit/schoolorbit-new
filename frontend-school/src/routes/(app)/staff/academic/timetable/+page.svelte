@@ -597,7 +597,21 @@
                     const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
                     const yearObj = academicYears.find((y) => y.id === selectedYearId);
                     const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
-                    const title = `ตารางเรียน ${targetName}`;
+                    
+                    let title = '';
+                    if (exportType === 'CLASSROOM') {
+                        // Assuming room.name is something like "ม.4/1" or "4/1"
+                        // User request: "ตารางเรียน ชั้นมัธยมศึกษาปีที่ 4/1"
+                        // We will use "ชั้น" + targetName (which is "ห้อง ...")
+                        // Wait, targetName was constructed as `ห้อง ${room.name}`.
+                        // Let's reconstruct cleanly.
+                         const room = classrooms.find(c => c.id === id);
+                         const roomName = room ? room.name : '';
+                         // Try to map short names if needed, but for now just use "ชั้น" prefix if not present
+                         title = `ตารางเรียน ชั้น${roomName.replace('ม.', 'มัธยมศึกษาปีที่ ')}`;
+                    } else {
+                        title = `ตารางสอน ${targetName}`;
+                    }
                     const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
 
                     // Generate PDF

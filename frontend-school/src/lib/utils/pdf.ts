@@ -116,8 +116,12 @@ export const generateTimetablePDF = async (
                 if (viewMode === 'CLASSROOM') {
                     // For Student: Show Teacher
                     if (entry.instructor_name) {
+                        const teacherName = entry.instructor_name.startsWith('ครู')
+                            ? entry.instructor_name
+                            : `ครู${entry.instructor_name}`;
+
                         stack.push({
-                            text: `ครู${entry.instructor_name}`,
+                            text: teacherName,
                             fontSize: 8,
                             color: '#4b5563',
                             margin: [0, 1]
