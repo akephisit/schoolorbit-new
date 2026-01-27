@@ -588,7 +588,7 @@
                     } else {
                         const teacher = instructors.find(inst => inst.id === id);
                         if (!teacher) continue;
-                        targetName = `ครู${teacher.name}`;
+                        targetName = teacher.name.startsWith('ครู') ? teacher.name : `ครู${teacher.name}`;
                         const res = await listTimetableEntries({ instructor_id: id, academic_semester_id: selectedSemesterId });
                         entries = res.data;
                     }
@@ -1062,18 +1062,13 @@
 					<PlusCircle class="w-4 h-4 mr-2" /> เพิ่มกิจกรรมพิเศษ (Batch)
 				</Button>
 
-				<Button
-					variant="outline"
-					size="sm"
-					onclick={handleExportPDF}
-					disabled={isExporting || (!selectedClassroomId && !selectedInstructorId)}
-				>
+				<Button variant="outline" size="sm" onclick={handleExportPDF} disabled={isExporting}>
 					{#if isExporting}
 						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
 					{:else}
 						<Download class="w-4 h-4 mr-2" />
 					{/if}
-					Download PDF
+					ดาวน์โหลด PDF
 				</Button>
 			</div>
 		</div>
