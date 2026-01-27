@@ -98,10 +98,19 @@ export const generateTimetablePDF = async (
             const entry = getEntry(timetableEntries, day.value, p.id);
             if (entry) {
                 // Build Content Stack
-                const stack: any[] = [
-                    { text: entry.subject_code || '', bold: true, fontSize: 10, color: '#1e3a8a' },
-                    { text: entry.subject_name_th || entry.subject_name_en || 'วิชา', fontSize: 9, margin: [0, 0] }
-                ];
+                const stack: any[] = [];
+
+                if (entry.entry_type === 'COURSE') {
+                    stack.push(
+                        { text: entry.subject_code || '', bold: true, fontSize: 10, color: '#1e3a8a' },
+                        { text: entry.subject_name_th || entry.subject_name_en || 'วิชา', fontSize: 9, margin: [0, 0] }
+                    );
+                } else {
+                    // Custom Activity / Break / Homeroom
+                    stack.push(
+                        { text: entry.title || 'กิจกรรม', bold: true, fontSize: 10, color: '#047857', margin: [0, 2] }
+                    );
+                }
 
                 // Contextual Info based on View Mode
                 if (viewMode === 'CLASSROOM') {
