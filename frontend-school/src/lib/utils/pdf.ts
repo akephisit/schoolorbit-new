@@ -115,10 +115,11 @@ export const generateTimetablePDF = async (
                 // Contextual Info based on View Mode
                 if (viewMode === 'CLASSROOM') {
                     // For Student: Show Teacher
-                    if (entry.instructor_name) {
-                        const teacherName = entry.instructor_name.startsWith('ครู')
-                            ? entry.instructor_name
-                            : `ครู${entry.instructor_name}`;
+                    if (entry.instructor_name && entry.instructor_name.trim() && entry.instructor_name !== '-') {
+                        const rawName = entry.instructor_name.trim();
+                        const teacherName = rawName.startsWith('ครู')
+                            ? rawName
+                            : `ครู${rawName}`;
 
                         stack.push({
                             text: teacherName,

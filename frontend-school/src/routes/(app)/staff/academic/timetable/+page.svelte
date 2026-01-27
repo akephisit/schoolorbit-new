@@ -606,9 +606,15 @@
                         // Wait, targetName was constructed as `ห้อง ${room.name}`.
                         // Let's reconstruct cleanly.
                          const room = classrooms.find(c => c.id === id);
-                         const roomName = room ? room.name : '';
-                         // Try to map short names if needed, but for now just use "ชั้น" prefix if not present
-                         title = `ตารางเรียน ชั้น${roomName.replace('ม.', 'มัธยมศึกษาปีที่ ')}`;
+                         let roomName = room ? room.name : '';
+                         
+                         // Expand abbreviated prefixes
+                         if (roomName.startsWith('ม.')) roomName = roomName.replace('ม.', 'มัธยมศึกษาปีที่ ');
+                         else if (roomName.startsWith('ป.')) roomName = roomName.replace('ป.', 'ประถมศึกษาปีที่ ');
+                         else if (roomName.startsWith('อ.')) roomName = roomName.replace('อ.', 'อนุบาลปีที่ ');
+                         else if (/^\d/.test(roomName)) roomName = `มัธยมศึกษาปีที่ ${roomName}`; // Fallback for plain "4/1"
+                         
+                         title = `ตารางเรียน ชั้น${roomName}`;
                     } else {
                         title = `ตารางสอน ${targetName}`;
                     }
