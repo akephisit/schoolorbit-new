@@ -5,14 +5,7 @@ import type { TDocumentDefinitions, CustomTableLayout } from 'pdfmake/interfaces
 import type { TimetableEntry } from '$lib/api/timetable';
 
 // Define fonts
-const fonts = {
-    Sarabun: {
-        normal: window.location.origin + '/fonts/Sarabun-Regular.ttf',
-        bold: window.location.origin + '/fonts/Sarabun-Bold.ttf',
-        italics: window.location.origin + '/fonts/Sarabun-Regular.ttf', // Fallback
-        bolditalics: window.location.origin + '/fonts/Sarabun-Bold.ttf', // Fallback
-    }
-};
+// Define fonts moved inside function to avoid SSR window error
 
 // Helper: Format time
 const formatTime = (timeStr: string) => {
@@ -56,6 +49,14 @@ export const generateTimetablePDF = async (
     viewMode: 'CLASSROOM' | 'INSTRUCTOR' = 'CLASSROOM'
 ) => {
     // 1. Configure Fonts
+    const fonts = {
+        Sarabun: {
+            normal: window.location.origin + '/fonts/Sarabun-Regular.ttf',
+            bold: window.location.origin + '/fonts/Sarabun-Bold.ttf',
+            italics: window.location.origin + '/fonts/Sarabun-Regular.ttf',
+            bolditalics: window.location.origin + '/fonts/Sarabun-Bold.ttf',
+        }
+    };
     pdfMake.fonts = fonts;
 
     // 2. Build Table Body
