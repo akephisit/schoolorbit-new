@@ -40,12 +40,23 @@ export const isConnected: Writable<boolean> = writable(false);
 
 let socket: WebSocket | null = null;
 let currentUserId: string | null = null;
+let reconnectTimer: any = null;
+let shouldReconnect = false;
+let lastParams: any = null;
 
 export function connectTimetableSocket(params: {
     semester_id: string,
     user_id: string,
     name: string
 }) {
+    // If we are already connected with same params, do nothing?
+    // Or force reconnect? Let's force reconnect to be safe but debounce?
+
+    // Clear any pending reconnect
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    shouldReconnect = true;
+    lastParams = params;
+
     if (socket) {
         socket.close();
     }
@@ -80,6 +91,8 @@ export function connectTimetableSocket(params: {
     socket.onopen = () => {
         console.log('WS Connected');
         isConnected.set(true);
+        // Clear reconnect timer if any (redundant but safe)
+        if (reconnectTimer) clearTimeout(reconnectTimer);
     };
 
     socket.onmessage = (event) => {
@@ -96,14 +109,28 @@ export function connectTimetableSocket(params: {
         activeUsers.set([]);
         remoteCursors.set({});
         userDrags.set({});
+
+        // Auto Reconnect
+        if (shouldReconnect) {
+            console.log('Attempting to reconnect in 3s...');
+            reconnectTimer = setTimeout(() => {
+                if (shouldReconnect && lastParams) {
+                    connectTimetableSocket(lastParams);
+                }
+            }, 3000);
+        }
     };
 
     socket.onerror = (err) => {
         console.error('WS Error', err);
+        // On error, onclose usually fires too, but just in case
     };
 }
 
 export function disconnectTimetableSocket() {
+    shouldReconnect = false;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+
     if (socket) {
         socket.close();
         socket = null;
