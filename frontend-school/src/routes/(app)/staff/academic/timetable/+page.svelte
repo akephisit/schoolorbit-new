@@ -1111,7 +1111,11 @@
 			<div class="w-[200px]">
 				<Select.Root type="single" bind:value={selectedSemesterId}>
 					<Select.Trigger class="w-full">
-						{semesters.find((s) => s.id === selectedSemesterId)?.term || 'เลือกเทอม'}
+						{#if selectedSemesterId && semesters.find((s) => s.id === selectedSemesterId)}
+							ภาคเรียนที่ {semesters.find((s) => s.id === selectedSemesterId)?.term}
+						{:else}
+							เลือกเทอม
+						{/if}
 					</Select.Trigger>
 					<Select.Content>
 						{#each semesters as term}
