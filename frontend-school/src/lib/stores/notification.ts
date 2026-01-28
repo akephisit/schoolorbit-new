@@ -195,10 +195,22 @@ function createNotificationStore() {
 
                 if (!p256dh || !auth) return false;
 
+                function arrayBufferToUrlSafeBase64(buffer: ArrayBuffer): string {
+                    let binary = '';
+                    const bytes = new Uint8Array(buffer);
+                    for (let i = 0; i < bytes.byteLength; i++) {
+                        binary += String.fromCharCode(bytes[i]);
+                    }
+                    return window.btoa(binary)
+                        .replace(/\+/g, '-')
+                        .replace(/\//g, '_')
+                        .replace(/=+$/, '');
+                }
+
                 const body = {
                     endpoint: subscription.endpoint,
-                    p256dh: btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(p256dh)))), // Fix type issues manually
-                    auth: btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(auth))))
+                    p256dh: arrayBufferToUrlSafeBase64(p256dh),
+                    auth: arrayBufferToUrlSafeBase64(auth)
                 };
 
                 await fetch(`${BACKEND_URL}/api/notifications/subscribe`, {
