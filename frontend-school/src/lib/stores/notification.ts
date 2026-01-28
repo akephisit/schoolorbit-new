@@ -185,7 +185,15 @@ function createNotificationStore() {
             }
 
             try {
-                const registration = await navigator.serviceWorker.register('/service-worker.js');
+                // First, check and unregister old service worker if exists
+                const oldReg = await navigator.serviceWorker.getRegistration('/service-worker.js');
+                if (oldReg) {
+                    await oldReg.unregister();
+                    console.log('Unregistered old service worker');
+                }
+
+                // Register New Service Worker
+                const registration = await navigator.serviceWorker.register('/sw.js');
                 await navigator.serviceWorker.ready;
 
                 // Check existing subscription
