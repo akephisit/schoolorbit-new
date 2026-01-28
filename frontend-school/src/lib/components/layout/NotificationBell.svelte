@@ -40,7 +40,7 @@
 
 <Popover.Root>
 	<Popover.Trigger class={buttonVariants({ variant: 'ghost', size: 'icon' }) + ' relative'}>
-		<Bell class="h-5 w-5 text-gray-600" />
+		<Bell class="h-5 w-5" />
 		{#if $notificationStore.unreadCount > 0}
 			<span
 				class="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white animate-pulse"
