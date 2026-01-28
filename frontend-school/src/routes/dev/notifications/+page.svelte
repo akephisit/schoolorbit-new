@@ -61,8 +61,9 @@
     async function enablePush() {
         loading = true;
         try {
-            const success = await notificationStore.subscribeToPush();
-            if (success) toast.success("เปิดแจ้งเตือนบนมือถือแล้ว (Web Push Enabled)");
+            // Force re-subscription to ensure VAPID keys match
+            const success = await notificationStore.subscribeToPush(true);
+            if (success) toast.success("เปิดแจ้งเตือนบนมือถือแล้ว (Updated Keys)");
             else toast.error("ไม่สามารถเปิดแจ้งเตือนได้ Check console.");
         } finally {
             loading = false;

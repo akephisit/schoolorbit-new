@@ -163,33 +163,55 @@ function createNotificationStore() {
             }
         },
 
-        async subscribeToPush() {
+        async unsubscribe() {
+            try {
+                const registration = await navigator.serviceWorker.ready;
+                const subscription = await registration.pushManager.getSubscription();
+                if (subscription) {
+                    await subscription.unsubscribe();
+                    console.log('Unsubscribed from push');
+                }
+                return true;
+            } catch (err) {
+                console.error('Failed to unsubscribe', err);
+                return false;
+            }
+        },
+
+        async subscribeToPush(force = false) {
             if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
                 console.warn('Push messaging is not supported');
                 return false;
             }
 
             try {
-                // Register Service Worker
                 const registration = await navigator.serviceWorker.register('/service-worker.js');
-
-                // Wait for it to be ready
                 await navigator.serviceWorker.ready;
 
-                // Request permission
-                const permission = await Notification.requestPermission();
-                if (permission !== 'granted') {
-                    console.warn('Notification permission denied');
-                    return false;
+                // Check existing subscription
+                let subscription = await registration.pushManager.getSubscription();
+
+                // If force update or no subscription, ensure clean state
+                if (force && subscription) {
+                    await subscription.unsubscribe();
+                    subscription = null;
                 }
 
-                // Subscribe
-                const subscription = await registration.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
-                });
+                if (!subscription) {
+                    const permission = await Notification.requestPermission();
+                    if (permission !== 'granted') {
+                        console.warn('Notification permission denied');
+                        return false;
+                    }
 
-                // Send to backend
+                    subscription = await registration.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+                    });
+                }
+
+                // ... (rest same logic to send backend)
+
                 const p256dh = subscription.getKey('p256dh');
                 const auth = subscription.getKey('auth');
 
@@ -220,7 +242,7 @@ function createNotificationStore() {
                     credentials: 'include'
                 });
 
-                console.log('✅ Push Notification Subscribed');
+                console.log('✅ Push Notification Subscribed (Synced to Backend)');
                 return true;
 
             } catch (err) {
