@@ -9,3 +9,4 @@ pub mod system;
 pub mod academic;
 pub mod lookup;
 pub mod facility;
+pub mod notification;

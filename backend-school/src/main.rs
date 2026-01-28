@@ -20,9 +20,8 @@ use db::pool_manager::PoolManager;
 use dotenv::dotenv;
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
-use std::{env, sync::Arc};
-use tokio_cron_scheduler::{Job, JobScheduler};
-use tower_cookies::CookieManagerLayer;
+use tokio::sync::broadcast;
+use crate::modules::notification::handlers::Notification;
 
 /// Shared application state
 #[derive(Clone)]
@@ -30,6 +29,7 @@ pub struct AppState {
     pub admin_pool: sqlx::PgPool,  // Backend-admin database (for school mapping)
     pub pool_manager: Arc<PoolManager>,
     pub websocket_manager: Arc<modules::academic::websockets::WebSocketManager>,
+    pub notification_channel: broadcast::Sender<(Uuid, Notification)>, // (User ID, Notification)
 }
 
 #[tokio::main]
@@ -67,6 +67,9 @@ async fn main() {
     let pool_manager = Arc::new(PoolManager::new());
     let websocket_manager = Arc::new(modules::academic::websockets::WebSocketManager::new());
     
+    // Notification broadcast channel (capacity 100)
+    let (notification_tx, _) = broadcast::channel(100);
+
     // Start cleanup task
     let pool_manager_cleanup = Arc::clone(&pool_manager);
     tokio::spawn(async move {
@@ -86,6 +89,7 @@ async fn main() {
         admin_pool,
         pool_manager,
         websocket_manager,
+        notification_channel: notification_tx,
     };
 
     // Build application
@@ -243,6 +247,18 @@ async fn main() {
         
         // Facility Management routes (Protected)
         .nest("/api/facilities", modules::facility::facility_routes()
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+
+        // Notification routes (Protected)
+        .route("/api/notifications/stream", get(modules::notification::handlers::stream_notifications)) // Auth handled inside to get user ID, or use middleware?
+                                                                                                        // Standard middleware might buffer or cause issues with SSE if not careful?
+                                                                                                        // Actually `auth_middleware` just parses token.
+            // .layer(axum_middleware::from_fn(middleware::auth::auth_middleware))) // Let's keep it consistent.
+        .route("/api/notifications", get(modules::notification::handlers::list_notifications)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/notifications/read-all", post(modules::notification::handlers::mark_all_as_read)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/notifications/{id}/read", post(modules::notification::handlers::mark_as_read)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
         // Lookup endpoints (Protected - only requires authentication, no specific permission)

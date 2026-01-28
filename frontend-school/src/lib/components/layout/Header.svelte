@@ -2,6 +2,7 @@
 	import { Bell, Search, Menu, Sun, Moon } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ProfileMenu from './ProfileMenu.svelte';
+	import NotificationBell from './NotificationBell.svelte';
 	import { uiPreferences } from '$lib/stores/ui-preferences';
 	import { onMount } from 'svelte';
 
@@ -93,12 +94,7 @@
 
 			<!-- Notifications -->
 			<div class="relative">
-				<Button variant="ghost" size="icon" aria-label="Notifications">
-					<Bell class="w-5 h-5" />
-					<span
-						class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-card"
-					></span>
-				</Button>
+				<NotificationBell />
 			</div>
 
 			<!-- User Menu -->
