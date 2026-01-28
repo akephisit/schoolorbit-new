@@ -72,6 +72,12 @@
     async function testLocal() {
         try {
             const reg = await navigator.serviceWorker.ready;
+            
+            if (!reg.showNotification) {
+                toast.warning("ไม่พบฟังก์ชันแสดงแจ้งเตือน (iOS ต้อง 'Add to Home Screen' ก่อนใช้งาน)");
+                return;
+            }
+
             await reg.showNotification("🔔 Local Test", {
                 body: "ถ้าเห็นข้อความนี้ แสดงว่ามือถือเครื่องนี้รับแจ้งเตือนได้ปกติครับ!",
                 icon: "/icon-192.png",
