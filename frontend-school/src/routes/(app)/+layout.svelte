@@ -5,6 +5,7 @@
 	import { authAPI } from '$lib/api/auth';
 
 	import { uiPreferences } from '$lib/stores/ui-preferences';
+    import { notificationStore } from '$lib/stores/notification';
 	let { children } = $props();
 
 	let sidebarRef: { toggleMobileSidebar?: () => void } | undefined;
@@ -19,6 +20,9 @@
 	// Check authentication for protected routes
 	onMount(async () => {
 		await authAPI.checkAuth();
+        
+        // Auto-subscribe to Web Push (Silent update if already allowed)
+        notificationStore.subscribeToPush();
 
 		// Mobile drag & drop support (Global Init)
 		// @ts-ignore
