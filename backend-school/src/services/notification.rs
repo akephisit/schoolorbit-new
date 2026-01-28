@@ -85,10 +85,6 @@ impl NotificationService {
         let vapid_private = env::var("VAPID_PRIVATE_KEY")?;
         let vapid_subject = env::var("VAPID_SUBJECT").unwrap_or_else(|_| "mailto:admin@localhost".to_string());
 
-        // 2. Load key
-        let sig_builder = VapidSignatureBuilder::from_base64_no_sub(&vapid_private, WebPushEncoder::Compact)?;
-        let signature = sig_builder.build_signature(); // Build logic might differ slightly per version
-
         // 3. Get user subscriptions
         #[derive(sqlx::FromRow)]
         struct SubRow {
@@ -130,12 +126,13 @@ impl NotificationService {
                 },
             };
 
-            let mut builder = WebPushMessageBuilder::new(&subscription_info)?;
+            let mut builder = WebPushMessageBuilder::new(&subscription_info);
             builder.set_payload(ContentEncoding::Aes128Gcm, payload.as_bytes());
             
             // Sign with VAPID
-            let sig_builder = VapidSignatureBuilder::from_base64(&vapid_private, WebPushEncoder::Compact, &subscription_info)?;
-            let signature = sig_builder.add_claim("sub", vapid_subject.clone()).build()?;
+            let mut sig_builder = VapidSignatureBuilder::from_base64(&vapid_private, &subscription_info)?;
+            sig_builder.add_claim("sub", vapid_subject.clone());
+            let signature = sig_builder.build()?;
             builder.set_vapid_signature(signature);
 
             match client.send(builder.build()?).await {
@@ -153,3 +150,4 @@ impl NotificationService {
 
         Ok(())
     }
+}
