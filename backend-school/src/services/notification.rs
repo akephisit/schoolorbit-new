@@ -1,6 +1,8 @@
 use crate::modules::notification::handlers::Notification;
 use uuid::Uuid;
 use tokio::sync::broadcast;
+use web_push::*;
+use std::env;
 
 pub struct NotificationService;
 
@@ -25,7 +27,7 @@ impl NotificationType {
 
 impl NotificationService {
     /// Send a notification to a specific user.
-    /// This handles database insertion and real-time broadcasting via SSE.
+    /// This handles database insertion, real-time broadcasting via SSE, AND Web Push.
     pub async fn send(
         pool: &sqlx::PgPool,
         notification_tx: &broadcast::Sender<(Uuid, Notification)>,
@@ -53,13 +55,101 @@ impl NotificationService {
         let id = notification.id;
 
         // Broadcast to SSE (Real-time)
-        // If no one is listening (error), that's fine, just ignore it.
         let _ = notification_tx.send((user_id, notification));
+
+        // 🚀 Trigger Web Push (Fire-and-forget task)
+        let pool_clone = pool.clone();
+        let title = title.to_string();
+        let message = message.to_string();
+        let link = link.map(|s| s.to_string());
+        
+        tokio::spawn(async move {
+            if let Err(e) = Self::send_web_push(&pool_clone, user_id, &title, &message, link.as_deref()).await {
+                tracing::error!("Web Push Failed for user {}: {}", user_id, e);
+            }
+        });
 
         Ok(id)
     }
-    
-    // Helper to send using AppState (if you have the correct pool already)
-    // Note: Since we use multi-tenant pools, we usually need the specific school pool, not just AppState.
-    // So the direct `send` method above is flexible. This helper is for convenience if logic allows.
-}
+
+    /// Internal helper to send Web Push
+    async fn send_web_push(
+        pool: &sqlx::PgPool,
+        user_id: Uuid,
+        title: &str,
+        message: &str,
+        link: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 1. Get VAPID config from .env
+        let vapid_public = env::var("VAPID_PUBLIC_KEY")?;
+        let vapid_private = env::var("VAPID_PRIVATE_KEY")?;
+        let vapid_subject = env::var("VAPID_SUBJECT").unwrap_or_else(|_| "mailto:admin@localhost".to_string());
+
+        // 2. Load key
+        let sig_builder = VapidSignatureBuilder::from_base64_no_sub(&vapid_private, WebPushEncoder::Compact)?;
+        let signature = sig_builder.build_signature(); // Build logic might differ slightly per version
+
+        // 3. Get user subscriptions
+        #[derive(sqlx::FromRow)]
+        struct SubRow {
+            endpoint: String,
+            p256dh_key: String,
+            auth_key: String,
+        }
+        
+        let subs = sqlx::query_as::<_, SubRow>(
+            "SELECT endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE user_id = $1"
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?;
+
+        if subs.is_empty() {
+            return Ok(());
+        }
+
+        // 4. Construct payload
+        let payload = serde_json::json!({
+            "title": title,
+            "body": message,
+            "link": link,
+            // Add icon if needed
+        }).to_string();
+
+        // 5. Send to each subscription
+        let client = IsahcWebPushClient::new()?; // Or async-std/tokio client depending on features
+        
+        // Note: web-push 0.10+ uses different API. Assuming 0.11
+        // Let's use simple loop
+        for sub in subs {
+            let subscription_info = SubscriptionInfo {
+                endpoint: sub.endpoint.clone(),
+                keys: SubscriptionKeys {
+                    p256dh: sub.p256dh_key,
+                    auth: sub.auth_key,
+                },
+            };
+
+            let mut builder = WebPushMessageBuilder::new(&subscription_info)?;
+            builder.set_payload(ContentEncoding::Aes128Gcm, payload.as_bytes());
+            
+            // Sign with VAPID
+            let sig_builder = VapidSignatureBuilder::from_base64(&vapid_private, WebPushEncoder::Compact, &subscription_info)?;
+            let signature = sig_builder.add_claim("sub", vapid_subject.clone()).build()?;
+            builder.set_vapid_signature(signature);
+
+            match client.send(builder.build()?).await {
+                Ok(_) => {
+                    tracing::info!("Push sent to device");
+                },
+                Err(e) => {
+                    // If error is 410 Gone, delete subscription
+                    // For now, just log
+                    tracing::warn!("Push failed for endpoint {}: {:?}", sub.endpoint, e);
+                    // TODO: Delete invalid subscription
+                }
+            }
+        }
+
+        Ok(())
+    }

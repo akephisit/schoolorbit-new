@@ -267,6 +267,8 @@ async fn main() {
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/notifications/{id}/read", post(modules::notification::handlers::mark_as_read)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/notifications/subscribe", post(modules::notification::handlers::subscribe_push)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
         // Lookup endpoints (Protected - only requires authentication, no specific permission)
         // These return minimal data for dropdowns (id, name only)

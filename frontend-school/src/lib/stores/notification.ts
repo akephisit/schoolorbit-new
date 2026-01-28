@@ -1,8 +1,21 @@
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
+import { PUBLIC_BACKEND_URL, PUBLIC_VAPID_KEY } from '$env/static/public';
 import { toast } from 'svelte-sonner';
 import { writable } from 'svelte/store';
 
 const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+
+// Helper for VAPID key conversion
+function urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
 
 export interface Notification {
     id: string;
@@ -147,6 +160,60 @@ function createNotificationStore() {
                 toast.success('อ่านทั้งหมดแล้ว');
             } catch (err) {
                 console.error('Failed to mark all as read', err);
+            }
+        },
+
+        async subscribeToPush() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                console.warn('Push messaging is not supported');
+                return false;
+            }
+
+            try {
+                // Register Service Worker
+                const registration = await navigator.serviceWorker.register('/service-worker.js');
+
+                // Wait for it to be ready
+                await navigator.serviceWorker.ready;
+
+                // Request permission
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    console.warn('Notification permission denied');
+                    return false;
+                }
+
+                // Subscribe
+                const subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+                });
+
+                // Send to backend
+                const p256dh = subscription.getKey('p256dh');
+                const auth = subscription.getKey('auth');
+
+                if (!p256dh || !auth) return false;
+
+                const body = {
+                    endpoint: subscription.endpoint,
+                    p256dh: btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(p256dh)))), // Fix type issues manually
+                    auth: btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(auth))))
+                };
+
+                await fetch(`${BACKEND_URL}/api/notifications/subscribe`, {
+                    method: 'POST',
+                    body: JSON.stringify(body),
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+
+                console.log('✅ Push Notification Subscribed');
+                return true;
+
+            } catch (err) {
+                console.error('Failed to subscribe to push', err);
+                return false;
             }
         }
     };

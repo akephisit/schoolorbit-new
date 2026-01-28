@@ -109,7 +109,8 @@ jobs:
               "PUBLIC_BACKEND_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
               "SCHOOL_ID": "${{ matrix.school.school_id }}",
               "SUBDOMAIN": "${{ matrix.school.subdomain }}",
-              "VITE_DEPLOY_KEY": "${{ secrets.DEPLOY_KEY }}"
+              "VITE_DEPLOY_KEY": "${{ secrets.DEPLOY_KEY }}",
+              "PUBLIC_VAPID_KEY": "${{ secrets.VAPID_PUBLIC_KEY }}"
             }
           }
           EOF
@@ -120,6 +121,7 @@ jobs:
           PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
           VITE_DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
+          PUBLIC_VAPID_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
         run: npm run build
       
       - name: Deploy to Cloudflare Workers

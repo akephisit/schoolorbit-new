@@ -8,7 +8,8 @@
     import { lookupStaff, type StaffLookupItem } from "$lib/api/lookup";
     import { toast } from "svelte-sonner";
     import { onMount } from "svelte";
-  
+    import { notificationStore } from "$lib/stores/notification";
+
     let title = $state("ทดสอบแจ้งเตือน");
     let message = $state("ข้อความทดสอบแจ้งเตือน Real-time");
     let type = $state("info");
@@ -43,10 +44,18 @@
         loading = false;
       }
     }
+    async function enablePush() {
+        const success = await notificationStore.subscribeToPush();
+        if (success) toast.success("เปิดแจ้งเตือนบนมือถือแล้ว (Web Push Enabled)");
+        else toast.error("ไม่สามารถเปิดแจ้งเตือนได้ Check console.");
+    }
 </script>
 
 <div class="container mx-auto py-10 max-w-lg">
-	<h1 class="text-2xl font-bold mb-6">🔔 Notification Tester</h1>
+	<div class="flex justify-between items-center mb-6">
+		<h1 class="text-2xl font-bold">🔔 Notification Tester</h1>
+		<Button variant="outline" size="sm" onclick={enablePush}>📲 Enable Web Push</Button>
+	</div>
 
 	<div class="space-y-4 p-6 border rounded-lg bg-card shadow-sm">
 		<div class="space-y-2">

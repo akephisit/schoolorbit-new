@@ -304,6 +304,7 @@ pub async fn create_notification(
         _ => NotificationType::Info,
     };
 
+
     let target_user_id = payload.user_id.unwrap_or(user_id);
 
     NotificationService::send(
@@ -329,5 +330,65 @@ pub async fn create_notification(
         })),
     ))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct SubscribePushRequest {
+    pub endpoint: String,
+    pub p256dh: String,
+    pub auth: String,
+}
+
+/// Subscribe to Web Push Notifications
+pub async fn subscribe_push(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<SubscribePushRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
+
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
+
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+    let user_id = extract_user_id(&headers, &pool)
+        .await
+        .map_err(|e| AppError::AuthError(e))?;
+
+    // Upsert subscription
+    // If endpoint exists, update keys and timestamp
+    sqlx::query(r#"
+        INSERT INTO push_subscriptions (user_id, endpoint, p256dh_key, auth_key, updated_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (endpoint) DO UPDATE
+        SET user_id = EXCLUDED.user_id,
+            p256dh_key = EXCLUDED.p256dh_key,
+            auth_key = EXCLUDED.auth_key,
+            updated_at = NOW()
+    "#)
+    .bind(user_id)
+    .bind(payload.endpoint)
+    .bind(payload.p256dh)
+    .bind(payload.auth)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to save push subscription: {}", e);
+        AppError::InternalServerError("Failed to subscribe".to_string())
+    })?;
+
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "message": "Subscribed to push notifications"
+        })),
+    ))
+}
+
 
 

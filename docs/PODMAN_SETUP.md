@@ -520,6 +520,10 @@ services:
       # Allowed File Types
       - ALLOWED_IMAGE_TYPES=${ALLOWED_IMAGE_TYPES:-jpg,jpeg,png,webp,gif}
       - ALLOWED_DOCUMENT_TYPES=${ALLOWED_DOCUMENT_TYPES:-pdf,doc,docx,xls,xlsx}
+      # Web Push Configuration
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:kruakemaths@gmail.com}
       # Note: DATABASE_URL is no longer needed (multi-tenant architecture)
       # Note: ALLOWED_ORIGINS is only for backend-admin
     networks:
