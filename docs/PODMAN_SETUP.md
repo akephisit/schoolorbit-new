@@ -245,6 +245,11 @@ server {
     client_max_body_size 20M;
     proxy_read_timeout 300s;
 
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Vary Origin always;
+
     # 🆕 SSE ENDPOINTS (backend-school)
     location ~ ^/api/v1/.*/stream$ {
         proxy_pass http://schoolorbit-backend-school:8081;
@@ -291,6 +296,23 @@ server {
         add_header 'Access-Control-Allow-Origin' $allow_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+    }
+
+    # 🆕 WEBSOCKETS (TimeTable)
+    location /ws/ {
+        proxy_pass http://schoolorbit-backend-school:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        add_header 'Access-Control-Allow-Origin' $allow_origin always;
     }
 
     # NORMAL API (backend-school)
