@@ -140,10 +140,17 @@ impl NotificationService {
                     tracing::info!("Push sent to device");
                 },
                 Err(e) => {
-                    // If error is 410 Gone, delete subscription
-                    // For now, just log
                     tracing::warn!("Push failed for endpoint {}: {:?}", sub.endpoint, e);
-                    // TODO: Delete invalid subscription
+                    
+                    let should_delete = matches!(e, WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_));
+
+                    if should_delete {
+                        tracing::info!("Removing invalid subscription: {}", sub.endpoint);
+                        let _ = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = $1")
+                            .bind(&sub.endpoint)
+                            .execute(pool)
+                            .await;
+                    }
                 }
             }
         }
