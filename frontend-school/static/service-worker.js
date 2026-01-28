@@ -7,8 +7,8 @@ self.addEventListener('push', function (event) {
 
             const options = {
                 body: data.body,
-                icon: '/icons/icon-192x192.png',
-                badge: '/icons/badge-72x72.png',
+                icon: '/icon-192.png', // แก้เป็นไฟล์ที่มีจริง
+                badge: '/icon-192.png', // Badge ควรเป็นขาวดำโปร่งใส แต่ใช้ icon นี้แก้ขัดไปก่อน
                 vibrate: [100, 50, 100],
                 data: {
                     link: data.link || '/'
