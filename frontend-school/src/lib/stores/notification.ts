@@ -185,15 +185,15 @@ function createNotificationStore() {
             }
 
             try {
-                // First, check and unregister old service worker if exists
+                // Cleanup old manual service workers
                 const oldReg = await navigator.serviceWorker.getRegistration('/service-worker.js');
-                if (oldReg) {
-                    await oldReg.unregister();
-                    console.log('Unregistered old service worker');
-                }
+                if (oldReg) await oldReg.unregister();
 
-                // Register New Service Worker
-                const registration = await navigator.serviceWorker.register('/sw.js');
+                const tempReg = await navigator.serviceWorker.getRegistration('/sw.js');
+                if (tempReg) await tempReg.unregister();
+
+                // Register Standard SvelteKit Service Worker
+                const registration = await navigator.serviceWorker.register('/service-worker.js');
                 await navigator.serviceWorker.ready;
 
                 // Check existing subscription

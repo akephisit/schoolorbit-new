@@ -118,18 +118,54 @@ button { background: hsl(221.2 83.2% 53.3%); color: white; border: none; padding
 });
 
 // Handle push notifications (optional - for future use)
+// Handle push notifications
 sw.addEventListener('push', (event) => {
-	console.log('[ServiceWorker] Push notification received:', event);
+	if (event.data) {
+		try {
+			const data = event.data.json();
 
-	// Handle push notifications here if needed in the future
-	// Example:
-	// const data = event.data?.json();
-	// event.waitUntil(
-	//   sw.registration.showNotification(data.title, {
-	//     body: data.body,
-	//     icon: '/icon-192.png'
-	//   })
-	// );
+			const options: NotificationOptions = {
+				body: data.body,
+				icon: '/icon-192.png',
+				// @ts-ignore
+				vibrate: [200, 100, 200, 100, 200],
+				tag: 'push-notification-v1',
+				renotify: true,
+				requireInteraction: true,
+				timestamp: Date.now(),
+				data: {
+					link: data.link || '/'
+				}
+			};
+
+			event.waitUntil(
+				sw.registration.showNotification(data.title, options)
+			);
+		} catch (e) {
+			console.error('Error parsing push data', e);
+		}
+	}
+});
+
+sw.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+
+	if (event.action === 'open' || !event.action) {
+		const link = event.notification.data.link;
+		event.waitUntil(
+			sw.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+				for (let i = 0; i < windowClients.length; i++) {
+					const client = windowClients[i];
+					if (client.url === link && 'focus' in client) {
+						return (client as WindowClient).focus();
+					}
+				}
+				if (sw.clients.openWindow) {
+					return sw.clients.openWindow(link);
+				}
+			})
+		);
+	}
 });
 
 console.log('[ServiceWorker] Script loaded - Network-Only mode');
