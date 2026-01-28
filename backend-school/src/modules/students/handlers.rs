@@ -169,12 +169,13 @@ pub async fn get_own_profile(
     .ok_or(AppError::NotFound("Student not found".to_string()))?;
 
     // Decrypt fields
-    if let Some(ref nid) = student.national_id {
+    // Decrypt fields
+    if let Some(nid) = &student.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
             student.national_id = Some(dec);
         }
     }
-    if let Some(ref mc) = student.medical_conditions {
+    if let Some(mc) = &student.medical_conditions {
         if let Ok(dec) = field_encryption::decrypt(mc) {
             student.medical_conditions = Some(dec);
         }
@@ -566,12 +567,13 @@ pub async fn get_student(
     .ok_or(AppError::NotFound("Student not found".to_string()))?;
 
     // Decrypt fields
-    if let Some(ref nid) = student.national_id {
+    // Decrypt fields
+    if let Some(nid) = &student.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
             student.national_id = Some(dec);
         }
     }
-    if let Some(ref mc) = student.medical_conditions {
+    if let Some(mc) = &student.medical_conditions {
         if let Ok(dec) = field_encryption::decrypt(mc) {
             student.medical_conditions = Some(dec);
         }

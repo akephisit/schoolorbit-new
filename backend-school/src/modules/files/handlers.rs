@@ -364,7 +364,7 @@ pub async fn delete_file(
         }
 
         // Delete thumbnail if exists
-        if let Some(ref thumb_path) = file.thumbnail_path {
+        if let Some(thumb_path) = &file.thumbnail_path {
             let _ = r2.delete_file(thumb_path).await;
         }
     }

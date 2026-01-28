@@ -19,7 +19,7 @@ use tokio_stream::StreamExt as _;
 use tokio::sync::broadcast;
 
 // Models
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, sqlx::FromRow)]
 pub struct Notification {
     pub id: Uuid,
     pub title: String,
@@ -270,35 +270,4 @@ pub async fn stream_notifications(
 }
 
 
-// Internal service function to create notification (for other modules to use)
-pub async fn create_notification_service(
-    pool: &sqlx::PgPool,
-    notification_tx: &broadcast::Sender<(Uuid, Notification)>,
-    user_id: Uuid,
-    title: &str,
-    message: &str,
-    type_: &str,
-    link: Option<&str>,
-) -> Result<Uuid, sqlx::Error> {
-    let notification = sqlx::query_as::<_, Notification>(
-        r#"
-        INSERT INTO notifications (user_id, title, message, type, link)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, title, message, type AS type_, link, read_at, created_at
-        "#
-    )
-    .bind(user_id)
-    .bind(title)
-    .bind(message)
-    .bind(type_)
-    .bind(link)
-    .fetch_one(pool)
-    .await?;
-    
-    let id = notification.id;
 
-    // Broadcast to SSE
-    let _ = notification_tx.send((user_id, notification));
-
-    Ok(id)
-}

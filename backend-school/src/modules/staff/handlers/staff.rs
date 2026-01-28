@@ -338,7 +338,7 @@ pub async fn get_staff_profile(
     .ok_or(AppError::NotFound("ไม่พบบุคลากร".to_string()))?;
     
     // Decrypt national_id
-    if let Some(ref nid) = user.national_id {
+    if let Some(nid) = &user.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
             user.national_id = Some(dec);
         }

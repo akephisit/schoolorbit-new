@@ -230,7 +230,8 @@ pub async fn me(
         .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
 
     // Decrypt national_id
-    if let Some(ref nid) = user.national_id {
+    // Decrypt national_id
+    if let Some(nid) = &user.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
             user.national_id = Some(dec);
         }
@@ -317,7 +318,7 @@ pub async fn get_profile(
         .await?
         .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
 
-    if let Some(ref nid) = user.national_id {
+    if let Some(nid) = &user.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
             user.national_id = Some(dec);
         }
@@ -450,7 +451,7 @@ pub async fn update_profile(
         .await?
         .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
 
-    if let Some(ref nid) = user.national_id {
+    if let Some(nid) = &user.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
             user.national_id = Some(dec);
         }

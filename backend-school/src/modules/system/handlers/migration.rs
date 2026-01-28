@@ -227,7 +227,10 @@ async fn migrate_single_school(
     println!("🔄 Migrating school: {}", subdomain);
 
     // Get pool (this will also run migrations lazily)
-    let pool = match state.pool_manager.get_pool(db_url, subdomain).await {
+    // Get pool (this will also run migrations lazily)
+    let pool_result: Result<sqlx::PgPool, String> = state.pool_manager.get_pool(db_url, subdomain).await;
+    
+    let pool = match pool_result {
         Ok(p) => p,
         Err(e) => {
             eprintln!("❌ Failed to get pool for {}: {}", subdomain, e);
@@ -246,7 +249,7 @@ async fn migrate_single_school(
                 subdomain: subdomain.to_string(),
                 status: "failed".to_string(),
                 version: None,
-                error: Some(e),
+                error: Some(e.to_string()),
             };
         }
     };
