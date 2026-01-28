@@ -39,7 +39,7 @@ pub struct ListNotificationsQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateNotificationRequest {
-    pub user_id: Uuid,
+    pub user_id: Option<Uuid>, // Optional: if None, send to self (creator)
     pub title: String,
     pub message: String,
     pub type_: String,
@@ -302,7 +302,7 @@ pub async fn create_notification(
         _ => NotificationType::Info,
     };
 
-    let target_user_id = if payload.user_id == Uuid::nil() { user_id } else { payload.user_id };
+    let target_user_id = payload.user_id.unwrap_or(user_id);
 
     NotificationService::send(
         &pool,

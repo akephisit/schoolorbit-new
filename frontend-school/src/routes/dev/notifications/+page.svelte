@@ -5,7 +5,9 @@
     import { Textarea } from "$lib/components/ui/textarea";
     import * as Select from "$lib/components/ui/select";
     import { apiClient } from "$lib/api/client";
+    import { lookupStaff, type StaffLookupItem } from "$lib/api/lookup";
     import { toast } from "svelte-sonner";
+    import { onMount } from "svelte";
   
     let title = $state("ทดสอบแจ้งเตือน");
     let message = $state("ข้อความทดสอบแจ้งเตือน Real-time");
@@ -13,13 +15,22 @@
     let link = $state("");
     let targetUserId = $state("");
     let loading = $state(false);
+
+    let staffList = $state<StaffLookupItem[]>([]);
+
+    onMount(async () => {
+        try {
+            staffList = await lookupStaff({ activeOnly: true, limit: 100 });
+        } catch (e) {
+            console.error("Failed to load staff:", e);
+        }
+    });
   
     async function sendNotification() {
       loading = true;
       try {
         await apiClient.post("/api/notifications", {
-          user_id: targetUserId || undefined, // If empty, backend might default to self or error (depends on impl)
-                                              // My implementation: if nil or empty, default to self (broadcaster)
+          user_id: targetUserId || undefined, // Empty = self
           title,
           message,
           type: type,
@@ -50,11 +61,11 @@
 
 		<div class="space-y-2">
 			<Label>Type</Label>
-			<select class="w-full border rounded p-2 bg-background" bind:value={type}>
-				<option value="info">Info (Blue)</option>
-				<option value="success">Success (Green)</option>
-				<option value="warning">Warning (Yellow)</option>
-				<option value="error">Error (Red)</option>
+			<select class="w-full border rounded p-2 bg-background text-sm" bind:value={type}>
+				<option value="info">ℹ️ Info (Blue)</option>
+				<option value="success">✅ Success (Green)</option>
+				<option value="warning">⚠️ Warning (Yellow)</option>
+				<option value="error">❌ Error (Red)</option>
 			</select>
 		</div>
 
@@ -64,13 +75,19 @@
 		</div>
 
 		<div class="space-y-2">
-			<Label>Target User ID (Optional)</Label>
-			<Input bind:value={targetUserId} placeholder="Leave empty to send to yourself" />
-			<p class="text-xs text-muted-foreground">ถ้าเว้นว่าง = ส่งหาตัวเอง</p>
+			<Label>Target User (Recipient)</Label>
+			<select class="w-full border rounded p-2 bg-background text-sm" bind:value={targetUserId}>
+				<option value="">👤 ส่งหาตัวเอง (Me)</option>
+				<option disabled>--- เลือกบุคลากร ---</option>
+				{#each staffList as staff}
+					<option value={staff.id}>{staff.name} {staff.title ? `(${staff.title})` : ''}</option>
+				{/each}
+			</select>
+			<p class="text-xs text-muted-foreground">เลือกผู้รับ (ดึงจาก Lookup Staff)</p>
 		</div>
 
 		<Button onclick={sendNotification} disabled={loading} class="w-full">
-			{loading ? 'Sending...' : 'Send Notification'}
+			{loading ? 'Sending...' : 'Send Notification 🚀'}
 		</Button>
 	</div>
 </div>
