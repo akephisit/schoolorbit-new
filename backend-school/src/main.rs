@@ -259,7 +259,9 @@ async fn main() {
                                                                                                         // Standard middleware might buffer or cause issues with SSE if not careful?
                                                                                                         // Actually `auth_middleware` just parses token.
             // .layer(axum_middleware::from_fn(middleware::auth::auth_middleware))) // Let's keep it consistent.
-        .route("/api/notifications", get(modules::notification::handlers::list_notifications)
+        .route("/api/notifications", 
+            get(modules::notification::handlers::list_notifications)
+            .post(modules::notification::handlers::create_notification)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/notifications/read-all", post(modules::notification::handlers::mark_all_as_read)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))

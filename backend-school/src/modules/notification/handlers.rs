@@ -269,5 +269,63 @@ pub async fn stream_notifications(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
+/// Create manual notification (For testing/internal use)
+pub async fn create_notification(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateNotificationRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
+
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+        .await
+        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
+
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+    let user_id = extract_user_id(&headers, &pool)
+        .await
+        .map_err(|e| AppError::AuthError(e))?;
+    
+    // In real app, check permissions here (e.g. only staff/admin can broadcast)
+    // For now, allow test.
+
+    use crate::services::notification::{NotificationService, NotificationType};
+
+    let notif_type = match payload.type_.as_str() {
+        "success" => NotificationType::Success,
+        "warning" => NotificationType::Warning,
+        "error" => NotificationType::Error,
+        _ => NotificationType::Info,
+    };
+
+    let target_user_id = if payload.user_id == Uuid::nil() { user_id } else { payload.user_id };
+
+    NotificationService::send(
+        &pool,
+        &state.notification_channel,
+        target_user_id,
+        &payload.title,
+        &payload.message,
+        notif_type,
+        payload.link.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create notification: {}", e);
+        AppError::InternalServerError("Failed to create notification".to_string())
+    })?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "success": true,
+            "message": "Notification created"
+        })),
+    ))
+}
 
 
