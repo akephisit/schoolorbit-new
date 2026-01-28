@@ -1,5 +1,14 @@
 // Web Push Service Worker
 
+// Force immediate update
+self.addEventListener('install', (event) => {
+    self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(clients.claim());
+});
+
 self.addEventListener('push', function (event) {
     if (event.data) {
         try {
@@ -7,19 +16,13 @@ self.addEventListener('push', function (event) {
 
             const options = {
                 body: data.body,
-                icon: '/icon-192.png', // แก้เป็นไฟล์ที่มีจริง
-                badge: '/icon-192.png', // Badge ควรเป็นขาวดำโปร่งใส แต่ใช้ icon นี้แก้ขัดไปก่อน
+                icon: '/icon-192.png',
                 vibrate: [100, 50, 100],
                 data: {
                     link: data.link || '/'
-                },
-                actions: [
-                    {
-                        action: 'open',
-                        title: 'เปิดดู'
-                    }
-                ]
+                }
             };
+            // Removed actions/badge to maximize compatibility
 
             event.waitUntil(
                 self.registration.showNotification(data.title, options)
