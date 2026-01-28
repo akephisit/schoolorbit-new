@@ -39,9 +39,11 @@ pub struct ListNotificationsQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateNotificationRequest {
+    #[serde(default)]
     pub user_id: Option<Uuid>, // Optional: if None, send to self (creator)
     pub title: String,
     pub message: String,
+    #[serde(rename = "type")]
     pub type_: String,
     pub link: Option<String>,
 }
