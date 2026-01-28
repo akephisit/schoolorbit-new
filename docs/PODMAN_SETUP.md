@@ -250,35 +250,35 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header Vary Origin always;
 
-    # 🆕 SSE ENDPOINTS (backend-school)
-    location ~ ^/api/v1/.*/stream$ {
+# 🆕 SSE ENDPOINTS (Matches any path ending in /stream)
+    location ~ /stream$ {
         proxy_pass http://schoolorbit-backend-school:8081;
-        
-        # SSE Handlers
+        # SSE Optimization
         proxy_buffering off;
         proxy_cache off;
-        proxy_read_timeout 24h;
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 24h;
-        chunked_transfer_encoding on;
+        proxy_http_version 1.1; # สำคัญสำหรับ Connection keep-alive
         proxy_set_header Connection "";
+        chunked_transfer_encoding on;
         
-        # Proxy Headers
+        # Timeouts (Long polling needs long timeout)
+        proxy_read_timeout 24h;
+        proxy_send_timeout 24h;
+        # Standard Proxy Headers
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
         # CORS
         add_header 'Access-Control-Allow-Origin' $allow_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-
+        
+        # Preflight
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' $allow_origin always;
             add_header 'Access-Control-Allow-Credentials' 'true' always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
             add_header 'Access-Control-Max-Age' 1728000;
             add_header 'Content-Type' 'text/plain; charset=utf-8';
