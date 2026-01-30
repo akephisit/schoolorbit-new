@@ -58,6 +58,9 @@ export function connectTimetableSocket(params: {
     lastParams = params;
 
     if (socket) {
+        // Prevent old socket from triggering reconnect
+        socket.onclose = null;
+        socket.onerror = null;
         socket.close();
     }
     currentUserId = params.user_id;
@@ -132,6 +135,9 @@ export function disconnectTimetableSocket() {
     if (reconnectTimer) clearTimeout(reconnectTimer);
 
     if (socket) {
+        // Prevent any pending callbacks
+        socket.onclose = null;
+        socket.onerror = null;
         socket.close();
         socket = null;
     }
