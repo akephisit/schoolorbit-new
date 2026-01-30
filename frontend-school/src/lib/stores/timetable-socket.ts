@@ -41,6 +41,7 @@ export const isConnected: Writable<boolean> = writable(false);
 let socket: WebSocket | null = null;
 let currentUserId: string | null = null;
 let reconnectTimer: any = null;
+let connectionDebounceTimer: any = null; // New timer for debouncing initial connection
 let shouldReconnect = false;
 let lastParams: any = null;
 
@@ -49,101 +50,111 @@ export function connectTimetableSocket(params: {
     user_id: string,
     name: string
 }) {
-    // If we are already connected with same params, do nothing?
-    // Or force reconnect? Let's force reconnect to be safe but debounce?
-
-    // Check duplicate connection
+    // Check duplicate connection (Immediate check)
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         if (lastParams &&
             String(lastParams.semester_id) === String(params.semester_id) &&
             String(lastParams.user_id) === String(params.user_id)
         ) {
             // Same params, already connected/connecting
+            // If there is a pending debounce for a NEW connection, we should probably clear it because we are happy with current?
+            // But if we are here, socket exists.
+            if (connectionDebounceTimer) clearTimeout(connectionDebounceTimer);
             return;
         }
     }
 
-    // Clear any pending reconnect
+    // Clear any pending reconnect or debounce
     if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (connectionDebounceTimer) clearTimeout(connectionDebounceTimer);
+
     shouldReconnect = true;
     lastParams = params;
 
-    if (socket) {
-        // Prevent old socket from triggering reconnect
-        socket.onclose = null;
-        socket.onerror = null;
-        socket.close();
-    }
-    currentUserId = params.user_id;
+    // Debounce the actual connection creation by 50ms
+    // This allows rapid destroy/create cycles (e.g. quick navigation) to cancel out 
+    // before the socket is actually created.
+    connectionDebounceTimer = setTimeout(() => {
+        if (!shouldReconnect) return; // If disconnected in the meantime
 
-    let baseUrl = PUBLIC_BACKEND_URL || 'http://localhost:8081';
-    let wsUrl = baseUrl.replace(/^http/, 'ws');
-
-    // Auto-detect school_key from hostname
-    let schoolKey = 'default';
-    if (typeof window !== 'undefined') {
-        const parts = window.location.hostname.split('.');
-        if (parts.length >= 3) {
-            schoolKey = parts[0];
+        if (socket) {
+            // Prevent old socket from triggering reconnect
+            socket.onclose = null;
+            socket.onerror = null;
+            socket.close();
         }
-    }
+        currentUserId = params.user_id;
 
-    // Ensure semester_id/user_id are strings
-    const safeParams = {
-        ...params,
-        semester_id: String(params.semester_id),
-        user_id: String(params.user_id),
-        school_key: schoolKey
-    };
+        let baseUrl = PUBLIC_BACKEND_URL || 'http://localhost:8081';
+        let wsUrl = baseUrl.replace(/^http/, 'ws');
 
-    const qs = new URLSearchParams(safeParams).toString();
-    const url = `${wsUrl}/ws/timetable?${qs}`;
-
-    console.log('Connecting to WS:', url);
-    socket = new WebSocket(url);
-
-    socket.onopen = () => {
-        console.log('WS Connected');
-        isConnected.set(true);
-        // Clear reconnect timer if any (redundant but safe)
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
-
-    socket.onmessage = (event) => {
-        try {
-            const msg = JSON.parse(event.data);
-            handleMessage(msg);
-        } catch (e) { console.error('WS Parse Error', e); }
-    };
-
-    socket.onclose = () => {
-        console.log('WS Disconnected');
-        isConnected.set(false);
-        // Clear state
-        activeUsers.set([]);
-        remoteCursors.set({});
-        userDrags.set({});
-
-        // Auto Reconnect
-        if (shouldReconnect) {
-            console.log('Attempting to reconnect in 3s...');
-            reconnectTimer = setTimeout(() => {
-                if (shouldReconnect && lastParams) {
-                    connectTimetableSocket(lastParams);
-                }
-            }, 3000);
+        // Auto-detect school_key from hostname
+        let schoolKey = 'default';
+        if (typeof window !== 'undefined') {
+            const parts = window.location.hostname.split('.');
+            if (parts.length >= 3) {
+                schoolKey = parts[0];
+            }
         }
-    };
 
-    socket.onerror = (err) => {
-        console.error('WS Error', err);
-        // On error, onclose usually fires too, but just in case
-    };
+        // Ensure semester_id/user_id are strings
+        const safeParams = {
+            ...params,
+            semester_id: String(params.semester_id),
+            user_id: String(params.user_id),
+            school_key: schoolKey
+        };
+
+        const qs = new URLSearchParams(safeParams).toString();
+        const url = `${wsUrl}/ws/timetable?${qs}`;
+
+        console.log('Connecting to WS:', url);
+        socket = new WebSocket(url);
+
+        socket.onopen = () => {
+            console.log('WS Connected');
+            isConnected.set(true);
+            // Clear reconnect timer if any (redundant but safe)
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                handleMessage(msg);
+            } catch (e) { console.error('WS Parse Error', e); }
+        };
+
+        socket.onclose = () => {
+            console.log('WS Disconnected');
+            isConnected.set(false);
+            // Clear state
+            activeUsers.set([]);
+            remoteCursors.set({});
+            userDrags.set({});
+
+            // Auto Reconnect
+            if (shouldReconnect) {
+                console.log('Attempting to reconnect in 3s...');
+                reconnectTimer = setTimeout(() => {
+                    if (shouldReconnect && lastParams) {
+                        connectTimetableSocket(lastParams);
+                    }
+                }, 3000);
+            }
+        };
+
+        socket.onerror = (err) => {
+            console.error('WS Error', err);
+            // On error, onclose usually fires too, but just in case
+        };
+    }, 50); // 50ms delay
 }
 
 export function disconnectTimetableSocket() {
     shouldReconnect = false;
     if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (connectionDebounceTimer) clearTimeout(connectionDebounceTimer); // Cancel pending connection
 
     if (socket) {
         // Prevent any pending callbacks
