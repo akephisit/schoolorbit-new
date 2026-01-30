@@ -52,6 +52,17 @@ export function connectTimetableSocket(params: {
     // If we are already connected with same params, do nothing?
     // Or force reconnect? Let's force reconnect to be safe but debounce?
 
+    // Check duplicate connection
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        if (lastParams &&
+            String(lastParams.semester_id) === String(params.semester_id) &&
+            String(lastParams.user_id) === String(params.user_id)
+        ) {
+            // Same params, already connected/connecting
+            return;
+        }
+    }
+
     // Clear any pending reconnect
     if (reconnectTimer) clearTimeout(reconnectTimer);
     shouldReconnect = true;
