@@ -8,11 +8,18 @@
 	import { createDepartment, updateDepartment, type Department } from '$lib/api/staff';
 	import { toast } from 'svelte-sonner';
 
-	let { open = $bindable(false), departmentToEdit = null, departments = [], onSuccess } = $props<{
+	let {
+		open = $bindable(false),
+		departmentToEdit = null,
+		departments = [],
+		onSuccess,
+		forcedCategory = undefined
+	} = $props<{
 		open: boolean;
 		departmentToEdit?: Department | null;
 		departments: Department[]; // For parent selection
 		onSuccess: () => void;
+		forcedCategory?: string; // Optional: If set, locks the category
 	}>();
 
 	let loading = $state(false);
@@ -23,7 +30,7 @@
 		name_en: '',
 		description: '',
 		parent_department_id: 'none',
-		category: 'administrative',
+		category: forcedCategory || 'administrative',
 		org_type: 'unit',
 		phone: '',
 		email: '',
@@ -40,7 +47,7 @@
 				name_en: departmentToEdit.name_en || '',
 				description: departmentToEdit.description || '',
 				parent_department_id: departmentToEdit.parent_department_id || 'none',
-				category: departmentToEdit.category || 'administrative',
+				category: departmentToEdit.category || forcedCategory || 'administrative',
 				org_type: departmentToEdit.org_type || 'unit',
 				phone: departmentToEdit.phone || '',
 				email: departmentToEdit.email || '',
@@ -55,7 +62,7 @@
 				name_en: '',
 				description: '',
 				parent_department_id: 'none',
-				category: 'administrative',
+				category: forcedCategory || 'administrative',
 				org_type: 'unit',
 				phone: '',
 				email: '',
@@ -74,9 +81,9 @@
 			if (payload.parent_department_id === 'none') {
 				delete payload.parent_department_id;
 			}
-            
-            // Convert types if needed (e.g. string -> number)
-            payload.display_order = Number(payload.display_order);
+
+			// Convert types if needed (e.g. string -> number)
+			payload.display_order = Number(payload.display_order);
 
 			if (departmentToEdit) {
 				await updateDepartment(departmentToEdit.id, payload);
@@ -139,7 +146,7 @@
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
 					<Label>ประเภท (Category)</Label>
-					<Select.Root type="single" bind:value={formData.category}>
+					<Select.Root type="single" bind:value={formData.category} disabled={!!forcedCategory}>
 						<Select.Trigger>
 							{formData.category === 'administrative'
 								? 'บริหารจัดการ (Administrative)'

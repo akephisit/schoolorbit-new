@@ -14,7 +14,8 @@
 		Mail,
 		MapPin,
 		Briefcase,
-		GraduationCap
+		GraduationCap,
+		Library
 	} from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
@@ -33,7 +34,7 @@
 	let editingDepartment: Department | null = $state(null);
 
 	// Hierarchical Data Processing
-	// Filter logic: Only Administrative or Miscellaneous
+	// Filter logic: Only Academic
 	let filteredDepartments = $derived(
 		departments.filter((dept) => {
 			const query = searchQuery.toLowerCase();
@@ -42,8 +43,7 @@
 				dept.code.toLowerCase().includes(query) ||
 				(dept.name_en && dept.name_en.toLowerCase().includes(query));
 
-			const isAllowedCategory =
-				dept.category === 'administrative' || dept.category === 'miscellaneous';
+			const isAllowedCategory = dept.category === 'academic';
 
 			return matchesSearch && isAllowedCategory;
 		})
@@ -55,11 +55,7 @@
 		isSearching
 			? []
 			: departments
-					.filter(
-						(d) =>
-							!d.parent_department_id &&
-							(d.category === 'administrative' || d.category === 'miscellaneous')
-					)
+					.filter((d) => !d.parent_department_id && d.category === 'academic')
 					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
 	);
 
@@ -116,8 +112,6 @@
 		e.preventDefault(); // allow drop
 		e.stopPropagation();
 
-		// If dragging over itself or one of its children (circular), we should ideally prevent it.
-		// For now simple check:
 		if (draggedDeptId === deptId) return;
 
 		dragOverDeptId = deptId;
@@ -135,7 +129,6 @@
 
 		if (!sourceDeptId) return;
 
-		// Prevent dropping on itself
 		if (sourceDeptId === targetParentId) return;
 
 		const sourceDept = departments.find((d) => d.id === sourceDeptId);
@@ -144,26 +137,27 @@
 		if (!sourceDept) return;
 
 		// Validation: Prevent nesting deeper than 2 levels
-		// Case: Moving a parent (Dept with children) into another parent (creating level 3)
 		if (targetParentId && getChildren(sourceDept.id).length > 0) {
-			toast.error('ไม่สามารถย้ายฝ่ายที่มีฝ่ายย่อยไปอยู่ใต้ฝ่ายอื่นได้ (จำกัดโครงสร้าง 2 ระดับ)');
+			toast.error(
+				'ไม่สามารถย้ายกลุ่มสาระที่มีหน่วยย่อยไปอยู่ใต้กลุ่มอื่นได้ (จำกัดโครงสร้าง 2 ระดับ)'
+			);
 			return;
 		}
 
 		const targetName = targetDept ? targetDept.name : 'ระดับสูงสุด (Root)';
 
 		if (confirm(`คุณต้องการย้าย "${sourceDept.name}" ไปสังกัด "${targetName}" ใช่หรือไม่?`)) {
-			const loadingToast = toast.loading('กำลังย้ายฝ่าย...');
+			const loadingToast = toast.loading('กำลังย้าย...');
 			try {
 				const result = await updateDepartment(sourceDeptId, {
 					parent_department_id: targetParentId ?? undefined
 				});
 
 				if (result.success) {
-					toast.success('ย้ายฝ่ายสำเร็จ', { id: loadingToast });
+					toast.success('ย้ายสำเร็จ', { id: loadingToast });
 					loadDepartments();
 				} else {
-					toast.error('ย้ายฝ่ายไม่สำเร็จ: ' + result.error, { id: loadingToast });
+					toast.error('ย้ายไม่สำเร็จ: ' + result.error, { id: loadingToast });
 				}
 			} catch (err: any) {
 				toast.error('เกิดข้อผิดพลาด: ' + err.message, { id: loadingToast });
@@ -177,7 +171,7 @@
 </script>
 
 <svelte:head>
-	<title>จัดการฝ่าย - SchoolOrbit</title>
+	<title>จัดการกลุ่มสาระฯ - SchoolOrbit</title>
 </svelte:head>
 
 <div class="space-y-6">
@@ -185,18 +179,18 @@
 	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 		<div>
 			<h1 class="text-3xl font-bold text-foreground flex items-center gap-2">
-				<Building2 class="w-8 h-8" />
-				จัดการฝ่าย
+				<Library class="w-8 h-8" />
+				จัดการกลุ่มสาระฯ
 			</h1>
-			<p class="text-muted-foreground mt-1">จัดการโครงสร้างองค์กรและฝ่ายบริหารทั่วไป</p>
+			<p class="text-muted-foreground mt-1">จัดการกลุ่มสาระการเรียนรู้และงานวิชาการ</p>
 		</div>
 		<Button onclick={handleCreate} class="flex items-center gap-2">
 			<Plus class="w-4 h-4" />
-			เพิ่มฝ่าย
+			เพิ่มกลุ่มสาระ
 		</Button>
 	</div>
 
-	<!-- Search & Filter Bar (No Category Select) -->
+	<!-- Search & Filter Bar -->
 	<div class="flex flex-col sm:flex-row gap-4">
 		<div class="bg-card border border-border rounded-lg p-1 flex-1">
 			<div class="relative">
@@ -204,7 +198,7 @@
 				<Input
 					type="text"
 					bind:value={searchQuery}
-					placeholder="ค้นหาฝ่าย..."
+					placeholder="ค้นหากลุ่มสาระ..."
 					class="pl-10 border-0 focus-visible:ring-0"
 				/>
 			</div>
@@ -225,15 +219,14 @@
 			<Button onclick={loadDepartments} variant="outline" class="mt-4">ลองอีกครั้ง</Button>
 		</div>
 	{:else if isSearching}
-		<!-- Search Results Mode (Flat Grid) -->
+		<!-- Search Results Mode -->
 		{#if filteredDepartments.length === 0}
 			<div class="bg-card border border-border rounded-lg p-12 text-center">
-				<p class="text-lg font-medium text-foreground">ไม่พบฝ่ายที่ค้นหา</p>
+				<p class="text-lg font-medium text-foreground">ไม่พบกลุ่มสาระที่ค้นหา</p>
 			</div>
 		{:else}
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 				{#each filteredDepartments as dept (dept.id)}
-					<!-- Reusing the Card UI in a flat structure -->
 					<div class="bg-card border border-border rounded-lg p-4 relative group">
 						<div class="flex items-center gap-2 mb-2">
 							<Badge variant="outline">{dept.code}</Badge>
@@ -250,12 +243,11 @@
 			</div>
 		{/if}
 	{:else}
-		<!-- Hierarchical Mode (Nested Cards) -->
+		<!-- Hierarchical Mode -->
 		<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
 			{#each rootDepartments as root (root.id)}
 				{@const children = getChildren(root.id)}
 
-				<!-- Root/Parent Card -->
 				<div
 					class="bg-muted/40 border border-border rounded-xl p-4 flex flex-col gap-4
                                transition-all duration-200
@@ -266,15 +258,10 @@
 					ondrop={(e) => handleDrop(e, root.id)}
 					role="group"
 				>
-					<!-- Parent Header -->
 					<div class="flex items-start justify-between">
 						<div class="flex-1">
 							<div class="flex items-center gap-2 mb-1">
-								{#if root.category === 'academic'}
-									<GraduationCap class="w-5 h-5 text-orange-500" />
-								{:else}
-									<Briefcase class="w-5 h-5 text-blue-500" />
-								{/if}
+								<GraduationCap class="w-5 h-5 text-orange-500" />
 								<h3 class="font-bold text-lg text-foreground">
 									<a href="/staff/departments/{root.id}" class="hover:underline">{root.name}</a>
 								</h3>
@@ -288,9 +275,7 @@
 						</Button>
 					</div>
 
-					<!-- Children Container -->
 					<div class="flex flex-col gap-2 min-h-[50px]">
-						<!-- Snippet for Recursive Children -->
 						{#snippet departmentNode(dept: Department)}
 							<div
 								class="bg-card border border-border/60 hover:border-primary/50 shadow-sm rounded-lg p-3
@@ -331,7 +316,6 @@
 								</div>
 							</div>
 
-							<!-- Recursive GrandChildren (Display only, no drop handlers) -->
 							{@const grandChildren = getChildren(dept.id)}
 							{#if grandChildren.length > 0}
 								<div
@@ -344,7 +328,6 @@
 							{/if}
 						{/snippet}
 
-						<!-- Render First Level Children -->
 						{#each children as child (child.id)}
 							{@render departmentNode(child)}
 						{/each}
@@ -353,18 +336,17 @@
 							<div
 								class="text-center py-4 border-2 border-dashed border-border/50 rounded-lg text-muted-foreground/50 text-xs"
 							>
-								ลากฝ่ายย่อยมาวางที่นี่
+								ลากหน่วยย่อยมาวางที่นี่
 							</div>
 						{/if}
 					</div>
 				</div>
 			{/each}
 
-			<!-- Add New Placeholders or Empty State if no roots -->
 			{#if rootDepartments.length === 0}
 				<div class="col-span-full py-12 text-center text-muted-foreground">
-					ไม่พบข้อมูลฝ่าย
-					<Button variant="link" onclick={handleCreate}>เพิ่มฝ่ายใหม่</Button>
+					ไม่พบข้อมูลกลุ่มสาระ
+					<Button variant="link" onclick={handleCreate}>เพิ่มกลุ่มสาระใหม่</Button>
 				</div>
 			{/if}
 		</div>
@@ -375,6 +357,6 @@
 		departmentToEdit={editingDepartment}
 		{departments}
 		onSuccess={loadDepartments}
-		forcedCategory="administrative"
+		forcedCategory="academic"
 	/>
 </div>
