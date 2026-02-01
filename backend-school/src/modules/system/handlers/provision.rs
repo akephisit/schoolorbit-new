@@ -136,7 +136,7 @@ pub async fn provision_tenant(
         r#"
         INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
         VALUES ($1, $2, $3, CURRENT_DATE)
-        ON CONFLICT (user_id, role_id, started_at) DO NOTHING
+        ON CONFLICT (user_id, role_id, department_id, started_at) DO NOTHING
         "#
     )
     .bind(user_id)

@@ -68,6 +68,28 @@ pub enum DepartmentPosition {
     Coordinator,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum DepartmentCategory {
+    #[serde(rename = "administrative")]
+    Administrative,
+    #[serde(rename = "academic")]
+    Academic,
+    #[serde(rename = "special")]
+    Special,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum OrganizationType {
+    #[serde(rename = "group")]
+    Group,      // กล่องแม่ (Cluster)
+    #[serde(rename = "unit")]
+    Unit,       // กล่องลูก (Department)
+    #[serde(rename = "team")]
+    Team,       // ทีมย่อย
+}
+
 // ===================================================================
 // Role (บทบาท)
 // ===================================================================
@@ -151,6 +173,8 @@ pub struct Department {
     pub location: Option<String>,
     pub is_active: bool,
     pub display_order: i32,
+    pub category: String, // administrative, academic
+    pub org_type: String, // group, unit
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -165,6 +189,8 @@ pub struct CreateDepartmentRequest {
     pub phone: Option<String>,
     pub email: Option<String>,
     pub location: Option<String>,
+    pub category: Option<String>,
+    pub org_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,6 +203,8 @@ pub struct UpdateDepartmentRequest {
     pub email: Option<String>,
     pub location: Option<String>,
     pub is_active: Option<bool>,
+    pub category: Option<String>,
+    pub org_type: Option<String>,
 }
 
 // ===================================================================
@@ -294,6 +322,8 @@ pub struct DepartmentResponse {
     pub name: String,
     pub position: Option<String>,
     pub is_primary_department: Option<bool>,
+    pub category: Option<String>,
+    pub org_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -832,8 +832,8 @@ pub async fn create_department(
     };
 
     let dept_id: Uuid = match sqlx::query_scalar(
-        "INSERT INTO departments (code, name, name_en, description, parent_department_id, phone, email, location)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "INSERT INTO departments (code, name, name_en, description, parent_department_id, phone, email, location, category, org_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id",
     )
     .bind(&payload.code)
@@ -844,6 +844,8 @@ pub async fn create_department(
     .bind(&payload.phone)
     .bind(&payload.email)
     .bind(&payload.location)
+    .bind(payload.category.unwrap_or_else(|| "administrative".to_string()))
+    .bind(payload.org_type.unwrap_or_else(|| "unit".to_string()))
     .fetch_one(&pool)
     .await
     {
@@ -949,7 +951,9 @@ pub async fn update_department(
             phone = COALESCE($6, phone),
             email = COALESCE($7, email),
             location = COALESCE($8, location),
-            is_active = COALESCE($9, is_active),
+            category = COALESCE($9, category),
+            org_type = COALESCE($10, org_type),
+            is_active = COALESCE($11, is_active),
             updated_at = NOW()
          WHERE id = $1",
     )
@@ -961,6 +965,8 @@ pub async fn update_department(
     .bind(&payload.phone)
     .bind(&payload.email)
     .bind(&payload.location)
+    .bind(&payload.category)
+    .bind(&payload.org_type)
     .bind(&payload.is_active)
     .execute(&pool)
     .await;

@@ -3,19 +3,32 @@
 	import { listDepartments, type Department } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Building2, Plus, Pencil, Search, Phone, Mail, MapPin } from 'lucide-svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import { 
+		Building2, Plus, Pencil, Search, Phone, Mail, MapPin, 
+		Briefcase, GraduationCap, LayoutGrid, Layers, Users 
+	} from 'lucide-svelte';
+	import * as Select from '$lib/components/ui/select';
 
 	let departments: Department[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
 	let searchQuery = $state('');
+	let selectedCategory = $state('all'); // all, administrative, academic
 
 	let filteredDepartments = $derived(
 		departments.filter(
-			(dept) =>
-				dept.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				dept.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				(dept.name_en && dept.name_en.toLowerCase().includes(searchQuery.toLowerCase()))
+			(dept) => {
+				// Filter by search
+				const matchesSearch = dept.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+					dept.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+					(dept.name_en && dept.name_en.toLowerCase().includes(searchQuery.toLowerCase()));
+				
+				// Filter by category
+				const matchesCategory = selectedCategory === 'all' || dept.category === selectedCategory;
+
+				return matchesSearch && matchesCategory;
+			}
 		)
 	);
 
@@ -64,10 +77,35 @@
 	</div>
 
 	<!-- Search Bar -->
-	<div class="bg-card border border-border rounded-lg p-4">
-		<div class="relative">
-			<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-			<Input type="text" bind:value={searchQuery} placeholder="ค้นหาฝ่าย..." class="pl-10" />
+	<!-- Search & Filter Bar -->
+	<div class="flex flex-col sm:flex-row gap-4">
+		<div class="bg-card border border-border rounded-lg p-1 flex-1">
+			<div class="relative">
+				<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+				<Input
+					type="text"
+					bind:value={searchQuery}
+					placeholder="ค้นหาฝ่าย..."
+					class="pl-10 border-0 focus-visible:ring-0"
+				/>
+			</div>
+		</div>
+
+		<div class="w-full sm:w-[200px]">
+			<Select.Root type="single" bind:value={selectedCategory}>
+				<Select.Trigger>
+					{selectedCategory === 'all'
+						? 'ทั้งหมด'
+						: selectedCategory === 'administrative'
+							? 'บริหารจัดการ'
+							: 'วิชาการ'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="all">ทั้งหมด</Select.Item>
+					<Select.Item value="administrative">บริหารจัดการ</Select.Item>
+					<Select.Item value="academic">วิชาการ</Select.Item>
+				</Select.Content>
+			</Select.Root>
 		</div>
 	</div>
 
@@ -96,17 +134,28 @@
 				<div class="bg-card border border-border rounded-lg p-6 hover:shadow-md transition-shadow">
 					<div class="flex items-start justify-between mb-4">
 						<div class="flex-1">
-							<div class="flex items-center gap-2 mb-1">
-								<Building2 class="w-5 h-5 text-primary" />
-								<h3 class="text-lg font-semibold text-foreground">{dept.name}</h3>
+							<div class="flex items-start justify-between gap-2 mb-1">
+								<div class="flex items-center gap-2">
+									{#if dept.category === 'academic'}
+										<GraduationCap class="w-5 h-5 text-orange-500" />
+									{:else}
+										<Briefcase class="w-5 h-5 text-blue-500" />
+									{/if}
+									<h3 class="text-lg font-semibold text-foreground">{dept.name}</h3>
+								</div>
+
+								<div class="flex gap-1 flex-wrap justify-end">
+									{#if dept.org_type === 'group'}
+										<Badge variant="default" class="bg-slate-800 hover:bg-slate-900">Group</Badge>
+									{:else}
+										<Badge variant="secondary">Unit</Badge>
+									{/if}
+								</div>
 							</div>
 							{#if dept.name_en}
-								<p class="text-sm text-muted-foreground ml-7">{dept.name_en}</p>
+								<p class="text-sm text-muted-foreground ml-7 mb-2">{dept.name_en}</p>
 							{/if}
 						</div>
-						<Button disabled size="sm" variant="ghost" class="opacity-50 cursor-not-allowed">
-							<Pencil class="w-4 h-4" />
-						</Button>
 					</div>
 
 					<div class="space-y-3">

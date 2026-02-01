@@ -125,6 +125,9 @@ CREATE TABLE IF NOT EXISTS user_roles (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
     
+    -- Department context (Optional - for department-specific roles)
+    department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
+
     -- Additional Info
     is_primary BOOLEAN DEFAULT false,
     started_at DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -135,17 +138,19 @@ CREATE TABLE IF NOT EXISTS user_roles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
     -- Constraints
-    UNIQUE(user_id, role_id, started_at)
+    UNIQUE(user_id, role_id, department_id, started_at)
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_department_id ON user_roles(department_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_is_primary ON user_roles(is_primary);
 CREATE INDEX IF NOT EXISTS idx_user_roles_active ON user_roles(user_id) 
     WHERE ended_at IS NULL;
 
 COMMENT ON TABLE user_roles IS 'ความสัมพันธ์ระหว่างผู้ใช้และบทบาท (Many-to-Many)';
 COMMENT ON COLUMN user_roles.is_primary IS 'บทบาทหลักของผู้ใช้';
+COMMENT ON COLUMN user_roles.department_id IS 'สังกัดฝ่าย (ถ้ามี) สำหรับบทบาทที่ผูกกับฝ่าย';
 
 -- ===================================================================
 -- 5. Departments Table (ฝ่าย/แผนก)
@@ -158,8 +163,10 @@ CREATE TABLE IF NOT EXISTS departments (
     name_en VARCHAR(200),
     description TEXT,
     
-    -- Hierarchy
+    -- Hierarchy & Org Structure
     parent_department_id UUID REFERENCES departments(id),
+    category VARCHAR(50) NOT NULL DEFAULT 'administrative', -- administrative, academic
+    org_type VARCHAR(50) NOT NULL DEFAULT 'unit',         -- group, unit
     
     -- Contact
     phone VARCHAR(20),
@@ -180,8 +187,13 @@ CREATE INDEX IF NOT EXISTS idx_departments_code ON departments(code);
 CREATE INDEX IF NOT EXISTS idx_departments_parent ON departments(parent_department_id);
 CREATE INDEX IF NOT EXISTS idx_departments_is_active ON departments(is_active);
 
-COMMENT ON TABLE departments IS 'ฝ่าย/แผนก';
+CREATE INDEX IF NOT EXISTS idx_departments_category ON departments(category);
+CREATE INDEX IF NOT EXISTS idx_departments_org_type ON departments(org_type);
+
+COMMENT ON TABLE departments IS 'ฝ่าย/แผนก/กลุ่มสาระ';
 COMMENT ON COLUMN departments.parent_department_id IS 'ฝ่ายแม่ (สำหรับฝ่ายย่อย)';
+COMMENT ON COLUMN departments.category IS 'ประเภทหน่วยงาน: administrative (บริหาร), academic (วิชาการ)';
+COMMENT ON COLUMN departments.org_type IS 'ระดับหน่วยงาน: cluster (กลุ่ม), department (ฝ่าย/หมวด)';
 
 -- ===================================================================
 -- 6. Department Members Table (สมาชิกในฝ่าย)
@@ -374,11 +386,10 @@ COMMENT ON COLUMN parent_info.relationship IS 'ความสัมพันธ
 -- Admin will assign permissions through the UI
 INSERT INTO roles (code, name, name_en, description, user_type, level) VALUES
     ('TEACHER', 'ครูผู้สอน', 'Teacher', 'ครูผู้สอนทั่วไป', 'staff', 10),
-    ('DEPT_HEAD', 'หัวหน้าฝ่าย', 'Department Head', 'หัวหน้าฝ่าย', 'staff', 50),
-    ('VICE_DIRECTOR', 'รองผู้อำนวยการ', 'Vice Director', 'รองผู้อำนวยการ', 'staff', 80),
+    ('HEAD', 'หัวหน้า', 'Head', 'หัวหน้างาน/หัวหน้ากลุ่มสาระ', 'staff', 50),
+    ('OFFICER', 'เจ้าหน้าที่', 'Officer', 'เจ้าหน้าที่ปฏิบัติงาน', 'staff', 30),
+    ('MEMBER', 'สมาชิก', 'Member', 'สมาชิกในฝ่าย/กลุ่มสาระ', 'staff', 10),
     ('DIRECTOR', 'ผู้อำนวยการ', 'Director', 'ผู้อำนวยการโรงเรียน', 'staff', 100),
-    ('SECRETARY', 'ธุรการ', 'Secretary', 'ธุรการทั่วไป', 'staff', 20),
-    ('LIBRARIAN', 'บรรณารักษ์', 'Librarian', 'เจ้าหน้าที่ห้องสมุด', 'staff', 15),
     ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'ผู้ดูแลระบบทั้งหมด', 'staff', 999)
 ON CONFLICT (code) DO NOTHING;
 
@@ -387,12 +398,19 @@ ON CONFLICT (code) DO NOTHING;
 -- ===================================================================
 -- 12. Insert Default Departments
 -- ===================================================================
-INSERT INTO departments (code, name, name_en, description, display_order) VALUES
-    ('ACADEMIC', 'ฝ่ายวิชาการ', 'Academic Affairs', 'รับผิดชอบด้านการเรียนการสอน', 1),
-    ('STUDENT_AFFAIRS', 'ฝ่ายกิจการนักเรียน', 'Student Affairs', 'ดูแลกิจกรรมและพัฒนานักเรียน', 2),
-    ('ADMINISTRATION', 'ฝ่ายบริหารทั่วไป', 'Administration', 'งานธุรการและบริหารทั่วไป', 3),
-    ('FINANCE', 'ฝ่ายการเงิน', 'Finance', 'รับผิดชอบด้านการเงินและบัญชี', 4),
-    ('LIBRARY', 'ห้องสมุด', 'Library', 'จัดการห้องสมุดและสื่อการเรียนรู้', 5)
+INSERT INTO departments (code, name, name_en, description, category, org_type, display_order) VALUES
+    ('ACADEMIC', 'กลุ่มบริหารวิชาการ', 'Academic Affairs', 'ดูแลงานวิชาการทั้งหมด', 'administrative', 'group', 1),
+    ('STUDENT_AFFAIRS', 'กลุ่มบริหารกิจการนักเรียน', 'Student Affairs', 'ดูแลงานปกครองและกิจกรรม', 'administrative', 'group', 2),
+    ('GENERAL_ADMIN', 'กลุ่มบริหารทั่วไป', 'General Administration', 'ดูแลอาคารสถานที่และธุรการ', 'administrative', 'group', 3),
+    ('BUDGET', 'กลุ่มบริหารงบประมาณ', 'Budget & Planning', 'ดูแลการเงินและแผนงาน', 'administrative', 'group', 4),
+    
+    -- Sample Units
+    ('REGISTRATION', 'งานทะเบียนวัดผล', 'Registration', 'งานทะเบียน', 'administrative', 'unit', 10),
+    ('CURRICULUM', 'งานหลักสูตร', 'Curriculum', 'งานหลักสูตร', 'administrative', 'unit', 11),
+    
+    -- Sample Learning Areas
+    ('MATH', 'กลุ่มสาระฯ คณิตศาสตร์', 'Mathematics', 'คณิตศาสตร์', 'academic', 'unit', 20),
+    ('SCIENCE', 'กลุ่มสาระฯ วิทยาศาสตร์', 'Science', 'วิทยาศาสตร์', 'academic', 'unit', 21)
 ON CONFLICT (code) DO NOTHING;
 
 -- ===================================================================

@@ -68,6 +68,8 @@ struct DepartmentRow {
     name: String,
     position: String,
     is_primary_department: bool,
+    category: Option<String>,
+    org_type: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -382,7 +384,7 @@ pub async fn get_staff_profile(
 
     // Get departments
     let departments = sqlx::query_as::<_, DepartmentRow>(
-        "SELECT d.id, d.code, d.name, dm.position, dm.is_primary_department
+        "SELECT d.id, d.code, d.name, d.category, d.org_type, dm.position, dm.is_primary_department
          FROM department_members dm
          JOIN departments d ON dm.department_id = d.id
          WHERE dm.user_id = $1 AND dm.ended_at IS NULL
@@ -399,6 +401,8 @@ pub async fn get_staff_profile(
         name: row.name,
         position: Some(row.position),
         is_primary_department: Some(row.is_primary_department),
+        category: row.category,
+        org_type: row.org_type,
     })
     .collect();
 

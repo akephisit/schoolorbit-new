@@ -42,6 +42,8 @@ export interface DepartmentResponse {
 	position?: string;
 	is_primary_department?: boolean;
 	is_primary?: boolean;
+	category?: string;
+	org_type?: string;
 	responsibilities?: string;
 }
 
@@ -177,6 +179,8 @@ export interface Department {
 	name_en?: string;
 	description?: string;
 	parent_department_id?: string;
+	category?: string; // administrative, academic
+	org_type?: string; // group, unit
 	phone?: string;
 	email?: string;
 	location?: string;
