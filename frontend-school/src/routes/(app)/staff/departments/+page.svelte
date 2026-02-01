@@ -105,6 +105,11 @@
 		e.dataTransfer.setData('text/plain', deptId);
 	}
 
+	function handleDragEnd(e: DragEvent) {
+		draggedDeptId = null;
+		dragOverDeptId = null;
+	}
+
 	function handleDragOver(e: DragEvent, deptId: string) {
 		e.preventDefault(); // allow drop
 		e.stopPropagation();
@@ -306,37 +311,36 @@
 
 					<!-- Children Container -->
 					<div class="flex flex-col gap-2 min-h-[50px]">
-						<!-- min-h allows dropping into empty parents -->
-						{#each children as child (child.id)}
+						<!-- Snippet for Recursive Children -->
+						{#snippet departmentNode(dept: Department)}
 							<div
 								class="bg-card border border-border/60 hover:border-primary/50 shadow-sm rounded-lg p-3
-                                           cursor-move transition-all group relative
-                                           {draggedDeptId === child.id ? 'opacity-40' : ''}
-                                           {dragOverDeptId === child.id
-									? 'ring-2 ring-primary'
-									: ''}"
+									   cursor-move transition-all group relative list-item-card
+									   {draggedDeptId === dept.id ? 'opacity-40' : ''}
+									   {dragOverDeptId === dept.id ? 'ring-2 ring-primary' : ''}"
 								draggable="true"
 								role="listitem"
-								ondragstart={(e) => handleDragStart(e, child.id)}
-								ondragover={(e) => handleDragOver(e, child.id)}
-								ondrop={(e) => handleDrop(e, child.id)}
+								ondragstart={(e) => handleDragStart(e, dept.id)}
+								ondragend={handleDragEnd}
+								ondragover={(e) => handleDragOver(e, dept.id)}
+								ondrop={(e) => handleDrop(e, dept.id)}
 							>
 								<div class="flex items-center justify-between gap-2">
 									<div class="flex items-center gap-2 overflow-hidden">
 										<div
-											class="w-1.5 h-8 rounded-full {child.is_active
+											class="w-1.5 h-8 rounded-full {dept.is_active
 												? 'bg-green-500'
 												: 'bg-gray-300'} shrink-0"
 										></div>
 										<div class="flex flex-col truncate">
 											<span class="font-medium truncate text-sm">
-												<a href="/staff/departments/{child.id}" class="hover:underline"
-													>{child.name}</a
+												<a href="/staff/departments/{dept.id}" class="hover:underline"
+													>{dept.name}</a
 												>
 											</span>
 											<span class="text-[10px] text-muted-foreground flex gap-2">
-												<span>{child.code}</span>
-												{#if child.phone}<span>• 📞 {child.phone}</span>{/if}
+												<span>{dept.code}</span>
+												{#if dept.phone}<span>• 📞 {dept.phone}</span>{/if}
 											</span>
 										</div>
 									</div>
@@ -344,12 +348,29 @@
 										variant="ghost"
 										size="icon"
 										class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-										onclick={() => handleEdit(child)}
+										onclick={() => handleEdit(dept)}
 									>
 										<Pencil class="w-3 h-3 text-muted-foreground" />
 									</Button>
 								</div>
 							</div>
+
+							<!-- Recursive GrandChildren -->
+							{@const grandChildren = getChildren(dept.id)}
+							{#if grandChildren.length > 0}
+								<div
+									class="ml-6 pl-2 border-l-2 border-dashed border-border/30 flex flex-col gap-2 pt-2"
+								>
+									{#each grandChildren as grandChild (grandChild.id)}
+										{@render departmentNode(grandChild)}
+									{/each}
+								</div>
+							{/if}
+						{/snippet}
+
+						<!-- Render First Level Children -->
+						{#each children as child (child.id)}
+							{@render departmentNode(child)}
 						{/each}
 
 						{#if children.length === 0}
