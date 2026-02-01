@@ -1,39 +1,53 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { listDepartments, type Department } from '$lib/api/staff';
+	import { listDepartments, updateDepartment } from '$lib/api/staff';
+	import type { Department } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
-	import { 
-		Building2, Plus, Pencil, Search, Phone, Mail, MapPin, 
-		Briefcase, GraduationCap, LayoutGrid, Layers, Users 
+	import {
+		Building2,
+		Plus,
+		Pencil,
+		Search,
+		Phone,
+		Mail,
+		MapPin,
+		Briefcase,
+		GraduationCap,
+		LayoutGrid,
+		Layers,
+		Users
 	} from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
+	import { toast } from 'svelte-sonner';
 
 	let departments: Department[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
 	let searchQuery = $state('');
 	let selectedCategory = $state('all'); // all, administrative, academic
-	
+
+	// Drag and Drop State
+	let draggedDeptId: string | null = $state(null);
+	let dragOverDeptId: string | null = $state(null);
+
 	let showDialog = $state(false);
 	let editingDepartment: Department | null = $state(null);
 
 	let filteredDepartments = $derived(
-		departments.filter(
-			(dept) => {
-				// Filter by search
-				const matchesSearch = dept.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-					dept.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-					(dept.name_en && dept.name_en.toLowerCase().includes(searchQuery.toLowerCase()));
-				
-				// Filter by category
-				const matchesCategory = selectedCategory === 'all' || dept.category === selectedCategory;
+		departments.filter((dept) => {
+			const query = searchQuery.toLowerCase();
+			const matchesSearch =
+				dept.name.toLowerCase().includes(query) ||
+				dept.code.toLowerCase().includes(query) ||
+				(dept.name_en && dept.name_en.toLowerCase().includes(query));
 
-				return matchesSearch && matchesCategory;
-			}
-		)
+			const matchesCategory = selectedCategory === 'all' || dept.category === selectedCategory;
+
+			return matchesSearch && matchesCategory;
+		})
 	);
 
 	async function loadDepartments() {
@@ -65,6 +79,66 @@
 		showDialog = true;
 	}
 
+	// Drag and Drop Handlers
+	function handleDragStart(e: DragEvent, deptId: string) {
+		if (!e.dataTransfer) return;
+		draggedDeptId = deptId;
+		e.dataTransfer.effectAllowed = 'move';
+		e.dataTransfer.setData('text/plain', deptId);
+	}
+
+	function handleDragOver(e: DragEvent, deptId: string) {
+		e.preventDefault(); // allow drop
+		if (draggedDeptId === deptId) return; // Prevent self-drop
+		dragOverDeptId = deptId;
+	}
+
+	function handleDragLeave(e: DragEvent) {
+		// Only clear if leaving the main drop target, not entering children
+		// But simpler: just rely on dragOver updating it correctly.
+		// Sometimes dragLeave fires when entering children.
+		// We can clear dragOverDeptId if we are sure we left the card.
+		// For now simple implementation: dragOver sets it.
+	}
+
+	async function handleDrop(e: DragEvent, targetDeptId: string) {
+		e.preventDefault();
+		dragOverDeptId = null;
+		const sourceDeptId = e.dataTransfer?.getData('text/plain');
+
+		if (!sourceDeptId || sourceDeptId === targetDeptId) return;
+
+		// Move Logic
+		// We are moving source (child) INTO target (parent)
+		// Check for circular dependency (simple check: if target's parent is source?)
+		// The robust backend check is better, but frontend can't easily check full tree without improved data structure.
+		// Let's just try to update.
+
+		const sourceDept = departments.find((d) => d.id === sourceDeptId);
+		const targetDept = departments.find((d) => d.id === targetDeptId);
+
+		if (!sourceDept || !targetDept) return;
+
+		if (
+			confirm(`คุณต้องการย้าย "${sourceDept.name}" ไปสังกัดภายใต้ "${targetDept.name}" ใช่หรือไม่?`)
+		) {
+			const loadingToast = toast.loading('กำลังย้ายฝ่าย...');
+			try {
+				// Keep other fields same, just update parent
+				const result = await updateDepartment(sourceDeptId, { parent_department_id: targetDeptId });
+
+				if (result.success) {
+					toast.success('ย้ายฝ่ายสำเร็จ', { id: loadingToast });
+					loadDepartments();
+				} else {
+					toast.error('ย้ายฝ่ายไม่สำเร็จ: ' + result.error, { id: loadingToast });
+				}
+			} catch (err: any) {
+				toast.error('เกิดข้อผิดพลาด: ' + err.message, { id: loadingToast });
+			}
+		}
+	}
+
 	onMount(() => {
 		loadDepartments();
 	});
@@ -90,7 +164,6 @@
 		</Button>
 	</div>
 
-	<!-- Search Bar -->
 	<!-- Search & Filter Bar -->
 	<div class="flex flex-col sm:flex-row gap-4">
 		<div class="bg-card border border-border rounded-lg p-1 flex-1">
@@ -149,7 +222,17 @@
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 			{#each filteredDepartments as dept (dept.id)}
 				<div
-					class="bg-card border border-border rounded-lg p-6 hover:shadow-md transition-shadow relative group"
+					class="bg-card border border-border rounded-lg p-6 hover:shadow-md transition-all relative group cursor-move
+                    {dragOverDeptId === dept.id
+						? 'ring-2 ring-primary bg-primary/5 scale-[1.02]'
+						: ''}
+                    {draggedDeptId === dept.id ? 'opacity-50 grayscale' : ''}"
+					draggable="true"
+					ondragstart={(e) => handleDragStart(e, dept.id)}
+					ondragover={(e) => handleDragOver(e, dept.id)}
+					ondragleave={handleDragLeave}
+					ondrop={(e) => handleDrop(e, dept.id)}
+					role="listitem"
 				>
 					<div class="flex items-start justify-between mb-4">
 						<div class="flex-1">
