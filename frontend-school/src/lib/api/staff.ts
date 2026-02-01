@@ -482,3 +482,44 @@ export async function deleteDepartment(deptId: string): Promise<ApiResponse<void
 
 	return response.json();
 }
+
+// ===================================================================
+// Department Menus APIs
+// ===================================================================
+
+export async function getDepartmentMenus(deptId: string): Promise<string[]> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/menus`, {
+		method: 'GET',
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json'
+		}
+	});
+
+	if (!response.ok) {
+		throw new Error('Failed to fetch department menus');
+	}
+
+	return response.json();
+}
+
+export async function updateDepartmentMenus(
+	deptId: string,
+	menu_item_ids: string[]
+): Promise<ApiResponse<void>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/menus`, {
+		method: 'PUT',
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ menu_item_ids })
+	});
+
+	if (!response.ok) {
+		const error = await response.json();
+		throw new Error(error.error || 'Failed to update department menus');
+	}
+
+	return response.json();
+}

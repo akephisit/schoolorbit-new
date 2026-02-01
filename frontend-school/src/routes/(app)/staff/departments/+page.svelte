@@ -14,10 +14,12 @@
 		Mail,
 		MapPin,
 		Briefcase,
-		GraduationCap
+		GraduationCap,
+		Settings
 	} from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
+	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte'; // New import
 	import { toast } from 'svelte-sonner';
 
 	let departments: Department[] = $state([]);
@@ -31,6 +33,10 @@
 
 	let showDialog = $state(false);
 	let editingDepartment: Department | null = $state(null);
+
+	// Permission Dialog State
+	let showPermissionDialog = $state(false);
+	let permissionDepartment = $state<Department | null>(null);
 
 	// Hierarchical Data Processing
 	// Filter logic: Only Administrative or Miscellaneous
@@ -96,6 +102,11 @@
 	function handleEdit(dept: Department) {
 		editingDepartment = dept;
 		showDialog = true;
+	}
+
+	function handlePermission(dept: Department) {
+		permissionDepartment = dept;
+		showPermissionDialog = true;
 	}
 
 	// Drag and Drop Handlers
@@ -280,9 +291,20 @@
 									{root.name_en}
 								</p>{/if}
 						</div>
-						<Button variant="ghost" size="icon" class="h-8 w-8" onclick={() => handleEdit(root)}>
-							<Pencil class="w-3 h-3" />
-						</Button>
+						<div class="flex items-center gap-1">
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-8 w-8 text-muted-foreground hover:text-foreground"
+								onclick={() => handlePermission(root)}
+								title="จัดการสิทธิ์เมนู"
+							>
+								<Settings class="w-4 h-4" />
+							</Button>
+							<Button variant="ghost" size="icon" class="h-8 w-8" onclick={() => handleEdit(root)}>
+								<Pencil class="w-3 h-3" />
+							</Button>
+						</div>
 					</div>
 
 					<!-- Children Container -->
@@ -374,4 +396,6 @@
 		onSuccess={loadDepartments}
 		forcedCategory="administrative"
 	/>
+
+	<DepartmentPermissionDialog bind:open={showPermissionDialog} department={permissionDepartment} />
 </div>
