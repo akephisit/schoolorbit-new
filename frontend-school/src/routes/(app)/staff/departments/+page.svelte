@@ -339,14 +339,27 @@
 											</span>
 										</div>
 									</div>
-									<Button
-										variant="ghost"
-										size="icon"
-										class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-										onclick={() => handleEdit(dept)}
+									<div
+										class="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity"
 									>
-										<Pencil class="w-3 h-3 text-muted-foreground" />
-									</Button>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-7 w-7 text-muted-foreground hover:text-foreground"
+											onclick={() => handlePermission(dept)}
+											title="จัดการสิทธิ์เมนู"
+										>
+											<Settings class="w-3.5 h-3.5" />
+										</Button>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-7 w-7"
+											onclick={() => handleEdit(dept)}
+										>
+											<Pencil class="w-3.5 h-3.5 text-muted-foreground" />
+										</Button>
+									</div>
 								</div>
 							</div>
 
