@@ -4,7 +4,7 @@
 
 export const _meta = {
 	menu: {
-		title: 'จัดการฝ่าย',
+		title: 'จัดการกลุ่มสาระ',
 		icon: 'Building2',
 		group: 'settings',
 		order: 1002,
@@ -15,6 +15,6 @@ export const _meta = {
 
 export const load = async () => {
 	return {
-		title: 'จัดการฝ่าย'
+		title: 'จัดการกลุ่มสาระ'
 	};
 };
