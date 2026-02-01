@@ -150,24 +150,21 @@
 			return;
 		}
 
-		const targetName = targetDept ? targetDept.name : 'ระดับสูงสุด (Root)';
+		// Direct move without confirmation
+		const loadingToast = toast.loading('กำลังย้ายฝ่าย...');
+		try {
+			const result = await updateDepartment(sourceDeptId, {
+				parent_department_id: targetParentId ?? undefined
+			});
 
-		if (confirm(`คุณต้องการย้าย "${sourceDept.name}" ไปสังกัด "${targetName}" ใช่หรือไม่?`)) {
-			const loadingToast = toast.loading('กำลังย้ายฝ่าย...');
-			try {
-				const result = await updateDepartment(sourceDeptId, {
-					parent_department_id: targetParentId ?? undefined
-				});
-
-				if (result.success) {
-					toast.success('ย้ายฝ่ายสำเร็จ', { id: loadingToast });
-					loadDepartments();
-				} else {
-					toast.error('ย้ายฝ่ายไม่สำเร็จ: ' + result.error, { id: loadingToast });
-				}
-			} catch (err: any) {
-				toast.error('เกิดข้อผิดพลาด: ' + err.message, { id: loadingToast });
+			if (result.success) {
+				toast.success('ย้ายฝ่ายสำเร็จ', { id: loadingToast });
+				loadDepartments();
+			} else {
+				toast.error('ย้ายฝ่ายไม่สำเร็จ: ' + result.error, { id: loadingToast });
 			}
+		} catch (err: any) {
+			toast.error('เกิดข้อผิดพลาด: ' + err.message, { id: loadingToast });
 		}
 	}
 
