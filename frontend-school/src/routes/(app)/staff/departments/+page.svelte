@@ -9,12 +9,16 @@
 		Briefcase, GraduationCap, LayoutGrid, Layers, Users 
 	} from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
+	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
 
 	let departments: Department[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
 	let searchQuery = $state('');
 	let selectedCategory = $state('all'); // all, administrative, academic
+	
+	let showDialog = $state(false);
+	let editingDepartment: Department | null = $state(null);
 
 	let filteredDepartments = $derived(
 		departments.filter(
@@ -51,6 +55,16 @@
 		}
 	}
 
+	function handleCreate() {
+		editingDepartment = null;
+		showDialog = true;
+	}
+
+	function handleEdit(dept: Department) {
+		editingDepartment = dept;
+		showDialog = true;
+	}
+
 	onMount(() => {
 		loadDepartments();
 	});
@@ -70,9 +84,9 @@
 			</h1>
 			<p class="text-muted-foreground mt-1">จัดการโครงสร้างองค์กรและหน่วยงาน</p>
 		</div>
-		<Button disabled class="flex items-center gap-2 opacity-50 cursor-not-allowed">
+		<Button onclick={handleCreate} class="flex items-center gap-2">
 			<Plus class="w-4 h-4" />
-			เพิ่มฝ่าย (ติดต่อผู้ดูแลระบบ)
+			เพิ่มฝ่าย
 		</Button>
 	</div>
 
@@ -126,12 +140,17 @@
 		<div class="bg-card border border-border rounded-lg p-12 text-center">
 			<Building2 class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
 			<p class="text-lg font-medium text-foreground">ไม่พบฝ่าย</p>
-			<p class="text-muted-foreground mt-2">ลองค้นหาด้วยคำอื่น</p>
+			<p class="text-muted-foreground mt-2">ลองค้นหาด้วยคำอื่น หรือเพิ่มฝ่ายใหม่</p>
+			<Button onclick={handleCreate} variant="outline" class="mt-4">
+				<Plus class="w-4 h-4 mr-2" /> เพิ่มฝ่ายใหม่
+			</Button>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 			{#each filteredDepartments as dept (dept.id)}
-				<div class="bg-card border border-border rounded-lg p-6 hover:shadow-md transition-shadow">
+				<div
+					class="bg-card border border-border rounded-lg p-6 hover:shadow-md transition-shadow relative group"
+				>
 					<div class="flex items-start justify-between mb-4">
 						<div class="flex-1">
 							<div class="flex items-start justify-between gap-2 mb-1">
@@ -141,7 +160,12 @@
 									{:else}
 										<Briefcase class="w-5 h-5 text-blue-500" />
 									{/if}
-									<h3 class="text-lg font-semibold text-foreground">{dept.name}</h3>
+									<a
+										href="/staff/departments/{dept.id}"
+										class="text-lg font-semibold text-foreground hover:underline hover:text-primary transition-colors"
+									>
+										{dept.name}
+									</a>
 								</div>
 
 								<div class="flex gap-1 flex-wrap justify-end">
@@ -207,9 +231,15 @@
 							<span class="text-xs {dept.is_active ? 'text-green-600' : 'text-gray-500'}">
 								{dept.is_active ? '● ใช้งาน' : '○ ไม่ใช้งาน'}
 							</span>
-							<span class="text-xs text-muted-foreground">
-								สร้าง: {new Date(dept.created_at).toLocaleDateString('th-TH')}
-							</span>
+
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-8 text-xs text-muted-foreground hover:text-foreground"
+								onclick={() => handleEdit(dept)}
+							>
+								<Pencil class="w-3 h-3 mr-1" /> แก้ไข
+							</Button>
 						</div>
 
 						{#if dept.parent_department_id}
@@ -220,4 +250,11 @@
 			{/each}
 		</div>
 	{/if}
+
+	<DepartmentDialog
+		bind:open={showDialog}
+		departmentToEdit={editingDepartment}
+		{departments}
+		onSuccess={loadDepartments}
+	/>
 </div>

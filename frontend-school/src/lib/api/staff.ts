@@ -395,3 +395,90 @@ export async function getDepartment(deptId: string): Promise<ApiResponse<Departm
 
 	return response.json();
 }
+
+export interface CreateDepartmentRequest {
+	code: string;
+	name: string;
+	name_en?: string;
+	description?: string;
+	parent_department_id?: string;
+	category?: string;
+	org_type?: string;
+	phone?: string;
+	email?: string;
+	location?: string;
+	is_active?: boolean;
+	display_order?: number;
+}
+
+export interface UpdateDepartmentRequest {
+	name?: string;
+	name_en?: string;
+	description?: string;
+	parent_department_id?: string;
+	category?: string;
+	org_type?: string;
+	phone?: string;
+	email?: string;
+	location?: string;
+	is_active?: boolean;
+	display_order?: number;
+}
+
+export async function createDepartment(
+	data: CreateDepartmentRequest
+): Promise<ApiResponse<{ id: string }>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments`, {
+		method: 'POST',
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify(data)
+	});
+
+	if (!response.ok) {
+		const error = await response.json();
+		throw new Error(error.error || 'Failed to create department');
+	}
+
+	return response.json();
+}
+
+export async function updateDepartment(
+	deptId: string,
+	data: UpdateDepartmentRequest
+): Promise<ApiResponse<void>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}`, {
+		method: 'PUT',
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify(data)
+	});
+
+	if (!response.ok) {
+		const error = await response.json();
+		throw new Error(error.error || 'Failed to update department');
+	}
+
+	return response.json();
+}
+
+export async function deleteDepartment(deptId: string): Promise<ApiResponse<void>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}`, {
+		method: 'DELETE',
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json'
+		}
+	});
+
+	if (!response.ok) {
+		const error = await response.json();
+		throw new Error(error.error || 'Failed to delete department');
+	}
+
+	return response.json();
+}

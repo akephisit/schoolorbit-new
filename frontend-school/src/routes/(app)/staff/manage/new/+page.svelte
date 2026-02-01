@@ -767,11 +767,55 @@
 													เลือกฝ่าย
 												{/if}
 											</Select.Trigger>
-											<Select.Content>
+											<Select.Content class="max-h-[300px] overflow-y-auto w-full max-w-[400px]">
 												<Select.Item value="">เลือกฝ่าย</Select.Item>
-												{#each departments as department (department.id)}
-													<Select.Item value={department.id}>{department.name}</Select.Item>
-												{/each}
+
+												{#if departments.some((d) => d.category === 'administrative')}
+													<Select.Group>
+														<Select.Label class="font-bold text-primary"
+															>บริหารจัดการ (Administrative)</Select.Label
+														>
+														{#each departments.filter((d) => d.category === 'administrative') as department (department.id)}
+															<Select.Item value={department.id} class="pl-6">
+																<div class="flex flex-col">
+																	<span>{department.name}</span>
+																	<span class="text-xs text-muted-foreground">
+																		{department.code} • {department.org_type?.toUpperCase()}
+																	</span>
+																</div>
+															</Select.Item>
+														{/each}
+													</Select.Group>
+												{/if}
+
+												{#if departments.some((d) => d.category === 'academic')}
+													<Select.Group>
+														<Select.Label class="font-bold text-orange-600 mt-2"
+															>วิชาการ (Academic)</Select.Label
+														>
+														{#each departments.filter((d) => d.category === 'academic') as department (department.id)}
+															<Select.Item value={department.id} class="pl-6">
+																<div class="flex flex-col">
+																	<span>{department.name}</span>
+																	<span class="text-xs text-muted-foreground">
+																		{department.code} • {department.org_type?.toUpperCase()}
+																	</span>
+																</div>
+															</Select.Item>
+														{/each}
+													</Select.Group>
+												{/if}
+
+												{#if departments.some((d) => !['administrative', 'academic'].includes(d.category || ''))}
+													<Select.Group>
+														<Select.Label class="font-bold mt-2">อื่นๆ</Select.Label>
+														{#each departments.filter((d) => !['administrative', 'academic'].includes(d.category || '')) as department (department.id)}
+															<Select.Item value={department.id} class="pl-6">
+																<span>{department.name}</span>
+															</Select.Item>
+														{/each}
+													</Select.Group>
+												{/if}
 											</Select.Content>
 										</Select.Root>
 									</div>
