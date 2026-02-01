@@ -146,6 +146,14 @@
 
 		if (!sourceDept) return;
 
+		// Validation: Prevent nesting deeper than 2 levels
+		// Case 1: Dropping onto a child (Already prevented by UI removal of drop handlers)
+		// Case 2: Moving a parent (Dept with children) into another parent (creating level 3)
+		if (targetParentId && getChildren(sourceDept.id).length > 0) {
+			toast.error('ไม่สามารถย้ายฝ่ายที่มีฝ่ายย่อยไปอยู่ใต้ฝ่ายอื่นได้ (จำกัดโครงสร้าง 2 ระดับ)');
+			return;
+		}
+
 		const targetName = targetDept ? targetDept.name : 'ระดับสูงสุด (Root)';
 
 		if (confirm(`คุณต้องการย้าย "${sourceDept.name}" ไปสังกัด "${targetName}" ใช่หรือไม่?`)) {
@@ -316,14 +324,11 @@
 							<div
 								class="bg-card border border-border/60 hover:border-primary/50 shadow-sm rounded-lg p-3
 									   cursor-move transition-all group relative list-item-card
-									   {draggedDeptId === dept.id ? 'opacity-40' : ''}
-									   {dragOverDeptId === dept.id ? 'ring-2 ring-primary' : ''}"
+									   {draggedDeptId === dept.id ? 'opacity-40' : ''}"
 								draggable="true"
 								role="listitem"
 								ondragstart={(e) => handleDragStart(e, dept.id)}
 								ondragend={handleDragEnd}
-								ondragover={(e) => handleDragOver(e, dept.id)}
-								ondrop={(e) => handleDrop(e, dept.id)}
 							>
 								<div class="flex items-center justify-between gap-2">
 									<div class="flex items-center gap-2 overflow-hidden">
@@ -355,7 +360,9 @@
 								</div>
 							</div>
 
-							<!-- Recursive GrandChildren -->
+							<!-- We do not render grandchildren recursively here anymore loop to enforce visual 2-levels -->
+							<!-- (But if data is already corrupt/deep, we just won't show it or show flatly? -->
+							<!-- Let's keep the render but remove drop capability to enforce structure from now on) -->
 							{@const grandChildren = getChildren(dept.id)}
 							{#if grandChildren.length > 0}
 								<div
