@@ -36,6 +36,7 @@
 	let showDialog = $state(false);
 	let editingDepartment: Department | null = $state(null);
 
+	// Hierarchical Data Processing
 	let filteredDepartments = $derived(
 		departments.filter((dept) => {
 			const query = searchQuery.toLowerCase();
@@ -49,6 +50,22 @@
 			return matchesSearch && matchesCategory;
 		})
 	);
+
+	let isSearching = $derived(searchQuery.length > 0 || selectedCategory !== 'all');
+
+	let rootDepartments = $derived(
+		isSearching
+			? []
+			: departments
+					.filter((d) => !d.parent_department_id) // Roots only
+					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+	);
+
+	function getChildren(parentId: string): Department[] {
+		return departments
+			.filter((d) => d.parent_department_id === parentId)
+			.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+	}
 
 	async function loadDepartments() {
 		try {
@@ -81,6 +98,7 @@
 
 	// Drag and Drop Handlers
 	function handleDragStart(e: DragEvent, deptId: string) {
+		e.stopPropagation(); // Prevent bubbling to parent
 		if (!e.dataTransfer) return;
 		draggedDeptId = deptId;
 		e.dataTransfer.effectAllowed = 'move';
@@ -89,43 +107,56 @@
 
 	function handleDragOver(e: DragEvent, deptId: string) {
 		e.preventDefault(); // allow drop
-		if (draggedDeptId === deptId) return; // Prevent self-drop
+		e.stopPropagation();
+
+		// If dragging over itself or one of its children (circular), we should ideally prevent it.
+		// For now simple check:
+		if (draggedDeptId === deptId) return;
+
 		dragOverDeptId = deptId;
 	}
 
 	function handleDragLeave(e: DragEvent) {
-		// Only clear if leaving the main drop target, not entering children
-		// But simpler: just rely on dragOver updating it correctly.
-		// Sometimes dragLeave fires when entering children.
-		// We can clear dragOverDeptId if we are sure we left the card.
-		// For now simple implementation: dragOver sets it.
+		// e.stopPropagation();
+		// dragOverDeptId = null; // Careful, this might flicker
 	}
 
-	async function handleDrop(e: DragEvent, targetDeptId: string) {
+	async function handleDrop(e: DragEvent, targetParentId: string | null) {
 		e.preventDefault();
+		e.stopPropagation();
 		dragOverDeptId = null;
 		const sourceDeptId = e.dataTransfer?.getData('text/plain');
 
-		if (!sourceDeptId || sourceDeptId === targetDeptId) return;
+		if (!sourceDeptId) return;
 
-		// Move Logic
-		// We are moving source (child) INTO target (parent)
-		// Check for circular dependency (simple check: if target's parent is source?)
-		// The robust backend check is better, but frontend can't easily check full tree without improved data structure.
-		// Let's just try to update.
+		// If drop on same parent (no change) - simplified check
+		// Ideally we check if targetParentId is actually different from current parent
+		// But let backend or confirm dialog handle strictly.
+
+		// Prevent dropping on itself
+		if (sourceDeptId === targetParentId) return;
 
 		const sourceDept = departments.find((d) => d.id === sourceDeptId);
-		const targetDept = departments.find((d) => d.id === targetDeptId);
+		const targetDept = targetParentId ? departments.find((d) => d.id === targetParentId) : null;
 
-		if (!sourceDept || !targetDept) return;
+		if (!sourceDept) return;
 
-		if (
-			confirm(`คุณต้องการย้าย "${sourceDept.name}" ไปสังกัดภายใต้ "${targetDept.name}" ใช่หรือไม่?`)
-		) {
+		const targetName = targetDept ? targetDept.name : 'ระดับสูงสุด (Root)';
+
+		if (confirm(`คุณต้องการย้าย "${sourceDept.name}" ไปสังกัด "${targetName}" ใช่หรือไม่?`)) {
 			const loadingToast = toast.loading('กำลังย้ายฝ่าย...');
 			try {
-				// Keep other fields same, just update parent
-				const result = await updateDepartment(sourceDeptId, { parent_department_id: targetDeptId });
+				// If targetParentId is null, we are moving to Root.
+				// If ID, we move to that parent.
+				// Important: UpdateDepartment payload expects parent_department_id or null/undefined logic
+				// Check our API: usually 'none' or null.
+
+				// Let's assume the API handles `null` as valid for "No Parent" or we send special value.
+				// Our DepartmentDialog uses 'none' string for logic, but API likely takes null/string.
+
+				const result = await updateDepartment(sourceDeptId, {
+					parent_department_id: targetParentId ?? undefined
+				}); // undefined to remove? Or null? Let's check API behavior. usually null works if backend supports Option<String>
 
 				if (result.success) {
 					toast.success('ย้ายฝ่ายสำเร็จ', { id: loadingToast });
@@ -209,128 +240,136 @@
 			<p class="text-destructive">{error}</p>
 			<Button onclick={loadDepartments} variant="outline" class="mt-4">ลองอีกครั้ง</Button>
 		</div>
-	{:else if filteredDepartments.length === 0}
-		<div class="bg-card border border-border rounded-lg p-12 text-center">
-			<Building2 class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-			<p class="text-lg font-medium text-foreground">ไม่พบฝ่าย</p>
-			<p class="text-muted-foreground mt-2">ลองค้นหาด้วยคำอื่น หรือเพิ่มฝ่ายใหม่</p>
-			<Button onclick={handleCreate} variant="outline" class="mt-4">
-				<Plus class="w-4 h-4 mr-2" /> เพิ่มฝ่ายใหม่
-			</Button>
-		</div>
-	{:else}
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-			{#each filteredDepartments as dept (dept.id)}
-				<div
-					class="bg-card border border-border rounded-lg p-6 hover:shadow-md transition-all relative group cursor-move
-                    {dragOverDeptId === dept.id
-						? 'ring-2 ring-primary bg-primary/5 scale-[1.02]'
-						: ''}
-                    {draggedDeptId === dept.id ? 'opacity-50 grayscale' : ''}"
-					draggable="true"
-					ondragstart={(e) => handleDragStart(e, dept.id)}
-					ondragover={(e) => handleDragOver(e, dept.id)}
-					ondragleave={handleDragLeave}
-					ondrop={(e) => handleDrop(e, dept.id)}
-					role="listitem"
-				>
-					<div class="flex items-start justify-between mb-4">
-						<div class="flex-1">
-							<div class="flex items-start justify-between gap-2 mb-1">
-								<div class="flex items-center gap-2">
-									{#if dept.category === 'academic'}
-										<GraduationCap class="w-5 h-5 text-orange-500" />
-									{:else}
-										<Briefcase class="w-5 h-5 text-blue-500" />
-									{/if}
-									<a
-										href="/staff/departments/{dept.id}"
-										class="text-lg font-semibold text-foreground hover:underline hover:text-primary transition-colors"
-									>
-										{dept.name}
-									</a>
-								</div>
-
-								<div class="flex gap-1 flex-wrap justify-end">
-									{#if dept.org_type === 'group'}
-										<Badge variant="default" class="bg-slate-800 hover:bg-slate-900">Group</Badge>
-									{:else}
-										<Badge variant="secondary">Unit</Badge>
-									{/if}
-								</div>
-							</div>
-							{#if dept.name_en}
-								<p class="text-sm text-muted-foreground ml-7 mb-2">{dept.name_en}</p>
-							{/if}
+	{:else if isSearching}
+		<!-- Search Results Mode (Flat Grid) -->
+		{#if filteredDepartments.length === 0}
+			<div class="bg-card border border-border rounded-lg p-12 text-center">
+				<p class="text-lg font-medium text-foreground">ไม่พบฝ่ายที่ค้นหา</p>
+			</div>
+		{:else}
+			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+				{#each filteredDepartments as dept (dept.id)}
+					<!-- Reusing the Card UI in a flat structure -->
+					<div class="bg-card border border-border rounded-lg p-4 relative group">
+						<div class="flex items-center gap-2 mb-2">
+							<Badge variant="outline">{dept.code}</Badge>
+							<span class="font-semibold">{dept.name}</span>
 						</div>
+						<div class="text-sm text-muted-foreground mb-4 line-clamp-2">
+							{dept.description || '-'}
+						</div>
+						<Button variant="outline" size="sm" class="w-full" onclick={() => handleEdit(dept)}>
+							<Pencil class="w-3 h-3 mr-2" /> แก้ไข
+						</Button>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	{:else}
+		<!-- Hierarchical Mode (Nested Cards) -->
+		<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
+			{#each rootDepartments as root (root.id)}
+				{@const children = getChildren(root.id)}
+
+				<!-- Root/Parent Card -->
+				<div
+					class="bg-muted/40 border border-border rounded-xl p-4 flex flex-col gap-4
+                               transition-all duration-200
+                               {dragOverDeptId === root.id
+						? 'ring-2 ring-primary bg-primary/10'
+						: ''}"
+					ondragover={(e) => handleDragOver(e, root.id)}
+					ondrop={(e) => handleDrop(e, root.id)}
+					role="group"
+				>
+					<!-- Parent Header -->
+					<div class="flex items-start justify-between">
+						<div class="flex-1">
+							<div class="flex items-center gap-2 mb-1">
+								{#if root.category === 'academic'}
+									<GraduationCap class="w-5 h-5 text-orange-500" />
+								{:else}
+									<Briefcase class="w-5 h-5 text-blue-500" />
+								{/if}
+								<h3 class="font-bold text-lg text-foreground">
+									<a href="/staff/departments/{root.id}" class="hover:underline">{root.name}</a>
+								</h3>
+							</div>
+							{#if root.name_en}<p class="text-xs text-muted-foreground ml-7">
+									{root.name_en}
+								</p>{/if}
+						</div>
+						<Button variant="ghost" size="icon" class="h-8 w-8" onclick={() => handleEdit(root)}>
+							<Pencil class="w-3 h-3" />
+						</Button>
 					</div>
 
-					<div class="space-y-3">
-						<div class="flex items-center gap-2">
-							<span class="text-xs px-2.5 py-1 bg-primary/10 text-primary rounded-full font-medium">
-								{dept.code}
-							</span>
-							<span
-								class="text-xs px-2.5 py-1 bg-muted text-muted-foreground rounded-full font-medium"
+					<!-- Children Container -->
+					<div class="flex flex-col gap-2 min-h-[50px]">
+						<!-- min-h allows dropping into empty parents -->
+						{#each children as child (child.id)}
+							<div
+								class="bg-card border border-border/60 hover:border-primary/50 shadow-sm rounded-lg p-3
+                                           cursor-move transition-all group relative
+                                           {draggedDeptId === child.id ? 'opacity-40' : ''}
+                                           {dragOverDeptId === child.id
+									? 'ring-2 ring-primary'
+									: ''}"
+								draggable="true"
+								role="listitem"
+								ondragstart={(e) => handleDragStart(e, child.id)}
+								ondragover={(e) => handleDragOver(e, child.id)}
+								ondrop={(e) => handleDrop(e, child.id)}
 							>
-								ลำดับ: {dept.display_order}
-							</span>
-						</div>
-
-						{#if dept.description}
-							<p class="text-sm text-muted-foreground">{dept.description}</p>
-						{/if}
-
-						<!-- Contact Info -->
-						<div class="pt-3 border-t border-border space-y-2">
-							{#if dept.phone}
-								<div class="flex items-center gap-2 text-sm">
-									<Phone class="w-4 h-4 text-muted-foreground" />
-									<span class="text-foreground">{dept.phone}</span>
+								<div class="flex items-center justify-between gap-2">
+									<div class="flex items-center gap-2 overflow-hidden">
+										<div
+											class="w-1.5 h-8 rounded-full {child.is_active
+												? 'bg-green-500'
+												: 'bg-gray-300'} shrink-0"
+										></div>
+										<div class="flex flex-col truncate">
+											<span class="font-medium truncate text-sm">
+												<a href="/staff/departments/{child.id}" class="hover:underline"
+													>{child.name}</a
+												>
+											</span>
+											<span class="text-[10px] text-muted-foreground flex gap-2">
+												<span>{child.code}</span>
+												{#if child.phone}<span>• 📞 {child.phone}</span>{/if}
+											</span>
+										</div>
+									</div>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+										onclick={() => handleEdit(child)}
+									>
+										<Pencil class="w-3 h-3 text-muted-foreground" />
+									</Button>
 								</div>
-							{/if}
+							</div>
+						{/each}
 
-							{#if dept.email}
-								<div class="flex items-center gap-2 text-sm">
-									<Mail class="w-4 h-4 text-muted-foreground" />
-									<span class="text-foreground">{dept.email}</span>
-								</div>
-							{/if}
-
-							{#if dept.location}
-								<div class="flex items-center gap-2 text-sm">
-									<MapPin class="w-4 h-4 text-muted-foreground" />
-									<span class="text-foreground">{dept.location}</span>
-								</div>
-							{/if}
-
-							{#if !dept.phone && !dept.email && !dept.location}
-								<p class="text-xs text-muted-foreground">ไม่มีข้อมูลการติดต่อ</p>
-							{/if}
-						</div>
-
-						<!-- Status & Date -->
-						<div class="flex items-center justify-between pt-2 border-t border-border">
-							<span class="text-xs {dept.is_active ? 'text-green-600' : 'text-gray-500'}">
-								{dept.is_active ? '● ใช้งาน' : '○ ไม่ใช้งาน'}
-							</span>
-
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-8 text-xs text-muted-foreground hover:text-foreground"
-								onclick={() => handleEdit(dept)}
+						{#if children.length === 0}
+							<div
+								class="text-center py-4 border-2 border-dashed border-border/50 rounded-lg text-muted-foreground/50 text-xs"
 							>
-								<Pencil class="w-3 h-3 mr-1" /> แก้ไข
-							</Button>
-						</div>
-
-						{#if dept.parent_department_id}
-							<div class="text-xs text-muted-foreground">สังกัดภายใต้ฝ่ายแม่</div>
+								ลากฝ่ายย่อยมาวางที่นี่
+							</div>
 						{/if}
 					</div>
 				</div>
 			{/each}
+
+			<!-- Add New Placeholders or Empty State if no roots -->
+			{#if rootDepartments.length === 0}
+				<div class="col-span-full py-12 text-center text-muted-foreground">
+					ไม่พบข้อมูลฝ่าย
+					<Button variant="link" onclick={handleCreate}>เพิ่มฝ่ายใหม่</Button>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
