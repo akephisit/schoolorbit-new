@@ -117,7 +117,49 @@ COMMENT ON TABLE permissions IS 'สิทธิ์การใช้งาน�
 COMMENT ON TABLE role_permissions IS 'ตารางเชื่อมระหว่าง Role และ Permission';
 
 -- ===================================================================
--- 4. User Roles Table (ความสัมพันธ์ระหว่าง User และ Role)
+-- 4. Departments Table (ฝ่าย/แผนก) - Created FIRST to allow reference
+-- ===================================================================
+CREATE TABLE IF NOT EXISTS departments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    name_en VARCHAR(200),
+    description TEXT,
+    
+    -- Hierarchy & Org Structure
+    parent_department_id UUID REFERENCES departments(id),
+    category VARCHAR(50) NOT NULL DEFAULT 'administrative', -- administrative, academic
+    org_type VARCHAR(50) NOT NULL DEFAULT 'unit',         -- group, unit
+    
+    -- Contact
+    phone VARCHAR(20),
+    email VARCHAR(255),
+    location VARCHAR(200),
+    
+    -- Status
+    is_active BOOLEAN DEFAULT true,
+    
+    -- Display Order
+    display_order INTEGER DEFAULT 0,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_departments_code ON departments(code);
+CREATE INDEX IF NOT EXISTS idx_departments_parent ON departments(parent_department_id);
+CREATE INDEX IF NOT EXISTS idx_departments_is_active ON departments(is_active);
+CREATE INDEX IF NOT EXISTS idx_departments_category ON departments(category);
+CREATE INDEX IF NOT EXISTS idx_departments_org_type ON departments(org_type);
+
+COMMENT ON TABLE departments IS 'ฝ่าย/แผนก/กลุ่มสาระ';
+COMMENT ON COLUMN departments.parent_department_id IS 'ฝ่ายแม่ (สำหรับฝ่ายย่อย)';
+COMMENT ON COLUMN departments.category IS 'ประเภทหน่วยงาน: administrative (บริหาร), academic (วิชาการ)';
+COMMENT ON COLUMN departments.org_type IS 'ระดับหน่วยงาน: cluster (กลุ่ม), department (ฝ่าย/หมวด)';
+
+-- ===================================================================
+-- 5. User Roles Table (ความสัมพันธ์ระหว่าง User และ Role)
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS user_roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -151,49 +193,6 @@ CREATE INDEX IF NOT EXISTS idx_user_roles_active ON user_roles(user_id)
 COMMENT ON TABLE user_roles IS 'ความสัมพันธ์ระหว่างผู้ใช้และบทบาท (Many-to-Many)';
 COMMENT ON COLUMN user_roles.is_primary IS 'บทบาทหลักของผู้ใช้';
 COMMENT ON COLUMN user_roles.department_id IS 'สังกัดฝ่าย (ถ้ามี) สำหรับบทบาทที่ผูกกับฝ่าย';
-
--- ===================================================================
--- 5. Departments Table (ฝ่าย/แผนก)
--- ===================================================================
-CREATE TABLE IF NOT EXISTS departments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
-    code VARCHAR(50) UNIQUE NOT NULL,
-    name VARCHAR(200) NOT NULL,
-    name_en VARCHAR(200),
-    description TEXT,
-    
-    -- Hierarchy & Org Structure
-    parent_department_id UUID REFERENCES departments(id),
-    category VARCHAR(50) NOT NULL DEFAULT 'administrative', -- administrative, academic
-    org_type VARCHAR(50) NOT NULL DEFAULT 'unit',         -- group, unit
-    
-    -- Contact
-    phone VARCHAR(20),
-    email VARCHAR(255),
-    location VARCHAR(200),
-    
-    -- Status
-    is_active BOOLEAN DEFAULT true,
-    
-    -- Display Order
-    display_order INTEGER DEFAULT 0,
-    
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_departments_code ON departments(code);
-CREATE INDEX IF NOT EXISTS idx_departments_parent ON departments(parent_department_id);
-CREATE INDEX IF NOT EXISTS idx_departments_is_active ON departments(is_active);
-
-CREATE INDEX IF NOT EXISTS idx_departments_category ON departments(category);
-CREATE INDEX IF NOT EXISTS idx_departments_org_type ON departments(org_type);
-
-COMMENT ON TABLE departments IS 'ฝ่าย/แผนก/กลุ่มสาระ';
-COMMENT ON COLUMN departments.parent_department_id IS 'ฝ่ายแม่ (สำหรับฝ่ายย่อย)';
-COMMENT ON COLUMN departments.category IS 'ประเภทหน่วยงาน: administrative (บริหาร), academic (วิชาการ)';
-COMMENT ON COLUMN departments.org_type IS 'ระดับหน่วยงาน: cluster (กลุ่ม), department (ฝ่าย/หมวด)';
 
 -- ===================================================================
 -- 6. Department Members Table (สมาชิกในฝ่าย)
