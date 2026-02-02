@@ -4,10 +4,10 @@
 
 export const _meta = {
 	menu: {
-		title: 'นักเรียน',
+		title: 'รายชื่อนักเรียน',
 		icon: 'GraduationCap',
-		group: 'main',
-		order: 20,
+		group: 'academic',
+		order: 5, // Top priority in academic
 		user_type: 'staff',
 		permission: 'student.read.all'
 	}

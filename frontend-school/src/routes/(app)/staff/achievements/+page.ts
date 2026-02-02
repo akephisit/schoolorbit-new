@@ -8,8 +8,8 @@ export const _meta = {
 	menu: {
 		title: 'บันทึกเกียรติบัตร',
 		icon: 'Award',
-		group: 'main',
-		order: 11, // After "Manage Staff" (10)
+		group: 'personnel',
+		order: 30, // After "Manage Staff" (10)
 		user_type: 'staff',
 		permission: 'achievement.read.all'
 	}

@@ -134,10 +134,17 @@ COMMENT ON TABLE menu_item_features IS 'เชื่อม menu items กับ 
 -- 5. Insert Default Menu Groups
 -- ===================================================================
 INSERT INTO menu_groups (code, name, name_en, icon, display_order) VALUES
-    ('main', 'เมนูหลัก', 'Main Menu', 'layout-dashboard', 1),
-    ('settings', 'ตั้งค่า', 'Settings', 'settings', 2),
-    ('other', 'อื่นๆ', 'Other', 'folder-open', 999)
-ON CONFLICT (code) DO NOTHING;
+    ('main', 'ทั่วไป', 'General', 'layout-dashboard', 1),
+    ('academic', 'กลุ่มบริหารงานวิชาการ', 'Academic Affairs', 'graduation-cap', 2),
+    ('personnel', 'กลุ่มบริหารงานบุคคล', 'Personnel Affairs', 'users', 3),
+    ('budget', 'กลุ่มบริหารงานงบประมาณ', 'Budget & Planning', 'wallet', 4),
+    ('general_admin', 'กลุ่มบริหารงานทั่วไป', 'General Administration', 'building-2', 5),
+    ('settings', 'การตั้งค่า', 'Settings', 'settings', 999)
+ON CONFLICT (code) DO UPDATE SET
+    name = EXCLUDED.name,
+    name_en = EXCLUDED.name_en,
+    icon = EXCLUDED.icon,
+    display_order = EXCLUDED.display_order;
 
 -- ===================================================================
 -- 6. Insert Default Menu Items

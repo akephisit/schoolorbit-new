@@ -4,10 +4,10 @@
 
 export const _meta = {
 	menu: {
-		title: 'จัดการฝ่าย',
+		title: 'โครงสร้างองค์กร',
 		icon: 'Building2',
-		group: 'settings',
-		order: 1002,
+		group: 'personnel',
+		order: 20,
 		user_type: 'staff',
 		permission: 'departments'
 	}
