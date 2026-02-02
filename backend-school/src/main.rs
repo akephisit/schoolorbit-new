@@ -175,8 +175,8 @@ async fn main() {
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/departments/{id}", axum::routing::put(modules::staff::handlers::roles::update_department)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/departments/{id}/menus", get(modules::staff::handlers::department_menus::get_department_menus)
-            .put(modules::staff::handlers::department_menus::update_department_menus)
+        .route("/api/departments/{id}/permissions", get(modules::staff::handlers::department_permissions::get_department_permissions)
+            .put(modules::staff::handlers::department_permissions::update_department_permissions)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
         // User Role Assignment routes (protected)

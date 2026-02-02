@@ -119,31 +119,6 @@ pub async fn get_user_menu(
 
     // Query menu items with groups - filter by user_type
     let user_type = user.user_type.as_str();
-    
-    // [NEW] If staff, fetch allowed menu IDs from department assignments
-    let allowed_dept_menu_ids: Option<Vec<Uuid>> = if user_type == "staff" {
-        use sqlx::Row;
-        let rows = sqlx::query(
-            r#"
-            SELECT DISTINCT dma.menu_item_id
-            FROM department_members dm
-            JOIN department_menu_access dma ON dm.department_id = dma.department_id
-            WHERE dm.user_id = $1
-              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-            "#
-        )
-        .bind(&user.id)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-             eprintln!("❌ Failed to fetch department menu access: {}", e);
-             AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์เมนูฝ่ายได้".to_string())
-        })?;
-        
-        Some(rows.into_iter().map(|r| r.get("menu_item_id")).collect())
-    } else {
-        None 
-    };
 
     let menu_rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, String, String, Option<String>, i32, i32)> = 
         sqlx::query_as(
@@ -177,7 +152,8 @@ pub async fn get_user_menu(
         })?;
 
     // Group and filter menu items
-    let groups = group_and_filter_menu(menu_rows, &user_permissions, allowed_dept_menu_ids.as_deref());
+    // Logic is now purely based on permissions (Role + Department permissions combined)
+    let groups = group_and_filter_menu(menu_rows, &user_permissions);
 
     Ok((
         StatusCode::OK,
@@ -211,7 +187,6 @@ fn user_has_module_permission(user_permissions: &[String], module: &str) -> bool
 fn group_and_filter_menu(
     rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, String, String, Option<String>, i32, i32)>,
     user_permissions: &[String],
-    allowed_dept_menu_ids: Option<&[Uuid]>,
 ) -> Vec<MenuGroupResponse> {
     // Intermediate struct to hold order information
     struct GroupWithOrder {
@@ -225,20 +200,10 @@ fn group_and_filter_menu(
     let mut groups_map: HashMap<String, GroupWithOrder> = HashMap::new();
 
     for (id, code, name, path, icon, required_permission, group_code, group_name, group_icon, group_order, item_order) in rows {
-        // 1. Check Role Permission (Standard RBAC)
+        // Check Role/Department Permission (Consolidated)
         if let Some(module) = &required_permission {
             if !user_has_module_permission(user_permissions, module) {
                 continue; // Skip if user doesn't have any permission in this module
-            }
-        }
-
-        // 2. Check Department Menu Access (Menu RBAC)
-        // If list is provided (for Staff), user MUST have access via department
-        // UNLESS user has super-admin wildcard permission (*)
-        if let Some(allowed_ids) = allowed_dept_menu_ids {
-            let is_super_admin = user_permissions.contains(&"*".to_string());
-            if !is_super_admin && !allowed_ids.contains(&id) {
-                continue;
             }
         }
 
@@ -289,12 +254,13 @@ fn group_and_filter_menu(
         .collect()
 }
 
-/// Get user's permissions from roles (normalized schema)
+/// Get user's permissions from roles AND departments (Consolidated)
 async fn get_user_permissions(
     user_id: &Uuid,
     pool: &sqlx::PgPool,
 ) -> Result<Vec<String>, sqlx::Error> {
-    let permissions: Vec<String> = sqlx::query_scalar(
+    // 1. Role Permissions
+    let mut permissions: Vec<String> = sqlx::query_scalar(
         r#"
         SELECT DISTINCT p.code
         FROM user_roles ur
@@ -302,12 +268,31 @@ async fn get_user_permissions(
         JOIN permissions p ON rp.permission_id = p.id
         WHERE ur.user_id = $1
           AND ur.ended_at IS NULL
-        ORDER BY p.code
         "#
     )
     .bind(user_id)
     .fetch_all(pool)
     .await?;
+
+    // 2. Department Permissions (New Logic)
+    let dept_permissions: Vec<String> = sqlx::query_scalar(
+        r#"
+        SELECT DISTINCT p.code
+        FROM department_members dm
+        JOIN department_permissions dp ON dm.department_id = dp.department_id
+        JOIN permissions p ON dp.permission_id = p.id
+        WHERE dm.user_id = $1
+          AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+        "#
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    // 3. Merge
+    permissions.extend(dept_permissions);
+    permissions.sort(); // Required for dedup
+    permissions.dedup();
 
     Ok(permissions)
 }

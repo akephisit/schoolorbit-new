@@ -512,16 +512,17 @@ pub struct Permission {
 
 
 // ===================================================================
-// Department Menus (สิทธิ์การเข้าถึงเมนูของฝ่าย)
+// ===================================================================
+// Department Permissions (สิทธิ์การเข้าใช้งานของฝ่าย)
 // ===================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateDepartmentMenusRequest {
-    pub menu_item_ids: Vec<Uuid>,
+pub struct UpdateDepartmentPermissionsRequest {
+    pub permission_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct DepartmentMenuAccess {
+pub struct DepartmentPermission {
     pub department_id: Uuid,
-    pub menu_item_id: Uuid,
+    pub permission_id: Uuid,
 }

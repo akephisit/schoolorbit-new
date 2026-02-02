@@ -484,11 +484,11 @@ export async function deleteDepartment(deptId: string): Promise<ApiResponse<void
 }
 
 // ===================================================================
-// Department Menus APIs
+// Department Permissions APIs
 // ===================================================================
 
-export async function getDepartmentMenus(deptId: string): Promise<string[]> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/menus`, {
+export async function getDepartmentPermissions(deptId: string): Promise<string[]> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/permissions`, {
 		method: 'GET',
 		credentials: 'include',
 		headers: {
@@ -497,28 +497,28 @@ export async function getDepartmentMenus(deptId: string): Promise<string[]> {
 	});
 
 	if (!response.ok) {
-		throw new Error('Failed to fetch department menus');
+		throw new Error('Failed to fetch department permissions');
 	}
 
 	return response.json();
 }
 
-export async function updateDepartmentMenus(
+export async function updateDepartmentPermissions(
 	deptId: string,
-	menu_item_ids: string[]
+	permission_ids: string[]
 ): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/menus`, {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/permissions`, {
 		method: 'PUT',
 		credentials: 'include',
 		headers: {
 			'Content-Type': 'application/json'
 		},
-		body: JSON.stringify({ menu_item_ids })
+		body: JSON.stringify({ permission_ids })
 	});
 
 	if (!response.ok) {
 		const error = await response.json();
-		throw new Error(error.error || 'Failed to update department menus');
+		throw new Error(error.error || 'Failed to update department permissions');
 	}
 
 	return response.json();

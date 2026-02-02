@@ -1,5 +1,5 @@
 use crate::db::school_mapping::get_school_database_url;
-use crate::modules::staff::models::UpdateDepartmentMenusRequest;
+use crate::modules::staff::models::UpdateDepartmentPermissionsRequest;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 use crate::error::AppError;
@@ -13,8 +13,8 @@ use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
 
-// GET /api/departments/{id}/menus
-pub async fn get_department_menus(
+// GET /api/departments/{id}/permissions
+pub async fn get_department_permissions(
     State(state): State<AppState>,
     Path(department_id): Path<Uuid>,
     headers: HeaderMap,
@@ -38,7 +38,7 @@ pub async fn get_department_menus(
 
     let rows = sqlx::query(
         r#"
-        SELECT menu_item_id FROM department_menu_access
+        SELECT permission_id FROM department_permissions
         WHERE department_id = $1
         "#
     )
@@ -46,54 +46,48 @@ pub async fn get_department_menus(
     .fetch_all(&pool)
     .await?;
 
-    let menu_ids: Vec<Uuid> = rows
+    let permission_ids: Vec<Uuid> = rows
         .into_iter()
-        .map(|row| row.get("menu_item_id"))
+        .map(|row| row.get("permission_id"))
         .collect();
 
-    Ok(Json(menu_ids))
+    Ok(Json(permission_ids))
 }
 
-// PUT /api/departments/{id}/menus
-pub async fn update_department_menus(
+// PUT /api/departments/{id}/permissions
+pub async fn update_department_permissions(
     State(state): State<AppState>,
     Path(department_id): Path<Uuid>,
     headers: HeaderMap,
-    Json(payload): Json<UpdateDepartmentMenusRequest>,
+    Json(payload): Json<UpdateDepartmentPermissionsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
      let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     let db_url = get_school_database_url(&state.admin_pool, &subdomain)
         .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
+        .map_err(|e| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("Database connection error".to_string())
-        })?;
+        .map_err(|e| AppError::InternalServerError("Database connection error".to_string()))?;
 
     // Transaction
     let mut tx = pool.begin().await?;
 
     // 1. Delete old mappings
-    sqlx::query("DELETE FROM department_menu_access WHERE department_id = $1")
+    sqlx::query("DELETE FROM department_permissions WHERE department_id = $1")
         .bind(department_id)
         .execute(&mut *tx)
         .await?;
 
     // 2. Insert new mappings
-    for menu_id in payload.menu_item_ids {
+    for permission_id in payload.permission_ids {
         sqlx::query(
-            "INSERT INTO department_menu_access (department_id, menu_item_id) VALUES ($1, $2)"
+            "INSERT INTO department_permissions (department_id, permission_id) VALUES ($1, $2)"
         )
         .bind(department_id)
-        .bind(menu_id)
+        .bind(permission_id)
         .execute(&mut *tx)
         .await?;
     }
@@ -102,6 +96,6 @@ pub async fn update_department_menus(
 
     Ok(Json(json!({
         "success": true,
-        "message": "Update department menus successfully"
+        "message": "Update department permissions successfully"
     })))
 }
