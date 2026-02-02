@@ -69,15 +69,30 @@ impl UserPermissions for User {
     
     
     async fn get_permissions(&self, pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
-        // Get all permissions from user's roles (normalized schema)
+        // Get permissions from both Roles and Departments (Consolidated)
         let permissions: Vec<String> = sqlx::query_scalar(
-            "SELECT DISTINCT p.code
-             FROM user_roles ur
-             JOIN role_permissions rp ON ur.role_id = rp.role_id
-             JOIN permissions p ON rp.permission_id = p.id
-             WHERE ur.user_id = $1 
-               AND ur.ended_at IS NULL
-             ORDER BY p.code"
+            r#"
+            SELECT DISTINCT code FROM (
+                -- 1. Role Permissions
+                SELECT p.code
+                FROM user_roles ur
+                JOIN role_permissions rp ON ur.role_id = rp.role_id
+                JOIN permissions p ON rp.permission_id = p.id
+                WHERE ur.user_id = $1 
+                  AND ur.ended_at IS NULL
+
+                UNION
+
+                -- 2. Department Permissions
+                SELECT p.code
+                FROM department_members dm
+                JOIN department_permissions dp ON dm.department_id = dp.department_id
+                JOIN permissions p ON dp.permission_id = p.id
+                WHERE dm.user_id = $1 
+                  AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+            ) AS combined_permissions
+            ORDER BY code
+            "#
         )
         .bind(self.id)
         .fetch_all(pool)
