@@ -43,7 +43,7 @@
 	// Form data
 	let formData = $state({
 		// Step 1: Personal Information
-        username: '',
+		username: '',
 		national_id: '',
 		email: '',
 		password: '',
@@ -122,11 +122,11 @@
 		if (formData.national_id && !/^\d{13}$/.test(formData.national_id)) {
 			errors.national_id = 'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก';
 		}
-        
-        // Optional: Username
-        // if (formData.username && formData.username.length < 3) {
-        //     errors.username = 'ชื่อผู้ใช้งานต้องมีอย่างน้อย 3 ตัวอักษร';
-        // }
+
+		// Optional: Username
+		// if (formData.username && formData.username.length < 3) {
+		//     errors.username = 'ชื่อผู้ใช้งานต้องมีอย่างน้อย 3 ตัวอักษร';
+		// }
 
 		// Required: Basic info
 		if (!formData.first_name) errors.first_name = 'กรุณากรอกชื่อ';
@@ -269,7 +269,7 @@
 
 			// Clean up payload - convert empty strings to undefined
 			const payload = {
-                username: payloadData.username || undefined,
+				username: payloadData.username || undefined,
 				national_id: payloadData.national_id || undefined,
 				email: payloadData.email || undefined,
 				password: payloadData.password,
@@ -294,10 +294,10 @@
 			if (result.success && result.data) {
 				// Clear draft
 				localStorage.removeItem('staff-create-draft');
-				
+
 				// Show success toast
 				toast.success('เพิ่มบุคลากรเรียบร้อยแล้ว');
-				
+
 				// Redirect to profile
 				await goto('/staff/manage', { invalidateAll: true });
 			} else {
@@ -770,48 +770,50 @@
 											<Select.Content class="max-h-[300px] overflow-y-auto w-full max-w-[400px]">
 												<Select.Item value="">เลือกฝ่าย</Select.Item>
 
-												{#if departments.some((d) => d.category === 'administrative')}
+												<!-- Group by Parent Departments (Administrative Groups) -->
+												{#each departments.filter((d) => !d.parent_department_id) as parentDept (parentDept.id)}
 													<Select.Group>
-														<Select.Label class="font-bold text-primary"
-															>บริหารจัดการ (Administrative)</Select.Label
+														<Select.Label
+															class="font-bold text-primary flex items-center gap-2 bg-muted/30 px-2 py-1"
 														>
-														{#each departments.filter((d) => d.category === 'administrative') as department (department.id)}
-															<Select.Item value={department.id} class="pl-6">
+															<Building2 class="w-3 H-3" />
+															{parentDept.name}
+														</Select.Label>
+
+														<!-- Parent itself (Optional) -->
+														<Select.Item
+															value={parentDept.id}
+															class="pl-4 font-semibold text-muted-foreground/80"
+														>
+															— สังกัด {parentDept.name} (ส่วนกลาง) —
+														</Select.Item>
+
+														<!-- Child Departments -->
+														{#each departments.filter((d) => d.parent_department_id === parentDept.id) as childDept (childDept.id)}
+															<Select.Item value={childDept.id} class="pl-6">
 																<div class="flex flex-col">
-																	<span>{department.name}</span>
-																	<span class="text-xs text-muted-foreground">
-																		{department.code} • {department.org_type?.toUpperCase()}
-																	</span>
+																	<span>{childDept.name}</span>
+																	{#if childDept.code}
+																		<span class="text-[10px] text-muted-foreground">
+																			{childDept.code}
+																		</span>
+																	{/if}
 																</div>
 															</Select.Item>
 														{/each}
 													</Select.Group>
-												{/if}
+													<Select.Separator />
+												{/each}
 
-												{#if departments.some((d) => d.category === 'academic')}
+												<!-- Orphan Departments -->
+												{#if departments.some((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id))}
 													<Select.Group>
-														<Select.Label class="font-bold text-orange-600 mt-2"
-															>วิชาการ (Academic)</Select.Label
+														<Select.Label class="font-bold text-muted-foreground"
+															>อื่นๆ</Select.Label
 														>
-														{#each departments.filter((d) => d.category === 'academic') as department (department.id)}
-															<Select.Item value={department.id} class="pl-6">
-																<div class="flex flex-col">
-																	<span>{department.name}</span>
-																	<span class="text-xs text-muted-foreground">
-																		{department.code} • {department.org_type?.toUpperCase()}
-																	</span>
-																</div>
-															</Select.Item>
-														{/each}
-													</Select.Group>
-												{/if}
-
-												{#if departments.some((d) => !['administrative', 'academic'].includes(d.category || ''))}
-													<Select.Group>
-														<Select.Label class="font-bold mt-2">อื่นๆ</Select.Label>
-														{#each departments.filter((d) => !['administrative', 'academic'].includes(d.category || '')) as department (department.id)}
-															<Select.Item value={department.id} class="pl-6">
-																<span>{department.name}</span>
+														{#each departments.filter((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id)) as orphan}
+															<Select.Item value={orphan.id} class="pl-6">
+																{orphan.name}
 															</Select.Item>
 														{/each}
 													</Select.Group>
