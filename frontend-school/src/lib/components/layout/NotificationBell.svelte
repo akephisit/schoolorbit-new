@@ -1,41 +1,54 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { notificationStore } from '$lib/stores/notification';
-  import { Bell, CheckCheck } from 'lucide-svelte';
-  import { fly, fade } from 'svelte/transition';
-  import * as Popover from '$lib/components/ui/popover';
-  import { Button, buttonVariants } from '$lib/components/ui/button';
-  import { ScrollArea } from '$lib/components/ui/scroll-area';
-  import { Badge } from '$lib/components/ui/badge';
+	import { onMount } from 'svelte';
+	import { notificationStore } from '$lib/stores/notification';
+	import { Bell, CheckCheck } from 'lucide-svelte';
+	import { fly, fade } from 'svelte/transition';
+	import * as Popover from '$lib/components/ui/popover';
+	import { Button, buttonVariants } from '$lib/components/ui/button';
+	import { ScrollArea } from '$lib/components/ui/scroll-area';
+	import { Badge } from '$lib/components/ui/badge';
 
-  onMount(() => {
-    notificationStore.fetchNotifications();
-    notificationStore.initSSE();
+	import { authStore } from '$lib/stores/auth';
 
-    return () => {
-        notificationStore.closeSSE();
-    };
-  });
+	// Svelte 5 Effect Rune
+	// This automatically tracks dependencies and runs cleanup function when re-running or destroying
+	$effect(() => {
+		if ($authStore.isAuthenticated) {
+			notificationStore.fetchNotifications();
+			notificationStore.initSSE();
+		} else {
+			notificationStore.closeSSE();
+		}
 
-  function formatDate(dateStr: string) {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diff = (now.getTime() - d.getTime()) / 1000;
-    
-    if (diff < 60) return 'เมื่อสักครู่';
-    if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`;
-    return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
-  }
+		// Cleanup function (runs before effect updates or on unmount)
+		return () => {
+			notificationStore.closeSSE();
+		};
+	});
 
-  function getTypeColor(type: string) {
-      switch(type) {
-          case 'success': return 'text-green-600 bg-green-50';
-          case 'warning': return 'text-amber-600 bg-amber-50';
-          case 'error': return 'text-red-600 bg-red-50';
-          default: return 'text-blue-600 bg-blue-50';
-      }
-  }
+	function formatDate(dateStr: string) {
+		const d = new Date(dateStr);
+		const now = new Date();
+		const diff = (now.getTime() - d.getTime()) / 1000;
+
+		if (diff < 60) return 'เมื่อสักครู่';
+		if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`;
+		if (diff < 86400) return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`;
+		return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+	}
+
+	function getTypeColor(type: string) {
+		switch (type) {
+			case 'success':
+				return 'text-green-600 bg-green-50';
+			case 'warning':
+				return 'text-amber-600 bg-amber-50';
+			case 'error':
+				return 'text-red-600 bg-red-50';
+			default:
+				return 'text-blue-600 bg-blue-50';
+		}
+	}
 </script>
 
 <Popover.Root>

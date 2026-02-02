@@ -133,7 +133,9 @@ class AuthAPI {
 			authStore.setUser(user);
 			return true;
 		} catch (error) {
-			console.error('Auth check error:', error);
+			// Only log actual errors, not 401/403 which are expected state checks
+			// Or just suppress log for auth check entirely to keep console clean
+			// console.error('Auth check error:', error);
 			authStore.clearUser();
 			return false;
 		} finally {

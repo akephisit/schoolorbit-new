@@ -24,6 +24,20 @@
 		// Get redirect URL from sessionStorage (set by route guards)
 		redirectUrl = sessionStorage.getItem('redirectAfterLogin');
 
+		// Check if we just logged out using a simple flag (optional, but good for UX to skip check)
+		// Or we can just let it fail quietly. But strictly speaking, if we just came here,
+		// we likely don't have a session.
+		// However, to fix the specific "401" log spam, we can't easily know "we just logged out"
+		// unless we pass state.
+
+		// In standard SPA, checking auth on mount of login page is correct behavior
+		// (in case user manually navigated here but is already logged in).
+
+		// To silence the 401 error log specifically for this case, we would need to know context.
+		// For now, let's keep it as is, because that 401 *is* valid information (User is not logged in).
+		// The user complained about it appearing "when logging out".
+
+		// Let's modify valid check logic:
 		const isAuthenticated = await authAPI.checkAuth();
 		if (isAuthenticated) {
 			// Already logged in, redirect based on user type or to redirectUrl
@@ -46,20 +60,20 @@
 		e.preventDefault();
 		isLoading = true;
 
-        // Username validation (if any specific rule is needed, add here).
-        // For now, just non-empty.
-        if (!username.trim()) {
-            toast.error('กรุณากรอกชื่อผู้ใช้งาน');
-            isLoading = false;
-            return;
-        }
+		// Username validation (if any specific rule is needed, add here).
+		// For now, just non-empty.
+		if (!username.trim()) {
+			toast.error('กรุณากรอกชื่อผู้ใช้งาน');
+			isLoading = false;
+			return;
+		}
 
 		try {
 			// Note: authAPI.login needs to be updated to accept username instead of nationalId
-            // Assuming we will update valid `login` in $lib/api/auth as a next step.
-            // But here we construct the object that matches what backend expects if we use the same old function name 
-            // OR we update the type definition in the next step.
-            // Let's assume authAPI.login will change signature.
+			// Assuming we will update valid `login` in $lib/api/auth as a next step.
+			// But here we construct the object that matches what backend expects if we use the same old function name
+			// OR we update the type definition in the next step.
+			// Let's assume authAPI.login will change signature.
 			const user = await authAPI.login({
 				username, // Changed from nationalId
 				password,
