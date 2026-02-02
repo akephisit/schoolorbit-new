@@ -141,6 +141,14 @@
 		@apply border-border outline-ring/50;
 	}
 
+	*,
+	*::before,
+	*::after {
+		transition-property: background-color, border-color, color, fill, stroke;
+		transition-timing-function: ease-in-out;
+		transition-duration: 300ms;
+	}
+
 	html {
 		font-family: 'Kanit', sans-serif;
 		-webkit-font-smoothing: antialiased;
