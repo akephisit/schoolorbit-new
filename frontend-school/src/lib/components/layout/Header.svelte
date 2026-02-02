@@ -48,7 +48,7 @@
 </script>
 
 <header
-	class="sticky top-0 h-16 bg-card border-b border-border z-30 transition-all duration-300 ease-in-out
+	class="sticky top-0 h-16 bg-card border-b border-border z-30 transition-[margin] duration-300 ease-in-out
 	{sidebarCollapsed ? 'lg:ml-0' : 'lg:ml-0'}"
 >
 	<div class="h-full px-4 lg:px-6 flex items-center justify-between gap-4">

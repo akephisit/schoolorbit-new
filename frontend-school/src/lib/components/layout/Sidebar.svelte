@@ -117,7 +117,7 @@
 
 <!-- Sidebar Container -->
 <aside
-	class="fixed left-0 top-0 z-50 h-screen bg-card border-r border-border transition-all duration-300 ease-in-out
+	class="fixed left-0 top-0 z-50 h-screen bg-card border-r border-border transition-[width,transform] duration-300 ease-in-out
   {isCollapsed ? 'w-[72px]' : 'w-64'}
   {isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
   lg:translate-x-0 flex flex-col"
@@ -230,7 +230,7 @@
 	.sidebar-nav {
 		/* Smooth scrolling */
 		scroll-behavior: smooth;
-		
+
 		/* Firefox - minimal style */
 		scrollbar-width: thin;
 		scrollbar-color: transparent transparent;
@@ -273,7 +273,7 @@
 			oklch(0.45 0.02 240 / 0.5) 50%,
 			oklch(0.5 0.02 240 / 0.4) 100%
 		);
-		box-shadow: 
+		box-shadow:
 			0 0 8px oklch(0.5 0.02 240 / 0.25),
 			0 0 4px oklch(0.5 0.02 240 / 0.4);
 		opacity: 1;
@@ -287,7 +287,7 @@
 			oklch(0.5 0.02 240 / 0.7) 50%,
 			oklch(0.55 0.02 240 / 0.6) 100%
 		);
-		box-shadow: 
+		box-shadow:
 			0 0 12px oklch(0.5 0.02 240 / 0.4),
 			0 0 6px oklch(0.5 0.02 240 / 0.6),
 			0 0 2px oklch(0.5 0.02 240 / 0.8);
@@ -301,7 +301,7 @@
 			oklch(0.7 0.02 240 / 0.6) 50%,
 			oklch(0.65 0.02 240 / 0.5) 100%
 		);
-		box-shadow: 
+		box-shadow:
 			0 0 10px oklch(0.65 0.02 240 / 0.35),
 			0 0 5px oklch(0.65 0.02 240 / 0.5);
 	}
@@ -313,7 +313,7 @@
 			oklch(0.75 0.02 240 / 0.8) 50%,
 			oklch(0.7 0.02 240 / 0.7) 100%
 		);
-		box-shadow: 
+		box-shadow:
 			0 0 15px oklch(0.65 0.02 240 / 0.5),
 			0 0 8px oklch(0.65 0.02 240 / 0.7),
 			0 0 3px oklch(0.7 0.02 240 / 0.9);
