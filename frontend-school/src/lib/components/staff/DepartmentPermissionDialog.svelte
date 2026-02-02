@@ -144,14 +144,23 @@
 							<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pl-7">
 								{#each permissionModules[module] as perm}
 									<div
-										class="flex items-start gap-2 p-2 rounded-md hover:bg-background border border-transparent hover:border-border transition-colors cursor-pointer group"
+										class="flex items-start gap-2 p-2 rounded-md hover:bg-background border border-transparent hover:border-border transition-colors cursor-pointer group focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+										role="button"
+										tabindex="0"
 										onclick={() => togglePermission(perm.id, !selectedPermissionIds.has(perm.id))}
+										onkeydown={(e) => {
+											if (e.key === 'Enter' || e.key === ' ') {
+												e.preventDefault();
+												togglePermission(perm.id, !selectedPermissionIds.has(perm.id));
+											}
+										}}
 									>
 										<Checkbox
 											class="mt-0.5"
 											checked={selectedPermissionIds.has(perm.id)}
 											onCheckedChange={(c) => togglePermission(perm.id, !!c)}
 											onclick={(e) => e.stopPropagation()}
+											tabindex={-1}
 										/>
 										<div class="flex flex-col">
 											<span class="text-sm font-medium group-hover:text-primary transition-colors"
