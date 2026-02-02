@@ -397,20 +397,8 @@ ON CONFLICT (code) DO NOTHING;
 -- ===================================================================
 -- 12. Insert Default Departments
 -- ===================================================================
-INSERT INTO departments (code, name, name_en, description, category, org_type, display_order) VALUES
-    ('ACADEMIC', 'กลุ่มบริหารวิชาการ', 'Academic Affairs', 'ดูแลงานวิชาการทั้งหมด', 'administrative', 'group', 1),
-    ('STUDENT_AFFAIRS', 'กลุ่มบริหารกิจการนักเรียน', 'Student Affairs', 'ดูแลงานปกครองและกิจกรรม', 'administrative', 'group', 2),
-    ('GENERAL_ADMIN', 'กลุ่มบริหารทั่วไป', 'General Administration', 'ดูแลอาคารสถานที่และธุรการ', 'administrative', 'group', 3),
-    ('BUDGET', 'กลุ่มบริหารงบประมาณ', 'Budget & Planning', 'ดูแลการเงินและแผนงาน', 'administrative', 'group', 4),
-    
-    -- Sample Units
-    ('REGISTRATION', 'งานทะเบียนวัดผล', 'Registration', 'งานทะเบียน', 'administrative', 'unit', 10),
-    ('CURRICULUM', 'งานหลักสูตร', 'Curriculum', 'งานหลักสูตร', 'administrative', 'unit', 11),
-    
-    -- Sample Learning Areas
-    ('MATH', 'กลุ่มสาระฯ คณิตศาสตร์', 'Mathematics', 'คณิตศาสตร์', 'academic', 'unit', 20),
-    ('SCIENCE', 'กลุ่มสาระฯ วิทยาศาสตร์', 'Science', 'วิทยาศาสตร์', 'academic', 'unit', 21)
-ON CONFLICT (code) DO NOTHING;
+-- Moved to Migration 035 for comprehensive structure seeding
+-- INSERT INTO departments ... (REMOVED)
 
 -- ===================================================================
 -- 13. Default Permissions
