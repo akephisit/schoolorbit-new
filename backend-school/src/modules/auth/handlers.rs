@@ -90,14 +90,29 @@ pub async fn login(
     .unwrap_or(None);
 
     // Fetch all user permissions from normalized schema
+    // Fetch all user permissions (Role-based + Department-based)
     let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT p.code
-         FROM user_roles ur
-         JOIN role_permissions rp ON ur.role_id = rp.role_id
-         JOIN permissions p ON rp.permission_id = p.id
-         WHERE ur.user_id = $1 
-           AND ur.ended_at IS NULL
-         ORDER BY p.code"
+        "SELECT DISTINCT code FROM (
+             -- 1. Role-based Permissions
+             SELECT p.code
+             FROM user_roles ur
+             JOIN role_permissions rp ON ur.role_id = rp.role_id
+             JOIN permissions p ON rp.permission_id = p.id
+             WHERE ur.user_id = $1 
+               AND ur.ended_at IS NULL
+             
+             UNION
+             
+             -- 2. Department-based Permissions
+             SELECT p.code
+             FROM staff_info si
+             JOIN department_permissions dp ON si.department_id = dp.department_id
+             JOIN permissions p ON dp.permission_id = p.id
+             WHERE si.user_id = $1 
+               AND si.is_active = true 
+               AND (si.resigned_date IS NULL OR si.resigned_date > CURRENT_DATE)
+         ) AS all_perms
+         ORDER BY code"
     )
     .bind(&user.id)
     .fetch_all(&pool)
@@ -254,14 +269,29 @@ pub async fn me(
     .unwrap_or(None);
 
     // Fetch all user permissions from normalized schema
+    // Fetch all user permissions (Role-based + Department-based)
     let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT p.code
-         FROM user_roles ur
-         JOIN role_permissions rp ON ur.role_id = rp.role_id
-         JOIN permissions p ON rp.permission_id = p.id
-         WHERE ur.user_id = $1 
-           AND ur.ended_at IS NULL
-         ORDER BY p.code"
+        "SELECT DISTINCT code FROM (
+             -- 1. Role-based Permissions
+             SELECT p.code
+             FROM user_roles ur
+             JOIN role_permissions rp ON ur.role_id = rp.role_id
+             JOIN permissions p ON rp.permission_id = p.id
+             WHERE ur.user_id = $1 
+               AND ur.ended_at IS NULL
+             
+             UNION
+             
+             -- 2. Department-based Permissions
+             SELECT p.code
+             FROM staff_info si
+             JOIN department_permissions dp ON si.department_id = dp.department_id
+             JOIN permissions p ON dp.permission_id = p.id
+             WHERE si.user_id = $1 
+               AND si.is_active = true 
+               AND (si.resigned_date IS NULL OR si.resigned_date > CURRENT_DATE)
+         ) AS all_perms
+         ORDER BY code"
     )
     .bind(&user.id)
     .fetch_all(&pool)
