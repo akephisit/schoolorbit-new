@@ -11,6 +11,8 @@
 
 	async function handleLogout() {
 		await authAPI.logout();
+		// Clear redirectAfterLogin to prevent layout from redirecting back to protected page
+		sessionStorage.removeItem('redirectAfterLogin');
 		await goto(resolve('/login'), { invalidateAll: true });
 	}
 

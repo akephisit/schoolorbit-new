@@ -5,7 +5,7 @@
 	import { authAPI } from '$lib/api/auth';
 
 	import { uiPreferences } from '$lib/stores/ui-preferences';
-    import { notificationStore } from '$lib/stores/notification';
+	import { notificationStore } from '$lib/stores/notification';
 	let { children } = $props();
 
 	let sidebarRef: { toggleMobileSidebar?: () => void } | undefined;
@@ -19,18 +19,19 @@
 
 	// Check authentication for protected routes
 	onMount(async () => {
-		await authAPI.checkAuth();
-        
-        // Auto-subscribe to Web Push (Silent update if already allowed)
-        notificationStore.subscribeToPush();
+		const isAuthenticated = await authAPI.checkAuth();
+
+		// Auto-subscribe to Web Push (Silent update if already allowed)
+		if (isAuthenticated) {
+			notificationStore.subscribeToPush();
+		}
 
 		// Mobile drag & drop support (Global Init)
 		// @ts-ignore
 		const { polyfill } = await import('mobile-drag-drop');
 		// @ts-ignore
-		const { scrollBehaviourDragImageTranslateOverride } = await import(
-			'mobile-drag-drop/scroll-behaviour'
-		);
+		const { scrollBehaviourDragImageTranslateOverride } =
+			await import('mobile-drag-drop/scroll-behaviour');
 
 		polyfill({
 			dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
