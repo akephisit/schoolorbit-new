@@ -80,7 +80,6 @@
 	// Validation errors
 	let errors = $state<Record<string, string>>({});
 
-
 	// Load staff profile
 	async function loadStaffProfile() {
 		if (!staffId) return;
@@ -290,7 +289,6 @@
 
 		saving = true;
 		errors = {};
-
 
 		try {
 			const payload = {
@@ -857,48 +855,50 @@
 													>
 														<Select.Item value="">เลือกฝ่าย</Select.Item>
 
-														{#if departments.some((d) => d.category === 'administrative')}
+														<!-- Group by Parent Departments (Administrative Groups) -->
+														{#each departments.filter((d) => !d.parent_department_id) as parentDept (parentDept.id)}
 															<Select.Group>
-																<Select.Label class="font-bold text-primary"
-																	>บริหารจัดการ (Administrative)</Select.Label
+																<Select.Label
+																	class="font-bold text-primary flex items-center gap-2 bg-muted/30 px-2 py-1"
 																>
-																{#each departments.filter((d) => d.category === 'administrative') as department (department.id)}
-																	<Select.Item value={department.id} class="pl-6">
+																	<Building2 class="w-3 H-3" />
+																	{parentDept.name}
+																</Select.Label>
+
+																<!-- Parent itself (Optional, allow assigning to root group) -->
+																<Select.Item
+																	value={parentDept.id}
+																	class="pl-4 font-semibold text-muted-foreground/80"
+																>
+																	— สังกัด {parentDept.name} (ส่วนกลาง) —
+																</Select.Item>
+
+																<!-- Child Departments -->
+																{#each departments.filter((d) => d.parent_department_id === parentDept.id) as childDept (childDept.id)}
+																	<Select.Item value={childDept.id} class="pl-6">
 																		<div class="flex flex-col">
-																			<span>{department.name}</span>
-																			<span class="text-xs text-muted-foreground">
-																				{department.code} • {department.org_type?.toUpperCase()}
-																			</span>
+																			<span>{childDept.name}</span>
+																			{#if childDept.code}
+																				<span class="text-[10px] text-muted-foreground">
+																					{childDept.code}
+																				</span>
+																			{/if}
 																		</div>
 																	</Select.Item>
 																{/each}
 															</Select.Group>
-														{/if}
+															<Select.Separator />
+														{/each}
 
-														{#if departments.some((d) => d.category === 'academic')}
+														<!-- Orphan Departments (No Parent) -->
+														{#if departments.some((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id))}
 															<Select.Group>
-																<Select.Label class="font-bold text-orange-600 mt-2"
-																	>วิชาการ (Academic)</Select.Label
+																<Select.Label class="font-bold text-muted-foreground"
+																	>อื่นๆ</Select.Label
 																>
-																{#each departments.filter((d) => d.category === 'academic') as department (department.id)}
-																	<Select.Item value={department.id} class="pl-6">
-																		<div class="flex flex-col">
-																			<span>{department.name}</span>
-																			<span class="text-xs text-muted-foreground">
-																				{department.code} • {department.org_type?.toUpperCase()}
-																			</span>
-																		</div>
-																	</Select.Item>
-																{/each}
-															</Select.Group>
-														{/if}
-
-														{#if departments.some((d) => !['administrative', 'academic'].includes(d.category || ''))}
-															<Select.Group>
-																<Select.Label class="font-bold mt-2">อื่นๆ</Select.Label>
-																{#each departments.filter((d) => !['administrative', 'academic'].includes(d.category || '')) as department (department.id)}
-																	<Select.Item value={department.id} class="pl-6">
-																		<span>{department.name}</span>
+																{#each departments.filter((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id)) as orphan}
+																	<Select.Item value={orphan.id} class="pl-6">
+																		{orphan.name}
 																	</Select.Item>
 																{/each}
 															</Select.Group>
