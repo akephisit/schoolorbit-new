@@ -117,7 +117,7 @@
 
 <!-- Sidebar Container -->
 <aside
-	class="fixed left-0 top-0 z-50 h-screen bg-card border-r border-border transition-[width,transform] duration-300 ease-in-out
+	class="fixed left-0 top-0 z-50 h-screen bg-card border-r border-border transition-[width,transform,translate] duration-300 ease-in-out
   {isCollapsed ? 'w-[72px]' : 'w-64'}
   {isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
   lg:translate-x-0 flex flex-col"
