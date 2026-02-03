@@ -9,11 +9,14 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::check_user_permission;
+use crate::middleware::permission::check_permission;
+use crate::db::school_mapping::get_school_database_url;
 use crate::utils::{
-    database::get_school_database_url, encryption as bcrypt, field_encryption,
+    encryption as bcrypt, field_encryption,
     subdomain::extract_subdomain_from_request,
 };
+use ::bcrypt::hash;
+use ::bcrypt::DEFAULT_COST;
 use crate::AppState;
 
 use super::models::CreateParentRequest;
@@ -30,7 +33,9 @@ pub async fn add_parent_to_student(
     Json(payload): Json<CreateParentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     // Check permission
-    check_user_permission(&headers, &state.admin_pool, "student.update").await?;
+    if let Err(e) = check_permission(&headers, &state.admin_pool, "student.update").await {
+        return Ok(e.into_response());
+    }
 
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
@@ -71,7 +76,7 @@ pub async fn add_parent_to_student(
     } else {
         // Create new parent user
         let parent_password_hash =
-            bcrypt::hash(&payload.phone, bcrypt::DEFAULT_COST).map_err(|e| {
+            hash(&payload.phone, DEFAULT_COST).map_err(|e| {
                 eprintln!("❌ Parent password hashing failed: {}", e);
                 AppError::InternalServerError(
                     "เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string(),
@@ -175,7 +180,7 @@ pub async fn add_parent_to_student(
             "success": true,
             "message": "เพิ่มผู้ปกครองสำเร็จ"
         })),
-    ))
+    ).into_response())
 }
 
 /// DELETE /api/students/:id/parents/:parentId - ลบความสัมพันธ์ผู้ปกครอง
@@ -185,7 +190,10 @@ pub async fn remove_parent_from_student(
     Path((student_id, parent_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     // Check permission
-    check_user_permission(&headers, &state.admin_pool, "student.update").await?;
+    // Check permission
+    if let Err(e) = check_permission(&headers, &state.admin_pool, "student.update").await {
+        return Ok(e.into_response());
+    }
 
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
@@ -229,5 +237,5 @@ pub async fn remove_parent_from_student(
             "success": true,
             "message": "ลบผู้ปกครองสำเร็จ"
         })),
-    ))
+    ).into_response())
 }

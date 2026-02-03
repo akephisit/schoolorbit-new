@@ -1,11 +1,15 @@
+use crate::modules::auth::models::User;
 use crate::utils::jwt::JwtService;
+use crate::utils::field_encryption;
+use crate::error::AppError;
 use axum::{
     extract::Request,
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
     Json,
 };
+use serde_json::json;
 
 /// Middleware to verify JWT token and inject user claims
 /// Supports both Authorization header (Bearer token) and Cookie
@@ -38,7 +42,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
+                Json(json!({
                     "error": "No authentication token found"
                 })),
             )
@@ -52,7 +56,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         Err(e) => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
+                Json(json!({
                     "error": format!("Invalid token: {}", e)
                 })),
             )
@@ -67,7 +71,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
 }
 
 /// Helper function to extract user ID from request headers
-pub async fn extract_user_id(headers: &axum::http::HeaderMap, _pool: &sqlx::PgPool) -> Result<uuid::Uuid, String> {
+pub async fn extract_user_id(headers: &HeaderMap, _pool: &sqlx::PgPool) -> Result<uuid::Uuid, String> {
     // Try to extract token from Authorization header first
     let auth_header = headers
         .get(header::AUTHORIZATION)
@@ -98,4 +102,31 @@ pub async fn extract_user_id(headers: &axum::http::HeaderMap, _pool: &sqlx::PgPo
     
     uuid::Uuid::parse_str(&claims.sub)
         .map_err(|e| format!("Invalid user ID in token: {}", e))
+}
+
+/// Helper function to get current user info with database query
+pub async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<User, AppError> {
+    let user_id = extract_user_id(headers, pool).await
+        .map_err(|e| AppError::AuthError(e))?;
+
+    let mut user = sqlx::query_as::<_, User>(
+        "SELECT * FROM users WHERE id = $1"
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error fetching user: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?
+    .ok_or(AppError::NotFound("User not found".to_string()))?;
+
+    // Decrypt sensitive fields
+    if let Some(nid) = &user.national_id {
+        if let Ok(dec) = field_encryption::decrypt(nid) {
+            user.national_id = Some(dec);
+        }
+    }
+
+    Ok(user)
 }
