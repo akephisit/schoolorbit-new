@@ -45,6 +45,7 @@
 	let isAddParentOpen = $state(false);
 	let parentLoading = $state(false);
 	let parentForm = $state({
+		title: '',
 		first_name: '',
 		last_name: '',
 		phone: '',
@@ -161,6 +162,7 @@
 			isAddParentOpen = false;
 			parentForm = {
 				// Reset form
+				title: '',
 				first_name: '',
 				last_name: '',
 				phone: '',
@@ -546,8 +548,19 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="grid gap-4 py-4">
-			<div class="grid grid-cols-2 gap-4">
-				<div>
+			<div class="grid grid-cols-4 gap-4">
+				<div class="col-span-1">
+					<Label for="p_title">คำนำหน้า</Label>
+					<Select.Root type="single" bind:value={parentForm.title}>
+						<Select.Trigger>{parentForm.title || 'เลือก'}</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="นาย">นาย</Select.Item>
+							<Select.Item value="นาง">นาง</Select.Item>
+							<Select.Item value="นางสาว">นางสาว</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="col-span-3">
 					<Label for="p_first_name">ชื่อ <span class="text-destructive">*</span></Label>
 					<Input
 						id="p_first_name"
@@ -573,6 +586,17 @@
 
 			<div class="grid grid-cols-2 gap-4">
 				<div>
+					<Label for="p_last_name">นามสกุล <span class="text-destructive">*</span></Label>
+					<Input
+						id="p_last_name"
+						bind:value={parentForm.last_name}
+						class={parentErrors.last_name ? 'border-destructive' : ''}
+					/>
+					{#if parentErrors.last_name}<p class="text-[10px] text-destructive">
+							{parentErrors.last_name}
+						</p>{/if}
+				</div>
+				<div>
 					<Label for="p_relationship">ความสัมพันธ์</Label>
 					<Select.Root type="single" bind:value={parentForm.relationship}>
 						<Select.Trigger>{parentForm.relationship}</Select.Trigger>
@@ -584,6 +608,9 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
+			</div>
+
+			<div class="grid grid-cols-2 gap-4">
 				<div>
 					<Label for="p_phone">เบอร์โทรศัพท์ <span class="text-destructive">*</span></Label>
 					<Input

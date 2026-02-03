@@ -36,6 +36,7 @@
 		gender: 'male',
 		parent_enabled: false,
 		parents: [] as {
+			title?: string;
 			first_name: string;
 			last_name: string;
 			phone: string;
@@ -445,6 +446,7 @@
 							if (v && formData.parents.length === 0) {
 								formData.parents = [
 									{
+										title: '',
 										first_name: '',
 										last_name: '',
 										phone: '',
@@ -522,8 +524,19 @@
 									</div>
 								</div>
 
-								<div class="grid grid-cols-2 gap-4">
-									<div>
+								<div class="grid grid-cols-4 gap-4">
+									<div class="col-span-1">
+										<Label>คำนำหน้า</Label>
+										<Select.Root type="single" bind:value={parent.title}>
+											<Select.Trigger>{parent.title || 'เลือก'}</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="นาย">นาย</Select.Item>
+												<Select.Item value="นาง">นาง</Select.Item>
+												<Select.Item value="นางสาว">นางสาว</Select.Item>
+											</Select.Content>
+										</Select.Root>
+									</div>
+									<div class="col-span-3">
 										<Label>
 											ชื่อ <span class="text-destructive">*</span>
 										</Label>
@@ -541,7 +554,9 @@
 											</p>
 										{/if}
 									</div>
+								</div>
 
+								<div class="grid grid-cols-2 gap-4">
 									<div>
 										<Label>
 											นามสกุล <span class="text-destructive">*</span>
@@ -560,9 +575,6 @@
 											</p>
 										{/if}
 									</div>
-								</div>
-
-								<div class="grid grid-cols-2 gap-4">
 									<div>
 										<Label>
 											เบอร์โทรศัพท์ <span class="text-destructive">*</span> (Username)
@@ -580,6 +592,9 @@
 											<p class="text-xs text-destructive mt-1">{errors[`parents.${i}.phone`]}</p>
 										{/if}
 									</div>
+								</div>
+
+								<div class="grid grid-cols-2 gap-4">
 									<div>
 										<Label>อีเมล</Label>
 										<Input
@@ -593,23 +608,22 @@
 											<p class="text-xs text-destructive mt-1">{errors[`parents.${i}.email`]}</p>
 										{/if}
 									</div>
-								</div>
-
-								<div>
-									<Label>เลขบัตรประชาชน</Label>
-									<Input
-										type="text"
-										bind:value={parent.national_id}
-										placeholder="13 หลัก"
-										maxlength={13}
-										class={errors[`parents.${i}.national_id`] ? 'border-destructive' : ''}
-										disabled={loading}
-									/>
-									{#if errors[`parents.${i}.national_id`]}
-										<p class="text-xs text-destructive mt-1">
-											{errors[`parents.${i}.national_id`]}
-										</p>
-									{/if}
+									<div>
+										<Label>เลขบัตรประชาชน</Label>
+										<Input
+											type="text"
+											bind:value={parent.national_id}
+											placeholder="13 หลัก"
+											maxlength={13}
+											class={errors[`parents.${i}.national_id`] ? 'border-destructive' : ''}
+											disabled={loading}
+										/>
+										{#if errors[`parents.${i}.national_id`]}
+											<p class="text-xs text-destructive mt-1">
+												{errors[`parents.${i}.national_id`]}
+											</p>
+										{/if}
+									</div>
 								</div>
 							</div>
 						</div>
@@ -623,6 +637,7 @@
 							formData.parents = [
 								...formData.parents,
 								{
+									title: '',
 									first_name: '',
 									last_name: '',
 									phone: '',

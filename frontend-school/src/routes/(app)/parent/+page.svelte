@@ -33,7 +33,10 @@
 	<!-- Profile Header -->
 	<div class="flex items-center justify-between">
 		<div>
-			<h1 class="text-3xl font-bold tracking-tight">สวัสดี, คุณ{profile?.first_name || '...'}</h1>
+			<h1 class="text-3xl font-bold tracking-tight">
+				สวัสดี, คุณ{profile?.first_name || '...'}
+				{profile?.last_name || ''}
+			</h1>
 			<p class="text-muted-foreground">ติดตามการเรียนและความเป็นอยู่ของบุตรหลาน</p>
 		</div>
 	</div>

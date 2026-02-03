@@ -77,6 +77,7 @@ export interface CreateStudentRequest {
 }
 
 export interface CreateParentRequest {
+	title?: string;
 	first_name: string;
 	last_name: string;
 	phone: string;
