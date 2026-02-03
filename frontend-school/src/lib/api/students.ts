@@ -252,3 +252,47 @@ export async function updateOwnProfile(
 
 	return await response.json();
 }
+
+/**
+ * Add parent to student
+ */
+export async function addParentToStudent(
+	studentId: string,
+	data: CreateParentRequest
+): Promise<{ success: boolean; message: string }> {
+	const response = await fetch(`${BACKEND_URL}/api/students/${studentId}/parents`, {
+		method: 'POST',
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify(data)
+	});
+
+	if (!response.ok) {
+		const error = await response.json();
+		throw new Error(error.error || 'Failed to add parent');
+	}
+
+	return await response.json();
+}
+
+/**
+ * Remove parent from student
+ */
+export async function removeParentFromStudent(
+	studentId: string,
+	parentId: string
+): Promise<{ success: boolean; message: string }> {
+	const response = await fetch(`${BACKEND_URL}/api/students/${studentId}/parents/${parentId}`, {
+		method: 'DELETE',
+		credentials: 'include'
+	});
+
+	if (!response.ok) {
+		const error = await response.json();
+		throw new Error(error.error || 'Failed to remove parent');
+	}
+
+	return await response.json();
+}

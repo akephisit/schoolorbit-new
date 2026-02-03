@@ -35,14 +35,14 @@
 		date_of_birth: '',
 		gender: 'male',
 		parent_enabled: false,
-		parent: {
-			first_name: '',
-			last_name: '',
-			phone: '',
-			relationship: 'บิดา',
-			national_id: '',
-			email: ''
-		}
+		parents: [] as {
+			first_name: string;
+			last_name: string;
+			phone: string;
+			relationship: string;
+			national_id: string;
+			email: string;
+		}[]
 	});
 
 	let errors = $state<Record<string, string>>({});
@@ -102,20 +102,24 @@
 			errors.email = 'รูปแบบอีเมลไม่ถูกต้อง';
 		}
 
-		// Parent validation
-		if (formData.parent_enabled) {
-			if (!formData.parent.first_name) errors['parent.first_name'] = 'กรุณากรอกชื่อผู้ปกครอง';
-			if (!formData.parent.last_name) errors['parent.last_name'] = 'กรุณากรอกนามสกุลผู้ปกครอง';
-			if (!formData.parent.phone) errors['parent.phone'] = 'กรุณากรอกเบอร์โทรศัพท์';
-			if (!/^\d{9,10}$/.test(formData.parent.phone))
-				errors['parent.phone'] = 'เบอร์โทรศัพท์ไม่ถูกต้อง';
-			if (formData.parent.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.parent.email)) {
-				errors['parent.email'] = 'รูปแบบอีเมลไม่ถูกต้อง';
-			}
-			if (formData.parent.national_id && !/^\d{13}$/.test(formData.parent.national_id)) {
-				errors['parent.national_id'] = 'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก';
-			}
+		// Parents validation
+		if (formData.parent_enabled && formData.parents.length === 0) {
+			// If enabled but list is empty, add one default parent or show error?
+			// Let's assume on enable we add one automatically
 		}
+
+		formData.parents.forEach((parent, index) => {
+			if (!parent.first_name) errors[`parents.${index}.first_name`] = 'กรุณากรอกชื่อ';
+			if (!parent.last_name) errors[`parents.${index}.last_name`] = 'กรุณากรอกนามสกุล';
+			if (!parent.phone) errors[`parents.${index}.phone`] = 'กรุณากรอกเบอร์โทร';
+			if (!/^\d{9,10}$/.test(parent.phone)) errors[`parents.${index}.phone`] = 'เบอร์โทรไม่ถูกต้อง';
+			if (parent.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parent.email)) {
+				errors[`parents.${index}.email`] = 'รูปแบบอีเมลไม่ถูกต้อง';
+			}
+			if (parent.national_id && !/^\d{13}$/.test(parent.national_id)) {
+				errors[`parents.${index}.national_id`] = 'เลขบัตรฯ ไม่ถูกต้อง';
+			}
+		});
 
 		return Object.keys(errors).length === 0;
 	}
@@ -140,12 +144,12 @@
 				class_room: formData.class_room || undefined,
 				student_number: undefined, // Force undefined to match API type (removing null)
 				title: formData.title || undefined,
-				parent: formData.parent_enabled
-					? {
-							...formData.parent,
-							email: formData.parent.email || undefined,
-							national_id: formData.parent.national_id || undefined
-						}
+				parents: formData.parent_enabled
+					? formData.parents.map((p) => ({
+							...p,
+							email: p.email || undefined,
+							national_id: p.national_id || undefined
+						}))
 					: undefined
 			};
 
@@ -433,116 +437,204 @@
 				</div>
 				<div class="flex items-center gap-2">
 					<Label for="parent_enabled" class="cursor-pointer">สร้างบัญชีผู้ปกครอง</Label>
-					<Switch id="parent_enabled" bind:checked={formData.parent_enabled} />
+					<Switch
+						id="parent_enabled"
+						checked={formData.parent_enabled}
+						onCheckedChange={(v) => {
+							formData.parent_enabled = v;
+							if (v && formData.parents.length === 0) {
+								formData.parents = [
+									{
+										first_name: '',
+										last_name: '',
+										phone: '',
+										relationship: 'บิดา',
+										national_id: '',
+										email: ''
+									}
+								];
+							}
+						}}
+					/>
 				</div>
 			</div>
 
 			{#if formData.parent_enabled}
-				<div class="space-y-4">
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label for="parent_relationship">ความสัมพันธ์</Label>
-							<Select.Root type="single" bind:value={formData.parent.relationship}>
-								<Select.Trigger
-									>{formData.parent.relationship || 'เลือกความสัมพันธ์'}</Select.Trigger
+				<div class="space-y-6">
+					{#each formData.parents as parent, i}
+						<div class="p-4 border rounded-lg relative bg-muted/30">
+							{#if i > 0}
+								<Button
+									variant="ghost"
+									size="icon"
+									class="absolute top-2 right-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+									onclick={() => {
+										formData.parents = formData.parents.filter((_, index) => index !== i);
+									}}
 								>
-								<Select.Content>
-									<Select.Item value="บิดา">บิดา</Select.Item>
-									<Select.Item value="มารดา">มารดา</Select.Item>
-									<Select.Item value="ผู้ปกครอง">ผู้ปกครอง</Select.Item>
-								</Select.Content>
-							</Select.Root>
-						</div>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label for="parent_first_name">
-								ชื่อผู้ปกครอง <span class="text-destructive">*</span>
-							</Label>
-							<Input
-								id="parent_first_name"
-								type="text"
-								bind:value={formData.parent.first_name}
-								placeholder="ชื่อ"
-								class={errors['parent.first_name'] ? 'border-destructive' : ''}
-								disabled={loading}
-								required
-							/>
-							{#if errors['parent.first_name']}
-								<p class="text-xs text-destructive mt-1">{errors['parent.first_name']}</p>
+									<span class="sr-only">ลบ</span>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										class="lucide lucide-trash-2"
+										><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path
+											d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"
+										/><line x1="10" x2="10" y1="11" y2="17" /><line
+											x1="14"
+											x2="14"
+											y1="11"
+											y2="17"
+										/></svg
+									>
+								</Button>
 							{/if}
-						</div>
 
-						<div>
-							<Label for="parent_last_name">
-								นามสกุลผู้ปกครอง <span class="text-destructive">*</span>
-							</Label>
-							<Input
-								id="parent_last_name"
-								type="text"
-								bind:value={formData.parent.last_name}
-								placeholder="นามสกุล"
-								class={errors['parent.last_name'] ? 'border-destructive' : ''}
-								disabled={loading}
-								required
-							/>
-							{#if errors['parent.last_name']}
-								<p class="text-xs text-destructive mt-1">{errors['parent.last_name']}</p>
-							{/if}
-						</div>
-					</div>
+							<h3 class="text-sm font-medium mb-4 flex items-center gap-2">
+								<span
+									class="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs"
+								>
+									{i + 1}
+								</span>
+								ผู้ปกครองคนที่ {i + 1}
+								{#if i === 0}<span class="text-xs text-muted-foreground">(ผู้ปกครองหลัก)</span>{/if}
+							</h3>
 
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label for="parent_phone">
-								เบอร์โทรศัพท์ <span class="text-destructive">*</span> (ใช้เป็น Username)
-							</Label>
-							<Input
-								id="parent_phone"
-								type="tel"
-								bind:value={formData.parent.phone}
-								placeholder="0812345678"
-								maxlength={10}
-								class={errors['parent.phone'] ? 'border-destructive' : ''}
-								disabled={loading}
-								required
-							/>
-							{#if errors['parent.phone']}
-								<p class="text-xs text-destructive mt-1">{errors['parent.phone']}</p>
-							{/if}
-						</div>
-						<div>
-							<Label for="parent_email">อีเมล</Label>
-							<Input
-								id="parent_email"
-								type="email"
-								bind:value={formData.parent.email}
-								placeholder="parent@example.com"
-								class={errors['parent.email'] ? 'border-destructive' : ''}
-								disabled={loading}
-							/>
-							{#if errors['parent.email']}
-								<p class="text-xs text-destructive mt-1">{errors['parent.email']}</p>
-							{/if}
-						</div>
-					</div>
+							<div class="space-y-4">
+								<div class="grid grid-cols-2 gap-4">
+									<div>
+										<Label>ความสัมพันธ์</Label>
+										<Select.Root type="single" bind:value={parent.relationship}>
+											<Select.Trigger>{parent.relationship || 'เลือกความสัมพันธ์'}</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="บิดา">บิดา</Select.Item>
+												<Select.Item value="มารดา">มารดา</Select.Item>
+												<Select.Item value="ผู้ปกครอง">ผู้ปกครอง</Select.Item>
+												<Select.Item value="ญาติ">ญาติ</Select.Item>
+											</Select.Content>
+										</Select.Root>
+									</div>
+								</div>
 
-					<div>
-						<Label for="parent_national_id">เลขบัตรประชาชนผู้ปกครอง</Label>
-						<Input
-							id="parent_national_id"
-							type="text"
-							bind:value={formData.parent.national_id}
-							placeholder="1234567890123"
-							maxlength={13}
-							class={errors['parent.national_id'] ? 'border-destructive' : ''}
-							disabled={loading}
-						/>
-						{#if errors['parent.national_id']}
-							<p class="text-xs text-destructive mt-1">{errors['parent.national_id']}</p>
-						{/if}
-					</div>
+								<div class="grid grid-cols-2 gap-4">
+									<div>
+										<Label>
+											ชื่อ <span class="text-destructive">*</span>
+										</Label>
+										<Input
+											type="text"
+											bind:value={parent.first_name}
+											placeholder="ชื่อ"
+											class={errors[`parents.${i}.first_name`] ? 'border-destructive' : ''}
+											disabled={loading}
+											required
+										/>
+										{#if errors[`parents.${i}.first_name`]}
+											<p class="text-xs text-destructive mt-1">
+												{errors[`parents.${i}.first_name`]}
+											</p>
+										{/if}
+									</div>
+
+									<div>
+										<Label>
+											นามสกุล <span class="text-destructive">*</span>
+										</Label>
+										<Input
+											type="text"
+											bind:value={parent.last_name}
+											placeholder="นามสกุล"
+											class={errors[`parents.${i}.last_name`] ? 'border-destructive' : ''}
+											disabled={loading}
+											required
+										/>
+										{#if errors[`parents.${i}.last_name`]}
+											<p class="text-xs text-destructive mt-1">
+												{errors[`parents.${i}.last_name`]}
+											</p>
+										{/if}
+									</div>
+								</div>
+
+								<div class="grid grid-cols-2 gap-4">
+									<div>
+										<Label>
+											เบอร์โทรศัพท์ <span class="text-destructive">*</span> (Username)
+										</Label>
+										<Input
+											type="tel"
+											bind:value={parent.phone}
+											placeholder="0812345678"
+											maxlength={10}
+											class={errors[`parents.${i}.phone`] ? 'border-destructive' : ''}
+											disabled={loading}
+											required
+										/>
+										{#if errors[`parents.${i}.phone`]}
+											<p class="text-xs text-destructive mt-1">{errors[`parents.${i}.phone`]}</p>
+										{/if}
+									</div>
+									<div>
+										<Label>อีเมล</Label>
+										<Input
+											type="email"
+											bind:value={parent.email}
+											placeholder="parent@example.com"
+											class={errors[`parents.${i}.email`] ? 'border-destructive' : ''}
+											disabled={loading}
+										/>
+										{#if errors[`parents.${i}.email`]}
+											<p class="text-xs text-destructive mt-1">{errors[`parents.${i}.email`]}</p>
+										{/if}
+									</div>
+								</div>
+
+								<div>
+									<Label>เลขบัตรประชาชน</Label>
+									<Input
+										type="text"
+										bind:value={parent.national_id}
+										placeholder="13 หลัก"
+										maxlength={13}
+										class={errors[`parents.${i}.national_id`] ? 'border-destructive' : ''}
+										disabled={loading}
+									/>
+									{#if errors[`parents.${i}.national_id`]}
+										<p class="text-xs text-destructive mt-1">
+											{errors[`parents.${i}.national_id`]}
+										</p>
+									{/if}
+								</div>
+							</div>
+						</div>
+					{/each}
+
+					<Button
+						type="button"
+						variant="outline"
+						class="w-full border-dashed"
+						onclick={() => {
+							formData.parents = [
+								...formData.parents,
+								{
+									first_name: '',
+									last_name: '',
+									phone: '',
+									relationship: 'ผู้ปกครอง',
+									national_id: '',
+									email: ''
+								}
+							];
+						}}
+					>
+						+ เพิ่มผู้ปกครองอีกท่าน
+					</Button>
 				</div>
 			{/if}
 		</Card>
