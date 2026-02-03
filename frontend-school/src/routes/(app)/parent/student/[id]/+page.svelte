@@ -49,10 +49,10 @@
 			<div
 				class="w-32 h-32 rounded-full bg-muted flex items-center justify-center overflow-hidden border-4 border-background shadow-lg"
 			>
-				{#if student.info.profile_image_url}
+				{#if student.profile_image_url}
 					<img
-						src={student.info.profile_image_url}
-						alt={student.info.first_name}
+						src={student.profile_image_url}
+						alt={student.first_name}
 						class="w-full h-full object-cover"
 					/>
 				{:else}
@@ -62,25 +62,25 @@
 
 			<div class="flex-1">
 				<h1 class="text-3xl font-bold tracking-tight mb-2">
-					{student.info.title || ''}{student.info.first_name}
-					{student.info.last_name}
+					{student.title || ''}{student.first_name}
+					{student.last_name}
 				</h1>
 				<div class="flex flex-wrap gap-2 mb-4">
 					<Badge variant="secondary" class="text-sm px-3 py-1">
-						{student.info.grade_level || 'ไม่ระบุชั้น'}
+						{student.grade_level || 'ไม่ระบุชั้น'}
 					</Badge>
 					<Badge variant="outline" class="text-sm px-3 py-1 text-muted-foreground">
-						ห้อง {student.info.class_room || '-'}
+						ห้อง {student.class_room || '-'}
 					</Badge>
 					<Badge variant="outline" class="text-sm px-3 py-1 text-muted-foreground">
-						รหัสนักเรียน: {student.info.student_number || '-'}
+						รหัสนักเรียน: {student.student_number || '-'}
 					</Badge>
 				</div>
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-muted-foreground">
 					<div class="flex items-center gap-2">
 						<Calendar class="w-4 h-4" />
-						วันเกิด: {student.info.date_of_birth ? formatDate(student.info.date_of_birth) : '-'}
+						วันเกิด: {student.date_of_birth ? formatDate(student.date_of_birth) : '-'}
 					</div>
 				</div>
 			</div>
