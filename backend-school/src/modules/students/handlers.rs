@@ -458,13 +458,110 @@ pub async fn create_student(
             AppError::InternalServerError("ไม่สามารถสร้างผู้ใช้งานได้".to_string())
         }
     })?;
-    
+
+    // 2.5 Handle Parent Creation
+    let parent_id: Option<Uuid> = if let Some(parent) = &payload.parent {
+        // Check if parent exists by phone (username)
+        let existing_parent = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM users WHERE username = $1"
+        )
+        .bind(&parent.phone)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| {
+             eprintln!("❌ Failed to check for existing parent: {}", e);
+             AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
+        })?;
+
+        if let Some(pid) = existing_parent {
+            Some(pid)
+        } else {
+             // Create new parent user
+             let parent_password_hash = bcrypt::hash(&parent.phone, bcrypt::DEFAULT_COST).map_err(|e| {
+                eprintln!("❌ Parent password hashing failed: {}", e);
+                AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string())
+            })?;
+            
+            // Encrypt parent national id if provided
+             let (parent_enc_nid, parent_nid_hash) = if let Some(nid) = &parent.national_id {
+                if !nid.is_empty() {
+                     let enc = field_encryption::encrypt(nid).map_err(|e| {
+                        eprintln!("❌ Parent Encryption failed: {}", e);
+                        AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
+                     })?;
+                    let hash = field_encryption::hash_for_search(nid);
+                    (Some(enc), Some(hash))
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            };
+
+            let new_parent_id: Uuid = sqlx::query_scalar(
+                r#"
+                INSERT INTO users (
+                    username, national_id, national_id_hash, email, password_hash,
+                    first_name, last_name, phone,
+                    user_type, status
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'parent', 'active')
+                RETURNING id
+                "#
+            )
+            .bind(&parent.phone) // Username as phone
+            .bind(parent_enc_nid)
+            .bind(parent_nid_hash)
+            .bind(&parent.email)
+            .bind(parent_password_hash)
+            .bind(&parent.first_name)
+            .bind(&parent.last_name)
+            .bind(&parent.phone)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                 eprintln!("❌ Failed to create parent: {}", e);
+                 AppError::InternalServerError("ไม่สามารถสร้างบัญชีผู้ปกครองได้".to_string())
+            })?;
+            
+             // Assign PARENT role (ensure it exists or similar)
+            // Ideally we should check if PARENT role exists first. 
+            // For now let's try to find it by code 'PARENT'
+             let parent_role_id: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true"
+            )
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some(rid) = parent_role_id {
+                 let _ = sqlx::query(
+                    r#"
+                    INSERT INTO user_roles (user_id, role_id, is_primary)
+                    VALUES ($1, $2, true)
+                    "#
+                )
+                .bind(new_parent_id)
+                .bind(rid)
+                .execute(&mut *tx)
+                .await;
+            } else {
+                 // Create PARENT role if it doesn't exist? 
+                 // Or just log warning. The user_type is 'parent', so maybe fine.
+                 eprintln!("⚠️ Creation of Parent successful but 'PARENT' role not found.");
+            }
+
+            Some(new_parent_id)
+        }
+    } else {
+        None
+    };
     // 3. Create student_info
     sqlx::query(
         r#"
         INSERT INTO student_info (
-            user_id, student_id, grade_level, class_room, student_number
-        ) VALUES ($1, $2, $3, $4, $5)
+            user_id, student_id, grade_level, class_room, student_number, parent_id
+        ) VALUES ($1, $2, $3, $4, $5, $6)
         "#
     )
     .bind(user_id)
@@ -472,6 +569,7 @@ pub async fn create_student(
     .bind(&payload.grade_level)
     .bind(&payload.class_room)
     .bind(&payload.student_number)
+    .bind(parent_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| {

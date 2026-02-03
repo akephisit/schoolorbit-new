@@ -73,6 +73,16 @@ export interface CreateStudentRequest {
 	student_number?: number;
 	date_of_birth?: string;
 	gender?: string;
+	parent?: CreateParentRequest;
+}
+
+export interface CreateParentRequest {
+	first_name: string;
+	last_name: string;
+	phone: string;
+	relationship: string;
+	national_id?: string;
+	email?: string;
 }
 
 export interface UpdateStudentRequest {

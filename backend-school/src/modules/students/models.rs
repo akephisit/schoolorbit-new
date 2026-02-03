@@ -89,6 +89,17 @@ pub struct CreateStudentRequest {
     pub student_number: Option<i32>,
     pub date_of_birth: Option<String>, // Changed from NaiveDate to String for flexible parsing
     pub gender: Option<String>,
+    pub parent: Option<CreateParentRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateParentRequest {
+    pub first_name: String,
+    pub last_name: String,
+    pub phone: String,
+    pub relationship: String,
+    pub national_id: Option<String>,
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
