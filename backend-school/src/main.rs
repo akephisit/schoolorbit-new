@@ -155,6 +155,11 @@ async fn main() {
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/students/{id}", axum::routing::delete(modules::students::handlers::delete_student)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        // Parent Management (Nested for simplicity)
+        .route("/api/students/{id}/parents", post(modules::students::handlers_parents::add_parent_to_student)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/students/{id}/parents/{parent_id}", axum::routing::delete(modules::students::handlers_parents::remove_parent_from_student)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         
         // Role Management routes (protected)
         .route("/api/roles", get(modules::staff::handlers::roles::list_roles)

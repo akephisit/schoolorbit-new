@@ -14,7 +14,7 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
 use crate::AppState;
 use crate::error::AppError;
-use super::models::{CreateStudentRequest, ListStudentsQuery, StudentListItem, StudentProfile, UpdateOwnProfileRequest, UpdateStudentRequest};
+use super::models::{CreateStudentRequest, ListStudentsQuery, StudentListItem, StudentProfile, StudentDbRow, UpdateOwnProfileRequest, UpdateStudentRequest};
 
 // =========================================
 // Helper Functions
@@ -146,7 +146,7 @@ pub async fn get_own_profile(
     let user = get_current_user(&headers, &pool).await?;
     
     // Query student profile
-    let mut student = sqlx::query_as::<_, StudentProfile>(
+    let mut student_row = sqlx::query_as::<_, StudentDbRow>(
         r#"
         SELECT 
             u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
@@ -170,16 +170,40 @@ pub async fn get_own_profile(
 
     // Decrypt fields
     // Decrypt fields
-    if let Some(nid) = &student.national_id {
+    // Decrypt fields
+    // Decrypt fields
+    if let Some(nid) = &student_row.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
-            student.national_id = Some(dec);
+            student_row.national_id = Some(dec);
         }
     }
-    if let Some(mc) = &student.medical_conditions {
+    if let Some(mc) = &student_row.medical_conditions {
         if let Ok(dec) = field_encryption::decrypt(mc) {
-            student.medical_conditions = Some(dec);
+            student_row.medical_conditions = Some(dec);
         }
     }
+
+    // Fetch parents for own profile too (if needed, currently not showing in own profile but good to have)
+    let parents = sqlx::query_as::<_, crate::modules::students::models::ParentDto>(
+        r#"
+        SELECT 
+            p.id, p.username, p.first_name, p.last_name, p.phone,
+            sp.relationship, sp.is_primary
+        FROM student_parents sp
+        INNER JOIN users p ON sp.parent_user_id = p.id
+        WHERE sp.student_user_id = $1
+        ORDER BY sp.is_primary DESC, p.first_name ASC
+        "#
+    )
+    .bind(user.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_else(|_| Vec::new());
+    
+    let student = StudentProfile {
+        info: student_row,
+        parents,
+    };
     
     Ok((
         StatusCode::OK,
@@ -459,109 +483,126 @@ pub async fn create_student(
         }
     })?;
 
-    // 2.5 Handle Parent Creation
-    let parent_id: Option<Uuid> = if let Some(parent) = &payload.parent {
-        // Check if parent exists by phone (username)
-        let existing_parent = sqlx::query_scalar::<_, Uuid>(
-            "SELECT id FROM users WHERE username = $1"
-        )
-        .bind(&parent.phone)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| {
-             eprintln!("❌ Failed to check for existing parent: {}", e);
-             AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
-        })?;
-
-        if let Some(pid) = existing_parent {
-            Some(pid)
-        } else {
-             // Create new parent user
-             let parent_password_hash = bcrypt::hash(&parent.phone, bcrypt::DEFAULT_COST).map_err(|e| {
-                eprintln!("❌ Parent password hashing failed: {}", e);
-                AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string())
-            })?;
-            
-            // Encrypt parent national id if provided
-             let (parent_enc_nid, parent_nid_hash) = if let Some(nid) = &parent.national_id {
-                if !nid.is_empty() {
-                     let enc = field_encryption::encrypt(nid).map_err(|e| {
-                        eprintln!("❌ Parent Encryption failed: {}", e);
-                        AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
-                     })?;
-                    let hash = field_encryption::hash_for_search(nid);
-                    (Some(enc), Some(hash))
-                } else {
-                    (None, None)
-                }
-            } else {
-                (None, None)
-            };
-
-            let new_parent_id: Uuid = sqlx::query_scalar(
-                r#"
-                INSERT INTO users (
-                    username, national_id, national_id_hash, email, password_hash,
-                    first_name, last_name, phone,
-                    user_type, status
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'parent', 'active')
-                RETURNING id
-                "#
+    // 2.5 Handle Parents Creation
+    if let Some(parents) = &payload.parents {
+        for (index, parent) in parents.iter().enumerate() {
+            // Check if parent exists by phone (username)
+            let existing_parent = sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM users WHERE username = $1"
             )
-            .bind(&parent.phone) // Username as phone
-            .bind(parent_enc_nid)
-            .bind(parent_nid_hash)
-            .bind(&parent.email)
-            .bind(parent_password_hash)
-            .bind(&parent.first_name)
-            .bind(&parent.last_name)
             .bind(&parent.phone)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| {
-                 eprintln!("❌ Failed to create parent: {}", e);
-                 AppError::InternalServerError("ไม่สามารถสร้างบัญชีผู้ปกครองได้".to_string())
-            })?;
-            
-             // Assign PARENT role (ensure it exists or similar)
-            // Ideally we should check if PARENT role exists first. 
-            // For now let's try to find it by code 'PARENT'
-             let parent_role_id: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true"
-            )
             .fetch_optional(&mut *tx)
             .await
-            .ok()
-            .flatten();
+            .map_err(|e| {
+                 eprintln!("❌ Failed to check for existing parent: {}", e);
+                 AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
+            })?;
 
-            if let Some(rid) = parent_role_id {
-                 let _ = sqlx::query(
+            let parent_id = if let Some(pid) = existing_parent {
+                pid
+            } else {
+                 // Create new parent user
+                 let parent_password_hash = bcrypt::hash(&parent.phone, bcrypt::DEFAULT_COST).map_err(|e| {
+                    eprintln!("❌ Parent password hashing failed: {}", e);
+                    AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string())
+                })?;
+                
+                // Encrypt parent national id if provided
+                 let (parent_enc_nid, parent_nid_hash) = if let Some(nid) = &parent.national_id {
+                    if !nid.is_empty() {
+                         let enc = field_encryption::encrypt(nid).map_err(|e| {
+                            eprintln!("❌ Parent Encryption failed: {}", e);
+                            AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
+                         })?;
+                        let hash = field_encryption::hash_for_search(nid);
+                        (Some(enc), Some(hash))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                };
+
+                let new_parent_id: Uuid = sqlx::query_scalar(
                     r#"
-                    INSERT INTO user_roles (user_id, role_id, is_primary)
-                    VALUES ($1, $2, true)
+                    INSERT INTO users (
+                        username, national_id, national_id_hash, email, password_hash,
+                        first_name, last_name, phone,
+                        user_type, status
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'parent', 'active')
+                    RETURNING id
                     "#
                 )
-                .bind(new_parent_id)
-                .bind(rid)
-                .execute(&mut *tx)
-                .await;
-            } else {
-                 // Create PARENT role if it doesn't exist? 
-                 // Or just log warning. The user_type is 'parent', so maybe fine.
-                 eprintln!("⚠️ Creation of Parent successful but 'PARENT' role not found.");
-            }
+                .bind(&parent.phone) // Username as phone
+                .bind(parent_enc_nid)
+                .bind(parent_nid_hash)
+                .bind(&parent.email)
+                .bind(parent_password_hash)
+                .bind(&parent.first_name)
+                .bind(&parent.last_name)
+                .bind(&parent.phone)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| {
+                     eprintln!("❌ Failed to create parent: {}", e);
+                     AppError::InternalServerError("ไม่สามารถสร้างบัญชีผู้ปกครองได้".to_string())
+                })?;
+                
+                 // Assign PARENT role
+                 let parent_role_id: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true"
+                )
+                .fetch_optional(&mut *tx)
+                .await
+                .ok()
+                .flatten();
 
-            Some(new_parent_id)
+                if let Some(rid) = parent_role_id {
+                     let _ = sqlx::query(
+                        r#"
+                        INSERT INTO user_roles (user_id, role_id, is_primary)
+                        VALUES ($1, $2, true)
+                        "#
+                    )
+                    .bind(new_parent_id)
+                    .bind(rid)
+                    .execute(&mut *tx)
+                    .await;
+                }
+
+                new_parent_id
+            };
+
+            // Link parent to student
+            // First parent in list is primary by default, or you can add checks
+            let is_primary = index == 0; 
+            
+            sqlx::query(
+                r#"
+                INSERT INTO student_parents (student_user_id, parent_user_id, relationship, is_primary)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (student_user_id, parent_user_id) DO NOTHING
+                "#
+            )
+            .bind(user_id)
+            .bind(parent_id)
+            .bind(&parent.relationship)
+            .bind(is_primary)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                 eprintln!("❌ Failed to link parent: {}", e);
+                 AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
+            })?;
         }
-    } else {
-        None
-    };
+    }
+    
     // 3. Create student_info
     sqlx::query(
         r#"
         INSERT INTO student_info (
-            user_id, student_id, grade_level, class_room, student_number, parent_id
-        ) VALUES ($1, $2, $3, $4, $5, $6)
+            user_id, student_id, grade_level, class_room, student_number
+        ) VALUES ($1, $2, $3, $4, $5)
         "#
     )
     .bind(user_id)
@@ -569,14 +610,13 @@ pub async fn create_student(
     .bind(&payload.grade_level)
     .bind(&payload.class_room)
     .bind(&payload.student_number)
-    .bind(parent_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
         eprintln!("❌ Failed to create student_info: {}", e);
         AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
     })?;
-    
+
     // 4. Assign STUDENT role
     let student_role_id: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM roles WHERE code = 'STUDENT' AND is_active = true"
@@ -642,7 +682,8 @@ pub async fn get_student(
     // Check permission
     check_user_permission(&headers, &pool, "student.read.all").await?;
     
-    let mut student = sqlx::query_as::<_, StudentProfile>(
+    // Query student profile
+    let mut student_row = sqlx::query_as::<_, StudentDbRow>(
         r#"
         SELECT 
             u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
@@ -664,18 +705,42 @@ pub async fn get_student(
     })?
     .ok_or(AppError::NotFound("Student not found".to_string()))?;
 
+    // Fetch parents for this student
+    let parents = sqlx::query_as::<_, crate::modules::students::models::ParentDto>(
+        r#"
+        SELECT 
+            p.id, p.username, p.first_name, p.last_name, p.phone,
+            sp.relationship, sp.is_primary
+        FROM student_parents sp
+        INNER JOIN users p ON sp.parent_user_id = p.id
+        WHERE sp.student_user_id = $1
+        ORDER BY sp.is_primary DESC, p.first_name ASC
+        "#
+    )
+    .bind(student_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_else(|_| Vec::new());
+    
+    // student_row.parents = parents; // Removed, StudentDbRow doesn't have parents
+
     // Decrypt fields
     // Decrypt fields
-    if let Some(nid) = &student.national_id {
+    if let Some(nid) = &student_row.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
-            student.national_id = Some(dec);
+            student_row.national_id = Some(dec);
         }
     }
-    if let Some(mc) = &student.medical_conditions {
+    if let Some(mc) = &student_row.medical_conditions {
         if let Ok(dec) = field_encryption::decrypt(mc) {
-            student.medical_conditions = Some(dec);
+            student_row.medical_conditions = Some(dec);
         }
     }
+    
+    let student = StudentProfile {
+        info: student_row,
+        parents,
+    };
     
     Ok((
         StatusCode::OK,

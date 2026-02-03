@@ -10,9 +10,8 @@ pub struct StudentInfo {
     pub user_id: Uuid,
     pub student_id: String,
     pub grade_level: Option<String>,
-    pub class_room: Option<String>,
     pub student_number: Option<i32>,
-    pub parent_id: Option<Uuid>,
+    // parent_id removed, use student_parents table linked by user_id
     pub enrollment_date: Option<NaiveDate>,
     pub expected_graduation_date: Option<NaiveDate>,
     pub blood_type: Option<String>,
@@ -28,7 +27,18 @@ pub struct StudentInfo {
 // =========================================
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
-pub struct StudentProfile {
+pub struct ParentDto {
+    pub id: Uuid,
+    pub username: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone: Option<String>,
+    pub relationship: String,
+    pub is_primary: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct StudentDbRow {
     // User fields
     pub id: Uuid,
     pub username: String,
@@ -52,6 +62,13 @@ pub struct StudentProfile {
     pub blood_type: Option<String>,
     pub allergies: Option<String>,
     pub medical_conditions: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StudentProfile {
+    #[serde(flatten)]
+    pub info: StudentDbRow,
+    pub parents: Vec<ParentDto>,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -89,7 +106,7 @@ pub struct CreateStudentRequest {
     pub student_number: Option<i32>,
     pub date_of_birth: Option<String>, // Changed from NaiveDate to String for flexible parsing
     pub gender: Option<String>,
-    pub parent: Option<CreateParentRequest>,
+    pub parents: Option<Vec<CreateParentRequest>>,
 }
 
 #[derive(Debug, Deserialize)]
