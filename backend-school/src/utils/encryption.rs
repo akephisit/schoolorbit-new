@@ -39,7 +39,7 @@ pub async fn setup_encryption_key(pool: &sqlx::PgPool) -> Result<(), String> {
 /// 
 /// # Returns
 /// SQL expression for encrypted data
-pub fn encrypt_sql(plaintext: &str, param_index: i32) -> String {
+pub fn encrypt_sql(_plaintext: &str, param_index: i32) -> String {
     format!(
         "pgp_sym_encrypt(${}, current_setting('app.encryption_key'))",
         param_index

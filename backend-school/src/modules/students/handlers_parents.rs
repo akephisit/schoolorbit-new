@@ -5,7 +5,6 @@ use axum::{
     Json,
 };
 use serde_json::json;
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::error::AppError;

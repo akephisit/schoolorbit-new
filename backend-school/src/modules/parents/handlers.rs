@@ -180,9 +180,7 @@ pub async fn get_child_profile(
             student_row.national_id = Some(dec);
         }
     }
-    if let Some(f) = &student_row.first_name.clone() { // Decrypt generic if encrypted? No, first name is plain usually.
-         // Pass
-    }
+
     // Note: Assuming other sensitive fields are handled.
 
     // Fetch parents for this student
