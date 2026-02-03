@@ -111,6 +111,7 @@ pub struct CreateStudentRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateParentRequest {
+    pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
     pub phone: String,

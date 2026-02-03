@@ -10,6 +10,7 @@ pub struct ParentProfile {
     pub username: String,
     pub first_name: String,
     pub last_name: String,
+    pub title: Option<String>,
     pub phone: Option<String>,
     pub email: Option<String>,
     pub national_id: Option<String>, // Encrypted
@@ -24,6 +25,7 @@ pub struct ParentDbRow {
     pub username: String,
     pub first_name: String,
     pub last_name: String,
+    pub title: Option<String>,
     pub phone: Option<String>,
     pub email: Option<String>,
     pub national_id: Option<String>,

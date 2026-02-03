@@ -104,9 +104,9 @@ pub async fn add_parent_to_student(
             r#"
             INSERT INTO users (
                 username, national_id, national_id_hash, email, password_hash,
-                first_name, last_name, phone,
+                title, first_name, last_name, phone,
                 user_type, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'parent', 'active')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'parent', 'active')
             RETURNING id
             "#,
         )
@@ -115,6 +115,7 @@ pub async fn add_parent_to_student(
         .bind(parent_nid_hash)
         .bind(&payload.email)
         .bind(parent_password_hash)
+        .bind(&payload.title)
         .bind(&payload.first_name)
         .bind(&payload.last_name)
         .bind(&payload.phone)

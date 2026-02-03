@@ -46,7 +46,7 @@ pub async fn get_own_parent_profile(
     let mut parent = sqlx::query_as::<_, ParentDbRow>(
         r#"
         SELECT 
-            id, username, first_name, last_name, phone, email, national_id
+            id, username, first_name, last_name, title, phone, email, national_id
         FROM users
         WHERE id = $1 AND status = 'active'
         "#
@@ -91,6 +91,7 @@ pub async fn get_own_parent_profile(
         username: parent.username,
         first_name: parent.first_name,
         last_name: parent.last_name,
+        title: parent.title,
         phone: parent.phone,
         email: parent.email,
         national_id: parent.national_id,
