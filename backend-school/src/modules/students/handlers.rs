@@ -877,7 +877,10 @@ pub async fn delete_student(
     sqlx::query(
         r#"
         UPDATE users 
-        SET status = 'inactive', updated_at = NOW() 
+        SET 
+            status = 'inactive', 
+            username = username || '_del_' || CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT),
+            updated_at = NOW() 
         WHERE id = $1 AND user_type = 'student'
         "#
     )
