@@ -310,21 +310,22 @@
 			<p>กรุณาเลือกปีการศึกษาและห้องเรียน</p>
 		</div>
 	{:else}
-		<div class="flex items-center justify-between">
+		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 			<h3 class="text-lg font-semibold flex items-center gap-2">
 				รายชื่อนักเรียน
 				<Badge variant="secondary">{enrollments.length} คน</Badge>
 			</h3>
-			<div class="flex gap-2">
+			<div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
 				<Button
 					variant="outline"
 					onclick={openAutoNumberDialog}
 					disabled={enrollments.length === 0}
+					class="w-full sm:w-auto"
 				>
 					<ArrowUpDown class="mr-2 h-4 w-4" />
 					เรียงเลขที่อัตโนมัติ
 				</Button>
-				<Button onclick={openAddDialog}>
+				<Button onclick={openAddDialog} class="w-full sm:w-auto">
 					<UserPlus class="mr-2 h-4 w-4" />
 					เพิ่มนักเรียนเข้าห้อง
 				</Button>
@@ -336,7 +337,7 @@
 				<Loader2 class="h-8 w-8 animate-spin text-primary" />
 			</div>
 		{:else}
-			<div class="rounded-md border bg-card">
+			<div class="rounded-md border bg-card overflow-x-auto">
 				<Table.Root>
 					<Table.Header>
 						<Table.Row>
