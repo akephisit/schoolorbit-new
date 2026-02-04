@@ -1,232 +1,239 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { toast } from 'svelte-sonner';
-    import {
-        type Building,
-        type Room,
-        listBuildings,
-        listRooms,
-        createBuilding,
-        updateBuilding,
-        deleteBuilding,
-        createRoom,
-        updateRoom,
-        deleteRoom
-    } from '$lib/api/facility';
-    
-    import * as Card from '$lib/components/ui/card';
-    import * as Table from '$lib/components/ui/table';
-    import { Button } from '$lib/components/ui/button';
-    import { Input } from '$lib/components/ui/input';
-    import { Label } from '$lib/components/ui/label';
-    import { Badge } from '$lib/components/ui/badge';
-    import * as Dialog from '$lib/components/ui/dialog';
-    import * as Select from '$lib/components/ui/select';
-    import * as Tabs from '$lib/components/ui/tabs';
-    
-    import {
-        Building as BuildingIcon,
-        DoorOpen,
-        Plus,
-        Search,
-        Settings,
-        Trash2,
-        Loader2,
-        School
-    } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
-    // Constants
-    const ROOM_TYPES = [
-        { value: 'GENERAL', label: 'ห้องเรียนทั่วไป' },
-        { value: 'LAB', label: 'ห้องปฏิบัติการ' },
-        { value: 'AUDITORIUM', label: 'หอประชุม' },
-        { value: 'GYM', label: 'โรงยิม' },
-        { value: 'LIBRARY', label: 'ห้องสมุด' },
-        { value: 'OFFICE', label: 'สำนักงาน' },
-        { value: 'OTHER', label: 'อื่นๆ' }
-    ];
+	let { data } = $props();
 
-    // State
-    let loading = $state(true);
-    let buildings = $state<Building[]>([]);
-    let rooms = $state<Room[]>([]);
-    let activeTab = $state('buildings');
-    
-    // Filters
-    let searchTerm = $state('');
-    let selectedBuildingFilter = $state('all');
+	import {
+		type Building,
+		type Room,
+		listBuildings,
+		listRooms,
+		createBuilding,
+		updateBuilding,
+		deleteBuilding,
+		createRoom,
+		updateRoom,
+		deleteRoom
+	} from '$lib/api/facility';
 
-    // Dialogs
-    let showBuildingDialog = $state(false);
-    let showRoomDialog = $state(false);
-    let showDeleteDialog = $state(false);
-    let submitting = $state(false);
+	import * as Card from '$lib/components/ui/card';
+	import * as Table from '$lib/components/ui/table';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
+	import * as Tabs from '$lib/components/ui/tabs';
 
-    // Editing
-    let editingItem = $state<any>(null); // Building or Room
-    let deleteTarget = $state<{type: 'building'|'room', id: string, name: string} | null>(null);
+	import {
+		Building as BuildingIcon,
+		DoorOpen,
+		Plus,
+		Search,
+		Settings,
+		Trash2,
+		Loader2,
+		School
+	} from 'lucide-svelte';
 
-    // Initial Data
-    async function loadData() {
-        try {
-            loading = true;
-            const [bRes, rRes] = await Promise.all([
-                listBuildings(),
-                listRooms({ 
-                    building_id: selectedBuildingFilter === 'all' ? undefined : selectedBuildingFilter 
-                }) // Preload active rooms
-            ]);
-            buildings = bRes.data;
-            rooms = rRes.data;
-        } catch (e) {
-            toast.error('โหลดข้อมูลไม่สำเร็จ');
-        } finally {
-            loading = false;
-        }
-    }
+	// Constants
+	const ROOM_TYPES = [
+		{ value: 'GENERAL', label: 'ห้องเรียนทั่วไป' },
+		{ value: 'LAB', label: 'ห้องปฏิบัติการ' },
+		{ value: 'AUDITORIUM', label: 'หอประชุม' },
+		{ value: 'GYM', label: 'โรงยิม' },
+		{ value: 'LIBRARY', label: 'ห้องสมุด' },
+		{ value: 'OFFICE', label: 'สำนักงาน' },
+		{ value: 'OTHER', label: 'อื่นๆ' }
+	];
 
-    async function refreshRooms() {
-        try {
-            const res = await listRooms({
-                building_id: selectedBuildingFilter === 'all' ? undefined : selectedBuildingFilter,
-                search: searchTerm || undefined
-            });
-            rooms = res.data;
-        } catch (e) {
-            console.error(e);
-        }
-    }
+	// State
+	let loading = $state(true);
+	let buildings = $state<Building[]>([]);
+	let rooms = $state<Room[]>([]);
+	let activeTab = $state('buildings');
 
-    // Actions: Buildings
-    async function handleSaveBuilding(e: SubmitEvent) {
-        e.preventDefault();
-        const form = e.target as HTMLFormElement;
-        const formData = new FormData(form);
-        const payload = {
-            name_th: formData.get('name_th') as string,
-            name_en: formData.get('name_en') as string,
-            code: formData.get('code') as string,
-            description: formData.get('description') as string
-        };
+	// Filters
+	let searchTerm = $state('');
+	let selectedBuildingFilter = $state('all');
 
-        submitting = true;
-        try {
-            if (editingItem) {
-                await updateBuilding(editingItem.id, payload);
-                toast.success('บันทึกข้อมูลอาคารสำเร็จ');
-            } else {
-                await createBuilding(payload);
-                toast.success('เพิ่มอาคารสำเร็จ');
-            }
-            showBuildingDialog = false;
-            loadData();
-        } catch (e) {
-            toast.error('บันทึกไม่สำเร็จ');
-        } finally {
-            submitting = false;
-        }
-    }
+	// Dialogs
+	let showBuildingDialog = $state(false);
+	let showRoomDialog = $state(false);
+	let showDeleteDialog = $state(false);
+	let submitting = $state(false);
 
-    // Actions: Rooms
-    async function handleSaveRoom(e: SubmitEvent) {
-         e.preventDefault();
-        const form = e.target as HTMLFormElement;
-        const formData = new FormData(form);
-        
-        const payload = {
-            name_th: formData.get('name_th') as string,
-            name_en: formData.get('name_en') as string,
-            code: formData.get('code') as string,
-            room_type: formData.get('room_type') as string,
-            building_id: (formData.get('building_id') as string) || undefined,
-            capacity: parseInt(formData.get('capacity') as string) || 40,
-            floor: parseInt(formData.get('floor') as string) || undefined,
-            description: formData.get('description') as string
-        };
+	// Editing
+	let editingItem = $state<any>(null); // Building or Room
+	let deleteTarget = $state<{ type: 'building' | 'room'; id: string; name: string } | null>(null);
 
-        submitting = true;
-        try {
-            if (editingItem) {
-                await updateRoom(editingItem.id, payload);
-                toast.success('บันทึกข้อมูลห้องสำเร็จ');
-            } else {
-                await createRoom(payload);
-                toast.success('เพิ่มห้องสำเร็จ');
-            }
-            showRoomDialog = false;
-            refreshRooms();
-        } catch (e) {
-            toast.error('บันทึกไม่สำเร็จ');
-        } finally {
-            submitting = false;
-        }
-    }
+	// Initial Data
+	async function loadData() {
+		try {
+			loading = true;
+			const [bRes, rRes] = await Promise.all([
+				listBuildings(),
+				listRooms({
+					building_id: selectedBuildingFilter === 'all' ? undefined : selectedBuildingFilter
+				}) // Preload active rooms
+			]);
+			buildings = bRes.data;
+			rooms = rRes.data;
+		} catch (e) {
+			toast.error('โหลดข้อมูลไม่สำเร็จ');
+		} finally {
+			loading = false;
+		}
+	}
 
-    async function handleDelete() {
-        if (!deleteTarget) return;
-        submitting = true;
-        try {
-            if (deleteTarget.type === 'building') {
-                await deleteBuilding(deleteTarget.id);
-                toast.success('ลบอาคารสำเร็จ');
-                loadData();
-            } else {
-                await deleteRoom(deleteTarget.id);
-                toast.success('ลบห้องสำเร็จ');
-                refreshRooms();
-            }
-            showDeleteDialog = false;
-        } catch (e) {
-            toast.error('ลบไม่สำเร็จ (อาจมีข้อมูลเชื่อมโยง)');
-        } finally {
-            submitting = false;
-        }
-    }
+	async function refreshRooms() {
+		try {
+			const res = await listRooms({
+				building_id: selectedBuildingFilter === 'all' ? undefined : selectedBuildingFilter,
+				search: searchTerm || undefined
+			});
+			rooms = res.data;
+		} catch (e) {
+			console.error(e);
+		}
+	}
 
-    // Helpers
-    function openAddBuilding() {
-        editingItem = null;
-        showBuildingDialog = true;
-    }
-    function openEditBuilding(b: Building) {
-        editingItem = b;
-        showBuildingDialog = true;
-    }
-    function openAddRoom() {
-        editingItem = null;
-        showRoomDialog = true;
-    }
-    function openEditRoom(r: Room) {
-        editingItem = r;
-        showRoomDialog = true;
-    }
-    function confirmDelete(type: 'building'|'room', item: any) {
-        deleteTarget = {
-            type,
-            id: item.id,
-            name: item.name_th
-        };
-        showDeleteDialog = true;
-    }
+	// Actions: Buildings
+	async function handleSaveBuilding(e: SubmitEvent) {
+		e.preventDefault();
+		const form = e.target as HTMLFormElement;
+		const formData = new FormData(form);
+		const payload = {
+			name_th: formData.get('name_th') as string,
+			name_en: formData.get('name_en') as string,
+			code: formData.get('code') as string,
+			description: formData.get('description') as string
+		};
 
-    // Fix for select inputs logic
-    let formBuildingId = $state('');
-    let formRoomType = $state('GENERAL');
+		submitting = true;
+		try {
+			if (editingItem) {
+				await updateBuilding(editingItem.id, payload);
+				toast.success('บันทึกข้อมูลอาคารสำเร็จ');
+			} else {
+				await createBuilding(payload);
+				toast.success('เพิ่มอาคารสำเร็จ');
+			}
+			showBuildingDialog = false;
+			loadData();
+		} catch (e) {
+			toast.error('บันทึกไม่สำเร็จ');
+		} finally {
+			submitting = false;
+		}
+	}
 
-    $effect(() => {
-        if (showRoomDialog) {
-            if (editingItem) {
-                formBuildingId = editingItem.building_id || '';
-                formRoomType = editingItem.room_type || 'GENERAL';
-            } else {
-                formBuildingId = (selectedBuildingFilter !== 'all' ? selectedBuildingFilter : '') || '';
-                formRoomType = 'GENERAL';
-            }
-        }
-    });
+	// Actions: Rooms
+	async function handleSaveRoom(e: SubmitEvent) {
+		e.preventDefault();
+		const form = e.target as HTMLFormElement;
+		const formData = new FormData(form);
 
-    onMount(loadData);
+		const payload = {
+			name_th: formData.get('name_th') as string,
+			name_en: formData.get('name_en') as string,
+			code: formData.get('code') as string,
+			room_type: formData.get('room_type') as string,
+			building_id: (formData.get('building_id') as string) || undefined,
+			capacity: parseInt(formData.get('capacity') as string) || 40,
+			floor: parseInt(formData.get('floor') as string) || undefined,
+			description: formData.get('description') as string
+		};
+
+		submitting = true;
+		try {
+			if (editingItem) {
+				await updateRoom(editingItem.id, payload);
+				toast.success('บันทึกข้อมูลห้องสำเร็จ');
+			} else {
+				await createRoom(payload);
+				toast.success('เพิ่มห้องสำเร็จ');
+			}
+			showRoomDialog = false;
+			refreshRooms();
+		} catch (e) {
+			toast.error('บันทึกไม่สำเร็จ');
+		} finally {
+			submitting = false;
+		}
+	}
+
+	async function handleDelete() {
+		if (!deleteTarget) return;
+		submitting = true;
+		try {
+			if (deleteTarget.type === 'building') {
+				await deleteBuilding(deleteTarget.id);
+				toast.success('ลบอาคารสำเร็จ');
+				loadData();
+			} else {
+				await deleteRoom(deleteTarget.id);
+				toast.success('ลบห้องสำเร็จ');
+				refreshRooms();
+			}
+			showDeleteDialog = false;
+		} catch (e) {
+			toast.error('ลบไม่สำเร็จ (อาจมีข้อมูลเชื่อมโยง)');
+		} finally {
+			submitting = false;
+		}
+	}
+
+	// Helpers
+	function openAddBuilding() {
+		editingItem = null;
+		showBuildingDialog = true;
+	}
+	function openEditBuilding(b: Building) {
+		editingItem = b;
+		showBuildingDialog = true;
+	}
+	function openAddRoom() {
+		editingItem = null;
+		showRoomDialog = true;
+	}
+	function openEditRoom(r: Room) {
+		editingItem = r;
+		showRoomDialog = true;
+	}
+	function confirmDelete(type: 'building' | 'room', item: any) {
+		deleteTarget = {
+			type,
+			id: item.id,
+			name: item.name_th
+		};
+		showDeleteDialog = true;
+	}
+
+	// Fix for select inputs logic
+	let formBuildingId = $state('');
+	let formRoomType = $state('GENERAL');
+
+	$effect(() => {
+		if (showRoomDialog) {
+			if (editingItem) {
+				formBuildingId = editingItem.building_id || '';
+				formRoomType = editingItem.room_type || 'GENERAL';
+			} else {
+				formBuildingId = (selectedBuildingFilter !== 'all' ? selectedBuildingFilter : '') || '';
+				formRoomType = 'GENERAL';
+			}
+		}
+	});
+
+	onMount(loadData);
 </script>
+
+<svelte:head>
+	<title>{data.title} - SchoolOrbit</title>
+</svelte:head>
 
 <div class="space-y-6">
 	<div class="flex flex-col gap-2">

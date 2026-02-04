@@ -15,6 +15,8 @@
 	import { GraduationCap, Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
+	let { data } = $props();
+
 	let students: StudentListItem[] = $state([]);
 	let loading = $state(true);
 	let deleting = $state(false);
@@ -121,7 +123,7 @@
 </script>
 
 <svelte:head>
-	<title>จัดการนักเรียน - SchoolOrbit</title>
+	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
 <div class="space-y-6">

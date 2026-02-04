@@ -11,6 +11,6 @@ export const _meta = {
 
 export const load = async () => {
     return {
-        title: 'จัดการอาคารและห้องเรียน'
+        title: _meta.menu.title
     };
 };
