@@ -92,8 +92,6 @@ export interface UpdateStudentRequest {
 	last_name?: string;
 	phone?: string;
 	address?: string;
-	grade_level?: string;
-	class_room?: string;
 	student_number?: number;
 }
 

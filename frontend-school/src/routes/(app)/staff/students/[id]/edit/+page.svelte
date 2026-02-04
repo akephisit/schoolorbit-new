@@ -90,8 +90,11 @@
 	async function handleSave() {
 		saving = true;
 		try {
+			// Extract editable fields (exclude grade_level and class_room)
+			const { grade_level, class_room, ...updateData } = formData;
+
 			await updateStudent(studentId, {
-				...formData,
+				...updateData,
 				student_number: formData.student_number || undefined
 			});
 			toast.success('บันทึกข้อมูลสำเร็จ');
