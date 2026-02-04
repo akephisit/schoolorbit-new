@@ -15,6 +15,13 @@
 	import { GraduationCap, Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
+	import {
+		lookupGradeLevels,
+		lookupClassrooms,
+		type GradeLevelLookupItem,
+		type ClassroomLookupItem
+	} from '$lib/api/lookup';
+
 	let students: StudentListItem[] = $state([]);
 	let loading = $state(true);
 	let deleting = $state(false);
@@ -26,13 +33,26 @@
 	let statusFilter = $state('active');
 	let currentPage = $state(1);
 	let totalPages = $state(1);
+
 	let total = $state(0);
+
+	let gradeLevels: GradeLevelLookupItem[] = $state([]);
+	let classrooms: ClassroomLookupItem[] = $state([]);
+
+	let filteredClassrooms = $derived(
+		gradeFilter ? classrooms.filter((c) => c.grade_level_id === gradeFilter) : classrooms
+	);
 
 	function formatFullClassRoom(name: string, gradeLevel?: string) {
 		if (!name) return '-';
-		
+
 		// If name has prefix/format
-		if (name.startsWith('อ.') || name.startsWith('ป.') || name.startsWith('ม.') || name.includes('/')) {
+		if (
+			name.startsWith('อ.') ||
+			name.startsWith('ป.') ||
+			name.startsWith('ม.') ||
+			name.includes('/')
+		) {
 			if (name.startsWith('อ.')) return name.replace('อ.', 'อนุบาลปีที่ ');
 			if (name.startsWith('ป.')) return name.replace('ป.', 'ประถมศึกษาปีที่ ');
 			if (name.startsWith('ม.')) return name.replace('ม.', 'มัธยมศึกษาปีที่ ');
@@ -43,8 +63,10 @@
 		if (gradeLevel) {
 			let fullGrade = gradeLevel;
 			if (gradeLevel.startsWith('อ.')) fullGrade = gradeLevel.replace('อ.', 'อนุบาลปีที่ ');
-			else if (gradeLevel.startsWith('ป.')) fullGrade = gradeLevel.replace('ป.', 'ประถมศึกษาปีที่ ');
-			else if (gradeLevel.startsWith('ม.')) fullGrade = gradeLevel.replace('ม.', 'มัธยมศึกษาปีที่ ');
+			else if (gradeLevel.startsWith('ป.'))
+				fullGrade = gradeLevel.replace('ป.', 'ประถมศึกษาปีที่ ');
+			else if (gradeLevel.startsWith('ม.'))
+				fullGrade = gradeLevel.replace('ม.', 'มัธยมศึกษาปีที่ ');
 			return `${fullGrade}/${name}`;
 		}
 
@@ -98,6 +120,16 @@
 		}
 	}
 
+	async function loadOptions() {
+		try {
+			const [gl, cr] = await Promise.all([lookupGradeLevels(), lookupClassrooms()]);
+			gradeLevels = gl.sort((a, b) => a.level_order - b.level_order);
+			classrooms = cr;
+		} catch (e) {
+			console.error('Failed to load options', e);
+		}
+	}
+
 	function handleSearch() {
 		currentPage = 1;
 		loadStudents();
@@ -113,6 +145,7 @@
 	}
 
 	onMount(() => {
+		loadOptions();
 		loadStudents();
 	});
 </script>
@@ -152,11 +185,45 @@
 			</div>
 
 			<div class="md:col-span-2">
-				<Input type="text" bind:value={gradeFilter} placeholder="ระดับชั้น (เช่น ม.1)" />
+				<Select.Root
+					type="single"
+					value={gradeFilter}
+					onValueChange={(v) => {
+						gradeFilter = v;
+						handleSearch();
+					}}
+				>
+					<Select.Trigger>
+						{gradeLevels.find((g) => g.id === gradeFilter)?.name || 'ระดับชั้น'}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="">ทั้งหมด</Select.Item>
+						{#each gradeLevels as gl}
+							<Select.Item value={gl.id}>{gl.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 
 			<div class="md:col-span-2">
-				<Input type="text" bind:value={classFilter} placeholder="ห้อง (เช่น 1, 2)" />
+				<Select.Root
+					type="single"
+					value={classFilter}
+					onValueChange={(v) => {
+						classFilter = v;
+						handleSearch();
+					}}
+				>
+					<Select.Trigger>
+						{classrooms.find((c) => c.id === classFilter)?.name || 'ห้องเรียน'}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="">ทั้งหมด</Select.Item>
+						{#each filteredClassrooms as room}
+							<Select.Item value={room.id}>{room.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 
 			<div class="md:col-span-3">
