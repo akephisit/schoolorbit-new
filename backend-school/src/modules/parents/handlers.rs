@@ -159,10 +159,16 @@ pub async fn get_child_profile(
         SELECT 
             u.id, u.username, u.national_id, u.email, u.first_name, u.last_name, 
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender, u.address, u.profile_image_url,
-            si.student_id, si.grade_level, si.class_room, si.student_number,
+            si.student_id, 
+            gl.short_name as grade_level, 
+            c.name as class_room,
+            si.student_number,
             si.blood_type, si.allergies, si.medical_conditions
         FROM users u
         INNER JOIN student_info si ON u.id = si.user_id
+        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
+        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
+        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE u.id = $1 AND u.status = 'active'
         "#
     )

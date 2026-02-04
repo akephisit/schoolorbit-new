@@ -595,17 +595,7 @@ pub async fn enroll_students(
             AppError::InternalServerError("Failed to enroll student".to_string())
         })?;
 
-        // Update student record to reflect current grade/classroom
-        sqlx::query(
-            "UPDATE student_info SET grade_level = $2, class_room = $3, updated_at = NOW() 
-             WHERE user_id = $1"
-        )
-        .bind(student_id)
-        .bind(&classroom.grade_level_name.clone().unwrap_or_default()) // Denormalize
-        .bind(&classroom.name) // Denormalize
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to update student info".to_string()))?;
+
 
         enrolled_count += 1;
     }
@@ -692,12 +682,7 @@ pub async fn remove_enrollment(
             .await
             .map_err(|_| AppError::InternalServerError("Failed to delete enrollment".to_string()))?;
 
-        // Reset student info
-        sqlx::query("UPDATE student_info SET grade_level = NULL, class_room = NULL WHERE user_id = $1")
-            .bind(record.student_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|_| AppError::InternalServerError("Failed to update student info".to_string()))?;
+
     }
 
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;

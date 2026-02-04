@@ -587,7 +587,6 @@ pub async fn lookup_students(
     let active_only = query.active_only.unwrap_or(true);
     
     // Query with student_id from student_info and current classroom from enrollments
-    // Fix: Table name is 'student_class_enrollments' and 'class_rooms'
     let mut sql = String::from(
         "SELECT u.id, u.title, u.first_name, u.last_name, u.username,
                 si.student_id,
