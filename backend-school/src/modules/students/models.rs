@@ -59,6 +59,11 @@ pub struct StudentDbRow {
     pub blood_type: Option<String>,
     pub allergies: Option<String>,
     pub medical_conditions: Option<String>,
+    
+    // Additional fields needed for Detail View
+    pub status: Option<String>,
+    pub grade_level: Option<String>,
+    pub class_room: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

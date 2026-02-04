@@ -693,7 +693,7 @@ pub async fn get_student(
         SELECT 
             u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
-            u.address, u.profile_image_url,
+            u.address, u.profile_image_url, u.status,
             s.student_id, 
             CASE gl.level_type 
                 WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
@@ -702,7 +702,7 @@ pub async fn get_student(
                 ELSE CONCAT('?.', gl.year)
             END as grade_level, 
             c.name as class_room, 
-            s.student_number,
+            sce.class_number as student_number,
             s.blood_type, s.allergies, s.medical_conditions as medical_conditions
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
