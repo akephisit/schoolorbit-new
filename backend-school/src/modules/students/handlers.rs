@@ -609,21 +609,16 @@ pub async fn create_student(
         }
     }
     
-    // 3. Create student_info (Without deprecated string fields)
-    let grade_level_none: Option<String> = None;
-    let class_room_none: Option<String> = None;
-
+    // 3. Create student_info
     sqlx::query(
         r#"
         INSERT INTO student_info (
-            user_id, student_id, grade_level, class_room, student_number
-        ) VALUES ($1, $2, $3, $4, $5)
+            user_id, student_id, student_number
+        ) VALUES ($1, $2, $3)
         "#
     )
     .bind(user_id)
     .bind(&payload.student_id)
-    .bind(grade_level_none) // NULL
-    .bind(class_room_none) // NULL
     .bind(&payload.student_number)
     .execute(&mut *tx)
     .await
@@ -855,16 +850,12 @@ pub async fn update_student(
         r#"
         UPDATE student_info
         SET 
-            grade_level = COALESCE($2, grade_level),
-            class_room = COALESCE($3, class_room),
-            student_number = COALESCE($4, student_number),
+            student_number = COALESCE($2, student_number),
             updated_at = NOW()
         WHERE user_id = $1
         "#
     )
     .bind(student_id)
-    .bind(&payload.grade_level)
-    .bind(&payload.class_room)
     .bind(&payload.student_number)
     .execute(&mut *tx)
     .await

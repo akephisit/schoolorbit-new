@@ -9,7 +9,6 @@ pub struct StudentInfo {
     pub id: Uuid,
     pub user_id: Uuid,
     pub student_id: String,
-    pub grade_level: Option<String>,
     pub student_number: Option<i32>,
     // parent_id removed, use student_parents table linked by user_id
     pub enrollment_date: Option<NaiveDate>,
@@ -56,8 +55,6 @@ pub struct StudentDbRow {
     
     // Student info fields
     pub student_id: Option<String>,
-    pub grade_level: Option<String>,
-    pub class_room: Option<String>,
     pub student_number: Option<i32>,
     pub blood_type: Option<String>,
     pub allergies: Option<String>,
