@@ -72,21 +72,11 @@ pub async fn get_own_parent_profile(
         r#"
         SELECT 
             u.id, u.first_name, u.last_name, u.profile_image_url,
-            si.student_id, 
-            CASE gl.level_type 
-                WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
-                WHEN 'primary' THEN CONCAT('ป.', gl.year)
-                WHEN 'secondary' THEN CONCAT('ม.', gl.year)
-                ELSE CONCAT('?.', gl.year)
-            END as grade_level, 
-            c.name as class_room,
+            si.student_id, si.grade_level, si.class_room,
             sp.relationship
         FROM student_parents sp
         INNER JOIN users u ON sp.student_user_id = u.id
         LEFT JOIN student_info si ON u.id = si.user_id
-        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
-        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
-        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE sp.parent_user_id = $1 AND u.status = 'active'
         ORDER BY u.first_name ASC
         "#
@@ -168,7 +158,7 @@ pub async fn get_child_profile(
         r#"
         SELECT 
             u.id, u.username, u.national_id, u.email, u.first_name, u.last_name, 
-            u.title, u.nickname, u.phone, u.date_of_birth, u.gender, u.address, u.profile_image_url, u.status,
+            u.title, u.nickname, u.phone, u.date_of_birth, u.gender, u.address, u.profile_image_url,
             si.student_id, 
             CASE gl.level_type 
                 WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
@@ -177,7 +167,7 @@ pub async fn get_child_profile(
                 ELSE CONCAT('?.', gl.year)
             END as grade_level, 
             c.name as class_room,
-            sce.class_number as student_number,
+            si.student_number,
             si.blood_type, si.allergies, si.medical_conditions
         FROM users u
         INNER JOIN student_info si ON u.id = si.user_id
