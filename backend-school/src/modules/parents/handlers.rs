@@ -77,7 +77,7 @@ pub async fn get_own_parent_profile(
         FROM student_parents sp
         INNER JOIN users u ON sp.student_user_id = u.id
         LEFT JOIN student_info si ON u.id = si.user_id
-        WHERE sp.parent_user_id = $1
+        WHERE sp.parent_user_id = $1 AND u.status = 'active'
         ORDER BY u.first_name ASC
         "#
     )
