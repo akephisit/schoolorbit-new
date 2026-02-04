@@ -362,7 +362,7 @@ pub async fn list_students(
         query.push_str(&conditions.join(" AND "));
     }
     
-    query.push_str(" ORDER BY gl.level_order NULLS LAST, c.name NULLS LAST, s.student_number");
+    query.push_str(" ORDER BY CASE gl.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2 WHEN 'secondary' THEN 3 ELSE 4 END, gl.year NULLS LAST, c.name NULLS LAST, s.student_number");
     query.push_str(&format!(" LIMIT {} OFFSET {}", page_size, offset));
     
     let students = sqlx::query_as::<_, StudentListItem>(&query)
