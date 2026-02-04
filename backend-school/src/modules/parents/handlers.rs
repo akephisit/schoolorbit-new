@@ -84,13 +84,7 @@ pub async fn get_own_parent_profile(
         FROM student_parents sp
         INNER JOIN users u ON sp.student_user_id = u.id
         LEFT JOIN student_info si ON u.id = si.user_id
-        LEFT JOIN LATERAL (
-            SELECT student_id, class_room_id 
-            FROM student_class_enrollments 
-            WHERE student_id = u.id 
-            ORDER BY created_at DESC 
-            LIMIT 1
-        ) sce ON true
+        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
         LEFT JOIN class_rooms c ON sce.class_room_id = c.id
         LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE sp.parent_user_id = $1 AND u.status = 'active'
@@ -187,13 +181,7 @@ pub async fn get_child_profile(
             si.blood_type, si.allergies, si.medical_conditions
         FROM users u
         INNER JOIN student_info si ON u.id = si.user_id
-        LEFT JOIN LATERAL (
-            SELECT student_id, class_room_id, class_number
-            FROM student_class_enrollments 
-            WHERE student_id = u.id 
-            ORDER BY created_at DESC 
-            LIMIT 1
-        ) sce ON true
+        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
         LEFT JOIN class_rooms c ON sce.class_room_id = c.id
         LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE u.id = $1 AND u.status = 'active'
