@@ -1,19 +1,19 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-	import {  
-		listSubjects, 
-		listSubjectGroups, 
-		createSubject, 
-		updateSubject, 
+	import { onMount } from 'svelte';
+	import {
+		listSubjects,
+		listSubjectGroups,
+		createSubject,
+		updateSubject,
 		deleteSubject,
-        lookupGradeLevels,
-        lookupAcademicYears,
-        bulkCopySubjects,
-		type Subject, 
+		lookupGradeLevels,
+		lookupAcademicYears,
+		bulkCopySubjects,
+		type Subject,
 		type SubjectGroup,
-        type LookupItem
+		type LookupItem
 	} from '$lib/api/academic';
-    import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
+	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import {
@@ -24,27 +24,39 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
-    import * as Table from '$lib/components/ui/table';
-    import { Badge } from '$lib/components/ui/badge';
-    import { Label } from '$lib/components/ui/label';
-    import { Textarea } from '$lib/components/ui/textarea';
-    import * as Select from '$lib/components/ui/select';
-    import { Checkbox } from '$lib/components/ui/checkbox';
-    import * as Popover from '$lib/components/ui/popover';
-    import * as Command from '$lib/components/ui/command';
-	import { BookOpen, Plus, Search, Pencil, Trash2, Copy, CircleCheck, Check, ChevronsUpDown } from 'lucide-svelte';
+	import * as Table from '$lib/components/ui/table';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Label } from '$lib/components/ui/label';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import * as Select from '$lib/components/ui/select';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import * as Popover from '$lib/components/ui/popover';
+	import * as Command from '$lib/components/ui/command';
+	import {
+		BookOpen,
+		Plus,
+		Search,
+		Pencil,
+		Trash2,
+		Copy,
+		CircleCheck,
+		Check,
+		ChevronsUpDown
+	} from 'lucide-svelte';
+
+	let { data } = $props();
 
 	// Data States
 	let subjects: Subject[] = $state([]);
 	let groups: SubjectGroup[] = $state([]);
-    let gradeLevels: LookupItem[] = $state([]);
-    let academicYears: LookupItem[] = $state([]);
-    let staffList: StaffLookupItem[] = $state([]);
+	let gradeLevels: LookupItem[] = $state([]);
+	let academicYears: LookupItem[] = $state([]);
+	let staffList: StaffLookupItem[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
-	
+
 	// Computed: Current Academic Year
-	let currentAcademicYear = $derived(academicYears.find(y => y.is_current) || academicYears[0]);
+	let currentAcademicYear = $derived(academicYears.find((y) => y.is_current) || academicYears[0]);
 
 	// Filter States
 	let searchQuery = $state('');
@@ -52,26 +64,26 @@
 	let selectedSubjectType = $state('');
 	let selectedLevelScope = $state('');
 	let selectedYearFilter = $state('');
-	let selectedYearObj = $derived(academicYears.find(y => y.id === selectedYearFilter));
+	let selectedYearObj = $derived(academicYears.find((y) => y.id === selectedYearFilter));
 
 	// Modal States
 	let showDialog = $state(false);
 	let showDeleteDialog = $state(false);
 	let showCopyDialog = $state(false);
-    let showSuccessDialog = $state(false);
-    let successTitle = $state('');
-    let successMessage = $state('');
+	let showSuccessDialog = $state(false);
+	let successTitle = $state('');
+	let successMessage = $state('');
 	let selectedSourceYear = $state('');
 	let copying = $state(false);
 	let isEditing = $state(false);
 	let submitting = $state(false);
-    let deleting = $state(false);
+	let deleting = $state(false);
 	let currentSubject: Partial<Subject> = $state(getInitialSubjectState());
 
 	function getInitialSubjectState(): Partial<Subject> {
 		// Find current/active academic year from the list, or use first one
-		const currentYear = academicYears.find(y => y.is_current) || academicYears[0];
-		
+		const currentYear = academicYears.find((y) => y.is_current) || academicYears[0];
+
 		return {
 			code: '',
 			academic_year_id: currentYear?.id || '', // Default to current year UUID
@@ -96,16 +108,16 @@
 				listSubjectGroups(),
 				lookupGradeLevels({ current_year: false }),
 				lookupAcademicYears(false),
-                lookupStaff({ activeOnly: true, limit: 1000 })
+				lookupStaff({ activeOnly: true, limit: 1000 })
 			]);
 
 			groups = groupsRes.data;
 			gradeLevels = levelsRes.data;
 			academicYears = yearsRes.data;
-            staffList = staffRes;
+			staffList = staffRes;
 
 			// Set default year filter to current year
-			const current = academicYears.find(y => y.is_current);
+			const current = academicYears.find((y) => y.is_current);
 			if (current) {
 				selectedYearFilter = current.id;
 			} else if (academicYears.length > 0) {
@@ -141,8 +153,8 @@
 		}
 	}
 
-    // Alias for compatibility with existing calls
-    const loadData = loadSubjects;
+	// Alias for compatibility with existing calls
+	const loadData = loadSubjects;
 
 	function handleOpenCreate() {
 		currentSubject = getInitialSubjectState();
@@ -169,25 +181,25 @@
 
 		submitting = true;
 		try {
-            // Sanitize payload: convert empty strings to null for UUID fields to avoid 422 errors
-            // Sanitize all UUID & Optional fields
-            const payload = { ...currentSubject };
-            
-            // Helper: Convert empty string to null. 
-            // Note: Keep 0 for numbers!
-            const nullify = (val: any) => (val === '' || val === undefined) ? null : val;
-            
-            payload.group_id = nullify(payload.group_id);
-            payload.start_academic_year_id = nullify(payload.start_academic_year_id);
-            payload.default_instructor_id = nullify(payload.default_instructor_id);
-            payload.level_scope = nullify(payload.level_scope);
-            payload.description = nullify(payload.description);
-            payload.term = nullify(payload.term);
-            
-            if (payload.credit === '' as any) payload.credit = null as any;
-            if (payload.hours_per_semester === '' as any) payload.hours_per_semester = null as any;
+			// Sanitize payload: convert empty strings to null for UUID fields to avoid 422 errors
+			// Sanitize all UUID & Optional fields
+			const payload = { ...currentSubject };
 
-            console.log('Submitting Subject Payload:', payload);
+			// Helper: Convert empty string to null.
+			// Note: Keep 0 for numbers!
+			const nullify = (val: any) => (val === '' || val === undefined ? null : val);
+
+			payload.group_id = nullify(payload.group_id);
+			payload.start_academic_year_id = nullify(payload.start_academic_year_id);
+			payload.default_instructor_id = nullify(payload.default_instructor_id);
+			payload.level_scope = nullify(payload.level_scope);
+			payload.description = nullify(payload.description);
+			payload.term = nullify(payload.term);
+
+			if (payload.credit === ('' as any)) payload.credit = null as any;
+			if (payload.hours_per_semester === ('' as any)) payload.hours_per_semester = null as any;
+
+			console.log('Submitting Subject Payload:', payload);
 
 			if (isEditing && payload.id) {
 				await updateSubject(payload.id, payload as any);
@@ -205,7 +217,7 @@
 
 	async function handleConfirmDelete() {
 		if (!currentSubject.id) return;
-        deleting = true;
+		deleting = true;
 		try {
 			await deleteSubject(currentSubject.id);
 			showDeleteDialog = false;
@@ -213,50 +225,52 @@
 		} catch (e) {
 			alert('ลบไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
 		} finally {
-            deleting = false;
-        }
+			deleting = false;
+		}
 	}
 
-    function clearFilters() {
-        searchQuery = '';
-        selectedGroupId = '';
-        selectedSubjectType = '';
-        selectedLevelScope = '';
-        loadData();
-    }
+	function clearFilters() {
+		searchQuery = '';
+		selectedGroupId = '';
+		selectedSubjectType = '';
+		selectedLevelScope = '';
+		loadData();
+	}
 
 	function handleOpenCopy() {
 		// Target is the selected year (or current active year if no filter selected, though filter usually selected)
 		const targetId = selectedYearFilter || currentAcademicYear?.id;
-        const targetObj = academicYears.find(y => y.id === targetId);
-		
-        if (!targetObj) return;
+		const targetObj = academicYears.find((y) => y.id === targetId);
+
+		if (!targetObj) return;
 
 		// Find potential source years (exclude target AND newer years)
-        // Assume 'year' field exists and is number. If missing, assume 0.
-		const otherYears = academicYears.filter(y => y.id !== targetId && (y.year || 0) < (targetObj.year || 0));
+		// Assume 'year' field exists and is number. If missing, assume 0.
+		const otherYears = academicYears.filter(
+			(y) => y.id !== targetId && (y.year || 0) < (targetObj.year || 0)
+		);
 
 		if (otherYears.length > 0) {
 			selectedSourceYear = otherYears[0].id;
 		} else {
-             selectedSourceYear = '';
-        }
+			selectedSourceYear = '';
+		}
 		showCopyDialog = true;
 	}
 
 	async function handleBulkCopy() {
 		const targetId = selectedYearFilter || currentAcademicYear?.id;
 		if (!selectedSourceYear || !targetId) return;
-		
+
 		copying = true;
 		try {
 			const result = await bulkCopySubjects(selectedSourceYear, targetId);
 			showCopyDialog = false;
-            
-            successTitle = 'คัดลอกรายวิชาสำเร็จ';
-            successMessage = result.data.message;
-            showSuccessDialog = true;
-            
+
+			successTitle = 'คัดลอกรายวิชาสำเร็จ';
+			successMessage = result.data.message;
+			showSuccessDialog = true;
+
 			await loadData(); // Reload subjects
 		} catch (e) {
 			alert(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด');
@@ -271,7 +285,7 @@
 </script>
 
 <svelte:head>
-	<title>จัดการรายวิชา - SchoolOrbit</title>
+	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
 <div class="space-y-6">
