@@ -728,6 +728,115 @@ pub async fn update_enrollment_number(
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct AutoAssignClassNumbersRequest {
+    pub sort_by: String, // "student_code" | "name" | "gender_name"
+}
+
+pub async fn auto_assign_class_numbers(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(class_id): Path<Uuid>,
+    Json(payload): Json<AutoAssignClassNumbersRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    // Define struct for fetching student data with title
+    #[derive(sqlx::FromRow)]
+    struct StudentForNumbering {
+        id: Uuid,
+        student_code: String,
+        first_name: String,
+        title: Option<String>,
+    }
+
+    // Fetch all active enrollments with student info
+    let mut students = sqlx::query_as::<_, StudentForNumbering>(
+        "SELECT ske.id, s.student_id as student_code, u.first_name, u.title
+         FROM student_class_enrollments ske
+         LEFT JOIN users u ON ske.student_id = u.id
+         LEFT JOIN student_info s ON u.id = s.user_id
+         WHERE ske.class_room_id = $1 AND ske.status = 'active'"
+    )
+    .bind(class_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to fetch students: {}", e);
+        AppError::InternalServerError("Failed to fetch students".to_string())
+    })?;
+
+    // Sort based on requested method
+    match payload.sort_by.as_str() {
+        "student_code" => {
+            students.sort_by(|a, b| a.student_code.cmp(&b.student_code));
+        }
+        "name" => {
+            students.sort_by(|a, b| a.first_name.cmp(&b.first_name));
+        }
+        "gender_name" => {
+            // Helper function to determine if title is male
+            let is_male = |title: &Option<String>| -> bool {
+                if let Some(t) = title {
+                    matches!(t.as_str(), "เด็กชาย" | "นาย")
+                } else {
+                    false
+                }
+            };
+
+            students.sort_by(|a, b| {
+                let a_male = is_male(&a.title);
+                let b_male = is_male(&b.title);
+
+                match (a_male, b_male) {
+                    (true, false) => std::cmp::Ordering::Less,    // Male before female
+                    (false, true) => std::cmp::Ordering::Greater, // Female after male
+                    _ => a.first_name.cmp(&b.first_name)          // Same gender, sort by name
+                }
+            });
+        }
+        _ => {
+            return Err(AppError::BadRequest("Invalid sort_by parameter".to_string()));
+        }
+    }
+
+    // Update class numbers in transaction
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    for (index, student) in students.iter().enumerate() {
+        let class_number = (index + 1) as i32;
+        
+        sqlx::query(
+            "UPDATE student_class_enrollments SET class_number = $1, updated_at = NOW() 
+             WHERE id = $2"
+        )
+        .bind(class_number)
+        .bind(student.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to update class number: {}", e);
+            AppError::InternalServerError("Failed to update class number".to_string())
+        })?;
+    }
+
+    tx.commit().await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": format!("เรียงเลขที่สำหรับ {} คนเรียบร้อยแล้ว", students.len())
+    })))
+}
+
+
+
 // ==========================================
 // Year-Level Configuration Handlers
 // ==========================================

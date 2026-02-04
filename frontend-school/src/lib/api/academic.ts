@@ -222,6 +222,15 @@ export const updateEnrollmentNumber = async (id: string, class_number: number | 
     });
 };
 
+export const autoAssignClassNumbers = async (classroomId: string, sortBy: 'student_code' | 'name' | 'gender_name') => {
+    return await fetchApi(`/api/academic/enrollments/class/${classroomId}/auto-number`, {
+        method: 'POST',
+        body: JSON.stringify({ sort_by: sortBy })
+    });
+};
+
+
+
 // ==========================================
 // Curriculum API
 // ==========================================

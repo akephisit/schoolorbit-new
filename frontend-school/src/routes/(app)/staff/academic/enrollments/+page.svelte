@@ -7,6 +7,7 @@
 		enrollStudents,
 		removeEnrollment,
 		updateEnrollmentNumber,
+		autoAssignClassNumbers,
 		type AcademicStructureData,
 		type Classroom,
 		type StudentEnrollment
@@ -27,6 +28,7 @@
 	import Search from 'lucide-svelte/icons/search';
 	import GraduationCap from 'lucide-svelte/icons/graduation-cap';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
 	let loading = true;
 	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
@@ -53,6 +55,11 @@
 	let showRemoveDialog = false;
 	let enrollmentToRemove: StudentEnrollment | null = null;
 	let isRemoving = false;
+
+	// Auto Number Dialog State
+	let showAutoNumberDialog = false;
+	let selectedSortMethod: 'student_code' | 'name' | 'gender_name' = 'student_code';
+	let isAutoNumbering = false;
 
 	async function loadInitData() {
 		try {
@@ -209,6 +216,28 @@
 		}
 	}
 
+	function openAutoNumberDialog() {
+		showAutoNumberDialog = true;
+		selectedSortMethod = 'student_code';
+	}
+
+	async function handleAutoAssignNumbers() {
+		if (!selectedClassroomId) return;
+
+		isAutoNumbering = true;
+		try {
+			await autoAssignClassNumbers(selectedClassroomId, selectedSortMethod);
+			toast.success('เรียงเลขที่เรียบร้อยแล้ว');
+			showAutoNumberDialog = false;
+			await fetchEnrollments();
+		} catch (error) {
+			console.error(error);
+			toast.error('ไม่สามารถเรียงเลขที่ได้');
+		} finally {
+			isAutoNumbering = false;
+		}
+	}
+
 	onMount(loadInitData);
 </script>
 
@@ -283,10 +312,20 @@
 				รายชื่อนักเรียน
 				<Badge variant="secondary">{enrollments.length} คน</Badge>
 			</h3>
-			<Button onclick={openAddDialog}>
-				<UserPlus class="mr-2 h-4 w-4" />
-				เพิ่มนักเรียนเข้าห้อง
-			</Button>
+			<div class="flex gap-2">
+				<Button
+					variant="outline"
+					onclick={openAutoNumberDialog}
+					disabled={enrollments.length === 0}
+				>
+					<ArrowUpDown class="mr-2 h-4 w-4" />
+					เรียงเลขที่อัตโนมัติ
+				</Button>
+				<Button onclick={openAddDialog}>
+					<UserPlus class="mr-2 h-4 w-4" />
+					เพิ่มนักเรียนเข้าห้อง
+				</Button>
+			</div>
 		</div>
 
 		{#if loadingEnrollments}
@@ -488,6 +527,119 @@
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 					{/if}
 					ยืนยันลบ
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Auto Number Dialog -->
+	<Dialog.Root bind:open={showAutoNumberDialog}>
+		<Dialog.Content class="sm:max-w-[500px]">
+			<Dialog.Header>
+				<Dialog.Title class="flex items-center gap-2">
+					<ArrowUpDown class="h-5 w-5" />
+					เรียงเลขที่อัตโนมัติ
+				</Dialog.Title>
+				<Dialog.Description>เลือกวิธีการเรียงลำดับเลขที่นักเรียนในห้องเรียนนี้</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="space-y-4 py-4">
+				<Label class="text-base font-semibold">วิธีการเรียง</Label>
+
+				<!-- Radio Group -->
+				<div class="space-y-3">
+					<!-- Sort by Student Code -->
+					<label
+						class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors {selectedSortMethod ===
+						'student_code'
+							? 'bg-primary/5 border-primary'
+							: ''}"
+					>
+						<input
+							type="radio"
+							name="sortMethod"
+							value="student_code"
+							bind:group={selectedSortMethod}
+							class="mt-1"
+						/>
+						<div class="flex-1">
+							<div class="font-medium">📋 เรียงตามรหัสนักเรียน</div>
+							<div class="text-sm text-muted-foreground mt-1">
+								เรียงตามลำดับรหัสนักเรียน (เช่น 67001, 67002, ...)
+							</div>
+						</div>
+					</label>
+
+					<!-- Sort by Name -->
+					<label
+						class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors {selectedSortMethod ===
+						'name'
+							? 'bg-primary/5 border-primary'
+							: ''}"
+					>
+						<input
+							type="radio"
+							name="sortMethod"
+							value="name"
+							bind:group={selectedSortMethod}
+							class="mt-1"
+						/>
+						<div class="flex-1">
+							<div class="font-medium">📝 เรียงตามชื่อ (ก-ฮ)</div>
+							<div class="text-sm text-muted-foreground mt-1">
+								เรียงตามลำดับตัวอักษรของชื่อนักเรียน
+							</div>
+						</div>
+					</label>
+
+					<!-- Sort by Gender + Name -->
+					<label
+						class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors {selectedSortMethod ===
+						'gender_name'
+							? 'bg-primary/5 border-primary'
+							: ''}"
+					>
+						<input
+							type="radio"
+							name="sortMethod"
+							value="gender_name"
+							bind:group={selectedSortMethod}
+							class="mt-1"
+						/>
+						<div class="flex-1">
+							<div class="font-medium">👥 เรียงตามเพศ + ชื่อ</div>
+							<div class="text-sm text-muted-foreground mt-1">
+								• ชาย (ด.ช., นาย) เรียงก่อน<br />
+								• หญิง (ด.ญ., น.ส.) เรียงตาม<br />
+								• ภายในเพศเดียวกันเรียงตามชื่อ
+							</div>
+						</div>
+					</label>
+				</div>
+
+				<div
+					class="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900 rounded-lg p-3"
+				>
+					<p class="text-sm text-yellow-800 dark:text-yellow-200">
+						⚠️ การเรียงเลขที่จะเขียนทับเลขที่เดิมทั้งหมด
+					</p>
+				</div>
+			</div>
+
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showAutoNumberDialog = false;
+					}}
+				>
+					ยกเลิก
+				</Button>
+				<Button onclick={handleAutoAssignNumbers} disabled={isAutoNumbering}>
+					{#if isAutoNumbering}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					✓ เรียงเลย
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
