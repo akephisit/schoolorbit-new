@@ -15,6 +15,6 @@ export const _meta = {
 
 export const load = async () => {
     return {
-        title: 'ตั้งค่าโครงสร้างวิชาการ'
+        title: _meta.menu.title
     };
 };

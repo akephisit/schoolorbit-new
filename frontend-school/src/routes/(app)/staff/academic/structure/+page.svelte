@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+
+	let { data } = $props();
+
 	import {
 		getAcademicStructure,
 		createAcademicYear,
@@ -24,38 +27,38 @@
 	import * as Select from '$lib/components/ui/select';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { 
-		Loader2, 
-		CalendarDays, 
-		School, 
-		Layers, 
-		Plus, 
-		Trash2, 
+	import {
+		Loader2,
+		CalendarDays,
+		School,
+		Layers,
+		Plus,
+		Trash2,
 		BookOpen,
 		Settings,
 		CalendarClock
 	} from 'lucide-svelte';
 
-	let loading = true;
-	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
-	let activeYearLevelIds: string[] = [];
-	
+	let loading = $state(true);
+	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
+	let activeYearLevelIds = $state<string[]>([]);
+
 	// Year state
-	let showCreateYearDialog = false;
-	let isSubmitting = false;
+	let showCreateYearDialog = $state(false);
+	let isSubmitting = $state(false);
 
 	// Level state
-	let showCreateLevelDialog = false;
-	let isSubmittingLevel = false;
-	let showDeleteLevelDialog = false;
-	let levelToDelete: GradeLevel | null = null;
-	let isDeletingLevel = false;
+	let showCreateLevelDialog = $state(false);
+	let isSubmittingLevel = $state(false);
+	let showDeleteLevelDialog = $state(false);
+	let levelToDelete = $state<GradeLevel | null>(null);
+	let isDeletingLevel = $state(false);
 
 	// Year Config State
-	let showConfigDialog = false;
-	let configYear: AcademicStructureData['years'][0] | null = null;
-	let configLevelIds: string[] = [];
-	let isSavingConfig = false;
+	let showConfigDialog = $state(false);
+	let configYear = $state<AcademicStructureData['years'][0] | null>(null);
+	let configLevelIds = $state<string[]>([]);
+	let isSavingConfig = $state(false);
 
 	async function openConfigDialog(year: AcademicStructureData['years'][0]) {
 		configYear = year;
@@ -63,7 +66,7 @@
 		configLevelIds = [];
 		// Open first then load data (can show loading inside dialog)
 		showConfigDialog = true;
-		
+
 		try {
 			const res = await getYearLevelConfig(year.id);
 			configLevelIds = res.data;
@@ -103,19 +106,19 @@
 	// ==========================================
 	// Semester Management
 	// ==========================================
-	let showSemestersDialog = false;
-	let selectedYearForSemesters: AcademicStructureData['years'][0] | null = null;
-	let showSemesterForm = false; // Create/Edit form dialog
-	let semesterToEdit: Semester | null = null;
-	let isSubmittingSemester = false;
-	
-	let newSemester = {
+	let showSemestersDialog = $state(false);
+	let selectedYearForSemesters = $state<AcademicStructureData['years'][0] | null>(null);
+	let showSemesterForm = $state(false); // Create/Edit form dialog
+	let semesterToEdit = $state<Semester | null>(null);
+	let isSubmittingSemester = $state(false);
+
+	let newSemester = $state({
 		term: '1',
 		name: 'ภาคเรียนที่ 1',
 		start_date: '',
 		end_date: '',
 		is_active: false
-	};
+	});
 
 	function openSemestersDialog(year: AcademicStructureData['years'][0]) {
 		selectedYearForSemesters = year;
@@ -148,7 +151,12 @@
 
 	async function handleSaveSemester() {
 		if (!selectedYearForSemesters) return;
-		if (!newSemester.term || !newSemester.name || !newSemester.start_date || !newSemester.end_date) {
+		if (
+			!newSemester.term ||
+			!newSemester.name ||
+			!newSemester.start_date ||
+			!newSemester.end_date
+		) {
 			toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
 			return;
 		}
@@ -188,24 +196,26 @@
 	}
 
 	// Filtered semesters for the selected year
-	$: displayedSemesters = selectedYearForSemesters 
-		? structure.semesters.filter(s => s.academic_year_id === selectedYearForSemesters!.id)
-		: [];
+	let displayedSemesters = $derived(
+		selectedYearForSemesters
+			? structure.semesters.filter((s) => s.academic_year_id === selectedYearForSemesters!.id)
+			: []
+	);
 
 	// New Year Form
-	let newYear = {
+	let newYear = $state({
 		year: new Date().getFullYear() + 543,
 		name: `ปีการศึกษา ${new Date().getFullYear() + 543}`,
 		start_date: '',
 		end_date: '',
 		is_active: false
-	};
+	});
 
 	// New Level Form (year stored as string for Select compatibility)
-	let newLevel = {
+	let newLevel = $state({
 		level_type: '' as 'kindergarten' | 'primary' | 'secondary' | '',
 		year: '1'
-	};
+	});
 
 	// Level type options for dropdown
 	const levelTypeOptions = [
@@ -221,9 +231,11 @@
 	}
 
 	// Preview the generated name
-	$: previewName = newLevel.level_type
-		? `${levelTypeOptions.find((o) => o.value === newLevel.level_type)?.prefix}${newLevel.year}`
-		: '';
+	let previewName = $derived(
+		newLevel.level_type
+			? `${levelTypeOptions.find((o) => o.value === newLevel.level_type)?.prefix}${newLevel.year}`
+			: ''
+	);
 
 	async function loadData() {
 		try {
@@ -339,6 +351,10 @@
 
 	onMount(loadData);
 </script>
+
+<svelte:head>
+	<title>{data.title} - SchoolOrbit</title>
+</svelte:head>
 
 <div class="space-y-6">
 	<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
