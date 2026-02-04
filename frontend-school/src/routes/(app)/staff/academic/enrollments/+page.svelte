@@ -30,12 +30,12 @@
 	let loading = true;
 	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
 	let classrooms: Classroom[] = [];
-	
+
 	// Selection State
 	let selectedYearId = '';
 	let selectedClassroomId = '';
 	let currentClassroom: Classroom | undefined;
-	
+
 	// Data State
 	let enrollments: StudentEnrollment[] = [];
 	let loadingEnrollments = false;
@@ -92,8 +92,8 @@
 			currentClassroom = undefined;
 			return;
 		}
-		
-		currentClassroom = classrooms.find(c => c.id === selectedClassroomId);
+
+		currentClassroom = classrooms.find((c) => c.id === selectedClassroomId);
 		await fetchEnrollments();
 	}
 
@@ -124,7 +124,7 @@
 			// Ideal: Filter only students not in this year? Or just search all.
 			// Currently listStudents doesn't support complex "not in" filters easily without backend modification.
 			// Let's just list all and maybe visually indicate? Or rely on user to search.
-			const data = await lookupStudents({ 
+			const data = await lookupStudents({
 				search: searchQuery,
 				limit: 20
 			});
@@ -139,7 +139,7 @@
 
 	function toggleCandidate(id: string) {
 		if (selectedCandidateIds.includes(id)) {
-			selectedCandidateIds = selectedCandidateIds.filter(cid => cid !== id);
+			selectedCandidateIds = selectedCandidateIds.filter((cid) => cid !== id);
 		} else {
 			selectedCandidateIds = [...selectedCandidateIds, id];
 		}
@@ -147,14 +147,14 @@
 
 	async function handleAddStudents() {
 		if (selectedCandidateIds.length === 0) return;
-		
+
 		isSubmitting = true;
 		try {
 			await enrollStudents({
 				student_ids: selectedCandidateIds,
 				class_room_id: selectedClassroomId
 			});
-			
+
 			toast.success(`เพิ่มนักเรียน ${selectedCandidateIds.length} คน เรียบร้อยแล้ว`);
 			showAddDialog = false;
 			await fetchEnrollments();
@@ -362,26 +362,28 @@
 						</Table.Header>
 						<Table.Body>
 							{#each studentCandidates as student}
-								<Table.Row
-									class="cursor-pointer hover:bg-muted/50"
-									onclick={() => toggleCandidate(student.id)}
-								>
-									<Table.Cell>
-										<Checkbox
-											checked={selectedCandidateIds.includes(student.id)}
-											onCheckedChange={() => toggleCandidate(student.id)}
-										/>
-									</Table.Cell>
-									<Table.Cell class="font-mono text-xs">{student.student_id || '-'}</Table.Cell>
-									<Table.Cell>{student.title || ''}{student.name}</Table.Cell>
-									<Table.Cell>
-										{#if student.class_room}
-											<Badge variant="outline">{student.class_room}</Badge>
-										{:else}
-											<span class="text-muted-foreground text-xs">- ยังไม่มีห้อง -</span>
-										{/if}
-									</Table.Cell>
-								</Table.Row>
+								{#if !student.class_room}
+									<Table.Row
+										class="cursor-pointer hover:bg-muted/50"
+										onclick={() => toggleCandidate(student.id)}
+									>
+										<Table.Cell>
+											<Checkbox
+												checked={selectedCandidateIds.includes(student.id)}
+												onCheckedChange={() => toggleCandidate(student.id)}
+											/>
+										</Table.Cell>
+										<Table.Cell class="font-mono text-xs">{student.student_id || '-'}</Table.Cell>
+										<Table.Cell>{student.title || ''}{student.name}</Table.Cell>
+										<Table.Cell>
+											<span
+												class="text-green-600 border border-green-200 bg-green-50 px-2 py-0.5 rounded text-xs"
+											>
+												พร้อมเข้าห้อง
+											</span>
+										</Table.Cell>
+									</Table.Row>
+								{/if}
 							{/each}
 						</Table.Body>
 					</Table.Root>
