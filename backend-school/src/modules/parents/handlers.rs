@@ -160,7 +160,12 @@ pub async fn get_child_profile(
             u.id, u.username, u.national_id, u.email, u.first_name, u.last_name, 
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender, u.address, u.profile_image_url,
             si.student_id, 
-            gl.short_name as grade_level, 
+            CASE gl.level_type 
+                WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                ELSE CONCAT('?.', gl.year)
+            END as grade_level, 
             c.name as class_room,
             si.student_number,
             si.blood_type, si.allergies, si.medical_conditions

@@ -313,7 +313,12 @@ pub async fn list_students(
         SELECT 
             u.id, u.username, u.title, u.first_name, u.last_name,
             s.student_id, 
-            gl.short_name as grade_level, 
+            CASE gl.level_type 
+                WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                ELSE CONCAT('?.', gl.year)
+            END as grade_level, 
             c.name as class_room,
             u.status
         FROM users u
@@ -702,7 +707,12 @@ pub async fn get_student(
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
             u.address, u.profile_image_url,
             s.student_id, 
-            gl.short_name as grade_level, 
+            CASE gl.level_type 
+                WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                ELSE CONCAT('?.', gl.year)
+            END as grade_level, 
             c.name as class_room, 
             s.student_number,
             s.blood_type, s.allergies, s.medical_conditions as medical_conditions
