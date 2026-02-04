@@ -50,6 +50,7 @@
 	let loadingCandidates = false;
 	let searchQuery = '';
 	let isSubmitting = false;
+	let numberingMethod: 'none' | 'append' | 'student_code' | 'name' | 'gender_name' = 'append';
 
 	// Remove Confirm Dialog State
 	let showRemoveDialog = false;
@@ -160,7 +161,8 @@
 		try {
 			await enrollStudents({
 				student_ids: selectedCandidateIds,
-				class_room_id: selectedClassroomId
+				class_room_id: selectedClassroomId,
+				numbering_method: numberingMethod
 			});
 
 			toast.success(`เพิ่มนักเรียน ${selectedCandidateIds.length} คน เรียบร้อยแล้ว`);
@@ -457,6 +459,82 @@
 						</Table.Body>
 					</Table.Root>
 				{/if}
+			</div>
+
+			<!-- Numbering Method Selection -->
+			<div class="px-6 py-4 border-t bg-muted/10">
+				<Label class="text-sm font-semibold mb-3 block">📌 วิธีกำหนดเลขที่</Label>
+				<div class="space-y-2 text-sm">
+					<label class="flex items-start gap-2 cursor-pointer">
+						<input
+							type="radio"
+							name="numberingMethod"
+							value="none"
+							bind:group={numberingMethod}
+							class="mt-0.5"
+						/>
+						<div class="flex-1">
+							<span class="font-medium">ไม่กำหนดเลขที่</span>
+							<span class="text-muted-foreground ml-1">(กำหนดทีหลัง)</span>
+						</div>
+					</label>
+
+					<label class="flex items-start gap-2 cursor-pointer">
+						<input
+							type="radio"
+							name="numberingMethod"
+							value="append"
+							bind:group={numberingMethod}
+							class="mt-0.5"
+						/>
+						<div class="flex-1">
+							<span class="font-medium">เรียงต่อท้ายอัตโนมัติ</span>
+							<span class="text-muted-foreground ml-1">(แนะนำ)</span>
+						</div>
+					</label>
+
+					<label class="flex items-start gap-2 cursor-pointer">
+						<input
+							type="radio"
+							name="numberingMethod"
+							value="student_code"
+							bind:group={numberingMethod}
+							class="mt-0.5"
+						/>
+						<div class="flex-1">
+							<span class="font-medium">เรียงตามรหัสนักเรียน</span>
+							<span class="text-muted-foreground ml-1">(เรียงทั้งห้องใหม่)</span>
+						</div>
+					</label>
+
+					<label class="flex items-start gap-2 cursor-pointer">
+						<input
+							type="radio"
+							name="numberingMethod"
+							value="name"
+							bind:group={numberingMethod}
+							class="mt-0.5"
+						/>
+						<div class="flex-1">
+							<span class="font-medium">เรียงตามชื่อ</span>
+							<span class="text-muted-foreground ml-1">(เรียงทั้งห้องใหม่)</span>
+						</div>
+					</label>
+
+					<label class="flex items-start gap-2 cursor-pointer">
+						<input
+							type="radio"
+							name="numberingMethod"
+							value="gender_name"
+							bind:group={numberingMethod}
+							class="mt-0.5"
+						/>
+						<div class="flex-1">
+							<span class="font-medium">เรียงตามเพศ + ชื่อ</span>
+							<span class="text-muted-foreground ml-1">(เรียงทั้งห้องใหม่)</span>
+						</div>
+					</label>
+				</div>
 			</div>
 
 			<div class="p-4 border-t bg-muted/20 flex justify-between items-center">

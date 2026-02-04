@@ -202,6 +202,7 @@ export const enrollStudents = async (data: {
     student_ids: string[];
     class_room_id: string;
     enrollment_date?: string;
+    numbering_method?: 'none' | 'append' | 'student_code' | 'name' | 'gender_name';
 }) => {
     return await fetchApi('/api/academic/enrollments', {
         method: 'POST',

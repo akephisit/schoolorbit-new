@@ -243,6 +243,7 @@ pub struct EnrollStudentRequest {
     pub student_ids: Vec<Uuid>,
     pub class_room_id: Uuid,
     pub enrollment_date: Option<NaiveDate>,
+    pub numbering_method: Option<String>, // "none" | "append" | "student_code" | "name" | "gender_name"
 }
 
 // ==========================================

@@ -564,7 +564,7 @@ pub async fn enroll_students(
 
     let mut enrolled_count = 0;
     
-    for student_id in payload.student_ids {
+    for student_id in &payload.student_ids {
         // Deactivate old active enrollments for this student (if any)
         sqlx::query(
             "UPDATE student_class_enrollments SET status = 'moved_out', updated_at = NOW() 
@@ -601,6 +601,126 @@ pub async fn enroll_students(
     }
 
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    // Handle class numbering based on method
+    let numbering_method = payload.numbering_method.as_deref().unwrap_or("append");
+    
+    match numbering_method {
+        "none" => {
+            // Do nothing - no class numbers assigned
+        }
+        "append" => {
+            // Get max class_number in the classroom
+            let max_number: Option<i32> = sqlx::query_scalar(
+                "SELECT MAX(class_number) FROM student_class_enrollments 
+                 WHERE class_room_id = $1 AND status = 'active'"
+            )
+            .bind(payload.class_room_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(None);
+
+            let start_number = max_number.unwrap_or(0) + 1;
+
+            // Assign numbers to newly enrolled students
+            for (index, student_id) in payload.student_ids.iter().enumerate() {
+                let class_number = start_number + index as i32;
+                
+                sqlx::query(
+                    "UPDATE student_class_enrollments 
+                     SET class_number = $1, updated_at = NOW()
+                     WHERE student_id = $2 AND class_room_id = $3 AND status = 'active'"
+                )
+                .bind(class_number)
+                .bind(student_id)
+                .bind(payload.class_room_id)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    eprintln!("Failed to update class number: {}", e);
+                    AppError::InternalServerError("Failed to update class number".to_string())
+                })?;
+            }
+        }
+        "student_code" | "name" | "gender_name" => {
+            // Re-sort entire classroom using existing auto_assign logic
+            #[derive(sqlx::FromRow)]
+            struct StudentForNumbering {
+                id: Uuid,
+                student_code: String,
+                first_name: String,
+                title: Option<String>,
+            }
+
+            let mut students = sqlx::query_as::<_, StudentForNumbering>(
+                "SELECT ske.id, s.student_id as student_code, u.first_name, u.title
+                 FROM student_class_enrollments ske
+                 LEFT JOIN users u ON ske.student_id = u.id
+                 LEFT JOIN student_info s ON u.id = s.user_id
+                 WHERE ske.class_room_id = $1 AND ske.status = 'active'"
+            )
+            .bind(payload.class_room_id)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to fetch students: {}", e);
+                AppError::InternalServerError("Failed to fetch students".to_string())
+            })?;
+
+            // Sort based on method
+            match numbering_method {
+                "student_code" => {
+                    students.sort_by(|a, b| a.student_code.cmp(&b.student_code));
+                }
+                "name" => {
+                    students.sort_by(|a, b| a.first_name.cmp(&b.first_name));
+                }
+                "gender_name" => {
+                    let is_male = |title: &Option<String>| -> bool {
+                        if let Some(t) = title {
+                            matches!(t.as_str(), "เด็กชาย" | "นาย")
+                        } else {
+                            false
+                        }
+                    };
+
+                    students.sort_by(|a, b| {
+                        let a_male = is_male(&a.title);
+                        let b_male = is_male(&b.title);
+
+                        match (a_male, b_male) {
+                            (true, false) => std::cmp::Ordering::Less,
+                            (false, true) => std::cmp::Ordering::Greater,
+                            _ => a.first_name.cmp(&b.first_name)
+                        }
+                    });
+                }
+                _ => {}
+            }
+
+            // Update all class numbers
+            for (index, student) in students.iter().enumerate() {
+                let class_number = (index + 1) as i32;
+                
+                sqlx::query(
+                    "UPDATE student_class_enrollments 
+                     SET class_number = $1, updated_at = NOW() 
+                     WHERE id = $2"
+                )
+                .bind(class_number)
+                .bind(student.id)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    eprintln!("Failed to update class number: {}", e);
+                    AppError::InternalServerError("Failed to update class number".to_string())
+                })?;
+            }
+        }
+        _ => {
+            // Invalid method - do nothing
+        }
+    }
 
     Ok(Json(json!({
         "success": true,
