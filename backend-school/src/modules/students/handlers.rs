@@ -627,24 +627,7 @@ pub async fn create_student(
         AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
     })?;
 
-    // 3.5 Create Enrollment (Critical)
-    if let Some(cid) = payload.class_room_id {
-        let enroll_date = chrono::Local::now().date_naive();
-        
-        sqlx::query(
-            "INSERT INTO student_class_enrollments (student_id, class_room_id, enrollment_date, status)
-             VALUES ($1, $2, $3, 'active')"
-        )
-        .bind(user_id)
-        .bind(cid)
-        .bind(enroll_date)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to create enrollment: {}", e);
-            AppError::InternalServerError("ไม่สามารถลงทะเบียนเข้าห้องเรียนได้".to_string())
-        })?;
-    }
+
 
     // 4. Assign STUDENT role
     let student_role_id: Option<Uuid> = sqlx::query_scalar(

@@ -11,14 +11,6 @@
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Switch } from '$lib/components/ui/switch';
 	import { createStudent } from '$lib/api/students';
-	import {
-		lookupGradeLevels,
-		lookupClassrooms,
-		type GradeLevelLookupItem,
-		type ClassroomLookupItem
-	} from '$lib/api/lookup';
-	import { onMount } from 'svelte';
-
 	// Form data
 	let formData = $state({
 		national_id: '',
@@ -29,8 +21,6 @@
 		first_name: '',
 		last_name: '',
 		student_id: '',
-		grade_level_id: '',
-		class_room_id: '',
 		student_number: null as number | null,
 		date_of_birth: '',
 		gender: 'male',
@@ -49,31 +39,6 @@
 	let errors = $state<Record<string, string>>({});
 	let loading = $state(false);
 
-	// Dropdown Options
-	let gradeLevels: GradeLevelLookupItem[] = $state([]);
-	let classrooms: ClassroomLookupItem[] = $state([]);
-
-	let filteredClassrooms = $derived(
-		formData.grade_level_id
-			? classrooms.filter((c) => c.grade_level_id === formData.grade_level_id)
-			: classrooms
-	);
-
-	function handleGradeChange(id: string) {
-		formData.grade_level_id = id;
-		formData.class_room_id = ''; // Reset classroom when grade changes
-	}
-
-	onMount(async () => {
-		try {
-			const [gl, cr] = await Promise.all([lookupGradeLevels(), lookupClassrooms()]);
-			gradeLevels = gl.sort((a, b) => a.level_order - b.level_order);
-			classrooms = cr;
-		} catch (e) {
-			console.error('Failed to load options', e);
-		}
-	});
-
 	function validateForm(): boolean {
 		errors = {};
 
@@ -85,9 +50,6 @@
 		if (!formData.first_name) errors.first_name = 'กรุณากรอกชื่อ';
 		if (!formData.last_name) errors.last_name = 'กรุณากรอกนามสกุล';
 		if (!formData.student_id) errors.student_id = 'กรุณากรอกรหัสนักเรียน';
-		if (!formData.grade_level_id) errors.grade_level_id = 'กรุณาเลือกระดับชั้น';
-		// Optional? Or required? The UI has *. Let's make it required to ensure enrollment.
-		if (!formData.class_room_id) errors.class_room_id = 'กรุณาเลือกห้องเรียน';
 
 		// Password
 		if (!formData.password) {
@@ -143,8 +105,6 @@
 				...payload,
 				email: payload.email || undefined,
 				date_of_birth: payload.date_of_birth || undefined,
-				grade_level_id: formData.grade_level_id || undefined,
-				class_room_id: formData.class_room_id || undefined,
 				student_number: undefined, // Force undefined to match API type (removing null)
 				title: formData.title || undefined,
 				parents: formData.parent_enabled
@@ -221,50 +181,12 @@
 					{/if}
 				</div>
 
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<Label>ระดับชั้น <span class="text-destructive">*</span></Label>
-						<Select.Root
-							type="single"
-							value={formData.grade_level_id}
-							onValueChange={handleGradeChange}
-						>
-							<Select.Trigger>
-								{gradeLevels.find((g) => g.id === formData.grade_level_id)?.name ||
-									'เลือกระดับชั้น'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each gradeLevels as gl}
-									<Select.Item value={gl.id}>{gl.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-						{#if errors.grade_level_id}
-							<p class="text-sm text-destructive">{errors.grade_level_id}</p>
-						{/if}
-					</div>
-
-					<!-- Classroom -->
-					<div class="space-y-2">
-						<Label>ห้องเรียน <span class="text-destructive">*</span></Label>
-						<Select.Root
-							type="single"
-							bind:value={formData.class_room_id}
-							disabled={!formData.grade_level_id}
-						>
-							<Select.Trigger>
-								{classrooms.find((c) => c.id === formData.class_room_id)?.name || 'เลือกห้องเรียน'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each filteredClassrooms as room}
-									<Select.Item value={room.id}>{room.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-						{#if errors.class_room_id}
-							<p class="text-sm text-destructive">{errors.class_room_id}</p>
-						{/if}
-					</div>
+				<div class="p-4 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm">
+					<strong>หมายเหตุ:</strong> หลังจากสร้างข้อมูลนักเรียนเสร็จแล้ว กรุณาไปที่เมนู
+					<a href="/staff/academic/enrollments" class="underline font-semibold hover:text-blue-900"
+						>จัดห้องเรียน (Enrollment)</a
+					>
+					เพื่อเพิ่มนักเรียนเข้าห้องเรียนในปีการศึกษาปัจจุบัน
 				</div>
 			</div>
 		</Card>

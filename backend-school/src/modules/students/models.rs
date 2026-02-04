@@ -98,8 +98,6 @@ pub struct CreateStudentRequest {
     pub last_name: String,
     pub title: Option<String>,
     pub student_id: String,
-    pub grade_level_id: Option<Uuid>,
-    pub class_room_id: Option<Uuid>,
     pub student_number: Option<i32>,
     pub date_of_birth: Option<String>, // Changed from NaiveDate to String for flexible parsing
     pub gender: Option<String>,
