@@ -51,7 +51,7 @@
 	let loadingCandidates = false;
 	let searchQuery = '';
 	let isSubmitting = false;
-	let numberingMethod: 'none' | 'append' | 'student_code' | 'name' | 'gender_name' = 'append';
+	let numberingMethod: 'append' | 'student_code' | 'name' | 'gender_name' = 'append';
 
 	// Remove Confirm Dialog State
 	let showRemoveDialog = false;
@@ -460,13 +460,6 @@
 			<div class="px-6 py-4 border-t bg-muted/10">
 				<Label class="text-sm font-semibold mb-3 block">📌 วิธีกำหนดเลขที่</Label>
 				<RadioGroup.Root bind:value={numberingMethod} class="space-y-3">
-					<div class="flex items-center space-x-2">
-						<RadioGroup.Item value="none" id="nm-none" />
-						<Label for="nm-none" class="font-normal cursor-pointer flex-1">
-							<span class="font-medium">ไม่กำหนดเลขที่</span>
-							<span class="text-muted-foreground ml-1">(กำหนดทีหลัง)</span>
-						</Label>
-					</div>
 					<div class="flex items-center space-x-2">
 						<RadioGroup.Item value="append" id="nm-append" />
 						<Label for="nm-append" class="font-normal cursor-pointer flex-1">
