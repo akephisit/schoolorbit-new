@@ -307,14 +307,20 @@ pub async fn list_students(
     let offset = (page - 1) * page_size;
     
     // Build query with filters
+    // JOIN with enrollments, class_rooms, and grade_levels to get current academic info
     let mut query = String::from(
         r#"
         SELECT 
             u.id, u.username, u.title, u.first_name, u.last_name,
-            s.student_id, s.grade_level, s.class_room,
+            s.student_id, 
+            gl.short_name as grade_level, 
+            c.name as class_room,
             u.status
         FROM users u
         INNER JOIN student_info s ON u.id = s.user_id
+        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
+        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
+        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE u.user_type = 'student'
         "#
     );
@@ -322,11 +328,17 @@ pub async fn list_students(
     let mut conditions = Vec::new();
     
     if let Some(ref grade_level) = filter.grade_level {
-        conditions.push(format!("s.grade_level = '{}'", grade_level));
+        // Strict UUID only for New System
+        if let Ok(uuid) = Uuid::parse_str(grade_level) {
+             conditions.push(format!("c.grade_level_id = '{}'", uuid));
+        }
     }
     
     if let Some(ref class_room) = filter.class_room {
-        conditions.push(format!("s.class_room = '{}'", class_room));
+        // Strict UUID only for New System
+         if let Ok(uuid) = Uuid::parse_str(class_room) {
+             conditions.push(format!("sce.class_room_id = '{}'", uuid));
+        }
     }
 
     if let Some(ref status) = filter.status {
@@ -345,7 +357,7 @@ pub async fn list_students(
         query.push_str(&conditions.join(" AND "));
     }
     
-    query.push_str(" ORDER BY s.grade_level, s.class_room, s.student_number");
+    query.push_str(" ORDER BY gl.level_order NULLS LAST, c.name NULLS LAST, s.student_number");
     query.push_str(&format!(" LIMIT {} OFFSET {}", page_size, offset));
     
     let students = sqlx::query_as::<_, StudentListItem>(&query)
@@ -597,7 +609,10 @@ pub async fn create_student(
         }
     }
     
-    // 3. Create student_info
+    // 3. Create student_info (Without deprecated string fields)
+    let grade_level_none: Option<String> = None;
+    let class_room_none: Option<String> = None;
+
     sqlx::query(
         r#"
         INSERT INTO student_info (
@@ -607,8 +622,8 @@ pub async fn create_student(
     )
     .bind(user_id)
     .bind(&payload.student_id)
-    .bind(&payload.grade_level)
-    .bind(&payload.class_room)
+    .bind(grade_level_none) // NULL
+    .bind(class_room_none) // NULL
     .bind(&payload.student_number)
     .execute(&mut *tx)
     .await
@@ -616,6 +631,25 @@ pub async fn create_student(
         eprintln!("❌ Failed to create student_info: {}", e);
         AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
     })?;
+
+    // 3.5 Create Enrollment (Critical)
+    if let Some(cid) = payload.class_room_id {
+        let enroll_date = chrono::Local::now().date_naive();
+        
+        sqlx::query(
+            "INSERT INTO student_class_enrollments (student_id, class_room_id, enrollment_date, status)
+             VALUES ($1, $2, $3, 'active')"
+        )
+        .bind(user_id)
+        .bind(cid)
+        .bind(enroll_date)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("❌ Failed to create enrollment: {}", e);
+            AppError::InternalServerError("ไม่สามารถลงทะเบียนเข้าห้องเรียนได้".to_string())
+        })?;
+    }
 
     // 4. Assign STUDENT role
     let student_role_id: Option<Uuid> = sqlx::query_scalar(
@@ -682,17 +716,23 @@ pub async fn get_student(
     // Check permission
     check_user_permission(&headers, &pool, "student.read.all").await?;
     
-    // Query student profile
+    // Query student profile with joined class info
     let mut student_row = sqlx::query_as::<_, StudentDbRow>(
         r#"
         SELECT 
             u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
             u.address, u.profile_image_url,
-            s.student_id, s.grade_level, s.class_room, s.student_number,
+            s.student_id, 
+            gl.short_name as grade_level, 
+            c.name as class_room, 
+            s.student_number,
             s.blood_type, s.allergies, s.medical_conditions as medical_conditions
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
+        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
+        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
+        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE u.id = $1 AND u.user_type = 'student'
         "#
     )

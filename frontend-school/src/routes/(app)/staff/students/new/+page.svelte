@@ -29,8 +29,8 @@
 		first_name: '',
 		last_name: '',
 		student_id: '',
-		grade_level: '',
-		class_room: '',
+		grade_level_id: '',
+		class_room_id: '',
 		student_number: null as number | null,
 		date_of_birth: '',
 		gender: 'male',
@@ -52,17 +52,16 @@
 	// Dropdown Options
 	let gradeLevels: GradeLevelLookupItem[] = $state([]);
 	let classrooms: ClassroomLookupItem[] = $state([]);
-	let selectedGradeId = $state('');
 
 	let filteredClassrooms = $derived(
-		selectedGradeId ? classrooms.filter((c) => c.grade_level_id === selectedGradeId) : classrooms
+		formData.grade_level_id
+			? classrooms.filter((c) => c.grade_level_id === formData.grade_level_id)
+			: classrooms
 	);
 
 	function handleGradeChange(id: string) {
-		selectedGradeId = id;
-		const gl = gradeLevels.find((g) => g.id === id);
-		formData.grade_level = gl?.short_name || '';
-		formData.class_room = ''; // Reset classroom when grade changes
+		formData.grade_level_id = id;
+		formData.class_room_id = ''; // Reset classroom when grade changes
 	}
 
 	onMount(async () => {
@@ -86,6 +85,9 @@
 		if (!formData.first_name) errors.first_name = 'กรุณากรอกชื่อ';
 		if (!formData.last_name) errors.last_name = 'กรุณากรอกนามสกุล';
 		if (!formData.student_id) errors.student_id = 'กรุณากรอกรหัสนักเรียน';
+		if (!formData.grade_level_id) errors.grade_level_id = 'กรุณาเลือกระดับชั้น';
+		// Optional? Or required? The UI has *. Let's make it required to ensure enrollment.
+		if (!formData.class_room_id) errors.class_room_id = 'กรุณาเลือกห้องเรียน';
 
 		// Password
 		if (!formData.password) {
@@ -141,8 +143,8 @@
 				...payload,
 				email: payload.email || undefined,
 				date_of_birth: payload.date_of_birth || undefined,
-				grade_level: formData.grade_level || undefined,
-				class_room: formData.class_room || undefined,
+				grade_level_id: formData.grade_level_id || undefined,
+				class_room_id: formData.class_room_id || undefined,
 				student_number: undefined, // Force undefined to match API type (removing null)
 				title: formData.title || undefined,
 				parents: formData.parent_enabled
@@ -222,9 +224,14 @@
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<Label>ระดับชั้น <span class="text-destructive">*</span></Label>
-						<Select.Root type="single" value={selectedGradeId} onValueChange={handleGradeChange}>
+						<Select.Root
+							type="single"
+							value={formData.grade_level_id}
+							onValueChange={handleGradeChange}
+						>
 							<Select.Trigger>
-								{gradeLevels.find((g) => g.id === selectedGradeId)?.name || 'เลือกระดับชั้น'}
+								{gradeLevels.find((g) => g.id === formData.grade_level_id)?.name ||
+									'เลือกระดับชั้น'}
 							</Select.Trigger>
 							<Select.Content>
 								{#each gradeLevels as gl}
@@ -232,24 +239,31 @@
 								{/each}
 							</Select.Content>
 						</Select.Root>
-						{#if errors.grade_level}
-							<p class="text-sm text-destructive">{errors.grade_level}</p>
+						{#if errors.grade_level_id}
+							<p class="text-sm text-destructive">{errors.grade_level_id}</p>
 						{/if}
 					</div>
 
 					<!-- Classroom -->
 					<div class="space-y-2">
 						<Label>ห้องเรียน <span class="text-destructive">*</span></Label>
-						<Select.Root type="single" bind:value={formData.class_room} disabled={!selectedGradeId}>
+						<Select.Root
+							type="single"
+							bind:value={formData.class_room_id}
+							disabled={!formData.grade_level_id}
+						>
 							<Select.Trigger>
-								{classrooms.find((c) => c.name === formData.class_room)?.name || 'เลือกห้องเรียน'}
+								{classrooms.find((c) => c.id === formData.class_room_id)?.name || 'เลือกห้องเรียน'}
 							</Select.Trigger>
 							<Select.Content>
 								{#each filteredClassrooms as room}
-									<Select.Item value={room.name}>{room.name}</Select.Item>
+									<Select.Item value={room.id}>{room.name}</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>
+						{#if errors.class_room_id}
+							<p class="text-sm text-destructive">{errors.class_room_id}</p>
+						{/if}
 					</div>
 				</div>
 			</div>

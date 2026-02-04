@@ -68,8 +68,8 @@ export interface CreateStudentRequest {
 	last_name: string;
 	title?: string;
 	student_id: string;
-	grade_level?: string;
-	class_room?: string;
+	grade_level_id?: string;
+	class_room_id?: string;
 	student_number?: number;
 	date_of_birth?: string;
 	gender?: string;

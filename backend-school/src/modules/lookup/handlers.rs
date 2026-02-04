@@ -442,12 +442,15 @@ pub async fn lookup_classrooms(
         "SELECT c.id, c.name, g.level_type, g.year, c.grade_level_id
          FROM class_rooms c
          LEFT JOIN grade_levels g ON c.grade_level_id = g.id
+         LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
          WHERE 1=1"
     );
     
-    // Check if class_rooms has is_active? Assuming not for now based on create handler.
-    // If it does, uncomment below:
-    // if active_only { sql.push_str(" AND c.is_active = true"); }
+    // Filter by active academic year by default
+    let active_only_flag = query.active_only.unwrap_or(true);
+    if active_only_flag {
+        sql.push_str(" AND ay.is_active = true");
+    }
     
     if let Some(ref search) = query.search {
         sql.push_str(&format!(" AND c.name ILIKE '%{}%'", search));
