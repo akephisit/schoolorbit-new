@@ -15,33 +15,18 @@
 	import { GraduationCap, Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
-	import {
-		lookupGradeLevels,
-		lookupClassrooms,
-		type GradeLevelLookupItem,
-		type ClassroomLookupItem
-	} from '$lib/api/lookup';
-
 	let students: StudentListItem[] = $state([]);
 	let loading = $state(true);
 	let deleting = $state(false);
 	let showDeleteDialog = $state(false);
 	let studentToDelete: StudentListItem | null = $state(null);
 	let searchQuery = $state('');
-	let gradeFilter = $state('');
-	let classFilter = $state('');
+
 	let statusFilter = $state('active');
 	let currentPage = $state(1);
 	let totalPages = $state(1);
 
 	let total = $state(0);
-
-	let gradeLevels: GradeLevelLookupItem[] = $state([]);
-	let classrooms: ClassroomLookupItem[] = $state([]);
-
-	let filteredClassrooms = $derived(
-		gradeFilter ? classrooms.filter((c) => c.grade_level_id === gradeFilter) : classrooms
-	);
 
 	function formatFullClassRoom(name: string, gradeLevel?: string) {
 		if (!name) return '-';
@@ -78,8 +63,6 @@
 			loading = true;
 			const response = await listStudents({
 				search: searchQuery || undefined,
-				grade_level: gradeFilter || undefined,
-				class_room: classFilter || undefined,
 				status: statusFilter === 'all' ? undefined : statusFilter,
 				page: currentPage,
 				page_size: 20
@@ -120,16 +103,6 @@
 		}
 	}
 
-	async function loadOptions() {
-		try {
-			const [gl, cr] = await Promise.all([lookupGradeLevels(), lookupClassrooms()]);
-			gradeLevels = gl.sort((a, b) => a.level_order - b.level_order);
-			classrooms = cr;
-		} catch (e) {
-			console.error('Failed to load options', e);
-		}
-	}
-
 	function handleSearch() {
 		currentPage = 1;
 		loadStudents();
@@ -137,15 +110,12 @@
 
 	function handleReset() {
 		searchQuery = '';
-		gradeFilter = '';
-		classFilter = '';
 		statusFilter = 'active';
 		currentPage = 1;
 		loadStudents();
 	}
 
 	onMount(() => {
-		loadOptions();
 		loadStudents();
 	});
 </script>
@@ -173,7 +143,7 @@
 	<!-- Search and Filter -->
 	<div class="bg-card border border-border rounded-lg p-4">
 		<div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-			<div class="md:col-span-5 relative">
+			<div class="md:col-span-8 relative">
 				<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
 				<Input
 					type="text"
@@ -184,49 +154,7 @@
 				/>
 			</div>
 
-			<div class="md:col-span-2">
-				<Select.Root
-					type="single"
-					value={gradeFilter}
-					onValueChange={(v) => {
-						gradeFilter = v;
-						handleSearch();
-					}}
-				>
-					<Select.Trigger>
-						{gradeLevels.find((g) => g.id === gradeFilter)?.name || 'ระดับชั้น'}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="">ทั้งหมด</Select.Item>
-						{#each gradeLevels as gl}
-							<Select.Item value={gl.id}>{gl.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			<div class="md:col-span-2">
-				<Select.Root
-					type="single"
-					value={classFilter}
-					onValueChange={(v) => {
-						classFilter = v;
-						handleSearch();
-					}}
-				>
-					<Select.Trigger>
-						{classrooms.find((c) => c.id === classFilter)?.name || 'ห้องเรียน'}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="">ทั้งหมด</Select.Item>
-						{#each filteredClassrooms as room}
-							<Select.Item value={room.id}>{room.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			<div class="md:col-span-3">
+			<div class="md:col-span-4">
 				<Select.Root type="single" bind:value={statusFilter} onValueChange={handleSearch}>
 					<Select.Trigger>
 						{statusFilter === 'active'
@@ -263,11 +191,11 @@
 			<GraduationCap class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
 			<p class="text-lg font-medium text-foreground">ไม่พบนักเรียน</p>
 			<p class="text-muted-foreground mt-2">
-				{searchQuery || gradeFilter || classFilter
+				{searchQuery
 					? 'ไม่พบนักเรียนที่ตรงกับเงื่อนไขที่ค้นหา'
 					: 'เริ่มต้นด้วยการเพิ่มนักเรียนคนแรก'}
 			</p>
-			{#if !searchQuery && !gradeFilter && !classFilter}
+			{#if !searchQuery}
 				<Button href="/staff/students/new" class="mt-4">
 					<Plus class="w-4 h-4 mr-2" />
 					เพิ่มนักเรียน

@@ -332,19 +332,7 @@ pub async fn list_students(
     
     let mut conditions = Vec::new();
     
-    if let Some(ref grade_level) = filter.grade_level {
-        // Strict UUID only for New System
-        if let Ok(uuid) = Uuid::parse_str(grade_level) {
-             conditions.push(format!("c.grade_level_id = '{}'", uuid));
-        }
-    }
-    
-    if let Some(ref class_room) = filter.class_room {
-        // Strict UUID only for New System
-         if let Ok(uuid) = Uuid::parse_str(class_room) {
-             conditions.push(format!("sce.class_room_id = '{}'", uuid));
-        }
-    }
+
 
     if let Some(ref status) = filter.status {
         conditions.push(format!("u.status = '{}'", status));

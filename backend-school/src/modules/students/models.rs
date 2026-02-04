@@ -131,8 +131,6 @@ pub struct UpdateStudentRequest {
 pub struct ListStudentsQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
-    pub grade_level: Option<String>,
-    pub class_room: Option<String>,
     pub search: Option<String>,
     pub status: Option<String>,
 }
