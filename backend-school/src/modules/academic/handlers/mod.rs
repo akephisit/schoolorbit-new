@@ -630,7 +630,7 @@ pub async fn get_class_enrollments(
          LEFT JOIN student_info s ON u.id = s.user_id
          LEFT JOIN class_rooms c ON ske.class_room_id = c.id
          WHERE ske.class_room_id = $1 AND ske.status = 'active'
-         ORDER BY s.student_id ASC"
+         ORDER BY ske.class_number ASC NULLS LAST, s.student_id ASC"
     )
     .bind(class_id)
     .fetch_all(&pool)
@@ -688,6 +688,44 @@ pub async fn remove_enrollment(
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok(Json(json!({"success": true, "message": "Enrollment removed"})))
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateEnrollmentNumberRequest {
+    pub class_number: Option<i32>,
+}
+
+pub async fn update_enrollment_number(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateEnrollmentNumberRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    // Check duplicate number in same class? optional, but good practice.
+    // However, it might be annoying during re-ordering. Let's allow simple update first.
+    
+    let result = sqlx::query(
+        "UPDATE student_class_enrollments SET class_number = $1, updated_at = NOW() WHERE id = $2"
+    )
+    .bind(payload.class_number)
+    .bind(id)
+    .execute(&pool)
+    .await;
+
+    match result {
+        Ok(_) => Ok(Json(json!({"success": true, "message": "Class number updated"}))),
+        Err(e) => {
+            eprintln!("Failed to update class number: {}", e);
+            Err(AppError::InternalServerError("Failed to update class number".to_string()))
+        }
+    }
 }
 
 // ==========================================

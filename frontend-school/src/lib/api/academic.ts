@@ -188,6 +188,7 @@ export interface StudentEnrollment {
     class_room_id: string;
     enrollment_date: string;
     status: string;
+    class_number?: number | null;
     student_name?: string;
     class_name?: string;
     student_code?: string;
@@ -211,6 +212,13 @@ export const enrollStudents = async (data: {
 export const removeEnrollment = async (id: string) => {
     return await fetchApi(`/api/academic/enrollments/${id}`, {
         method: 'DELETE'
+    });
+};
+
+export const updateEnrollmentNumber = async (id: string, class_number: number | null) => {
+    return await fetchApi(`/api/academic/enrollments/${id}/number`, {
+        method: 'PUT',
+        body: JSON.stringify({ class_number })
     });
 };
 

@@ -6,6 +6,7 @@
 		getEnrollments,
 		enrollStudents,
 		removeEnrollment,
+		updateEnrollmentNumber,
 		type AcademicStructureData,
 		type Classroom,
 		type StudentEnrollment
@@ -189,6 +190,25 @@
 		}
 	}
 
+	async function handleClassNumberChange(enrollmentId: string, value: string) {
+		try {
+			const classNumber = value.trim() === '' ? null : parseInt(value);
+			await updateEnrollmentNumber(enrollmentId, classNumber);
+			// Optionally show success toast - but might be too noisy for rapid entry
+			// toast.success('อัปเดตเลขที่เรียบร้อย');
+
+			// Update local state
+			enrollments = enrollments.map((e) =>
+				e.id === enrollmentId ? { ...e, class_number: classNumber } : e
+			);
+		} catch (error) {
+			console.error(error);
+			toast.error('ไม่สามารถอัปเดตเลขที่ได้');
+			// Revert on error by re-fetching
+			await fetchEnrollments();
+		}
+	}
+
 	onMount(loadInitData);
 </script>
 
@@ -279,6 +299,7 @@
 					<Table.Header>
 						<Table.Row>
 							<Table.Head class="w-[50px]">#</Table.Head>
+							<Table.Head class="w-[80px]">เลขที่</Table.Head>
 							<Table.Head>รหัสนักเรียน</Table.Head>
 							<Table.Head>ชื่อ-นามสกุล</Table.Head>
 							<Table.Head>สถานะ</Table.Head>
@@ -289,6 +310,15 @@
 						{#each enrollments as item, i}
 							<Table.Row>
 								<Table.Cell>{i + 1}</Table.Cell>
+								<Table.Cell>
+									<Input
+										type="number"
+										class="h-8 w-16"
+										value={item.class_number}
+										onchange={(e) => handleClassNumberChange(item.id, e.currentTarget.value)}
+										placeholder="-"
+									/>
+								</Table.Cell>
 								<Table.Cell class="font-mono">{item.student_code || '-'}</Table.Cell>
 								<Table.Cell class="font-medium">{item.student_name}</Table.Cell>
 								<Table.Cell>
@@ -308,7 +338,7 @@
 						{/each}
 						{#if enrollments.length === 0}
 							<Table.Row>
-								<Table.Cell colspan={5} class="h-32 text-center text-muted-foreground">
+								<Table.Cell colspan={6} class="h-32 text-center text-muted-foreground">
 									ยังไม่มีนักเรียนในห้องเรียนนี้
 								</Table.Cell>
 							</Table.Row>

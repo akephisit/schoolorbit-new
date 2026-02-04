@@ -29,6 +29,7 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/enrollments", post(handlers::enroll_students))
         .route("/enrollments/class/{id}", get(handlers::get_class_enrollments))
         .route("/enrollments/{id}", axum::routing::delete(handlers::remove_enrollment))
+        .route("/enrollments/{id}/number", put(handlers::update_enrollment_number))
 
         // Curriculum: Subjects
         .route("/subjects/groups", get(handlers::subjects::list_subject_groups))

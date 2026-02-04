@@ -228,6 +228,7 @@ pub struct StudentEnrollment {
     pub class_room_id: Uuid,
     pub enrollment_date: NaiveDate,
     pub status: String,
+    pub class_number: Option<i32>, // Added class number
     // Joined fields
     #[serde(skip_serializing_if = "Option::is_none")]
     pub student_name: Option<String>,
