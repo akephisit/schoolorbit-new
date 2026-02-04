@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+
+	let { data } = $props();
+
 	import {
 		getAcademicStructure,
 		listClassrooms,
@@ -24,26 +27,17 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
-	import { 
-		Loader2, 
-		BookOpen, 
-		Plus, 
-		Search, 
-		Trash2, 
-		Save,
-        Calendar,
-		Settings
-	} from 'lucide-svelte';
+	import { Loader2, BookOpen, Plus, Search, Trash2, Save, Calendar, Settings } from 'lucide-svelte';
 
 	// State
 	let loading = $state(true);
 	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
-	
+
 	// Filter Selections
 	let selectedYearId = $state('');
 	let selectedTermId = $state('');
 	let selectedClassroomId = $state('');
-    let selectedTermFilter = $state('');
+	let selectedTermFilter = $state('');
 
 	// Data
 	let classrooms = $state<Classroom[]>([]);
@@ -59,23 +53,21 @@
 	// Edit Dialog
 	let showEditDialog = $state(false);
 	let editingCourse = $state<ClassroomCourse | null>(null);
-    let deletingCourse = $state<ClassroomCourse | null>(null);
-    let showDeleteDialog = $state(false);
+	let deletingCourse = $state<ClassroomCourse | null>(null);
+	let showDeleteDialog = $state(false);
 	let teachers = $state<StaffLookupItem[]>([]);
 	let selectedTeacherId = $state<string>(''); // For dropdown
 	let teachersLoaded = $state(false);
 
 	// Derived
 	let filteredSemesters = $derived(
-		structure.semesters.filter(s => s.academic_year_id === selectedYearId)
-	);
-	
-	let currentClassroom = $derived(
-		classrooms.find(c => c.id === selectedClassroomId)
+		structure.semesters.filter((s) => s.academic_year_id === selectedYearId)
 	);
 
+	let currentClassroom = $derived(classrooms.find((c) => c.id === selectedClassroomId));
+
 	let filteredSubjects = $derived(
-		allSubjects.filter(s => {
+		allSubjects.filter((s) => {
 			if (!subjectSearchTerm) return true;
 			const term = subjectSearchTerm.toLowerCase();
 			return (
@@ -86,54 +78,57 @@
 		})
 	);
 
-    // Summary Statistics
-    let summaryStats = $derived.by(() => {
-        let basicCredit = 0;
-        let basicHours = 0; 
-        let additionalCredit = 0;
-        let additionalHours = 0;
-        let activityHours = 0;
+	// Summary Statistics
+	let summaryStats = $derived.by(() => {
+		let basicCredit = 0;
+		let basicHours = 0;
+		let additionalCredit = 0;
+		let additionalHours = 0;
+		let activityHours = 0;
 
-        courses.forEach(c => {
-             const credit = c.subject_credit || 0;
-             const estimatedHours = credit * 40; 
-             
-             if (c.subject_type === 'BASIC') {
-                 basicCredit += credit;
-                 basicHours += estimatedHours;
-             } else if (c.subject_type === 'ADDITIONAL') {
-                 additionalCredit += credit;
-                 additionalHours += estimatedHours;
-             } else if (c.subject_type === 'ACTIVITY') {
-                 // Activity hours might need better logic if credit is 0. 
-                 // Assuming activities have 20-40 hours regardless of credit if we had hours fields.
-                 // For now, keep using estimate or if 0 credit, maybe count as 1 unit of activity time?
-                 // But sticking to credit-based for consistency with existing logic unless field available.
-                 // If credit is 0, let's treat as 20 hours (0.5 equivalent) as fallback for visible stats?
-                 // Or just keep 0 if no credit.
-                 activityHours += estimatedHours; 
-             }
-        });
+		courses.forEach((c) => {
+			const credit = c.subject_credit || 0;
+			const estimatedHours = credit * 40;
 
-        return {
-            basic: { credit: basicCredit, hours: basicHours },
-            additional: { credit: additionalCredit, hours: additionalHours },
-            activity: { hours: activityHours },
-            total: { credit: basicCredit + additionalCredit, hours: basicHours + additionalHours + activityHours }
-        };
-    });
+			if (c.subject_type === 'BASIC') {
+				basicCredit += credit;
+				basicHours += estimatedHours;
+			} else if (c.subject_type === 'ADDITIONAL') {
+				additionalCredit += credit;
+				additionalHours += estimatedHours;
+			} else if (c.subject_type === 'ACTIVITY') {
+				// Activity hours might need better logic if credit is 0.
+				// Assuming activities have 20-40 hours regardless of credit if we had hours fields.
+				// For now, keep using estimate or if 0 credit, maybe count as 1 unit of activity time?
+				// But sticking to credit-based for consistency with existing logic unless field available.
+				// If credit is 0, let's treat as 20 hours (0.5 equivalent) as fallback for visible stats?
+				// Or just keep 0 if no credit.
+				activityHours += estimatedHours;
+			}
+		});
 
-    // Sorted courses: Basic -> Additional -> Activity -> Others
-    let sortedCourses = $derived(
-        [...courses].sort((a, b) => {
-            const typeOrder: Record<string, number> = { 'BASIC': 1, 'ADDITIONAL': 2, 'ACTIVITY': 3 };
-            const orderA = typeOrder[a.subject_type || ''] || 4;
-            const orderB = typeOrder[b.subject_type || ''] || 4;
-            
-            if (orderA !== orderB) return orderA - orderB;
-            return (a.subject_code || '').localeCompare(b.subject_code || '');
-        })
-    );
+		return {
+			basic: { credit: basicCredit, hours: basicHours },
+			additional: { credit: additionalCredit, hours: additionalHours },
+			activity: { hours: activityHours },
+			total: {
+				credit: basicCredit + additionalCredit,
+				hours: basicHours + additionalHours + activityHours
+			}
+		};
+	});
+
+	// Sorted courses: Basic -> Additional -> Activity -> Others
+	let sortedCourses = $derived(
+		[...courses].sort((a, b) => {
+			const typeOrder: Record<string, number> = { BASIC: 1, ADDITIONAL: 2, ACTIVITY: 3 };
+			const orderA = typeOrder[a.subject_type || ''] || 4;
+			const orderB = typeOrder[b.subject_type || ''] || 4;
+
+			if (orderA !== orderB) return orderA - orderB;
+			return (a.subject_code || '').localeCompare(b.subject_code || '');
+		})
+	);
 
 	// Effects / Loaders
 	async function initData() {
@@ -143,7 +138,7 @@
 			structure = res.data;
 
 			// Default Year
-			const activeYear = structure.years.find(y => y.is_active) || structure.years[0];
+			const activeYear = structure.years.find((y) => y.is_active) || structure.years[0];
 			if (activeYear) {
 				selectedYearId = activeYear.id;
 				await fetchClassrooms();
@@ -185,28 +180,28 @@
 	}
 
 	async function loadModalSubjects() {
-        try {
-            const res = await listSubjects({ 
-                academic_year_id: selectedYearId,
-                term: selectedTermFilter || undefined
-            });
-            allSubjects = res.data;
-        } catch (e) {
-            toast.error('โหลดรายวิชาไม่สำเร็จ');
-        }
-    }
+		try {
+			const res = await listSubjects({
+				academic_year_id: selectedYearId,
+				term: selectedTermFilter || undefined
+			});
+			allSubjects = res.data;
+		} catch (e) {
+			toast.error('โหลดรายวิชาไม่สำเร็จ');
+		}
+	}
 
 	async function openAddDialog() {
-        // Auto-set filter based on current term
-        const activeTerm = filteredSemesters.find(s => s.id === selectedTermId);
-        if (activeTerm) {
-             selectedTermFilter = activeTerm.term;
-        } else {
-             selectedTermFilter = '';
-        }
-        
-        await loadModalSubjects();
-        
+		// Auto-set filter based on current term
+		const activeTerm = filteredSemesters.find((s) => s.id === selectedTermId);
+		if (activeTerm) {
+			selectedTermFilter = activeTerm.term;
+		} else {
+			selectedTermFilter = '';
+		}
+
+		await loadModalSubjects();
+
 		selectedSubjectIds = [];
 		subjectSearchTerm = '';
 		showAddDialog = true;
@@ -236,25 +231,25 @@
 	}
 
 	function openDeleteDialog(course: ClassroomCourse) {
-        deletingCourse = course;
-        showDeleteDialog = true;
-    }
+		deletingCourse = course;
+		showDeleteDialog = true;
+	}
 
 	async function handleRemove() {
 		if (!deletingCourse) return;
-        
-        submitting = true;
+
+		submitting = true;
 		try {
 			await removeCourse(deletingCourse.id);
 			toast.success('ลบวิชาสำเร็จ');
-            showDeleteDialog = false;
+			showDeleteDialog = false;
 			await fetchCourses();
 		} catch (e) {
 			console.error(e);
 			toast.error('ลบไม่สำเร็จ');
 		} finally {
-            submitting = false;
-        }
+			submitting = false;
+		}
 	}
 
 	async function loadTeachers() {
@@ -264,7 +259,7 @@
 			teachers = res;
 			teachersLoaded = true;
 		} catch (e) {
-			console.error("Failed to load teachers", e);
+			console.error('Failed to load teachers', e);
 		}
 	}
 
@@ -293,11 +288,11 @@
 			submitting = false;
 		}
 	}
-	
+
 	// Watchers (Svelte 5 effects or just bind:value + handler)
 	// Using handlers on Select.onValueChange is better for explicit control?
 	// But shadcn Select binds value.
-	
+
 	// When Year Changes -> Fetch Classrooms, Reset Term & Class
 	function onYearChange(id: string) {
 		if (id !== selectedYearId) {
@@ -320,6 +315,10 @@
 
 	onMount(initData);
 </script>
+
+<svelte:head>
+	<title>{data.title} - SchoolOrbit</title>
+</svelte:head>
 
 <div class="space-y-6">
 	<!-- Header -->

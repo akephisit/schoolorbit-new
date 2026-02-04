@@ -9,26 +9,35 @@
 		updateTimetableEntry,
 		deleteTimetableEntry,
 		listPeriods,
-        createBatchTimetableEntries
+		createBatchTimetableEntries
 	} from '$lib/api/timetable';
 	import {
 		lookupAcademicYears,
 		listClassrooms,
 		listClassroomCourses,
 		type Classroom,
-        getAcademicStructure,
-        type AcademicYear, 
-        type Semester
+		getAcademicStructure,
+		type AcademicYear,
+		type Semester
 	} from '$lib/api/academic';
-	import { lookupRooms, type RoomLookupItem, lookupStaff, type StaffLookupItem, lookupSubjects, type LookupItem, lookupGradeLevels, type GradeLevelLookupItem } from '$lib/api/lookup';
-    import * as Dialog from '$lib/components/ui/dialog';
-    import * as Label from '$lib/components/ui/label';
+	import {
+		lookupRooms,
+		type RoomLookupItem,
+		lookupStaff,
+		type StaffLookupItem,
+		lookupSubjects,
+		type LookupItem,
+		lookupGradeLevels,
+		type GradeLevelLookupItem
+	} from '$lib/api/lookup';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Label from '$lib/components/ui/label';
 
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import { Badge } from '$lib/components/ui/badge';
-    import * as Tooltip from '$lib/components/ui/tooltip';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	import {
 		CalendarDays,
@@ -37,60 +46,61 @@
 		School,
 		BookOpen,
 		Users,
-        PlusCircle, MapPin, 
-        Download
+		PlusCircle,
+		MapPin,
+		Download
 	} from 'lucide-svelte';
-    import { tick } from 'svelte';
-    import { generateTimetablePDF } from '$lib/utils/pdf';
-    
-    import { Checkbox } from '$lib/components/ui/checkbox';
-    
-    import { authStore } from '$lib/stores/auth';
-    import { 
-        connectTimetableSocket, 
-        disconnectTimetableSocket, 
-        sendTimetableEvent,
-        activeUsers,
-        remoteCursors,
-        userDrags,
-        refreshTrigger,
-        isConnected
-    } from '$lib/stores/timetable-socket';
+	import { tick } from 'svelte';
+	import { generateTimetablePDF } from '$lib/utils/pdf';
 
-    let { data }: { data: any } = $props();
+	import { Checkbox } from '$lib/components/ui/checkbox';
 
-    // Helper: Generate consistent pastel color from string
-    function getSubjectColor(code: string, type?: string): string {
-        if (type === 'BREAK') return '#fef3c7'; // amber-100
-        if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#d1fae5'; // emerald-100
-        
-        if (!code) return '#eff6ff'; // default blue-50
-        let hash = 0;
-        for (let i = 0; i < code.length; i++) {
-            hash = code.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const h = Math.abs(hash) % 360;
-        return `hsl(${h}, 85%, 94%)`; // Light pastel
-    }
+	import { authStore } from '$lib/stores/auth';
+	import {
+		connectTimetableSocket,
+		disconnectTimetableSocket,
+		sendTimetableEvent,
+		activeUsers,
+		remoteCursors,
+		userDrags,
+		refreshTrigger,
+		isConnected
+	} from '$lib/stores/timetable-socket';
 
-    function getSubjectBorderColor(code: string, type?: string): string {
-        if (type === 'BREAK') return '#fcd34d'; // amber-300
-        if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#6ee7b7'; // emerald-300
+	let { data } = $props();
 
-        if (!code) return '#bfdbfe'; // default blue-200
-        let hash = 0;
-        for (let i = 0; i < code.length; i++) {
-            hash = code.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const h = Math.abs(hash) % 360;
-        return `hsl(${h}, 60%, 80%)`; // Slightly darker for border
-    }
+	// Helper: Generate consistent pastel color from string
+	function getSubjectColor(code: string, type?: string): string {
+		if (type === 'BREAK') return '#fef3c7'; // amber-100
+		if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#d1fae5'; // emerald-100
 
-    // Export State
-    let showExportModal = $state(false);
-    let exportType = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
-    let exportTargetIds = $state<string[]>([]);
-    let isExporting = $state(false);
+		if (!code) return '#eff6ff'; // default blue-50
+		let hash = 0;
+		for (let i = 0; i < code.length; i++) {
+			hash = code.charCodeAt(i) + ((hash << 5) - hash);
+		}
+		const h = Math.abs(hash) % 360;
+		return `hsl(${h}, 85%, 94%)`; // Light pastel
+	}
+
+	function getSubjectBorderColor(code: string, type?: string): string {
+		if (type === 'BREAK') return '#fcd34d'; // amber-300
+		if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#6ee7b7'; // emerald-300
+
+		if (!code) return '#bfdbfe'; // default blue-200
+		let hash = 0;
+		for (let i = 0; i < code.length; i++) {
+			hash = code.charCodeAt(i) + ((hash << 5) - hash);
+		}
+		const h = Math.abs(hash) % 360;
+		return `hsl(${h}, 60%, 80%)`; // Slightly darker for border
+	}
+
+	// Export State
+	let showExportModal = $state(false);
+	let exportType = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
+	let exportTargetIds = $state<string[]>([]);
+	let isExporting = $state(false);
 
 	const DAYS = [
 		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
@@ -107,72 +117,66 @@
 	let classrooms = $state<Classroom[]>([]);
 	let courses = $state<any[]>([]);
 	let academicYears = $state<AcademicYear[]>([]);
-    let allSemesters = $state<Semester[]>([]);
+	let allSemesters = $state<Semester[]>([]);
 	let rooms = $state<RoomLookupItem[]>([]);
-    let instructors = $state<StaffLookupItem[]>([]);
+	let instructors = $state<StaffLookupItem[]>([]);
 
-    // View Mode: 'CLASSROOM' or 'INSTRUCTOR'
-    let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
+	// View Mode: 'CLASSROOM' or 'INSTRUCTOR'
+	let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
 
 	let selectedYearId = $state('');
-    let selectedSemesterId = $state('');
+	let selectedSemesterId = $state('');
 	let selectedClassroomId = $state('');
-    let selectedInstructorId = $state('');
-    
-    // Derived Semesters based on selected year
-    let semesters = $derived(allSemesters.filter(s => s.academic_year_id === selectedYearId));
+	let selectedInstructorId = $state('');
+
+	// Derived Semesters based on selected year
+	let semesters = $derived(allSemesters.filter((s) => s.academic_year_id === selectedYearId));
 
 	// Drag & Drop state
 	let draggedCourse = $state<any>(null);
 	let submitting = $state(false);
 	let isDropPending = $state(false);
-    // Identify what is being dragged: 'NEW' (from list) | 'MOVE' (from grid)
+	// Identify what is being dragged: 'NEW' (from list) | 'MOVE' (from grid)
 	let dragType = $state<'NEW' | 'MOVE'>('NEW');
 
 	let draggedEntryId = $state<string | null>(null);
-
-
 
 	async function loadInitialData() {
 		try {
 			loading = true;
 			const structureRes = await getAcademicStructure();
-            academicYears = structureRes.data.years;
-            allSemesters = structureRes.data.semesters;
+			academicYears = structureRes.data.years;
+			allSemesters = structureRes.data.semesters;
 
-            // Find active year
-            const activeYear = academicYears.find((y) => y.is_active) || academicYears[0];
-            
+			// Find active year
+			const activeYear = academicYears.find((y) => y.is_active) || academicYears[0];
+
 			if (activeYear) {
 				selectedYearId = activeYear.id;
-                
-                // Active semester
-                const yearSemesters = allSemesters.filter(s => s.academic_year_id === activeYear.id);
-                const activeSemester = yearSemesters.find(s => s.is_active) || yearSemesters[0];
-                if (activeSemester) selectedSemesterId = activeSemester.id;
 
-				await Promise.all([
-                    loadClassrooms(),
-                    loadRooms(),
-                    loadInstructors()
-                ]);
+				// Active semester
+				const yearSemesters = allSemesters.filter((s) => s.academic_year_id === activeYear.id);
+				const activeSemester = yearSemesters.find((s) => s.is_active) || yearSemesters[0];
+				if (activeSemester) selectedSemesterId = activeSemester.id;
+
+				await Promise.all([loadClassrooms(), loadRooms(), loadInstructors()]);
 			}
 		} catch (e) {
-            console.error(e);
+			console.error(e);
 			toast.error('โหลดข้อมูลไม่สำเร็จ');
 		} finally {
 			loading = false;
 		}
 	}
-    
-    async function loadInstructors() {
-        try {
-            const data = await lookupStaff({ limit: 500 }); 
-            instructors = data;
-        } catch(e) {
-            console.error('Failed to load instructors', e);
-        }
-    }
+
+	async function loadInstructors() {
+		try {
+			const data = await lookupStaff({ limit: 500 });
+			instructors = data;
+		} catch (e) {
+			console.error('Failed to load instructors', e);
+		}
+	}
 
 	async function loadClassrooms() {
 		if (!selectedYearId) return;
@@ -194,52 +198,64 @@
 		}
 	}
 
-    async function loadRooms() {
-        try {
-            const res = await lookupRooms();
-            rooms = res;
-        } catch (e) {
-            console.error('Failed to load rooms', e);
-        }
-    }
+	async function loadRooms() {
+		try {
+			const res = await lookupRooms();
+			rooms = res;
+		} catch (e) {
+			console.error('Failed to load rooms', e);
+		}
+	}
 
 	async function loadCourses() {
-        // Mode: CLASSROOM
+		// Mode: CLASSROOM
 		if (viewMode === 'CLASSROOM' && !selectedClassroomId) return;
-        // Mode: INSTRUCTOR
-        if (viewMode === 'INSTRUCTOR' && !selectedInstructorId) return;
+		// Mode: INSTRUCTOR
+		if (viewMode === 'INSTRUCTOR' && !selectedInstructorId) return;
 
 		try {
-            let res;
-            if (viewMode === 'CLASSROOM') {
-			    res = await listClassroomCourses({ classroomId: selectedClassroomId, semesterId: selectedSemesterId });
-            } else {
-                res = await listClassroomCourses({ instructorId: selectedInstructorId, semesterId: selectedSemesterId });
-            }
+			let res;
+			if (viewMode === 'CLASSROOM') {
+				res = await listClassroomCourses({
+					classroomId: selectedClassroomId,
+					semesterId: selectedSemesterId
+				});
+			} else {
+				res = await listClassroomCourses({
+					instructorId: selectedInstructorId,
+					semesterId: selectedSemesterId
+				});
+			}
 			courses = res.data;
 		} catch (e) {
 			console.error(e);
-            toast.error('โหลดรายวิชาไม่สำเร็จ');
+			toast.error('โหลดรายวิชาไม่สำเร็จ');
 		}
 	}
 
 	async function loadTimetable() {
-        if (viewMode === 'CLASSROOM' && !selectedClassroomId) {
+		if (viewMode === 'CLASSROOM' && !selectedClassroomId) {
 			timetableEntries = [];
 			return;
 		}
-        if (viewMode === 'INSTRUCTOR' && !selectedInstructorId) {
+		if (viewMode === 'INSTRUCTOR' && !selectedInstructorId) {
 			timetableEntries = [];
 			return;
 		}
 
 		try {
-            let res;
-            if (viewMode === 'CLASSROOM') {
-			    res = await listTimetableEntries({ classroom_id: selectedClassroomId, academic_semester_id: selectedSemesterId });
-            } else {
-                res = await listTimetableEntries({ instructor_id: selectedInstructorId, academic_semester_id: selectedSemesterId });
-            }
+			let res;
+			if (viewMode === 'CLASSROOM') {
+				res = await listTimetableEntries({
+					classroom_id: selectedClassroomId,
+					academic_semester_id: selectedSemesterId
+				});
+			} else {
+				res = await listTimetableEntries({
+					instructor_id: selectedInstructorId,
+					academic_semester_id: selectedSemesterId
+				});
+			}
 			timetableEntries = res.data;
 		} catch (e) {
 			toast.error('โหลดตารางสอนไม่สำเร็จ');
@@ -250,11 +266,11 @@
 		try {
 			await deleteTimetableEntry(entryId);
 			toast.success('ลบออกจากตารางสำเร็จ');
-            
-            // Notify others to refresh
-            if ($authStore.user) {
-                sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
-            }
+
+			// Notify others to refresh
+			if ($authStore.user) {
+				sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+			}
 
 			loadTimetable();
 		} catch (e: any) {
@@ -275,8 +291,6 @@
 	// Drag & Drop Handlers
 	// ============================================
 
-	
-	
 	// Room Selection State
 	let showRoomModal = $state(false);
 	let pendingDropContext = $state<{
@@ -286,12 +300,12 @@
 		course: any;
 		entryId: string | null;
 	} | null>(null);
-	
+
 	let selectedRoomId = $state<string>(''); // empty string = no room (default)
 
 	// Availability State
 	let occupiedSlots = $state<Set<string>>(new Set()); // Format: "DAY_PERIODID"
-	
+
 	function getSlotKey(day: string, periodId: string) {
 		return `${day}_${periodId}`;
 	}
@@ -301,45 +315,51 @@
 	}
 
 	async function fetchInstructorConflicts(course: any) {
-        let conflicts = new Set<string>();
+		let conflicts = new Set<string>();
 
-        // 1. INSTRUCTOR VIEW
-        if (viewMode === 'INSTRUCTOR') {
-            const classroomId = course.classroom_id;
-            if (!classroomId) return;
+		// 1. INSTRUCTOR VIEW
+		if (viewMode === 'INSTRUCTOR') {
+			const classroomId = course.classroom_id;
+			if (!classroomId) return;
 
-            try {
-                const res = await listTimetableEntries({ classroom_id: classroomId, academic_semester_id: selectedSemesterId });
-                res.data.forEach(entry => {
-                    if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
-                    
-                    const isMyCourse = courses.some(c => c.id === entry.classroom_course_id);
-                    if (isMyCourse) return;
+			try {
+				const res = await listTimetableEntries({
+					classroom_id: classroomId,
+					academic_semester_id: selectedSemesterId
+				});
+				res.data.forEach((entry) => {
+					if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
 
-                    conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
-                });
-                occupiedSlots = conflicts;
-            } catch (e) {
-                console.error('Failed to check conflicts', e);
-            }
-            return;
-        }
+					const isMyCourse = courses.some((c) => c.id === entry.classroom_course_id);
+					if (isMyCourse) return;
 
-        // 2. CLASSROOM VIEW
+					conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
+				});
+				occupiedSlots = conflicts;
+			} catch (e) {
+				console.error('Failed to check conflicts', e);
+			}
+			return;
+		}
+
+		// 2. CLASSROOM VIEW
 		const instructorId = course.primary_instructor_id;
 		if (!instructorId) {
-            occupiedSlots = new Set();
-            return;
-        }
+			occupiedSlots = new Set();
+			return;
+		}
 
 		try {
-			const res = await listTimetableEntries({ instructor_id: instructorId, academic_semester_id: selectedSemesterId });
-			res.data.forEach(entry => {
+			const res = await listTimetableEntries({
+				instructor_id: instructorId,
+				academic_semester_id: selectedSemesterId
+			});
+			res.data.forEach((entry) => {
 				if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
-				
-                if (viewMode === 'CLASSROOM') {
-                    if (entry.classroom_id === selectedClassroomId) return;
-                }
+
+				if (viewMode === 'CLASSROOM') {
+					if (entry.classroom_id === selectedClassroomId) return;
+				}
 
 				conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
 			});
@@ -350,9 +370,10 @@
 	}
 
 	function createDragImage(text: string, subtext: string) {
-        const div = document.createElement('div');
-        div.className = 'fixed top-[-1000px] left-[-1000px] bg-white border border-primary/50 shadow-xl rounded-lg p-3 w-[180px] z-[9999] flex flex-col gap-1';
-        div.innerHTML = `
+		const div = document.createElement('div');
+		div.className =
+			'fixed top-[-1000px] left-[-1000px] bg-white border border-primary/50 shadow-xl rounded-lg p-3 w-[180px] z-[9999] flex flex-col gap-1';
+		div.innerHTML = `
             <div class="flex items-center gap-2">
                 <div class="p-1 rounded bg-primary/10 text-primary">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
@@ -361,13 +382,13 @@
             </div>
             <div class="text-xs text-muted-foreground truncate pl-1">${subtext}</div>
         `;
-        document.body.appendChild(div);
-        return div;
-    }
+		document.body.appendChild(div);
+		return div;
+	}
 
 	function handleDragStart(event: DragEvent, item: any, type: 'NEW' | 'MOVE') {
 		dragType = type;
-		
+
 		let courseToCheck: any = null;
 
 		if (type === 'NEW') {
@@ -375,17 +396,17 @@
 			draggedEntryId = null;
 			courseToCheck = item;
 		} else {
-			draggedCourse = item; 
+			draggedCourse = item;
 			draggedEntryId = item.id;
-			
-			const originalCourse = courses.find(c => c.id === item.classroom_course_id);
+
+			const originalCourse = courses.find((c) => c.id === item.classroom_course_id);
 			courseToCheck = originalCourse || {
-                ...item,
-                id: item.classroom_course_id,
-                subject_code: item.subject_code,
-                title: item.subject_name_th,
-                title_th: item.subject_name_th
-            }; 
+				...item,
+				id: item.classroom_course_id,
+				subject_code: item.subject_code,
+				title: item.subject_name_th,
+				title_th: item.subject_name_th
+			};
 		}
 
 		if (courseToCheck) {
@@ -394,51 +415,55 @@
 
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = type === 'NEW' ? 'copy' : 'move';
-			event.dataTransfer.setData('text/plain', JSON.stringify({ 
-				type,
-				id: type === 'NEW' ? item.id : item.id
-			}));
-            
-            // Custom Drag Image
-            const dragTitle = courseToCheck.subject_code || 'วิชา';
-            const dragSub = courseToCheck.title_th || courseToCheck.title || '...';
-            const dragElement = createDragImage(dragTitle, dragSub);
-            event.dataTransfer.setDragImage(dragElement, 10, 10);
-            
-            setTimeout(() => document.body.removeChild(dragElement), 0);
+			event.dataTransfer.setData(
+				'text/plain',
+				JSON.stringify({
+					type,
+					id: type === 'NEW' ? item.id : item.id
+				})
+			);
+
+			// Custom Drag Image
+			const dragTitle = courseToCheck.subject_code || 'วิชา';
+			const dragSub = courseToCheck.title_th || courseToCheck.title || '...';
+			const dragElement = createDragImage(dragTitle, dragSub);
+			event.dataTransfer.setDragImage(dragElement, 10, 10);
+
+			setTimeout(() => document.body.removeChild(dragElement), 0);
 		}
 
-        // Notify others
-        if ($authStore.user) {
-            sendTimetableEvent({
-                 type: 'DragStart',
-                 payload: {
-                     user_id: $authStore.user.id,
-                     entry_id: draggedEntryId || undefined,
-                     course_id: item.classroom_course_id || item.id,
-                     info: {
-                         code: courseToCheck.subject_code || '??',
-                         title: courseToCheck.title_th || courseToCheck.title_en || courseToCheck.title || 'รายวิชา',
-                         color: courseToCheck.color
-                     }
-                 }
-            });
-        }
-    }
+		// Notify others
+		if ($authStore.user) {
+			sendTimetableEvent({
+				type: 'DragStart',
+				payload: {
+					user_id: $authStore.user.id,
+					entry_id: draggedEntryId || undefined,
+					course_id: item.classroom_course_id || item.id,
+					info: {
+						code: courseToCheck.subject_code || '??',
+						title:
+							courseToCheck.title_th || courseToCheck.title_en || courseToCheck.title || 'รายวิชา',
+						color: courseToCheck.color
+					}
+				}
+			});
+		}
+	}
 
 	function handleDragEnd() {
-        if (isDropPending) return;
+		if (isDropPending) return;
 
-        if ($authStore.user) {
-            sendTimetableEvent({ type: 'DragEnd', payload: { user_id: $authStore.user.id } });
-        }
+		if ($authStore.user) {
+			sendTimetableEvent({ type: 'DragEnd', payload: { user_id: $authStore.user.id } });
+		}
 		draggedCourse = null;
 		draggedEntryId = null;
-		occupiedSlots = new Set(); 
+		occupiedSlots = new Set();
 	}
 
 	function handleDragOver(event: DragEvent) {
-		event.preventDefault(); 
+		event.preventDefault();
 		if (event.dataTransfer) {
 			event.dataTransfer.dropEffect = dragType === 'NEW' ? 'copy' : 'move';
 		}
@@ -448,13 +473,13 @@
 		event.preventDefault();
 
 		if (!draggedCourse) return;
-        
-        const existingEntry = getEntryForSlot(day, periodId);
+
+		const existingEntry = getEntryForSlot(day, periodId);
 		if (existingEntry) {
 			toast.error('ช่องนี้มีรายการอยู่แล้ว');
-            // Do not end drag yet if we want to retry? No, valid end if failed.
-            // But let's call standard end.
-            handleDragEnd();
+			// Do not end drag yet if we want to retry? No, valid end if failed.
+			// But let's call standard end.
+			handleDragEnd();
 			return;
 		}
 
@@ -464,76 +489,75 @@
 			return;
 		}
 
-        pendingDropContext = {
-            day,
-            periodId,
-            dragType,
-            course: draggedCourse,
-            entryId: draggedEntryId
-        };
-        
-        if (dragType === 'MOVE' && draggedCourse.room_id) {
-            selectedRoomId = draggedCourse.room_id;
-        } else {
-            selectedRoomId = 'none'; 
-        }
-        
-        showRoomModal = true;
-        isDropPending = true;
-        updateUnavailableRooms(day, periodId);
+		pendingDropContext = {
+			day,
+			periodId,
+			dragType,
+			course: draggedCourse,
+			entryId: draggedEntryId
+		};
+
+		if (dragType === 'MOVE' && draggedCourse.room_id) {
+			selectedRoomId = draggedCourse.room_id;
+		} else {
+			selectedRoomId = 'none';
+		}
+
+		showRoomModal = true;
+		isDropPending = true;
+		updateUnavailableRooms(day, periodId);
 	}
 
-    let unavailableRooms = $state<Set<string>>(new Set());
-    let loadingRoomsAvailability = $state(false);
+	let unavailableRooms = $state<Set<string>>(new Set());
+	let loadingRoomsAvailability = $state(false);
 
-    async function updateUnavailableRooms(day: string, periodId: string) {
-        loadingRoomsAvailability = true;
-        unavailableRooms = new Set(); 
-        try {
-            const res = await listTimetableEntries({ 
-                day_of_week: day, 
-                academic_semester_id: selectedSemesterId 
-            });
-            
-            const busyRooms = new Set<string>();
-            res.data.forEach(entry => {
-                if (entry.period_id === periodId && entry.room_id) {
-                    if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
-                    busyRooms.add(entry.room_id);
-                }
-            });
-            unavailableRooms = busyRooms;
-        } catch(e) {
-            console.error(e);
-        } finally {
-            loadingRoomsAvailability = false;
-        }
-    }
+	async function updateUnavailableRooms(day: string, periodId: string) {
+		loadingRoomsAvailability = true;
+		unavailableRooms = new Set();
+		try {
+			const res = await listTimetableEntries({
+				day_of_week: day,
+				academic_semester_id: selectedSemesterId
+			});
 
-    async function confirmDropWithRoom() {
-        if (!pendingDropContext) return;
-        
-        const { day, periodId, dragType, course, entryId } = pendingDropContext;
-        const roomId = selectedRoomId === 'none' ? undefined : selectedRoomId;
-        
-        showRoomModal = false;
-        
+			const busyRooms = new Set<string>();
+			res.data.forEach((entry) => {
+				if (entry.period_id === periodId && entry.room_id) {
+					if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
+					busyRooms.add(entry.room_id);
+				}
+			});
+			unavailableRooms = busyRooms;
+		} catch (e) {
+			console.error(e);
+		} finally {
+			loadingRoomsAvailability = false;
+		}
+	}
+
+	async function confirmDropWithRoom() {
+		if (!pendingDropContext) return;
+
+		const { day, periodId, dragType, course, entryId } = pendingDropContext;
+		const roomId = selectedRoomId === 'none' ? undefined : selectedRoomId;
+
+		showRoomModal = false;
+
 		try {
 			submitting = true;
 
 			if (dragType === 'NEW') {
 				// CREATE NEW
 				const courseCode = course.subject_code;
-				const payload: any = { 
+				const payload: any = {
 					classroom_course_id: course.id,
 					day_of_week: day,
 					period_id: periodId,
-                    room_id: roomId
+					room_id: roomId
 				};
-				
+
 				const res = await createTimetableEntry(payload);
 				handleResponse(res, `ลงตาราง ${courseCode} สำเร็จ`);
-
 			} else if (dragType === 'MOVE' && entryId) {
 				// UPDATE EXISTING
 				const courseName = course.subject_code || course.title || 'รายการ';
@@ -541,27 +565,26 @@
 				const payload = {
 					day_of_week: day,
 					period_id: periodId,
-                    room_id: roomId
+					room_id: roomId
 				};
 
 				const res = await updateTimetableEntry(entryId, payload);
 				handleResponse(res, `ย้าย ${courseName} สำเร็จ`);
 			}
-
 		} catch (e: any) {
 			toast.error(e.message || 'บันทึกไม่สำเร็จ');
 		} finally {
-            // Notify others
-            if ($authStore.user) {
-                sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
-            }
-            
+			// Notify others
+			if ($authStore.user) {
+				sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+			}
+
 			submitting = false;
-            pendingDropContext = null;
-            isDropPending = false;
-            handleDragEnd();
+			pendingDropContext = null;
+			isDropPending = false;
+			handleDragEnd();
 		}
-    }
+	}
 
 	async function handleResponse(res: any, successMessage: string) {
 		if (res.success === false) {
@@ -577,112 +600,117 @@
 		}
 	}
 
-    async function handleExportPDF() {
-        showExportModal = true;
-        // Default to current view settings
-        exportType = viewMode;
-        exportTargetIds = [];
-        if (viewMode === 'CLASSROOM' && selectedClassroomId) {
-            exportTargetIds = [selectedClassroomId];
-        } else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
-            exportTargetIds = [selectedInstructorId];
-        }
-    }
+	async function handleExportPDF() {
+		showExportModal = true;
+		// Default to current view settings
+		exportType = viewMode;
+		exportTargetIds = [];
+		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
+			exportTargetIds = [selectedClassroomId];
+		} else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
+			exportTargetIds = [selectedInstructorId];
+		}
+	}
 
-    async function confirmExport() {
-        if (exportTargetIds.length === 0) return;
-        
-        try {
-            isExporting = true;
-            let successCount = 0;
-            let failCount = 0;
+	async function confirmExport() {
+		if (exportTargetIds.length === 0) return;
 
-            const total = exportTargetIds.length;
-            
-            // Loop through each target
-            for (let i = 0; i < total; i++) {
-                const id = exportTargetIds[i];
-                try {
-                    // Fetch Data
-                    let entries: TimetableEntry[] = [];
-                    let targetName = '';
-                    
-                    if (exportType === 'CLASSROOM') {
-                        const room = classrooms.find(c => c.id === id);
-                        if (!room) continue;
-                        targetName = `ห้อง ${room.name}`;
-                        const res = await listTimetableEntries({ classroom_id: id, academic_semester_id: selectedSemesterId });
-                        entries = res.data;
-                    } else {
-                        const teacher = instructors.find(inst => inst.id === id);
-                        if (!teacher) continue;
-                        targetName = teacher.name.startsWith('ครู') ? teacher.name : `ครู${teacher.name}`;
-                        const res = await listTimetableEntries({ instructor_id: id, academic_semester_id: selectedSemesterId });
-                        entries = res.data;
-                    }
+		try {
+			isExporting = true;
+			let successCount = 0;
+			let failCount = 0;
 
-                    // Prepare PDF Metadata
-                    const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
-                    const yearObj = academicYears.find((y) => y.id === selectedYearId);
-                    const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
-                    
-                    let title = '';
-                    if (exportType === 'CLASSROOM') {
-                        // Assuming room.name is something like "ม.4/1" or "4/1"
-                        // User request: "ตารางเรียน ชั้นมัธยมศึกษาปีที่ 4/1"
-                        // We will use "ชั้น" + targetName (which is "ห้อง ...")
-                        // Wait, targetName was constructed as `ห้อง ${room.name}`.
-                        // Let's reconstruct cleanly.
-                         const room = classrooms.find(c => c.id === id);
-                         let roomName = room ? room.name : '';
-                         
-                         // Expand abbreviated prefixes
-                         if (roomName.startsWith('ม.')) roomName = roomName.replace('ม.', 'มัธยมศึกษาปีที่ ');
-                         else if (roomName.startsWith('ป.')) roomName = roomName.replace('ป.', 'ประถมศึกษาปีที่ ');
-                         else if (roomName.startsWith('อ.')) roomName = roomName.replace('อ.', 'อนุบาลปีที่ ');
-                         else if (/^\d/.test(roomName)) roomName = `มัธยมศึกษาปีที่ ${roomName}`; // Fallback for plain "4/1"
-                         
-                         title = `ตารางเรียน ชั้น${roomName}`;
-                    } else {
-                        title = `ตารางสอน ${targetName}`;
-                    }
-                    const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
+			const total = exportTargetIds.length;
 
-                    // Generate PDF
-                    await generateTimetablePDF(title, subTitle, periods, entries, exportType);
-                    successCount++;
-                    
-                    // Small delay to prevent browser choking/blocking multiple downloads
-                    if (i < total - 1) await new Promise(r => setTimeout(r, 500));
+			// Loop through each target
+			for (let i = 0; i < total; i++) {
+				const id = exportTargetIds[i];
+				try {
+					// Fetch Data
+					let entries: TimetableEntry[] = [];
+					let targetName = '';
 
-                } catch (err) {
-                    console.error(`Failed to export ${id}`, err);
-                    failCount++;
-                }
-            }
-            
-            if (failCount === 0) {
-                toast.success(`ดาวน์โหลดเสร็จสิ้น ${successCount} รายการ`);
-                showExportModal = false;
-            } else {
-                toast.warning(`ดาวน์โหลดสำเร็จ ${successCount} รายการ, ล้มเหลว ${failCount} รายการ`);
-            }
+					if (exportType === 'CLASSROOM') {
+						const room = classrooms.find((c) => c.id === id);
+						if (!room) continue;
+						targetName = `ห้อง ${room.name}`;
+						const res = await listTimetableEntries({
+							classroom_id: id,
+							academic_semester_id: selectedSemesterId
+						});
+						entries = res.data;
+					} else {
+						const teacher = instructors.find((inst) => inst.id === id);
+						if (!teacher) continue;
+						targetName = teacher.name.startsWith('ครู') ? teacher.name : `ครู${teacher.name}`;
+						const res = await listTimetableEntries({
+							instructor_id: id,
+							academic_semester_id: selectedSemesterId
+						});
+						entries = res.data;
+					}
 
-        } catch(e: any) {
-            toast.error('เกิดข้อผิดพลาดในการดาวน์โหลด');
-            console.error(e);
-        } finally {
-            isExporting = false;
-        }
-    }
+					// Prepare PDF Metadata
+					const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
+					const yearObj = academicYears.find((y) => y.id === selectedYearId);
+					const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
+
+					let title = '';
+					if (exportType === 'CLASSROOM') {
+						// Assuming room.name is something like "ม.4/1" or "4/1"
+						// User request: "ตารางเรียน ชั้นมัธยมศึกษาปีที่ 4/1"
+						// We will use "ชั้น" + targetName (which is "ห้อง ...")
+						// Wait, targetName was constructed as `ห้อง ${room.name}`.
+						// Let's reconstruct cleanly.
+						const room = classrooms.find((c) => c.id === id);
+						let roomName = room ? room.name : '';
+
+						// Expand abbreviated prefixes
+						if (roomName.startsWith('ม.')) roomName = roomName.replace('ม.', 'มัธยมศึกษาปีที่ ');
+						else if (roomName.startsWith('ป.'))
+							roomName = roomName.replace('ป.', 'ประถมศึกษาปีที่ ');
+						else if (roomName.startsWith('อ.')) roomName = roomName.replace('อ.', 'อนุบาลปีที่ ');
+						else if (/^\d/.test(roomName)) roomName = `มัธยมศึกษาปีที่ ${roomName}`; // Fallback for plain "4/1"
+
+						title = `ตารางเรียน ชั้น${roomName}`;
+					} else {
+						title = `ตารางสอน ${targetName}`;
+					}
+					const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
+
+					// Generate PDF
+					await generateTimetablePDF(title, subTitle, periods, entries, exportType);
+					successCount++;
+
+					// Small delay to prevent browser choking/blocking multiple downloads
+					if (i < total - 1) await new Promise((r) => setTimeout(r, 500));
+				} catch (err) {
+					console.error(`Failed to export ${id}`, err);
+					failCount++;
+				}
+			}
+
+			if (failCount === 0) {
+				toast.success(`ดาวน์โหลดเสร็จสิ้น ${successCount} รายการ`);
+				showExportModal = false;
+			} else {
+				toast.warning(`ดาวน์โหลดสำเร็จ ${successCount} รายการ, ล้มเหลว ${failCount} รายการ`);
+			}
+		} catch (e: any) {
+			toast.error('เกิดข้อผิดพลาดในการดาวน์โหลด');
+			console.error(e);
+		} finally {
+			isExporting = false;
+		}
+	}
 
 	let unscheduledCourses = $derived.by(() => {
 		const courseCounts = new Map<string, number>();
 		timetableEntries.forEach((entry) => {
-            if (entry.classroom_course_id) {
-			    const count = courseCounts.get(entry.classroom_course_id) || 0;
-			    courseCounts.set(entry.classroom_course_id, count + 1);
-            }
+			if (entry.classroom_course_id) {
+				const count = courseCounts.get(entry.classroom_course_id) || 0;
+				courseCounts.set(entry.classroom_course_id, count + 1);
+			}
 		});
 
 		return courses
@@ -691,11 +719,10 @@
 				const credit = course.subject_credit || 0;
 				const hours = course.subject_hours || 0;
 				// Default 20 weeks per semester
-                // Priority: Hours > Credit > Default
-				const maxPeriods = hours > 0 
-                    ? Math.ceil(hours / 20)
-                    : (credit > 0 ? Math.ceil(credit * 2) : 3); 
-				
+				// Priority: Hours > Credit > Default
+				const maxPeriods =
+					hours > 0 ? Math.ceil(hours / 20) : credit > 0 ? Math.ceil(credit * 2) : 3;
+
 				return {
 					...course,
 					scheduled_count: scheduled,
@@ -710,17 +737,16 @@
 			});
 	});
 
-
 	$effect(() => {
 		if (selectedYearId) {
 			loadClassrooms();
 			loadPeriods();
-            
-            const yearSemesters = allSemesters.filter(s => s.academic_year_id === selectedYearId);
-            if (!yearSemesters.find(s => s.id === selectedSemesterId)) {
-                 const activeOrFirst = yearSemesters.find(s => s.is_active) || yearSemesters[0];
-                 selectedSemesterId = activeOrFirst ? activeOrFirst.id : '';
-            }
+
+			const yearSemesters = allSemesters.filter((s) => s.academic_year_id === selectedYearId);
+			if (!yearSemesters.find((s) => s.id === selectedSemesterId)) {
+				const activeOrFirst = yearSemesters.find((s) => s.is_active) || yearSemesters[0];
+				selectedSemesterId = activeOrFirst ? activeOrFirst.id : '';
+			}
 		}
 	});
 
@@ -728,311 +754,326 @@
 		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
 			loadCourses();
 			loadTimetable();
-            
-            // Broadcast View Context
-            if ($authStore.user) {
-                sendTimetableEvent({
-                    type: 'CursorMove', 
-                    payload: {
-                        user_id: $authStore.user.id,
-                        x: 0, 
-                        y: 0,
-                        context: {
-                            view_mode: 'CLASSROOM',
-                            view_id: selectedClassroomId
-                        }
-                    }
-                });
-            }
 
+			// Broadcast View Context
+			if ($authStore.user) {
+				sendTimetableEvent({
+					type: 'CursorMove',
+					payload: {
+						user_id: $authStore.user.id,
+						x: 0,
+						y: 0,
+						context: {
+							view_mode: 'CLASSROOM',
+							view_id: selectedClassroomId
+						}
+					}
+				});
+			}
 		} else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
-            loadCourses();
-            loadTimetable();
+			loadCourses();
+			loadTimetable();
 
-            // Broadcast View Context
-             if ($authStore.user) {
-                sendTimetableEvent({
-                    type: 'CursorMove',
-                    payload: {
-                        user_id: $authStore.user.id,
-                        x: 0, 
-                        y: 0,
-                        context: {
-                            view_mode: 'INSTRUCTOR',
-                            view_id: selectedInstructorId
-                        }
-                    }
-                });
-            }
-        }
+			// Broadcast View Context
+			if ($authStore.user) {
+				sendTimetableEvent({
+					type: 'CursorMove',
+					payload: {
+						user_id: $authStore.user.id,
+						x: 0,
+						y: 0,
+						context: {
+							view_mode: 'INSTRUCTOR',
+							view_id: selectedInstructorId
+						}
+					}
+				});
+			}
+		}
 	});
-    
-    $effect(() => {
-        if (selectedSemesterId) {
-             if ((viewMode === 'CLASSROOM' && selectedClassroomId) || (viewMode === 'INSTRUCTOR' && selectedInstructorId)) {
-                 loadCourses();
-                 loadTimetable();
-             }
-        }
-    });
 
-    // Batch Assign State
-    let showBatchModal = $state(false);
-    let batchClassrooms = $state<string[]>([]);
-    let batchDay = $state('MON');
-    let batchPeriodId = $state('');
-    let batchType = $state('ACTIVITY');
-    let batchTitle = $state('');
-    let batchRoomId = $state('none');
-    
-    // Batch Mode State
-    let batchMode = $state<'TEXT' | 'COURSE'>('TEXT');
-    let subjectOptions = $state<LookupItem[]>([]);
+	$effect(() => {
+		if (selectedSemesterId) {
+			if (
+				(viewMode === 'CLASSROOM' && selectedClassroomId) ||
+				(viewMode === 'INSTRUCTOR' && selectedInstructorId)
+			) {
+				loadCourses();
+				loadTimetable();
+			}
+		}
+	});
+
+	// Batch Assign State
+	let showBatchModal = $state(false);
+	let batchClassrooms = $state<string[]>([]);
+	let batchDay = $state('MON');
+	let batchPeriodId = $state('');
+	let batchType = $state('ACTIVITY');
+	let batchTitle = $state('');
+	let batchRoomId = $state('none');
+
+	// Batch Mode State
+	let batchMode = $state<'TEXT' | 'COURSE'>('TEXT');
+	let subjectOptions = $state<LookupItem[]>([]);
 	let batchSubjectId = $state('');
-    let loadingSubjects = $state(false);
+	let loadingSubjects = $state(false);
 
-    async function ensureSubjectsLoaded() {
-        if (subjectOptions.length > 0) return;
-        loadingSubjects = true;
-        try {
-            subjectOptions = await lookupSubjects({ limit: 500, activeOnly: true, subjectType: 'ACTIVITY' });
-        } catch(e) {
-            console.error(e);
-            toast.error('โหลดรายวิชาไม่สำเร็จ');
-        } finally {
-            loadingSubjects = false;
-        }
-    }
+	async function ensureSubjectsLoaded() {
+		if (subjectOptions.length > 0) return;
+		loadingSubjects = true;
+		try {
+			subjectOptions = await lookupSubjects({
+				limit: 500,
+				activeOnly: true,
+				subjectType: 'ACTIVITY'
+			});
+		} catch (e) {
+			console.error(e);
+			toast.error('โหลดรายวิชาไม่สำเร็จ');
+		} finally {
+			loadingSubjects = false;
+		}
+	}
 
-    // Filter & Override State
-    let batchGradeLevels = $state<GradeLevelLookupItem[]>([]);
+	// Filter & Override State
+	let batchGradeLevels = $state<GradeLevelLookupItem[]>([]);
 	let batchGradeFilterId = $state('all');
-    let batchForce = $state(false);
+	let batchForce = $state(false);
 
-    async function loadBatchGradeLevels() {
-        if (batchGradeLevels.length > 0) return;
-        try {
-            // Need to pass academic_year_id if possible, or just list all
-            batchGradeLevels = await lookupGradeLevels({ limit: 100, activeOnly: true });
-        } catch(e) {
-             console.error(e);
-        }
-    }
-    
-    // Plan Validation State
-    let validBatchClassroomIds = $state<Set<string> | null>(null);
-    let loadingBatchValidClassrooms = $state(false);
+	async function loadBatchGradeLevels() {
+		if (batchGradeLevels.length > 0) return;
+		try {
+			// Need to pass academic_year_id if possible, or just list all
+			batchGradeLevels = await lookupGradeLevels({ limit: 100, activeOnly: true });
+		} catch (e) {
+			console.error(e);
+		}
+	}
 
-    $effect(() => {
-        const currentSubject = batchSubjectId;
-        // Only run validation if Modal is open to save resources
-        if (showBatchModal && batchMode === 'COURSE' && currentSubject && selectedSemesterId) {
-             loadingBatchValidClassrooms = true;
-             validBatchClassroomIds = new Set(); 
-             
-             // Check which classrooms have this subject in their plan
-             listClassroomCourses({ subjectId: currentSubject, semesterId: selectedSemesterId })
-                .then(res => {
-                    if (batchSubjectId !== currentSubject) return; // Stale check
-                    const ids = new Set(res.data.map((c: any) => c.classroom_id));
-                    validBatchClassroomIds = ids;
-                })
-                .catch(err => {
-                    console.error(err);
-                    toast.error('ตรวจสอบแผนการเรียนไม่สำเร็จ');
-                })
-                .finally(() => { 
-                    if (batchSubjectId === currentSubject) loadingBatchValidClassrooms = false; 
-                });
-        } else if (batchMode !== 'COURSE' || !batchSubjectId) {
-             validBatchClassroomIds = null;
-        }
-    });
+	// Plan Validation State
+	let validBatchClassroomIds = $state<Set<string> | null>(null);
+	let loadingBatchValidClassrooms = $state(false);
 
-    let filteredBatchClassroomsList = $derived.by(() => {
-        let list = classrooms;
+	$effect(() => {
+		const currentSubject = batchSubjectId;
+		// Only run validation if Modal is open to save resources
+		if (showBatchModal && batchMode === 'COURSE' && currentSubject && selectedSemesterId) {
+			loadingBatchValidClassrooms = true;
+			validBatchClassroomIds = new Set();
 
-        // Priority: Course Plan Validation
-        if (batchMode === 'COURSE' && batchSubjectId) {
-             const validSet = validBatchClassroomIds;
-             if (validSet) {
-                 list = list.filter(c => validSet.has(c.id));
-             } else {
-                 // Pending or Failed -> Empty list
-                 list = [];
-             }
-        }
-        
-        // Apply Manual Filter (Intersection with Plan)
-        if (batchGradeFilterId !== 'all') {
-             list = list.filter(c => c.grade_level_id === batchGradeFilterId);
-        }
-        
-        return list;
-    });
+			// Check which classrooms have this subject in their plan
+			listClassroomCourses({ subjectId: currentSubject, semesterId: selectedSemesterId })
+				.then((res) => {
+					if (batchSubjectId !== currentSubject) return; // Stale check
+					const ids = new Set(res.data.map((c: any) => c.classroom_id));
+					validBatchClassroomIds = ids;
+				})
+				.catch((err) => {
+					console.error(err);
+					toast.error('ตรวจสอบแผนการเรียนไม่สำเร็จ');
+				})
+				.finally(() => {
+					if (batchSubjectId === currentSubject) loadingBatchValidClassrooms = false;
+				});
+		} else if (batchMode !== 'COURSE' || !batchSubjectId) {
+			validBatchClassroomIds = null;
+		}
+	});
 
-    function toggleBatchClassroom(id: string) {
-        if (batchClassrooms.includes(id)) {
-            batchClassrooms = batchClassrooms.filter(c => c !== id);
-        } else {
-            batchClassrooms = [...batchClassrooms, id];
-        }
-    }
-    
-    function selectAllBatchClassrooms() {
-        // Only select currently filtered items
-        const currentListIds = filteredBatchClassroomsList.map(c => c.id);
-        
-        // If all currently visible are selected -> Deselect All (visible)
-        const allVisibleSelected = currentListIds.every(id => batchClassrooms.includes(id));
-        
-        if (allVisibleSelected) {
-             batchClassrooms = batchClassrooms.filter(id => !currentListIds.includes(id));
-        } else {
-             // Add missing ones
-             const newIds = currentListIds.filter(id => !batchClassrooms.includes(id));
-             batchClassrooms = [...batchClassrooms, ...newIds];
-        }
-    }
+	let filteredBatchClassroomsList = $derived.by(() => {
+		let list = classrooms;
 
-    async function handleBatchSubmit() {
-        if (batchClassrooms.length === 0) {
-            toast.error('กรุณาเลือกห้องเรียนอย่างน้อย 1 ห้อง');
-            return;
-        }
-        if (!batchPeriodId) {
-            toast.error('กรุณาเลือกคาบเวลา');
-            return;
-        }
-        
-        // Validate based on mode
-        if (batchMode === 'TEXT' && !batchTitle) {
-            toast.error('กรุณาระบุชื่อกิจกรรม');
-            return;
-        }
-        if (batchMode === 'COURSE' && !batchSubjectId) {
-            toast.error('กรุณาเลือกรายวิชา');
-            return;
-        }
+		// Priority: Course Plan Validation
+		if (batchMode === 'COURSE' && batchSubjectId) {
+			const validSet = validBatchClassroomIds;
+			if (validSet) {
+				list = list.filter((c) => validSet.has(c.id));
+			} else {
+				// Pending or Failed -> Empty list
+				list = [];
+			}
+		}
 
-        try {
-            submitting = true;
-            
-            let titleToSend = batchTitle;
-            let entryTypeToSend = batchType;
-            let subjectIdToSend = undefined;
+		// Apply Manual Filter (Intersection with Plan)
+		if (batchGradeFilterId !== 'all') {
+			list = list.filter((c) => c.grade_level_id === batchGradeFilterId);
+		}
 
-            if (batchMode === 'COURSE') {
-                const subj = subjectOptions.find(s => s.id === batchSubjectId);
-                titleToSend = subj?.name || ''; 
-                // We send ACTIVITY first, backend might auto-convert to COURSE if it finds a mapping.
-                // Or we can send ACTIVITY and let backend handle it as per our new logic.
-                entryTypeToSend = 'ACTIVITY'; 
-                subjectIdToSend = batchSubjectId;
-            }
+		return list;
+	});
 
-            await createBatchTimetableEntries({
-                classroom_ids: batchClassrooms,
-                day_of_week: batchDay,
-                period_id: batchPeriodId,
-                academic_semester_id: selectedSemesterId,
-                entry_type: entryTypeToSend as any,
-                title: titleToSend,
-                room_id: batchRoomId === 'none' ? undefined : batchRoomId,
-                subject_id: subjectIdToSend,
-                force: batchForce
-            });
-            
-            toast.success('บันทึกกิจกรรมเรียบร้อย');
-            showBatchModal = false;
-            
-            // Reset fields
-            batchTitle = '';
-            batchSubjectId = '';
-            
-            // Reload if current view is affected
-            if (viewMode === 'CLASSROOM' && selectedClassroomId && batchClassrooms.includes(selectedClassroomId)) {
-                loadTimetable();
-            }
-        } catch(e: any) {
-            toast.error(e.message || 'บันทึกไม่สำเร็จ');
-        } finally {
-            submitting = false;
-        }
-    }
+	function toggleBatchClassroom(id: string) {
+		if (batchClassrooms.includes(id)) {
+			batchClassrooms = batchClassrooms.filter((c) => c !== id);
+		} else {
+			batchClassrooms = [...batchClassrooms, id];
+		}
+	}
 
-    // WebSocket Connection
-    $effect(() => {
-        if (selectedSemesterId && $authStore.user) {
-             const user = $authStore.user;
-             connectTimetableSocket({
+	function selectAllBatchClassrooms() {
+		// Only select currently filtered items
+		const currentListIds = filteredBatchClassroomsList.map((c) => c.id);
 
-                 semester_id: selectedSemesterId,
-                 user_id: user.id,
-                 name: `${user.firstName} ${user.lastName}`
-             });
-        }
-    });
+		// If all currently visible are selected -> Deselect All (visible)
+		const allVisibleSelected = currentListIds.every((id) => batchClassrooms.includes(id));
 
-    onDestroy(() => {
-        disconnectTimetableSocket();
-    });
+		if (allVisibleSelected) {
+			batchClassrooms = batchClassrooms.filter((id) => !currentListIds.includes(id));
+		} else {
+			// Add missing ones
+			const newIds = currentListIds.filter((id) => !batchClassrooms.includes(id));
+			batchClassrooms = [...batchClassrooms, ...newIds];
+		}
+	}
 
-    let lastCursorSend = 0;
-    function handleMouseMove(e: MouseEvent) {
-        const now = Date.now();
-        if (now - lastCursorSend > 50 && $authStore.user) { // 20fps cap
-             lastCursorSend = now;
-             
-             // Dynamic Context
-             const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
-             
-             sendTimetableEvent({
-                 type: 'CursorMove',
-                 payload: {
-                     user_id: $authStore.user.id,
-                     x: e.clientX,
-                     y: e.clientY,
-                     context: {
-                         view_mode: viewMode,
-                         view_id: currentViewId
-                     }
-                 }
-             });
-        }
-    }
+	async function handleBatchSubmit() {
+		if (batchClassrooms.length === 0) {
+			toast.error('กรุณาเลือกห้องเรียนอย่างน้อย 1 ห้อง');
+			return;
+		}
+		if (!batchPeriodId) {
+			toast.error('กรุณาเลือกคาบเวลา');
+			return;
+		}
 
-    // Auto Refresh Listener
-    $effect(() => {
-        if ($refreshTrigger > 0) {
-            console.log('Auto-refreshing timetable...');
-            loadTimetable();
-            loadCourses(); 
-        }
-    });
+		// Validate based on mode
+		if (batchMode === 'TEXT' && !batchTitle) {
+			toast.error('กรุณาระบุชื่อกิจกรรม');
+			return;
+		}
+		if (batchMode === 'COURSE' && !batchSubjectId) {
+			toast.error('กรุณาเลือกรายวิชา');
+			return;
+		}
 
-    function getDragOwner(entryId?: string, courseId?: string) {
-        if (!entryId && !courseId) return null;
-        for (const [userId, drag] of Object.entries($userDrags)) {
-             // Strict check: Only lock if entry_id matches (Move)
-             // or if dragging NEW course (courseId matches, but only if we want to lock new drags?)
-             
-             // Request: Don't lock existing entries if dragging NEW course.
-             if (entryId) {
-                 // Only lock if someone is dragging THIS SPECIFIC entry (Move)
-                 if (drag.entry_id === entryId) return $activeUsers.find(u => u.user_id === userId);
-             } 
-             // If this is a course list item
-             else if (courseId) {
-                 // Lock list item if someone is dragging this course
-                 if (drag.course_id === courseId && !drag.entry_id) return $activeUsers.find(u => u.user_id === userId);
-             }
-        }
-        return null;
-    }
+		try {
+			submitting = true;
+
+			let titleToSend = batchTitle;
+			let entryTypeToSend = batchType;
+			let subjectIdToSend = undefined;
+
+			if (batchMode === 'COURSE') {
+				const subj = subjectOptions.find((s) => s.id === batchSubjectId);
+				titleToSend = subj?.name || '';
+				// We send ACTIVITY first, backend might auto-convert to COURSE if it finds a mapping.
+				// Or we can send ACTIVITY and let backend handle it as per our new logic.
+				entryTypeToSend = 'ACTIVITY';
+				subjectIdToSend = batchSubjectId;
+			}
+
+			await createBatchTimetableEntries({
+				classroom_ids: batchClassrooms,
+				day_of_week: batchDay,
+				period_id: batchPeriodId,
+				academic_semester_id: selectedSemesterId,
+				entry_type: entryTypeToSend as any,
+				title: titleToSend,
+				room_id: batchRoomId === 'none' ? undefined : batchRoomId,
+				subject_id: subjectIdToSend,
+				force: batchForce
+			});
+
+			toast.success('บันทึกกิจกรรมเรียบร้อย');
+			showBatchModal = false;
+
+			// Reset fields
+			batchTitle = '';
+			batchSubjectId = '';
+
+			// Reload if current view is affected
+			if (
+				viewMode === 'CLASSROOM' &&
+				selectedClassroomId &&
+				batchClassrooms.includes(selectedClassroomId)
+			) {
+				loadTimetable();
+			}
+		} catch (e: any) {
+			toast.error(e.message || 'บันทึกไม่สำเร็จ');
+		} finally {
+			submitting = false;
+		}
+	}
+
+	// WebSocket Connection
+	$effect(() => {
+		if (selectedSemesterId && $authStore.user) {
+			const user = $authStore.user;
+			connectTimetableSocket({
+				semester_id: selectedSemesterId,
+				user_id: user.id,
+				name: `${user.firstName} ${user.lastName}`
+			});
+		}
+	});
+
+	onDestroy(() => {
+		disconnectTimetableSocket();
+	});
+
+	let lastCursorSend = 0;
+	function handleMouseMove(e: MouseEvent) {
+		const now = Date.now();
+		if (now - lastCursorSend > 50 && $authStore.user) {
+			// 20fps cap
+			lastCursorSend = now;
+
+			// Dynamic Context
+			const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
+
+			sendTimetableEvent({
+				type: 'CursorMove',
+				payload: {
+					user_id: $authStore.user.id,
+					x: e.clientX,
+					y: e.clientY,
+					context: {
+						view_mode: viewMode,
+						view_id: currentViewId
+					}
+				}
+			});
+		}
+	}
+
+	// Auto Refresh Listener
+	$effect(() => {
+		if ($refreshTrigger > 0) {
+			console.log('Auto-refreshing timetable...');
+			loadTimetable();
+			loadCourses();
+		}
+	});
+
+	function getDragOwner(entryId?: string, courseId?: string) {
+		if (!entryId && !courseId) return null;
+		for (const [userId, drag] of Object.entries($userDrags)) {
+			// Strict check: Only lock if entry_id matches (Move)
+			// or if dragging NEW course (courseId matches, but only if we want to lock new drags?)
+
+			// Request: Don't lock existing entries if dragging NEW course.
+			if (entryId) {
+				// Only lock if someone is dragging THIS SPECIFIC entry (Move)
+				if (drag.entry_id === entryId) return $activeUsers.find((u) => u.user_id === userId);
+			}
+			// If this is a course list item
+			else if (courseId) {
+				// Lock list item if someone is dragging this course
+				if (drag.course_id === courseId && !drag.entry_id)
+					return $activeUsers.find((u) => u.user_id === userId);
+			}
+		}
+		return null;
+	}
 
 	onMount(loadInitialData);
 </script>
+
+<svelte:head>
+	<title>{data.title} - SchoolOrbit</title>
+</svelte:head>
 
 <div
 	class="h-full flex flex-col space-y-4 relative"
@@ -2017,24 +2058,24 @@
 </div>
 
 <style>
-    /* Custom Scrollbar */
-    ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
-    ::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
-        border-radius: 4px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-        background: #cbd5e1;
-    }
+	/* Custom Scrollbar */
+	::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+	::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	::-webkit-scrollbar-thumb {
+		background: #e2e8f0;
+		border-radius: 4px;
+	}
+	::-webkit-scrollbar-thumb:hover {
+		background: #cbd5e1;
+	}
 
-    /* Mobile handling */
-    @media (max-width: 768px) {
+	/* Mobile handling */
+	@media (max-width: 768px) {
 		.mobile-draggable {
 			touch-action: none;
 			-webkit-user-select: none;
@@ -2044,7 +2085,7 @@
 		/* Helper class added by polyfill */
 		:global(.dnd-poly-drag-image) {
 			opacity: 0.8 !important;
-            transform: scale(1.05);
+			transform: scale(1.05);
 		}
 	}
 </style>

@@ -1,163 +1,160 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { toast } from 'svelte-sonner';
-    import {
-        type AcademicPeriod,
-        listPeriods,
-        createPeriod,
-        updatePeriod,
-        deletePeriod
-    } from '$lib/api/timetable';
-    import { lookupAcademicYears } from '$lib/api/academic';
-    
-    import * as Card from '$lib/components/ui/card';
-    import * as Table from '$lib/components/ui/table';
-    import { Button } from '$lib/components/ui/button';
-    import { Input } from '$lib/components/ui/input';
-    import { Label } from '$lib/components/ui/label';
-    import { Badge } from '$lib/components/ui/badge';
-    import * as Dialog from '$lib/components/ui/dialog';
-    import * as Select from '$lib/components/ui/select';
-    
-    import {
-        Clock,
-        Plus,
-        Settings,
-        Trash2,
-        Loader2,
-        Calendar
-    } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
+	let { data } = $props();
 
+	import {
+		type AcademicPeriod,
+		listPeriods,
+		createPeriod,
+		updatePeriod,
+		deletePeriod
+	} from '$lib/api/timetable';
+	import { lookupAcademicYears } from '$lib/api/academic';
 
-    // State
-    let loading = $state(true);
-    let periods = $state<AcademicPeriod[]>([]);
-    let academicYears = $state<any[]>([]);
-    let selectedYearId = $state('');
-    
-    // Dialogs
-    let showPeriodDialog = $state(false);
-    let showDeleteDialog = $state(false);
-    let submitting = $state(false);
+	import * as Card from '$lib/components/ui/card';
+	import * as Table from '$lib/components/ui/table';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
 
-    // Editing
-    let editingPeriod = $state<AcademicPeriod | null>(null);
-    let deleteTarget = $state<{ id: string; name: string } | null>(null);
-    
-    // Form state for Select
-    let formYearId = $state('');
+	import { Clock, Plus, Settings, Trash2, Loader2, Calendar } from 'lucide-svelte';
 
+	// State
+	let loading = $state(true);
+	let periods = $state<AcademicPeriod[]>([]);
+	let academicYears = $state<any[]>([]);
+	let selectedYearId = $state('');
 
-    async function loadData() {
-        try {
-            loading = true;
-            const yearsRes = await lookupAcademicYears(false);
-            academicYears = yearsRes.data;
-            
-            if (academicYears.length > 0 && !selectedYearId) {
-                const activeYear = academicYears.find(y => y.is_current) || academicYears[0];
-                selectedYearId = activeYear.id;
-            }
-            
-            if (selectedYearId) {
-                await loadPeriods();
-            }
-        } catch (e) {
-            toast.error('โหลดข้อมูลไม่สำเร็จ');
-        } finally {
-            loading = false;
-        }
-    }
+	// Dialogs
+	let showPeriodDialog = $state(false);
+	let showDeleteDialog = $state(false);
+	let submitting = $state(false);
 
-    async function loadPeriods() {
-        if (!selectedYearId) return;
-        try {
-            const res = await listPeriods({ academic_year_id: selectedYearId });
-            periods = res.data;
-        } catch (e) {
-            toast.error('โหลดคาบเวลาไม่สำเร็จ');
-        }
-    }
+	// Editing
+	let editingPeriod = $state<AcademicPeriod | null>(null);
+	let deleteTarget = $state<{ id: string; name: string } | null>(null);
 
-    async function handleSavePeriod(e: SubmitEvent) {
-        e.preventDefault();
-        const form = e.target as HTMLFormElement;
-        const formData = new FormData(form);
-        
-        const payload = {
-            academic_year_id: formData.get('academic_year_id') as string,
-            name: formData.get('name') as string,
-            start_time: formData.get('start_time') as string,
-            end_time: formData.get('end_time') as string,
-            order_index: parseInt(formData.get('order_index') as string)
-        };
+	// Form state for Select
+	let formYearId = $state('');
 
-        submitting = true;
-        try {
-            if (editingPeriod) {
-                await updatePeriod(editingPeriod.id, payload);
-                toast.success('บันทึกข้อมูลสำเร็จ');
-            } else {
-                await createPeriod(payload);
-                toast.success('เพิ่มคาบเวลาสำเร็จ');
-            }
-            showPeriodDialog = false;
-            loadPeriods();
-        } catch (e: any) {
-            toast.error(e.message || 'บันทึกไม่สำเร็จ');
-        } finally {
-            submitting = false;
-        }
-    }
+	async function loadData() {
+		try {
+			loading = true;
+			const yearsRes = await lookupAcademicYears(false);
+			academicYears = yearsRes.data;
 
-    async function handleDelete() {
-        if (!deleteTarget) return;
-        submitting = true;
-        try {
-            await deletePeriod(deleteTarget.id);
-            toast.success('ลบคาบเวลาสำเร็จ');
-            showDeleteDialog = false;
-            loadPeriods();
-        } catch (e: any) {
-            toast.error(e.message || 'ลบไม่สำเร็จ (อาจมีข้อมูลตารางสอนเชื่อมโยง)');
-        } finally {
-            submitting = false;
-        }
-    }
+			if (academicYears.length > 0 && !selectedYearId) {
+				const activeYear = academicYears.find((y) => y.is_current) || academicYears[0];
+				selectedYearId = activeYear.id;
+			}
 
-    function openAddPeriod() {
-        editingPeriod = null;
-        formYearId = selectedYearId;
+			if (selectedYearId) {
+				await loadPeriods();
+			}
+		} catch (e) {
+			toast.error('โหลดข้อมูลไม่สำเร็จ');
+		} finally {
+			loading = false;
+		}
+	}
 
-        showPeriodDialog = true;
-    }
+	async function loadPeriods() {
+		if (!selectedYearId) return;
+		try {
+			const res = await listPeriods({ academic_year_id: selectedYearId });
+			periods = res.data;
+		} catch (e) {
+			toast.error('โหลดคาบเวลาไม่สำเร็จ');
+		}
+	}
 
-    function openEditPeriod(p: AcademicPeriod) {
-        editingPeriod = p;
-        formYearId = p.academic_year_id;
+	async function handleSavePeriod(e: SubmitEvent) {
+		e.preventDefault();
+		const form = e.target as HTMLFormElement;
+		const formData = new FormData(form);
 
-        showPeriodDialog = true;
-    }
+		const payload = {
+			academic_year_id: formData.get('academic_year_id') as string,
+			name: formData.get('name') as string,
+			start_time: formData.get('start_time') as string,
+			end_time: formData.get('end_time') as string,
+			order_index: parseInt(formData.get('order_index') as string)
+		};
 
-    function confirmDelete(p: AcademicPeriod) {
-        deleteTarget = { id: p.id, name: p.name };
-        showDeleteDialog = true;
-    }
+		submitting = true;
+		try {
+			if (editingPeriod) {
+				await updatePeriod(editingPeriod.id, payload);
+				toast.success('บันทึกข้อมูลสำเร็จ');
+			} else {
+				await createPeriod(payload);
+				toast.success('เพิ่มคาบเวลาสำเร็จ');
+			}
+			showPeriodDialog = false;
+			loadPeriods();
+		} catch (e: any) {
+			toast.error(e.message || 'บันทึกไม่สำเร็จ');
+		} finally {
+			submitting = false;
+		}
+	}
 
-    function formatTime(time: string): string {
-        // Convert "HH:MM:SS" to "HH:MM"
-        return time.substring(0, 5);
-    }
+	async function handleDelete() {
+		if (!deleteTarget) return;
+		submitting = true;
+		try {
+			await deletePeriod(deleteTarget.id);
+			toast.success('ลบคาบเวลาสำเร็จ');
+			showDeleteDialog = false;
+			loadPeriods();
+		} catch (e: any) {
+			toast.error(e.message || 'ลบไม่สำเร็จ (อาจมีข้อมูลตารางสอนเชื่อมโยง)');
+		} finally {
+			submitting = false;
+		}
+	}
 
-    $effect(() => {
-        if (selectedYearId) {
-            loadPeriods();
-        }
-    });
+	function openAddPeriod() {
+		editingPeriod = null;
+		formYearId = selectedYearId;
 
-    onMount(loadData);
+		showPeriodDialog = true;
+	}
+
+	function openEditPeriod(p: AcademicPeriod) {
+		editingPeriod = p;
+		formYearId = p.academic_year_id;
+
+		showPeriodDialog = true;
+	}
+
+	function confirmDelete(p: AcademicPeriod) {
+		deleteTarget = { id: p.id, name: p.name };
+		showDeleteDialog = true;
+	}
+
+	function formatTime(time: string): string {
+		// Convert "HH:MM:SS" to "HH:MM"
+		return time.substring(0, 5);
+	}
+
+	$effect(() => {
+		if (selectedYearId) {
+			loadPeriods();
+		}
+	});
+
+	onMount(loadData);
 </script>
+
+<svelte:head>
+	<title>{data.title} - SchoolOrbit</title>
+</svelte:head>
 
 <div class="space-y-6">
 	<div class="flex flex-col gap-2">

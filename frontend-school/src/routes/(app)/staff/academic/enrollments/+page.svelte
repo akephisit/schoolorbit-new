@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+
+	let { data } = $props();
+
 	import {
 		getAcademicStructure,
 		listClassrooms,
@@ -31,37 +34,37 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
-	let loading = true;
-	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
-	let classrooms: Classroom[] = [];
+	let loading = $state(true);
+	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
+	let classrooms = $state<Classroom[]>([]);
 
 	// Selection State
-	let selectedYearId = '';
-	let selectedClassroomId = '';
-	let currentClassroom: Classroom | undefined;
+	let selectedYearId = $state('');
+	let selectedClassroomId = $state('');
+	let currentClassroom = $state<Classroom | undefined>(undefined);
 
 	// Data State
-	let enrollments: StudentEnrollment[] = [];
-	let loadingEnrollments = false;
+	let enrollments = $state<StudentEnrollment[]>([]);
+	let loadingEnrollments = $state(false);
 
 	// Add Student Dialog State
-	let showAddDialog = false;
-	let studentCandidates: StudentLookupItem[] = [];
-	let selectedCandidateIds: string[] = [];
-	let loadingCandidates = false;
-	let searchQuery = '';
-	let isSubmitting = false;
-	let numberingMethod: 'append' | 'student_code' | 'name' | 'gender_name' = 'append';
+	let showAddDialog = $state(false);
+	let studentCandidates = $state<StudentLookupItem[]>([]);
+	let selectedCandidateIds = $state<string[]>([]);
+	let loadingCandidates = $state(false);
+	let searchQuery = $state('');
+	let isSubmitting = $state(false);
+	let numberingMethod = $state<'append' | 'student_code' | 'name' | 'gender_name'>('append');
 
 	// Remove Confirm Dialog State
-	let showRemoveDialog = false;
-	let enrollmentToRemove: StudentEnrollment | null = null;
-	let isRemoving = false;
+	let showRemoveDialog = $state(false);
+	let enrollmentToRemove = $state<StudentEnrollment | null>(null);
+	let isRemoving = $state(false);
 
 	// Auto Number Dialog State
-	let showAutoNumberDialog = false;
-	let selectedSortMethod: 'student_code' | 'name' | 'gender_name' = 'student_code';
-	let isAutoNumbering = false;
+	let showAutoNumberDialog = $state(false);
+	let selectedSortMethod = $state<'student_code' | 'name' | 'gender_name'>('student_code');
+	let isAutoNumbering = $state(false);
 
 	async function loadInitData() {
 		try {
@@ -243,6 +246,10 @@
 
 	onMount(loadInitData);
 </script>
+
+<svelte:head>
+	<title>{data.title} - SchoolOrbit</title>
+</svelte:head>
 
 <div class="space-y-6">
 	<!-- Header -->

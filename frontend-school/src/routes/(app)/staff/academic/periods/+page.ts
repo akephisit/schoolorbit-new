@@ -11,6 +11,6 @@ export const _meta = {
 
 export const load = async () => {
     return {
-        title: 'ตั้งค่าคาบเวลา'
+        title: _meta.menu.title
     };
 };

@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+
+	let { data } = $props();
+
 	import {
 		getAcademicStructure,
 		listClassrooms,
@@ -18,36 +21,28 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { 
-		Loader2, 
-		Layers, 
-		Filter, 
-		Plus, 
-		Users, 
-		School, 
-		Pencil 
-	} from 'lucide-svelte';
+	import { Loader2, Layers, Filter, Plus, Users, School, Pencil } from 'lucide-svelte';
 
-	let loading = true;
-	let structure: AcademicStructureData = { years: [], semesters: [], levels: [] };
-	let classrooms: Classroom[] = [];
-	let staffList: StaffLookupItem[] = [];
-	let activeLevelIds: string[] = [];
+	let loading = $state(true);
+	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
+	let classrooms = $state<Classroom[]>([]);
+	let staffList = $state<StaffLookupItem[]>([]);
+	let activeLevelIds = $state<string[]>([]);
 
-	let showCreateDialog = false;
-	let isSubmitting = false;
+	let showCreateDialog = $state(false);
+	let isSubmitting = $state(false);
 
 	// Filter State
-	let selectedYearId = '';
+	let selectedYearId = $state('');
 
 	// New Classroom Form
-	let newClassroom = {
+	let newClassroom = $state({
 		academic_year_id: '',
 		grade_level_id: '',
 		room_number: '',
 		advisor_id: '',
 		co_advisor_id: ''
-	};
+	});
 
 	async function loadInitData() {
 		try {
@@ -91,7 +86,11 @@
 	}
 
 	async function handleCreateClassroom() {
-		if (!newClassroom.academic_year_id || !newClassroom.grade_level_id || !newClassroom.room_number) {
+		if (
+			!newClassroom.academic_year_id ||
+			!newClassroom.grade_level_id ||
+			!newClassroom.room_number
+		) {
 			toast.error('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน');
 			return;
 		}
@@ -109,7 +108,7 @@
 			toast.success('สร้างห้องเรียนสำเร็จ');
 			showCreateDialog = false;
 			await fetchClassrooms();
-			
+
 			// Reset pertinent fields (keep year)
 			newClassroom.room_number = '';
 			newClassroom.advisor_id = '';
@@ -124,6 +123,10 @@
 
 	onMount(loadInitData);
 </script>
+
+<svelte:head>
+	<title>{data.title} - SchoolOrbit</title>
+</svelte:head>
 
 <div class="space-y-6">
 	<!-- Header -->

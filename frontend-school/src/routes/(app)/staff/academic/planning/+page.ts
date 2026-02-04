@@ -15,6 +15,6 @@ export const _meta = {
 
 export const load = async () => {
     return {
-        title: 'จัดแผนการเรียน (Course Planning)'
+        title: _meta.menu.title
     };
 };
