@@ -27,6 +27,7 @@
 	import Trash2 from 'lucide-svelte/icons/trash-2';
 	import Search from 'lucide-svelte/icons/search';
 	import GraduationCap from 'lucide-svelte/icons/graduation-cap';
+	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
@@ -351,14 +352,8 @@
 						{#each enrollments as item, i}
 							<Table.Row>
 								<Table.Cell>{i + 1}</Table.Cell>
-								<Table.Cell>
-									<Input
-										type="number"
-										class="h-8 w-16"
-										value={item.class_number}
-										onchange={(e) => handleClassNumberChange(item.id, e.currentTarget.value)}
-										placeholder="-"
-									/>
+								<Table.Cell class="font-mono font-medium text-center">
+									{item.class_number || '-'}
 								</Table.Cell>
 								<Table.Cell class="font-mono">{item.student_code || '-'}</Table.Cell>
 								<Table.Cell class="font-medium">{item.student_name}</Table.Cell>
@@ -464,77 +459,43 @@
 			<!-- Numbering Method Selection -->
 			<div class="px-6 py-4 border-t bg-muted/10">
 				<Label class="text-sm font-semibold mb-3 block">📌 วิธีกำหนดเลขที่</Label>
-				<div class="space-y-2 text-sm">
-					<label class="flex items-start gap-2 cursor-pointer">
-						<input
-							type="radio"
-							name="numberingMethod"
-							value="none"
-							bind:group={numberingMethod}
-							class="mt-0.5"
-						/>
-						<div class="flex-1">
+				<RadioGroup.Root bind:value={numberingMethod} class="space-y-3">
+					<div class="flex items-center space-x-2">
+						<RadioGroup.Item value="none" id="nm-none" />
+						<Label for="nm-none" class="font-normal cursor-pointer flex-1">
 							<span class="font-medium">ไม่กำหนดเลขที่</span>
 							<span class="text-muted-foreground ml-1">(กำหนดทีหลัง)</span>
-						</div>
-					</label>
-
-					<label class="flex items-start gap-2 cursor-pointer">
-						<input
-							type="radio"
-							name="numberingMethod"
-							value="append"
-							bind:group={numberingMethod}
-							class="mt-0.5"
-						/>
-						<div class="flex-1">
+						</Label>
+					</div>
+					<div class="flex items-center space-x-2">
+						<RadioGroup.Item value="append" id="nm-append" />
+						<Label for="nm-append" class="font-normal cursor-pointer flex-1">
 							<span class="font-medium">เรียงต่อท้ายอัตโนมัติ</span>
 							<span class="text-muted-foreground ml-1">(แนะนำ)</span>
-						</div>
-					</label>
-
-					<label class="flex items-start gap-2 cursor-pointer">
-						<input
-							type="radio"
-							name="numberingMethod"
-							value="student_code"
-							bind:group={numberingMethod}
-							class="mt-0.5"
-						/>
-						<div class="flex-1">
+						</Label>
+					</div>
+					<div class="flex items-center space-x-2">
+						<RadioGroup.Item value="student_code" id="nm-code" />
+						<Label for="nm-code" class="font-normal cursor-pointer flex-1">
 							<span class="font-medium">เรียงตามรหัสนักเรียน</span>
 							<span class="text-muted-foreground ml-1">(เรียงทั้งห้องใหม่)</span>
-						</div>
-					</label>
-
-					<label class="flex items-start gap-2 cursor-pointer">
-						<input
-							type="radio"
-							name="numberingMethod"
-							value="name"
-							bind:group={numberingMethod}
-							class="mt-0.5"
-						/>
-						<div class="flex-1">
+						</Label>
+					</div>
+					<div class="flex items-center space-x-2">
+						<RadioGroup.Item value="name" id="nm-name" />
+						<Label for="nm-name" class="font-normal cursor-pointer flex-1">
 							<span class="font-medium">เรียงตามชื่อ</span>
 							<span class="text-muted-foreground ml-1">(เรียงทั้งห้องใหม่)</span>
-						</div>
-					</label>
-
-					<label class="flex items-start gap-2 cursor-pointer">
-						<input
-							type="radio"
-							name="numberingMethod"
-							value="gender_name"
-							bind:group={numberingMethod}
-							class="mt-0.5"
-						/>
-						<div class="flex-1">
+						</Label>
+					</div>
+					<div class="flex items-center space-x-2">
+						<RadioGroup.Item value="gender_name" id="nm-gender" />
+						<Label for="nm-gender" class="font-normal cursor-pointer flex-1">
 							<span class="font-medium">เรียงตามเพศ + ชื่อ</span>
 							<span class="text-muted-foreground ml-1">(เรียงทั้งห้องใหม่)</span>
-						</div>
-					</label>
-				</div>
+						</Label>
+					</div>
+				</RadioGroup.Root>
 			</div>
 
 			<div class="p-4 border-t bg-muted/20 flex justify-between items-center">
@@ -625,75 +586,57 @@
 				<Label class="text-base font-semibold">วิธีการเรียง</Label>
 
 				<!-- Radio Group -->
-				<div class="space-y-3">
+				<RadioGroup.Root bind:value={selectedSortMethod} class="space-y-3">
 					<!-- Sort by Student Code -->
-					<label
-						class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors {selectedSortMethod ===
+					<div
+						class="flex items-start space-x-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors {selectedSortMethod ===
 						'student_code'
 							? 'bg-primary/5 border-primary'
 							: ''}"
 					>
-						<input
-							type="radio"
-							name="sortMethod"
-							value="student_code"
-							bind:group={selectedSortMethod}
-							class="mt-1"
-						/>
-						<div class="flex-1">
+						<RadioGroup.Item value="student_code" id="sm-code" class="mt-1" />
+						<Label for="sm-code" class="font-normal cursor-pointer flex-1">
 							<div class="font-medium">📋 เรียงตามรหัสนักเรียน</div>
 							<div class="text-sm text-muted-foreground mt-1">
 								เรียงตามลำดับรหัสนักเรียน (เช่น 67001, 67002, ...)
 							</div>
-						</div>
-					</label>
+						</Label>
+					</div>
 
 					<!-- Sort by Name -->
-					<label
-						class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors {selectedSortMethod ===
+					<div
+						class="flex items-start space-x-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors {selectedSortMethod ===
 						'name'
 							? 'bg-primary/5 border-primary'
 							: ''}"
 					>
-						<input
-							type="radio"
-							name="sortMethod"
-							value="name"
-							bind:group={selectedSortMethod}
-							class="mt-1"
-						/>
-						<div class="flex-1">
+						<RadioGroup.Item value="name" id="sm-name" class="mt-1" />
+						<Label for="sm-name" class="font-normal cursor-pointer flex-1">
 							<div class="font-medium">📝 เรียงตามชื่อ (ก-ฮ)</div>
 							<div class="text-sm text-muted-foreground mt-1">
 								เรียงตามลำดับตัวอักษรของชื่อนักเรียน
 							</div>
-						</div>
-					</label>
+						</Label>
+					</div>
 
 					<!-- Sort by Gender + Name -->
-					<label
-						class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors {selectedSortMethod ===
+					<div
+						class="flex items-start space-x-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors {selectedSortMethod ===
 						'gender_name'
 							? 'bg-primary/5 border-primary'
 							: ''}"
 					>
-						<input
-							type="radio"
-							name="sortMethod"
-							value="gender_name"
-							bind:group={selectedSortMethod}
-							class="mt-1"
-						/>
-						<div class="flex-1">
+						<RadioGroup.Item value="gender_name" id="sm-gender" class="mt-1" />
+						<Label for="sm-gender" class="font-normal cursor-pointer flex-1">
 							<div class="font-medium">👥 เรียงตามเพศ + ชื่อ</div>
 							<div class="text-sm text-muted-foreground mt-1">
 								• ชาย (ด.ช., นาย) เรียงก่อน<br />
 								• หญิง (ด.ญ., น.ส.) เรียงตาม<br />
 								• ภายในเพศเดียวกันเรียงตามชื่อ
 							</div>
-						</div>
-					</label>
-				</div>
+						</Label>
+					</div>
+				</RadioGroup.Root>
 
 				<div
 					class="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900 rounded-lg p-3"
