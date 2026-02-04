@@ -152,10 +152,28 @@ pub async fn get_own_profile(
             u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
             u.address, u.profile_image_url,
-            s.student_id, s.grade_level, s.class_room, s.student_number,
-            s.blood_type, s.allergies, s.medical_conditions as medical_conditions
+            s.student_id, 
+            CASE gl.level_type 
+                WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                ELSE CONCAT('?.', gl.year)
+            END as grade_level, 
+            c.name as class_room, 
+            sce.class_number as student_number,
+            s.blood_type, s.allergies, s.medical_conditions as medical_conditions,
+            u.status
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
+        LEFT JOIN LATERAL (
+            SELECT student_id, class_room_id, class_number
+            FROM student_class_enrollments 
+            WHERE student_id = u.id 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        ) sce ON true
+        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
+        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE u.id = $1 AND u.user_type = 'student' AND u.status = 'active'
         "#
     )
