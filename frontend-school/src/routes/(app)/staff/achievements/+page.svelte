@@ -43,6 +43,8 @@
 	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
 	import { toast } from 'svelte-sonner';
 
+	let { data } = $props();
+
 	// State
 	let loading = $state(false);
 	let achievements = $state<Achievement[]>([]);
@@ -218,6 +220,10 @@
 		}
 	});
 </script>
+
+<svelte:head>
+	<title>{data.title} - SchoolOrbit</title>
+</svelte:head>
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">

@@ -17,6 +17,6 @@ export const _meta = {
 
 export const load = async () => {
 	return {
-		title: 'จัดการข้อมูลเกียรติบัตร'
+		title: _meta.menu.title
 	};
 };

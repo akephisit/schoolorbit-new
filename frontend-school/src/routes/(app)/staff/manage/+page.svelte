@@ -13,6 +13,8 @@
 	} from '$lib/components/ui/dialog';
 	import { Users, Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
 
+	let { data } = $props();
+
 	let staffList: StaffListItem[] = $state([]);
 	let loading = $state(true);
 	let deleting = $state(false);
@@ -78,7 +80,7 @@
 </script>
 
 <svelte:head>
-	<title>จัดการบุคลากร - SchoolOrbit</title>
+	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
 <div class="space-y-6">
