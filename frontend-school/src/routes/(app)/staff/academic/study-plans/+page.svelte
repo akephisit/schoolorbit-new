@@ -95,6 +95,13 @@
 			const grade = gradeLevels.find((g) => g.id === selectedGrade);
 			if (!grade) return false;
 
+			// 0. Check if already added to this grade (regardless of term)
+			// Assuming unique subject per grade level
+			const isAlreadyAdded = planSubjects.some(
+				(s) => s.subject_id === subject.id && s.grade_level_id === selectedGrade
+			);
+			if (isAlreadyAdded) return false;
+
 			// 1. Check specific grade_level_ids (Specific Scope)
 			if (subject.grade_level_ids && subject.grade_level_ids.length > 0) {
 				return subject.grade_level_ids.includes(selectedGrade);
