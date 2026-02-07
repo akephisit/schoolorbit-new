@@ -37,6 +37,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { GraduationCap, Plus, Pencil, Trash2, BookOpen, ListTodo } from 'lucide-svelte';
 
 	let { data } = $props();
@@ -818,14 +819,12 @@
 								class:opacity-50={isAdded}
 								class:bg-muted={isAdded}
 							>
-								<input
-									type="checkbox"
-									value={subject.id}
-									class="rounded"
-									disabled={isAdded}
+								<Checkbox
 									checked={isAdded || selectedSubjects.includes(subject.id)}
-									onchange={(e) => {
-										if (e.currentTarget.checked) {
+									disabled={isAdded}
+									onCheckedChange={(v) => {
+										const checked = v === true; // Handle boolean | 'indeterminate'
+										if (checked) {
 											selectedSubjects = [...selectedSubjects, subject.id];
 										} else {
 											selectedSubjects = selectedSubjects.filter((id) => id !== subject.id);
