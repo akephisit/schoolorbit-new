@@ -95,7 +95,12 @@
 			const grade = gradeLevels.find((g) => g.id === selectedGrade);
 			if (!grade) return false;
 
-			// If subject has level_scope, check if it matches
+			// 1. Check specific grade_level_ids (Specific Scope)
+			if (subject.grade_level_ids && subject.grade_level_ids.length > 0) {
+				return subject.grade_level_ids.includes(selectedGrade);
+			}
+
+			// 2. If subject has level_scope, check if it matches
 			if (subject.level_scope) {
 				// level_scope can be 'ALL', 'M1', 'M2', 'P1', etc.
 				if (subject.level_scope.toUpperCase() === 'ALL') return true;
