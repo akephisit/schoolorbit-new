@@ -7,6 +7,7 @@
 		getAcademicStructure,
 		listClassrooms,
 		createClassroom,
+		updateClassroom,
 		getYearLevelConfig,
 		listStudyPlanVersions,
 		type AcademicStructureData,
@@ -33,6 +34,7 @@
 	let studyPlanVersions = $state<StudyPlanVersion[]>([]);
 
 	let showCreateDialog = $state(false);
+	let showEditDialog = $state(false);
 	let isSubmitting = $state(false);
 
 	// Filter State
@@ -42,6 +44,15 @@
 	let newClassroom = $state({
 		academic_year_id: '',
 		grade_level_id: '',
+		room_number: '',
+		advisor_id: '',
+		co_advisor_id: '',
+		study_plan_version_id: ''
+	});
+
+	// Edit Classroom Form
+	let editingClassroom = $state({
+		id: '',
 		room_number: '',
 		advisor_id: '',
 		co_advisor_id: '',
@@ -124,6 +135,40 @@
 		} catch (error) {
 			console.error(error);
 			toast.error('สร้างห้องเรียนไม่สำเร็จ (ชื่อห้องซ้ำหรือข้อมูลไม่ถูกต้อง)');
+		} finally {
+			isSubmitting = false;
+		}
+	}
+
+	function handleOpenEdit(room: Classroom) {
+		editingClassroom = {
+			id: room.id,
+			room_number: room.room_number || '',
+			advisor_id: room.advisor_id || '',
+			co_advisor_id: room.co_advisor_id || '',
+			study_plan_version_id: room.study_plan_version_id || ''
+		};
+		showEditDialog = true;
+	}
+
+	async function handleUpdateClassroom() {
+		if (!editingClassroom.room_number) {
+			toast.error('กรุณาระบุเลขห้อง');
+			return;
+		}
+		isSubmitting = true;
+		try {
+			await updateClassroom(editingClassroom.id, {
+				room_number: editingClassroom.room_number,
+				advisor_id: editingClassroom.advisor_id || undefined,
+				study_plan_version_id: editingClassroom.study_plan_version_id || undefined
+			});
+			toast.success('บันทึกข้อมูลสำเร็จ');
+			showEditDialog = false;
+			await fetchClassrooms();
+		} catch (error) {
+			console.error(error);
+			toast.error('บันทึกไม่สำเร็จ');
 		} finally {
 			isSubmitting = false;
 		}
@@ -221,7 +266,7 @@
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-right">
-								<Button variant="ghost" size="sm">
+								<Button variant="ghost" size="sm" onclick={() => handleOpenEdit(room)}>
 									<Pencil class="h-4 w-4" />
 								</Button>
 							</Table.Cell>
@@ -299,9 +344,7 @@
 								const v = studyPlanVersions.find(
 									(v) => v.id === newClassroom.study_plan_version_id
 								);
-								return v
-									? `${v.study_plan_name_th || ''} - ${v.version_name}`
-									: 'เลือกหลักสูตร';
+								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
 							})()}
 						</Select.Trigger>
 						<Select.Content>
@@ -331,6 +374,80 @@
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 					{/if}
 					บันทึก
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Edit Dialog -->
+	<Dialog.Root bind:open={showEditDialog}>
+		<Dialog.Content class="sm:max-w-[500px]">
+			<Dialog.Header>
+				<Dialog.Title>แก้ไขข้อมูลห้องเรียน</Dialog.Title>
+				<Dialog.Description>แก้ไขหมายเลขห้อง ครูที่ปรึกษา หรือหลักสูตร</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="grid gap-4 py-4">
+				<div class="grid gap-2">
+					<Label>ชื่อห้อง/เลขห้อง <span class="text-red-500">*</span></Label>
+					<Input placeholder="เช่น 1, 2, EP, Gifted" bind:value={editingClassroom.room_number} />
+					<p class="text-xs text-muted-foreground">
+						⚠️ การเปลี่ยนเลขห้องจะทำให้ รหัสห้องและชื่อห้องเปลี่ยนไปด้วย
+					</p>
+				</div>
+
+				<div class="grid gap-2">
+					<Label>ครูที่ปรึกษาหลัก</Label>
+					<Select.Root type="single" bind:value={editingClassroom.advisor_id}>
+						<Select.Trigger class="w-full">
+							{(() => {
+								const s = staffList.find((s) => s.id === editingClassroom.advisor_id);
+								return s ? `${s.title || ''}${s.name}` : '- ไม่ระบุ -';
+							})()}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">- ไม่ระบุ -</Select.Item>
+							{#each staffList as staff}
+								<Select.Item value={staff.id}
+									>{staff.title ? `${staff.title}` : ''}{staff.name}</Select.Item
+								>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="grid gap-2">
+					<Label>หลักสูตรสถานศึกษา (เวอร์ชัน) <span class="text-red-500">*</span></Label>
+					<Select.Root type="single" bind:value={editingClassroom.study_plan_version_id}>
+						<Select.Trigger class="w-full">
+							{(() => {
+								const v = studyPlanVersions.find(
+									(v) => v.id === editingClassroom.study_plan_version_id
+								);
+								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
+							})()}
+						</Select.Trigger>
+						<Select.Content>
+							{#each studyPlanVersions as version}
+								<Select.Item value={version.id}>
+									{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+					<p class="text-xs text-muted-foreground">
+						💡 หลักสูตรจะใช้สำหรับสร้างรายวิชาอัตโนมัติในภายหลัง
+					</p>
+				</div>
+			</div>
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showEditDialog = false)}>ยกเลิก</Button>
+				<Button onclick={handleUpdateClassroom} disabled={isSubmitting}>
+					{#if isSubmitting}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					บันทึกการแก้ไข
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>

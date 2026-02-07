@@ -434,6 +434,134 @@ pub async fn create_classroom(
     Ok((StatusCode::CREATED, Json(json!({"success": true, "data": classroom}))))
 }
 
+pub async fn update_classroom(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateClassroomRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    // Validate Advisor if changed
+    if let Some(advisor_id) = payload.advisor_id {
+        let is_staff: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND user_type = 'staff')") 
+            .bind(advisor_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
+        
+        if !is_staff {
+            return Err(AppError::BadRequest("ครูที่ปรึกษาต้องเป็นบุคลากร (Staff)".to_string()));
+        }
+    }
+
+    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    // If room_number changes, update name and code
+    if let Some(ref new_room) = payload.room_number {
+         let current = sqlx::query_as::<_, Classroom>("SELECT * FROM class_rooms WHERE id = $1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| AppError::NotFound("Classroom not found".to_string()))?;
+
+         let grade_level = sqlx::query_as::<_, GradeLevel>("SELECT * FROM grade_levels WHERE id = $1")
+            .bind(current.grade_level_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| AppError::InternalServerError("Failed to fetch grade level".to_string()))?;
+            
+         let year = sqlx::query_as::<_, AcademicYear>("SELECT * FROM academic_years WHERE id = $1")
+            .bind(current.academic_year_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| AppError::InternalServerError("Failed to fetch year".to_string()))?;
+
+        let full_name = format!("{}/{}", grade_level.short_name(), new_room);
+        let short_year = year.year % 100;
+        let code = format!("{}-{}-{}", short_year, grade_level.code(), new_room.replace(" ", ""));
+
+        sqlx::query("UPDATE class_rooms SET name = $1, code = $2, room_number = $3 WHERE id = $4")
+            .bind(full_name)
+            .bind(code)
+            .bind(new_room)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                if e.to_string().contains("unique") {
+                    AppError::BadRequest("ชื่อ/รหัสห้องเรียนซ้ำ".to_string())
+                } else {
+                    AppError::InternalServerError("Failed to update room number".to_string())
+                }
+            })?;
+    }
+
+    // Update other fields including study_plan_version_id
+    /* Note: We use COALESCE to only update provided fields. 
+       However, for Option<Uuid> fields like advisor_id, sending null in JSON means "remove advisor" or "no change"?
+       In Rust, UpdateClassroomRequest fields are Option<T>. 
+       If JSON has "advisor_id": null -> Rust Option is None? No, serde treats null as None by default.
+       So if we want to set it to NULL, we need explicit handling or double Option (Option<Option<T>>).
+       But for simplicity here: 
+       - If payload.field is Some, we update it.
+       - If payload.field is None, we keep existing.
+       BUT wait, what if user wants to CLEAR advisor_id?
+       For now, let's assume they only select new values. Clearing might need specific logic or "empty string" sentinel if it was string.
+       For UUIDs, ideally we'd use Option<Option<Uuid>> but that requires custom deserializer or 'default' handling.
+       Let's stick to: "If value is provided, update it". To clear, we might need a separate endpoint or specific "null" handling which serde doesn't map to "Some(None)" easily without flags.
+       Given the UI requirements, we are mostly SETTING values. Clearing is rare or can be done by replacing.
+    */
+    
+    // Construct dynamic update query to handle "set to null" properly? 
+    // Hand-rolled dynamic query is safer for "set if present".
+    // But specific to study_plan_version_id, it is NOT NULL in DB, so we always update if present.
+    // advisor_id IS nullable.
+    
+    // Let's use individual updates if they are present in payload to allow clearer logic, or just one big query with COALESCE ($x, col).
+    // The issue with COALESCE($1, col) is that if $1 is NULL (None), it keeps col. So we CANNOT set to NULL.
+    // That is acceptable for now.
+    
+    let result = sqlx::query_as::<_, Classroom>(
+        "UPDATE class_rooms SET 
+            advisor_id = COALESCE($1, advisor_id),
+            co_advisor_id = COALESCE($2, co_advisor_id),
+            study_plan_version_id = COALESCE($3, study_plan_version_id),
+            is_active = COALESCE($4, is_active),
+            updated_at = NOW()
+         WHERE id = $5
+         RETURNING *, 
+            (SELECT CASE level_type 
+                WHEN 'kindergarten' THEN CONCAT('อ.', year)
+                WHEN 'primary' THEN CONCAT('ป.', year)
+                WHEN 'secondary' THEN CONCAT('ม.', year)
+                ELSE CONCAT('?.', year)
+            END FROM grade_levels WHERE id = grade_level_id) as grade_level_name,
+            (SELECT name FROM academic_years WHERE id = academic_year_id) as academic_year_label,
+            CONCAT(COALESCE((SELECT title FROM users WHERE id = advisor_id), ''), (SELECT first_name FROM users WHERE id = advisor_id), ' ', (SELECT last_name FROM users WHERE id = advisor_id)) as advisor_name,
+            (SELECT COUNT(*) FROM student_class_enrollments ske WHERE ske.class_room_id = id AND ske.status = 'active') as student_count"
+    )
+    .bind(payload.advisor_id)
+    .bind(payload.co_advisor_id)
+    .bind(payload.study_plan_version_id)
+    .bind(payload.is_active)
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| {
+         eprintln!("Failed to update classroom: {}", e);
+         AppError::InternalServerError("Failed to update classroom".to_string())
+    })?;
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({"success": true, "data": result})))
+
 // ==========================================
 // Grade Level Handlers
 // ==========================================

@@ -24,6 +24,7 @@ pub fn academic_routes() -> Router<AppState> {
 
         // Classrooms
         .route("/classrooms", get(handlers::list_classrooms).post(handlers::create_classroom))
+        .route("/classrooms/{id}", put(handlers::update_classroom))
 
         // Enrollments
         .route("/enrollments", post(handlers::enroll_students))

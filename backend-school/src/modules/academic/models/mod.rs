@@ -189,6 +189,7 @@ pub struct Classroom {
     pub room_number: Option<String>, // Defines the variant e.g. "1", "2", "EP"
     pub advisor_id: Option<Uuid>,
     pub co_advisor_id: Option<Uuid>,
+    pub study_plan_version_id: Option<Uuid>, // Added for course generation
     pub is_active: bool,
     // Joined fields
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -216,6 +217,7 @@ pub struct UpdateClassroomRequest {
     pub room_number: Option<String>,
     pub advisor_id: Option<Uuid>,
     pub co_advisor_id: Option<Uuid>,
+    pub study_plan_version_id: Option<Uuid>,
     pub is_active: Option<bool>,
 }
 
