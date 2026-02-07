@@ -8,8 +8,10 @@
 		listClassrooms,
 		createClassroom,
 		getYearLevelConfig,
+		listStudyPlanVersions,
 		type AcademicStructureData,
-		type Classroom
+		type Classroom,
+		type StudyPlanVersion
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { toast } from 'svelte-sonner';
@@ -28,6 +30,7 @@
 	let classrooms = $state<Classroom[]>([]);
 	let staffList = $state<StaffLookupItem[]>([]);
 	let activeLevelIds = $state<string[]>([]);
+	let studyPlanVersions = $state<StudyPlanVersion[]>([]);
 
 	let showCreateDialog = $state(false);
 	let isSubmitting = $state(false);
@@ -41,18 +44,21 @@
 		grade_level_id: '',
 		room_number: '',
 		advisor_id: '',
-		co_advisor_id: ''
+		co_advisor_id: '',
+		study_plan_version_id: ''
 	});
 
 	async function loadInitData() {
 		try {
 			loading = true;
-			const [structureRes, staffData] = await Promise.all([
+			const [structureRes, staffData, versionsRes] = await Promise.all([
 				getAcademicStructure(),
-				lookupStaff() // Lookup API - only requires authentication
+				lookupStaff(), // Lookup API - only requires authentication
+				listStudyPlanVersions({ active_only: true })
 			]);
 			structure = structureRes.data;
 			staffList = staffData;
+			studyPlanVersions = versionsRes.data;
 
 			// Auto-select latest active year
 			const activeYear = structure.years.find((y) => y.is_active) || structure.years[0];
@@ -101,7 +107,8 @@
 			const payload = {
 				...newClassroom,
 				advisor_id: newClassroom.advisor_id || undefined,
-				co_advisor_id: newClassroom.co_advisor_id || undefined
+				co_advisor_id: newClassroom.co_advisor_id || undefined,
+				study_plan_version_id: newClassroom.study_plan_version_id || undefined
 			};
 
 			await createClassroom(payload);
@@ -281,6 +288,33 @@
 							{/each}
 						</Select.Content>
 					</Select.Root>
+				</div>
+
+				<div class="grid gap-2">
+					<Label>หลักสูตรสถานศึกษา (เวอร์ชัน)</Label>
+					<Select.Root type="single" bind:value={newClassroom.study_plan_version_id}>
+						<Select.Trigger class="w-full">
+							{(() => {
+								const v = studyPlanVersions.find(
+									(v) => v.id === newClassroom.study_plan_version_id
+								);
+								return v
+									? `${v.study_plan_name_th || ''} - ${v.version_name}`
+									: '- ไม่ระบุ (เพิ่มรายวิชาด้วยตนเอง) -';
+							})()}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">- ไม่ระบุ (เพิ่มรายวิชาด้วยตนเอง) -</Select.Item>
+							{#each studyPlanVersions as version}
+								<Select.Item value={version.id}>
+									{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+					<p class="text-xs text-muted-foreground">
+						💡 หากเลือกหลักสูตร คุณสามารถใช้ฟีเจอร์ "สร้างรายวิชาอัตโนมัติ" ได้ในภายหลัง
+					</p>
 				</div>
 
 				<div class="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground">

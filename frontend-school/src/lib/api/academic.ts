@@ -48,6 +48,7 @@ export interface Classroom {
     room_number: string;
     advisor_id?: string;
     co_advisor_id?: string;
+    study_plan_version_id?: string;
     is_active: boolean;
     grade_level_name?: string;
     academic_year_label?: string;
@@ -410,3 +411,184 @@ export const updateCourse = async (id: string, data: {
         body: JSON.stringify(data)
     });
 };
+
+// ==========================================
+// Study Plans (หลักสูตรสถานศึกษา)
+// ==========================================
+
+export interface StudyPlan {
+    id: string;
+    code: string;
+    name_th: string;
+    name_en?: string;
+    description?: string;
+    level_scope?: string; // 'kindergarten' | 'primary' | 'secondary' | 'all'
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface StudyPlanVersion {
+    id: string;
+    study_plan_id: string;
+    version_name: string;
+    start_academic_year_id: string;
+    end_academic_year_id?: string;
+    description?: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+    // Joined fields
+    study_plan_name_th?: string;
+    start_year_name?: string;
+}
+
+export interface StudyPlanSubject {
+    id: string;
+    study_plan_version_id: string;
+    grade_level_id: string;
+    term: string; // '1', '2', '3'
+    subject_id: string;
+    subject_code: string;
+    is_required: boolean;
+    display_order: number;
+    // Joined fields
+    subject_name_th?: string;
+    subject_name_en?: string;
+    subject_credit?: number;
+    subject_type?: string;
+    grade_level_name?: string;
+}
+
+// Study Plans CRUD
+export const listStudyPlans = async (filters: {
+    active_only?: boolean;
+    level_scope?: string;
+} = {}): Promise<{ data: StudyPlan[] }> => {
+    const params = new URLSearchParams();
+    if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
+    if (filters.level_scope) params.append('level_scope', filters.level_scope);
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return await fetchApi(`/api/academic/study-plans${queryString}`);
+};
+
+export const getStudyPlan = async (id: string): Promise<{ data: StudyPlan }> => {
+    return await fetchApi(`/api/academic/study-plans/${id}`);
+};
+
+export const createStudyPlan = async (data: {
+    code: string;
+    name_th: string;
+    name_en?: string;
+    description?: string;
+    level_scope?: string;
+}) => {
+    return await fetchApi('/api/academic/study-plans', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const updateStudyPlan = async (id: string, data: Partial<StudyPlan>) => {
+    return await fetchApi(`/api/academic/study-plans/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};
+
+export const deleteStudyPlan = async (id: string) => {
+    return await fetchApi(`/api/academic/study-plans/${id}`, {
+        method: 'DELETE'
+    });
+};
+
+// Study Plan Versions CRUD
+export const listStudyPlanVersions = async (filters: {
+    study_plan_id?: string;
+    active_only?: boolean;
+} = {}): Promise<{ data: StudyPlanVersion[] }> => {
+    const params = new URLSearchParams();
+    if (filters.study_plan_id) params.append('study_plan_id', filters.study_plan_id);
+    if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return await fetchApi(`/api/academic/study-plan-versions${queryString}`);
+};
+
+export const getStudyPlanVersion = async (id: string): Promise<{ data: StudyPlanVersion }> => {
+    return await fetchApi(`/api/academic/study-plan-versions/${id}`);
+};
+
+export const createStudyPlanVersion = async (data: {
+    study_plan_id: string;
+    version_name: string;
+    start_academic_year_id: string;
+    end_academic_year_id?: string;
+    description?: string;
+}) => {
+    return await fetchApi('/api/academic/study-plan-versions', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const updateStudyPlanVersion = async (id: string, data: Partial<StudyPlanVersion>) => {
+    return await fetchApi(`/api/academic/study-plan-versions/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};
+
+export const deleteStudyPlanVersion = async (id: string) => {
+    return await fetchApi(`/api/academic/study-plan-versions/${id}`, {
+        method: 'DELETE'
+    });
+};
+
+// Study Plan Subjects Management
+export const listStudyPlanSubjects = async (filters: {
+    study_plan_version_id?: string;
+    grade_level_id?: string;
+    term?: string;
+} = {}): Promise<{ data: StudyPlanSubject[] }> => {
+    const params = new URLSearchParams();
+    if (filters.study_plan_version_id) params.append('study_plan_version_id', filters.study_plan_version_id);
+    if (filters.grade_level_id) params.append('grade_level_id', filters.grade_level_id);
+    if (filters.term) params.append('term', filters.term);
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return await fetchApi(`/api/academic/study-plan-versions/${filters.study_plan_version_id}/subjects${queryString}`);
+};
+
+export const addSubjectsToVersion = async (versionId: string, subjects: {
+    subject_id: string;
+    grade_level_id: string;
+    term: string;
+    is_required?: boolean;
+    display_order?: number;
+}[]) => {
+    return await fetchApi(`/api/academic/study-plan-versions/${versionId}/subjects`, {
+        method: 'POST',
+        body: JSON.stringify({ subjects })
+    });
+};
+
+export const deleteStudyPlanSubject = async (id: string) => {
+    return await fetchApi(`/api/academic/study-plan-subjects/${id}`, {
+        method: 'DELETE'
+    });
+};
+
+// Bulk: Generate Courses from Study Plan
+export const generateCoursesFromPlan = async (data: {
+    classroom_id: string;
+    academic_semester_id: string;
+    skip_existing?: boolean;
+}): Promise<{ data: { added_count: number; skipped_count: number; message: string } }> => {
+    return await fetchApi('/api/academic/planning/generate-from-plan', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+

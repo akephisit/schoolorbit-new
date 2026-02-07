@@ -50,4 +50,19 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/timetable", get(handlers::timetable::list_timetable_entries).post(handlers::timetable::create_timetable_entry))
         .route("/timetable/batch", post(handlers::timetable::create_batch_timetable_entries))
         .route("/timetable/{id}", axum::routing::put(handlers::timetable::update_timetable_entry).delete(handlers::timetable::delete_timetable_entry))
+
+        // Study Plans (หลักสูตรสถานศึกษา)
+        .route("/study-plans", get(handlers::study_plans::list_study_plans).post(handlers::study_plans::create_study_plan))
+        .route("/study-plans/{id}", get(handlers::study_plans::get_study_plan).put(handlers::study_plans::update_study_plan).delete(handlers::study_plans::delete_study_plan))
+        
+        // Study Plan Versions
+        .route("/study-plan-versions", get(handlers::study_plans::list_study_plan_versions).post(handlers::study_plans::create_study_plan_version))
+        .route("/study-plan-versions/{id}", get(handlers::study_plans::get_study_plan_version).put(handlers::study_plans::update_study_plan_version).delete(handlers::study_plans::delete_study_plan_version))
+        
+        // Study Plan Subjects
+        .route("/study-plan-versions/{id}/subjects", get(handlers::study_plans::list_study_plan_subjects).post(handlers::study_plans::add_subjects_to_version))
+        .route("/study-plan-subjects/{id}", axum::routing::delete(handlers::study_plans::delete_study_plan_subject))
+        
+        // Bulk: Generate Courses from Study Plan
+        .route("/planning/generate-from-plan", post(handlers::study_plans::generate_courses_from_plan))
 }

@@ -9,6 +9,7 @@ use chrono::NaiveDate;
 pub mod curriculum;
 pub mod course_planning;
 pub mod timetable;
+pub mod study_plans;
 
 // ==========================================
 // Academic Year Models
@@ -207,6 +208,7 @@ pub struct CreateClassroomRequest {
     pub room_number: String,
     pub advisor_id: Option<Uuid>,
     pub co_advisor_id: Option<Uuid>,
+    pub study_plan_version_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

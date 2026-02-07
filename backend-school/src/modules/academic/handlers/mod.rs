@@ -8,6 +8,7 @@ use crate::AppState;
 pub mod subjects;
 pub mod course_planning;
 pub mod timetable;
+pub mod study_plans;
 
 use axum::{
     extract::{Path, Query, State},
@@ -391,8 +392,8 @@ pub async fn create_classroom(
 
     // 5. Insert
     let classroom = sqlx::query_as::<_, Classroom>(
-        "INSERT INTO class_rooms (code, name, academic_year_id, grade_level_id, room_number, advisor_id, co_advisor_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "INSERT INTO class_rooms (code, name, academic_year_id, grade_level_id, room_number, advisor_id, co_advisor_id, study_plan_version_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *, 
             (SELECT CASE level_type 
                 WHEN 'kindergarten' THEN CONCAT('อ.', year)
@@ -411,6 +412,7 @@ pub async fn create_classroom(
     .bind(&payload.room_number)
     .bind(payload.advisor_id)
     .bind(payload.co_advisor_id)
+    .bind(payload.study_plan_version_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
