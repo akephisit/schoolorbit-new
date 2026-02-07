@@ -562,17 +562,23 @@ pub async fn generate_courses_from_plan(
         }
         
         // Insert
+        // Insert
         sqlx::query(
             "INSERT INTO classroom_courses 
-             (classroom_id, subject_id, academic_semester_id, settings)
-             VALUES ($1, $2, $3, '{}'::jsonb)
+             (classroom_id, subject_id, academic_semester_id, settings, primary_instructor_id)
+             SELECT $1, $2, $3, '{}'::jsonb, s.default_instructor_id
+             FROM subjects s WHERE s.id = $2
              ON CONFLICT (classroom_id, subject_id, academic_semester_id) DO NOTHING"
         )
         .bind(req.classroom_id)
         .bind(subject_id)
         .bind(req.academic_semester_id)
         .execute(&mut *tx)
-        .await?;
+        .await
+        .map_err(|e| {
+             eprintln!("Failed to generate course: {}", e);
+             AppError::InternalServerError("Database error".to_string())
+        })?;
         
         added += 1;
     }
