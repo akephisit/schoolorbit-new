@@ -71,6 +71,21 @@
 	let selectedGrade = $state('');
 	let selectedTerm = $state('1');
 
+	// Derived: Filter grade levels based on selected version's study plan level_scope
+	let filteredGradeLevels = $derived(
+		gradeLevels.filter((grade) => {
+			if (!selectedVersion) return true; // Show all if no version selected
+
+			// Get the study plan's level_scope
+			const plan = plans.find((p) => p.id === selectedVersion!.study_plan_id);
+			if (!plan || !plan.level_scope || plan.level_scope === 'all') return true;
+
+			// Check if grade level matches the plan's scope
+			const levelType = grade.level_type; // 'kindergarten', 'primary', 'secondary'
+			return levelType === plan.level_scope;
+		})
+	);
+
 	// Derived: Filter subjects based on selected grade
 	let filteredSubjects = $derived(
 		subjects.filter((subject) => {
@@ -257,8 +272,18 @@
 	function handleOpenAddSubjects(version: StudyPlanVersion) {
 		selectedVersion = version;
 		selectedSubjects = [];
-		selectedGrade = gradeLevels[0]?.id || '';
 		selectedTerm = '1';
+
+		// Calculate valid grade levels based on plan scope
+		const plan = plans.find((p) => p.id === version.study_plan_id);
+		let validGrades = gradeLevels;
+		if (plan && plan.level_scope && plan.level_scope !== 'all') {
+			validGrades = gradeLevels.filter((g) => g.level_type === plan.level_scope);
+		}
+
+		// Set first valid grade as default
+		selectedGrade = validGrades.length > 0 ? validGrades[0].id : '';
+
 		showSubjectsDialog = true;
 	}
 
@@ -734,7 +759,7 @@
 							{gradeLevels.find((g) => g.id === selectedGrade)?.name || 'เลือกระดับชั้น'}
 						</Select.Trigger>
 						<Select.Content>
-							{#each gradeLevels as level}
+							{#each filteredGradeLevels as level}
 								<Select.Item value={level.id}>{level.name}</Select.Item>
 							{/each}
 						</Select.Content>
