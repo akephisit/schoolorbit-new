@@ -561,6 +561,7 @@ pub async fn update_classroom(
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok(Json(json!({"success": true, "data": result})))
+}
 
 // ==========================================
 // Grade Level Handlers
