@@ -39,7 +39,17 @@ impl IntoResponse for AppError {
                 // Log the actual db error
                 tracing::error!("Database error: {:?}", err);
                 match err {
-                    sqlx::Error::RowNotFound => (StatusCode::NOT_FOUND, "Resource not found".to_string()),
+                    sqlx::Error::RowNotFound => (StatusCode::NOT_FOUND, "ไม่พบข้อมูล".to_string()),
+                    sqlx::Error::Database(db_err) => {
+                        let code = db_err.code().unwrap_or_default();
+                        if code == "23503" || code == "23001" {
+                            (StatusCode::BAD_REQUEST, "ไม่สามารถลบหรือแก้ไขข้อมูลได้ เนื่องจากข้อมูลนี้ถูกใช้งานอยู่ในส่วนอื่นของระบบ".to_string())
+                        } else if code == "23505" {
+                            (StatusCode::CONFLICT, "ข้อมูลซ้ำกับที่มีอยู่ในระบบแล้ว".to_string())
+                        } else {
+                            (StatusCode::INTERNAL_SERVER_ERROR, "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string())
+                        }
+                    },
                     _ => (StatusCode::INTERNAL_SERVER_ERROR, "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string()),
                 }
             },
