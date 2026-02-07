@@ -95,13 +95,6 @@
 			const grade = gradeLevels.find((g) => g.id === selectedGrade);
 			if (!grade) return false;
 
-			// 0. Check if already added to this grade (regardless of term)
-			// Assuming unique subject per grade level
-			const isAlreadyAdded = planSubjects.some(
-				(s) => s.subject_id === subject.id && s.grade_level_id === selectedGrade
-			);
-			if (isAlreadyAdded) return false;
-
 			// 1. Check specific grade_level_ids (Specific Scope)
 			if (subject.grade_level_ids && subject.grade_level_ids.length > 0) {
 				return subject.grade_level_ids.includes(selectedGrade);
@@ -811,13 +804,26 @@
 							{/if}
 						</div>
 					{:else}
-						{#each filteredSubjects as subject}
-							<label class="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer">
+						{#each [...filteredSubjects].sort((a, b) => {
+							const aAdded = planSubjects.some((ps) => ps.subject_id === a.id && ps.grade_level_id === selectedGrade);
+							const bAdded = planSubjects.some((ps) => ps.subject_id === b.id && ps.grade_level_id === selectedGrade);
+							// Sort: Not added first (0), Added last (1)
+							return Number(aAdded) - Number(bAdded) || a.code.localeCompare(b.code);
+						}) as subject}
+							{@const isAdded = planSubjects.some(
+								(ps) => ps.subject_id === subject.id && ps.grade_level_id === selectedGrade
+							)}
+							<label
+								class="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer transition-colors"
+								class:opacity-50={isAdded}
+								class:bg-muted={isAdded}
+							>
 								<input
 									type="checkbox"
 									value={subject.id}
 									class="rounded"
-									checked={selectedSubjects.includes(subject.id)}
+									disabled={isAdded}
+									checked={isAdded || selectedSubjects.includes(subject.id)}
 									onchange={(e) => {
 										if (e.currentTarget.checked) {
 											selectedSubjects = [...selectedSubjects, subject.id];
@@ -826,11 +832,21 @@
 										}
 									}}
 								/>
-								<span class="font-medium">{subject.code}</span>
-								<span class="text-sm">{subject.name_th}</span>
-								{#if subject.level_scope && subject.level_scope.toUpperCase() !== 'ALL'}
-									<Badge variant="outline" class="text-xs">{subject.level_scope}</Badge>
-								{/if}
+								<div class="flex-1 flex items-center justify-between">
+									<div class="flex flex-col">
+										<div class="flex items-center gap-2">
+											<span class="font-medium text-sm">{subject.code}</span>
+											{#if isAdded}
+												<Badge variant="secondary" class="text-[10px] px-1 h-4">เลือกแล้ว</Badge>
+											{/if}
+										</div>
+										<span class="text-xs text-muted-foreground">{subject.name_th}</span>
+									</div>
+
+									{#if subject.level_scope && subject.level_scope.toUpperCase() !== 'ALL'}
+										<Badge variant="outline" class="text-[10px] h-5">{subject.level_scope}</Badge>
+									{/if}
+								</div>
 							</label>
 						{/each}
 					{/if}
