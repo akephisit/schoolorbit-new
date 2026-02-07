@@ -430,6 +430,7 @@
 											<Button
 												onclick={() => {
 													selectedPlan = plan;
+													selectedVersion = null;
 													loadVersions(plan.id);
 													activeTab = 'versions';
 												}}
