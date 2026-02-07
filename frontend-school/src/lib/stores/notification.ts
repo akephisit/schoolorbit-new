@@ -68,7 +68,8 @@ function createNotificationStore() {
 
         initSSE() {
             if (typeof EventSource === 'undefined') return;
-            if (eventSource?.readyState === 1) return; // Already connected
+            // 0 = CONNECTING, 1 = OPEN
+            if (eventSource && (eventSource.readyState === 1 || eventSource.readyState === 0)) return;
 
             eventSource = new EventSource(`${BACKEND_URL}/api/notifications/stream`, {
                 withCredentials: true
@@ -112,8 +113,8 @@ function createNotificationStore() {
 
             eventSource.onerror = (err) => {
                 console.error('SSE Error', err);
-                eventSource?.close();
-                // Reconnect logic usually handled by browser for SSE
+                // Do not close explicitly; let the browser handle reconnection
+                // eventSource?.close();
             };
         },
 
