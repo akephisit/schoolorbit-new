@@ -197,7 +197,7 @@ pub async fn delete_study_plan(
         .execute(&pool)
         .await?;
     
-    Ok((StatusCode::NO_CONTENT, Json(json!({"success": true}))))
+    Ok((StatusCode::OK, Json(json!({"success": true}))))
 }
 
 // ============================================
@@ -353,7 +353,7 @@ pub async fn delete_study_plan_version(
         .execute(&pool)
         .await?;
     
-    Ok((StatusCode::NO_CONTENT, Json(json!({"success": true}))))
+    Ok((StatusCode::OK, Json(json!({"success": true}))))
 }
 
 // ============================================
@@ -479,7 +479,7 @@ pub async fn delete_study_plan_subject(
         .execute(&pool)
         .await?;
     
-    Ok((StatusCode::NO_CONTENT, Json(json!({"success": true}))))
+    Ok((StatusCode::OK, Json(json!({"success": true}))))
 }
 
 // ============================================
