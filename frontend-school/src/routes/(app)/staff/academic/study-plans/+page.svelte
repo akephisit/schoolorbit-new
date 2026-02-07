@@ -92,6 +92,11 @@
 		subjects.filter((subject) => {
 			if (!selectedGrade) return false; // Don't show any subjects if no grade selected
 
+			// Filter by Term
+			if (selectedTerm && subject.term && subject.term !== selectedTerm) {
+				return false;
+			}
+
 			// Get the grade level info
 			const grade = gradeLevels.find((g) => g.id === selectedGrade);
 			if (!grade) return false;
@@ -835,6 +840,14 @@
 									<div class="flex flex-col">
 										<div class="flex items-center gap-2">
 											<span class="font-medium text-sm">{subject.code}</span>
+											{#if subject.term}
+												<Badge
+													variant="outline"
+													class="text-[10px] px-1 h-4 bg-blue-50 text-blue-700 border-blue-200"
+												>
+													เทอม {subject.term}
+												</Badge>
+											{/if}
 											{#if isAdded}
 												<Badge variant="secondary" class="text-[10px] px-1 h-4">เลือกแล้ว</Badge>
 											{/if}
