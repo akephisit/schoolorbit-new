@@ -71,6 +71,37 @@
 	let selectedGrade = $state('');
 	let selectedTerm = $state('1');
 
+	// Derived: Filter subjects based on selected grade
+	let filteredSubjects = $derived(
+		subjects.filter((subject) => {
+			if (!selectedGrade) return true; // Show all if no grade selected
+
+			// Get the grade level info
+			const grade = gradeLevels.find((g) => g.id === selectedGrade);
+			if (!grade) return true;
+
+			// If subject has level_scope, check if it matches
+			if (subject.level_scope) {
+				// level_scope can be 'ALL', 'M1', 'M2', 'P1', etc.
+				if (subject.level_scope.toUpperCase() === 'ALL') return true;
+
+				// Match by shortname (e.g., 'ม.1' matches 'M1')
+				const gradeShortName = grade.code || ''; // e.g., 'ม.1'
+				const scopeUpper = subject.level_scope.toUpperCase(); // e.g., 'M1'
+
+				// Convert 'ม.1' to 'M1', 'ป.1' to 'P1', etc.
+				const normalizedGrade = gradeShortName
+					.replace('ม.', 'M')
+					.replace('ป.', 'P')
+					.replace('อ.', 'K');
+
+				return scopeUpper === normalizedGrade;
+			}
+
+			return true; // If no level_scope, show for all grades
+		})
+	);
+
 	function getEmptyPlanForm(): {
 		id: string;
 		code: string;
@@ -725,27 +756,45 @@
 			<div class="space-y-2">
 				<Label>เลือกรายวิชา</Label>
 				<div class="border rounded-md p-2 max-h-[300px] overflow-y-auto space-y-1">
-					{#each subjects as subject}
-						<label class="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer">
-							<input
-								type="checkbox"
-								value={subject.id}
-								class="rounded"
-								checked={selectedSubjects.includes(subject.id)}
-								onchange={(e) => {
-									if (e.currentTarget.checked) {
-										selectedSubjects = [...selectedSubjects, subject.id];
-									} else {
-										selectedSubjects = selectedSubjects.filter((id) => id !== subject.id);
-									}
-								}}
-							/>
-							<span class="font-medium">{subject.code}</span>
-							<span class="text-sm">{subject.name_th}</span>
-						</label>
-					{/each}
+					{#if filteredSubjects.length === 0}
+						<div class="text-center text-muted-foreground p-4">
+							{#if selectedGrade}
+								ไม่พบรายวิชาสำหรับระดับชั้นนี้
+							{:else}
+								กรุณาเลือกระดับชั้น
+							{/if}
+						</div>
+					{:else}
+						{#each filteredSubjects as subject}
+							<label class="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer">
+								<input
+									type="checkbox"
+									value={subject.id}
+									class="rounded"
+									checked={selectedSubjects.includes(subject.id)}
+									onchange={(e) => {
+										if (e.currentTarget.checked) {
+											selectedSubjects = [...selectedSubjects, subject.id];
+										} else {
+											selectedSubjects = selectedSubjects.filter((id) => id !== subject.id);
+										}
+									}}
+								/>
+								<span class="font-medium">{subject.code}</span>
+								<span class="text-sm">{subject.name_th}</span>
+								{#if subject.level_scope && subject.level_scope.toUpperCase() !== 'ALL'}
+									<Badge variant="outline" class="text-xs">{subject.level_scope}</Badge>
+								{/if}
+							</label>
+						{/each}
+					{/if}
 				</div>
-				<p class="text-xs text-muted-foreground">เลือกแล้ว: {selectedSubjects.length} วิชา</p>
+				<p class="text-xs text-muted-foreground">
+					เลือกแล้ว: {selectedSubjects.length} วิชา
+					{#if filteredSubjects.length > 0}
+						(จาก {filteredSubjects.length} วิชาที่แสดง)
+					{/if}
+				</p>
 			</div>
 		</div>
 
