@@ -47,6 +47,7 @@ pub struct GradeLevelLookupItem {
     pub code: String,
     pub name: String,
     pub short_name: Option<String>,
+    pub level_type: String,
     pub level_order: i32,
 }
 

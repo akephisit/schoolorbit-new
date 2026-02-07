@@ -388,6 +388,7 @@ pub async fn lookup_grade_levels(
             code,
             name,
             short_name: Some(short_name),
+            level_type: r.level_type,
             level_order: order_base * 100 + r.year,
         }
     }).collect();
