@@ -43,7 +43,7 @@ impl IntoResponse for AppError {
                     sqlx::Error::Database(db_err) => {
                         let code = db_err.code().unwrap_or_default();
                         if code == "23503" || code == "23001" {
-                            (StatusCode::BAD_REQUEST, "ไม่สามารถลบหรือแก้ไขข้อมูลได้ เนื่องจากข้อมูลนี้ถูกใช้งานอยู่ในส่วนอื่นของระบบ".to_string())
+                            (StatusCode::BAD_REQUEST, format!("ไม่สามารถทำรายการได้ (ข้อมูลอ้างอิงไม่ถูกต้องหรือถูกใช้งานอยู่): {}", db_err.message()))
                         } else if code == "23505" {
                             (StatusCode::CONFLICT, "ข้อมูลซ้ำกับที่มีอยู่ในระบบแล้ว".to_string())
                         } else {
