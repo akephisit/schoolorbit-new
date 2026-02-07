@@ -84,7 +84,7 @@ CREATE INDEX idx_plan_subjects_code ON study_plan_subjects(subject_code);
 -- 4. Add study_plan_version_id to class_rooms
 -- เชื่อมห้องเรียนเข้ากับแผนการเรียน
 ALTER TABLE class_rooms 
-ADD COLUMN IF NOT EXISTS study_plan_version_id UUID REFERENCES study_plan_versions(id) ON DELETE SET NULL;
+ADD COLUMN IF NOT EXISTS study_plan_version_id UUID NOT NULL REFERENCES study_plan_versions(id) ON DELETE RESTRICT;
 
 CREATE INDEX idx_classrooms_plan_version ON class_rooms(study_plan_version_id);
 
@@ -108,4 +108,4 @@ CREATE TRIGGER update_study_plan_subjects_updated_at
 COMMENT ON TABLE study_plans IS 'แม่บทแผนการเรียน (Study Plan Master)';
 COMMENT ON TABLE study_plan_versions IS 'ฉบับปรับปรุงหลักสูตร (Curriculum Versions for different cohorts)';
 COMMENT ON TABLE study_plan_subjects IS 'โครงสร้างรายวิชาในแผนการเรียน (Subjects in each plan by grade/term)';
-COMMENT ON COLUMN class_rooms.study_plan_version_id IS 'แผนการเรียนที่ห้องนี้ใช้ (NULL = ไม่ผูกแผน, จัดรายวิชาด้วยตนเอง)';
+COMMENT ON COLUMN class_rooms.study_plan_version_id IS 'แผนการเรียนที่ห้องนี้ใช้ (Required - ห้องเรียนทุกห้องต้องใช้หลักสูตร)';

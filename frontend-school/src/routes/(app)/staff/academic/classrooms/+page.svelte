@@ -95,9 +95,10 @@
 		if (
 			!newClassroom.academic_year_id ||
 			!newClassroom.grade_level_id ||
-			!newClassroom.room_number
+			!newClassroom.room_number ||
+			!newClassroom.study_plan_version_id
 		) {
-			toast.error('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน');
+			toast.error('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน (รวมถึงหลักสูตร)');
 			return;
 		}
 
@@ -107,8 +108,8 @@
 			const payload = {
 				...newClassroom,
 				advisor_id: newClassroom.advisor_id || undefined,
-				co_advisor_id: newClassroom.co_advisor_id || undefined,
-				study_plan_version_id: newClassroom.study_plan_version_id || undefined
+				co_advisor_id: newClassroom.co_advisor_id || undefined
+				// study_plan_version_id is required, no need to convert
 			};
 
 			await createClassroom(payload);
@@ -291,7 +292,7 @@
 				</div>
 
 				<div class="grid gap-2">
-					<Label>หลักสูตรสถานศึกษา (เวอร์ชัน)</Label>
+					<Label>หลักสูตรสถานศึกษา (เวอร์ชัน) <span class="text-red-500">*</span></Label>
 					<Select.Root type="single" bind:value={newClassroom.study_plan_version_id}>
 						<Select.Trigger class="w-full">
 							{(() => {
@@ -300,11 +301,10 @@
 								);
 								return v
 									? `${v.study_plan_name_th || ''} - ${v.version_name}`
-									: '- ไม่ระบุ (เพิ่มรายวิชาด้วยตนเอง) -';
+									: 'เลือกหลักสูตร';
 							})()}
 						</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="">- ไม่ระบุ (เพิ่มรายวิชาด้วยตนเอง) -</Select.Item>
 							{#each studyPlanVersions as version}
 								<Select.Item value={version.id}>
 									{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
@@ -313,7 +313,7 @@
 						</Select.Content>
 					</Select.Root>
 					<p class="text-xs text-muted-foreground">
-						💡 หากเลือกหลักสูตร คุณสามารถใช้ฟีเจอร์ "สร้างรายวิชาอัตโนมัติ" ได้ในภายหลัง
+						💡 หลักสูตรจะใช้สำหรับสร้างรายวิชาอัตโนมัติในภายหลัง
 					</p>
 				</div>
 

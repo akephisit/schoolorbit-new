@@ -208,7 +208,7 @@ pub struct CreateClassroomRequest {
     pub room_number: String,
     pub advisor_id: Option<Uuid>,
     pub co_advisor_id: Option<Uuid>,
-    pub study_plan_version_id: Option<Uuid>,
+    pub study_plan_version_id: Uuid, // Required - ห้องเรียนทุกห้องต้องใช้หลักสูตร
 }
 
 #[derive(Debug, Deserialize)]

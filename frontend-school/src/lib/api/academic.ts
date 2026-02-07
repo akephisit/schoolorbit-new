@@ -48,7 +48,7 @@ export interface Classroom {
     room_number: string;
     advisor_id?: string;
     co_advisor_id?: string;
-    study_plan_version_id?: string;
+    study_plan_version_id: string; // Required - ห้องเรียนทุกห้องต้องใช้หลักสูตร
     is_active: boolean;
     grade_level_name?: string;
     academic_year_label?: string;
