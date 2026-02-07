@@ -89,11 +89,11 @@
 	// Derived: Filter subjects based on selected grade
 	let filteredSubjects = $derived(
 		subjects.filter((subject) => {
-			if (!selectedGrade) return true; // Show all if no grade selected
+			if (!selectedGrade) return false; // Don't show any subjects if no grade selected
 
 			// Get the grade level info
 			const grade = gradeLevels.find((g) => g.id === selectedGrade);
-			if (!grade) return true;
+			if (!grade) return false;
 
 			// If subject has level_scope, check if it matches
 			if (subject.level_scope) {
@@ -754,16 +754,25 @@
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
 					<Label>ระดับชั้น <span class="text-destructive">*</span></Label>
-					<Select.Root type="single" bind:value={selectedGrade}>
-						<Select.Trigger>
-							{gradeLevels.find((g) => g.id === selectedGrade)?.name || 'เลือกระดับชั้น'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each filteredGradeLevels as level}
-								<Select.Item value={level.id}>{level.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+					{#if filteredGradeLevels.length === 0}
+						<div
+							class="text-sm text-destructive p-2 border border-destructive/20 bg-destructive/10 rounded"
+						>
+							ไม่พบระดับชั้นที่ตรงกับแผนการเรียนนี้ (โปรดตรวจสอบ "ขอบเขตระดับชั้น"
+							ในการตั้งค่าแผนการเรียน หรือเพิ่มระดับชั้นในระบบ)
+						</div>
+					{:else}
+						<Select.Root type="single" bind:value={selectedGrade}>
+							<Select.Trigger>
+								{filteredGradeLevels.find((g) => g.id === selectedGrade)?.name || 'เลือกระดับชั้น'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each filteredGradeLevels as level}
+									<Select.Item value={level.id}>{level.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{/if}
 				</div>
 
 				<div class="space-y-2">
