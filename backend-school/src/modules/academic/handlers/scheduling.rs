@@ -138,7 +138,7 @@ pub async fn get_scheduling_job(
         r#"
         SELECT 
             id, academic_semester_id, classroom_ids, algorithm::TEXT, config, 
-            status::TEXT, progress, quality_score, scheduled_courses, total_courses, 
+            status::TEXT, progress, quality_score::REAL, scheduled_courses, total_courses, 
             failed_courses, started_at, completed_at, duration_seconds, 
             error_message, created_by, created_at, updated_at
         FROM timetable_scheduling_jobs
@@ -212,7 +212,7 @@ pub async fn list_scheduling_jobs(
     
     let select_fields = "
         id, academic_semester_id, classroom_ids, algorithm::TEXT, config, 
-        status::TEXT, progress, quality_score, scheduled_courses, total_courses, 
+        status::TEXT, progress, quality_score::REAL, scheduled_courses, total_courses, 
         failed_courses, started_at, completed_at, duration_seconds, 
         error_message, created_by, created_at, updated_at
     ";
