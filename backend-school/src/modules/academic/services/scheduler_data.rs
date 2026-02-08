@@ -42,7 +42,7 @@ impl<'a> SchedulerDataLoader<'a> {
                 
                 -- Consecutive requirements
                 COALESCE(s.min_consecutive_periods, 1) as min_consecutive,
-                COALESCE(s.max_consecutive_periods, 2) as max_consecutive,
+                2 as max_consecutive,
                 COALESCE(s.allow_single_period, true) as allow_single_period,
                 
                 -- Room requirements
