@@ -136,7 +136,12 @@ pub async fn get_scheduling_job(
     
     let job = sqlx::query_as::<_, TimetableSchedulingJob>(
         r#"
-        SELECT * FROM timetable_scheduling_jobs
+        SELECT 
+            id, academic_semester_id, classroom_ids, algorithm::TEXT, config, 
+            status::TEXT, progress, quality_score, scheduled_courses, total_courses, 
+            failed_courses, started_at, completed_at, duration_seconds, 
+            error_message, created_by, created_at, updated_at
+        FROM timetable_scheduling_jobs
         WHERE id = $1
         "#
     )
@@ -205,7 +210,14 @@ pub async fn list_scheduling_jobs(
         return Ok(response);
     }
     
-    let mut sql = "SELECT * FROM timetable_scheduling_jobs WHERE 1=1".to_string();
+    let select_fields = "
+        id, academic_semester_id, classroom_ids, algorithm::TEXT, config, 
+        status::TEXT, progress, quality_score, scheduled_courses, total_courses, 
+        failed_courses, started_at, completed_at, duration_seconds, 
+        error_message, created_by, created_at, updated_at
+    ";
+    
+    let mut sql = format!("SELECT {} FROM timetable_scheduling_jobs WHERE 1=1", select_fields);
     
     if query.semester_id.is_some() {
         sql.push_str(" AND academic_semester_id = $1");
@@ -223,7 +235,7 @@ pub async fn list_scheduling_jobs(
             .await
     } else {
         sqlx::query_as::<_, TimetableSchedulingJob>(
-            "SELECT * FROM timetable_scheduling_jobs ORDER BY created_at DESC LIMIT $1"
+            &format!("SELECT {} FROM timetable_scheduling_jobs ORDER BY created_at DESC LIMIT $1", select_fields)
         )
         .bind(limit)
         .fetch_all(&pool)
