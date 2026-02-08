@@ -189,7 +189,10 @@ pub async fn get_scheduling_job(
         created_at: job.created_at,
     };
     
-    Ok(Json(response).into_response())
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "data": response
+    })).into_response())
 }
 
 /// List scheduling jobs
@@ -243,7 +246,10 @@ pub async fn list_scheduling_jobs(
     }
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     
-    Ok(Json(jobs).into_response())
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "data": jobs
+    })).into_response())
 }
 
 /// Background scheduling task
