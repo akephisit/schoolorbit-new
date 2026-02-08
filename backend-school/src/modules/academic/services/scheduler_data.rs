@@ -35,7 +35,7 @@ impl<'a> SchedulerDataLoader<'a> {
                 
                 -- Period requirements
                 COALESCE(s.periods_per_week, 
-                    CASE WHEN s.hours > 0 THEN CEIL(s.hours::float / 20.0)::int
+                    CASE WHEN s.hours_per_semester > 0 THEN CEIL(s.hours_per_semester::float / 20.0)::int
                          WHEN s.credit > 0 THEN CEIL(s.credit * 2.0)::int
                          ELSE 2
                     END) as periods_needed,
