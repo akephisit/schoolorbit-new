@@ -8,29 +8,43 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Loader2, Zap, Settings2, History } from 'lucide-svelte';
+	import { Loader2, Zap, Settings2, History, CalendarDays } from 'lucide-svelte';
 	import type { UUID } from '$lib/types';
 	import type { Classroom } from '$lib/api/academic';
 	import type { SchedulingAlgorithm, CreateSchedulingJobRequest } from '$lib/api/scheduling';
-	import { listClassrooms } from '$lib/api/academic';
+	import { listClassrooms, getAcademicStructure } from '$lib/api/academic';
 	import { autoScheduleTimetable } from '$lib/api/scheduling';
+	import * as Select from '$lib/components/ui/select';
 
-	let loading = false;
-	let submitting = false;
+	let loading = $state(false);
+	let submitting = $state(false);
 
 	// Data
-	let classrooms: Classroom[] = [];
-	let selectedSemesterId: UUID | null = null;
-	let selectedClassroomIds: UUID[] = [];
+	let classrooms = $state<Classroom[]>([]);
+	let allSemesters = $state<any[]>([]);
+	let selectedSemesterId = $state<UUID | null>(null);
+	let selectedClassroomIds = $state<UUID[]>([]);
+
+	let selectedSemester = $derived(
+		allSemesters.find((s) => s.id === selectedSemesterId)
+			? {
+					value: selectedSemesterId,
+					label: `${allSemesters.find((s) => s.id === selectedSemesterId)?.term}/${
+						allSemesters.find((s) => s.id === selectedSemesterId)?.academic_year_code
+					}`
+				}
+			: undefined
+	);
 
 	// Config
-	let algorithm: SchedulingAlgorithm = 'BACKTRACKING';
-	let forceOverwrite = false;
-	let allowPartial = false;
-	let minQualityScore = 70;
-	let timeoutSeconds = 120;
+	let algorithm = $state<SchedulingAlgorithm>('BACKTRACKING');
+	let forceOverwrite = $state(false);
+	let allowPartial = $state(false);
+	let minQualityScore = $state(70);
+	let timeoutSeconds = $state(120);
 
 	onMount(async () => {
+		await loadSemesters();
 		await loadClassrooms();
 
 		// Get semester from query params if available
@@ -39,6 +53,22 @@
 			selectedSemesterId = semesterId;
 		}
 	});
+
+	async function loadSemesters() {
+		try {
+			const res = await getAcademicStructure();
+			allSemesters = res.data.semesters;
+
+			// Auto-select active semester
+			if (!selectedSemesterId) {
+				const active = allSemesters.find((s) => s.is_active);
+				if (active) selectedSemesterId = active.id;
+				else if (allSemesters.length > 0) selectedSemesterId = allSemesters[0].id;
+			}
+		} catch (error) {
+			console.error('Failed to load semesters:', error);
+		}
+	}
 
 	async function loadClassrooms() {
 		loading = true;
@@ -108,7 +138,7 @@
 		}
 	}
 
-	$: selectedCount = selectedClassroomIds.length;
+	let selectedCount = $derived(selectedClassroomIds.length);
 </script>
 
 <div class="container mx-auto p-6 max-w-4xl">
@@ -131,6 +161,37 @@
 		</div>
 	{:else}
 		<div class="space-y-6">
+			<!-- Semester Selection -->
+			<div class="flex items-center gap-4">
+				<div class="w-[300px]">
+					<Label class="mb-2 block">ภาคเรียน</Label>
+					<Select.Root
+						type="single"
+						value={selectedSemesterId || undefined}
+						onValueChange={(v) => {
+							if (v) selectedSemesterId = v;
+						}}
+					>
+						<Select.Trigger>
+							<div class="flex items-center gap-2">
+								<CalendarDays class="h-4 w-4 text-muted-foreground" />
+								<span>{selectedSemester?.label || 'เลือกภาคเรียน'}</span>
+							</div>
+						</Select.Trigger>
+						<Select.Content>
+							{#each allSemesters as semester}
+								<Select.Item
+									value={semester.id}
+									label={`${semester.term}/${semester.academic_year_code}`}
+								>
+									{semester.term}/{semester.academic_year_code}
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
 			<!-- Classroom Selection -->
 			<Card class="p-6">
 				<div class="mb-4">
