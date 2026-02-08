@@ -343,9 +343,15 @@ async fn run_scheduling_job(
         sqlx::query(
             r#"
             INSERT INTO academic_timetable_entries 
-                (id, classroom_course_id, day_of_week, period_id, room_id)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT ON CONSTRAINT unique_entry_per_slot DO UPDATE
+                (id, classroom_course_id, day_of_week, period_id, room_id,
+                 classroom_id, academic_semester_id, entry_type)
+            SELECT 
+                $1, $2, $3, $4, $5,
+                cc.classroom_id, cc.academic_semester_id, 'COURSE'
+            FROM classroom_courses cc
+            WHERE cc.id = $2
+            ON CONFLICT (classroom_id, academic_semester_id, day_of_week, period_id) WHERE is_active = true
+            DO UPDATE
             SET room_id = EXCLUDED.room_id, updated_at = NOW()
             "#
         )
