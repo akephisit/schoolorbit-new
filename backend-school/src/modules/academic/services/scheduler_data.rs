@@ -105,10 +105,10 @@ impl<'a> SchedulerDataLoader<'a> {
     /// Load available time slots from periods
     pub async fn load_available_slots(&self) -> Result<Vec<TimeSlot>, sqlx::Error> {
         let query = r#"
-            SELECT id, period_order, name, start_time, end_time
+            SELECT id, order_index as period_order, name, start_time::text, end_time::text
             FROM academic_periods
             WHERE is_active = true
-            ORDER BY period_order
+            ORDER BY order_index
         "#;
         
         let periods = sqlx::query_as::<_, PeriodRow>(query)
@@ -134,10 +134,10 @@ impl<'a> SchedulerDataLoader<'a> {
     /// Load periods info
     pub async fn load_periods(&self) -> Result<Vec<PeriodInfo>, sqlx::Error> {
         let query = r#"
-            SELECT id, period_order, name, start_time, end_time
+            SELECT id, order_index as period_order, name, start_time::text, end_time::text
             FROM academic_periods
             WHERE is_active = true
-            ORDER BY period_order
+            ORDER BY order_index
         "#;
         
         let rows = sqlx::query_as::<_, PeriodRow>(query)
