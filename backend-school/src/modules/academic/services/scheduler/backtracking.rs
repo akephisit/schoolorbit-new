@@ -288,7 +288,7 @@ impl BacktrackingScheduler {
             
             // Check max consecutive per day limit locally
             let current_day_count = state.assignments.iter()
-                .filter(|a| a.course_id == course.id && a.time_slot.day == slot.day)
+                .filter(|a| a.classroom_course_id == course.classroom_course_id && a.time_slot.day == slot.day)
                 .count() as i32;
                 
             // Strict distribution: If ANY class exists today, skip this day
@@ -351,7 +351,7 @@ impl BacktrackingScheduler {
         for (day_name, mut day_slots) in by_day {
             // Check if already assigned on this day
             let current_day_count = state.assignments.iter()
-                .filter(|a| a.course_id == course.id && a.time_slot.day == day_name)
+                .filter(|a| a.classroom_course_id == course.classroom_course_id && a.time_slot.day == day_name)
                 .count() as i32;
             
             if current_day_count > 0 {
