@@ -8,7 +8,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Loader2, Zap, Settings2 } from 'lucide-svelte';
+	import { Loader2, Zap, Settings2, History } from 'lucide-svelte';
 	import type { UUID } from '$lib/types';
 	import type { Classroom } from '$lib/api/academic';
 	import type { SchedulingAlgorithm, CreateSchedulingJobRequest } from '$lib/api/scheduling';
@@ -112,11 +112,17 @@
 </script>
 
 <div class="container mx-auto p-6 max-w-4xl">
-	<div class="mb-6">
-		<h1 class="text-3xl font-bold mb-2">จัดตารางอัตโนมัติ</h1>
-		<p class="text-muted-foreground">
-			ระบบจะจัดตารางสอนให้อัตโนมัติตามเงื่อนไขและความต้องการที่กำหนด
-		</p>
+	<div class="flex items-center justify-between mb-6">
+		<div>
+			<h1 class="text-3xl font-bold mb-2">จัดตารางอัตโนมัติ</h1>
+			<p class="text-muted-foreground">
+				ระบบจะจัดตารางสอนให้อัตโนมัติตามเงื่อนไขและความต้องการที่กำหนด
+			</p>
+		</div>
+		<Button variant="outline" onclick={() => goto('/staff/academic/timetable/scheduling/jobs')}>
+			<History class="mr-2 h-4 w-4" />
+			ประวัติการจัดตาราง
+		</Button>
 	</div>
 
 	{#if loading}

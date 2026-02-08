@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import {
 		type TimetableEntry,
@@ -48,7 +49,8 @@
 		Users,
 		PlusCircle,
 		MapPin,
-		Download
+		Download,
+		Zap
 	} from 'lucide-svelte';
 	import { tick } from 'svelte';
 	import { generateTimetablePDF } from '$lib/utils/pdf';
@@ -1105,6 +1107,21 @@
 					{$isConnected ? `Online (${$activeUsers.length})` : 'Offline'}
 				</span>
 			</div>
+
+			<div class="w-px h-4 bg-border mx-1"></div>
+
+			<!-- Quick Actions -->
+			<Button
+				variant="ghost"
+				size="sm"
+				class="h-7 text-xs gap-1.5"
+				onclick={() => {
+					goto('/staff/academic/timetable/scheduling/auto-schedule');
+				}}
+			>
+				<Zap class="w-3.5 h-3.5 text-orange-500" />
+				จัดตารางสอนอัตโนมัติ
+			</Button>
 
 			{#if $isConnected && $activeUsers.length > 0}
 				<div class="w-px h-4 bg-border mx-1"></div>
