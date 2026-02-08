@@ -1,3 +1,6 @@
+// Common Types
+export type UUID = string;
+
 // API Response Types
 export interface ApiResponse<T> {
 	success: boolean;

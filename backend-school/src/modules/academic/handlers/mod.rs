@@ -9,6 +9,7 @@ pub mod subjects;
 pub mod course_planning;
 pub mod timetable;
 pub mod study_plans;
+pub mod scheduling;
 
 use axum::{
     extract::{Path, Query, State},

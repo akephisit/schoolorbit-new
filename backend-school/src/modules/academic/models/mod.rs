@@ -10,6 +10,7 @@ pub mod curriculum;
 pub mod course_planning;
 pub mod timetable;
 pub mod study_plans;
+pub mod scheduling;
 
 // ==========================================
 // Academic Year Models

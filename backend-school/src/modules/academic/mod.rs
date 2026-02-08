@@ -1,6 +1,7 @@
 pub mod models;
 pub mod handlers;
 pub mod websockets;
+pub mod services;
 
 use axum::routing::{get, post, put};
 use axum::Router;
@@ -66,4 +67,19 @@ pub fn academic_routes() -> Router<AppState> {
         
         // Bulk: Generate Courses from Study Plan
         .route("/planning/generate-from-plan", post(handlers::study_plans::generate_courses_from_plan))
+        
+        // Auto-Scheduling
+        .route("/scheduling/auto-schedule", post(handlers::scheduling::auto_schedule_timetable))
+        .route("/scheduling/jobs", get(handlers::scheduling::list_scheduling_jobs))
+        .route("/scheduling/jobs/:id", get(handlers::scheduling::get_scheduling_job))
+        
+        // Instructor Preferences
+        .route("/instructor-preferences", post(handlers::scheduling::create_instructor_preference))
+        
+        // Instructor Room Assignments
+        .route("/instructor-rooms", post(handlers::scheduling::create_instructor_room_assignment))
+        
+        // Locked Slots
+        .route("/timetable/locked-slots", post(handlers::scheduling::create_locked_slot).get(handlers::scheduling::list_locked_slots))
+        .route("/timetable/locked-slots/:id", axum::routing::delete(handlers::scheduling::delete_locked_slot))
 }
