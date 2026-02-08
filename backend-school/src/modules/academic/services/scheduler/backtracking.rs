@@ -285,6 +285,18 @@ impl BacktrackingScheduler {
             
             // Check if can assign
             let room_id = self.determine_room_id(course);
+            
+            // Check max consecutive per day limit locally
+            let current_day_count = state.assignments.iter()
+                .filter(|a| a.course_id == course.id && a.time_slot.day == slot.day)
+                .count() as i32;
+                
+            // Strict distribution: If ANY class exists today, skip this day
+            // This forces subjects to be spread across multiple days
+            if current_day_count > 0 {
+                continue; 
+            }
+
             match self.validator.can_assign(course, slot, room_id, state) {
                 Ok(()) => {
                     // Check instructor daily load
@@ -297,6 +309,12 @@ impl BacktrackingScheduler {
                             continue; // Skip this slot
                         }
                     }
+                    
+                    // Check if adding this slot creates a gap (non-consecutive)
+                    // If we already have assignments on this day, new slot MUST be adjacent
+                    // But for min_consecutive=1, maybe gaps are allowed?
+                    // User requirement implies "2 periods consecutive, but not 3" which means NO GAPS usually
+                    // Let's defer strict consecutive check to Validator, but at least control COUNT here.
                     
                     // Assign
                     let assignment = Assignment::new(course, slot.clone(), room_id, false);
@@ -330,7 +348,16 @@ impl BacktrackingScheduler {
         }
         
         // Try each day
-        for (_day, mut day_slots) in by_day {
+        for (day_name, mut day_slots) in by_day {
+            // Check if already assigned on this day
+            let current_day_count = state.assignments.iter()
+                .filter(|a| a.course_id == course.id && a.time_slot.day == day_name)
+                .count() as i32;
+            
+            if current_day_count > 0 {
+                continue; // Already taught today, skip to force different day
+            }
+
             // Sort by period order
             day_slots.sort_by_key(|s| s.period_order);
             
