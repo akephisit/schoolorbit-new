@@ -292,8 +292,8 @@ impl BacktrackingScheduler {
                 .count() as i32;
                 
             // Strict distribution: If ANY class exists today, skip this day
-            // This forces subjects to be spread across multiple days
-            if current_day_count > 0 {
+            // Only if allow_multiple_sessions_per_day is FALSE (default)
+            if !self.config.allow_multiple_sessions_per_day && current_day_count > 0 {
                 continue; 
             }
 
@@ -354,7 +354,7 @@ impl BacktrackingScheduler {
                 .filter(|a| a.classroom_course_id == course.classroom_course_id && a.time_slot.day == day_name)
                 .count() as i32;
             
-            if current_day_count > 0 {
+            if !self.config.allow_multiple_sessions_per_day && current_day_count > 0 {
                 continue; // Already taught today, skip to force different day
             }
 

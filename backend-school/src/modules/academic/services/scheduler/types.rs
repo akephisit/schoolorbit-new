@@ -245,6 +245,9 @@ pub struct SchedulerConfig {
     pub allow_partial: bool,
     pub min_quality_score: f64,
     
+    // Custom constraints
+    pub allow_multiple_sessions_per_day: bool, // If false, forces spread days
+    
     // Weights (for quality scoring)
     pub weight_distribution: f64,      // 30%
     pub weight_consecutive: f64,        // 20%
@@ -282,6 +285,8 @@ impl Default for SchedulerConfig {
             force_overwrite: false,
             allow_partial: false,
             min_quality_score: 70.0,
+            
+            allow_multiple_sessions_per_day: false, // Default = Force Spread Days
             
             weight_distribution: 30.0,
             weight_consecutive: 20.0,

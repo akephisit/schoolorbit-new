@@ -40,8 +40,12 @@
 	let algorithm = $state<SchedulingAlgorithm>('BACKTRACKING');
 	let forceOverwrite = $state(false);
 	let allowPartial = $state(false);
-	let minQualityScore = $state(70);
-	let timeoutSeconds = $state(120);
+	let minQualityScore = $state(95); // Detailed (High Quality)
+	let timeoutSeconds = $state(300); // 5 Minutes
+	let showAdvanced = $state(false);
+
+	// Advanced Config
+	let allowMultipleSessions = $state(false); // Default: Force spread (strict)
 
 	onMount(async () => {
 		await loadSemesters();
@@ -120,7 +124,8 @@
 					force_overwrite: forceOverwrite,
 					allow_partial: allowPartial,
 					min_quality_score: minQualityScore,
-					timeout_seconds: timeoutSeconds
+					timeout_seconds: timeoutSeconds,
+					allow_multiple_sessions_per_day: allowMultipleSessions
 				}
 			};
 
@@ -222,77 +227,126 @@
 				</div>
 			</Card>
 
-			<!-- Algorithm Selection -->
+			<!-- Algorithm Selection & Settings -->
 			<Card class="p-6">
-				<h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
-					<Settings2 class="h-5 w-5" />
-					การตั้งค่า
-				</h2>
-
-				<div class="space-y-4">
-					<!-- Algorithm -->
-					<div>
-						<Label for="algorithm">อัลกอริทึม</Label>
-						<select
-							id="algorithm"
-							bind:value={algorithm}
-							class="w-full mt-1 rounded-md border border-input bg-background px-3 py-2"
-						>
-							<option value="BACKTRACKING">Backtracking (คุณภาพสูง)</option>
-							<option value="GREEDY">Greedy (รวดเร็ว)</option>
-							<option value="HYBRID">Hybrid (สมดุล)</option>
-						</select>
-						<p class="text-xs text-muted-foreground mt-1">
-							{#if algorithm === 'BACKTRACKING'}
-								ใช้เวลานานกว่า แต่ได้ผลลัพธ์ที่ดีที่สุด
-							{:else if algorithm === 'GREEDY'}
-								รวดเร็ว เหมาะกับงานเร่งด่วน
-							{:else}
-								สมดุลระหว่างความเร็วและคุณภาพ
-							{/if}
-						</p>
-					</div>
-
-					<!-- Quality Score -->
-					<div>
-						<Label for="quality">คะแนนคุณภาพขั้นต่ำ: {minQualityScore}%</Label>
-						<input
-							id="quality"
-							type="range"
-							min="50"
-							max="95"
-							step="5"
-							bind:value={minQualityScore}
-							class="w-full"
-						/>
-					</div>
-
-					<!-- Timeout -->
-					<div>
-						<Label for="timeout">เวลาสูงสุด (วินาที)</Label>
-						<Input
-							id="timeout"
-							type="number"
-							min="30"
-							max="600"
-							bind:value={timeoutSeconds}
-							class="mt-1"
-						/>
-					</div>
-
-					<!-- Options -->
-					<div class="space-y-2 pt-2 border-t">
-						<label class="flex items-center space-x-2">
-							<Checkbox bind:checked={forceOverwrite} />
-							<span class="text-sm">เขียนทับตารางเดิม</span>
-						</label>
-
-						<label class="flex items-center space-x-2">
-							<Checkbox bind:checked={allowPartial} />
-							<span class="text-sm">อนุญาตให้จัดไม่ครบ (บางวิชา)</span>
-						</label>
-					</div>
+				<div class="flex items-center justify-between mb-2">
+					<h2 class="text-xl font-semibold flex items-center gap-2">
+						<Settings2 class="h-5 w-5" />
+						การตั้งค่าขั้นสูง (Advanced)
+					</h2>
+					<Button variant="ghost" size="sm" onclick={() => (showAdvanced = !showAdvanced)}>
+						{#if showAdvanced}ซ่อน{:else}แสดง{/if}
+					</Button>
 				</div>
+
+				{#if !showAdvanced}
+					<div
+						class="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg flex items-center gap-2"
+					>
+						<Zap class="h-4 w-4 text-purple-600" />
+						<span
+							>ใช้การตั้งค่าละเอียด: <strong>Backtracking</strong>, คุณภาพ <strong>95%</strong> (นานหน่อยแต่คุ้มค่า),
+							บังคับกระจายวันเรียน</span
+						>
+					</div>
+				{/if}
+
+				{#if showAdvanced}
+					<div class="space-y-4 mt-4 animate-in slide-in-from-top-2 duration-200">
+						<!-- Algorithm -->
+						<div>
+							<Label for="algorithm">อัลกอริทึม</Label>
+							<select
+								id="algorithm"
+								bind:value={algorithm}
+								class="w-full mt-1 rounded-md border border-input bg-background px-3 py-2"
+							>
+								<option value="BACKTRACKING">Backtracking (คุณภาพสูง)</option>
+								<option value="GREEDY">Greedy (รวดเร็ว)</option>
+								<option value="HYBRID">Hybrid (สมดุล)</option>
+							</select>
+							<p class="text-xs text-muted-foreground mt-1">
+								{#if algorithm === 'BACKTRACKING'}
+									<span class="text-green-600 font-medium">แนะนำ!</span> ละเอียดรอบคอบที่สุด ลองจัดหลายรูปแบบเพื่อหาทางออกที่ดีที่สุด
+									(ใช้เวลาประมวลผลนานกว่าเล็กน้อย)
+								{:else if algorithm === 'GREEDY'}
+									เน้นความเร็ว จัดตามลำดับก่อนหลัง แต่อาจจัดได้ไม่ครบถ้วนหากเงื่อนไขซับซ้อน
+								{:else}
+									แบบผสมผสาน เน้นความสมดุลระหว่างความเร็วและคุณภาพ
+								{/if}
+							</p>
+						</div>
+
+						<!-- Advanced Conditions -->
+						<div class="pt-4 border-t space-y-4">
+							<h3 class="font-medium">เงื่อนไขเพิ่มเติม</h3>
+
+							<div class="flex items-start space-x-2">
+								<Checkbox
+									id="spreadDays"
+									checked={!allowMultipleSessions}
+									onCheckedChange={(c) => (allowMultipleSessions = !c)}
+								/>
+								<div class="grid gap-1.5 leading-none">
+									<Label
+										for="spreadDays"
+										class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+									>
+										บังคับเรียนคนละวัน (Force Spread Days)
+									</Label>
+									<p class="text-sm text-muted-foreground">
+										ห้ามเรียนวิชาเดียวกันซ้ำในวันเดียว (ยกเว้นคาบต่อเนื่อง) เพื่อกระจายภาระการเรียน
+									</p>
+								</div>
+							</div>
+						</div>
+
+						<!-- Quality Score -->
+						<div>
+							<Label for="quality">คะแนนคุณภาพขั้นต่ำ: {minQualityScore}%</Label>
+							<input
+								id="quality"
+								type="range"
+								min="50"
+								max="95"
+								step="5"
+								bind:value={minQualityScore}
+								class="w-full"
+							/>
+							<div class="flex justify-between text-xs text-muted-foreground mt-1">
+								<span>50% (เร็ว)</span>
+								<span>70-75% (มาตรฐาน)</span>
+								<span>95% (ละเอียด)</span>
+							</div>
+						</div>
+
+						<!-- Timeout -->
+						<div>
+							<Label for="timeout">เวลาสูงสุด (วินาที)</Label>
+							<Input
+								id="timeout"
+								type="number"
+								min="30"
+								max="600"
+								bind:value={timeoutSeconds}
+								class="mt-1"
+							/>
+						</div>
+
+						<!-- Options -->
+						<div class="space-y-2 pt-2 border-t">
+							<label class="flex items-center space-x-2">
+								<Checkbox bind:checked={forceOverwrite} />
+								<span class="text-sm">เขียนทับตารางเดิม</span>
+							</label>
+
+							<label class="flex items-center space-x-2">
+								<Checkbox bind:checked={allowPartial} />
+								<span class="text-sm">อนุญาตให้จัดไม่ครบ (บางวิชา)</span>
+							</label>
+						</div>
+					</div>
+				{/if}
 			</Card>
 
 			<!-- Submit -->

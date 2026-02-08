@@ -13,6 +13,7 @@ export interface SchedulingConfig {
     allow_partial?: boolean;
     min_quality_score?: number;
     timeout_seconds?: number;
+    allow_multiple_sessions_per_day?: boolean;
 }
 
 export interface CreateSchedulingJobRequest {
