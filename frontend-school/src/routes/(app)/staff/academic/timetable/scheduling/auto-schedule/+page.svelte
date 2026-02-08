@@ -227,126 +227,94 @@
 				</div>
 			</Card>
 
-			<!-- Algorithm Selection & Settings -->
+			<!-- Conditions Settings -->
 			<Card class="p-6">
-				<div class="flex items-center justify-between mb-2">
-					<h2 class="text-xl font-semibold flex items-center gap-2">
-						<Settings2 class="h-5 w-5" />
-						การตั้งค่าขั้นสูง (Advanced)
-					</h2>
-					<Button variant="ghost" size="sm" onclick={() => (showAdvanced = !showAdvanced)}>
-						{#if showAdvanced}ซ่อน{:else}แสดง{/if}
-					</Button>
-				</div>
+				<h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+					<Settings2 class="h-5 w-5" />
+					เงื่อนไขการจัดตาราง
+				</h2>
 
-				{#if !showAdvanced}
-					<div
-						class="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg flex items-center gap-2"
-					>
-						<Zap class="h-4 w-4 text-purple-600" />
-						<span
-							>ใช้การตั้งค่าละเอียด: <strong>Backtracking</strong>, คุณภาพ <strong>95%</strong> (นานหน่อยแต่คุ้มค่า),
-							บังคับกระจายวันเรียน</span
-						>
-					</div>
-				{/if}
-
-				{#if showAdvanced}
-					<div class="space-y-4 mt-4 animate-in slide-in-from-top-2 duration-200">
-						<!-- Algorithm -->
-						<div>
-							<Label for="algorithm">อัลกอริทึม</Label>
-							<select
-								id="algorithm"
-								bind:value={algorithm}
-								class="w-full mt-1 rounded-md border border-input bg-background px-3 py-2"
-							>
-								<option value="BACKTRACKING">Backtracking (คุณภาพสูง)</option>
-								<option value="GREEDY">Greedy (รวดเร็ว)</option>
-								<option value="HYBRID">Hybrid (สมดุล)</option>
-							</select>
-							<p class="text-xs text-muted-foreground mt-1">
-								{#if algorithm === 'BACKTRACKING'}
-									<span class="text-green-600 font-medium">แนะนำ!</span> ละเอียดรอบคอบที่สุด ลองจัดหลายรูปแบบเพื่อหาทางออกที่ดีที่สุด
-									(ใช้เวลาประมวลผลนานกว่าเล็กน้อย)
-								{:else if algorithm === 'GREEDY'}
-									เน้นความเร็ว จัดตามลำดับก่อนหลัง แต่อาจจัดได้ไม่ครบถ้วนหากเงื่อนไขซับซ้อน
-								{:else}
-									แบบผสมผสาน เน้นความสมดุลระหว่างความเร็วและคุณภาพ
-								{/if}
+				<div class="space-y-5">
+					<!-- Spread Days -->
+					<div class="flex items-start space-x-3">
+						<Checkbox
+							id="spreadDays"
+							checked={!allowMultipleSessions}
+							onCheckedChange={(c) => (allowMultipleSessions = !c)}
+						/>
+						<div class="grid gap-1.5 leading-none">
+							<Label for="spreadDays" class="text-base font-medium leading-none cursor-pointer">
+								บังคับเรียนคนละวัน (Force Spread Days)
+							</Label>
+							<p class="text-sm text-muted-foreground">
+								ห้ามเรียนวิชาเดียวกันซ้ำในวันเดียว (ยกเว้นคาบต่อเนื่อง) เพื่อกระจายภาระการเรียน
 							</p>
 						</div>
+					</div>
 
-						<!-- Advanced Conditions -->
-						<div class="pt-4 border-t space-y-4">
-							<h3 class="font-medium">เงื่อนไขเพิ่มเติม</h3>
+					<div class="border-t my-4"></div>
 
-							<div class="flex items-start space-x-2">
-								<Checkbox
-									id="spreadDays"
-									checked={!allowMultipleSessions}
-									onCheckedChange={(c) => (allowMultipleSessions = !c)}
-								/>
-								<div class="grid gap-1.5 leading-none">
-									<Label
-										for="spreadDays"
-										class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-									>
-										บังคับเรียนคนละวัน (Force Spread Days)
-									</Label>
-									<p class="text-sm text-muted-foreground">
-										ห้ามเรียนวิชาเดียวกันซ้ำในวันเดียว (ยกเว้นคาบต่อเนื่อง) เพื่อกระจายภาระการเรียน
-									</p>
-								</div>
-							</div>
+					<!-- Overwrite -->
+					<div class="flex items-start space-x-3">
+						<Checkbox id="overwrite" bind:checked={forceOverwrite} />
+						<div class="grid gap-1.5 leading-none">
+							<Label for="overwrite" class="text-base font-medium leading-none cursor-pointer">
+								เขียนทับตารางเดิม (Force Overwrite)
+							</Label>
+							<p class="text-sm text-muted-foreground">
+								หากมีตารางเรียนอยู่แล้ว จะทำการลบและจัดใหม่ทั้งหมด (ถ้าไม่เลือก จะจัดเฉพาะช่องว่าง)
+							</p>
 						</div>
+					</div>
 
-						<!-- Quality Score -->
+					<!-- Partial -->
+					<div class="flex items-start space-x-3">
+						<Checkbox id="partial" bind:checked={allowPartial} />
+						<div class="grid gap-1.5 leading-none">
+							<Label for="partial" class="text-base font-medium leading-none cursor-pointer">
+								อนุญาตให้จัดไม่ครบ (Allow Partial)
+							</Label>
+							<p class="text-sm text-muted-foreground">
+								ให้ระบบจัดตารางเท่าที่ทำได้ แม้จะมีบางวิชาที่หาลงไม่ได้ (ถ้าไม่เลือก ระบบจะฟ้อง
+								Error หากจัดไม่ครบ)
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<!-- Hidden Technical Settings (Defaults) -->
+				{#if showAdvanced}
+					<!-- Only show if explicitly toggled (for debugging), otherwise hidden as requested -->
+					<div class="mt-6 pt-6 border-t space-y-4">
+						<h3 class="font-medium text-muted-foreground">การตั้งค่าขั้นสูง (Technical)</h3>
 						<div>
-							<Label for="quality">คะแนนคุณภาพขั้นต่ำ: {minQualityScore}%</Label>
-							<input
-								id="quality"
-								type="range"
-								min="50"
-								max="95"
-								step="5"
-								bind:value={minQualityScore}
-								class="w-full"
-							/>
-							<div class="flex justify-between text-xs text-muted-foreground mt-1">
-								<span>50% (เร็ว)</span>
-								<span>70-75% (มาตรฐาน)</span>
-								<span>95% (ละเอียด)</span>
-							</div>
+							<Label>Algorithm</Label>
+							<select bind:value={algorithm} class="w-full mt-1 border rounded p-2 text-sm">
+								<option value="BACKTRACKING">Backtracking</option>
+								<option value="GREEDY">Greedy</option>
+							</select>
 						</div>
-
-						<!-- Timeout -->
 						<div>
-							<Label for="timeout">เวลาสูงสุด (วินาที)</Label>
-							<Input
-								id="timeout"
-								type="number"
-								min="30"
-								max="600"
-								bind:value={timeoutSeconds}
-								class="mt-1"
-							/>
+							<Label>Quality Score ({minQualityScore}%)</Label>
+							<input type="range" class="w-full" min="50" max="99" bind:value={minQualityScore} />
 						</div>
-
-						<!-- Options -->
-						<div class="space-y-2 pt-2 border-t">
-							<label class="flex items-center space-x-2">
-								<Checkbox bind:checked={forceOverwrite} />
-								<span class="text-sm">เขียนทับตารางเดิม</span>
-							</label>
-
-							<label class="flex items-center space-x-2">
-								<Checkbox bind:checked={allowPartial} />
-								<span class="text-sm">อนุญาตให้จัดไม่ครบ (บางวิชา)</span>
-							</label>
+						<div>
+							<Label>Timeout ({timeoutSeconds}s)</Label>
+							<Input type="number" bind:value={timeoutSeconds} />
 						</div>
 					</div>
 				{/if}
+
+				<div class="mt-4 flex justify-end">
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={() => (showAdvanced = !showAdvanced)}
+						class="text-muted-foreground text-xs"
+					>
+						{#if showAdvanced}ซ่อนค่าเทคนิค{:else}แสดงค่าเทคนิค (Advanced){/if}
+					</Button>
+				</div>
 			</Card>
 
 			<!-- Submit -->
