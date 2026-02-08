@@ -31,7 +31,7 @@ impl<'a> SchedulerDataLoader<'a> {
                 s.code as subject_code,
                 s.name_th as subject_name,
                 cc.primary_instructor_id as instructor_id,
-                u.name as instructor_name,
+                u.first_name || ' ' || u.last_name as instructor_name,
                 
                 -- Period requirements
                 COALESCE(s.periods_per_week, 
