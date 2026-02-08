@@ -34,23 +34,23 @@ UPDATE subjects SET
     max_consecutive_periods = 2,
     allow_single_period = true,
     preferred_time_of_day = 'AFTERNOON'
-WHERE subject_type = 'PE';
+WHERE type = 'PE' OR type = 'ACTIVITY';  -- Adjusted to match existing types or specific codes if needed
 
--- CORE subjects: No strict requirements
+-- CORE subjects (BASIC): No strict requirements
 UPDATE subjects SET 
     min_consecutive_periods = 1,
     max_consecutive_periods = 2,
     allow_single_period = true,
     preferred_time_of_day = 'MORNING'
-WHERE subject_type = 'CORE';
+WHERE type = 'BASIC';
 
--- ELECTIVE: Flexible
+-- ELECTIVE (ADDITIONAL): Flexible
 UPDATE subjects SET 
     min_consecutive_periods = 1,
     max_consecutive_periods = 2,
     allow_single_period = true,
     preferred_time_of_day = 'ANYTIME'
-WHERE subject_type = 'ELECTIVE';
+WHERE type = 'ADDITIONAL';
 
 -- ACTIVITY: Usually 2 consecutive
 UPDATE subjects SET 
@@ -58,4 +58,4 @@ UPDATE subjects SET
     max_consecutive_periods = 2,
     allow_single_period = false,
     preferred_time_of_day = 'AFTERNOON'
-WHERE subject_type = 'ACTIVITY';
+WHERE type = 'ACTIVITY' OR type = 'CLUB';
