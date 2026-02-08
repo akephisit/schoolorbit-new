@@ -59,7 +59,7 @@ pub async fn auto_schedule_timetable(
         r#"
         INSERT INTO timetable_scheduling_jobs 
             (id, academic_semester_id, classroom_ids, algorithm, config, status, progress, created_by)
-        VALUES ($1, $2, $3, $4, $5, 'PENDING', 0, $6)
+        VALUES ($1, $2, $3, $4::scheduling_algorithm, $5, 'PENDING'::scheduling_job_status, 0, $6)
         "#
     )
     .bind(job_id)
