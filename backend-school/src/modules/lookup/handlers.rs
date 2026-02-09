@@ -675,7 +675,9 @@ pub async fn lookup_rooms(
 
     let rooms = sqlx::query_as::<_, Room>(
         r#"
-        SELECT r.*, b.name_th as building_name
+        SELECT r.id, r.building_id, r.name_th, r.name_en, r.code, 
+               r.room_type, r.capacity, r.floor, r.status, r.description, 
+               r.created_at, r.updated_at, b.name_th as building_name
         FROM rooms r
         LEFT JOIN buildings b ON r.building_id = b.id
         WHERE r.status = 'ACTIVE'
