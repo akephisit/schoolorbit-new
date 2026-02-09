@@ -11,6 +11,9 @@ pub struct ConstraintValidator {
     
     // Periods by day
     periods_by_day: HashMap<String, Vec<PeriodInfo>>,
+    
+    // Rooms info
+    rooms: HashMap<Uuid, RoomInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +28,7 @@ impl ConstraintValidator {
         locked_slots: Vec<LockedSlotData>,
         instructor_prefs: HashMap<Uuid, InstructorPrefData>,
         periods: Vec<PeriodInfo>,
+        rooms: HashMap<Uuid, RoomInfo>,
     ) -> Self {
         let mut locked_map = HashMap::new();
         
@@ -51,6 +55,7 @@ impl ConstraintValidator {
             locked_slots: locked_map,
             instructor_prefs,
             periods_by_day,
+            rooms,
         }
     }
     
@@ -91,11 +96,28 @@ impl ConstraintValidator {
         
         // HC-3: Room conflict
         if let Some(rid) = room_id {
+            // Check occupancy
             if state.is_room_slot_occupied(rid, &slot_key) {
                 return Err(Conflict {
                     conflict_type: ConflictType::RoomOccupied,
                     message: format!("Room is occupied at {}", slot_key),
                 });
+            }
+            
+            // HC-4: Room Type Compatibility
+            if let Some(req_type) = &course.required_room_type {
+                if let Some(room) = self.rooms.get(&rid) {
+                    let room_type = room.room_type.as_deref().unwrap_or("STANDARD");
+                    // Compare types (Exact match for now, could be improved)
+                    // If required type is STANDARD, usually any room is OK? Or strict?
+                    // Let's assume strict: If subject requires LAB_SCIENCE, Room MUST be LAB_SCIENCE.
+                    if room_type != req_type {
+                         return Err(Conflict {
+                            conflict_type: ConflictType::RoomOccupied,
+                            message: format!("Room type mismatch. Needed: {}, Room is: {}", req_type, room_type),
+                         });
+                    }
+                }
             }
         }
         

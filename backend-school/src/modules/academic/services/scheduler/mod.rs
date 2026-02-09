@@ -28,12 +28,14 @@ impl TimetableScheduler {
         locked_slots: Vec<LockedSlotData>,
         instructor_prefs: HashMap<Uuid, InstructorPrefData>,
         periods: Vec<PeriodInfo>,
+        rooms: HashMap<Uuid, RoomInfo>,
     ) -> SchedulingResult {
         // Build validator
         let validator = ConstraintValidator::new(
             locked_slots,
             instructor_prefs,
             periods,
+            rooms,
         );
         
         // Select algorithm

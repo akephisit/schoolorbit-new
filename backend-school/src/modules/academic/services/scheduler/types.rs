@@ -344,6 +344,14 @@ pub struct PeriodInfo {
     pub end_time: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct RoomInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub room_type: Option<String>,
+    pub capacity: i32,
+}
+
 // ==================== Available Slots ====================
 
 pub type AvailableSlots = Vec<TimeSlot>;

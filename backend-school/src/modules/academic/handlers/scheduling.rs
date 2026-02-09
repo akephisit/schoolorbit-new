@@ -288,6 +288,7 @@ async fn run_scheduling_job(
     .await?;
     
     let instructor_prefs = loader.load_instructor_preferences(academic_year_id).await?;
+    let rooms = loader.load_rooms().await?; // Load rooms
     
     // Update progress
     sqlx::query(
@@ -326,6 +327,7 @@ async fn run_scheduling_job(
         locked_slots,
         instructor_prefs,
         periods,
+        rooms, // Pass rooms
     );
     
     // Save assignments to database

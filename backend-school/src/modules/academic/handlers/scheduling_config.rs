@@ -12,35 +12,67 @@ use crate::AppState;
 use crate::db::school_mapping::get_school_database_url;
 use crate::utils::subdomain::extract_subdomain_from_request;
 
-// ==================== Common Response ====================
-
+// Structs for Request/Response
 #[derive(Serialize)]
 pub struct ApiResponse<T> {
     pub success: bool,
     pub data: Option<T>,
-    pub message: Option<String>,
+    pub error: Option<String>,
 }
 
-impl<T: Serialize> ApiResponse<T> {
+impl<T> ApiResponse<T> {
     pub fn success(data: T) -> Self {
-        Self {
-            success: true,
-            data: Some(data),
-            message: None,
-        }
+        Self { success: true, data: Some(data), error: None }
     }
-    
-    // Unused but kept for completeness
     pub fn error(msg: String) -> Self {
-        Self {
-            success: false,
-            data: None,
-            message: Some(msg),
-        }
+        Self { success: false, data: None, error: Some(msg) }
     }
 }
 
-// Helper to get pool
+#[derive(Serialize, sqlx::FromRow)]
+pub struct InstructorConstraintView {
+    pub instructor_id: Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    pub hard_unavailable_slots: Option<serde_json::Value>,
+    pub max_periods_per_day: Option<i32>,
+    pub min_periods_per_day: Option<i32>,
+    pub assigned_room_id: Option<Uuid>,
+    pub assigned_room_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateInstructorConstraintRequest {
+    pub instructor_id: Uuid,
+    pub hard_unavailable_slots: Option<serde_json::Value>,
+    pub max_periods_per_day: Option<i32>,
+    pub preferred_slots: Option<serde_json::Value>,
+    pub assigned_room_id: Option<Uuid>,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct SubjectConstraintView {
+    pub subject_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub min_consecutive_periods: i32,
+    pub max_consecutive_periods: Option<i32>, // Can be null in DB
+    pub allow_single_period: Option<bool>,
+    pub required_room_type: Option<String>,
+    pub preferred_time_of_day: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateSubjectConstraintRequest {
+    pub subject_id: Uuid,
+    pub min_consecutive_periods: Option<i32>,
+    pub max_consecutive_periods: Option<i32>,
+    pub allow_single_period: Option<bool>,
+    pub required_room_type: Option<String>,
+    pub preferred_time_of_day: Option<String>,
+}
+
+/// Helper
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
@@ -52,32 +84,7 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
-// ==================== Instructor Constraints ====================
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct InstructorConstraintView {
-    pub id: Uuid,
-    pub first_name: String,
-    pub last_name: String,
-    pub short_name: Option<String>,
-    
-    // Preferences
-    pub max_periods_per_day: Option<i32>,
-    pub hard_unavailable_slots: Option<serde_json::Value>, 
-    pub preferred_slots: Option<serde_json::Value>,
-    
-    // Room Assignment
-    pub assigned_room_id: Option<Uuid>,
-    pub assigned_room_name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateInstructorConstraintRequest {
-    pub max_periods_per_day: Option<i32>,
-    pub hard_unavailable_slots: Option<serde_json::Value>,
-    pub preferred_slots: Option<serde_json::Value>,
-    pub assigned_room_id: Option<Uuid>,
-}
+// Handlers
 
 pub async fn list_instructor_constraints(
     State(state): State<AppState>,
@@ -85,42 +92,42 @@ pub async fn list_instructor_constraints(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     
-    let academic_year = sqlx::query!("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
+    // Get active academic year
+    let academic_year = sqlx::query_as::<_, (Uuid,)>("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
         .fetch_optional(&pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
         
     let year_id = match academic_year {
-        Some(y) => y.id,
-        None => return Err(AppError::NotFound("No active academic year found".into())),
+        Some(y) => y.0,
+        None => return Err(AppError::NotFound("Active academic year not found".to_string())),
     };
 
-    let instructors = sqlx::query_as!(
-        InstructorConstraintView,
+    let instructors = sqlx::query_as::<_, InstructorConstraintView>(
         r#"
         SELECT 
-            u.id,
+            u.id as instructor_id,
             u.first_name,
             u.last_name,
-            s.short_name,
-            ip.max_periods_per_day,
             ip.hard_unavailable_slots,
-            ip.preferred_slots,
-            ira.room_id as assigned_room_id,
+            ip.max_periods_per_day,
+            ip.min_periods_per_day,
+            ra.room_id as assigned_room_id,
             r.name as assigned_room_name
         FROM users u
-        JOIN staff s ON u.id = s.user_id
+        JOIN user_roles ur ON u.id = ur.user_id
+        JOIN roles rol ON ur.role_id = rol.id
         LEFT JOIN instructor_preferences ip ON u.id = ip.instructor_id AND ip.academic_year_id = $1
-        LEFT JOIN instructor_room_assignments ira ON u.id = ira.instructor_id AND ira.academic_year_id = $1
-        LEFT JOIN rooms r ON ira.room_id = r.id
-        WHERE (u.role = 'TEACHER' OR u.role = 'ADMIN')
+        LEFT JOIN instructor_room_assignments ra ON u.id = ra.instructor_id AND ra.academic_year_id = $1 AND ra.is_required = true
+        LEFT JOIN rooms r ON ra.room_id = r.id
+        WHERE rol.name = 'Teacher'
         ORDER BY u.first_name
-        "#,
-        year_id
+        "#
     )
+    .bind(year_id)
     .fetch_all(&pool)
     .await
-    .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(ApiResponse::success(instructors)))
 }
@@ -128,116 +135,135 @@ pub async fn list_instructor_constraints(
 pub async fn update_instructor_constraints(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(instructor_id): Path<Uuid>,
     Json(payload): Json<UpdateInstructorConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let mut tx = pool.begin().await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    
+    let mut tx = pool.begin().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let academic_year = sqlx::query!("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
+    // Get active academic year
+    let academic_year = sqlx::query_as::<_, (Uuid,)>("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
         .fetch_optional(&mut *tx)
         .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let year_id = match academic_year {
-        Some(y) => y.id,
-        None => return Err(AppError::NotFound("Active academic year not found".into())),
+        Some(y) => y.0,
+        None => return Err(AppError::NotFound("Active academic year not found".to_string())),
     };
 
-    sqlx::query!(
+    // Update preferences
+    // Using simple query! macro for update/insert
+    sqlx::query(
         r#"
         INSERT INTO instructor_preferences (
             instructor_id, academic_year_id, 
-            max_periods_per_day, hard_unavailable_slots, preferred_slots
+            hard_unavailable_slots, max_periods_per_day, preferred_slots
         )
         VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (instructor_id, academic_year_id) DO UPDATE SET
-            max_periods_per_day = EXCLUDED.max_periods_per_day,
+        ON CONFLICT (instructor_id, academic_year_id) 
+        DO UPDATE SET 
             hard_unavailable_slots = EXCLUDED.hard_unavailable_slots,
-            preferred_slots = EXCLUDED.preferred_slots
-        "#,
-        instructor_id,
-        year_id,
-        payload.max_periods_per_day.unwrap_or(7),
-        payload.hard_unavailable_slots.unwrap_or(serde_json::json!([])),
-        payload.preferred_slots.unwrap_or(serde_json::json!([]))
+            max_periods_per_day = EXCLUDED.max_periods_per_day,
+            updated_at = NOW()
+        "#
     )
+    .bind(payload.instructor_id)
+    .bind(year_id)
+    .bind(payload.hard_unavailable_slots.unwrap_or(serde_json::json!([])))
+    .bind(payload.max_periods_per_day)
+    .bind(payload.preferred_slots.unwrap_or(serde_json::json!([])))
     .execute(&mut *tx)
     .await
-    .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
+    // Handle Room Assignment
+    // If room_id is Some, insert/update. If None, we might want to delete?
+    // Current logic: only insert if payload has room_id
     if let Some(room_id) = payload.assigned_room_id {
-        sqlx::query!(
-            r#"
-            INSERT INTO instructor_room_assignments (instructor_id, room_id, academic_year_id)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (instructor_id, academic_year_id) DO UPDATE SET room_id = EXCLUDED.room_id
-            "#,
-            instructor_id,
-            room_id,
-            year_id
+        // First, clear existing assignments for this instructor/year ??
+        // Actually, constraint usually implies "Primary Room".
+        // Let's delete old one first to be safe or upsert.
+        
+        sqlx::query(
+            "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
         )
+        .bind(payload.instructor_id)
+        .bind(year_id)
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+        
+        sqlx::query(
+            r#"
+            INSERT INTO instructor_room_assignments (
+                instructor_id, academic_year_id, room_id, is_required
+            )
+            VALUES ($1, $2, $3, true)
+            "#
+        )
+        .bind(payload.instructor_id)
+        .bind(year_id)
+        .bind(room_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    } else {
+        // If assigned_room_id is None (or not sent? Payload field is Option),
+        // If explicit Null was sent, we might want to clear assignment.
+        // But `Option<Uuid>` doesn't distinguish between "Missing" and "Null" easily in Axum Json without wrapper.
+        // Let's assume if it's sent as None, we do nothing or clear?
+        // Let's clear if it's None for now? Or maybe user just didn't select one.
+        // UI sends null if cleared.
+        
+        // Let's try to remove assignment if we can confirm intent. 
+        // For now, let's just leave it alone if None, or maybe the UI sends a specific Value?
+        // Just Update: if User unselects room, UI should send null.
+        // So we should delete.
+        // But checking if field was present is hard.
+        // Let's assume Update always sends current state.
+         sqlx::query(
+            "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
+        )
+        .bind(payload.instructor_id)
+        .bind(year_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
-    tx.commit().await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
-    
-    // Return empty success object? Or match ApiResponse structure
-    // Since ApiResponse expects "data", we can pass a simple message struct or String
-    Ok(Json(ApiResponse::success("Updated successfully".to_string())))
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(ApiResponse::success("Updated instructor constraints".to_string())))
 }
-
-
-// ==================== Subject Constraints ====================
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SubjectConstraintView {
-    pub id: Uuid,
-    pub code: String,
-    pub name: String,
-    
-    pub min_consecutive_periods: Option<i32>,
-    pub max_consecutive_periods: Option<i32>,
-    pub preferred_time_of_day: Option<String>,
-    pub required_room_type: Option<String>,
-    pub periods_per_week: Option<i32>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateSubjectConstraintRequest {
-    pub min_consecutive_periods: Option<i32>,
-    pub max_consecutive_periods: Option<i32>,
-    pub preferred_time_of_day: Option<String>,
-    pub required_room_type: Option<String>,
-    pub periods_per_week: Option<i32>,
-}
-
 
 pub async fn list_subject_constraints(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    let subjects = sqlx::query_as!(
-        SubjectConstraintView,
+    
+    // Simple query for subjects
+    let subjects = sqlx::query_as::<_, SubjectConstraintView>(
         r#"
         SELECT 
-            id, code, name,
+            id as subject_id,
+            code,
+            name_th as name,
             min_consecutive_periods,
             max_consecutive_periods,
-            preferred_time_of_day,
+            allow_single_period,
             required_room_type,
-            periods_per_week
+            preferred_time_of_day
         FROM subjects
+        WHERE is_active = true
         ORDER BY code
         "#
     )
     .fetch_all(&pool)
     .await
-    .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(ApiResponse::success(subjects)))
 }
@@ -245,31 +271,31 @@ pub async fn list_subject_constraints(
 pub async fn update_subject_constraints(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(subject_id): Path<Uuid>,
     Json(payload): Json<UpdateSubjectConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    
-    sqlx::query!(
+
+    sqlx::query(
         r#"
         UPDATE subjects SET
             min_consecutive_periods = COALESCE($2, min_consecutive_periods),
-            max_consecutive_periods = COALESCE($3, max_consecutive_periods),
-            preferred_time_of_day = COALESCE($4, preferred_time_of_day),
-            required_room_type = COALESCE($5, required_room_type),
-            periods_per_week = COALESCE($6, periods_per_week)
+            max_consecutive_periods = $3,
+            allow_single_period = COALESCE($4, allow_single_period),
+            required_room_type = $5,
+            preferred_time_of_day = $6,
+            updated_at = NOW()
         WHERE id = $1
-        "#,
-        subject_id,
-        payload.min_consecutive_periods,
-        payload.max_consecutive_periods,
-        payload.preferred_time_of_day,
-        payload.required_room_type,
-        payload.periods_per_week
+        "#
     )
+    .bind(payload.subject_id)
+    .bind(payload.min_consecutive_periods)
+    .bind(payload.max_consecutive_periods)
+    .bind(payload.allow_single_period)
+    .bind(payload.required_room_type)
+    .bind(payload.preferred_time_of_day)
     .execute(&pool)
     .await
-    .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(ApiResponse::success("Updated subject constraints".to_string())))
 }

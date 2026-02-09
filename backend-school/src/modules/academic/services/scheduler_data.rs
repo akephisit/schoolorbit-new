@@ -225,6 +225,23 @@ impl<'a> SchedulerDataLoader<'a> {
         &self,
         academic_year_id: Uuid,
     ) -> Result<HashMap<Uuid, InstructorPrefData>, sqlx::Error> {
+        // 1. Load periods to map index -> id
+        let periods = self.load_periods().await?;
+        let period_map: HashMap<i32, Uuid> = periods.iter()
+            .map(|p| (p.order, p.id)) 
+            .collect();
+            
+        let resolve_period_id = |slot: &TimeSlotJson| -> Option<Uuid> {
+            if let Some(id) = slot.period_id {
+                return Some(id);
+            }
+            if let Some(idx) = slot.period_index {
+                // Front end index 0 = Period 1 (order 1)
+                return period_map.get(&(idx + 1)).copied(); 
+            }
+            None
+        };
+
         let query = r#"
             SELECT 
                 instructor_id,
@@ -248,20 +265,24 @@ impl<'a> SchedulerDataLoader<'a> {
                 row.hard_unavailable_slots
             ).unwrap_or_default();
             
-            let hard_unavailable_set: HashSet<String> = hard_unavailable
-                .into_iter()
-                .map(|slot| format!("{}__{}", slot.day, slot.period_id))
-                .collect();
+            let mut hard_unavailable_set = HashSet::new();
+            for slot in hard_unavailable {
+                if let Some(pid) = resolve_period_id(&slot) {
+                    hard_unavailable_set.insert(format!("{}__{}", slot.day, pid));
+                }
+            }
             
             // Parse preferred slots
             let preferred: Vec<TimeSlotJson> = serde_json::from_value(
                 row.preferred_slots
             ).unwrap_or_default();
             
-            let preferred_set: HashSet<String> = preferred
-                .into_iter()
-                .map(|slot| format!("{}__{}", slot.day, slot.period_id))
-                .collect();
+            let mut preferred_set = HashSet::new();
+            for slot in preferred {
+                if let Some(pid) = resolve_period_id(&slot) {
+                    preferred_set.insert(format!("{}__{}", slot.day, pid));
+                }
+            }
             
             prefs.insert(row.instructor_id, InstructorPrefData {
                 instructor_id: row.instructor_id,
@@ -282,7 +303,7 @@ impl<'a> SchedulerDataLoader<'a> {
         let query = r#"
             SELECT instructor_id, room_id
             FROM instructor_room_assignments
-            WHERE is_required = true
+            -- WHERE is_required = true (Assuming all assignments in this table are binding for now)
         "#;
         
         let rows = sqlx::query_as::<_, (Uuid, Uuid)>(query)
@@ -291,9 +312,37 @@ impl<'a> SchedulerDataLoader<'a> {
         
         Ok(rows.into_iter().collect())
     }
+
+    /// Load all rooms with details
+    pub async fn load_rooms(&self) -> Result<HashMap<Uuid, RoomInfo>, sqlx::Error> {
+        let query = r#"
+            SELECT id, name, room_type, capacity
+            FROM rooms
+            WHERE is_active = true
+        "#;
+        
+        let rows = sqlx::query_as::<_, RoomRow>(query)
+            .fetch_all(self.pool)
+            .await?;
+            
+        Ok(rows.into_iter().map(|r| (r.id, RoomInfo {
+            id: r.id,
+            name: r.name,
+            room_type: r.room_type,
+            capacity: r.capacity.unwrap_or(0),
+        })).collect())
+    }
 }
 
 // Database row types
+
+#[derive(sqlx::FromRow)]
+struct RoomRow {
+    id: Uuid,
+    name: String,
+    room_type: Option<String>,
+    capacity: Option<i32>,
+}
 
 #[derive(sqlx::FromRow)]
 struct CourseRow {
@@ -342,5 +391,6 @@ struct InstructorPrefRow {
 #[derive(serde::Deserialize)]
 struct TimeSlotJson {
     day: String,
-    period_id: Uuid,
+    period_id: Option<Uuid>,
+    period_index: Option<i32>,
 }
