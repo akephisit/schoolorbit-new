@@ -154,10 +154,19 @@
 				ระบบจะจัดตารางสอนให้อัตโนมัติตามเงื่อนไขและความต้องการที่กำหนด
 			</p>
 		</div>
-		<Button variant="outline" onclick={() => goto('/staff/academic/timetable/scheduling/jobs')}>
-			<History class="mr-2 h-4 w-4" />
-			ประวัติการจัดตาราง
-		</Button>
+		<div class="flex gap-2">
+			<Button
+				variant="outline"
+				onclick={() => goto('/staff/academic/timetable/scheduling/constraints')}
+			>
+				<Settings2 class="mr-2 h-4 w-4" />
+				ตั้งค่าเงื่อนไข
+			</Button>
+			<Button variant="outline" onclick={() => goto('/staff/academic/timetable/scheduling/jobs')}>
+				<History class="mr-2 h-4 w-4" />
+				ประวัติการจัดตาราง
+			</Button>
+		</div>
 	</div>
 
 	{#if loading}

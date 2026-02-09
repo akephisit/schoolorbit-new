@@ -127,15 +127,72 @@ export interface CreateLockedSlotRequest {
     reason?: string;
 }
 
-// ==================== API Functions ====================
+// ==================== Scheduling Constraints ====================
 
-// Auto-schedule
+export interface InstructorConstraintView {
+    id: UUID;
+    first_name: string;
+    last_name: string;
+    short_name?: string;
+    max_periods_per_day?: number;
+    hard_unavailable_slots?: any; // JSON
+    preferred_slots?: any; // JSON
+    assigned_room_id?: UUID;
+    assigned_room_name?: string;
+}
+
+export interface UpdateInstructorConstraintRequest {
+    max_periods_per_day?: number;
+    hard_unavailable_slots?: any;
+    preferred_slots?: any;
+    assigned_room_id?: UUID;
+}
+
+export interface SubjectConstraintView {
+    id: UUID;
+    code: string;
+    name: string;
+    min_consecutive_periods?: number; // 
+    max_consecutive_periods?: number;
+    preferred_time_of_day?: string; // MORNING, AFTERNOON
+    required_room_type?: string;
+    periods_per_week?: number;
+}
+
+export interface UpdateSubjectConstraintRequest {
+    min_consecutive_periods?: number;
+    max_consecutive_periods?: number;
+    preferred_time_of_day?: string;
+    required_room_type?: string;
+    periods_per_week?: number;
+}
+
+// Constraints API
+export async function listInstructorConstraints() {
+    return apiClient.get<InstructorConstraintView[]>('/api/academic/scheduling/instructors');
+}
+
+export async function updateInstructorConstraints(id: UUID, req: UpdateInstructorConstraintRequest) {
+    return apiClient.put<any>(`/api/academic/scheduling/instructors/${id}`, req);
+}
+
+export async function listSubjectConstraints() {
+    return apiClient.get<SubjectConstraintView[]>('/api/academic/scheduling/subjects');
+}
+
+export async function updateSubjectConstraints(id: UUID, req: UpdateSubjectConstraintRequest) {
+    return apiClient.put<any>(`/api/academic/scheduling/subjects/${id}`, req);
+}
+
+// ==================== Legacy / Other API Functions (Keep if needed) ====================
+// ... (Previous job APIs)
 export async function autoScheduleTimetable(request: CreateSchedulingJobRequest) {
     return apiClient.post<{ job_id: UUID; status: string; message: string }>(
         '/api/academic/scheduling/auto-schedule',
         request
     );
 }
+// ...
 
 export async function getSchedulingJob(jobId: UUID) {
     return apiClient.get<SchedulingJobResponse>(`/api/academic/scheduling/jobs/${jobId}`);
@@ -151,7 +208,7 @@ export async function listSchedulingJobs(params?: { semester_id?: UUID; limit?: 
     );
 }
 
-// Instructor Preferences
+// Instructor Preferences (Legacy/Direct)
 export async function createInstructorPreference(request: CreateInstructorPreferenceRequest) {
     return apiClient.post<InstructorPreference>('/api/academic/instructor-preferences', request);
 }
@@ -171,7 +228,7 @@ export async function getInstructorPreference(instructorId: UUID, academicYearId
     return apiClient.get<InstructorPreference>(`/api/academic/instructor-preferences?${query}`);
 }
 
-// Instructor Room Assignments
+// Instructor Room Assignments (Legacy/Direct)
 export async function createInstructorRoomAssignment(request: CreateInstructorRoomAssignmentRequest) {
     return apiClient.post<InstructorRoomAssignment>('/api/academic/instructor-rooms', request);
 }

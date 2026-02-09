@@ -82,4 +82,10 @@ pub fn academic_routes() -> Router<AppState> {
         // Locked Slots
         .route("/timetable/locked-slots", post(handlers::scheduling::create_locked_slot).get(handlers::scheduling::list_locked_slots))
         .route("/timetable/locked-slots/{id}", axum::routing::delete(handlers::scheduling::delete_locked_slot))
+
+        // Scheduling Constraints Config
+        .route("/scheduling/instructors", get(handlers::scheduling_config::list_instructor_constraints))
+        .route("/scheduling/instructors/{id}", put(handlers::scheduling_config::update_instructor_constraints))
+        .route("/scheduling/subjects", get(handlers::scheduling_config::list_subject_constraints))
+        .route("/scheduling/subjects/{id}", put(handlers::scheduling_config::update_subject_constraints))
 }
