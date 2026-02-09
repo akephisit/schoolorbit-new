@@ -60,6 +60,7 @@ pub struct SubjectConstraintView {
     pub allow_single_period: Option<bool>,
     pub required_room_type: Option<String>,
     pub preferred_time_of_day: Option<String>,
+    pub periods_per_week: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -113,14 +114,14 @@ pub async fn list_instructor_constraints(
             ip.max_periods_per_day,
             ip.min_periods_per_day,
             ra.room_id as assigned_room_id,
-            r.name as assigned_room_name
+            r.name_th as assigned_room_name
         FROM users u
         JOIN user_roles ur ON u.id = ur.user_id
         JOIN roles rol ON ur.role_id = rol.id
         LEFT JOIN instructor_preferences ip ON u.id = ip.instructor_id AND ip.academic_year_id = $1
         LEFT JOIN instructor_room_assignments ra ON u.id = ra.instructor_id AND ra.academic_year_id = $1 AND ra.is_required = true
         LEFT JOIN rooms r ON ra.room_id = r.id
-        WHERE rol.name = 'Teacher'
+        WHERE rol.code = 'TEACHER'
         ORDER BY u.first_name
         "#
     )
@@ -248,11 +249,12 @@ pub async fn list_subject_constraints(
             id, -- map to id
             code,
             name_th as name,
-            min_consecutive_periods,
+            COALESCE(min_consecutive_periods, 1) as min_consecutive_periods,
             max_consecutive_periods,
             allow_single_period,
             required_room_type,
-            preferred_time_of_day
+            preferred_time_of_day,
+            periods_per_week
         FROM subjects
         WHERE is_active = true
         ORDER BY code

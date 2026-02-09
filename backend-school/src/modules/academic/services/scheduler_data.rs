@@ -316,9 +316,9 @@ impl<'a> SchedulerDataLoader<'a> {
     /// Load all rooms with details
     pub async fn load_rooms(&self) -> Result<HashMap<Uuid, RoomInfo>, sqlx::Error> {
         let query = r#"
-            SELECT id, name, room_type, capacity
+            SELECT id, name_th as name, room_type, capacity
             FROM rooms
-            WHERE is_active = true
+            WHERE status = 'ACTIVE'
         "#;
         
         let rows = sqlx::query_as::<_, RoomRow>(query)
