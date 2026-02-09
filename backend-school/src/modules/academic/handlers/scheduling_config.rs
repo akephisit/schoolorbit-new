@@ -31,7 +31,7 @@ impl<T> ApiResponse<T> {
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct InstructorConstraintView {
-    pub instructor_id: Uuid,
+    pub id: Uuid, // Changed from instructor_id to id
     pub first_name: String,
     pub last_name: String,
     pub hard_unavailable_slots: Option<serde_json::Value>,
@@ -43,7 +43,7 @@ pub struct InstructorConstraintView {
 
 #[derive(Deserialize)]
 pub struct UpdateInstructorConstraintRequest {
-    pub instructor_id: Uuid,
+    // instructor_id removed, use Path param
     pub hard_unavailable_slots: Option<serde_json::Value>,
     pub max_periods_per_day: Option<i32>,
     pub preferred_slots: Option<serde_json::Value>,
@@ -52,11 +52,11 @@ pub struct UpdateInstructorConstraintRequest {
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct SubjectConstraintView {
-    pub subject_id: Uuid,
+    pub id: Uuid, // Changed from subject_id to id
     pub code: String,
     pub name: String,
     pub min_consecutive_periods: i32,
-    pub max_consecutive_periods: Option<i32>, // Can be null in DB
+    pub max_consecutive_periods: Option<i32>, 
     pub allow_single_period: Option<bool>,
     pub required_room_type: Option<String>,
     pub preferred_time_of_day: Option<String>,
@@ -64,7 +64,7 @@ pub struct SubjectConstraintView {
 
 #[derive(Deserialize)]
 pub struct UpdateSubjectConstraintRequest {
-    pub subject_id: Uuid,
+    // subject_id removed, use Path param
     pub min_consecutive_periods: Option<i32>,
     pub max_consecutive_periods: Option<i32>,
     pub allow_single_period: Option<bool>,
@@ -106,7 +106,7 @@ pub async fn list_instructor_constraints(
     let instructors = sqlx::query_as::<_, InstructorConstraintView>(
         r#"
         SELECT 
-            u.id as instructor_id,
+            u.id, -- map to id
             u.first_name,
             u.last_name,
             ip.hard_unavailable_slots,
@@ -135,6 +135,7 @@ pub async fn list_instructor_constraints(
 pub async fn update_instructor_constraints(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Path(instructor_id): Path<Uuid>, // Extract from URL
     Json(payload): Json<UpdateInstructorConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
@@ -154,7 +155,6 @@ pub async fn update_instructor_constraints(
     };
 
     // Update preferences
-    // Using simple query! macro for update/insert
     sqlx::query(
         r#"
         INSERT INTO instructor_preferences (
@@ -166,10 +166,11 @@ pub async fn update_instructor_constraints(
         DO UPDATE SET 
             hard_unavailable_slots = EXCLUDED.hard_unavailable_slots,
             max_periods_per_day = EXCLUDED.max_periods_per_day,
+            preferred_slots = EXCLUDED.preferred_slots,
             updated_at = NOW()
         "#
     )
-    .bind(payload.instructor_id)
+    .bind(instructor_id)
     .bind(year_id)
     .bind(payload.hard_unavailable_slots.unwrap_or(serde_json::json!([])))
     .bind(payload.max_periods_per_day)
@@ -179,17 +180,11 @@ pub async fn update_instructor_constraints(
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     // Handle Room Assignment
-    // If room_id is Some, insert/update. If None, we might want to delete?
-    // Current logic: only insert if payload has room_id
     if let Some(room_id) = payload.assigned_room_id {
-        // First, clear existing assignments for this instructor/year ??
-        // Actually, constraint usually implies "Primary Room".
-        // Let's delete old one first to be safe or upsert.
-        
         sqlx::query(
             "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
         )
-        .bind(payload.instructor_id)
+        .bind(instructor_id)
         .bind(year_id)
         .execute(&mut *tx)
         .await
@@ -203,30 +198,32 @@ pub async fn update_instructor_constraints(
             VALUES ($1, $2, $3, true)
             "#
         )
-        .bind(payload.instructor_id)
+        .bind(instructor_id)
         .bind(year_id)
         .bind(room_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     } else {
-        // If assigned_room_id is None (or not sent? Payload field is Option),
-        // If explicit Null was sent, we might want to clear assignment.
-        // But `Option<Uuid>` doesn't distinguish between "Missing" and "Null" easily in Axum Json without wrapper.
-        // Let's assume if it's sent as None, we do nothing or clear?
-        // Let's clear if it's None for now? Or maybe user just didn't select one.
-        // UI sends null if cleared.
+        // Clear assignment if None passed? Or assume no change? 
+        // Let's check logic. If UI sends undefined, it's None.
+        // If UI sends null, it's deserialized as None (if Option<Uuid>).
+        // Standard JSON: null -> None.
+        // If we want to support "Clear", we might need to know if it was explicitly null.
+        // But for simplicity, let's assume if it is NOT in payload, we don't clear (Partial Update).
+        // BUT `assigned_room_id` is Option<Uuid>. If field is missing => None.
+        // We can't distinguish Missing vs Null easily without `Option<Option<T>>` or serde default.
         
-        // Let's try to remove assignment if we can confirm intent. 
-        // For now, let's just leave it alone if None, or maybe the UI sends a specific Value?
-        // Just Update: if User unselects room, UI should send null.
-        // So we should delete.
-        // But checking if field was present is hard.
-        // Let's assume Update always sends current state.
-         sqlx::query(
+        // Let's implement: If we want to clear, user must send specific cleared value?
+        // Or actually, simple approach: Always clear if this endpoint is called? No.
+        // Let's assume this endpoint is "Settings Save". It sends FULL state.
+        // If user selected "No Room", frontend sends null.
+        // So we should DELETE if room_id is None.
+        
+        sqlx::query(
             "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
         )
-        .bind(payload.instructor_id)
+        .bind(instructor_id)
         .bind(year_id)
         .execute(&mut *tx)
         .await
@@ -248,7 +245,7 @@ pub async fn list_subject_constraints(
     let subjects = sqlx::query_as::<_, SubjectConstraintView>(
         r#"
         SELECT 
-            id as subject_id,
+            id, -- map to id
             code,
             name_th as name,
             min_consecutive_periods,
@@ -271,6 +268,7 @@ pub async fn list_subject_constraints(
 pub async fn update_subject_constraints(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Path(subject_id): Path<Uuid>, // Extract from URL
     Json(payload): Json<UpdateSubjectConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
@@ -287,7 +285,7 @@ pub async fn update_subject_constraints(
         WHERE id = $1
         "#
     )
-    .bind(payload.subject_id)
+    .bind(subject_id)
     .bind(payload.min_consecutive_periods)
     .bind(payload.max_consecutive_periods)
     .bind(payload.allow_single_period)
