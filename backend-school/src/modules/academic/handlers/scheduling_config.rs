@@ -61,6 +61,8 @@ pub struct SubjectConstraintView {
     pub required_room_type: Option<String>,
     pub preferred_time_of_day: Option<String>,
     pub periods_per_week: Option<i32>,
+    pub allowed_period_ids: Option<serde_json::Value>, // JSONB array of period UUIDs
+    pub allowed_days: Option<serde_json::Value>,       // JSONB array of days
 }
 
 #[derive(Deserialize)]
@@ -71,6 +73,8 @@ pub struct UpdateSubjectConstraintRequest {
     pub allow_single_period: Option<bool>,
     pub required_room_type: Option<String>,
     pub preferred_time_of_day: Option<String>,
+    pub allowed_period_ids: Option<serde_json::Value>, // JSONB array
+    pub allowed_days: Option<serde_json::Value>,       // JSONB array
 }
 
 /// Helper
@@ -254,7 +258,9 @@ pub async fn list_subject_constraints(
             allow_single_period,
             required_room_type,
             preferred_time_of_day,
-            periods_per_week
+            periods_per_week,
+            allowed_period_ids,
+            allowed_days
         FROM subjects
         WHERE is_active = true
         ORDER BY code
@@ -283,6 +289,8 @@ pub async fn update_subject_constraints(
             allow_single_period = COALESCE($4, allow_single_period),
             required_room_type = $5,
             preferred_time_of_day = $6,
+            allowed_period_ids = $7,
+            allowed_days = $8,
             updated_at = NOW()
         WHERE id = $1
         "#
@@ -293,6 +301,8 @@ pub async fn update_subject_constraints(
     .bind(payload.allow_single_period)
     .bind(payload.required_room_type)
     .bind(payload.preferred_time_of_day)
+    .bind(payload.allowed_period_ids)
+    .bind(payload.allowed_days)
     .execute(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;

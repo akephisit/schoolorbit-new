@@ -7,6 +7,27 @@ export type SchedulingAlgorithm = 'GREEDY' | 'BACKTRACKING' | 'HYBRID';
 export type SchedulingStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type LockedSlotScope = 'CLASSROOM' | 'GRADE_LEVEL' | 'ALL_SCHOOL';
 
+export interface Period {
+    id: UUID;
+    name: string;
+    start_time: string;
+    end_time: string;
+    type: 'TEACHING' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM';
+    order_index: number;
+    applicable_days?: string;
+}
+
+export const DAY_OPTIONS = [
+    { value: 'MON', label: 'จันทร์' },
+    { value: 'TUE', label: 'อังคาร' },
+    { value: 'WED', label: 'พุธ' },
+    { value: 'THU', label: 'พฤหัสบดี' },
+    { value: 'FRI', label: 'ศุกร์' },
+    { value: 'SAT', label: 'เสาร์' },
+    { value: 'SUN', label: 'อาทิตย์' }
+] as const;
+
+
 export interface SchedulingConfig {
     force_overwrite?: boolean;
     respect_preferences?: boolean;
@@ -157,6 +178,8 @@ export interface SubjectConstraintView {
     preferred_time_of_day?: string; // MORNING, AFTERNOON
     required_room_type?: string;
     periods_per_week?: number;
+    allowed_period_ids?: UUID[]; // Array of period UUID strings
+    allowed_days?: string[];      // Array of day codes: MON, TUE, etc.
 }
 
 export interface UpdateSubjectConstraintRequest {
@@ -165,6 +188,8 @@ export interface UpdateSubjectConstraintRequest {
     preferred_time_of_day?: string;
     required_room_type?: string;
     periods_per_week?: number;
+    allowed_period_ids?: UUID[] | null;
+    allowed_days?: string[] | null;
 }
 
 // Constraints API
@@ -183,6 +208,12 @@ export async function listSubjectConstraints() {
 export async function updateSubjectConstraints(id: UUID, req: UpdateSubjectConstraintRequest) {
     return apiClient.put<any>(`/api/academic/scheduling/subjects/${id}`, req);
 }
+
+export async function listPeriods(academicYearId?: UUID) {
+    const params = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return apiClient.get<Period[]>(`/api/academic/periods${params}`);
+}
+
 
 // ==================== Legacy / Other API Functions (Keep if needed) ====================
 // ... (Previous job APIs)

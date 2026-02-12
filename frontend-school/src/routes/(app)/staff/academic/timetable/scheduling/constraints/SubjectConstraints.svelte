@@ -5,10 +5,14 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Checkbox from '$lib/components/ui/checkbox';
 	import {
 		listSubjectConstraints,
 		updateSubjectConstraints,
-		type SubjectConstraintView
+		listPeriods,
+		DAY_OPTIONS,
+		type SubjectConstraintView,
+		type Period
 	} from '$lib/api/scheduling';
 	import { Loader2, Pencil, Clock, MapPin, Layers } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
@@ -31,6 +35,7 @@
 
 	// State
 	let subjects: SubjectConstraintView[] = [];
+	let periods: Period[] = [];
 	let loading = true;
 	let searchTerm = '';
 
@@ -45,9 +50,11 @@
 	let preferredTime = 'ANYTIME';
 	let requiredRoomType = '';
 	let periodsPerWeek = 2;
+	let selectedPeriodIds: string[] = [];
+	let selectedDays: string[] = [];
 
 	onMount(async () => {
-		await loadData();
+		await Promise.all([loadData(), loadPeriods()]);
 	});
 
 	async function loadData() {
@@ -63,6 +70,15 @@
 		}
 	}
 
+	async function loadPeriods() {
+		try {
+			const res = await listPeriods();
+			periods = (res.data || []).filter((p) => p.type === 'TEACHING'); // Only teaching periods
+		} catch (err) {
+			console.error('Failed to load periods:', err);
+		}
+	}
+
 	function openEdit(subject: SubjectConstraintView) {
 		selectedSubject = subject;
 		minConsecutive = subject.min_consecutive_periods || 1;
@@ -70,6 +86,8 @@
 		preferredTime = subject.preferred_time_of_day || 'ANYTIME';
 		requiredRoomType = subject.required_room_type || '';
 		periodsPerWeek = subject.periods_per_week || 2;
+		selectedPeriodIds = subject.allowed_period_ids || [];
+		selectedDays = subject.allowed_days || [];
 
 		showDialog = true;
 	}
@@ -84,7 +102,9 @@
 				max_consecutive_periods: maxConsecutive,
 				preferred_time_of_day: preferredTime,
 				required_room_type: requiredRoomType ? requiredRoomType : undefined,
-				periods_per_week: periodsPerWeek
+				periods_per_week: periodsPerWeek,
+				allowed_period_ids: selectedPeriodIds.length > 0 ? selectedPeriodIds : null,
+				allowed_days: selectedDays.length > 0 ? selectedDays : null
 			});
 			toast.success('บันทึกข้อมูลเรียบร้อย');
 			showDialog = false;
@@ -209,6 +229,62 @@
 						<option value={time.value}>{time.label}</option>
 					{/each}
 				</select>
+			</div>
+
+			<!-- Allowed Period IDs -->
+			<div class="space-y-2">
+				<Label>คาบที่อนุญาต (ไม่เลือก = ทุกคาบ)</Label>
+				<div class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 border rounded-md">
+					{#each periods as period}
+						<label class="flex items-center space-x-2 text-sm cursor-pointer">
+							<input
+								type="checkbox"
+								value={period.id}
+								checked={selectedPeriodIds.includes(period.id)}
+								on:change={(e) => {
+									if (e.currentTarget.checked) {
+										selectedPeriodIds = [...selectedPeriodIds, period.id];
+									} else {
+										selectedPeriodIds = selectedPeriodIds.filter((id) => id !== period.id);
+									}
+								}}
+								class="h-4 w-4 rounded border-gray-300"
+							/>
+							<span>{period.name} ({period.start_time})</span>
+						</label>
+					{/each}
+				</div>
+				<p class="text-xs text-muted-foreground">
+					เลือกคาบที่วิชานี้สามารถจัดได้ (ว่างไว้ = ทุกคาบ)
+				</p>
+			</div>
+
+			<!-- Allowed Days -->
+			<div class="space-y-2">
+				<Label>วันที่อนุญาต (ไม่เลือก = ทุกวัน)</Label>
+				<div class="grid grid-cols-2 gap-2">
+					{#each DAY_OPTIONS as day}
+						<label class="flex items-center space-x-2 text-sm cursor-pointer">
+							<input
+								type="checkbox"
+								value={day.value}
+								checked={selectedDays.includes(day.value)}
+								on:change={(e) => {
+									if (e.currentTarget.checked) {
+										selectedDays = [...selectedDays, day.value];
+									} else {
+										selectedDays = selectedDays.filter((d) => d !== day.value);
+									}
+								}}
+								class="h-4 w-4 rounded border-gray-300"
+							/>
+							<span>{day.label}</span>
+						</label>
+					{/each}
+				</div>
+				<p class="text-xs text-muted-foreground">
+					เลือกวันที่วิชานี้สามารถจัดได้ (ว่างไว้ = ทุกวัน)
+				</p>
 			</div>
 
 			<!-- Room Type -->
