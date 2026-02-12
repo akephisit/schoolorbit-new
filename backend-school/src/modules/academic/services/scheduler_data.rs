@@ -49,7 +49,11 @@ impl<'a> SchedulerDataLoader<'a> {
                 s.required_room_type,
                 
                 -- Time preferences
-                s.preferred_time_of_day
+                s.preferred_time_of_day,
+                
+                -- Flexible constraints (new)
+                s.allowed_period_ids,
+                s.allowed_days
                 
             FROM classroom_courses cc
             JOIN subjects s ON s.id = cc.subject_id
@@ -78,6 +82,27 @@ impl<'a> SchedulerDataLoader<'a> {
                 None
             };
             
+            // Parse JSONB arrays
+            let allowed_period_ids = row.allowed_period_ids.as_ref().and_then(|json| {
+                json.as_array().and_then(|arr| {
+                    let uuids: Result<Vec<Uuid>, _> = arr
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|s| Uuid::parse_str(s))
+                        .collect();
+                    uuids.ok()
+                })
+            });
+            
+            let allowed_days = row.allowed_days.as_ref().and_then(|json| {
+                json.as_array().and_then(|arr| {
+                    Some(arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect())
+                })
+            });
+            
             courses.push(CourseToSchedule {
                 id: Uuid::new_v4(), // Unique ID for this scheduling instance
                 classroom_course_id: row.classroom_course_id,
@@ -96,6 +121,8 @@ impl<'a> SchedulerDataLoader<'a> {
                 required_room_type: row.required_room_type,
                 fixed_room_id,
                 preferred_time_of_day: row.preferred_time_of_day,
+                allowed_period_ids,
+                allowed_days,
             });
         }
         
@@ -360,6 +387,8 @@ struct CourseRow {
     allow_single_period: bool,
     required_room_type: Option<String>,
     preferred_time_of_day: Option<String>,
+    allowed_period_ids: Option<serde_json::Value>, // JSONB
+    allowed_days: Option<serde_json::Value>,       // JSONB
 }
 
 #[derive(sqlx::FromRow)]

@@ -200,6 +200,31 @@ impl BacktrackingScheduler {
         false
     }
     
+    /// Filter slots based on course's flexible constraints (allowed_period_ids, allowed_days)
+    fn filter_allowed_slots<'a>(
+        &self,
+        course: &CourseToSchedule,
+        available_slots: &'a [TimeSlot],
+    ) -> Vec<&'a TimeSlot> {
+        available_slots.iter().filter(|slot| {
+            // Check allowed_days constraint
+            if let Some(ref allowed_days) = course.allowed_days {
+                if !allowed_days.is_empty() && !allowed_days.contains(&slot.day) {
+                    return false;
+                }
+            }
+            
+            // Check allowed_period_ids constraint
+            if let Some(ref allowed_periods) = course.allowed_period_ids {
+                if !allowed_periods.is_empty() && !allowed_periods.contains(&slot.period_id) {
+                    return false;
+                }
+            }
+            
+            true
+        }).collect()
+    }
+    
     /// Try to schedule a single course
     fn schedule_course(
         &self,
@@ -212,11 +237,22 @@ impl BacktrackingScheduler {
         _iterations: &mut u32,
         _start_time: &Instant,
     ) -> bool {
+        // Filter slots based on course constraints (allowed_period_ids, allowed_days)
+        let filtered_slots = self.filter_allowed_slots(course, available_slots);
+        
+        // If no valid slots after filtering, cannot schedule
+        if filtered_slots.is_empty() {
+            return false;
+        }
+        
+        // Convert back to owned Vec for easier handling
+        let filtered_owned: Vec<TimeSlot> = filtered_slots.iter().map(|s| (*s).clone()).collect();
+        
         // Strategy based on consecutive requirements
         if course.min_consecutive > 1 {
-            self.schedule_with_consecutive(course, periods_needed, available_slots, state)
+            self.schedule_with_consecutive(course, periods_needed, &filtered_owned, state)
         } else {
-            self.schedule_without_consecutive(course, periods_needed, available_slots, state)
+            self.schedule_without_consecutive(course, periods_needed, &filtered_owned, state)
         }
     }
     

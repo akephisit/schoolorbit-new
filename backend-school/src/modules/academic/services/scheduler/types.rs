@@ -47,6 +47,10 @@ pub struct CourseToSchedule {
     
     // Time preferences
     pub preferred_time_of_day: Option<String>, // "MORNING", "AFTERNOON", "ANYTIME"
+    
+    // Flexible constraints (new)
+    pub allowed_period_ids: Option<Vec<Uuid>>, // NULL = all periods allowed
+    pub allowed_days: Option<Vec<String>>,     // NULL = all days allowed
 }
 
 // ==================== Assignment ====================
