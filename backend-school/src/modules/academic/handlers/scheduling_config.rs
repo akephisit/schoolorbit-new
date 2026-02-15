@@ -116,12 +116,10 @@ pub async fn list_instructor_constraints(
             ra.room_id as assigned_room_id,
             r.name_th as assigned_room_name
         FROM users u
-        JOIN user_roles ur ON u.id = ur.user_id
-        JOIN roles rol ON ur.role_id = rol.id
         LEFT JOIN instructor_preferences ip ON u.id = ip.instructor_id AND ip.academic_year_id = $1
         LEFT JOIN instructor_room_assignments ra ON u.id = ra.instructor_id AND ra.academic_year_id = $1 AND ra.is_required = true
         LEFT JOIN rooms r ON ra.room_id = r.id
-        WHERE rol.code = 'TEACHER'
+        WHERE u.user_type = 'staff' AND u.status = 'active'
         ORDER BY u.first_name
         "#
     )
