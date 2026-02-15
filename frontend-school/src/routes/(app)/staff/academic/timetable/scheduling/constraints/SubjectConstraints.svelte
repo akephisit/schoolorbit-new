@@ -117,6 +117,40 @@
 		}
 	}
 
+	// Calculate available slots based on current constraints
+	$: availableSlots = (() => {
+		if (!selectedSubject) return 0;
+
+		let count = periods.length * 5; // Default: all teaching periods × 5 days (Mon-Fri)
+
+		// Apply day filter
+		if (selectedDays.length > 0) {
+			count = periods.length * selectedDays.length;
+		}
+
+		// Apply period filter
+		if (selectedPeriodIds.length > 0) {
+			const dayCount = selectedDays.length > 0 ? selectedDays.length : 5;
+			count = selectedPeriodIds.length * dayCount;
+		}
+
+		return count;
+	})();
+
+	// Check if constraints are too restrictive
+	$: constraintWarning = (() => {
+		if (!selectedSubject) return '';
+
+		const needed = periodsPerWeek || 2;
+		if (availableSlots < needed) {
+			return `⚠️ คำเตือน: มีช่องว่างเพียง ${availableSlots} ช่อง แต่ต้องการ ${needed} คาบต่อสัปดาห์`;
+		}
+		if (availableSlots < needed * 1.5) {
+			return `⚡ หมายเหตุ: มีช่องว่างเพียง ${availableSlots} ช่อง สำหรับ ${needed} คาบ (อาจจัดตารางลำบาก)`;
+		}
+		return '';
+	})();
+
 	$: filteredSubjects = subjects.filter(
 		(s) =>
 			s.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -300,6 +334,42 @@
 					{/each}
 				</select>
 			</div>
+
+			<!-- Preview / Warning -->
+			{#if selectedPeriodIds.length > 0 || selectedDays.length > 0}
+				<div class="rounded-lg border bg-blue-50 dark:bg-blue-950 p-3">
+					<div class="flex items-start gap-2">
+						<div class="text-blue-600 dark:text-blue-400 mt-0.5">
+							<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+								></path>
+							</svg>
+						</div>
+						<div class="flex-1">
+							<p class="text-sm font-medium text-blue-900 dark:text-blue-100">
+								ช่วงเวลาที่สามารถจัดได้: {availableSlots} ช่อง
+							</p>
+							<p class="text-xs text-blue-700 dark:text-blue-300 mt-1">
+								ต้องการ {periodsPerWeek || 2} คาบต่อสัปดาห์
+							</p>
+						</div>
+					</div>
+				</div>
+			{/if}
+
+			{#if constraintWarning}
+				<div
+					class="rounded-lg border bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800 p-3"
+				>
+					<p class="text-sm text-yellow-800 dark:text-yellow-200">
+						{constraintWarning}
+					</p>
+				</div>
+			{/if}
 		</div>
 
 		<Dialog.Footer>
