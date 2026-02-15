@@ -17,22 +17,6 @@
 	import { Loader2, Pencil, Clock, MapPin, Layers } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
-	// Constants
-	const TIME_PREFERENCES = [
-		{ value: 'ANYTIME', label: 'เวลาใดก็ได้ (Anytime)' },
-		{ value: 'MORNING', label: 'ช่วงเช้า (Morning)' },
-		{ value: 'AFTERNOON', label: 'ช่วงบ่าย (Afternoon)' }
-	];
-
-	const ROOM_TYPES = [
-		{ value: 'STANDARD', label: 'ห้องเรียนปกติ' },
-		{ value: 'LAB_SCIENCE', label: 'ห้องวิทยาศาสตร์' },
-		{ value: 'LAB_COMPUTER', label: 'ห้องคอมพิวเตอร์' },
-		{ value: 'MUSIC', label: 'ห้องดนตรี' },
-		{ value: 'ART', label: 'ห้องศิลปะ' },
-		{ value: 'GYM', label: 'สนาม/โรงยิม' }
-	];
-
 	// State
 	let subjects: SubjectConstraintView[] = [];
 	let periods: Period[] = [];
@@ -47,8 +31,6 @@
 	// Form Data
 	let minConsecutive = 1;
 	let maxConsecutive = 2;
-	let preferredTime = 'ANYTIME';
-	let requiredRoomType = '';
 	let periodsPerWeek = 2;
 	let selectedPeriodIds: string[] = [];
 	let selectedDays: string[] = [];
@@ -89,8 +71,6 @@
 		selectedSubject = subject;
 		minConsecutive = subject.min_consecutive_periods || 1;
 		maxConsecutive = subject.max_consecutive_periods || 2;
-		preferredTime = subject.preferred_time_of_day || 'ANYTIME';
-		requiredRoomType = subject.required_room_type || '';
 		periodsPerWeek = subject.periods_per_week || 2;
 		selectedPeriodIds = subject.allowed_period_ids || [];
 		selectedDays = subject.allowed_days || [];
@@ -106,8 +86,6 @@
 			await updateSubjectConstraints(selectedSubject.id, {
 				min_consecutive_periods: minConsecutive,
 				max_consecutive_periods: maxConsecutive,
-				preferred_time_of_day: preferredTime,
-				required_room_type: requiredRoomType ? requiredRoomType : undefined,
 				periods_per_week: periodsPerWeek,
 				allowed_period_ids: selectedPeriodIds.length > 0 ? selectedPeriodIds : null,
 				allowed_days: selectedDays.length > 0 ? selectedDays : null
@@ -264,19 +242,6 @@
 				</div>
 			</div>
 
-			<!-- Time Preference -->
-			<div class="space-y-2">
-				<Label>ช่วงเวลาที่ต้องการ</Label>
-				<select
-					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-					bind:value={preferredTime}
-				>
-					{#each TIME_PREFERENCES as time}
-						<option value={time.value}>{time.label}</option>
-					{/each}
-				</select>
-			</div>
-
 			<!-- Allowed Period IDs -->
 			<div class="space-y-2">
 				<Label>คาบที่อนุญาต (ไม่เลือก = ทุกคาบ)</Label>
@@ -333,18 +298,12 @@
 				</p>
 			</div>
 
-			<!-- Room Type -->
-			<div class="space-y-2">
-				<Label>ประเภทห้องที่ต้องการ</Label>
-				<select
-					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-					bind:value={requiredRoomType}
-				>
-					<option value="">-- ไม่ระบุ (ห้องเรียนปกติ) --</option>
-					{#each ROOM_TYPES as room}
-						<option value={room.value}>{room.label}</option>
-					{/each}
-				</select>
+			<!-- Room Assignment Info -->
+			<div class="rounded-lg border bg-slate-50 dark:bg-slate-900 p-3">
+				<p class="text-sm text-slate-700 dark:text-slate-300">
+					📍 <strong>หมายเหตุ:</strong> ห้องเรียนจะถูกกำหนดตามห้องประจำของครูผู้สอน (ตั้งค่าได้ที่แท็บ
+					"ข้อมูลครู")
+				</p>
 			</div>
 
 			<!-- Preview / Warning -->
