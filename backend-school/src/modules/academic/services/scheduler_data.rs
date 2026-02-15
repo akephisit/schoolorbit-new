@@ -44,14 +44,6 @@ impl<'a> SchedulerDataLoader<'a> {
                 COALESCE(s.min_consecutive_periods, 1) as min_consecutive,
                 2 as max_consecutive,
                 COALESCE(s.allow_single_period, true) as allow_single_period,
-                
-                -- Room requirements
-                -- s.required_room_type removed
-                
-                -- Time preferences
-                -- s.preferred_time_of_day removed
-                
-                -- Flexible constraints (new)
                 s.allowed_period_ids,
                 s.allowed_days
                 
