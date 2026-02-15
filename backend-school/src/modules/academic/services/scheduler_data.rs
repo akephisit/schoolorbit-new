@@ -46,10 +46,10 @@ impl<'a> SchedulerDataLoader<'a> {
                 COALESCE(s.allow_single_period, true) as allow_single_period,
                 
                 -- Room requirements
-                s.required_room_type,
+                -- s.required_room_type removed
                 
                 -- Time preferences
-                s.preferred_time_of_day,
+                -- s.preferred_time_of_day removed
                 
                 -- Flexible constraints (new)
                 s.allowed_period_ids,
@@ -118,9 +118,7 @@ impl<'a> SchedulerDataLoader<'a> {
                 min_consecutive: row.min_consecutive,
                 max_consecutive: row.max_consecutive,
                 allow_single_period: row.allow_single_period,
-                required_room_type: row.required_room_type,
                 fixed_room_id,
-                preferred_time_of_day: row.preferred_time_of_day,
                 allowed_period_ids,
                 allowed_days,
             });
@@ -385,8 +383,6 @@ struct CourseRow {
     min_consecutive: i32,
     max_consecutive: i32,
     allow_single_period: bool,
-    required_room_type: Option<String>,
-    preferred_time_of_day: Option<String>,
     allowed_period_ids: Option<serde_json::Value>, // JSONB
     allowed_days: Option<serde_json::Value>,       // JSONB
 }

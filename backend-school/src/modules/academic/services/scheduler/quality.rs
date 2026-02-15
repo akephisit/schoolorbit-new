@@ -167,51 +167,9 @@ impl QualityScorer {
         total_score / count as f64
     }
     
-    /// SC-3: Score time of day matching
-    fn score_time_of_day(&self, state: &ScheduleState, courses: &[CourseToSchedule]) -> f64 {
-        let mut total_score = 0.0;
-        let mut count = 0;
-        
-        for course in courses {
-            let assignments = state.get_course_assignments(course.id);
-            if assignments.is_empty() {
-                continue;
-            }
-            
-            let preferred = course.preferred_time_of_day.as_deref();
-            
-            if preferred.is_none() || preferred == Some("ANYTIME") {
-                total_score += 80.0; // No preference = OK
-                count += 1;
-                continue;
-            }
-            
-            let mut matched = 0;
-            for assign in &assignments {
-                let period_order = assign.time_slot.period_order;
-                let is_morning = period_order <= 4; // Periods 1-4 = morning
-                
-                let matches = match preferred {
-                    Some("MORNING") => is_morning,
-                    Some("AFTERNOON") => !is_morning,
-                    _ => true,
-                };
-                
-                if matches {
-                    matched += 1;
-                }
-            }
-            
-            let match_rate = matched as f64 / assignments.len() as f64;
-            total_score += match_rate * 100.0;
-            count += 1;
-        }
-        
-        if count == 0 {
-            return 100.0;
-        }
-        
-        total_score / count as f64
+    /// SC-3: Score time of day matching (Deprecated/Removed)
+    fn score_time_of_day(&self, _state: &ScheduleState, _courses: &[CourseToSchedule]) -> f64 {
+        100.0 // Feature removed
     }
     
     /// SC-5: Score daily load balance for classrooms

@@ -42,11 +42,7 @@ pub struct CourseToSchedule {
     pub allow_single_period: bool,
     
     // Room requirements
-    pub required_room_type: Option<String>,
     pub fixed_room_id: Option<Uuid>, // From instructor_room_assignments
-    
-    // Time preferences
-    pub preferred_time_of_day: Option<String>, // "MORNING", "AFTERNOON", "ANYTIME"
     
     // Flexible constraints (new)
     pub allowed_period_ids: Option<Vec<Uuid>>, // NULL = all periods allowed

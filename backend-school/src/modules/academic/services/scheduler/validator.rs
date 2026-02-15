@@ -104,21 +104,7 @@ impl ConstraintValidator {
                 });
             }
             
-            // HC-4: Room Type Compatibility
-            if let Some(req_type) = &course.required_room_type {
-                if let Some(room) = self.rooms.get(&rid) {
-                    let room_type = room.room_type.as_deref().unwrap_or("STANDARD");
-                    // Compare types (Exact match for now, could be improved)
-                    // If required type is STANDARD, usually any room is OK? Or strict?
-                    // Let's assume strict: If subject requires LAB_SCIENCE, Room MUST be LAB_SCIENCE.
-                    if room_type != req_type {
-                         return Err(Conflict {
-                            conflict_type: ConflictType::RoomOccupied,
-                            message: format!("Room type mismatch. Needed: {}, Room is: {}", req_type, room_type),
-                         });
-                    }
-                }
-            }
+            // Room type check removed as per data schema change
         }
         
         // HC-6: Instructor unavailability (hard)
