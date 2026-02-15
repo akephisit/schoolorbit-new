@@ -168,8 +168,6 @@
 					<th class="h-12 px-4 align-middle font-medium text-muted-foreground"
 						>คาบต่อเนื่อง (Min-Max)</th
 					>
-					<th class="h-12 px-4 align-middle font-medium text-muted-foreground">ช่วงเวลา</th>
-					<th class="h-12 px-4 align-middle font-medium text-muted-foreground">ประเภทห้อง</th>
 					<th class="h-12 px-4 align-middle font-medium text-muted-foreground text-right"
 						>ดำเนินการ</th
 					>
@@ -188,25 +186,6 @@
 										2}</span
 								>
 							</div>
-						</td>
-						<td class="p-4 align-middle">
-							{#if subject.preferred_time_of_day === 'MORNING'}
-								<span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">เช้า ☀️</span>
-							{:else if subject.preferred_time_of_day === 'AFTERNOON'}
-								<span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">บ่าย 🌙</span>
-							{:else}
-								<span class="text-xs text-muted-foreground">เวลาใดก็ได้</span>
-							{/if}
-						</td>
-						<td class="p-4 align-middle">
-							{#if subject.required_room_type}
-								<div class="flex items-center gap-1 text-purple-600 font-medium text-xs">
-									<MapPin class="h-3 w-3" />
-									{subject.required_room_type}
-								</div>
-							{:else}
-								<span class="text-xs text-muted-foreground">-</span>
-							{/if}
 						</td>
 						<td class="p-4 align-middle text-right">
 							<Button variant="ghost" size="sm" onclick={() => openEdit(subject)}>

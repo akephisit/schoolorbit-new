@@ -173,10 +173,8 @@ export interface SubjectConstraintView {
     id: UUID;
     code: string;
     name: string;
-    min_consecutive_periods?: number; // 
+    min_consecutive_periods?: number;
     max_consecutive_periods?: number;
-    preferred_time_of_day?: string; // MORNING, AFTERNOON
-    required_room_type?: string;
     periods_per_week?: number;
     allowed_period_ids?: UUID[]; // Array of period UUID strings
     allowed_days?: string[];      // Array of day codes: MON, TUE, etc.
@@ -185,8 +183,6 @@ export interface SubjectConstraintView {
 export interface UpdateSubjectConstraintRequest {
     min_consecutive_periods?: number;
     max_consecutive_periods?: number;
-    preferred_time_of_day?: string;
-    required_room_type?: string;
     periods_per_week?: number;
     allowed_period_ids?: UUID[] | null;
     allowed_days?: string[] | null;
