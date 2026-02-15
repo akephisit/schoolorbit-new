@@ -52,6 +52,7 @@
 	let periodsPerWeek = 2;
 	let selectedPeriodIds: string[] = [];
 	let selectedDays: string[] = [];
+	let showOnlyTeachingPeriods = true; // Default: filter out breaks/activities
 
 	onMount(async () => {
 		await Promise.all([loadData(), loadPeriods()]);
@@ -73,11 +74,16 @@
 	async function loadPeriods() {
 		try {
 			const res = await listPeriods();
-			periods = (res.data || []).filter((p) => p.type === 'TEACHING'); // Only teaching periods
+			periods = res.data || []; // Load all period types
 		} catch (err) {
 			console.error('Failed to load periods:', err);
 		}
 	}
+
+	// Filter periods based on type toggle
+	$: filteredPeriods = showOnlyTeachingPeriods
+		? periods.filter((p) => p.type === 'TEACHING')
+		: periods;
 
 	function openEdit(subject: SubjectConstraintView) {
 		selectedSubject = subject;
@@ -121,11 +127,11 @@
 	$: availableSlots = (() => {
 		if (!selectedSubject) return 0;
 
-		let count = periods.length * 5; // Default: all teaching periods × 5 days (Mon-Fri)
+		let count = filteredPeriods.length * 5; // Default: filtered periods × 5 days (Mon-Fri)
 
 		// Apply day filter
 		if (selectedDays.length > 0) {
-			count = periods.length * selectedDays.length;
+			count = filteredPeriods.length * selectedDays.length;
 		}
 
 		// Apply period filter
