@@ -11,6 +11,7 @@
 		updateInstructorConstraints,
 		type InstructorConstraintView
 	} from '$lib/api/scheduling';
+	import { lookupRooms, type RoomLookupItem } from '$lib/api/lookup';
 	import { Loader2, Pencil, CalendarClock, Briefcase, User } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -18,17 +19,9 @@
 	const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
 	const PERIODS = 8;
 
-	// Mock Rooms (TODO: Fetch from API)
-	const ROOMS = [
-		{ value: 'uuid-1', label: 'Room 101' },
-		{ value: 'uuid-2', label: 'Science Lab 1' },
-		{ value: 'uuid-3', label: 'Computer Lab' },
-		{ value: 'uuid-4', label: 'Music Room' },
-		{ value: 'uuid-5', label: 'Gym' }
-	];
-
 	// State
 	let instructors: InstructorConstraintView[] = [];
+	let rooms: RoomLookupItem[] = [];
 	let loading = true;
 	let searchTerm = '';
 
@@ -39,6 +32,7 @@
 
 	// Form Data
 	let maxPeriods = 7;
+	let selectedBuildingName = '';
 	let assignedRoomId = '';
 	// Grid: [DayIndex][PeriodIndex] -> true/false (true = busy/unavailable)
 	let busyGrid: boolean[][] = [];
@@ -50,13 +44,43 @@
 	async function loadData() {
 		loading = true;
 		try {
-			const res = await listInstructorConstraints();
-			instructors = res.data || [];
+			const [instructorsRes, roomsRes] = await Promise.all([
+				listInstructorConstraints(),
+				lookupRooms()
+			]);
+			instructors = instructorsRes.data || [];
+			rooms = roomsRes;
 		} catch (err) {
 			console.error(err);
-			toast.error('โหลดข้อมูลครูไม่สำเร็จ');
+			toast.error('โหลดข้อมูลไม่สำเร็จ');
 		} finally {
 			loading = false;
+		}
+	}
+
+	// Reactive: Group rooms by building
+	$: buildingGroups = rooms.reduce(
+		(acc, room) => {
+			const buildingName = room.building_name || 'ไม่ระบุอาคาร';
+			if (!acc[buildingName]) {
+				acc[buildingName] = [];
+			}
+			acc[buildingName].push(room);
+			return acc;
+		},
+		{} as Record<string, RoomLookupItem[]>
+	);
+
+	$: buildingNames = Object.keys(buildingGroups).sort();
+
+	// Reactive: Get rooms for selected building
+	$: availableRooms = selectedBuildingName ? buildingGroups[selectedBuildingName] || [] : [];
+
+	// Auto-detect building from assigned room on edit
+	$: if (assignedRoomId && rooms.length > 0 && !selectedBuildingName) {
+		const room = rooms.find((r) => r.id === assignedRoomId);
+		if (room?.building_name) {
+			selectedBuildingName = room.building_name;
 		}
 	}
 
@@ -64,6 +88,7 @@
 		selectedInstructor = instructor;
 		maxPeriods = instructor.max_periods_per_day || 7;
 		assignedRoomId = instructor.assigned_room_id || '';
+		selectedBuildingName = ''; // Will be auto-detected by reactive statement
 
 		// Init Grid (Default Available)
 		busyGrid = Array(5)
@@ -211,18 +236,48 @@
 					<Label for="maxPeriods">จำนวนคาบสูงสุดต่อวัน</Label>
 					<Input id="maxPeriods" type="number" min="1" max="8" bind:value={maxPeriods} />
 				</div>
+
+				<!-- Building & Room Selection -->
+				<div class="grid gap-2">
+					<Label for="building">เลือกตึก/อาคาร</Label>
+					<select
+						id="building"
+						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+						bind:value={selectedBuildingName}
+						onchange={() => {
+							assignedRoomId = '';
+						}}
+					>
+						<option value="">-- เลือกตึก --</option>
+						{#each buildingNames as buildingName}
+							<option value={buildingName}>{buildingName}</option>
+						{/each}
+					</select>
+				</div>
+
 				<div class="grid gap-2">
 					<Label for="room">ห้องประจำตำแหน่ง</Label>
 					<select
 						id="room"
 						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 						bind:value={assignedRoomId}
+						disabled={!selectedBuildingName}
 					>
-						<option value="">-- ไม่ระบุ --</option>
-						{#each ROOMS as room}
-							<option value={room.value}>{room.label}</option>
+						<option value="">-- เลือกห้อง --</option>
+						{#each availableRooms as room}
+							<option value={room.id}>
+								{room.name_th}
+								{#if room.code}
+									({room.code}){/if}
+								{#if room.room_type && room.room_type !== 'STANDARD'}
+									- {room.room_type}
+								{/if}
+							</option>
 						{/each}
 					</select>
+					{#if !selectedBuildingName}
+						<p class="text-xs text-muted-foreground">กรุณาเลือกตึกก่อน</p>
+					{/if}
 				</div>
 			</div>
 
