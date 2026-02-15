@@ -157,6 +157,12 @@
 		return '';
 	})();
 
+	// Reminder to check instructor availability
+	$: instructorHint =
+		selectedPeriodIds.length > 0 || selectedDays.length > 0
+			? '💡 หมายเหตุ: อย่าลืมตรวจสอบว่าครูผู้สอนว่างในช่วงเวลาที่เลือกด้วย'
+			: '';
+
 	$: filteredSubjects = subjects.filter(
 		(s) =>
 			s.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -373,6 +379,16 @@
 				>
 					<p class="text-sm text-yellow-800 dark:text-yellow-200">
 						{constraintWarning}
+					</p>
+				</div>
+			{/if}
+
+			{#if instructorHint}
+				<div
+					class="rounded-lg border bg-purple-50 dark:bg-purple-950 border-purple-200 dark:border-purple-800 p-3"
+				>
+					<p class="text-sm text-purple-800 dark:text-purple-200 flex items-center gap-2">
+						<span>{instructorHint}</span>
 					</p>
 				</div>
 			{/if}
