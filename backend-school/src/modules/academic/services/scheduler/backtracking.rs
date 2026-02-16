@@ -267,30 +267,39 @@ impl BacktrackingScheduler {
         let mut remaining = periods_needed;
         
         while remaining > 0 {
-            let chunk_size = if remaining >= course.min_consecutive {
-                course.max_consecutive.min(remaining)
+            // Determine the ideal chunk size (prefer max_consecutive)
+            let ideal_chunk_size = course.max_consecutive.min(remaining);
+            let min_chunk_size = if remaining >= course.min_consecutive {
+                course.min_consecutive
             } else if course.allow_single_period && remaining == 1 {
                 1
             } else {
                 return false; // Cannot schedule remainder
             };
             
-            // Find consecutive slots
-            if let Some(slots) = self.find_consecutive_slots(
-                course,
-                chunk_size,
-                available_slots,
-                state,
-            ) {
-                // Assign these slots
-                for slot in slots {
-                    let room_id = self.determine_room_id(course);
-                    let assignment = Assignment::new(course, slot, room_id, false);
-                    state.add_assignment(assignment);
+            // Try to find consecutive slots, starting from ideal and falling back to smaller sizes
+            let mut assigned = false;
+            for chunk_size in (min_chunk_size..=ideal_chunk_size).rev() {
+                if let Some(slots) = self.find_consecutive_slots(
+                    course,
+                    chunk_size,
+                    available_slots,
+                    state,
+                ) {
+                    // Assign these slots
+                    for slot in slots {
+                        let room_id = self.determine_room_id(course);
+                        let assignment = Assignment::new(course, slot, room_id, false);
+                        state.add_assignment(assignment);
+                    }
+                    remaining -= chunk_size;
+                    assigned = true;
+                    break; // Successfully assigned this chunk
                 }
-                remaining -= chunk_size;
-            } else {
-                return false; // Cannot find consecutive slots
+            }
+            
+            if !assigned {
+                return false; // Cannot find any valid chunk
             }
         }
         
