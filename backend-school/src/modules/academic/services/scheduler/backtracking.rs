@@ -249,7 +249,9 @@ impl BacktrackingScheduler {
         let filtered_owned: Vec<TimeSlot> = filtered_slots.iter().map(|s| (*s).clone()).collect();
         
         // Strategy based on consecutive requirements
-        if course.min_consecutive > 1 {
+        // Use consecutive scheduler if we want to group periods together (max > 1)
+        // or if we require minimum consecutive periods (min > 1)
+        if course.max_consecutive > 1 || course.min_consecutive > 1 {
             self.schedule_with_consecutive(course, periods_needed, &filtered_owned, state)
         } else {
             self.schedule_without_consecutive(course, periods_needed, &filtered_owned, state)
