@@ -13,6 +13,22 @@ impl QualityScorer {
     
     /// Calculate overall quality score (0-100)
     pub fn calculate_quality(&self, state: &ScheduleState, courses: &[CourseToSchedule]) -> f64 {
+        // If no assignments at all, quality is 0
+        if state.assignments.is_empty() {
+            return 0.0;
+        }
+        
+        // Calculate completion rate (how many periods were scheduled vs needed)
+        let total_periods_needed: i32 = courses.iter().map(|c| c.periods_needed).sum();
+        let total_periods_scheduled = state.assignments.len() as i32;
+        
+        let completion_rate = if total_periods_needed > 0 {
+            (total_periods_scheduled as f64 / total_periods_needed as f64).min(1.0)
+        } else {
+            1.0
+        };
+        
+        // Calculate base quality score from various metrics
         let mut total_score = 0.0;
         let mut total_weight = 0.0;
         
@@ -49,11 +65,15 @@ impl QualityScorer {
         total_score += score * self.config.weight_spacing;
         total_weight += self.config.weight_spacing;
         
-        if total_weight == 0.0 {
-            return 100.0;
-        }
+        let base_quality = if total_weight == 0.0 {
+            100.0
+        } else {
+            (total_score / total_weight).min(100.0).max(0.0)
+        };
         
-        (total_score / total_weight).min(100.0).max(0.0)
+        // Apply completion penalty: final score = base_quality * completion_rate
+        // This ensures partial schedules get lower scores
+        (base_quality * completion_rate).min(100.0).max(0.0)
     }
     
     /// SC-1: Score how well subjects are distributed across days

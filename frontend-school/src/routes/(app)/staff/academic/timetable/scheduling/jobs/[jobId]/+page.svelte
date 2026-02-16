@@ -161,8 +161,16 @@
 			{#if job.status === 'COMPLETED'}
 				<Card class="p-6">
 					<h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
-						<CheckCircle2 class="h-5 w-5 text-green-600" />
-						ผลลัพธ์
+						{#if job.scheduled_courses === 0}
+							<XCircle class="h-5 w-5 text-red-600" />
+							จัดตารางไม่สำเร็จ
+						{:else if job.scheduled_courses < job.total_courses}
+							<AlertCircle class="h-5 w-5 text-orange-600" />
+							จัดได้บางส่วน
+						{:else}
+							<CheckCircle2 class="h-5 w-5 text-green-600" />
+							จัดตารางสำเร็จ
+						{/if}
 					</h2>
 
 					<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -177,7 +185,13 @@
 						<!-- Scheduled Courses -->
 						<div class="text-center p-4 rounded-lg bg-muted/50">
 							<div class="text-sm text-muted-foreground mb-1">จัดสำเร็จ</div>
-							<div class="text-3xl font-bold text-green-600">
+							<div
+								class="text-3xl font-bold {job.scheduled_courses === 0
+									? 'text-red-600'
+									: job.scheduled_courses < job.total_courses
+										? 'text-orange-600'
+										: 'text-green-600'}"
+							>
 								{job.scheduled_courses}
 							</div>
 							<div class="text-xs text-muted-foreground">
@@ -189,7 +203,7 @@
 						<div class="text-center p-4 rounded-lg bg-muted/50">
 							<div class="text-sm text-muted-foreground mb-1">ระยะเวลา</div>
 							<div class="text-3xl font-bold">
-								{job.duration_seconds || 0}
+								{job.duration_seconds === 0 ? '< 1' : job.duration_seconds}
 							</div>
 							<div class="text-xs text-muted-foreground">วินาที</div>
 						</div>
