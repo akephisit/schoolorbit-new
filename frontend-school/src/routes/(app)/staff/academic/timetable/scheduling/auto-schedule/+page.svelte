@@ -22,19 +22,22 @@
 	// Data
 	let classrooms = $state<Classroom[]>([]);
 	let allSemesters = $state<any[]>([]);
+	let allYears = $state<any[]>([]);
 	let selectedSemesterId = $state<UUID | null>(null);
 	let selectedClassroomIds = $state<UUID[]>([]);
 
-	let selectedSemester = $derived(
-		allSemesters.find((s) => s.id === selectedSemesterId)
-			? {
-					value: selectedSemesterId,
-					label: `${allSemesters.find((s) => s.id === selectedSemesterId)?.term}/${
-						allSemesters.find((s) => s.id === selectedSemesterId)?.academic_year_code
-					}`
-				}
-			: undefined
-	);
+	let selectedSemester = $derived.by(() => {
+		const semester = allSemesters.find((s) => s.id === selectedSemesterId);
+		if (!semester) return undefined;
+
+		const year = allYears.find((y) => y.id === semester.academic_year_id);
+		const yearLabel = year ? year.year : 'N/A';
+
+		return {
+			value: selectedSemesterId,
+			label: `${semester.term}/${yearLabel}`
+		};
+	});
 
 	// Config
 	let algorithm = $state<SchedulingAlgorithm>('BACKTRACKING');
@@ -48,8 +51,10 @@
 	let allowMultipleSessions = $state(false); // Default: Force spread (strict)
 
 	onMount(async () => {
-		await loadSemesters();
-		await loadClassrooms();
+		// Load data in parallel for better performance
+		loading = true;
+		await Promise.all([loadAcademicData(), loadClassrooms()]);
+		loading = false;
 
 		// Get semester from query params if available
 		const semesterId = $page.url.searchParams.get('semester_id');
@@ -58,10 +63,11 @@
 		}
 	});
 
-	async function loadSemesters() {
+	async function loadAcademicData() {
 		try {
 			const res = await getAcademicStructure();
 			allSemesters = res.data.semesters;
+			allYears = res.data.years;
 
 			// Auto-select active semester
 			if (!selectedSemesterId) {
@@ -70,19 +76,16 @@
 				else if (allSemesters.length > 0) selectedSemesterId = allSemesters[0].id;
 			}
 		} catch (error) {
-			console.error('Failed to load semesters:', error);
+			console.error('Failed to load academic data:', error);
 		}
 	}
 
 	async function loadClassrooms() {
-		loading = true;
 		try {
 			const res = await listClassrooms();
 			classrooms = res.data || [];
 		} catch (error) {
 			toast.error('โหลดข้อมูลห้องเรียนไม่สำเร็จ');
-		} finally {
-			loading = false;
 		}
 	}
 
