@@ -197,11 +197,10 @@
 						</Select.Trigger>
 						<Select.Content>
 							{#each allSemesters as semester}
-								<Select.Item
-									value={semester.id}
-									label={`${semester.term}/${semester.academic_year_code}`}
-								>
-									{semester.term}/{semester.academic_year_code}
+								{@const year = allYears.find((y) => y.id === semester.academic_year_id)}
+								{@const yearLabel = year ? year.year : 'N/A'}
+								<Select.Item value={semester.id} label={`${semester.term}/${yearLabel}`}>
+									{semester.term}/{yearLabel}
 								</Select.Item>
 							{/each}
 						</Select.Content>
