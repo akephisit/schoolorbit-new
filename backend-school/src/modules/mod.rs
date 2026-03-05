@@ -11,4 +11,3 @@ pub mod lookup;
 pub mod facility;
 pub mod notification;
 pub mod parents;
-pub mod admission;
