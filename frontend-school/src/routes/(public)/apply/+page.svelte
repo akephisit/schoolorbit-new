@@ -22,14 +22,7 @@
 	let savingForm = $state(false);
 
 	let nationalId = $state('');
-	let dateOfBirth = $state(''); // ISO format yyyy-mm-dd
-
-	// helper: แปลงวันที่ไปเป็น DDMMYYYY (AD) สำหรับส่ง API
-	function toDDMMYYYY(iso: string): string {
-		if (!iso) return '';
-		const [y, m, d] = iso.split('-');
-		return `${d}${m}${y}`;
-	}
+	let dateOfBirth = $state(''); // format: DDMMYYYY พ.ศ. (เช่น 20082543)
 
 	let portalData: {
 		application?: {
@@ -82,11 +75,11 @@
 
 	async function handleCheck(e: Event) {
 		e.preventDefault();
-		if (!nationalId.trim() || !dateOfBirth) {
-			toast.error('กรุณากรอกข้อมูลให้ครบ');
+		const dob = dateOfBirth.trim();
+		if (!nationalId.trim() || dob.length !== 8) {
+			toast.error('กรุณากรอกข้อมูลให้ครบ (วันเกิด 8 หลัก)');
 			return;
 		}
-		const dob = toDDMMYYYY(dateOfBirth);
 		checking = true;
 		try {
 			await portalCheck(nationalId, dob);
@@ -101,10 +94,7 @@
 
 	async function loadStatus() {
 		try {
-			portalData = (await portalGetStatus(
-				nationalId,
-				toDDMMYYYY(dateOfBirth)
-			)) as typeof portalData;
+			portalData = (await portalGetStatus(nationalId, dateOfBirth.trim())) as typeof portalData;
 			// Pre-fill form if exists
 			if (portalData?.enrollmentForm?.formData) {
 				const fd = portalData.enrollmentForm.formData as Record<string, string>;
@@ -123,7 +113,7 @@
 	async function handleConfirm() {
 		confirming = true;
 		try {
-			await portalConfirm(nationalId, toDDMMYYYY(dateOfBirth));
+			await portalConfirm(nationalId, dateOfBirth.trim());
 			toast.success('ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัว');
 			await loadStatus();
 		} catch (e) {
@@ -137,11 +127,7 @@
 		e.preventDefault();
 		savingForm = true;
 		try {
-			await portalSubmitForm(
-				nationalId,
-				toDDMMYYYY(dateOfBirth),
-				formFields as Record<string, unknown>
-			);
+			await portalSubmitForm(nationalId, dateOfBirth.trim(), formFields as Record<string, unknown>);
 			toast.success('บันทึกแบบฟอร์มสำเร็จ');
 			await loadStatus();
 		} catch (e) {
@@ -166,7 +152,7 @@
 				<GraduationCap class="w-10 h-10 text-blue-600" />
 			</div>
 			<h1 class="text-2xl font-bold text-gray-900">ตรวจสอบผลการสมัครเรียน</h1>
-			<p class="text-gray-500 mt-1 text-sm">กรอกเลขบัตรประชาชนและเลขที่ใบสมัครเพื่อตรวจสอบผล</p>
+			<p class="text-gray-500 mt-1 text-sm">กรอกเลขบัตรประชาชนและวันเดือนปีเกิดเพื่อตรวจสอบผล</p>
 		</div>
 
 		{#if step === 'login'}
@@ -187,9 +173,17 @@
 					</div>
 					<div class="space-y-1.5">
 						<label for="dob" class="text-sm font-medium text-gray-700"
-							>วันเดือนปีเกิด <span class="text-xs text-muted-foreground">(ค.ศ.)</span></label
+							>วันเดือนปีเกิด <span class="text-xs text-muted-foreground">(พ.ศ.)</span></label
 						>
-						<Input id="dob" type="date" bind:value={dateOfBirth} class="h-11" />
+						<Input
+							id="dob"
+							type="text"
+							inputmode="numeric"
+							maxlength={8}
+							placeholder="เช่น 20082543 (ดดมมปปปป 8 หลัก)"
+							bind:value={dateOfBirth}
+							class="h-11 font-mono tracking-widest text-center"
+						/>
 					</div>
 					<Button type="submit" disabled={checking} class="w-full h-11 gap-2">
 						<Search class="w-4 h-4" />

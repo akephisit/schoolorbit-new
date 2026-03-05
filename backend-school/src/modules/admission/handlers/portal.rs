@@ -28,13 +28,22 @@ async fn verify_credentials(
     national_id: &str,
     date_of_birth: &str,
 ) -> Result<uuid::Uuid, AppError> {
-    // แปลง DDMMYYYY เป็น NaiveDate
+    if date_of_birth.len() != 8 {
+        return Err(AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (ต้องกรอก 8 หลัก ววดดปปปป เช่น 20082543)".to_string()));
+    }
+
+    let year_be: i32 = date_of_birth[4..].parse().unwrap_or(0);
+    // แปลง พ.ศ. เป็น ค.ศ.
+    let year_ce = year_be - 543;
+
+    // แปลง DDMMYYYY (พ.ศ.) เป็น NaiveDate
     let dob = chrono::NaiveDate::parse_from_str(
-        &format!("{}/{}/{}", &date_of_birth[0..2], &date_of_birth[2..4], &date_of_birth[4..]), 
+        &format!("{}/{}/{}", &date_of_birth[0..2], &date_of_birth[2..4], year_ce), 
         "%d/%m/%Y"
     ).ok();
+    
     let Some(dob) = dob else {
-        return Err(AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (กรอก DDMMYYYY ระบบคริสต์ศักราช)".to_string()));
+        return Err(AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (กรอก ววดดปปปป พ.ศ. เช่น 20082543)".to_string()));
     };
 
     let application_id: Option<uuid::Uuid> = sqlx::query_scalar(
