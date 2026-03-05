@@ -230,23 +230,6 @@ BEGIN
 END
 $$;
 
--- ===================================================================
--- 9. Seed: Permissions สำหรับ Admission
--- ===================================================================
-INSERT INTO permissions (code, name, module, description) VALUES
-    ('admission.read',   'ดูข้อมูลการรับสมัคร',   'admission', 'ดูรอบรับสมัครและใบสมัคร'),
-    ('admission.create', 'สร้างรอบรับสมัคร',        'admission', 'สร้างรอบรับสมัครและจัดการใบสมัคร'),
-    ('admission.update', 'แก้ไขข้อมูลการรับสมัคร', 'admission', 'อัปเดตสถานะและข้อมูลใบสมัคร'),
-    ('admission.delete', 'ลบข้อมูลการรับสมัคร',    'admission', 'ลบรอบรับสมัครและใบสมัคร')
-ON CONFLICT (code) DO NOTHING;
-
--- เพิ่ม ADMIN role ให้มีสิทธิ์ admission ทั้งหมด
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT r.id, p.id
-FROM roles r, permissions p
-WHERE r.code = 'ADMIN' AND p.code LIKE 'admission.%'
-ON CONFLICT DO NOTHING;
-
 COMMENT ON TABLE admission_periods IS 'รอบรับสมัครนักเรียน - กำหนดช่วงเวลาและเป้าหมายการรับ';
 COMMENT ON TABLE admission_applications IS 'ใบสมัครนักเรียน - ข้อมูลผู้สมัครและสถานะ';
 COMMENT ON TABLE admission_documents IS 'เอกสารแนบประกอบใบสมัคร';
