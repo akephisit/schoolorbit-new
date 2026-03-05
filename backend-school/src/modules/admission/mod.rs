@@ -31,6 +31,7 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/tracks/{id}/capacity", get(handlers::rounds::get_track_capacity))
 
         // === Applications (Public: submit ไม่ต้อง auth) ===
+        .route("/apply/round/{id}", get(handlers::rounds::get_public_round_info))
         .route("/apply/{round_id}", post(handlers::applications::submit_application))
         .route("/rounds/{id}/applications", get(handlers::applications::list_applications))
         .route("/applications/{id}", get(handlers::applications::get_application))

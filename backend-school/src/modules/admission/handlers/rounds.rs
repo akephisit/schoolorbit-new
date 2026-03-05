@@ -26,6 +26,71 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
 }
 
 // ==========================================
+// Public API (No auth required)
+// ==========================================
+
+/// GET /api/admission/apply/round/:id — ข้อมูลรอบรับสมัคร + สายการเรียน สำหรับหน้ากรอกใบสมัครของนักเรียน
+pub async fn get_public_round_info(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let round = sqlx::query_as::<_, AdmissionRound>(
+        r#"
+        SELECT ar.*,
+               ay.name AS academic_year_name,
+               CASE gl.level_type
+                   WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                   WHEN 'primary'      THEN CONCAT('ป.', gl.year)
+                   WHEN 'secondary'    THEN CONCAT('ม.', gl.year)
+                   ELSE CONCAT('?.', gl.year)
+               END AS grade_level_name,
+               0::bigint AS application_count
+        FROM admission_rounds ar
+        JOIN academic_years ay ON ar.academic_year_id = ay.id
+        JOIN grade_levels gl ON ar.grade_level_id = gl.id
+        WHERE ar.id = $1 AND ar.status = 'open'
+        "#
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to fetch public round: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร หรือไม่ได้เปิดรับสมัครในขณะนี้".to_string()))?;
+
+    let tracks = sqlx::query_as::<_, AdmissionTrack>(
+        r#"
+        SELECT at2.*,
+               sp.name_th AS study_plan_name,
+               0::bigint AS computed_capacity,
+               0::bigint AS room_count,
+               0::bigint AS application_count
+        FROM admission_tracks at2
+        JOIN study_plans sp ON at2.study_plan_id = sp.id
+        WHERE at2.admission_round_id = $1
+        ORDER BY at2.display_order ASC
+        "#
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "round": round,
+            "tracks": tracks
+        }
+    })).into_response())
+}
+
+// ==========================================
 // Admission Rounds CRUD
 // ==========================================
 

@@ -445,6 +445,12 @@ export async function portalSubmitForm(
 // Public Submit API
 // ==========================================
 
+export async function getPublicRoundInfo(roundId: string) {
+    const res = await apiClient.get<{ round: AdmissionRound; tracks: AdmissionTrack[] }>(`/api/admission/apply/round/${roundId}`);
+    if (!res.success) throw new Error(res.error || 'ไม่สามารถดึงข้อมูลรอบการรับสมัครได้');
+    return res.data!;
+}
+
 export async function submitApplication(roundId: string, data: {
     admissionTrackId: string;
     nationalId: string;
