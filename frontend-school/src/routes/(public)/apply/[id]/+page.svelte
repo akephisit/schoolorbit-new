@@ -196,7 +196,7 @@
 						<CheckCircle2 class="w-20 h-20 text-green-500 mx-auto" />
 						<div>
 							<h2 class="text-2xl font-bold text-green-800 mb-1">ส่งใบสมัครสำเร็จ!</h2>
-							<p class="text-gray-600">กรุณาจดเลขที่ใบสมัครไว้ใช้ติดตามผล</p>
+							<p class="text-gray-600">ได้รับข้อมูลใบสมัครของท่านเรียบร้อยแล้ว</p>
 						</div>
 						<div
 							class="bg-green-50 border border-green-200 rounded-xl py-5 px-8 inline-block mx-auto"
@@ -211,8 +211,8 @@
 						>
 							<AlertCircle class="w-5 h-5 shrink-0 mt-0.5" />
 							<p>
-								โปรดจดจำ <strong>เลขที่ใบสมัคร</strong> และ <strong>เลขบัตรประชาชน</strong>
-								เพื่อตรวจสอบสถานะในภายหลัง
+								ระบบใช้ <strong>เลขบัตรประชาชน</strong> และ <strong>วัน/เดือน/ปีเกิด (พ.ศ.)</strong>
+								ในการตรวจสอบสถานะในภายหลัง (กรุณาแคปหน้าจอไว้เป็นหลักฐาน)
 							</p>
 						</div>
 						<Button href="/apply" class="gap-2 mt-2">
