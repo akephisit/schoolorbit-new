@@ -39,7 +39,9 @@
 		Check,
 		ClipboardList,
 		Users,
-		Loader2
+		Loader2,
+		Copy,
+		Link as LinkIcon
 	} from 'lucide-svelte';
 
 	let { data } = $props();
@@ -77,6 +79,12 @@
 		'enrolling',
 		'closed'
 	];
+
+	function copyLink(path: string) {
+		const url = `${$page.url.origin}${path}`;
+		navigator.clipboard.writeText(url);
+		toast.success('คัดลอกลิงก์เรียบร้อยแล้ว');
+	}
 
 	const statusVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
 		draft: 'secondary',
@@ -292,6 +300,57 @@
 									{roundStatusLabel[s]}
 								</button>
 							{/each}
+						</div>
+					</div>
+				</div>
+
+				<Separator class="my-4" />
+
+				<!-- Share Links Section -->
+				<div class="space-y-3">
+					<h3 class="text-sm font-semibold flex items-center gap-1.5">
+						<LinkIcon class="w-4 h-4 text-primary" /> ลิงก์สำหรับนักเรียน
+					</h3>
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div class="space-y-1.5">
+							<Label class="text-xs text-muted-foreground"
+								>ลิงก์กรอกใบสมัคร (เปิดเมื่อสถานะ "เปิดรับสมัคร")</Label
+							>
+							<div class="flex items-center gap-2">
+								<Input
+									value={`${$page.url.origin}/apply/${id}`}
+									readonly
+									class="h-9 bg-muted/50 font-mono text-xs"
+								/>
+								<Button
+									variant="secondary"
+									size="icon"
+									class="h-9 w-9 shrink-0"
+									onclick={() => copyLink(`/apply/${id}`)}
+								>
+									<Copy class="w-4 h-4" />
+								</Button>
+							</div>
+						</div>
+						<div class="space-y-1.5">
+							<Label class="text-xs text-muted-foreground"
+								>ลิงก์ตรวจสอบผล / มอบตัว (ใช้ได้ตลอด)</Label
+							>
+							<div class="flex items-center gap-2">
+								<Input
+									value={`${$page.url.origin}/apply`}
+									readonly
+									class="h-9 bg-muted/50 font-mono text-xs"
+								/>
+								<Button
+									variant="secondary"
+									size="icon"
+									class="h-9 w-9 shrink-0"
+									onclick={() => copyLink(`/apply`)}
+								>
+									<Copy class="w-4 h-4" />
+								</Button>
+							</div>
 						</div>
 					</div>
 				</div>
