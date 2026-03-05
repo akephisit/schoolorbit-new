@@ -21,22 +21,32 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
-/// Helper: ตรวจสอบ credentials และคืน application record
+/// Helper: ตรวจสอบ credentials และคืน application id
+/// พารามิเตอร์: national_id + date_of_birth (DDMMYYYY เช่น "20082543")
 async fn verify_credentials(
     pool: &sqlx::PgPool,
     national_id: &str,
-    application_number: &str,
+    date_of_birth: &str,
 ) -> Result<uuid::Uuid, AppError> {
+    // แปลง DDMMYYYY เป็น NaiveDate
+    let dob = chrono::NaiveDate::parse_from_str(
+        &format!("{}/{}/{}", &date_of_birth[0..2], &date_of_birth[2..4], &date_of_birth[4..]), 
+        "%d/%m/%Y"
+    ).ok();
+    let Some(dob) = dob else {
+        return Err(AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (กรอก DDMMYYYY ระบบคริสต์ศักราช)".to_string()));
+    };
+
     let application_id: Option<uuid::Uuid> = sqlx::query_scalar(
-        "SELECT id FROM admission_applications WHERE national_id = $1 AND application_number = $2"
+        "SELECT id FROM admission_applications WHERE national_id = $1 AND date_of_birth = $2 ORDER BY created_at DESC LIMIT 1"
     )
     .bind(national_id)
-    .bind(application_number)
+    .bind(dob)
     .fetch_optional(pool)
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
-    application_id.ok_or_else(|| AppError::AuthError("เลขบัตรประชาชนหรือเลขที่ใบสมัครไม่ถูกต้อง".to_string()))
+    application_id.ok_or_else(|| AppError::AuthError("ไม่พบข้อมูลผู้สมัคร กรุณาตรวจสอบเลขบัตรประชาชนและวันเกิด".to_string()))
 }
 
 // ==========================================
@@ -52,7 +62,7 @@ pub async fn check_application(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.application_number).await?;
+    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
 
     #[derive(sqlx::FromRow, serde::Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -105,7 +115,7 @@ pub async fn get_status(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.application_number).await?;
+    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
 
     // ดึงข้อมูล application
     let application = sqlx::query_as::<_, AdmissionApplication>(
@@ -208,7 +218,7 @@ pub async fn confirm_enrollment(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.application_number).await?;
+    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
 
     // ตรวจสอบสถานะ
     let status: String = sqlx::query_scalar(
@@ -247,7 +257,7 @@ pub async fn get_enrollment_form(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.application_number).await?;
+    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
 
     let form = sqlx::query_as::<_, EnrollmentForm>(
         "SELECT * FROM admission_enrollment_forms WHERE application_id = $1"
@@ -268,7 +278,7 @@ pub async fn submit_enrollment_form(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.application_number).await?;
+    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
 
     // ตรวจสอบว่ายืนยันแล้วหรือยัง (student_confirmed = true)
     let confirmed: bool = sqlx::query_scalar(

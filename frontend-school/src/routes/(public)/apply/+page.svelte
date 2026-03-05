@@ -22,7 +22,14 @@
 	let savingForm = $state(false);
 
 	let nationalId = $state('');
-	let applicationNumber = $state('');
+	let dateOfBirth = $state(''); // ISO format yyyy-mm-dd
+
+	// helper: แปลงวันที่ไปเป็น DDMMYYYY (AD) สำหรับส่ง API
+	function toDDMMYYYY(iso: string): string {
+		if (!iso) return '';
+		const [y, m, d] = iso.split('-');
+		return `${d}${m}${y}`;
+	}
 
 	let portalData: {
 		application?: {
@@ -75,13 +82,14 @@
 
 	async function handleCheck(e: Event) {
 		e.preventDefault();
-		if (!nationalId.trim() || !applicationNumber.trim()) {
+		if (!nationalId.trim() || !dateOfBirth) {
 			toast.error('กรุณากรอกข้อมูลให้ครบ');
 			return;
 		}
+		const dob = toDDMMYYYY(dateOfBirth);
 		checking = true;
 		try {
-			await portalCheck(nationalId, applicationNumber);
+			await portalCheck(nationalId, dob);
 			await loadStatus();
 			step = 'status';
 		} catch (e) {
@@ -93,7 +101,10 @@
 
 	async function loadStatus() {
 		try {
-			portalData = (await portalGetStatus(nationalId, applicationNumber)) as typeof portalData;
+			portalData = (await portalGetStatus(
+				nationalId,
+				toDDMMYYYY(dateOfBirth)
+			)) as typeof portalData;
 			// Pre-fill form if exists
 			if (portalData?.enrollmentForm?.formData) {
 				const fd = portalData.enrollmentForm.formData as Record<string, string>;
@@ -112,7 +123,7 @@
 	async function handleConfirm() {
 		confirming = true;
 		try {
-			await portalConfirm(nationalId, applicationNumber);
+			await portalConfirm(nationalId, toDDMMYYYY(dateOfBirth));
 			toast.success('ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัว');
 			await loadStatus();
 		} catch (e) {
@@ -126,7 +137,11 @@
 		e.preventDefault();
 		savingForm = true;
 		try {
-			await portalSubmitForm(nationalId, applicationNumber, formFields as Record<string, unknown>);
+			await portalSubmitForm(
+				nationalId,
+				toDDMMYYYY(dateOfBirth),
+				formFields as Record<string, unknown>
+			);
 			toast.success('บันทึกแบบฟอร์มสำเร็จ');
 			await loadStatus();
 		} catch (e) {
@@ -171,13 +186,10 @@
 						/>
 					</div>
 					<div class="space-y-1.5">
-						<label for="app-number" class="text-sm font-medium text-gray-700">เลขที่ใบสมัคร</label>
-						<Input
-							id="app-number"
-							bind:value={applicationNumber}
-							placeholder="เช่น 2569-0001"
-							class="h-11"
-						/>
+						<label for="dob" class="text-sm font-medium text-gray-700"
+							>วันเดือนปีเกิด <span class="text-xs text-muted-foreground">(ค.ศ.)</span></label
+						>
+						<Input id="dob" type="date" bind:value={dateOfBirth} class="h-11" />
 					</div>
 					<Button type="submit" disabled={checking} class="w-full h-11 gap-2">
 						<Search class="w-4 h-4" />

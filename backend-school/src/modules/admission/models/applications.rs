@@ -315,25 +315,26 @@ pub struct SubmitEnrollmentFormRequest {
 // ==========================================
 
 /// Credentials ที่ผู้สมัครส่งมาทุก request (stateless)
+/// ใช้ national_id + date_of_birth (format DDMMYYYY) เพื่อยืนยันตัวตน
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortalCredentials {
     pub national_id: String,
-    pub application_number: String,
+    pub date_of_birth: String,  // format: DDMMYYYY e.g. "20082543"
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortalConfirmRequest {
     pub national_id: String,
-    pub application_number: String,
+    pub date_of_birth: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortalFormRequest {
     pub national_id: String,
-    pub application_number: String,
+    pub date_of_birth: String,
     pub form_data: Option<serde_json::Value>,
 }
 

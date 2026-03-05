@@ -391,37 +391,37 @@ export async function completeEnrollment(id: string, studentCode?: string) {
 // Portal API (Stateless — ส่ง credentials ทุก request)
 // ==========================================
 
-export async function portalCheck(nationalId: string, applicationNumber: string) {
+export async function portalCheck(nationalId: string, dateOfBirth: string) {
     const res = await apiClient.post('/api/admission/portal/check', {
         nationalId,
-        applicationNumber
+        dateOfBirth
     });
     if (!res.success) throw new Error(res.error || 'ข้อมูลไม่ถูกต้อง');
     return res.data;
 }
 
-export async function portalGetStatus(nationalId: string, applicationNumber: string) {
+export async function portalGetStatus(nationalId: string, dateOfBirth: string) {
     const res = await apiClient.post('/api/admission/portal/status', {
         nationalId,
-        applicationNumber
+        dateOfBirth
     });
     if (!res.success) throw new Error(res.error);
     return res.data;
 }
 
-export async function portalConfirm(nationalId: string, applicationNumber: string) {
+export async function portalConfirm(nationalId: string, dateOfBirth: string) {
     const res = await apiClient.post('/api/admission/portal/confirm', {
         nationalId,
-        applicationNumber
+        dateOfBirth
     });
     if (!res.success) throw new Error(res.error);
     return res;
 }
 
-export async function portalGetForm(nationalId: string, applicationNumber: string) {
+export async function portalGetForm(nationalId: string, dateOfBirth: string) {
     const res = await apiClient.post('/api/admission/portal/form', {
         nationalId,
-        applicationNumber
+        dateOfBirth
     });
     if (!res.success) throw new Error(res.error);
     return res.data;
@@ -429,12 +429,12 @@ export async function portalGetForm(nationalId: string, applicationNumber: strin
 
 export async function portalSubmitForm(
     nationalId: string,
-    applicationNumber: string,
+    dateOfBirth: string,
     formData: Record<string, unknown>
 ) {
     const res = await apiClient.put('/api/admission/portal/form', {
         nationalId,
-        applicationNumber,
+        dateOfBirth,
         formData
     });
     if (!res.success) throw new Error(res.error);
