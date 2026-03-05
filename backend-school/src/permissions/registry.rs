@@ -107,6 +107,13 @@ pub mod codes {
     pub const DEPT_WORK_CREATE: &str = "dept_work.create";
     pub const DEPT_WORK_UPDATE_OWN: &str = "dept_work.update.own";
     pub const DEPT_WORK_APPROVE: &str = "dept_work.approve.department";
+
+    // Admission permissions
+    pub const ADMISSION_READ_ALL: &str = "admission.read.all";
+    pub const ADMISSION_MANAGE_ALL: &str = "admission.manage.all";
+    pub const ADMISSION_VERIFY: &str = "admission.verify";
+    pub const ADMISSION_SCORES: &str = "admission.scores";
+    pub const ADMISSION_ENROLL: &str = "admission.enroll";
 }
 
 /// Complete list of all permissions in the system
@@ -609,5 +616,47 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "approve",
         scope: "department",
         description: "อนุมัติหรือตรวจสอบงานของสมาชิกในฝ่าย",
+    },
+
+    // Admission Permissions
+    PermissionDef {
+        code: codes::ADMISSION_READ_ALL,
+        name: "ดูข้อมูลรับสมัคร",
+        module: "admission",
+        action: "read",
+        scope: "all",
+        description: "ดูรายชื่อผู้สมัคร, ผล, คะแนน",
+    },
+    PermissionDef {
+        code: codes::ADMISSION_MANAGE_ALL,
+        name: "จัดการรับสมัคร",
+        module: "admission",
+        action: "manage",
+        scope: "all",
+        description: "สร้าง/แก้ไข รอบรับสมัคร, สายการเรียน, วิชาสอบ",
+    },
+    PermissionDef {
+        code: codes::ADMISSION_VERIFY,
+        name: "ตรวจสอบใบสมัคร",
+        module: "admission",
+        action: "verify",
+        scope: "all",
+        description: "ยืนยัน/ปฏิเสธใบสมัครของผู้สมัคร",
+    },
+    PermissionDef {
+        code: codes::ADMISSION_SCORES,
+        name: "กรอกคะแนนและจัดห้อง",
+        module: "admission",
+        action: "scores",
+        scope: "all",
+        description: "กรอกคะแนนสอบ, เรียงคะแนน, จัดห้องเรียน",
+    },
+    PermissionDef {
+        code: codes::ADMISSION_ENROLL,
+        name: "รับมอบตัว",
+        module: "admission",
+        action: "enroll",
+        scope: "all",
+        description: "รับมอบตัวและสร้าง account นักเรียนในระบบ",
     },
 ];
