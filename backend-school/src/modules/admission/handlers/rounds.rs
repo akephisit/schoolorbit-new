@@ -297,7 +297,7 @@ pub async fn list_subjects(
     }
 
     let subjects = sqlx::query_as::<_, AdmissionExamSubject>(
-        "SELECT * FROM admission_exam_subjects WHERE admission_round_id = $1 ORDER BY display_order ASC, created_at ASC"
+        "SELECT id, admission_round_id, name, code, max_score::FLOAT8 AS max_score, display_order, created_at FROM admission_exam_subjects WHERE admission_round_id = $1 ORDER BY display_order ASC, created_at ASC"
     )
     .bind(round_id)
     .fetch_all(&pool)
@@ -326,7 +326,7 @@ pub async fn create_subject(
         r#"
         INSERT INTO admission_exam_subjects (admission_round_id, name, code, max_score, display_order)
         VALUES ($1, $2, $3, $4, $5)
-        RETURNING *
+        RETURNING id, admission_round_id, name, code, max_score::FLOAT8 AS max_score, display_order, created_at
         "#
     )
     .bind(round_id)
@@ -364,7 +364,7 @@ pub async fn update_subject(
             max_score     = COALESCE($3, max_score),
             display_order = COALESCE($4, display_order)
         WHERE id = $5
-        RETURNING *
+        RETURNING id, admission_round_id, name, code, max_score::FLOAT8 AS max_score, display_order, created_at
         "#
     )
     .bind(&payload.name)

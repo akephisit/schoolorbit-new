@@ -59,7 +59,7 @@ pub async fn get_all_scores(
             aes.id AS subject_id,
             aes.name AS subject_name,
             aes.code AS subject_code,
-            aes.max_score,
+            aes.max_score::FLOAT8 AS max_score,
             esc.score
         FROM admission_applications aa
         JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
@@ -105,7 +105,7 @@ pub async fn get_application_scores(
             esc.updated_at,
             aes.name AS subject_name,
             aes.code AS subject_code,
-            aes.max_score
+            aes.max_score::FLOAT8 AS max_score
         FROM admission_exam_subjects aes
         LEFT JOIN admission_exam_scores esc ON esc.exam_subject_id = aes.id AND esc.application_id = $1
         WHERE aes.admission_round_id = (
