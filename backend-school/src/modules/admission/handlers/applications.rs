@@ -197,7 +197,7 @@ pub async fn list_applications(
         return Ok(r);
     }
 
-    let mut query = String::from(
+    let mut query = sqlx::QueryBuilder::new(
         r#"
         SELECT
             aa.id,
@@ -212,27 +212,33 @@ pub async fn list_applications(
             aa.created_at
         FROM admission_applications aa
         LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
-        WHERE aa.admission_round_id = '
-        "#
+        WHERE aa.admission_round_id = "#
     );
-    query.push_str(&round_id.to_string());
-    query.push('\'');
+    query.push_bind(round_id);
 
     if let Some(ref s) = filter.status {
-        query.push_str(&format!(" AND aa.status = '{}'", s));
+        query.push(" AND aa.status = ");
+        query.push_bind(s);
     }
     if let Some(tid) = filter.track_id {
-        query.push_str(&format!(" AND aa.admission_track_id = '{}'", tid));
+        query.push(" AND aa.admission_track_id = ");
+        query.push_bind(tid);
     }
     if let Some(ref search) = filter.search {
         if !search.is_empty() {
-            query.push_str(&format!(
-                " AND (aa.national_id ILIKE '%{s}%' OR aa.first_name ILIKE '%{s}%' OR aa.last_name ILIKE '%{s}%' OR aa.application_number ILIKE '%{s}%')",
-                s = search
-            ));
+            let like_term = format!("%{}%", search);
+            query.push(" AND (aa.national_id ILIKE ");
+            query.push_bind(like_term.clone());
+            query.push(" OR aa.first_name ILIKE ");
+            query.push_bind(like_term.clone());
+            query.push(" OR aa.last_name ILIKE ");
+            query.push_bind(like_term.clone());
+            query.push(" OR aa.application_number ILIKE ");
+            query.push_bind(like_term);
+            query.push(")");
         }
     }
-    query.push_str(" ORDER BY aa.created_at ASC");
+    query.push(" ORDER BY aa.created_at ASC");
 
     #[derive(sqlx::FromRow, serde::Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -249,7 +255,7 @@ pub async fn list_applications(
         created_at: chrono::DateTime<chrono::Utc>,
     }
 
-    let applications = sqlx::query_as::<_, AppListRow>(&query)
+    let applications = query.build_query_as::<AppListRow>()
         .fetch_all(&pool)
         .await
         .map_err(|e| {
