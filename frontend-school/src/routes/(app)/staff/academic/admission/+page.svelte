@@ -92,7 +92,7 @@
 			</h1>
 			<p class="text-muted-foreground mt-1">จัดการรอบรับสมัคร สายการเรียน และใบสมัคร</p>
 		</div>
-		<Button href="academic/admission/new" class="flex items-center gap-2">
+		<Button href="/staff/academic/admission/new" class="flex items-center gap-2">
 			<Plus class="w-4 h-4" />
 			สร้างรอบรับสมัครใหม่
 		</Button>
@@ -111,7 +111,7 @@
 			<ClipboardList class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
 			<p class="text-lg font-medium text-foreground">ยังไม่มีรอบรับสมัคร</p>
 			<p class="text-muted-foreground mt-2">เริ่มต้นด้วยการสร้างรอบรับสมัครแรก</p>
-			<Button href="academic/admission/new" class="mt-4">
+			<Button href="/staff/academic/admission/new" class="mt-4">
 				<Plus class="w-4 h-4 mr-2" />
 				สร้างรอบรับสมัคร
 			</Button>
@@ -159,7 +159,7 @@
 								<ToggleRight class="w-3.5 h-3.5 mr-1" />
 								{round.status === 'open' ? 'ปิดรับสมัคร' : 'เปิดรับสมัคร'}
 							</Button>
-							<Button href="academic/admission/{round.id}" variant="outline" size="sm">
+							<Button href="/staff/academic/admission/{round.id}" variant="outline" size="sm">
 								<Eye class="w-4 h-4 mr-1" />
 								จัดการ
 							</Button>
