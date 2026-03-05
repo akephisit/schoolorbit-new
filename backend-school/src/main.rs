@@ -31,7 +31,7 @@ use tower_cookies::CookieManagerLayer;
 /// Shared application state
 #[derive(Clone)]
 pub struct AppState {
-    pub admin_pool: sqlx::PgPool,  // Backend-admin database (for school mapping)
+    pub admin_pool: sqlx::PgPool,  // Backend-admin database (for school mapping).
     pub pool_manager: Arc<PoolManager>,
     pub websocket_manager: Arc<modules::academic::websockets::WebSocketManager>,
     pub notification_channel: broadcast::Sender<(Uuid, Notification)>, // (User ID, Notification)
