@@ -14,10 +14,14 @@
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import * as Card from '$lib/components/ui/card';
+	import * as Table from '$lib/components/ui/table';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, ClipboardList, Save } from 'lucide-svelte';
+	import { ArrowLeft, ClipboardList, Save, Loader2 } from 'lucide-svelte';
 
+	let { data } = $props();
 	let id = $derived($page.params.id);
+
 	let round: AdmissionRound | null = $state(null);
 	let tracks: AdmissionTrack[] = $state([]);
 	let subjects: AdmissionExamSubject[] = $state([]);
@@ -26,10 +30,9 @@
 	let saving = $state(false);
 	let selectedTrack = $state('');
 
-	// local score map: { [appId]: { [subjectId]: score } }
 	let scores: Record<string, Record<string, string>> = $state({});
 
-	async function load() {
+	async function loadAll() {
 		if (!id) return;
 		loading = true;
 		try {
@@ -37,9 +40,7 @@
 			round = r;
 			tracks = t;
 			subjects = s;
-			if (tracks.length > 0 && !selectedTrack) {
-				selectedTrack = tracks[0].id;
-			}
+			if (t.length > 0 && !selectedTrack) selectedTrack = t[0].id;
 			await loadApps();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดไม่สำเร็จ');
@@ -52,11 +53,8 @@
 		if (!id || !selectedTrack) return;
 		const apps = await listApplications(id, { trackId: selectedTrack, status: 'verified' });
 		applications = apps;
-		// init scores map
 		for (const app of apps) {
-			if (!scores[app.id]) {
-				scores[app.id] = {};
-			}
+			if (!scores[app.id]) scores[app.id] = {};
 		}
 	}
 
@@ -69,13 +67,9 @@
 					applicationId: appId,
 					scores: Object.entries(subScores)
 						.filter(([, v]) => v !== '')
-						.map(([subId, v]) => ({
-							examSubjectId: subId,
-							score: parseFloat(v)
-						}))
+						.map(([subId, v]) => ({ examSubjectId: subId, score: parseFloat(v) }))
 				}))
 				.filter((e) => e.scores.length > 0);
-
 			await bulkUpdateScores(id, entries);
 			toast.success('บันทึกคะแนนทั้งหมดแล้ว');
 		} catch (e) {
@@ -88,12 +82,11 @@
 	$effect(() => {
 		if (selectedTrack) loadApps();
 	});
-
-	onMount(load);
+	onMount(loadAll);
 </script>
 
 <svelte:head>
-	<title>กรอกคะแนน - SchoolOrbit</title>
+	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
 <div class="space-y-5">
@@ -107,67 +100,67 @@
 	</div>
 
 	{#if round}
-		<p class="text-muted-foreground text-sm">{round.name} — รอบนี้มี {subjects.length} วิชา</p>
+		<p class="text-muted-foreground text-sm">{round.name} — {subjects.length} วิชา</p>
 	{/if}
 
 	<!-- Track Selector -->
-	<div class="bg-card border border-border rounded-lg p-4 flex items-center gap-4">
-		<label class="text-sm font-medium whitespace-nowrap">สายการเรียน:</label>
-		<div class="flex gap-2 flex-wrap">
-			{#each tracks as track (track.id)}
-				<button
-					onclick={() => {
-						selectedTrack = track.id;
-					}}
-					class="text-sm px-3 py-1.5 rounded-md border transition-colors {selectedTrack === track.id
-						? 'bg-primary text-primary-foreground border-primary'
-						: 'border-border hover:bg-accent'}"
-				>
-					{track.name}
-					<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
-				</button>
-			{/each}
-		</div>
-	</div>
+	<Card.Root>
+		<Card.Content class="pt-4 pb-4 flex items-center gap-4">
+			<p class="text-sm font-medium whitespace-nowrap">สายการเรียน:</p>
+			<div class="flex gap-2 flex-wrap">
+				{#each tracks as track (track.id)}
+					<Button
+						variant={selectedTrack === track.id ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => {
+							selectedTrack = track.id;
+						}}
+					>
+						{track.name}
+						<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
+					</Button>
+				{/each}
+			</div>
+		</Card.Content>
+	</Card.Root>
 
 	{#if loading}
-		<div class="bg-card border border-border rounded-lg p-10 text-center">
-			<div
-				class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"
-			></div>
-		</div>
+		<Card.Root>
+			<Card.Content class="flex justify-center py-16">
+				<Loader2 class="w-8 h-8 animate-spin text-primary" />
+			</Card.Content>
+		</Card.Root>
 	{:else if applications.length === 0}
-		<div class="bg-card border border-border rounded-lg p-10 text-center text-muted-foreground">
-			<p>ไม่มีผู้สมัครที่ผ่านการตรวจสอบในสายนี้</p>
-			<p class="text-xs mt-1">ต้องยืนยันใบสมัคร (status: verified) ก่อนกรอกคะแนน</p>
-		</div>
+		<Card.Root>
+			<Card.Content class="py-12 text-center text-muted-foreground">
+				<p>ไม่มีผู้สมัครที่ผ่านการตรวจสอบในสายนี้</p>
+				<p class="text-xs mt-1">ต้องยืนยันใบสมัคร (status: verified) ก่อนกรอกคะแนน</p>
+			</Card.Content>
+		</Card.Root>
 	{:else}
-		<!-- Score Table -->
-		<div class="bg-card border border-border rounded-lg overflow-x-auto">
-			<table class="w-full min-w-max text-sm">
-				<thead class="bg-muted/50 border-b border-border">
-					<tr>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground w-10">ที่</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">เลขที่ใบสมัคร</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">ชื่อ-สกุล</th>
+		<Card.Root class="overflow-x-auto">
+			<Table.Root>
+				<Table.Header>
+					<Table.Row>
+						<Table.Head class="w-10">ที่</Table.Head>
+						<Table.Head>เลขที่ใบสมัคร</Table.Head>
+						<Table.Head>ชื่อ-สกุล</Table.Head>
 						{#each subjects as sub (sub.id)}
-							<th class="px-3 py-3 text-center font-medium text-muted-foreground min-w-24">
+							<Table.Head class="text-center min-w-24">
 								{sub.name}
-								<span class="block text-xs font-normal text-muted-foreground/70"
-									>/{sub.maxScore}</span
-								>
-							</th>
+								<span class="block text-xs font-normal text-muted-foreground">/{sub.maxScore}</span>
+							</Table.Head>
 						{/each}
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-border">
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
 					{#each applications as app, i (app.id)}
-						<tr class="hover:bg-accent/20 transition-colors">
-							<td class="px-4 py-2.5 text-muted-foreground text-center">{i + 1}</td>
-							<td class="px-4 py-2.5 font-mono text-xs">{app.applicationNumber ?? '-'}</td>
-							<td class="px-4 py-2.5 font-medium">{app.fullName}</td>
+						<Table.Row>
+							<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
+							<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
+							<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
 							{#each subjects as sub (sub.id)}
-								<td class="px-3 py-2">
+								<Table.Cell class="px-2 py-1.5">
 									<Input
 										type="number"
 										min="0"
@@ -177,17 +170,17 @@
 										class="h-7 text-center text-sm w-20 mx-auto"
 										placeholder="-"
 									/>
-								</td>
+								</Table.Cell>
 							{/each}
-						</tr>
+						</Table.Row>
 					{/each}
-				</tbody>
-			</table>
-		</div>
+				</Table.Body>
+			</Table.Root>
+		</Card.Root>
 
 		<div class="flex justify-end">
 			<Button onclick={saveScores} disabled={saving} class="gap-2">
-				<Save class="w-4 h-4" />
+				{#if saving}<Loader2 class="w-4 h-4 animate-spin" />{:else}<Save class="w-4 h-4" />{/if}
 				{saving ? 'กำลังบันทึก...' : 'บันทึกคะแนนทั้งหมด'}
 			</Button>
 		</div>

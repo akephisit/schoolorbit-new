@@ -9,16 +9,21 @@
 		deleteRound
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as Card from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Separator } from '$lib/components/ui/separator';
 	import { toast } from 'svelte-sonner';
-	import { ClipboardList, Plus, Eye, Trash2, ToggleRight, Users, Calendar } from 'lucide-svelte';
 	import {
-		Dialog,
-		DialogContent,
-		DialogHeader,
-		DialogTitle,
-		DialogDescription,
-		DialogFooter
-	} from '$lib/components/ui/dialog';
+		ClipboardList,
+		Plus,
+		Eye,
+		Trash2,
+		ToggleRight,
+		Users,
+		Calendar,
+		Loader2
+	} from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -75,6 +80,17 @@
 		});
 	}
 
+	// Map status → Badge variant
+	const statusVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
+		draft: 'secondary',
+		open: 'default',
+		exam: 'default',
+		scoring: 'default',
+		announced: 'default',
+		enrolling: 'default',
+		closed: 'destructive'
+	};
+
 	onMount(load);
 </script>
 
@@ -100,104 +116,113 @@
 
 	<!-- Rounds List -->
 	{#if loading}
-		<div class="bg-card border border-border rounded-lg p-12 text-center">
-			<div
-				class="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-			></div>
-			<p class="mt-4 text-muted-foreground">กำลังโหลด...</p>
-		</div>
+		<Card.Root>
+			<Card.Content class="flex items-center justify-center py-16">
+				<div class="flex flex-col items-center gap-3 text-muted-foreground">
+					<Loader2 class="w-8 h-8 animate-spin" />
+					<p>กำลังโหลด...</p>
+				</div>
+			</Card.Content>
+		</Card.Root>
 	{:else if rounds.length === 0}
-		<div class="bg-card border border-border rounded-lg p-12 text-center">
-			<ClipboardList class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-			<p class="text-lg font-medium text-foreground">ยังไม่มีรอบรับสมัคร</p>
-			<p class="text-muted-foreground mt-2">เริ่มต้นด้วยการสร้างรอบรับสมัครแรก</p>
-			<Button href="/staff/academic/admission/new" class="mt-4">
-				<Plus class="w-4 h-4 mr-2" />
-				สร้างรอบรับสมัคร
-			</Button>
-		</div>
+		<Card.Root>
+			<Card.Content class="flex flex-col items-center py-16 gap-3">
+				<ClipboardList class="w-16 h-16 text-muted-foreground" />
+				<p class="text-lg font-medium text-foreground">ยังไม่มีรอบรับสมัคร</p>
+				<p class="text-muted-foreground text-sm">เริ่มต้นด้วยการสร้างรอบรับสมัครแรก</p>
+				<Button href="/staff/academic/admission/new" class="mt-2">
+					<Plus class="w-4 h-4 mr-2" />
+					สร้างรอบรับสมัคร
+				</Button>
+			</Card.Content>
+		</Card.Root>
 	{:else}
 		<div class="grid gap-4">
 			{#each rounds as round (round.id)}
-				<div class="bg-card border border-border rounded-lg p-5 hover:shadow-md transition-shadow">
-					<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-						<div class="space-y-1.5">
-							<div class="flex items-center gap-2 flex-wrap">
-								<h2 class="text-lg font-semibold text-foreground">{round.name}</h2>
-								<span
-									class="text-xs px-2 py-0.5 rounded-full font-medium {roundStatusColor[
-										round.status
-									] || 'bg-gray-100 text-gray-700'}"
-								>
-									{roundStatusLabel[round.status] || round.status}
-								</span>
-								{#if round.gradeLevelName}
-									<span class="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">
-										{round.gradeLevelName}
-									</span>
-								{/if}
-							</div>
-							<div class="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-								<span class="flex items-center gap-1">
-									<Calendar class="w-3.5 h-3.5" />
-									รับสมัคร: {formatDate(round.applyStartDate)} – {formatDate(round.applyEndDate)}
-								</span>
-								{#if round.applicationCount !== undefined}
+				<Card.Root class="hover:shadow-md transition-shadow">
+					<Card.Content class="p-5">
+						<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+							<div class="space-y-2">
+								<div class="flex items-center gap-2 flex-wrap">
+									<h2 class="text-lg font-semibold text-foreground">{round.name}</h2>
+									<Badge
+										variant={statusVariant[round.status] ?? 'secondary'}
+										class={roundStatusColor[round.status]}
+									>
+										{roundStatusLabel[round.status] ?? round.status}
+									</Badge>
+									{#if round.gradeLevelName}
+										<Badge variant="outline">{round.gradeLevelName}</Badge>
+									{/if}
+								</div>
+								<div class="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
 									<span class="flex items-center gap-1">
-										<Users class="w-3.5 h-3.5" />
-										{round.applicationCount} ใบสมัคร
+										<Calendar class="w-3.5 h-3.5" />
+										รับสมัคร: {formatDate(round.applyStartDate)} – {formatDate(round.applyEndDate)}
 									</span>
-								{/if}
-								{#if round.academicYearName}
-									<span>ปีการศึกษา {round.academicYearName}</span>
-								{/if}
+									{#if round.applicationCount !== undefined}
+										<span class="flex items-center gap-1">
+											<Users class="w-3.5 h-3.5" />
+											{round.applicationCount} ใบสมัคร
+										</span>
+									{/if}
+									{#if round.academicYearName}
+										<span>ปีการศึกษา {round.academicYearName}</span>
+									{/if}
+								</div>
+							</div>
+
+							<div class="flex items-center gap-2 flex-wrap">
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => toggleOpen(round)}
+									class="text-xs"
+								>
+									<ToggleRight class="w-3.5 h-3.5 mr-1" />
+									{round.status === 'open' ? 'ปิดรับสมัคร' : 'เปิดรับสมัคร'}
+								</Button>
+								<Button href="/staff/academic/admission/{round.id}" variant="outline" size="sm">
+									<Eye class="w-4 h-4 mr-1" />
+									จัดการ
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={() => {
+										roundToDelete = round;
+										showDeleteDialog = true;
+									}}
+									class="text-destructive hover:text-destructive"
+								>
+									<Trash2 class="w-4 h-4" />
+								</Button>
 							</div>
 						</div>
-
-						<div class="flex items-center gap-2 flex-wrap">
-							<Button variant="outline" size="sm" onclick={() => toggleOpen(round)} class="text-xs">
-								<ToggleRight class="w-3.5 h-3.5 mr-1" />
-								{round.status === 'open' ? 'ปิดรับสมัคร' : 'เปิดรับสมัคร'}
-							</Button>
-							<Button href="/staff/academic/admission/{round.id}" variant="outline" size="sm">
-								<Eye class="w-4 h-4 mr-1" />
-								จัดการ
-							</Button>
-							<Button
-								variant="ghost"
-								size="sm"
-								onclick={() => {
-									roundToDelete = round;
-									showDeleteDialog = true;
-								}}
-								class="text-destructive hover:text-destructive"
-							>
-								<Trash2 class="w-4 h-4" />
-							</Button>
-						</div>
-					</div>
-				</div>
+					</Card.Content>
+				</Card.Root>
 			{/each}
 		</div>
 	{/if}
 </div>
 
 <!-- Delete Confirm Dialog -->
-<Dialog bind:open={showDeleteDialog}>
-	<DialogContent>
-		<DialogHeader>
-			<DialogTitle>ยืนยันการลบรอบรับสมัคร</DialogTitle>
-			<DialogDescription>
+<Dialog.Root bind:open={showDeleteDialog}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>ยืนยันการลบรอบรับสมัคร</Dialog.Title>
+			<Dialog.Description>
 				ลบ <strong>{roundToDelete?.name}</strong>? รอบที่มีใบสมัครอยู่จะไม่สามารถลบได้
-			</DialogDescription>
-		</DialogHeader>
-		<DialogFooter>
-			<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}
-				>ยกเลิก</Button
-			>
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
+				ยกเลิก
+			</Button>
 			<Button variant="destructive" onclick={confirmDelete} disabled={deleting}>
+				{#if deleting}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
 				{deleting ? 'กำลังลบ...' : 'ลบรอบ'}
 			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

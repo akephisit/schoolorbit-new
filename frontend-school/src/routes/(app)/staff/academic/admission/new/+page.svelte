@@ -5,8 +5,13 @@
 	import { apiClient } from '$lib/api/client';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import * as Card from '$lib/components/ui/card';
+	import * as Select from '$lib/components/ui/select';
+	import { Separator } from '$lib/components/ui/separator';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Plus } from 'lucide-svelte';
+	import { ArrowLeft, Plus, Loader2 } from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -100,108 +105,124 @@
 		<h1 class="text-2xl font-bold text-foreground">สร้างรอบรับสมัครใหม่</h1>
 	</div>
 
-	<form onsubmit={handleSubmit} class="bg-card border border-border rounded-lg p-6 space-y-5">
-		<!-- ปีการศึกษา -->
-		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-			<div class="space-y-1.5">
-				<label class="text-sm font-medium" for="year">ปีการศึกษา *</label>
-				<select
-					id="year"
-					bind:value={form.academicYearId}
-					class="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
-				>
-					<option value="">-- เลือกปีการศึกษา --</option>
-					{#each years as y (y.id)}
-						<option value={y.id}>{y.name}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="space-y-1.5">
-				<label class="text-sm font-medium" for="grade">ระดับชั้น *</label>
-				<select
-					id="grade"
-					bind:value={form.gradeLevelId}
-					class="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
-				>
-					<option value="">-- เลือกระดับชั้น --</option>
-					{#each gradeLevels as g (g.id)}
-						<option value={g.id}>{gradeName(g)}</option>
-					{/each}
-				</select>
-			</div>
-		</div>
-
-		<!-- ชื่อรอบ -->
-		<div class="space-y-1.5">
-			<label class="text-sm font-medium" for="name">ชื่อรอบรับสมัคร *</label>
-			<Input
-				id="name"
-				bind:value={form.name}
-				placeholder="เช่น รับสมัครนักเรียน ม.1 ปีการศึกษา 2569"
-				required
-			/>
-		</div>
-
-		<!-- คำอธิบาย -->
-		<div class="space-y-1.5">
-			<label class="text-sm font-medium" for="desc">คำอธิบาย (ไม่บังคับ)</label>
-			<textarea
-				id="desc"
-				bind:value={form.description}
-				rows="2"
-				class="w-full px-3 py-2 rounded-md border border-border bg-background text-sm resize-none"
-				placeholder="รายละเอียดเพิ่มเติม..."
-			></textarea>
-		</div>
-
-		<!-- ช่วงรับสมัคร -->
-		<div class="space-y-2">
-			<p class="text-sm font-semibold text-muted-foreground">ช่วงรับสมัคร *</p>
-			<div class="grid grid-cols-2 gap-4">
-				<div class="space-y-1">
-					<label class="text-xs text-muted-foreground" for="apply-start">เริ่ม</label>
-					<Input id="apply-start" type="date" bind:value={form.applyStartDate} required />
+	<form onsubmit={handleSubmit}>
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>ข้อมูลรอบรับสมัคร</Card.Title>
+				<Card.Description>กรอกข้อมูลสำหรับเปิดรอบรับสมัครนักเรียนใหม่</Card.Description>
+			</Card.Header>
+			<Card.Content class="space-y-5">
+				<!-- ปีการศึกษา + ระดับชั้น -->
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+					<div class="space-y-2">
+						<Label for="year-select">ปีการศึกษา <span class="text-destructive">*</span></Label>
+						<Select.Root type="single" bind:value={form.academicYearId}>
+							<Select.Trigger id="year-select" class="w-full">
+								{years.find((y) => y.id === form.academicYearId)?.name ?? '-- เลือกปีการศึกษา --'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each years as y (y.id)}
+									<Select.Item value={y.id}>{y.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="space-y-2">
+						<Label for="grade-select">ระดับชั้น <span class="text-destructive">*</span></Label>
+						<Select.Root type="single" bind:value={form.gradeLevelId}>
+							<Select.Trigger id="grade-select" class="w-full">
+								{gradeLevels.find((g) => g.id === form.gradeLevelId)
+									? gradeName(gradeLevels.find((g) => g.id === form.gradeLevelId)!)
+									: '-- เลือกระดับชั้น --'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each gradeLevels as g (g.id)}
+									<Select.Item value={g.id}>{gradeName(g)}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
 				</div>
-				<div class="space-y-1">
-					<label class="text-xs text-muted-foreground" for="apply-end">สิ้นสุด</label>
-					<Input id="apply-end" type="date" bind:value={form.applyEndDate} required />
-				</div>
-			</div>
-		</div>
 
-		<!-- วันสอบ -->
-		<div class="grid grid-cols-2 gap-4">
-			<div class="space-y-1.5">
-				<label class="text-sm font-medium" for="exam-date">วันสอบ</label>
-				<Input id="exam-date" type="date" bind:value={form.examDate} />
-			</div>
-			<div class="space-y-1.5">
-				<label class="text-sm font-medium" for="result-date">วันประกาศผล</label>
-				<Input id="result-date" type="date" bind:value={form.resultAnnounceDate} />
-			</div>
-		</div>
-
-		<!-- ช่วงมอบตัว -->
-		<div class="space-y-2">
-			<p class="text-sm font-semibold text-muted-foreground">ช่วงมอบตัว</p>
-			<div class="grid grid-cols-2 gap-4">
-				<div class="space-y-1">
-					<label class="text-xs text-muted-foreground" for="enroll-start">เริ่ม</label>
-					<Input id="enroll-start" type="date" bind:value={form.enrollmentStartDate} />
+				<!-- ชื่อรอบ -->
+				<div class="space-y-2">
+					<Label for="round-name">ชื่อรอบรับสมัคร <span class="text-destructive">*</span></Label>
+					<Input
+						id="round-name"
+						bind:value={form.name}
+						placeholder="เช่น รับสมัครนักเรียน ม.1 ปีการศึกษา 2569"
+					/>
 				</div>
-				<div class="space-y-1">
-					<label class="text-xs text-muted-foreground" for="enroll-end">สิ้นสุด</label>
-					<Input id="enroll-end" type="date" bind:value={form.enrollmentEndDate} />
-				</div>
-			</div>
-		</div>
 
-		<div class="flex gap-3 pt-2">
-			<Button type="submit" disabled={saving} class="flex items-center gap-2">
-				<Plus class="w-4 h-4" />
-				{saving ? 'กำลังสร้าง...' : 'สร้างรอบรับสมัคร'}
-			</Button>
-			<Button type="button" variant="outline" href="/staff/academic/admission">ยกเลิก</Button>
-		</div>
+				<!-- คำอธิบาย -->
+				<div class="space-y-2">
+					<Label for="round-desc">คำอธิบาย</Label>
+					<Textarea
+						id="round-desc"
+						bind:value={form.description}
+						placeholder="รายละเอียดเพิ่มเติม..."
+						rows={2}
+					/>
+				</div>
+
+				<Separator />
+
+				<!-- ช่วงรับสมัคร -->
+				<div class="space-y-3">
+					<p class="text-sm font-medium">ช่วงรับสมัคร <span class="text-destructive">*</span></p>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label for="apply-start">วันเริ่มรับสมัคร</Label>
+							<Input id="apply-start" type="date" bind:value={form.applyStartDate} />
+						</div>
+						<div class="space-y-2">
+							<Label for="apply-end">วันสิ้นสุดรับสมัคร</Label>
+							<Input id="apply-end" type="date" bind:value={form.applyEndDate} />
+						</div>
+					</div>
+				</div>
+
+				<!-- วันสอบ + ประกาศผล -->
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-2">
+						<Label for="exam-date">วันสอบ</Label>
+						<Input id="exam-date" type="date" bind:value={form.examDate} />
+					</div>
+					<div class="space-y-2">
+						<Label for="result-date">วันประกาศผล</Label>
+						<Input id="result-date" type="date" bind:value={form.resultAnnounceDate} />
+					</div>
+				</div>
+
+				<Separator />
+
+				<!-- ช่วงมอบตัว -->
+				<div class="space-y-3">
+					<p class="text-sm font-medium">ช่วงมอบตัว</p>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label for="enroll-start">วันเริ่มมอบตัว</Label>
+							<Input id="enroll-start" type="date" bind:value={form.enrollmentStartDate} />
+						</div>
+						<div class="space-y-2">
+							<Label for="enroll-end">วันสิ้นสุดมอบตัว</Label>
+							<Input id="enroll-end" type="date" bind:value={form.enrollmentEndDate} />
+						</div>
+					</div>
+				</div>
+			</Card.Content>
+
+			<Card.Footer class="flex gap-3">
+				<Button type="submit" disabled={saving} class="flex items-center gap-2">
+					{#if saving}
+						<Loader2 class="w-4 h-4 animate-spin" />
+					{:else}
+						<Plus class="w-4 h-4" />
+					{/if}
+					{saving ? 'กำลังสร้าง...' : 'สร้างรอบรับสมัคร'}
+				</Button>
+				<Button type="button" variant="outline" href="/staff/academic/admission">ยกเลิก</Button>
+			</Card.Footer>
+		</Card.Root>
 	</form>
 </div>

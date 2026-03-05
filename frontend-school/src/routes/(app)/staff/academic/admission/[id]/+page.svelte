@@ -1,9 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-
-	let { data } = $props();
-
 	import {
 		getRound,
 		listTracks,
@@ -24,6 +21,11 @@
 	import { apiClient } from '$lib/api/client';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as Card from '$lib/components/ui/card';
+	import * as Select from '$lib/components/ui/select';
+	import { Separator } from '$lib/components/ui/separator';
 	import { toast } from 'svelte-sonner';
 	import {
 		ArrowLeft,
@@ -34,10 +36,12 @@
 		Pencil,
 		Trash2,
 		Check,
-		X,
 		ClipboardList,
-		Users
+		Users,
+		Loader2
 	} from 'lucide-svelte';
+
+	let { data } = $props();
 
 	let id = $derived($page.params.id);
 	let round: AdmissionRound | null = $state(null);
@@ -63,7 +67,6 @@
 	let subjectForm = $state({ name: '', code: '', maxScore: '100', displayOrder: '0' });
 	let savingSubject = $state(false);
 
-	// Status update
 	const statusFlow: AdmissionRound['status'][] = [
 		'draft',
 		'open',
@@ -73,6 +76,16 @@
 		'enrolling',
 		'closed'
 	];
+
+	const statusVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
+		draft: 'secondary',
+		open: 'default',
+		exam: 'default',
+		scoring: 'default',
+		announced: 'default',
+		enrolling: 'default',
+		closed: 'destructive'
+	};
 
 	async function load() {
 		if (!id) return;
@@ -87,7 +100,6 @@
 		} finally {
 			loading = false;
 		}
-		// โหลด study plans
 		const sp = await apiClient.get<{ id: string; nameTh: string }[]>('/api/academic/study-plans');
 		if (sp.success) studyPlans = sp.data ?? [];
 	}
@@ -103,7 +115,7 @@
 		}
 	}
 
-	// ===== Track =====
+	// Track CRUD
 	function openNewTrack() {
 		editingTrack = null;
 		trackForm = { studyPlanId: '', name: '', capacityOverride: '', tiebreakMethod: 'applied_at' };
@@ -162,7 +174,7 @@
 		}
 	}
 
-	// ===== Subject =====
+	// Subject CRUD
 	function openNewSubject() {
 		editingSubject = null;
 		subjectForm = { name: '', code: '', maxScore: '100', displayOrder: subjects.length.toString() };
@@ -236,155 +248,160 @@
 
 {#if loading}
 	<div class="flex justify-center items-center py-20">
-		<div
-			class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-		></div>
+		<Loader2 class="w-8 h-8 animate-spin text-primary" />
 	</div>
 {:else if round}
 	<div class="space-y-6">
-		<!-- Header -->
-		<div class="flex items-center gap-3">
-			<Button href="/staff/academic/admission" variant="ghost" size="sm">
-				<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
-			</Button>
-		</div>
+		<!-- Back -->
+		<Button href="/staff/academic/admission" variant="ghost" size="sm" class="gap-1">
+			<ArrowLeft class="w-4 h-4" /> ย้อนกลับ
+		</Button>
 
 		<!-- Round Info Card -->
-		<div class="bg-card border border-border rounded-lg p-5">
-			<div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
-				<div>
-					<div class="flex items-center gap-2 flex-wrap">
-						<h1 class="text-2xl font-bold">{round.name}</h1>
-						<span
-							class="text-xs px-2 py-0.5 rounded-full font-medium {roundStatusColor[round.status]}"
-						>
-							{roundStatusLabel[round.status]}
-						</span>
+		<Card.Root>
+			<Card.Content class="p-5">
+				<div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+					<div class="space-y-1">
+						<div class="flex items-center gap-2 flex-wrap">
+							<h1 class="text-2xl font-bold">{round.name}</h1>
+							<Badge variant={statusVariant[round.status] ?? 'secondary'}>
+								{roundStatusLabel[round.status]}
+							</Badge>
+						</div>
+						<div class="text-sm text-muted-foreground space-y-0.5">
+							<p>ปีการศึกษา: {round.academicYearName} | ชั้น: {round.gradeLevelName}</p>
+							<p>รับสมัคร: {formatDate(round.applyStartDate)} – {formatDate(round.applyEndDate)}</p>
+							{#if round.examDate}<p>วันสอบ: {formatDate(round.examDate)}</p>{/if}
+							{#if round.resultAnnounceDate}<p>
+									ประกาศผล: {formatDate(round.resultAnnounceDate)}
+								</p>{/if}
+						</div>
 					</div>
-					<div class="mt-2 text-sm text-muted-foreground space-y-0.5">
-						<p>ปีการศึกษา: {round.academicYearName} | ชั้น: {round.gradeLevelName}</p>
-						<p>รับสมัคร: {formatDate(round.applyStartDate)} – {formatDate(round.applyEndDate)}</p>
-						{#if round.examDate}<p>วันสอบ: {formatDate(round.examDate)}</p>{/if}
-						{#if round.resultAnnounceDate}<p>
-								ประกาศผล: {formatDate(round.resultAnnounceDate)}
-							</p>{/if}
+					<!-- Status Stepper -->
+					<div class="flex flex-col gap-1.5">
+						<p class="text-xs text-muted-foreground font-medium">เปลี่ยนสถานะ:</p>
+						<div class="flex flex-wrap gap-1">
+							{#each statusFlow as s}
+								<button
+									onclick={() => handleStatusChange(s)}
+									class="text-xs px-2 py-1 rounded border transition-colors {round.status === s
+										? 'border-primary bg-primary text-primary-foreground'
+										: 'border-border hover:bg-accent'}"
+								>
+									{roundStatusLabel[s]}
+								</button>
+							{/each}
+						</div>
 					</div>
 				</div>
-				<!-- Status Stepper -->
-				<div class="flex flex-col gap-1">
-					<p class="text-xs text-muted-foreground font-medium mb-1">เปลี่ยนสถานะ:</p>
-					<div class="flex flex-wrap gap-1">
-						{#each statusFlow as s}
-							<button
-								onclick={() => handleStatusChange(s)}
-								class="text-xs px-2 py-1 rounded border transition-colors {round.status === s
-									? 'border-primary bg-primary text-primary-foreground'
-									: 'border-border hover:bg-accent'}"
-							>
-								{roundStatusLabel[s]}
-							</button>
-						{/each}
-					</div>
-				</div>
-			</div>
 
-			<!-- Quick Links -->
-			<div class="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
-				<Button
-					href="/staff/academic/admission/{id}/applications"
-					variant="outline"
-					size="sm"
-					class="gap-1.5"
-				>
-					<Users class="w-3.5 h-3.5" /> ใบสมัคร ({round.applicationCount ?? 0})
-				</Button>
-				<Button
-					href="/staff/academic/admission/{id}/scores"
-					variant="outline"
-					size="sm"
-					class="gap-1.5"
-				>
-					<ClipboardList class="w-3.5 h-3.5" /> กรอกคะแนน
-				</Button>
-				<Button
-					href="/staff/academic/admission/{id}/selections"
-					variant="outline"
-					size="sm"
-					class="gap-1.5"
-				>
-					<GraduationCap class="w-3.5 h-3.5" /> จัดห้อง
-				</Button>
-				<Button
-					href="/staff/academic/admission/{id}/enrollment"
-					variant="outline"
-					size="sm"
-					class="gap-1.5"
-				>
-					<Check class="w-3.5 h-3.5" /> รับมอบตัว
-				</Button>
-			</div>
-		</div>
+				<Separator class="my-4" />
 
-		<div class="grid md:grid-cols-2 gap-6">
-			<!-- Section: Tracks -->
-			<div class="bg-card border border-border rounded-lg">
-				<div class="flex items-center justify-between px-5 py-4 border-b border-border">
-					<h2 class="font-semibold flex items-center gap-2">
-						<BookOpen class="w-4 h-4" /> สายการเรียน ({tracks.length})
-					</h2>
-					<Button size="sm" onclick={openNewTrack} class="gap-1">
-						<Plus class="w-3.5 h-3.5" /> เพิ่ม
+				<!-- Quick Links -->
+				<div class="flex flex-wrap gap-2">
+					<Button
+						href="/staff/academic/admission/{id}/applications"
+						variant="outline"
+						size="sm"
+						class="gap-1.5"
+					>
+						<Users class="w-3.5 h-3.5" /> ใบสมัคร ({round.applicationCount ?? 0})
+					</Button>
+					<Button
+						href="/staff/academic/admission/{id}/scores"
+						variant="outline"
+						size="sm"
+						class="gap-1.5"
+					>
+						<ClipboardList class="w-3.5 h-3.5" /> กรอกคะแนน
+					</Button>
+					<Button
+						href="/staff/academic/admission/{id}/selections"
+						variant="outline"
+						size="sm"
+						class="gap-1.5"
+					>
+						<GraduationCap class="w-3.5 h-3.5" /> จัดห้อง
+					</Button>
+					<Button
+						href="/staff/academic/admission/{id}/enrollment"
+						variant="outline"
+						size="sm"
+						class="gap-1.5"
+					>
+						<Check class="w-3.5 h-3.5" /> รับมอบตัว
 					</Button>
 				</div>
+			</Card.Content>
+		</Card.Root>
+
+		<div class="grid md:grid-cols-2 gap-6">
+			<!-- Tracks -->
+			<Card.Root>
+				<Card.Header class="flex flex-row items-center justify-between pb-3">
+					<Card.Title class="flex items-center gap-2 text-base">
+						<BookOpen class="w-4 h-4" /> สายการเรียน ({tracks.length})
+					</Card.Title>
+					<Button size="sm" onclick={openNewTrack} class="gap-1 h-8">
+						<Plus class="w-3.5 h-3.5" /> เพิ่ม
+					</Button>
+				</Card.Header>
 
 				{#if showTrackForm}
-					<div class="p-4 border-b border-border bg-muted/30 space-y-3">
+					<div class="px-4 pb-4 space-y-3 border-b border-border">
 						{#if !editingTrack}
-							<div>
-								<label class="text-xs font-medium">แผนการเรียน *</label>
-								<select
-									bind:value={trackForm.studyPlanId}
-									class="mt-1 w-full px-3 py-1.5 text-sm rounded border border-border bg-background"
-								>
-									<option value="">-- เลือก --</option>
-									{#each studyPlans as sp (sp.id)}
-										<option value={sp.id}>{sp.nameTh}</option>
-									{/each}
-								</select>
+							<div class="space-y-1.5">
+								<Label for="track-plan">แผนการเรียน <span class="text-destructive">*</span></Label>
+								<Select.Root type="single" bind:value={trackForm.studyPlanId}>
+									<Select.Trigger id="track-plan" class="w-full">
+										{studyPlans.find((s) => s.id === trackForm.studyPlanId)?.nameTh ??
+											'-- เลือก --'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each studyPlans as sp (sp.id)}
+											<Select.Item value={sp.id}>{sp.nameTh}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 						{/if}
-						<div>
-							<label class="text-xs font-medium">ชื่อสาย *</label>
+						<div class="space-y-1.5">
+							<Label for="track-name">ชื่อสาย <span class="text-destructive">*</span></Label>
 							<Input
+								id="track-name"
 								bind:value={trackForm.name}
 								placeholder="เช่น สายวิทย์-คณิต"
-								class="mt-1 h-8 text-sm"
+								class="h-8 text-sm"
 							/>
 						</div>
 						<div class="grid grid-cols-2 gap-2">
-							<div>
-								<label class="text-xs font-medium">จำนวนรับ (override)</label>
+							<div class="space-y-1.5">
+								<Label for="track-cap">จำนวนรับ (override)</Label>
 								<Input
+									id="track-cap"
 									bind:value={trackForm.capacityOverride}
 									type="number"
 									placeholder="อัตโนมัติ"
-									class="mt-1 h-8 text-sm"
+									class="h-8 text-sm"
 								/>
 							</div>
-							<div>
-								<label class="text-xs font-medium">Tie-breaking</label>
-								<select
-									bind:value={trackForm.tiebreakMethod}
-									class="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-background"
-								>
-									<option value="applied_at">สมัครก่อนได้ก่อน</option>
-									<option value="gpa">GPA สูงกว่าได้ก่อน</option>
-								</select>
+							<div class="space-y-1.5">
+								<Label for="track-tie">Tie-breaking</Label>
+								<Select.Root type="single" bind:value={trackForm.tiebreakMethod}>
+									<Select.Trigger id="track-tie" class="w-full h-8 text-sm">
+										{trackForm.tiebreakMethod === 'gpa' ? 'GPA สูงกว่าได้ก่อน' : 'สมัครก่อนได้ก่อน'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="applied_at">สมัครก่อนได้ก่อน</Select.Item>
+										<Select.Item value="gpa">GPA สูงกว่าได้ก่อน</Select.Item>
+									</Select.Content>
+								</Select.Root>
 							</div>
 						</div>
 						<div class="flex gap-2">
 							<Button size="sm" onclick={saveTrack} disabled={savingTrack} class="h-7 text-xs">
-								{savingTrack ? 'บันทึก...' : 'บันทึก'}
+								{#if savingTrack}<Loader2 class="w-3 h-3 mr-1 animate-spin" />{/if}
+								บันทึก
 							</Button>
 							<Button
 								size="sm"
@@ -396,80 +413,100 @@
 					</div>
 				{/if}
 
-				<div class="divide-y divide-border">
-					{#each tracks as t (t.id)}
-						<div class="px-5 py-3 flex items-center justify-between">
-							<div>
-								<p class="font-medium text-sm">{t.name}</p>
-								<p class="text-xs text-muted-foreground">
-									{t.studyPlanName ?? '-'} • รับ {t.computedCapacity ?? '-'} คน ({t.roomCount ?? 0} ห้อง)
-									• สมัครแล้ว {t.applicationCount ?? 0}
-								</p>
+				<Card.Content class="p-0">
+					<div class="divide-y divide-border">
+						{#each tracks as t (t.id)}
+							<div class="px-4 py-3 flex items-center justify-between">
+								<div>
+									<p class="font-medium text-sm">{t.name}</p>
+									<p class="text-xs text-muted-foreground">
+										{t.studyPlanName ?? '-'} • รับ {t.computedCapacity ?? '-'} คน ({t.roomCount ??
+											0} ห้อง) • สมัคร {t.applicationCount ?? 0}
+									</p>
+								</div>
+								<div class="flex gap-1">
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-7 w-7"
+										onclick={() => openEditTrack(t)}
+									>
+										<Pencil class="w-3.5 h-3.5" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-7 w-7 text-destructive hover:text-destructive"
+										onclick={() => removeTrack(t)}
+									>
+										<Trash2 class="w-3.5 h-3.5" />
+									</Button>
+								</div>
 							</div>
-							<div class="flex gap-1">
-								<Button variant="ghost" size="sm" onclick={() => openEditTrack(t)}>
-									<Pencil class="w-3.5 h-3.5" />
-								</Button>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => removeTrack(t)}
-									class="text-destructive"
-								>
-									<Trash2 class="w-3.5 h-3.5" />
-								</Button>
-							</div>
-						</div>
-					{:else}
-						<p class="px-5 py-6 text-center text-sm text-muted-foreground">ยังไม่มีสายการเรียน</p>
-					{/each}
-				</div>
-			</div>
+						{:else}
+							<p class="px-4 py-8 text-center text-sm text-muted-foreground">ยังไม่มีสายการเรียน</p>
+						{/each}
+					</div>
+				</Card.Content>
+			</Card.Root>
 
-			<!-- Section: Exam Subjects -->
-			<div class="bg-card border border-border rounded-lg">
-				<div class="flex items-center justify-between px-5 py-4 border-b border-border">
-					<h2 class="font-semibold flex items-center gap-2">
+			<!-- Exam Subjects -->
+			<Card.Root>
+				<Card.Header class="flex flex-row items-center justify-between pb-3">
+					<Card.Title class="flex items-center gap-2 text-base">
 						<Settings class="w-4 h-4" /> วิชาที่สอบ ({subjects.length})
-					</h2>
-					<Button size="sm" onclick={openNewSubject} class="gap-1">
+					</Card.Title>
+					<Button size="sm" onclick={openNewSubject} class="gap-1 h-8">
 						<Plus class="w-3.5 h-3.5" /> เพิ่ม
 					</Button>
-				</div>
+				</Card.Header>
 
 				{#if showSubjectForm}
-					<div class="p-4 border-b border-border bg-muted/30 space-y-3">
+					<div class="px-4 pb-4 space-y-3 border-b border-border">
 						<div class="grid grid-cols-2 gap-2">
-							<div>
-								<label class="text-xs font-medium">ชื่อวิชา *</label>
+							<div class="space-y-1.5">
+								<Label for="sub-name">ชื่อวิชา <span class="text-destructive">*</span></Label>
 								<Input
+									id="sub-name"
 									bind:value={subjectForm.name}
 									placeholder="วิชาคณิตศาสตร์"
-									class="mt-1 h-8 text-sm"
+									class="h-8 text-sm"
 								/>
 							</div>
-							<div>
-								<label class="text-xs font-medium">รหัส</label>
-								<Input bind:value={subjectForm.code} placeholder="MATH" class="mt-1 h-8 text-sm" />
+							<div class="space-y-1.5">
+								<Label for="sub-code">รหัส</Label>
+								<Input
+									id="sub-code"
+									bind:value={subjectForm.code}
+									placeholder="MATH"
+									class="h-8 text-sm"
+								/>
 							</div>
 						</div>
 						<div class="grid grid-cols-2 gap-2">
-							<div>
-								<label class="text-xs font-medium">คะแนนเต็ม</label>
-								<Input bind:value={subjectForm.maxScore} type="number" class="mt-1 h-8 text-sm" />
-							</div>
-							<div>
-								<label class="text-xs font-medium">ลำดับ</label>
+							<div class="space-y-1.5">
+								<Label for="sub-max">คะแนนเต็ม</Label>
 								<Input
+									id="sub-max"
+									bind:value={subjectForm.maxScore}
+									type="number"
+									class="h-8 text-sm"
+								/>
+							</div>
+							<div class="space-y-1.5">
+								<Label for="sub-order">ลำดับ</Label>
+								<Input
+									id="sub-order"
 									bind:value={subjectForm.displayOrder}
 									type="number"
-									class="mt-1 h-8 text-sm"
+									class="h-8 text-sm"
 								/>
 							</div>
 						</div>
 						<div class="flex gap-2">
 							<Button size="sm" onclick={saveSubject} disabled={savingSubject} class="h-7 text-xs">
-								{savingSubject ? 'บันทึก...' : 'บันทึก'}
+								{#if savingSubject}<Loader2 class="w-3 h-3 mr-1 animate-spin" />{/if}
+								บันทึก
 							</Button>
 							<Button
 								size="sm"
@@ -481,32 +518,41 @@
 					</div>
 				{/if}
 
-				<div class="divide-y divide-border">
-					{#each subjects as s (s.id)}
-						<div class="px-5 py-3 flex items-center justify-between">
-							<div>
-								<p class="font-medium text-sm">{s.name}</p>
-								<p class="text-xs text-muted-foreground">
-									{s.code ? `[${s.code}]` : ''} คะแนนเต็ม {s.maxScore}
-								</p>
+				<Card.Content class="p-0">
+					<div class="divide-y divide-border">
+						{#each subjects as s (s.id)}
+							<div class="px-4 py-3 flex items-center justify-between">
+								<div>
+									<p class="font-medium text-sm">{s.name}</p>
+									<p class="text-xs text-muted-foreground">
+										{s.code ? `[${s.code}]` : ''} คะแนนเต็ม {s.maxScore}
+									</p>
+								</div>
+								<div class="flex gap-1">
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-7 w-7"
+										onclick={() => openEditSubject(s)}
+									>
+										<Pencil class="w-3.5 h-3.5" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-7 w-7 text-destructive hover:text-destructive"
+										onclick={() => removeSubject(s)}
+									>
+										<Trash2 class="w-3.5 h-3.5" />
+									</Button>
+								</div>
 							</div>
-							<div class="flex gap-1">
-								<Button variant="ghost" size="sm" onclick={() => openEditSubject(s)}
-									><Pencil class="w-3.5 h-3.5" /></Button
-								>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => removeSubject(s)}
-									class="text-destructive"><Trash2 class="w-3.5 h-3.5" /></Button
-								>
-							</div>
-						</div>
-					{:else}
-						<p class="px-5 py-6 text-center text-sm text-muted-foreground">ยังไม่มีวิชา</p>
-					{/each}
-				</div>
-			</div>
+						{:else}
+							<p class="px-4 py-8 text-center text-sm text-muted-foreground">ยังไม่มีวิชา</p>
+						{/each}
+					</div>
+				</Card.Content>
+			</Card.Root>
 		</div>
 	</div>
 {/if}
