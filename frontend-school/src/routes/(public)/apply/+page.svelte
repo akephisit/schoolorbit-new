@@ -323,8 +323,9 @@
 					<form onsubmit={handleSubmitForm} class="space-y-3">
 						<div class="grid grid-cols-2 gap-3">
 							<div class="space-y-1">
-								<label class="text-xs font-medium text-gray-600">ไซส์เสื้อ</label>
+								<label for="shirt-size" class="text-xs font-medium text-gray-600">ไซส์เสื้อ</label>
 								<select
+									id="shirt-size"
 									bind:value={formFields.shirtSize}
 									class="w-full px-3 py-1.5 text-sm rounded-md border border-gray-300"
 								>
@@ -335,8 +336,9 @@
 								</select>
 							</div>
 							<div class="space-y-1">
-								<label class="text-xs font-medium text-gray-600">กลุ่มเลือด</label>
+								<label for="blood-type" class="text-xs font-medium text-gray-600">กลุ่มเลือด</label>
 								<select
+									id="blood-type"
 									bind:value={formFields.bloodType}
 									class="w-full px-3 py-1.5 text-sm rounded-md border border-gray-300"
 								>
@@ -348,24 +350,33 @@
 							</div>
 						</div>
 						<div class="space-y-1">
-							<label class="text-xs font-medium text-gray-600">ผู้ติดต่อฉุกเฉิน</label>
+							<label for="emergency-contact" class="text-xs font-medium text-gray-600"
+								>ผู้ติดต่อฉุกเฉิน</label
+							>
 							<Input
+								id="emergency-contact"
 								bind:value={formFields.emergencyContact}
 								placeholder="ชื่อ-สกุล ผู้ติดต่อ"
 								class="h-8 text-sm"
 							/>
 						</div>
 						<div class="space-y-1">
-							<label class="text-xs font-medium text-gray-600">เบอร์โทรฉุกเฉิน</label>
+							<label for="emergency-phone" class="text-xs font-medium text-gray-600"
+								>เบอร์โทรฉุกเฉิน</label
+							>
 							<Input
+								id="emergency-phone"
 								bind:value={formFields.emergencyPhone}
 								placeholder="0XX-XXX-XXXX"
 								class="h-8 text-sm"
 							/>
 						</div>
 						<div class="space-y-1">
-							<label class="text-xs font-medium text-gray-600">โรคประจำตัว / แพ้ยา</label>
+							<label for="allergy" class="text-xs font-medium text-gray-600"
+								>โรคประจำตัว / แพ้ยา</label
+							>
 							<textarea
+								id="allergy"
 								bind:value={formFields.allergy}
 								rows="2"
 								class="w-full px-3 py-1.5 text-sm rounded-md border border-gray-300 resize-none"

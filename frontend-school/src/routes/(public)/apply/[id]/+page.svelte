@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { submitApplication } from '$lib/api/admission';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -10,7 +10,6 @@
 	import { GraduationCap, CheckCircle2, AlertCircle, ChevronRight } from 'lucide-svelte';
 
 	let { data } = $props();
-	$inspect(data);
 
 	const round = $derived(data.info?.round);
 	const tracks = $derived(data.info?.tracks ?? []);
@@ -63,7 +62,7 @@
 
 		submitting = true;
 		try {
-			const res = await submitApplication($page.params.id, {
+			const res = await submitApplication(page.params.id!, {
 				admissionTrackId: trackId,
 				nationalId,
 				title,
