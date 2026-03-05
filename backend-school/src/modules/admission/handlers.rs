@@ -10,6 +10,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use chrono::{DateTime, Utc, NaiveDate};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -818,9 +819,15 @@ pub async fn confirm_selection(
             confirmed_at  = NOW(),
             updated_at    = NOW()
          WHERE id = $1
-         RETURNING *, NULL::text as applicant_name, NULL::text as application_number,
-                   NULL::text as grade_level_name, NULL::numeric as total_score,
-                   NULL::text as applying_grade_level_name"
+         RETURNING *,
+            NULL::text as applicant_name, NULL::text as application_number,
+            NULL::text as grade_level_name, NULL::text as applying_grade_level_name,
+            NULL::text as classroom_name, NULL::text as classroom_code,
+            NULL::text as study_plan_name, NULL::text as study_plan_version_name,
+            NULL::numeric as app_total_score, NULL::text as checked_in_by_name,
+            NULL::text as student_username, NULL::text as applicant_national_id,
+            NULL::text as applicant_gender, NULL::date as applicant_date_of_birth,
+            NULL::text as guardian_phone, NULL::text as guardian_name"
     )
     .bind(id)
     .fetch_one(&pool)
@@ -1040,4 +1047,668 @@ pub async fn generate_students(
     })))
 }
 
-use chrono::NaiveDate;
+// ==========================================
+// Exam Subjects Handlers (NEW)
+// ==========================================
+
+pub async fn list_exam_subjects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(period_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    let subjects = sqlx::query_as::<_, AdmissionExamSubject>(
+        "SELECT * FROM admission_exam_subjects
+         WHERE admission_period_id = $1
+         ORDER BY display_order, created_at"
+    )
+    .bind(period_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("list_exam_subjects error: {e}");
+        AppError::InternalServerError("ไม่สามารถโหลดรายวิชาสอบได้".to_string())
+    })?;
+
+    Ok(Json(json!({ "success": true, "data": subjects })))
+}
+
+pub async fn create_exam_subject(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(period_id): Path<Uuid>,
+    Json(payload): Json<UpsertExamSubjectRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    let subject = sqlx::query_as::<_, AdmissionExamSubject>(
+        "INSERT INTO admission_exam_subjects
+            (admission_period_id, subject_name, subject_code, max_score, display_order, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *"
+    )
+    .bind(period_id)
+    .bind(&payload.subject_name)
+    .bind(&payload.subject_code)
+    .bind(payload.max_score.unwrap_or(100.0))
+    .bind(payload.display_order.unwrap_or(0))
+    .bind(payload.is_active.unwrap_or(true))
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("create_exam_subject error: {e}");
+        AppError::InternalServerError("ไม่สามารถสร้างรายวิชาได้".to_string())
+    })?;
+
+    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": subject }))))
+}
+
+pub async fn update_exam_subject(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((_period_id, subject_id)): Path<(Uuid, Uuid)>,
+    Json(payload): Json<UpsertExamSubjectRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    let subject = sqlx::query_as::<_, AdmissionExamSubject>(
+        "UPDATE admission_exam_subjects SET
+            subject_name  = $1,
+            subject_code  = COALESCE($2, subject_code),
+            max_score     = COALESCE($3, max_score),
+            display_order = COALESCE($4, display_order),
+            is_active     = COALESCE($5, is_active),
+            updated_at    = NOW()
+         WHERE id = $6
+         RETURNING *"
+    )
+    .bind(&payload.subject_name)
+    .bind(&payload.subject_code)
+    .bind(payload.max_score)
+    .bind(payload.display_order)
+    .bind(payload.is_active)
+    .bind(subject_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("update_exam_subject error: {e}");
+        AppError::InternalServerError("ไม่สามารถอัปเดตรายวิชาได้".to_string())
+    })?;
+
+    Ok(Json(json!({ "success": true, "data": subject })))
+}
+
+pub async fn delete_exam_subject(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((_period_id, subject_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    sqlx::query("DELETE FROM admission_exam_subjects WHERE id = $1")
+        .bind(subject_id)
+        .execute(&pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("ลบรายวิชาไม่สำเร็จ".to_string()))?;
+
+    Ok(Json(json!({ "success": true })))
+}
+
+// ==========================================
+// Exam Scores Handlers (NEW)
+// ==========================================
+
+/// โหลดคะแนนทั้งหมดของรอบนี้ (grouped by application)
+pub async fn list_scores_by_period(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(period_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    // subjects
+    let subjects = sqlx::query_as::<_, AdmissionExamSubject>(
+        "SELECT * FROM admission_exam_subjects
+         WHERE admission_period_id = $1 AND is_active = true
+         ORDER BY display_order"
+    )
+    .bind(period_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // applications accepted/waitlisted/confirmed with their scores
+    let rows = sqlx::query(
+        "SELECT a.id as app_id,
+                a.application_number,
+                CONCAT(COALESCE(a.applicant_title,''), a.applicant_first_name, ' ', a.applicant_last_name) as name,
+                a.status,
+                a.applying_grade_level_id,
+                CASE gl.level_type
+                    WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                    WHEN 'primary'      THEN CONCAT('ป.', gl.year)
+                    WHEN 'secondary'    THEN CONCAT('ม.', gl.year)
+                    ELSE gl.name
+                END as grade_level_name,
+                COALESCE(
+                    jsonb_object_agg(es.exam_subject_id::text, es.score)
+                    FILTER (WHERE es.exam_subject_id IS NOT NULL),
+                    '{}'
+                ) as score_map,
+                COALESCE(SUM(es.score), 0) as computed_total
+         FROM admission_applications a
+         LEFT JOIN grade_levels gl ON a.applying_grade_level_id = gl.id
+         LEFT JOIN admission_exam_scores es ON es.application_id = a.id
+         WHERE a.admission_period_id = $1
+           AND a.status IN ('accepted', 'waitlisted', 'confirmed', 'reviewing', 'interview_scheduled')
+         GROUP BY a.id, a.application_number, a.applicant_title, a.applicant_first_name,
+                  a.applicant_last_name, a.status, a.applying_grade_level_id,
+                  gl.level_type, gl.year, gl.name
+         ORDER BY computed_total DESC NULLS LAST, a.applicant_first_name"
+    )
+    .bind(period_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("list_scores_by_period error: {e}");
+        AppError::InternalServerError("โหลดคะแนนไม่สำเร็จ".to_string())
+    })?;
+
+    use sqlx::Row;
+    let applications: Vec<serde_json::Value> = rows.into_iter().map(|row| {
+        json!({
+            "app_id": row.try_get::<Uuid, _>("app_id").ok().map(|u| u.to_string()),
+            "application_number": row.try_get::<String, _>("application_number").unwrap_or_default(),
+            "name": row.try_get::<String, _>("name").unwrap_or_default(),
+            "status": row.try_get::<String, _>("status").unwrap_or_default(),
+            "grade_level_name": row.try_get::<Option<String>, _>("grade_level_name").unwrap_or(None),
+            "score_map": row.try_get::<serde_json::Value, _>("score_map").unwrap_or(json!({})),
+            "computed_total": row.try_get::<f64, _>("computed_total").unwrap_or(0.0),
+        })
+    }).collect();
+
+    Ok(Json(json!({
+        "success": true,
+        "subjects": subjects,
+        "applications": applications
+    })))
+}
+
+/// Batch upsert scores + optional recalculate total
+pub async fn batch_upsert_scores(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<BatchUpsertScoresRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    let mut upserted = 0i32;
+    for entry in &payload.scores {
+        sqlx::query(
+            "INSERT INTO admission_exam_scores (application_id, exam_subject_id, score)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (application_id, exam_subject_id)
+             DO UPDATE SET score = EXCLUDED.score, updated_at = NOW()"
+        )
+        .bind(entry.application_id)
+        .bind(entry.exam_subject_id)
+        .bind(entry.score)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("batch_upsert_scores error: {e}");
+            AppError::InternalServerError("บันทึกคะแนนไม่สำเร็จ".to_string())
+        })?;
+        upserted += 1;
+    }
+
+    // Recalculate total_score for affected applications
+    if payload.recalculate_total.unwrap_or(true) {
+        let app_ids: Vec<Uuid> = payload.scores.iter()
+            .map(|s| s.application_id)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter().collect();
+
+        for app_id in &app_ids {
+            // Build subject filter
+            let subject_filter = if let Some(ref ids) = payload.total_subject_ids {
+                let id_strs: Vec<String> = ids.iter().map(|u| format!("'{}'", u)).collect();
+                format!("AND es.exam_subject_id IN ({})", id_strs.join(","))
+            } else {
+                String::new()
+            };
+
+            let _ = sqlx::query(
+                &format!("UPDATE admission_applications SET
+                    total_score = (
+                        SELECT COALESCE(SUM(es.score), 0)
+                        FROM admission_exam_scores es
+                        WHERE es.application_id = $1 {subject_filter}
+                    ),
+                    updated_at = NOW()
+                 WHERE id = $1")
+            )
+            .bind(app_id)
+            .execute(&mut *tx)
+            .await;
+        }
+    }
+
+    tx.commit().await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({ "success": true, "upserted": upserted })))
+}
+
+// ==========================================
+// Selection Update Handler (NEW)
+// ==========================================
+
+pub async fn update_selection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateSelectionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    let sel = sqlx::query_as::<_, AdmissionSelection>(
+        "UPDATE admission_selections SET
+            rank                   = COALESCE($1, rank),
+            study_plan_version_id  = COALESCE($2, study_plan_version_id),
+            assigned_classroom_id  = COALESCE($3, assigned_classroom_id),
+            notes                  = COALESCE($4, notes),
+            updated_at             = NOW()
+         WHERE id = $5
+         RETURNING *, NULL::text as applicant_name, NULL::text as application_number,
+            NULL::text as grade_level_name, NULL::text as applying_grade_level_name,
+            NULL::text as classroom_name, NULL::text as classroom_code,
+            NULL::text as study_plan_name, NULL::text as study_plan_version_name,
+            NULL::numeric as app_total_score, NULL::text as checked_in_by_name,
+            NULL::text as student_username, NULL::text as applicant_national_id,
+            NULL::text as applicant_gender, NULL::date as applicant_date_of_birth,
+            NULL::text as guardian_phone, NULL::text as guardian_name"
+    )
+    .bind(payload.rank)
+    .bind(payload.study_plan_version_id)
+    .bind(payload.assigned_classroom_id)
+    .bind(&payload.notes)
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("update_selection error: {e}");
+        AppError::InternalServerError("ไม่สามารถอัปเดตรายชื่อผู้ผ่านได้".to_string())
+    })?;
+
+    Ok(Json(json!({ "success": true, "data": sel })))
+}
+
+// ==========================================
+// Check-in Handlers (NEW)
+// ==========================================
+
+/// List selections สำหรับหน้า checkin (ค้นหา + filter)
+pub async fn list_checkins(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(period_id): Path<Uuid>,
+    Query(params): Query<ListSelectionsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    let mut where_parts = vec![
+        "s.admission_period_id = $1".to_string(),
+        "s.is_confirmed = true".to_string(),
+    ];
+
+    if let Some(ref status) = params.checkin_status {
+        where_parts.push(format!("s.checkin_status = '{}'", status.replace('\'', "''")));
+    }
+    if let Some(ref search) = params.search {
+        let s = search.replace('\'', "''");
+        where_parts.push(format!(
+            "(a.applicant_first_name ILIKE '%{s}%' OR a.applicant_last_name ILIKE '%{s}%' OR a.application_number ILIKE '%{s}%')"
+        ));
+    }
+
+    // Sort by subset of subjects or by total_score
+    let sort_col = if let Some(ref subject_csv) = params.sort_subject_ids {
+        let ids: Vec<&str> = subject_csv.split(',').map(|s| s.trim()).collect();
+        let ids_sql: Vec<String> = ids.iter().map(|id| format!("'{}'", id)).collect();
+        format!(
+            "(SELECT COALESCE(SUM(es.score),0) FROM admission_exam_scores es WHERE es.application_id = a.id AND es.exam_subject_id::text IN ({}))",
+            ids_sql.join(",")
+        )
+    } else {
+        "COALESCE(a.total_score, 0)".to_string()
+    };
+
+    let sort_dir = match params.sort_dir.as_deref() {
+        Some("asc") => "ASC",
+        _ => "DESC",
+    };
+
+    let where_clause = where_parts.join(" AND ");
+
+    let rows = sqlx::query(
+        &format!(
+            "SELECT s.*,
+                    CONCAT(COALESCE(a.applicant_title,''), a.applicant_first_name, ' ', a.applicant_last_name) as applicant_name,
+                    a.application_number,
+                    a.applicant_national_id,
+                    a.applicant_gender,
+                    a.applicant_date_of_birth,
+                    a.guardian_phone,
+                    a.guardian_name,
+                    a.total_score as app_total_score,
+                    CASE agl.level_type
+                        WHEN 'kindergarten' THEN CONCAT('อ.', agl.year)
+                        WHEN 'primary'      THEN CONCAT('ป.', agl.year)
+                        WHEN 'secondary'    THEN CONCAT('ม.', agl.year)
+                        ELSE agl.name
+                    END as applying_grade_level_name,
+                    cr.name  as classroom_name,
+                    cr.code  as classroom_code,
+                    sp.name  as study_plan_name,
+                    spv.name as study_plan_version_name,
+                    CONCAT(COALESCE(cu.title,''), cu.first_name, ' ', cu.last_name) as checked_in_by_name,
+                    su.username as student_username,
+                    NULL::text as grade_level_name
+             FROM admission_selections s
+             JOIN admission_applications a   ON s.application_id        = a.id
+             LEFT JOIN grade_levels agl      ON a.applying_grade_level_id = agl.id
+             LEFT JOIN class_rooms cr        ON s.assigned_classroom_id  = cr.id
+             LEFT JOIN study_plan_versions spv ON s.study_plan_version_id = spv.id
+             LEFT JOIN study_plans sp        ON spv.study_plan_id        = sp.id
+             LEFT JOIN users cu              ON s.checked_in_by          = cu.id
+             LEFT JOIN users su              ON s.student_user_id        = su.id
+             WHERE {where_clause}
+             ORDER BY {sort_col} {sort_dir} NULLS LAST, a.applicant_first_name"
+        )
+    )
+    .bind(period_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("list_checkins error: {e}");
+        AppError::InternalServerError("โหลดรายชื่อรายงานตัวไม่สำเร็จ".to_string())
+    })?;
+
+    use sqlx::Row as SRow;
+    let data: Vec<serde_json::Value> = rows.into_iter().map(|row| {
+        json!({
+            "id":                      row.try_get::<Uuid,_>("id").ok().map(|u|u.to_string()),
+            "application_id":         row.try_get::<Uuid,_>("application_id").ok().map(|u|u.to_string()),
+            "selection_type":          row.try_get::<String,_>("selection_type").unwrap_or_default(),
+            "rank":                    row.try_get::<Option<i32>,_>("rank").unwrap_or(None),
+            "checkin_status":          row.try_get::<String,_>("checkin_status").unwrap_or_default(),
+            "checked_in_at":           row.try_get::<Option<DateTime<Utc>>,_>("checked_in_at").unwrap_or(None),
+            "checked_in_by_name":      row.try_get::<Option<String>,_>("checked_in_by_name").unwrap_or(None),
+            "checkin_notes":           row.try_get::<Option<String>,_>("checkin_notes").unwrap_or(None),
+            "student_user_id":         row.try_get::<Option<Uuid>,_>("student_user_id").ok().flatten().map(|u|u.to_string()),
+            "student_username":        row.try_get::<Option<String>,_>("student_username").unwrap_or(None),
+            "is_confirmed":            row.try_get::<bool,_>("is_confirmed").unwrap_or(false),
+            "applicant_name":          row.try_get::<Option<String>,_>("applicant_name").unwrap_or(None),
+            "application_number":      row.try_get::<Option<String>,_>("application_number").unwrap_or(None),
+            "applicant_national_id":   row.try_get::<Option<String>,_>("applicant_national_id").unwrap_or(None),
+            "applicant_gender":        row.try_get::<Option<String>,_>("applicant_gender").unwrap_or(None),
+            "guardian_phone":          row.try_get::<Option<String>,_>("guardian_phone").unwrap_or(None),
+            "guardian_name":           row.try_get::<Option<String>,_>("guardian_name").unwrap_or(None),
+            "applying_grade_level_name": row.try_get::<Option<String>,_>("applying_grade_level_name").unwrap_or(None),
+            "classroom_name":          row.try_get::<Option<String>,_>("classroom_name").unwrap_or(None),
+            "classroom_code":          row.try_get::<Option<String>,_>("classroom_code").unwrap_or(None),
+            "study_plan_name":         row.try_get::<Option<String>,_>("study_plan_name").unwrap_or(None),
+            "study_plan_version_name": row.try_get::<Option<String>,_>("study_plan_version_name").unwrap_or(None),
+            "app_total_score":         row.try_get::<Option<f64>,_>("app_total_score").unwrap_or(None),
+        })
+    }).collect();
+
+    Ok(Json(json!({ "success": true, "data": data })))
+}
+
+/// สถิติรายงานตัว
+pub async fn get_checkin_stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(period_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    let stats = sqlx::query_as::<_, CheckinStats>(
+        "SELECT
+            $1::uuid as period_id,
+            COUNT(*) FILTER (WHERE is_confirmed = true)                 as total_confirmed,
+            COUNT(*) FILTER (WHERE is_confirmed = true AND checkin_status = 'pending')     as pending_checkin,
+            COUNT(*) FILTER (WHERE is_confirmed = true AND checkin_status = 'checked_in')  as checked_in,
+            COUNT(*) FILTER (WHERE is_confirmed = true AND checkin_status = 'absent')      as absent
+         FROM admission_selections
+         WHERE admission_period_id = $1"
+    )
+    .bind(period_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("get_checkin_stats error: {e}");
+        AppError::InternalServerError("โหลดสถิติรายงานตัวไม่สำเร็จ".to_string())
+    })?;
+
+    Ok(Json(json!({ "success": true, "data": stats })))
+}
+
+/// ครูยืนยันรายงานตัว → สร้าง student account ทันที
+pub async fn confirm_checkin(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(selection_id): Path<Uuid>,
+    Json(payload): Json<CheckinRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    // โหลดข้อมูล selection + application
+    #[derive(sqlx::FromRow)]
+    struct SelInfo {
+        application_id: Uuid,
+        admission_period_id: Uuid,
+        is_confirmed: bool,
+        checkin_status: String,
+        student_user_id: Option<Uuid>,
+        assigned_classroom_id: Option<Uuid>,
+        applicant_first_name: String,
+        applicant_last_name: String,
+        applicant_title: Option<String>,
+        applicant_national_id: Option<String>,
+        applicant_date_of_birth: Option<NaiveDate>,
+        applicant_gender: Option<String>,
+        guardian_phone: Option<String>,
+        guardian_email: Option<String>,
+    }
+
+    let info = sqlx::query_as::<_, SelInfo>(
+        "SELECT s.id, s.application_id, s.admission_period_id,
+                s.is_confirmed, s.checkin_status, s.student_user_id,
+                s.assigned_classroom_id,
+                a.applicant_first_name, a.applicant_last_name, a.applicant_title,
+                a.applicant_national_id, a.applicant_date_of_birth, a.applicant_gender,
+                a.guardian_phone, a.guardian_email
+         FROM admission_selections s
+         JOIN admission_applications a ON s.application_id = a.id
+         WHERE s.id = $1"
+    )
+    .bind(selection_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+    .ok_or(AppError::NotFound("ไม่พบรายชื่อผู้ผ่านคัดเลือก".to_string()))?;
+
+    if !info.is_confirmed {
+        return Err(AppError::BadRequest("นักเรียนยังไม่ได้ยืนยันสิทธิ์".to_string()));
+    }
+    if info.checkin_status == "checked_in" {
+        return Err(AppError::BadRequest("รายงานตัวแล้ว".to_string()));
+    }
+    if info.student_user_id.is_some() {
+        return Err(AppError::BadRequest("มี account อยู่แล้ว".to_string()));
+    }
+
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    // Generate username & password
+    let year: i32 = sqlx::query_scalar(
+        "SELECT EXTRACT(YEAR FROM open_date)::int + 543 FROM admission_periods WHERE id = $1"
+    )
+    .bind(info.admission_period_id)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap_or(2568);
+
+    let short_year = year % 100;
+
+    let seq: i64 = sqlx::query_scalar("SELECT nextval('admission_application_seq')")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or(1);
+
+    let username_base = format!(
+        "{}{}{}",
+        short_year,
+        info.applicant_first_name.chars().take(3).collect::<String>(),
+        info.applicant_last_name.chars().take(2).collect::<String>()
+    );
+    let final_username = format!("{}{seq:03}", username_base.to_lowercase().replace(' ', ""));
+    let plain_password = format!("school{seq:04}");
+    let student_id_str = format!("{short_year}{seq:04}");
+
+    let hashed = bcrypt::hash(&plain_password, bcrypt::DEFAULT_COST)
+        .map_err(|_| AppError::InternalServerError("Password hash failed".to_string()))?;
+
+    // Create user
+    let user_id: Option<Uuid> = sqlx::query_scalar(
+        "INSERT INTO users (username, password_hash, first_name, last_name, title,
+                            national_id, date_of_birth, gender, phone, email, user_type, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'student','active')
+         ON CONFLICT (username) DO NOTHING
+         RETURNING id"
+    )
+    .bind(&final_username)
+    .bind(&hashed)
+    .bind(&info.applicant_first_name)
+    .bind(&info.applicant_last_name)
+    .bind(&info.applicant_title)
+    .bind(&info.applicant_national_id)
+    .bind(info.applicant_date_of_birth)
+    .bind(&info.applicant_gender)
+    .bind(&info.guardian_phone)
+    .bind(&info.guardian_email)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| {
+        eprintln!("confirm_checkin create user error: {e}");
+        AppError::InternalServerError("สร้างบัญชีผู้ใช้ไม่สำเร็จ".to_string())
+    })?
+    .flatten();
+
+    let uid = user_id.ok_or_else(|| AppError::BadRequest(
+        format!("ชื่อผู้ใช้ '{final_username}' ซ้ำกับในระบบ กรุณาลองใหม่")
+    ))?;
+
+    // student_info
+    let _ = sqlx::query(
+        "INSERT INTO student_info (user_id, student_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+    )
+    .bind(uid)
+    .bind(&student_id_str)
+    .execute(&mut *tx)
+    .await;
+
+    // STUDENT role
+    let _ = sqlx::query(
+        "INSERT INTO user_roles (user_id, role_id)
+         SELECT $1, id FROM roles WHERE code = 'STUDENT'
+         ON CONFLICT DO NOTHING"
+    )
+    .bind(uid)
+    .execute(&mut *tx)
+    .await;
+
+    // Enroll in classroom if set
+    if let Some(cr_id) = info.assigned_classroom_id {
+        let _ = sqlx::query(
+            "INSERT INTO student_class_enrollments (student_id, class_room_id, enrollment_date, status)
+             VALUES ($1, $2, CURRENT_DATE, 'active')
+             ON CONFLICT DO NOTHING"
+        )
+        .bind(uid)
+        .bind(cr_id)
+        .execute(&mut *tx)
+        .await;
+    }
+
+    // Update selection: checkin_status = checked_in, student_user_id = uid
+    sqlx::query(
+        "UPDATE admission_selections SET
+            checkin_status  = 'checked_in',
+            checked_in_at   = NOW(),
+            student_user_id = $1,
+            checkin_notes   = $2,
+            updated_at      = NOW()
+         WHERE id = $3"
+    )
+    .bind(uid)
+    .bind(&payload.notes)
+    .bind(selection_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| AppError::InternalServerError("อัปเดตสถานะรายงานตัวไม่สำเร็จ".to_string()))?;
+
+    // Update application status
+    let _ = sqlx::query(
+        "UPDATE admission_applications SET status = 'confirmed', updated_at = NOW() WHERE id = $1"
+    )
+    .bind(info.application_id)
+    .execute(&mut *tx)
+    .await;
+
+    tx.commit().await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "รายงานตัวและสร้างบัญชีนักเรียนเรียบร้อยแล้ว",
+        "student_user_id": uid.to_string(),
+        "username": final_username,
+        "password": plain_password,
+        "student_id": student_id_str
+    })))
+}
+
+/// Mark as absent
+pub async fn mark_absent(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(selection_id): Path<Uuid>,
+    Json(payload): Json<CheckinRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool!(state, headers);
+
+    sqlx::query(
+        "UPDATE admission_selections SET
+            checkin_status = 'absent',
+            checked_in_at  = NOW(),
+            checkin_notes  = $1,
+            updated_at     = NOW()
+         WHERE id = $2"
+    )
+    .bind(&payload.notes)
+    .bind(selection_id)
+    .execute(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("อัปเดตสถานะไม่สำเร็จ".to_string()))?;
+
+    Ok(Json(json!({ "success": true, "message": "บันทึกไม่มารายงานตัวแล้ว" })))
+}
