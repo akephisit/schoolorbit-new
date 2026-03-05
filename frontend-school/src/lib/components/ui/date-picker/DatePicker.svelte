@@ -1,11 +1,6 @@
 <script lang="ts">
 	import CalendarIcon from 'lucide-svelte/icons/calendar';
-	import {
-		type DateValue,
-		DateFormatter,
-		getLocalTimeZone,
-		parseDate
-	} from '@internationalized/date';
+	import { type DateValue, getLocalTimeZone, parseDate } from '@internationalized/date';
 	import { cn } from '$lib/utils.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Calendar } from '$lib/components/ui/calendar/index.js';
@@ -25,12 +20,32 @@
 		onValueChange
 	}: Props = $props();
 
-	const df = new DateFormatter('th-TH', {
-		dateStyle: 'long'
-	});
-
 	// Convert string to DateValue
 	let dateValue = $derived<DateValue | undefined>(value ? parseDate(value) : undefined);
+
+	// Custom format: วันศุกร์ ที่ ... เดือน ... ปี พ.ศ. ....
+	function formatThaiDateFull(date: Date) {
+		const weekdays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+		const months = [
+			'มกราคม',
+			'กุมภาพันธ์',
+			'มีนาคม',
+			'เมษายน',
+			'พฤษภาคม',
+			'มิถุนายน',
+			'กรกฎาคม',
+			'สิงหาคม',
+			'กันยายน',
+			'ตุลาคม',
+			'พฤศจิกายน',
+			'ธันวาคม'
+		];
+		const day = date.getDate();
+		const month = months[date.getMonth()];
+		const year = date.getFullYear() + 543;
+		const weekdayName = weekdays[date.getDay()];
+		return `วัน${weekdayName} ที่ ${day} เดือน ${month} ปี พ.ศ. ${year}`;
+	}
 
 	// Handle calendar value change
 	function handleValueChange(newValue: DateValue | undefined) {
@@ -53,7 +68,9 @@
 				{...props}
 			>
 				<CalendarIcon class="me-2 size-4" />
-				{value && dateValue ? df.format(dateValue.toDate(getLocalTimeZone())) : placeholder}
+				{value && dateValue
+					? formatThaiDateFull(dateValue.toDate(getLocalTimeZone()))
+					: placeholder}
 			</Button>
 		{/snippet}
 	</Popover.Trigger>
@@ -63,8 +80,8 @@
 			onValueChange={handleValueChange}
 			type="single"
 			initialFocus
-			captionLayout="dropdown"
 			locale="th-TH"
+			captionLayout="dropdown"
 		/>
 	</Popover.Content>
 </Popover.Root>

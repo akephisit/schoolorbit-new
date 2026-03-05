@@ -10,6 +10,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
+	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, Plus, Loader2 } from 'lucide-svelte';
 
@@ -159,26 +160,26 @@
 				<div class="space-y-3">
 					<p class="text-sm font-medium">ช่วงรับสมัคร <span class="text-destructive">*</span></p>
 					<div class="grid grid-cols-2 gap-4">
-						<div class="space-y-2">
+						<div class="space-y-2 flex flex-col">
 							<Label for="apply-start">วันเริ่มรับสมัคร</Label>
-							<Input id="apply-start" type="date" bind:value={form.applyStartDate} />
+							<DatePicker bind:value={form.applyStartDate} />
 						</div>
-						<div class="space-y-2">
+						<div class="space-y-2 flex flex-col">
 							<Label for="apply-end">วันสิ้นสุดรับสมัคร</Label>
-							<Input id="apply-end" type="date" bind:value={form.applyEndDate} />
+							<DatePicker bind:value={form.applyEndDate} />
 						</div>
 					</div>
 				</div>
 
 				<!-- วันสอบ + ประกาศผล -->
 				<div class="grid grid-cols-2 gap-4">
-					<div class="space-y-2">
+					<div class="space-y-2 flex flex-col">
 						<Label for="exam-date">วันสอบ</Label>
-						<Input id="exam-date" type="date" bind:value={form.examDate} />
+						<DatePicker bind:value={form.examDate} />
 					</div>
-					<div class="space-y-2">
+					<div class="space-y-2 flex flex-col">
 						<Label for="result-date">วันประกาศผล</Label>
-						<Input id="result-date" type="date" bind:value={form.resultAnnounceDate} />
+						<DatePicker bind:value={form.resultAnnounceDate} />
 					</div>
 				</div>
 
@@ -188,13 +189,13 @@
 				<div class="space-y-3">
 					<p class="text-sm font-medium">ช่วงมอบตัว</p>
 					<div class="grid grid-cols-2 gap-4">
-						<div class="space-y-2">
+						<div class="space-y-2 flex flex-col">
 							<Label for="enroll-start">วันเริ่มมอบตัว</Label>
-							<Input id="enroll-start" type="date" bind:value={form.enrollmentStartDate} />
+							<DatePicker bind:value={form.enrollmentStartDate} />
 						</div>
-						<div class="space-y-2">
+						<div class="space-y-2 flex flex-col">
 							<Label for="enroll-end">วันสิ้นสุดมอบตัว</Label>
-							<Input id="enroll-end" type="date" bind:value={form.enrollmentEndDate} />
+							<DatePicker bind:value={form.enrollmentEndDate} />
 						</div>
 					</div>
 				</div>

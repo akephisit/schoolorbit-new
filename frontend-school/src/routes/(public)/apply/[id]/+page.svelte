@@ -11,6 +11,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
+	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { GraduationCap, CheckCircle2, AlertCircle, ChevronRight, Loader2 } from 'lucide-svelte';
 
 	let { data } = $props();
@@ -58,15 +59,24 @@
 	let previousSchool = $state('');
 	let previousGrade = $state('');
 	let previousGpa = $state('');
-	let fatherName = $state('');
+
+	let fatherTitle = $state('');
+	let fatherFirstName = $state('');
+	let fatherLastName = $state('');
 	let fatherPhone = $state('');
 	let fatherOccupation = $state('');
 	let fatherNationalId = $state('');
-	let motherName = $state('');
+
+	let motherTitle = $state('');
+	let motherFirstName = $state('');
+	let motherLastName = $state('');
 	let motherPhone = $state('');
 	let motherOccupation = $state('');
 	let motherNationalId = $state('');
-	let guardianName = $state('');
+
+	let guardianTitle = $state('');
+	let guardianFirstName = $state('');
+	let guardianLastName = $state('');
 	let guardianPhone = $state('');
 	let guardianRelation = $state('');
 	let guardianNationalId = $state('');
@@ -103,15 +113,21 @@
 				previousSchool,
 				previousGrade,
 				previousGpa: previousGpa ? parseFloat(previousGpa) : undefined,
-				fatherName,
+				fatherName: fatherFirstName
+					? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim()
+					: undefined,
 				fatherPhone,
 				fatherOccupation,
 				fatherNationalId,
-				motherName,
+				motherName: motherFirstName
+					? `${motherTitle}${motherFirstName} ${motherLastName}`.trim()
+					: undefined,
 				motherPhone,
 				motherOccupation,
 				motherNationalId,
-				guardianName,
+				guardianName: guardianFirstName
+					? `${guardianTitle}${guardianFirstName} ${guardianLastName}`.trim()
+					: undefined,
 				guardianPhone,
 				guardianRelation,
 				guardianNationalId
@@ -311,8 +327,8 @@
 									</Select.Root>
 								</div>
 								<div class="space-y-2">
-									<Label for="dob">วันเกิด</Label>
-									<Input id="dob" type="date" bind:value={dob} />
+									<Label for="dob">วันเกิด (ปฏิทินไทย)</Label>
+									<DatePicker bind:value={dob} />
 								</div>
 								<div class="space-y-2">
 									<Label for="phone">เบอร์โทร</Label>
@@ -361,7 +377,17 @@
 								</div>
 								<div class="space-y-2">
 									<Label for="prevGrade">ชั้นที่จบ</Label>
-									<Input id="prevGrade" bind:value={previousGrade} placeholder="เช่น ป.6" />
+									<Select.Root type="single" bind:value={previousGrade}>
+										<Select.Trigger id="prevGrade" class="w-full">
+											{previousGrade || '-- เลือกระดับชั้น --'}
+										</Select.Trigger>
+										<Select.Content>
+											<Select.Item value="อนุบาล 3">อนุบาล 3</Select.Item>
+											<Select.Item value="ประถมศึกษาปีที่ 6">ประถมศึกษาปีที่ 6</Select.Item>
+											<Select.Item value="มัธยมศึกษาปีที่ 3">มัธยมศึกษาปีที่ 3</Select.Item>
+											<Select.Item value="เทียบเท่า">เทียบเท่า / อื่นๆ</Select.Item>
+										</Select.Content>
+									</Select.Root>
 								</div>
 								<div class="space-y-2">
 									<Label for="prevGpa">เกรดเฉลี่ย (GPA)</Label>
@@ -391,9 +417,33 @@
 									บิดา
 								</p>
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div class="space-y-2">
-										<Label for="fatherName">ชื่อ-นามสกุล</Label>
-										<Input id="fatherName" bind:value={fatherName} placeholder="นายสมชาย ใจดี" />
+									<div class="grid grid-cols-12 gap-3 sm:col-span-2">
+										<div class="col-span-12 sm:col-span-3 space-y-2">
+											<Label for="fatherTitle">คำนำหน้า</Label>
+											<Select.Root type="single" bind:value={fatherTitle}>
+												<Select.Trigger id="fatherTitle"
+													>{fatherTitle || '-- เลือก --'}</Select.Trigger
+												>
+												<Select.Content>
+													<Select.Item value="นาย">นาย</Select.Item>
+													<Select.Item value="ม.ร.ว.">ม.ร.ว.</Select.Item>
+													<Select.Item value="ม.ล.">ม.ล.</Select.Item>
+													<Select.Item value="ดร.">ดร.</Select.Item>
+												</Select.Content>
+											</Select.Root>
+										</div>
+										<div class="col-span-12 sm:col-span-5 space-y-2">
+											<Label for="fatherFirstName">ชื่อ</Label>
+											<Input
+												id="fatherFirstName"
+												bind:value={fatherFirstName}
+												placeholder="สมชาย"
+											/>
+										</div>
+										<div class="col-span-12 sm:col-span-4 space-y-2">
+											<Label for="fatherLastName">นามสกุล</Label>
+											<Input id="fatherLastName" bind:value={fatherLastName} placeholder="ใจดี" />
+										</div>
 									</div>
 									<div class="space-y-2">
 										<Label for="fatherNationalId">เลขประชาชน</Label>
@@ -423,9 +473,34 @@
 									มารดา
 								</p>
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div class="space-y-2">
-										<Label for="motherName">ชื่อ-นามสกุล</Label>
-										<Input id="motherName" bind:value={motherName} placeholder="นางสมศรี ใจดี" />
+									<div class="grid grid-cols-12 gap-3 sm:col-span-2">
+										<div class="col-span-12 sm:col-span-3 space-y-2">
+											<Label for="motherTitle">คำนำหน้า</Label>
+											<Select.Root type="single" bind:value={motherTitle}>
+												<Select.Trigger id="motherTitle"
+													>{motherTitle || '-- เลือก --'}</Select.Trigger
+												>
+												<Select.Content>
+													<Select.Item value="นาง">นาง</Select.Item>
+													<Select.Item value="นางสาว">นางสาว</Select.Item>
+													<Select.Item value="ม.ร.ว.">ม.ร.ว.</Select.Item>
+													<Select.Item value="ม.ล.">ม.ล.</Select.Item>
+													<Select.Item value="ดร.">ดร.</Select.Item>
+												</Select.Content>
+											</Select.Root>
+										</div>
+										<div class="col-span-12 sm:col-span-5 space-y-2">
+											<Label for="motherFirstName">ชื่อ</Label>
+											<Input
+												id="motherFirstName"
+												bind:value={motherFirstName}
+												placeholder="สมศรี"
+											/>
+										</div>
+										<div class="col-span-12 sm:col-span-4 space-y-2">
+											<Label for="motherLastName">นามสกุล</Label>
+											<Input id="motherLastName" bind:value={motherLastName} placeholder="ใจดี" />
+										</div>
 									</div>
 									<div class="space-y-2">
 										<Label for="motherNationalId">เลขประชาชน</Label>
@@ -458,9 +533,47 @@
 									</span>
 								</p>
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div class="space-y-2">
-										<Label for="guardianName">ชื่อ-นามสกุล ผู้ปกครอง</Label>
-										<Input id="guardianName" bind:value={guardianName} />
+									<div class="grid grid-cols-12 gap-3 sm:col-span-2">
+										<div class="col-span-12 sm:col-span-3 space-y-2">
+											<Label for="guardianTitle">คำนำหน้า <span class="text-red-500">*</span></Label
+											>
+											<Select.Root type="single" bind:value={guardianTitle} required>
+												<Select.Trigger id="guardianTitle"
+													>{guardianTitle || '-- เลือก --'}</Select.Trigger
+												>
+												<Select.Content>
+													<Select.Item value="นาย">นาย</Select.Item>
+													<Select.Item value="นาง">นาง</Select.Item>
+													<Select.Item value="นางสาว">นางสาว</Select.Item>
+													<Select.Item value="ปู่">ปู่</Select.Item>
+													<Select.Item value="ย่า">ย่า</Select.Item>
+													<Select.Item value="ตา">ตา</Select.Item>
+													<Select.Item value="ยาย">ยาย</Select.Item>
+													<Select.Item value="ดร.">ดร.</Select.Item>
+												</Select.Content>
+											</Select.Root>
+										</div>
+										<div class="col-span-12 sm:col-span-5 space-y-2">
+											<Label for="guardianFirstName">ชื่อ <span class="text-red-500">*</span></Label
+											>
+											<Input
+												id="guardianFirstName"
+												bind:value={guardianFirstName}
+												placeholder="สมศักดิ์"
+												required
+											/>
+										</div>
+										<div class="col-span-12 sm:col-span-4 space-y-2">
+											<Label for="guardianLastName"
+												>นามสกุล <span class="text-red-500">*</span></Label
+											>
+											<Input
+												id="guardianLastName"
+												bind:value={guardianLastName}
+												placeholder="ใจดี"
+												required
+											/>
+										</div>
 									</div>
 									<div class="space-y-2">
 										<Label for="guardianRelation">ความสัมพันธ์</Label>
