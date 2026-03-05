@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { createRound } from '$lib/api/admission';
-	import { apiClient } from '$lib/api/client';
+	import { getAcademicStructure, type AcademicYear, type GradeLevel } from '$lib/api/academic';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -14,18 +14,6 @@
 	import { ArrowLeft, Plus, Loader2 } from 'lucide-svelte';
 
 	let { data } = $props();
-
-	interface AcademicYear {
-		id: string;
-		name: string;
-		year: number;
-	}
-	interface GradeLevel {
-		id: string;
-		levelType: string;
-		year: number;
-		name?: string;
-	}
 
 	let years: AcademicYear[] = $state([]);
 	let gradeLevels: GradeLevel[] = $state([]);
@@ -45,17 +33,16 @@
 	});
 
 	async function load() {
-		const [yRes, gRes] = await Promise.all([
-			apiClient.get<AcademicYear[]>('/api/academic/years'),
-			apiClient.get<GradeLevel[]>('/api/academic/grade-levels')
-		]);
-		if (yRes.success) years = yRes.data ?? [];
-		if (gRes.success) gradeLevels = gRes.data ?? [];
-	}
-
-	function gradeName(g: GradeLevel) {
-		const prefix = g.levelType === 'kindergarten' ? 'อ.' : g.levelType === 'primary' ? 'ป.' : 'ม.';
-		return `${prefix}${g.year}`;
+		try {
+			const res = await getAcademicStructure();
+			years = res.data.years;
+			gradeLevels = res.data.levels.filter((l) => l.is_active);
+			// Auto-select active year
+			const activeYear = years.find((y) => y.is_active) ?? years[0];
+			if (activeYear) form.academicYearId = activeYear.id;
+		} catch (e) {
+			toast.error('โหลดข้อมูลปีการศึกษาไม่สำเร็จ');
+		}
 	}
 
 	async function handleSubmit(e: Event) {
@@ -122,7 +109,9 @@
 							</Select.Trigger>
 							<Select.Content>
 								{#each years as y (y.id)}
-									<Select.Item value={y.id}>{y.name}</Select.Item>
+									<Select.Item value={y.id}>
+										{y.name}{y.is_active ? ' (ปัจจุบัน)' : ''}
+									</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>
@@ -131,13 +120,12 @@
 						<Label for="grade-select">ระดับชั้น <span class="text-destructive">*</span></Label>
 						<Select.Root type="single" bind:value={form.gradeLevelId}>
 							<Select.Trigger id="grade-select" class="w-full">
-								{gradeLevels.find((g) => g.id === form.gradeLevelId)
-									? gradeName(gradeLevels.find((g) => g.id === form.gradeLevelId)!)
-									: '-- เลือกระดับชั้น --'}
+								{gradeLevels.find((g) => g.id === form.gradeLevelId)?.short_name ??
+									'-- เลือกระดับชั้น --'}
 							</Select.Trigger>
 							<Select.Content>
 								{#each gradeLevels as g (g.id)}
-									<Select.Item value={g.id}>{gradeName(g)}</Select.Item>
+									<Select.Item value={g.id}>{g.short_name} — {g.name}</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>

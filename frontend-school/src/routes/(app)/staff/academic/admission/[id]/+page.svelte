@@ -18,7 +18,8 @@
 		roundStatusLabel,
 		roundStatusColor
 	} from '$lib/api/admission';
-	import { apiClient } from '$lib/api/client';
+	import { listStudyPlans } from '$lib/api/academic';
+
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -100,8 +101,8 @@
 		} finally {
 			loading = false;
 		}
-		const sp = await apiClient.get<{ id: string; nameTh: string }[]>('/api/academic/study-plans');
-		if (sp.success) studyPlans = sp.data ?? [];
+		const sp = await listStudyPlans({ active_only: true });
+		studyPlans = (sp.data ?? []).map((p) => ({ id: p.id, nameTh: p.name_th }));
 	}
 
 	async function handleStatusChange(status: AdmissionRound['status']) {
