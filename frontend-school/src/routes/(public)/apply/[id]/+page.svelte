@@ -199,14 +199,6 @@
 							<p class="text-gray-600">ได้รับข้อมูลใบสมัครของท่านเรียบร้อยแล้ว</p>
 						</div>
 						<div
-							class="bg-green-50 border border-green-200 rounded-xl py-5 px-8 inline-block mx-auto"
-						>
-							<p class="text-sm text-gray-500 mb-1">เลขที่ใบสมัคร</p>
-							<p class="text-4xl font-mono font-bold text-gray-900 tracking-widest">
-								{successResult.applicationNumber}
-							</p>
-						</div>
-						<div
 							class="flex items-start gap-3 max-w-sm mx-auto bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4 text-sm text-left"
 						>
 							<AlertCircle class="w-5 h-5 shrink-0 mt-0.5" />
