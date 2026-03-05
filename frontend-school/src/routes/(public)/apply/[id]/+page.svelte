@@ -5,7 +5,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Card from '$lib/components/ui/card';
+	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import { GraduationCap, CheckCircle2, AlertCircle, ChevronRight } from 'lucide-svelte';
 
@@ -121,7 +123,7 @@
 					ระดับชั้น {round.gradeLevelName} | ปีการศึกษา {round.academicYearName}
 				</p>
 				<p class="text-xs text-gray-400 mt-1">
-					เปิดรับสมัคร {new Date(round.applyStartDate).toLocaleDateString('th-TH', {
+					รับสมัคร {new Date(round.applyStartDate).toLocaleDateString('th-TH', {
 						year: 'numeric',
 						month: 'short',
 						day: 'numeric'
@@ -135,7 +137,7 @@
 			{/if}
 		</div>
 
-		<!-- Success State -->
+		<!-- Success -->
 		{#if successResult}
 			<Card.Root class="border-green-200 shadow-lg">
 				<Card.Content class="pt-8 pb-8 text-center space-y-5">
@@ -157,10 +159,11 @@
 					>
 						<AlertCircle class="w-5 h-5 shrink-0 mt-0.5" />
 						<p>
-							โปรดจดจำ <strong>เลขที่ใบสมัคร</strong> และ <strong>เลขบัตรประชาชน</strong> เพื่อตรวจสอบสถานะในภายหลัง
+							โปรดจดจำ <strong>เลขที่ใบสมัคร</strong> และ <strong>เลขบัตรประชาชน</strong>
+							เพื่อตรวจสอบสถานะในภายหลัง
 						</p>
 					</div>
-					<Button href="/apply" variant="default" class="gap-2 mt-2">
+					<Button href="/apply" class="gap-2 mt-2">
 						<ChevronRight class="w-4 h-4" /> ไปหน้าตรวจสอบผลการสมัคร
 					</Button>
 				</Card.Content>
@@ -172,13 +175,13 @@
 				<!-- Step 1: เลือกสายการเรียน -->
 				<Card.Root class="mb-5 shadow-sm">
 					<Card.Header class="pb-2">
-						<Card.Title class="text-base"
-							>1. เลือกสายการเรียน <span class="text-red-500">*</span></Card.Title
-						>
+						<Card.Title class="text-base">
+							1. เลือกสายการเรียน <span class="text-red-500">*</span>
+						</Card.Title>
 					</Card.Header>
 					<Card.Content>
 						{#if tracks.length === 0}
-							<p class="text-sm text-gray-500 py-4 text-center">
+							<p class="text-sm text-muted-foreground py-4 text-center">
 								ไม่มีสายการเรียนที่เปิดรับในรอบนี้
 							</p>
 						{:else}
@@ -189,22 +192,22 @@
 										onclick={() => (trackId = t.id)}
 										class="text-left border-2 rounded-xl p-4 transition-all
 											{trackId === t.id
-											? 'border-blue-500 bg-blue-50'
-											: 'border-gray-200 hover:border-blue-300 bg-white'}"
+											? 'border-primary bg-primary/5'
+											: 'border-border hover:border-primary/40 bg-card'}"
 									>
 										<div class="flex items-center gap-2">
 											<div
 												class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
-												{trackId === t.id ? 'border-blue-500' : 'border-gray-400'}"
+													{trackId === t.id ? 'border-primary' : 'border-muted-foreground'}"
 											>
 												{#if trackId === t.id}
-													<div class="w-2 h-2 rounded-full bg-blue-500"></div>
+													<div class="w-2 h-2 rounded-full bg-primary"></div>
 												{/if}
 											</div>
-											<p class="font-semibold text-gray-900">{t.name}</p>
+											<p class="font-semibold text-card-foreground">{t.name}</p>
 										</div>
 										{#if t.studyPlanName}
-											<p class="text-xs text-gray-500 mt-1 ml-6">{t.studyPlanName}</p>
+											<p class="text-xs text-muted-foreground mt-1 ml-6">{t.studyPlanName}</p>
 										{/if}
 									</button>
 								{/each}
@@ -233,19 +236,18 @@
 
 						<div class="grid grid-cols-12 gap-3">
 							<div class="col-span-12 sm:col-span-3 space-y-2">
-								<Label for="title">คำนำหน้า <span class="text-red-500">*</span></Label>
-								<select
-									id="title"
-									bind:value={title}
-									required
-									class="w-full h-10 border border-input rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-								>
-									<option value="">-- เลือก --</option>
-									<option value="ด.ช.">เด็กชาย (ด.ช.)</option>
-									<option value="ด.ญ.">เด็กหญิง (ด.ญ.)</option>
-									<option value="นาย">นาย</option>
-									<option value="นางสาว">นางสาว</option>
-								</select>
+								<Label for="title-select">คำนำหน้า <span class="text-red-500">*</span></Label>
+								<Select.Root type="single" bind:value={title} required>
+									<Select.Trigger id="title-select">
+										{title || '-- เลือก --'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="ด.ช.">เด็กชาย (ด.ช.)</Select.Item>
+										<Select.Item value="ด.ญ.">เด็กหญิง (ด.ญ.)</Select.Item>
+										<Select.Item value="นาย">นาย</Select.Item>
+										<Select.Item value="นางสาว">นางสาว</Select.Item>
+									</Select.Content>
+								</Select.Root>
 							</div>
 							<div class="col-span-12 sm:col-span-5 space-y-2">
 								<Label for="firstName">ชื่อจริง <span class="text-red-500">*</span></Label>
@@ -259,16 +261,16 @@
 
 						<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 							<div class="space-y-2">
-								<Label for="gender">เพศ</Label>
-								<select
-									id="gender"
-									bind:value={gender}
-									class="w-full h-10 border border-input rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-								>
-									<option value="">-- เลือก --</option>
-									<option value="Male">ชาย</option>
-									<option value="Female">หญิง</option>
-								</select>
+								<Label for="gender-select">เพศ</Label>
+								<Select.Root type="single" bind:value={gender}>
+									<Select.Trigger id="gender-select">
+										{gender === 'Male' ? 'ชาย' : gender === 'Female' ? 'หญิง' : '-- เลือก --'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="Male">ชาย</Select.Item>
+										<Select.Item value="Female">หญิง</Select.Item>
+									</Select.Content>
+								</Select.Root>
 							</div>
 							<div class="space-y-2">
 								<Label for="dob">วันเกิด</Label>
@@ -287,7 +289,7 @@
 
 						<Separator />
 
-						<p class="text-sm font-semibold text-gray-700">ที่อยู่ปัจจุบัน</p>
+						<p class="text-sm font-semibold">ที่อยู่ปัจจุบัน</p>
 						<div class="space-y-2">
 							<Label for="addressLine">บ้านเลขที่ / ซอย / ถนน</Label>
 							<Input id="addressLine" bind:value={addressLine} />
@@ -313,7 +315,7 @@
 
 						<Separator />
 
-						<p class="text-sm font-semibold text-gray-700">ข้อมูลโรงเรียนเดิม</p>
+						<p class="text-sm font-semibold">ข้อมูลโรงเรียนเดิม</p>
 						<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 							<div class="col-span-2 space-y-2">
 								<Label for="prevSchool">ชื่อโรงเรียนเดิม</Label>
@@ -347,23 +349,30 @@
 					<Card.Content class="space-y-6">
 						<!-- บิดา -->
 						<div class="space-y-3">
-							<p class="text-xs font-semibold uppercase tracking-wide text-gray-500">บิดา</p>
+							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+								บิดา
+							</p>
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 								<div class="space-y-2">
-									<Label>ชื่อ-นามสกุล</Label>
-									<Input bind:value={fatherName} placeholder="นายสมชาย ใจดี" />
+									<Label for="fatherName">ชื่อ-นามสกุล</Label>
+									<Input id="fatherName" bind:value={fatherName} placeholder="นายสมชาย ใจดี" />
 								</div>
 								<div class="space-y-2">
-									<Label>เลขประชาชน</Label>
-									<Input bind:value={fatherNationalId} maxlength={13} class="font-mono" />
+									<Label for="fatherNationalId">เลขประชาชน</Label>
+									<Input
+										id="fatherNationalId"
+										bind:value={fatherNationalId}
+										maxlength={13}
+										class="font-mono"
+									/>
 								</div>
 								<div class="space-y-2">
-									<Label>เบอร์โทร</Label>
-									<Input bind:value={fatherPhone} type="tel" />
+									<Label for="fatherPhone">เบอร์โทร</Label>
+									<Input id="fatherPhone" bind:value={fatherPhone} type="tel" />
 								</div>
 								<div class="space-y-2">
-									<Label>อาชีพ</Label>
-									<Input bind:value={fatherOccupation} />
+									<Label for="fatherOcc">อาชีพ</Label>
+									<Input id="fatherOcc" bind:value={fatherOccupation} />
 								</div>
 							</div>
 						</div>
@@ -372,23 +381,30 @@
 
 						<!-- มารดา -->
 						<div class="space-y-3">
-							<p class="text-xs font-semibold uppercase tracking-wide text-gray-500">มารดา</p>
+							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+								มารดา
+							</p>
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 								<div class="space-y-2">
-									<Label>ชื่อ-นามสกุล</Label>
-									<Input bind:value={motherName} placeholder="นางสมศรี ใจดี" />
+									<Label for="motherName">ชื่อ-นามสกุล</Label>
+									<Input id="motherName" bind:value={motherName} placeholder="นางสมศรี ใจดี" />
 								</div>
 								<div class="space-y-2">
-									<Label>เลขประชาชน</Label>
-									<Input bind:value={motherNationalId} maxlength={13} class="font-mono" />
+									<Label for="motherNationalId">เลขประชาชน</Label>
+									<Input
+										id="motherNationalId"
+										bind:value={motherNationalId}
+										maxlength={13}
+										class="font-mono"
+									/>
 								</div>
 								<div class="space-y-2">
-									<Label>เบอร์โทร</Label>
-									<Input bind:value={motherPhone} type="tel" />
+									<Label for="motherPhone">เบอร์โทร</Label>
+									<Input id="motherPhone" bind:value={motherPhone} type="tel" />
 								</div>
 								<div class="space-y-2">
-									<Label>อาชีพ</Label>
-									<Input bind:value={motherOccupation} />
+									<Label for="motherOcc">อาชีพ</Label>
+									<Input id="motherOcc" bind:value={motherOccupation} />
 								</div>
 							</div>
 						</div>
@@ -397,27 +413,37 @@
 
 						<!-- ผู้ปกครอง -->
 						<div class="space-y-3">
-							<p class="text-xs font-semibold uppercase tracking-wide text-gray-500">
-								ผู้ปกครอง <span class="normal-case font-normal text-gray-400"
-									>(กรณีไม่ใช่บิดา-มารดา)</span
-								>
+							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+								ผู้ปกครอง
+								<span class="normal-case font-normal text-muted-foreground/70">
+									(กรณีไม่ใช่บิดา-มารดา)
+								</span>
 							</p>
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 								<div class="space-y-2">
-									<Label>ชื่อ-นามสกุล ผู้ปกครอง</Label>
-									<Input bind:value={guardianName} />
+									<Label for="guardianName">ชื่อ-นามสกุล ผู้ปกครอง</Label>
+									<Input id="guardianName" bind:value={guardianName} />
 								</div>
 								<div class="space-y-2">
-									<Label>ความสัมพันธ์</Label>
-									<Input bind:value={guardianRelation} placeholder="เช่น ปู่, ย่า, ลุง" />
+									<Label for="guardianRelation">ความสัมพันธ์</Label>
+									<Input
+										id="guardianRelation"
+										bind:value={guardianRelation}
+										placeholder="เช่น ปู่, ย่า, ลุง"
+									/>
 								</div>
 								<div class="space-y-2">
-									<Label>เบอร์โทร</Label>
-									<Input bind:value={guardianPhone} type="tel" />
+									<Label for="guardianPhone">เบอร์โทร</Label>
+									<Input id="guardianPhone" bind:value={guardianPhone} type="tel" />
 								</div>
 								<div class="space-y-2">
-									<Label>เลขประชาชน</Label>
-									<Input bind:value={guardianNationalId} maxlength={13} class="font-mono" />
+									<Label for="guardianNationalId">เลขประชาชน</Label>
+									<Input
+										id="guardianNationalId"
+										bind:value={guardianNationalId}
+										maxlength={13}
+										class="font-mono"
+									/>
 								</div>
 							</div>
 						</div>
@@ -425,16 +451,11 @@
 				</Card.Root>
 
 				<!-- Submit -->
-				<div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
-					<p class="text-xs text-gray-400 text-center sm:text-left max-w-sm">
+				<div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 pb-8">
+					<p class="text-xs text-muted-foreground text-center sm:text-left max-w-sm">
 						ข้าพเจ้าขอรับรองว่าข้อมูลที่กรอกทั้งหมดเป็นความจริง
 					</p>
-					<Button
-						type="submit"
-						size="lg"
-						disabled={submitting}
-						class="w-full sm:w-auto px-10 text-base"
-					>
+					<Button type="submit" size="lg" disabled={submitting} class="w-full sm:w-auto px-10">
 						{submitting ? '⏳ กำลังส่งข้อมูล...' : '📨 ส่งใบสมัคร'}
 					</Button>
 				</div>

@@ -8,6 +8,9 @@
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
 	import { GraduationCap, Search, Check, FileText, AlertCircle, Clock, X } from 'lucide-svelte';
 
@@ -323,35 +326,35 @@
 					<form onsubmit={handleSubmitForm} class="space-y-3">
 						<div class="grid grid-cols-2 gap-3">
 							<div class="space-y-1">
-								<label for="shirt-size" class="text-xs font-medium text-gray-600">ไซส์เสื้อ</label>
-								<select
-									id="shirt-size"
-									bind:value={formFields.shirtSize}
-									class="w-full px-3 py-1.5 text-sm rounded-md border border-gray-300"
-								>
-									<option value="">-- เลือก --</option>
-									{#each ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as s}
-										<option value={s}>{s}</option>
-									{/each}
-								</select>
+								<Label for="shirt-size" class="text-xs font-medium text-gray-600">ไซส์เสื้อ</Label>
+								<Select.Root type="single" bind:value={formFields.shirtSize}>
+									<Select.Trigger id="shirt-size" class="h-8 text-sm">
+										{formFields.shirtSize || '-- เลือก --'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as s}
+											<Select.Item value={s}>{s}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 							<div class="space-y-1">
-								<label for="blood-type" class="text-xs font-medium text-gray-600">กลุ่มเลือด</label>
-								<select
-									id="blood-type"
-									bind:value={formFields.bloodType}
-									class="w-full px-3 py-1.5 text-sm rounded-md border border-gray-300"
-								>
-									<option value="">-- เลือก --</option>
-									{#each ['A', 'B', 'AB', 'O'] as b}
-										<option value={b}>{b}</option>
-									{/each}
-								</select>
+								<Label for="blood-type" class="text-xs font-medium text-gray-600">กลุ่มเลือด</Label>
+								<Select.Root type="single" bind:value={formFields.bloodType}>
+									<Select.Trigger id="blood-type" class="h-8 text-sm">
+										{formFields.bloodType || '-- เลือก --'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each ['A', 'B', 'AB', 'O'] as b}
+											<Select.Item value={b}>{b}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 						</div>
 						<div class="space-y-1">
-							<label for="emergency-contact" class="text-xs font-medium text-gray-600"
-								>ผู้ติดต่อฉุกเฉิน</label
+							<Label for="emergency-contact" class="text-xs font-medium text-gray-600"
+								>ผู้ติดต่อฉุกเฉิน</Label
 							>
 							<Input
 								id="emergency-contact"
@@ -361,8 +364,8 @@
 							/>
 						</div>
 						<div class="space-y-1">
-							<label for="emergency-phone" class="text-xs font-medium text-gray-600"
-								>เบอร์โทรฉุกเฉิน</label
+							<Label for="emergency-phone" class="text-xs font-medium text-gray-600"
+								>เบอร์โทรฉุกเฉิน</Label
 							>
 							<Input
 								id="emergency-phone"
@@ -372,16 +375,16 @@
 							/>
 						</div>
 						<div class="space-y-1">
-							<label for="allergy" class="text-xs font-medium text-gray-600"
-								>โรคประจำตัว / แพ้ยา</label
+							<Label for="allergy" class="text-xs font-medium text-gray-600"
+								>โรคประจำตัว / แพ้ยา</Label
 							>
-							<textarea
+							<Textarea
 								id="allergy"
 								bind:value={formFields.allergy}
-								rows="2"
-								class="w-full px-3 py-1.5 text-sm rounded-md border border-gray-300 resize-none"
+								rows={2}
+								class="text-sm resize-none"
 								placeholder="ถ้าไม่มีใส่ - ไม่มี"
-							></textarea>
+							/>
 						</div>
 						<Button type="submit" disabled={savingForm} class="w-full gap-2">
 							{savingForm ? 'กำลังบันทึก...' : form ? 'อัปเดตแบบฟอร์ม' : 'บันทึกแบบฟอร์ม'}
