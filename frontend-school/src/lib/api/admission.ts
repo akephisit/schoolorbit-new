@@ -23,7 +23,6 @@ export type AdmissionStatus = 'draft' | 'open' | 'closed' | 'announced' | 'done'
 export type ApplicationStatus =
     | 'pending' | 'reviewing' | 'interview_scheduled'
     | 'accepted' | 'rejected' | 'waitlisted' | 'confirmed' | 'cancelled';
-export type CheckinStatus = 'pending' | 'checked_in' | 'absent';
 
 export interface RequiredDocument {
     key: string;
@@ -90,7 +89,6 @@ export interface AdmissionApplication {
     interview_score?: number;
     exam_score?: number;
     total_score?: number;
-    computed_score?: number;
     submitted_at?: string;
     reviewed_at?: string;
     // Joined
@@ -124,48 +122,19 @@ export interface AdmissionSelection {
     selection_type: 'main' | 'waitlist';
     rank?: number;
     assigned_grade_level_id?: string;
-    assigned_classroom_id?: string;
-    study_plan_version_id?: string;
     is_confirmed: boolean;
     confirmed_at?: string;
     confirmation_deadline?: string;
-    // Checkin
-    checkin_status: CheckinStatus;
-    checked_in_at?: string;
-    checked_in_by?: string;
-    checkin_notes?: string;
     student_user_id?: string;
     notes?: string;
     // Joined
     applicant_name?: string;
     application_number?: string;
-    applicant_national_id?: string;
-    applicant_gender?: string;
-    applicant_date_of_birth?: string;
-    guardian_phone?: string;
-    guardian_name?: string;
     grade_level_name?: string;
+    total_score?: number;
     applying_grade_level_name?: string;
-    classroom_name?: string;
-    classroom_code?: string;
-    study_plan_name?: string;
-    study_plan_version_name?: string;
-    app_total_score?: number;
-    checked_in_by_name?: string;
-    student_username?: string;
     created_at: string;
     updated_at: string;
-}
-
-export interface AdmissionExamSubject {
-    id: string;
-    admission_period_id: string;
-    subject_name: string;
-    subject_code?: string;
-    max_score: number;
-    display_order: number;
-    is_active: boolean;
-    created_at: string;
 }
 
 export interface AdmissionStats {
@@ -178,25 +147,6 @@ export interface AdmissionStats {
     waitlisted: number;
     confirmed: number;
     cancelled: number;
-}
-
-export interface CheckinStats {
-    period_id: string;
-    total_confirmed: number;
-    pending_checkin: number;
-    checked_in: number;
-    absent: number;
-}
-
-/** ข้อมูลคะแนนต่อใบสมัคร (สำหรับหน้าคะแนน) */
-export interface ScoreRow {
-    app_id: string;
-    application_number: string;
-    name: string;
-    status: ApplicationStatus;
-    grade_level_name?: string;
-    score_map: Record<string, number>;  // subject_id → score
-    computed_total: number;
 }
 
 // ==========================================
@@ -243,41 +193,6 @@ export const getAdmissionPeriodStats = async (id: string): Promise<{ data: Admis
     fetchApi(`/api/admission/periods/${id}/stats`);
 
 // ==========================================
-// Exam Subjects APIs (NEW)
-// ==========================================
-
-export const listExamSubjects = async (periodId: string): Promise<{ data: AdmissionExamSubject[] }> =>
-    fetchApi(`/api/admission/periods/${periodId}/subjects`);
-
-export const createExamSubject = async (periodId: string, data: {
-    subject_name: string;
-    subject_code?: string;
-    max_score?: number;
-    display_order?: number;
-}) => fetchApi(`/api/admission/periods/${periodId}/subjects`, { method: 'POST', body: JSON.stringify(data) });
-
-export const updateExamSubject = async (periodId: string, subjectId: string, data: Partial<AdmissionExamSubject>) =>
-    fetchApi(`/api/admission/periods/${periodId}/subjects/${subjectId}`, { method: 'PUT', body: JSON.stringify(data) });
-
-export const deleteExamSubject = async (periodId: string, subjectId: string) =>
-    fetchApi(`/api/admission/periods/${periodId}/subjects/${subjectId}`, { method: 'DELETE' });
-
-// ==========================================
-// Scores APIs (NEW)
-// ==========================================
-
-export const listScoresByPeriod = async (periodId: string): Promise<{
-    subjects: AdmissionExamSubject[];
-    applications: ScoreRow[];
-}> => fetchApi(`/api/admission/periods/${periodId}/scores`);
-
-export const batchUpsertScores = async (data: {
-    scores: { application_id: string; exam_subject_id: string; score: number }[];
-    recalculate_total?: boolean;
-    total_subject_ids?: string[];
-}) => fetchApi('/api/admission/scores/batch', { method: 'POST', body: JSON.stringify(data) });
-
-// ==========================================
 // Application APIs
 // ==========================================
 
@@ -285,8 +200,6 @@ export const listApplications = async (filters: {
     admission_period_id?: string;
     status?: string;
     search?: string;
-    sort_by?: string;
-    sort_dir?: 'asc' | 'desc';
     page?: number;
     page_size?: number;
 } = {}): Promise<{ data: AdmissionApplication[]; total: number; page: number; page_size: number; total_pages: number }> => {
@@ -294,8 +207,6 @@ export const listApplications = async (filters: {
     if (filters.admission_period_id) params.append('admission_period_id', filters.admission_period_id);
     if (filters.status) params.append('status', filters.status);
     if (filters.search) params.append('search', filters.search);
-    if (filters.sort_by) params.append('sort_by', filters.sort_by);
-    if (filters.sort_dir) params.append('sort_dir', filters.sort_dir);
     if (filters.page) params.append('page', String(filters.page));
     if (filters.page_size) params.append('page_size', String(filters.page_size));
     const q = params.toString() ? `?${params}` : '';
@@ -343,78 +254,20 @@ export const updateInterview = async (id: string, data: Partial<AdmissionIntervi
 // Selection APIs
 // ==========================================
 
-export const listSelections = async (periodId: string, filters: {
-    sort_subject_ids?: string;
-    sort_dir?: 'asc' | 'desc';
-    study_plan_version_id?: string;
-} = {}): Promise<{ data: AdmissionSelection[] }> => {
-    const params = new URLSearchParams();
-    if (filters.sort_subject_ids) params.append('sort_subject_ids', filters.sort_subject_ids);
-    if (filters.sort_dir) params.append('sort_dir', filters.sort_dir);
-    if (filters.study_plan_version_id) params.append('study_plan_version_id', filters.study_plan_version_id);
-    const q = params.toString() ? `?${params}` : '';
-    return fetchApi(`/api/admission/periods/${periodId}/selections${q}`);
-};
+export const listSelections = async (periodId: string): Promise<{ data: AdmissionSelection[] }> =>
+    fetchApi(`/api/admission/periods/${periodId}/selections`);
 
 export const createSelections = async (periodId: string, data: {
     application_ids: string[];
     selection_type?: 'main' | 'waitlist';
     confirmation_deadline?: string;
-    study_plan_version_id?: string;
-    classroom_id?: string;
 }) => fetchApi(`/api/admission/periods/${periodId}/selections`, { method: 'POST', body: JSON.stringify(data) });
-
-export const updateSelection = async (selectionId: string, data: {
-    rank?: number;
-    study_plan_version_id?: string | null;
-    assigned_classroom_id?: string | null;
-    notes?: string;
-}) => fetchApi(`/api/admission/selections/${selectionId}`, { method: 'PUT', body: JSON.stringify(data) });
 
 export const confirmSelection = async (selectionId: string) =>
     fetchApi(`/api/admission/selections/${selectionId}/confirm`, { method: 'POST' });
 
 // ==========================================
-// Checkin APIs (NEW)
-// ==========================================
-
-export const listCheckins = async (periodId: string, filters: {
-    checkin_status?: CheckinStatus;
-    search?: string;
-    sort_subject_ids?: string;
-    sort_dir?: 'asc' | 'desc';
-} = {}): Promise<{ data: AdmissionSelection[] }> => {
-    const params = new URLSearchParams();
-    if (filters.checkin_status) params.append('checkin_status', filters.checkin_status);
-    if (filters.search) params.append('search', filters.search);
-    if (filters.sort_subject_ids) params.append('sort_subject_ids', filters.sort_subject_ids);
-    if (filters.sort_dir) params.append('sort_dir', filters.sort_dir);
-    const q = params.toString() ? `?${params}` : '';
-    return fetchApi(`/api/admission/periods/${periodId}/checkin${q}`);
-};
-
-export const getCheckinStats = async (periodId: string): Promise<{ data: CheckinStats }> =>
-    fetchApi(`/api/admission/periods/${periodId}/checkin/stats`);
-
-export const confirmCheckin = async (selectionId: string, notes?: string): Promise<{
-    success: boolean;
-    username: string;
-    password: string;
-    student_id: string;
-    student_user_id: string;
-}> => fetchApi(`/api/admission/selections/${selectionId}/checkin`, {
-    method: 'POST',
-    body: JSON.stringify({ notes })
-});
-
-export const markAbsent = async (selectionId: string, notes?: string) =>
-    fetchApi(`/api/admission/selections/${selectionId}/absent`, {
-        method: 'POST',
-        body: JSON.stringify({ notes })
-    });
-
-// ==========================================
-// Generate Students (legacy)
+// Generate Students
 // ==========================================
 
 export const generateStudents = async (periodId: string, data: {
@@ -463,16 +316,4 @@ export const PERIOD_STATUS_COLORS: Record<AdmissionStatus, string> = {
     closed: 'bg-yellow-100 text-yellow-800',
     announced: 'bg-blue-100 text-blue-800',
     done: 'bg-purple-100 text-purple-800',
-};
-
-export const CHECKIN_STATUS_LABELS: Record<CheckinStatus, string> = {
-    pending: 'รอรายงานตัว',
-    checked_in: 'รายงานตัวแล้ว',
-    absent: 'ไม่มา',
-};
-
-export const CHECKIN_STATUS_COLORS: Record<CheckinStatus, string> = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    checked_in: 'bg-green-100 text-green-800',
-    absent: 'bg-red-100 text-red-800',
 };
