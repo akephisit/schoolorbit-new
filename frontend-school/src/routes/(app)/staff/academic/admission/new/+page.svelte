@@ -8,6 +8,8 @@
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, Plus } from 'lucide-svelte';
 
+	let { data } = $props();
+
 	interface AcademicYear {
 		id: string;
 		name: string;
@@ -86,7 +88,7 @@
 </script>
 
 <svelte:head>
-	<title>สร้างรอบรับสมัครใหม่ - SchoolOrbit</title>
+	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
 <div class="max-w-2xl mx-auto space-y-6">

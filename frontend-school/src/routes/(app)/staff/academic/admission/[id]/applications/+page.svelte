@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+
+	let { data } = $props();
+
 	import {
 		listApplications,
 		verifyApplication,
@@ -91,7 +94,7 @@
 </script>
 
 <svelte:head>
-	<title>ใบสมัคร - SchoolOrbit</title>
+	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
 <div class="space-y-5">

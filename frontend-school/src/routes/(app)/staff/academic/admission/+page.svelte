@@ -20,6 +20,8 @@
 		DialogFooter
 	} from '$lib/components/ui/dialog';
 
+	let { data } = $props();
+
 	let rounds: AdmissionRound[] = $state([]);
 	let loading = $state(true);
 	let showDeleteDialog = $state(false);
@@ -77,7 +79,7 @@
 </script>
 
 <svelte:head>
-	<title>ระบบรับสมัครนักเรียน - SchoolOrbit</title>
+	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
 <div class="space-y-6">

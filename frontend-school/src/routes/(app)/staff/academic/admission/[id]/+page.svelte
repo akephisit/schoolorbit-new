@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+
+	let { data } = $props();
+
 	import {
 		getRound,
 		listTracks,
@@ -228,7 +231,7 @@
 </script>
 
 <svelte:head>
-	<title>{round?.name ?? 'จัดการรอบรับสมัคร'} - SchoolOrbit</title>
+	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
 {#if loading}
