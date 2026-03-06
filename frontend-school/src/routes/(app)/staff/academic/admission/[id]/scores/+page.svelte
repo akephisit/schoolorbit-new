@@ -88,7 +88,7 @@
 				.map(([appId, subScores]) => ({
 					applicationId: appId,
 					scores: Object.entries(subScores)
-						.filter(([subId, v]) => v !== '' && activeSubjectIds.includes(subId))
+						.filter(([, v]) => v !== '') // บันทึกทุกช่องที่มีค่า แม้ว่าจะถูกซ่อน(ปิด switch) อยู่ก็ตาม
 						.map(([subId, v]) => ({ examSubjectId: subId, score: parseFloat(v) }))
 				}))
 				.filter((e) => e.scores.length > 0);
