@@ -72,9 +72,8 @@
 					gender = app.gender || '';
 					if (app.dateOfBirth) {
 						if (app.dateOfBirth.length === 10) {
-							// YYYY-MM-DD
-							const parts = app.dateOfBirth.split('-');
-							dob = `${parts[2]}${parts[1]}${parseInt(parts[0]) + 543}`;
+							// dateOfBirth is returned as YYYY-MM-DD from the backend (NaiveDate)
+							dob = app.dateOfBirth;
 						}
 					}
 					phone = app.phone || '';
