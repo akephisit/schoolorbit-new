@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import {
 		getRound,
 		listTracks,
@@ -12,6 +13,7 @@
 		updateSubject,
 		deleteSubject,
 		updateRoundStatus,
+		deleteRound,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
@@ -25,6 +27,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import { toast } from 'svelte-sonner';
@@ -52,6 +55,9 @@
 	let subjects: AdmissionExamSubject[] = $state([]);
 	let studyPlans: { id: string; nameTh: string }[] = $state([]);
 	let loading = $state(true);
+
+	let showDeleteDialog = $state(false);
+	let deletingRound = $state(false);
 
 	// Track form
 	let showTrackForm = $state(false);
@@ -121,6 +127,21 @@
 			await load();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'เปลี่ยนสถานะไม่สำเร็จ');
+		}
+	}
+
+	async function confirmDeleteRound() {
+		if (!round) return;
+		deletingRound = true;
+		try {
+			await deleteRound(round.id);
+			toast.success('ลบรอบรับสมัครแล้ว');
+			goto('/staff/academic/admission');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
+		} finally {
+			deletingRound = false;
+			showDeleteDialog = false;
 		}
 	}
 
@@ -261,10 +282,23 @@
 	</div>
 {:else if round}
 	<div class="space-y-6">
-		<!-- Back -->
-		<Button href="/staff/academic/admission" variant="ghost" size="sm" class="gap-1">
-			<ArrowLeft class="w-4 h-4" /> ย้อนกลับ
-		</Button>
+		<!-- Header Actions -->
+		<div class="flex items-center justify-between">
+			<Button href="/staff/academic/admission" variant="ghost" size="sm" class="gap-1">
+				<ArrowLeft class="w-4 h-4" /> ย้อนกลับ
+			</Button>
+
+			<Button
+				variant="destructive"
+				size="sm"
+				class="gap-1"
+				onclick={() => {
+					showDeleteDialog = true;
+				}}
+			>
+				<Trash2 class="w-4 h-4" /> ลบรอบ
+			</Button>
+		</div>
 
 		<!-- Round Info Card -->
 		<Card.Root>
@@ -615,4 +649,29 @@
 			</Card.Root>
 		</div>
 	</div>
+
+	<!-- Delete Confirm Dialog -->
+	<Dialog.Root bind:open={showDeleteDialog}>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการลบรอบรับสมัคร</Dialog.Title>
+				<Dialog.Description>
+					ลบ <strong>{round?.name}</strong>? รอบที่มีใบสมัครอยู่จะไม่สามารถลบได้
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => (showDeleteDialog = false)}
+					disabled={deletingRound}
+				>
+					ยกเลิก
+				</Button>
+				<Button variant="destructive" onclick={confirmDeleteRound} disabled={deletingRound}>
+					{#if deletingRound}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
+					{deletingRound ? 'กำลังลบ...' : 'ลบรอบ'}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 {/if}
