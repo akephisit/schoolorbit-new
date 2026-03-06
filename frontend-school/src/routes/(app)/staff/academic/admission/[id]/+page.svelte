@@ -367,9 +367,7 @@
 							</div>
 						</div>
 						<div class="space-y-1.5">
-							<Label class="text-xs text-muted-foreground"
-								>ลิงก์ตรวจสอบผล / มอบตัว (ใช้ได้ตลอด)</Label
-							>
+							<Label class="text-xs text-muted-foreground">ลิงก์รวมรอบรับสมัคร / ระบบมอบตัว</Label>
 							<div class="flex items-center gap-2">
 								<Input
 									value={`${$page.url.origin}/apply`}
