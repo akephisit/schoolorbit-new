@@ -29,6 +29,45 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
 // Public API (No auth required)
 // ==========================================
 
+/// GET /api/admission/apply/rounds — ข้อมูลรอบรับสมัครทั้งหมดที่เปิดอยู่
+pub async fn list_public_rounds(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let rounds = sqlx::query_as::<_, AdmissionRound>(
+        r#"
+        SELECT ar.*,
+               ay.name AS academic_year_name,
+               CASE gl.level_type
+                   WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                   WHEN 'primary'      THEN CONCAT('ป.', gl.year)
+                   WHEN 'secondary'    THEN CONCAT('ม.', gl.year)
+                   ELSE CONCAT('?.', gl.year)
+               END AS grade_level_name,
+               0::bigint AS application_count
+        FROM admission_rounds ar
+        JOIN academic_years ay ON ar.academic_year_id = ay.id
+        JOIN grade_levels gl ON ar.grade_level_id = gl.id
+        WHERE ar.status = 'open'
+        ORDER BY ar.apply_start_date ASC
+        "#
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to fetch public rounds: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": rounds
+    })).into_response())
+}
+
+
 /// GET /api/admission/apply/round/:id — ข้อมูลรอบรับสมัคร + สายการเรียน สำหรับหน้ากรอกใบสมัครของนักเรียน
 pub async fn get_public_round_info(
     State(state): State<AppState>,

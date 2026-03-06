@@ -459,6 +459,13 @@ export async function updateApplication(
 // Public Submit API
 // ==========================================
 
+export async function getPublicRounds() {
+    const res = await apiClient.get<AdmissionRound[]>('/api/admission/apply/rounds');
+    if (!res.success) throw new Error(res.error || 'ไม่สามารถโหลดรอบการรับสมัครได้');
+    return res.data ?? [];
+}
+
+
 export async function getPublicRoundInfo(roundId: string) {
     const res = await apiClient.get<{ round: AdmissionRound; tracks: AdmissionTrack[] }>(`/api/admission/apply/round/${roundId}`);
     if (!res.success) throw new Error(res.error || 'ไม่สามารถดึงข้อมูลรอบการรับสมัครได้');

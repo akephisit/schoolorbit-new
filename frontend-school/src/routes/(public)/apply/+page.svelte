@@ -4,7 +4,9 @@
 		portalCheck,
 		portalGetStatus,
 		portalConfirm,
-		portalSubmitForm
+		portalSubmitForm,
+		getPublicRounds,
+		type AdmissionRound
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -21,7 +23,9 @@
 		AlertCircle,
 		Clock,
 		X,
-		Edit3
+		Edit3,
+		CalendarDays,
+		ArrowRight
 	} from 'lucide-svelte';
 
 	type PortalStep = 'login' | 'status';
@@ -30,6 +34,9 @@
 	let checking = $state(false);
 	let confirming = $state(false);
 	let savingForm = $state(false);
+	let loadingRounds = $state(true);
+
+	let publicRounds: AdmissionRound[] = $state([]);
 
 	let nationalId = $state('');
 	let dateOfBirth = $state(''); // format: DDMMYYYY พ.ศ. (เช่น 20082543)
@@ -156,6 +163,16 @@
 			savingForm = false;
 		}
 	}
+
+	onMount(async () => {
+		try {
+			publicRounds = await getPublicRounds();
+		} catch (e) {
+			console.error('Failed to load public rounds', e);
+		} finally {
+			loadingRounds = false;
+		}
+	});
 </script>
 
 <svelte:head>
@@ -171,13 +188,75 @@
 			<div class="inline-flex p-3 bg-white rounded-2xl shadow-md mb-4">
 				<GraduationCap class="w-10 h-10 text-blue-600" />
 			</div>
-			<h1 class="text-2xl font-bold text-gray-900">ตรวจสอบผลการสมัครเรียน</h1>
-			<p class="text-gray-500 mt-1 text-sm">กรอกเลขบัตรประชาชนและวันเดือนปีเกิดเพื่อตรวจสอบผล</p>
+			<h1 class="text-2xl font-bold text-gray-900">ระบบรับสมัครนักเรียน</h1>
+			<p class="text-gray-500 mt-1 text-sm">กรุณาเลือกรอบรับสมัครหรือตรวจสอบผลการสมัครของคุณ</p>
 		</div>
 
 		{#if step === 'login'}
+			{#if loadingRounds}
+				<div class="flex justify-center py-6">
+					<div class="animate-pulse flex items-center justify-center space-x-2 text-blue-600">
+						<div class="w-2 h-2 rounded-full bg-blue-600"></div>
+						<div class="w-2 h-2 rounded-full bg-blue-600"></div>
+						<div class="w-2 h-2 rounded-full bg-blue-600"></div>
+					</div>
+				</div>
+			{:else if publicRounds.length > 0}
+				<!-- Open Rounds List -->
+				<div class="space-y-4">
+					<h2 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+						<GraduationCap class="w-5 h-5 text-blue-600" /> รอบที่กำลังเปิดรับสมัคร
+					</h2>
+					<div class="grid gap-4">
+						{#each publicRounds as r}
+							<div
+								class="bg-white rounded-2xl shadow-sm border border-blue-100 p-5 hover:shadow-md transition-shadow"
+							>
+								<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+									<div>
+										<h3 class="font-bold text-gray-900 text-lg">{r.name}</h3>
+										<p class="text-sm text-gray-600 mt-1 flex items-center gap-1.5">
+											<CalendarDays class="w-4 h-4 text-blue-500" />
+											รับสมัคร {new Date(r.applyStartDate).toLocaleDateString('th-TH', {
+												month: 'short',
+												day: 'numeric'
+											})} - {new Date(r.applyEndDate).toLocaleDateString('th-TH', {
+												month: 'short',
+												day: 'numeric',
+												year: 'numeric'
+											})}
+										</p>
+									</div>
+									<Button
+										href="/apply/{r.id}"
+										class="bg-blue-600 hover:bg-blue-700 text-white shrink-0 group"
+									>
+										สมัครเรียน <ArrowRight
+											class="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform"
+										/>
+									</Button>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+				<div class="relative py-4">
+					<div class="absolute inset-0 flex items-center">
+						<div class="w-full border-t border-gray-300"></div>
+					</div>
+					<div class="relative flex justify-center text-sm">
+						<span class="px-2 bg-gradient-to-br from-blue-50 to-indigo-100 text-gray-500"
+							>หรือตรวจสอบสถานะ</span
+						>
+					</div>
+				</div>
+			{/if}
+
 			<!-- Login Form -->
 			<div class="bg-white rounded-2xl shadow-lg p-6">
+				<h2 class="text-lg font-semibold text-gray-800 flex items-center gap-2 mb-4">
+					<Search class="w-5 h-5 text-gray-600" /> ตรวจสอบผล / เข้าระบบมอบตัว
+				</h2>
 				<form onsubmit={handleCheck} class="space-y-4">
 					<div class="space-y-1.5">
 						<label for="national-id" class="text-sm font-medium text-gray-700"
