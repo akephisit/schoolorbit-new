@@ -88,7 +88,7 @@
 				.map(([appId, subScores]) => ({
 					applicationId: appId,
 					scores: Object.entries(subScores)
-						.filter(([, v]) => v !== '')
+						.filter(([subId, v]) => v !== '' && activeSubjectIds.includes(subId))
 						.map(([subId, v]) => ({ examSubjectId: subId, score: parseFloat(v) }))
 				}))
 				.filter((e) => e.scores.length > 0);
