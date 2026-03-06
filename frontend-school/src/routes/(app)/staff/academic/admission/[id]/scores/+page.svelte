@@ -17,8 +17,9 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, ClipboardList, Save, Loader2 } from 'lucide-svelte';
+	import { ArrowLeft, ClipboardList, Save, Loader2, ListFilter } from 'lucide-svelte';
 
 	let { data } = $props();
 	let id = $derived($page.params.id);
@@ -31,6 +32,7 @@
 	let saving = $state(false);
 	let selectedTrack = $state('');
 	let allRawScores: any[] = [];
+	let visibleSubjectIds: string[] = $state([]);
 
 	let scores: Record<string, Record<string, string>> = $state({});
 
@@ -47,7 +49,8 @@
 			round = r;
 			tracks = t;
 			subjects = s;
-			allRawScores = allS;
+			visibleSubjectIds = s.map((sub) => sub.id);
+			allRawScores = allS as any[];
 
 			if (t.length > 0 && !selectedTrack) selectedTrack = t[0].id;
 			await loadApps();
@@ -98,6 +101,20 @@
 		}
 	}
 
+	function handleKeydown(e: KeyboardEvent, appIndex: number, subId: string) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			// Attempt to focus the input in the same column but next row
+			const nextAppId = applications[appIndex + 1]?.id;
+			if (nextAppId) {
+				const nextInput = document.getElementById(`score-${nextAppId}-${subId}`);
+				if (nextInput) {
+					nextInput.focus();
+				}
+			}
+		}
+	}
+
 	$effect(() => {
 		if (selectedTrack) loadApps();
 	});
@@ -122,24 +139,49 @@
 		<p class="text-muted-foreground text-sm">{round.name} — {subjects.length} วิชา</p>
 	{/if}
 
-	<!-- Track Selector -->
+	<!-- Track Selector + Filters -->
 	<Card.Root>
-		<Card.Content class="pt-4 pb-4 flex items-center gap-4">
-			<p class="text-sm font-medium whitespace-nowrap">สายการเรียน:</p>
-			<div class="flex gap-2 flex-wrap">
-				{#each tracks as track (track.id)}
-					<Button
-						variant={selectedTrack === track.id ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => {
-							selectedTrack = track.id;
-						}}
-					>
-						{track.name}
-						<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
-					</Button>
-				{/each}
+		<Card.Content class="pt-4 pb-4 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+			<div class="flex items-center gap-4">
+				<p class="text-sm font-medium whitespace-nowrap">สายการเรียน:</p>
+				<div class="flex gap-2 flex-wrap">
+					{#each tracks as track (track.id)}
+						<Button
+							variant={selectedTrack === track.id ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => {
+								selectedTrack = track.id;
+							}}
+						>
+							{track.name}
+							<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
+						</Button>
+					{/each}
+				</div>
 			</div>
+
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<Button {...props} variant="outline" size="sm" class="gap-2 shrink-0">
+							<ListFilter class="w-4 h-4" /> เลือกวิชา
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end">
+					{#each subjects as sub (sub.id)}
+						<DropdownMenu.CheckboxItem
+							checked={visibleSubjectIds.includes(sub.id)}
+							onCheckedChange={(v) => {
+								if (v) visibleSubjectIds = [...visibleSubjectIds, sub.id];
+								else visibleSubjectIds = visibleSubjectIds.filter((id) => id !== sub.id);
+							}}
+						>
+							{sub.name}
+						</DropdownMenu.CheckboxItem>
+					{/each}
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
 		</Card.Content>
 	</Card.Root>
 
@@ -164,7 +206,7 @@
 						<Table.Head class="w-10">ที่</Table.Head>
 						<Table.Head>เลขที่ใบสมัคร</Table.Head>
 						<Table.Head>ชื่อ-สกุล</Table.Head>
-						{#each subjects as sub (sub.id)}
+						{#each subjects.filter((s) => visibleSubjectIds.includes(s.id)) as sub (sub.id)}
 							<Table.Head class="text-center min-w-24">
 								{sub.name}
 								<span class="block text-xs font-normal text-muted-foreground">/{sub.maxScore}</span>
@@ -178,14 +220,16 @@
 							<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
 							<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
 							<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
-							{#each subjects as sub (sub.id)}
+							{#each subjects.filter((s) => visibleSubjectIds.includes(s.id)) as sub (sub.id)}
 								<Table.Cell class="px-2 py-1.5">
 									<Input
+										id="score-{app.id}-{sub.id}"
 										type="number"
 										min="0"
 										max={sub.maxScore}
 										step="0.5"
 										bind:value={scores[app.id][sub.id]}
+										onkeydown={(e) => handleKeydown(e, i, sub.id)}
 										class="h-7 text-center text-sm w-20 mx-auto"
 										placeholder="-"
 									/>
