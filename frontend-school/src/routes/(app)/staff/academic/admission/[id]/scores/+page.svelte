@@ -10,7 +10,8 @@
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
-		type ApplicationListItem
+		type ApplicationListItem,
+		getAllScores
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -29,6 +30,7 @@
 	let loading = $state(true);
 	let saving = $state(false);
 	let selectedTrack = $state('');
+	let allRawScores: any[] = [];
 
 	let scores: Record<string, Record<string, string>> = $state({});
 
@@ -36,10 +38,17 @@
 		if (!id) return;
 		loading = true;
 		try {
-			const [r, t, s] = await Promise.all([getRound(id), listTracks(id), listSubjects(id)]);
+			const [r, t, s, allS] = await Promise.all([
+				getRound(id),
+				listTracks(id),
+				listSubjects(id),
+				getAllScores(id)
+			]);
 			round = r;
 			tracks = t;
 			subjects = s;
+			allRawScores = allS;
+
 			if (t.length > 0 && !selectedTrack) selectedTrack = t[0].id;
 			await loadApps();
 		} catch (e) {
@@ -51,10 +60,20 @@
 
 	async function loadApps() {
 		if (!id || !selectedTrack) return;
-		const apps = await listApplications(id, { trackId: selectedTrack, status: 'verified' });
-		applications = apps;
-		for (const app of apps) {
+		const allApps = await listApplications(id, { trackId: selectedTrack });
+		// Only show applications that are verified or scored
+		applications = allApps.filter((a) => ['verified', 'scored', 'accepted'].includes(a.status));
+
+		for (const app of applications) {
 			if (!scores[app.id]) scores[app.id] = {};
+
+			// Map existing scores
+			const appScores = allRawScores.filter((s) => s.applicationId === app.id);
+			for (const s of appScores) {
+				if (s.score !== null && s.score !== undefined) {
+					scores[app.id][s.subjectId] = s.score.toString();
+				}
+			}
 		}
 	}
 
