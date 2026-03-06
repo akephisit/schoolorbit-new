@@ -319,21 +319,17 @@ pub async fn delete_round(
         return Ok(r);
     }
 
-    // Check if has applications
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM admission_applications WHERE admission_round_id = $1"
-    )
-    .bind(id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
+    // Delete all applications first (this will cascade to scores, room assignments, etc.)
+    sqlx::query("DELETE FROM admission_applications WHERE admission_round_id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to delete applications: {}", e);
+            AppError::InternalServerError("Failed to delete applications".to_string())
+        })?;
 
-    if count > 0 {
-        return Err(AppError::BadRequest(
-            format!("ไม่สามารถลบรอบที่มีใบสมัครอยู่แล้ว ({} ใบ)", count)
-        ));
-    }
-
+    // Delete the round
     sqlx::query("DELETE FROM admission_rounds WHERE id = $1")
         .bind(id)
         .execute(&pool)
@@ -343,7 +339,7 @@ pub async fn delete_round(
             AppError::InternalServerError("Failed to delete round".to_string())
         })?;
 
-    Ok(Json(json!({ "success": true, "message": "ลบรอบรับสมัครแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "message": "ลบรอบรับสมัครและใบสมัครที่เกี่ยวข้องเรียบร้อยแล้ว" })).into_response())
 }
 
 // ==========================================
