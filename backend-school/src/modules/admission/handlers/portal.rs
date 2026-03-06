@@ -328,3 +328,116 @@ pub async fn submit_enrollment_form(
         "message": "บันทึกแบบฟอร์มมอบตัวแล้ว",
     })).into_response())
 }
+
+/// PUT /api/admission/portal/application
+/// แก้ไขใบสมัคร (เฉพาะสถานะ submitted หรือ rejected)
+pub async fn update_application(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdatePortalApplicationRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let application_id = verify_credentials(&pool, &payload.auth_national_id, &payload.auth_date_of_birth).await?;
+
+    // ตรวจสอบสถานะก่อนแก้
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM admission_applications WHERE id = $1"
+    )
+    .bind(application_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+    if status != "submitted" && status != "rejected" {
+        return Err(AppError::BadRequest(
+            format!("ไม่สามารถแก้ไขใบสมัครได้เนื่องจากอยู่ในสถานะ '{}'", status)
+        ));
+    }
+
+    // ตรวจสอบ national_id แอบเปลี่ยนไปซ้ำกับใบอื่นรอบนี้ไหม (ถ้ามีการแก้เลขบัตร)
+    if payload.data.national_id != payload.auth_national_id {
+        let round_id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT admission_round_id FROM admission_applications WHERE id = $1"
+        )
+        .bind(application_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or_default();
+
+        let already_applied: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE national_id = $1 AND admission_round_id = $2 AND id != $3)"
+        )
+        .bind(&payload.data.national_id)
+        .bind(round_id)
+        .bind(application_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(false);
+
+        if already_applied {
+            return Err(AppError::BadRequest("เลขบัตรประชาชนใหม่ที่กรอกได้สมัครรอบนี้ไปแล้ว (ซ้ำ)".to_string()));
+        }
+    }
+
+    // อัปเดตข้อมูล
+    sqlx::query(
+        r#"
+        UPDATE admission_applications SET
+            admission_track_id = $1, title = $2, first_name = $3, last_name = $4,
+            gender = $5, phone = $6, email = $7,
+            address_line = $8, sub_district = $9, district = $10, province = $11, postal_code = $12,
+            previous_school = $13, previous_grade = $14, previous_gpa = $15,
+            father_name = $16, father_phone = $17, father_occupation = $18, father_national_id = $19,
+            mother_name = $20, mother_phone = $21, mother_occupation = $22, mother_national_id = $23,
+            guardian_name = $24, guardian_phone = $25, guardian_relation = $26, guardian_national_id = $27,
+            national_id = $28, date_of_birth = $29,
+            status = 'submitted', -- คืนสถานะกลับเป็น Submitted เพื่อให้ครูรอตรวจใหม่
+            rejection_reason = NULL,
+            updated_at = NOW()
+        WHERE id = $30
+        "#
+    )
+    .bind(payload.data.admission_track_id)
+    .bind(&payload.data.title)
+    .bind(&payload.data.first_name)
+    .bind(&payload.data.last_name)
+    .bind(&payload.data.gender)
+    .bind(&payload.data.phone)
+    .bind(&payload.data.email)
+    .bind(&payload.data.address_line)
+    .bind(&payload.data.sub_district)
+    .bind(&payload.data.district)
+    .bind(&payload.data.province)
+    .bind(&payload.data.postal_code)
+    .bind(&payload.data.previous_school)
+    .bind(&payload.data.previous_grade)
+    .bind(payload.data.previous_gpa)
+    .bind(&payload.data.father_name)
+    .bind(&payload.data.father_phone)
+    .bind(&payload.data.father_occupation)
+    .bind(&payload.data.father_national_id)
+    .bind(&payload.data.mother_name)
+    .bind(&payload.data.mother_phone)
+    .bind(&payload.data.mother_occupation)
+    .bind(&payload.data.mother_national_id)
+    .bind(&payload.data.guardian_name)
+    .bind(&payload.data.guardian_phone)
+    .bind(&payload.data.guardian_relation)
+    .bind(&payload.data.guardian_national_id)
+    .bind(&payload.data.national_id)
+    .bind(payload.data.date_of_birth)
+    .bind(application_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to update application: {}", e);
+        AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
+    })?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว",
+    })).into_response())
+}
+

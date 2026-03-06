@@ -59,4 +59,5 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/portal/confirm", post(handlers::portal::confirm_enrollment))
         .route("/portal/form", post(handlers::portal::get_enrollment_form)
                                .put(handlers::portal::submit_enrollment_form))
+        .route("/portal/application", put(handlers::portal::update_application))
 }

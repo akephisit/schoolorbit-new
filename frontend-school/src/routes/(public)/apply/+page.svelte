@@ -12,7 +12,17 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
-	import { GraduationCap, Search, Check, FileText, AlertCircle, Clock, X } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import {
+		GraduationCap,
+		Search,
+		Check,
+		FileText,
+		AlertCircle,
+		Clock,
+		X,
+		Edit3
+	} from 'lucide-svelte';
 
 	type PortalStep = 'login' | 'status';
 
@@ -24,15 +34,25 @@
 	let nationalId = $state('');
 	let dateOfBirth = $state(''); // format: DDMMYYYY พ.ศ. (เช่น 20082543)
 
+	function goToEdit() {
+		if (portalData?.application?.admissionRoundId) {
+			sessionStorage.setItem('admissionEditNid', nationalId);
+			sessionStorage.setItem('admissionEditDob', dateOfBirth);
+			goto(`/apply/${portalData.application.admissionRoundId}?edit=true`);
+		}
+	}
+
 	let portalData: {
 		application?: {
 			id: string;
+			admissionRoundId: string;
 			applicationNumber?: string;
 			firstName: string;
 			lastName: string;
 			status: string;
 			trackName?: string;
 			roundName?: string;
+			rejectionReason?: string;
 		};
 		assignment?: {
 			rankInTrack?: number;
@@ -224,19 +244,44 @@
 						</div>
 					</div>
 
-					<!-- Status Badge -->
 					<div
 						class="border rounded-xl p-4 {statusColor[app.status] ?? 'bg-gray-50 border-gray-200'}"
 					>
-						<div class="flex items-center gap-2">
-							{#if app.status === 'accepted' || app.status === 'enrolled'}
-								<Check class="w-5 h-5" />
-							{:else if app.status === 'rejected'}
-								<X class="w-5 h-5" />
-							{:else}
-								<Clock class="w-5 h-5" />
+						<div class="flex flex-col gap-2">
+							<div class="flex items-center gap-2">
+								{#if app.status === 'accepted' || app.status === 'enrolled'}
+									<Check class="w-5 h-5" />
+								{:else if app.status === 'rejected'}
+									<X class="w-5 h-5" />
+								{:else}
+									<Clock class="w-5 h-5" />
+								{/if}
+								<p class="font-semibold">{statusLabel[app.status] ?? app.status}</p>
+							</div>
+
+							<!-- แสดงเหตุผลถ้าถูกปฏิเสธ -->
+							{#if app.status === 'rejected' && app.rejectionReason}
+								<div
+									class="mt-2 p-3 bg-red-50/50 border border-red-100 rounded-lg text-sm text-red-800"
+								>
+									<strong>หมายเหตุ:</strong>
+									{app.rejectionReason}
+								</div>
+
+								<div class="mt-4 pt-4 border-t border-red-100">
+									<p class="text-xs text-gray-500 mb-3">
+										คุณสามารถแก้ไขใบสมัครตามเหตุผลข้างต้นโดยไม่ต้องกรอกข้อมูลใหม่ทั้งหมด
+									</p>
+									<Button
+										onclick={goToEdit}
+										variant="outline"
+										class="w-full text-blue-600 border-blue-200 hover:bg-blue-50"
+									>
+										<Edit3 class="w-4 h-4 mr-2" />
+										แก้ไขข้อมูลใบสมัคร
+									</Button>
+								</div>
 							{/if}
-							<p class="font-semibold">{statusLabel[app.status] ?? app.status}</p>
 						</div>
 					</div>
 

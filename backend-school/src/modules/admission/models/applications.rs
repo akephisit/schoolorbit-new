@@ -156,6 +156,17 @@ pub struct SubmitApplicationRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdatePortalApplicationRequest {
+    pub auth_national_id: String,
+    pub auth_date_of_birth: String,
+    
+    #[serde(flatten)]
+    pub data: SubmitApplicationRequest,
+}
+
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RejectApplicationRequest {
     pub rejection_reason: String,
 }

@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { submitApplication, getPublicRoundInfo } from '$lib/api/admission';
+	import {
+		submitApplication,
+		getPublicRoundInfo,
+		updateApplication,
+		portalGetStatus
+	} from '$lib/api/admission';
 	import type { AdmissionRound, AdmissionTrack } from '$lib/api/admission';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -12,7 +17,14 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
-	import { GraduationCap, CheckCircle2, AlertCircle, ChevronRight, Loader2 } from 'lucide-svelte';
+	import {
+		GraduationCap,
+		CheckCircle2,
+		AlertCircle,
+		ChevronRight,
+		Loader2,
+		Save
+	} from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -22,19 +34,123 @@
 	let loading = $state(true);
 
 	let submitting = $state(false);
-	let successResult: { applicationNumber: string } | null = $state(null);
+	let successResult: { applicationNumber?: string; message?: string } | null = $state(null);
+
+	let isEditMode = $state(false);
+	let authNid = '';
+	let authDob = '';
 
 	onMount(async () => {
 		const id = page.params.id;
+		isEditMode = page.url.searchParams.get('edit') === 'true';
+
+		if (isEditMode) {
+			authNid = sessionStorage.getItem('admissionEditNid') || '';
+			authDob = sessionStorage.getItem('admissionEditDob') || '';
+		}
+
 		if (!id) {
 			loadError = 'ไม่พบ ID ของรอบ';
 			loading = false;
 			return;
 		}
+
 		try {
 			const info = await getPublicRoundInfo(id);
 			round = info.round;
 			tracks = info.tracks;
+
+			if (isEditMode && authNid && authDob) {
+				const statusData = (await portalGetStatus(authNid, authDob)) as any;
+				if (statusData?.application) {
+					const app = statusData.application;
+					trackId = app.admissionTrackId || '';
+					nationalId = app.nationalId || '';
+					title = app.title || '';
+					firstName = app.firstName || '';
+					lastName = app.lastName || '';
+					gender = app.gender || '';
+					if (app.dateOfBirth) {
+						if (app.dateOfBirth.length === 10) {
+							// YYYY-MM-DD
+							const parts = app.dateOfBirth.split('-');
+							dob = `${parts[2]}${parts[1]}${parseInt(parts[0]) + 543}`;
+						}
+					}
+					phone = app.phone || '';
+					email = app.email || '';
+					addressLine = app.addressLine || '';
+					subDistrict = app.subDistrict || '';
+					district = app.district || '';
+					province = app.province || '';
+					postalCode = app.postalCode || '';
+					previousSchool = app.previousSchool || '';
+					previousGrade = app.previousGrade || '';
+					previousGpa = app.previousGpa ? app.previousGpa.toString() : '';
+
+					const parseName = (
+						fullName: string,
+						setTitle: (v: string) => void,
+						setFirst: (v: string) => void,
+						setLast: (v: string) => void
+					) => {
+						if (!fullName) return;
+						let f = fullName.trim();
+						if (f.startsWith('นาย')) {
+							setTitle('นาย');
+							f = f.substring(3).trim();
+						} else if (f.startsWith('นางสาว')) {
+							setTitle('นางสาว');
+							f = f.substring(6).trim();
+						} else if (f.startsWith('นาง')) {
+							setTitle('นาง');
+							f = f.substring(3).trim();
+						} else if (f.startsWith('ด.ช.')) {
+							setTitle('ด.ช.');
+							f = f.substring(4).trim();
+						} else if (f.startsWith('ด.ญ.')) {
+							setTitle('ด.ญ.');
+							f = f.substring(4).trim();
+						} else {
+							setTitle('');
+						}
+						const parts = f.split(' ').filter(Boolean);
+						setFirst(parts[0] || '');
+						setLast(parts.slice(1).join(' '));
+					};
+
+					parseName(
+						app.fatherName || '',
+						(v: string) => (fatherTitle = v),
+						(v: string) => (fatherFirstName = v),
+						(v: string) => (fatherLastName = v)
+					);
+					parseName(
+						app.motherName || '',
+						(v: string) => (motherTitle = v),
+						(v: string) => (motherFirstName = v),
+						(v: string) => (motherLastName = v)
+					);
+					parseName(
+						app.guardianName || '',
+						(v: string) => (guardianTitle = v),
+						(v: string) => (guardianFirstName = v),
+						(v: string) => (guardianLastName = v)
+					);
+
+					fatherPhone = app.fatherPhone || '';
+					fatherOccupation = app.fatherOccupation || '';
+					fatherNationalId = app.fatherNationalId || '';
+
+					motherPhone = app.motherPhone || '';
+					motherOccupation = app.motherOccupation || '';
+					motherNationalId = app.motherNationalId || '';
+
+					guardianRelation = app.guardianRelation || '';
+					guardianPhone = app.guardianPhone || '';
+					guardianNationalId = app.guardianNationalId || '';
+				}
+			}
 		} catch (e) {
 			loadError = e instanceof Error ? e.message : 'ไม่สามารถโหลดข้อมูลรอบรับสมัคร';
 		} finally {
@@ -95,43 +211,87 @@
 
 		submitting = true;
 		try {
-			const res = await submitApplication(page.params.id!, {
-				admissionTrackId: trackId,
-				nationalId,
-				title,
-				firstName,
-				lastName,
-				gender,
-				dateOfBirth: dob || undefined,
-				phone,
-				email,
-				addressLine,
-				subDistrict,
-				district,
-				province,
-				postalCode,
-				previousSchool,
-				previousGrade,
-				previousGpa: previousGpa ? parseFloat(previousGpa) : undefined,
-				fatherName: fatherFirstName
-					? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim()
-					: undefined,
-				fatherPhone,
-				fatherOccupation,
-				fatherNationalId,
-				motherName: motherFirstName
-					? `${motherTitle}${motherFirstName} ${motherLastName}`.trim()
-					: undefined,
-				motherPhone,
-				motherOccupation,
-				motherNationalId,
-				guardianName: guardianFirstName
-					? `${guardianTitle}${guardianFirstName} ${guardianLastName}`.trim()
-					: undefined,
-				guardianPhone,
-				guardianRelation,
-				guardianNationalId
-			});
+			let res;
+			if (isEditMode) {
+				const payload = {
+					admissionTrackId: trackId,
+					nationalId,
+					title,
+					firstName,
+					lastName,
+					gender,
+					dateOfBirth: dob || undefined,
+					phone,
+					email,
+					addressLine,
+					subDistrict,
+					district,
+					province,
+					postalCode,
+					previousSchool,
+					previousGrade,
+					previousGpa: previousGpa ? parseFloat(previousGpa) : undefined,
+					fatherName: fatherFirstName
+						? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim()
+						: undefined,
+					fatherPhone,
+					fatherOccupation,
+					fatherNationalId,
+					motherName: motherFirstName
+						? `${motherTitle}${motherFirstName} ${motherLastName}`.trim()
+						: undefined,
+					motherPhone,
+					motherOccupation,
+					motherNationalId,
+					guardianName: guardianFirstName
+						? `${guardianTitle}${guardianFirstName} ${guardianLastName}`.trim()
+						: undefined,
+					guardianPhone,
+					guardianRelation,
+					guardianNationalId
+				};
+				await updateApplication(authNid, authDob, payload);
+				res = { message: 'อัปเดตใบสมัครเรียบร้อยแล้ว' };
+			} else {
+				res = await submitApplication(page.params.id!, {
+					admissionTrackId: trackId,
+					nationalId,
+					title,
+					firstName,
+					lastName,
+					gender,
+					dateOfBirth: dob || undefined,
+					phone,
+					email,
+					addressLine,
+					subDistrict,
+					district,
+					province,
+					postalCode,
+					previousSchool,
+					previousGrade,
+					previousGpa: previousGpa ? parseFloat(previousGpa) : undefined,
+					fatherName: fatherFirstName
+						? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim()
+						: undefined,
+					fatherPhone,
+					fatherOccupation,
+					fatherNationalId,
+					motherName: motherFirstName
+						? `${motherTitle}${motherFirstName} ${motherLastName}`.trim()
+						: undefined,
+					motherPhone,
+					motherOccupation,
+					motherNationalId,
+					guardianName: guardianFirstName
+						? `${guardianTitle}${guardianFirstName} ${guardianLastName}`.trim()
+						: undefined,
+					guardianPhone,
+					guardianRelation,
+					guardianNationalId
+				});
+			}
+
 			successResult = res;
 			window.scrollTo({ top: 0, behavior: 'smooth' });
 		} catch (e) {
@@ -168,7 +328,9 @@
 				<div class="inline-flex p-3 bg-white rounded-2xl shadow border border-blue-100 mb-2">
 					<GraduationCap class="w-10 h-10 text-blue-600" />
 				</div>
-				<h1 class="text-3xl font-bold text-gray-900">ใบสมัครเรียน</h1>
+				<h1 class="text-3xl font-bold text-gray-900">
+					{isEditMode ? 'แก้ไขใบสมัครเรียน' : 'ใบสมัครเรียน'}
+				</h1>
 				{#if round}
 					<p class="text-lg font-medium text-blue-700">{round.name}</p>
 					<p class="text-sm text-gray-500">
@@ -195,17 +357,26 @@
 					<Card.Content class="pt-8 pb-8 text-center space-y-5">
 						<CheckCircle2 class="w-20 h-20 text-green-500 mx-auto" />
 						<div>
-							<h2 class="text-2xl font-bold text-green-800 mb-1">ส่งใบสมัครสำเร็จ!</h2>
+							<h2 class="text-2xl font-bold text-green-800 mb-1">
+								{isEditMode ? 'อัปเดตใบสมัครสำเร็จ!' : 'ส่งใบสมัครสำเร็จ!'}
+							</h2>
 							<p class="text-gray-600">ได้รับข้อมูลใบสมัครของท่านเรียบร้อยแล้ว</p>
 						</div>
 						<div
 							class="flex items-start gap-3 max-w-sm mx-auto bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4 text-sm text-left"
 						>
 							<AlertCircle class="w-5 h-5 shrink-0 mt-0.5" />
-							<p>
-								ระบบใช้ <strong>เลขบัตรประชาชน</strong> และ <strong>วัน/เดือน/ปีเกิด (พ.ศ.)</strong>
-								ของผู้สมัครในการตรวจสอบสถานะในภายหลัง
-							</p>
+							{#if !isEditMode}
+								<p>
+									ระบบใช้ <strong>เลขบัตรประชาชน</strong> และ
+									<strong>วัน/เดือน/ปีเกิด (พ.ศ.)</strong>
+									ของผู้สมัครในการตรวจสอบสถานะในภายหลัง
+								</p>
+							{:else}
+								<p>
+									ข้อมูลใบสมัครของคุณได้รับการแก้ไขและอัปเดตเรียบร้อยแล้ว <br /> กรุณารอการตรวจสอบจากฝั่งเจ้าหน้าที่อีกครั้ง
+								</p>
+							{/if}
 						</div>
 						<Button href="/apply" class="gap-2 mt-2">
 							<ChevronRight class="w-4 h-4" /> ไปหน้าตรวจสอบผลการสมัคร
@@ -599,7 +770,13 @@
 							ข้าพเจ้าขอรับรองว่าข้อมูลที่กรอกทั้งหมดเป็นความจริง
 						</p>
 						<Button type="submit" size="lg" disabled={submitting} class="w-full sm:w-auto px-10">
-							{submitting ? '⏳ กำลังส่งข้อมูล...' : '📨 ส่งใบสมัคร'}
+							{submitting
+								? isEditMode
+									? '⏳ กำลังบันทึก...'
+									: '⏳ กำลังส่งข้อมูล...'
+								: isEditMode
+									? '💾 บันทึกการแก้ไข'
+									: '📨 ส่งใบสมัคร'}
 						</Button>
 					</div>
 				</form>

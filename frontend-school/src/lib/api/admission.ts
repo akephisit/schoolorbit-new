@@ -400,7 +400,7 @@ export async function portalCheck(nationalId: string, dateOfBirth: string) {
     return res.data;
 }
 
-export async function portalGetStatus(nationalId: string, dateOfBirth: string) {
+export async function portalGetStatus(nationalId: string, dateOfBirth: string): Promise<any> {
     const res = await apiClient.post('/api/admission/portal/status', {
         nationalId,
         dateOfBirth
@@ -436,6 +436,20 @@ export async function portalSubmitForm(
         nationalId,
         dateOfBirth,
         formData
+    });
+    if (!res.success) throw new Error(res.error);
+    return res;
+}
+
+export async function updateApplication(
+    authNationalId: string,
+    authDateOfBirth: string,
+    data: any
+) {
+    const res = await apiClient.put('/api/admission/portal/application', {
+        authNationalId,
+        authDateOfBirth,
+        ...data
     });
     if (!res.success) throw new Error(res.error);
     return res;
