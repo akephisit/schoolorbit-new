@@ -253,6 +253,12 @@
 										step="0.5"
 										disabled={!isActive}
 										bind:value={scores[app.id][sub.id]}
+										oninput={(e) => {
+											const val = parseFloat(e.currentTarget.value);
+											if (!isNaN(val) && val > sub.maxScore) {
+												scores[app.id][sub.id] = sub.maxScore.toString();
+											}
+										}}
 										onkeydown={(e) => handleKeydown(e, i, subIdx)}
 										class="h-7 text-center text-sm w-20 mx-auto {isActive
 											? ''
