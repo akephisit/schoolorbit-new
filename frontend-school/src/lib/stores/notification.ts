@@ -112,9 +112,12 @@ function createNotificationStore() {
             };
 
             eventSource.onerror = (err) => {
-                console.error('SSE Error', err);
-                // Do not close explicitly; let the browser handle reconnection
-                // eventSource?.close();
+                if (eventSource && eventSource.readyState === 0) {
+                    // 0 = CONNECTING. Browser is trying to reconnect, no need for error log.
+                    console.log('🔄 SSE Reconnecting...');
+                } else {
+                    console.error('SSE Error', err);
+                }
             };
         },
 
