@@ -475,8 +475,8 @@
 								</div>
 							</div>
 
-							<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-								<div class="space-y-2">
+							<div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+								<div class="md:col-span-3 space-y-2 flex flex-col justify-end">
 									<Label for="gender-select">เพศ</Label>
 									<Select.Root type="single" bind:value={gender}>
 										<Select.Trigger id="gender-select">
@@ -488,11 +488,11 @@
 										</Select.Content>
 									</Select.Root>
 								</div>
-								<div class="space-y-2">
+								<div class="md:col-span-5 space-y-2 flex flex-col justify-end">
 									<Label for="dob">วันเกิด (ปฏิทินไทย)</Label>
 									<DatePicker bind:value={dob} />
 								</div>
-								<div class="space-y-2">
+								<div class="md:col-span-4 space-y-2 flex flex-col justify-end">
 									<Label for="phone">เบอร์โทร</Label>
 									<Input id="phone" type="tel" bind:value={phone} placeholder="08XXXXXXXX" />
 								</div>

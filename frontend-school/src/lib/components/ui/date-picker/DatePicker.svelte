@@ -25,26 +25,24 @@
 
 	// Custom format: วันศุกร์ ที่ ... เดือน ... ปี พ.ศ. ....
 	function formatThaiDateFull(date: Date) {
-		const weekdays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
 		const months = [
-			'มกราคม',
-			'กุมภาพันธ์',
-			'มีนาคม',
-			'เมษายน',
-			'พฤษภาคม',
-			'มิถุนายน',
-			'กรกฎาคม',
-			'สิงหาคม',
-			'กันยายน',
-			'ตุลาคม',
-			'พฤศจิกายน',
-			'ธันวาคม'
+			'ม.ค.',
+			'ก.พ.',
+			'มี.ค.',
+			'เม.ย.',
+			'พ.ค.',
+			'มิ.ย.',
+			'ก.ค.',
+			'ส.ค.',
+			'ก.ย.',
+			'ต.ค.',
+			'พ.ย.',
+			'ธ.ค.'
 		];
 		const day = date.getDate();
 		const month = months[date.getMonth()];
 		const year = date.getFullYear() + 543;
-		const weekdayName = weekdays[date.getDay()];
-		return `วัน${weekdayName} ที่ ${day} เดือน ${month} ปี พ.ศ. ${year}`;
+		return `${day} ${month} ${year}`;
 	}
 
 	// Handle calendar value change
