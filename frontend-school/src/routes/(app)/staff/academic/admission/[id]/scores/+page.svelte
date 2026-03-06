@@ -17,7 +17,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import { Switch } from '$lib/components/ui/switch';
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, ClipboardList, Save, Loader2, ListFilter } from 'lucide-svelte';
 
@@ -32,7 +32,7 @@
 	let saving = $state(false);
 	let selectedTrack = $state('');
 	let allRawScores: any[] = [];
-	let visibleSubjectIds: string[] = $state([]);
+	let activeSubjectIds: string[] = $state([]);
 
 	let scores: Record<string, Record<string, string>> = $state({});
 
@@ -49,7 +49,7 @@
 			round = r;
 			tracks = t;
 			subjects = s;
-			visibleSubjectIds = s.map((sub) => sub.id);
+			activeSubjectIds = s.map((sub) => sub.id);
 			allRawScores = allS as any[];
 
 			if (t.length > 0 && !selectedTrack) selectedTrack = t[0].id;
@@ -101,15 +101,42 @@
 		}
 	}
 
-	function handleKeydown(e: KeyboardEvent, appIndex: number, subId: string) {
+	function handleKeydown(e: KeyboardEvent, appIndex: number, currentSubIndex: number) {
 		if (e.key === 'Enter') {
 			e.preventDefault();
-			// Attempt to focus the input in the same column but next row
-			const nextAppId = applications[appIndex + 1]?.id;
-			if (nextAppId) {
-				const nextInput = document.getElementById(`score-${nextAppId}-${subId}`);
-				if (nextInput) {
-					nextInput.focus();
+
+			// ค้นหาวิชาถัดไปที่เปิดอยู่ (active) ในแถวเดียวกัน
+			let nextSubIdx = -1;
+			for (let i = currentSubIndex + 1; i < subjects.length; i++) {
+				if (activeSubjectIds.includes(subjects[i].id)) {
+					nextSubIdx = i;
+					break;
+				}
+			}
+
+			if (nextSubIdx !== -1) {
+				// ไปขวา (วิชาถัดไปที่เปิด)
+				const appId = applications[appIndex].id;
+				const subId = subjects[nextSubIdx].id;
+				const nextInput = document.getElementById(`score-${appId}-${subId}`);
+				nextInput?.focus();
+			} else {
+				// หมดวิชาในแถวนี้แล้ว -> ลงบรรทัดใหม่ไปคนถัดไป (วิชาแรกที่เปิด)
+				const nextAppIndex = appIndex + 1;
+				if (nextAppIndex < applications.length) {
+					let firstVisSubIdx = -1;
+					for (let i = 0; i < subjects.length; i++) {
+						if (activeSubjectIds.includes(subjects[i].id)) {
+							firstVisSubIdx = i;
+							break;
+						}
+					}
+					if (firstVisSubIdx !== -1) {
+						const nextAppId = applications[nextAppIndex].id;
+						const subId = subjects[firstVisSubIdx].id;
+						const nextInput = document.getElementById(`score-${nextAppId}-${subId}`);
+						nextInput?.focus();
+					}
 				}
 			}
 		}
@@ -139,49 +166,24 @@
 		<p class="text-muted-foreground text-sm">{round.name} — {subjects.length} วิชา</p>
 	{/if}
 
-	<!-- Track Selector + Filters -->
+	<!-- Track Selector -->
 	<Card.Root>
-		<Card.Content class="pt-4 pb-4 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
-			<div class="flex items-center gap-4">
-				<p class="text-sm font-medium whitespace-nowrap">สายการเรียน:</p>
-				<div class="flex gap-2 flex-wrap">
-					{#each tracks as track (track.id)}
-						<Button
-							variant={selectedTrack === track.id ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => {
-								selectedTrack = track.id;
-							}}
-						>
-							{track.name}
-							<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
-						</Button>
-					{/each}
-				</div>
+		<Card.Content class="pt-4 pb-4 flex items-center gap-4">
+			<p class="text-sm font-medium whitespace-nowrap">สายการเรียน:</p>
+			<div class="flex gap-2 flex-wrap">
+				{#each tracks as track (track.id)}
+					<Button
+						variant={selectedTrack === track.id ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => {
+							selectedTrack = track.id;
+						}}
+					>
+						{track.name}
+						<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
+					</Button>
+				{/each}
 			</div>
-
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
-					{#snippet child({ props })}
-						<Button {...props} variant="outline" size="sm" class="gap-2 shrink-0">
-							<ListFilter class="w-4 h-4" /> เลือกวิชา
-						</Button>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end">
-					{#each subjects as sub (sub.id)}
-						<DropdownMenu.CheckboxItem
-							checked={visibleSubjectIds.includes(sub.id)}
-							onCheckedChange={(v) => {
-								if (v) visibleSubjectIds = [...visibleSubjectIds, sub.id];
-								else visibleSubjectIds = visibleSubjectIds.filter((id) => id !== sub.id);
-							}}
-						>
-							{sub.name}
-						</DropdownMenu.CheckboxItem>
-					{/each}
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
 		</Card.Content>
 	</Card.Root>
 
@@ -206,10 +208,28 @@
 						<Table.Head class="w-10">ที่</Table.Head>
 						<Table.Head>เลขที่ใบสมัคร</Table.Head>
 						<Table.Head>ชื่อ-สกุล</Table.Head>
-						{#each subjects.filter((s) => visibleSubjectIds.includes(s.id)) as sub (sub.id)}
-							<Table.Head class="text-center min-w-24">
-								{sub.name}
-								<span class="block text-xs font-normal text-muted-foreground">/{sub.maxScore}</span>
+						{#each subjects as sub (sub.id)}
+							{@const isActive = activeSubjectIds.includes(sub.id)}
+							<Table.Head
+								class="text-center min-w-[120px] pb-4 transition-all duration-300 {isActive
+									? ''
+									: 'bg-muted/40 shadow-inner'}"
+							>
+								<div class="flex flex-col items-center gap-2">
+									<Switch
+										checked={isActive}
+										onCheckedChange={(v) => {
+											if (v) activeSubjectIds = [...activeSubjectIds, sub.id];
+											else activeSubjectIds = activeSubjectIds.filter((id) => id !== sub.id);
+										}}
+									/>
+									<div class={isActive ? '' : 'opacity-50'}>
+										{sub.name}
+										<span class="block text-xs font-normal text-muted-foreground"
+											>/{sub.maxScore}</span
+										>
+									</div>
+								</div>
 							</Table.Head>
 						{/each}
 					</Table.Row>
@@ -220,17 +240,23 @@
 							<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
 							<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
 							<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
-							{#each subjects.filter((s) => visibleSubjectIds.includes(s.id)) as sub (sub.id)}
-								<Table.Cell class="px-2 py-1.5">
+							{#each subjects as sub, subIdx (sub.id)}
+								{@const isActive = activeSubjectIds.includes(sub.id)}
+								<Table.Cell
+									class="px-2 py-1.5 transition-all duration-300 {isActive ? '' : 'bg-muted/40'}"
+								>
 									<Input
 										id="score-{app.id}-{sub.id}"
 										type="number"
 										min="0"
 										max={sub.maxScore}
 										step="0.5"
+										disabled={!isActive}
 										bind:value={scores[app.id][sub.id]}
-										onkeydown={(e) => handleKeydown(e, i, sub.id)}
-										class="h-7 text-center text-sm w-20 mx-auto"
+										onkeydown={(e) => handleKeydown(e, i, subIdx)}
+										class="h-7 text-center text-sm w-20 mx-auto {isActive
+											? ''
+											: 'opacity-50 cursor-not-allowed'}"
 										placeholder="-"
 									/>
 								</Table.Cell>
@@ -249,3 +275,19 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* ซ่อนลูกศรขึ้น/ลง ของช่องใส่ตัวเลข (number input spinners) */
+	:global(input[type='number']::-webkit-outer-spin-button) {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+	:global(input[type='number']::-webkit-inner-spin-button) {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+	:global(input[type='number']) {
+		-moz-appearance: textfield; /* สำหรับ Firefox */
+		appearance: textfield;
+	}
+</style>
