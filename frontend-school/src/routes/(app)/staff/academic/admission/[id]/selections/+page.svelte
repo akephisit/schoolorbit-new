@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import {
 		getRound,
 		listTracks,
@@ -14,12 +14,11 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
-	import { Separator } from '$lib/components/ui/separator';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, GraduationCap, Trophy, Check, Loader2 } from 'lucide-svelte';
+	import { ArrowLeft, GraduationCap, Trophy, Check, LoaderCircle } from 'lucide-svelte';
 
 	let { data } = $props();
-	let id = $derived($page.params.id);
+	let id = $derived(page.params.id);
 
 	let round: AdmissionRound | null = $state(null);
 	let tracks: AdmissionTrack[] = $state([]);
@@ -114,7 +113,7 @@
 	{#if loading}
 		<Card.Root>
 			<Card.Content class="flex justify-center py-16">
-				<Loader2 class="w-8 h-8 animate-spin text-primary" />
+				<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
 			</Card.Content>
 		</Card.Root>
 	{:else if ranking}
@@ -147,7 +146,7 @@
 					class="gap-2"
 				>
 					{#if assigning}
-						<Loader2 class="w-4 h-4 animate-spin" />
+						<LoaderCircle class="w-4 h-4 animate-spin" />
 					{:else}
 						<Check class="w-4 h-4" />
 					{/if}

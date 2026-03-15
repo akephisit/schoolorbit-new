@@ -63,14 +63,9 @@ pub async fn get_ranking(
             "aa.created_at ASC"
         };
 
-        let scoring_ids_str = if scoring_uuids.is_empty() {
-            "FALSE".to_string() // ไม่มีวิชาเรียง → total_score = 0
-        } else {
-            format!(
-                "esc.exam_subject_id = ANY(ARRAY[{}]::uuid[])",
-                scoring_uuids.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(",")
-            )
-        };
+        let scoring_uuids_parsed: Vec<Uuid> = scoring_uuids.iter()
+            .filter_map(|s| Uuid::parse_str(s).ok())
+            .collect();
 
         #[derive(sqlx::FromRow)]
         struct RankRow {
@@ -89,21 +84,21 @@ pub async fn get_ranking(
                 aa.application_number,
                 aa.national_id,
                 CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
-                COALESCE(SUM(CASE WHEN {} THEN esc.score ELSE 0 END), 0) AS total_score,
+                COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1::uuid[]) THEN esc.score ELSE 0 END), 0) AS total_score,
                 COALESCE(SUM(esc.score), 0) AS full_score
             FROM admission_applications aa
             LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
-            WHERE aa.admission_track_id = '{}'
+            WHERE aa.admission_track_id = $2
               AND aa.status NOT IN ('rejected', 'withdrawn')
             GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
             ORDER BY total_score DESC, {}
             "#,
-            scoring_ids_str,
-            track_id,
             tiebreak_order
         );
 
         let rows = sqlx::query_as::<_, RankRow>(&query)
+            .bind(&scoring_uuids_parsed)
+            .bind(track_id)
             .fetch_all(&pool)
             .await
             .unwrap_or_default();
@@ -166,15 +161,6 @@ pub async fn get_track_ranking(
         "aa.created_at ASC"
     };
 
-    let scoring_ids_str = if scoring_uuids.is_empty() {
-        "FALSE".to_string()
-    } else {
-        format!(
-            "esc.exam_subject_id = ANY(ARRAY[{}]::uuid[])",
-            scoring_uuids.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(",")
-        )
-    };
-
     // ดึง rooms ของ track นี้
     #[derive(sqlx::FromRow)]
     struct RoomRow {
@@ -185,7 +171,7 @@ pub async fn get_track_ranking(
 
     let rooms = sqlx::query_as::<_, RoomRow>(
         r#"
-        SELECT cr.id AS room_id, cr.name AS room_name, 40 AS capacity
+        SELECT cr.id AS room_id, cr.name AS room_name, cr.capacity
         FROM admission_tracks t
         JOIN study_plans sp ON t.study_plan_id = sp.id
         JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
@@ -212,6 +198,10 @@ pub async fn get_track_ranking(
         full_score: Option<f64>,
     }
 
+    let scoring_uuids_parsed: Vec<Uuid> = scoring_uuids.iter()
+        .filter_map(|s| Uuid::parse_str(s).ok())
+        .collect();
+
     let query = format!(
         r#"
         SELECT
@@ -219,43 +209,57 @@ pub async fn get_track_ranking(
             aa.application_number,
             aa.national_id,
             CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
-            COALESCE(SUM(CASE WHEN {} THEN esc.score ELSE 0 END), 0) AS total_score,
+            COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1::uuid[]) THEN esc.score ELSE 0 END), 0) AS total_score,
             COALESCE(SUM(esc.score), 0) AS full_score
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
-        WHERE aa.admission_track_id = '{}'
+        WHERE aa.admission_track_id = $2
           AND aa.status NOT IN ('rejected', 'withdrawn')
         GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
         ORDER BY total_score DESC, {}
         "#,
-        scoring_ids_str,
-        track_id,
         tiebreak_order
     );
 
     let rows = sqlx::query_as::<_, RankRow>(&query)
+        .bind(&scoring_uuids_parsed)
+        .bind(track_id)
         .fetch_all(&pool)
         .await
         .unwrap_or_default();
 
-    // Preview การจัดห้อง
+    // Preview การจัดห้อง — คนที่เกินความจุรวมได้ assignedRoom = null
+    let total_capacity: i64 = rooms.iter().map(|r| r.capacity).sum();
     let mut room_idx = 0usize;
     let mut count_in_room = 0i64;
-    let current_capacity = if rooms.is_empty() { i64::MAX } else { rooms[0].capacity };
 
     let ranked: Vec<serde_json::Value> = rows.into_iter().enumerate().map(|(i, row)| {
-        // จัดห้อง
-        let assigned_room = rooms.get(room_idx).map(|r| r.room_name.clone());
-        let current_room_id = rooms.get(room_idx).map(|r| r.room_id);
+        let rank = (i + 1) as i64;
+        if rooms.is_empty() || rank > total_capacity {
+            return json!({
+                "rank": rank,
+                "applicationId": row.application_id,
+                "applicationNumber": row.application_number,
+                "nationalId": row.national_id,
+                "fullName": row.full_name,
+                "totalScore": row.total_score.unwrap_or(0.0),
+                "fullScore": row.full_score.unwrap_or(0.0),
+                "assignedRoom": null,
+                "assignedRoomId": null,
+            });
+        }
+
+        let assigned_room = rooms[room_idx].room_name.clone();
+        let current_room_id = rooms[room_idx].room_id;
 
         count_in_room += 1;
-        if count_in_room >= current_capacity && room_idx + 1 < rooms.len() {
+        if count_in_room >= rooms[room_idx].capacity && room_idx + 1 < rooms.len() {
             room_idx += 1;
             count_in_room = 0;
         }
 
         json!({
-            "rank": i + 1,
+            "rank": rank,
             "applicationId": row.application_id,
             "applicationNumber": row.application_number,
             "nationalId": row.national_id,
@@ -323,22 +327,13 @@ pub async fn assign_rooms(
         "aa.created_at ASC"
     };
 
-    let scoring_ids_str = if scoring_uuids.is_empty() {
-        "FALSE".to_string()
-    } else {
-        format!(
-            "esc.exam_subject_id = ANY(ARRAY[{}]::uuid[])",
-            scoring_uuids.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(",")
-        )
-    };
-
     // ดึง rooms
     #[derive(sqlx::FromRow)]
     struct RoomRow { room_id: Uuid, capacity: i64 }
 
     let rooms = sqlx::query_as::<_, RoomRow>(
         r#"
-        SELECT cr.id AS room_id, 40 AS capacity
+        SELECT cr.id AS room_id, cr.capacity
         FROM admission_tracks t
         JOIN study_plans sp ON t.study_plan_id = sp.id
         JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
@@ -369,28 +364,35 @@ pub async fn assign_rooms(
         full_score: Option<f64>,
     }
 
+    let scoring_uuids_parsed: Vec<Uuid> = scoring_uuids.iter()
+        .filter_map(|s| Uuid::parse_str(s).ok())
+        .collect();
+
     let query = format!(
         r#"
         SELECT
             aa.id AS application_id,
-            COALESCE(SUM(CASE WHEN {} THEN esc.score ELSE 0 END), 0) AS total_score,
+            COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1::uuid[]) THEN esc.score ELSE 0 END), 0) AS total_score,
             COALESCE(SUM(esc.score), 0) AS full_score
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
-        WHERE aa.admission_track_id = '{}'
+        WHERE aa.admission_track_id = $2
           AND aa.status NOT IN ('rejected', 'withdrawn')
         GROUP BY aa.id, aa.previous_gpa, aa.created_at
         ORDER BY total_score DESC, {}
         "#,
-        scoring_ids_str,
-        track_id,
         tiebreak_order
     );
 
     let ranked = sqlx::query_as::<_, RankRow>(&query)
+        .bind(&scoring_uuids_parsed)
+        .bind(track_id)
         .fetch_all(&pool)
         .await
         .map_err(|_| AppError::InternalServerError("Failed to compute ranking".to_string()))?;
+
+    // คำนวณความจุรวม — คนที่เกินจะถูก skip (ไม่ได้รับการจัดห้อง)
+    let total_capacity: i64 = rooms.iter().map(|r| r.capacity).sum();
 
     // จัดห้อง + บันทึก
     let mut tx = pool.begin().await
@@ -407,12 +409,19 @@ pub async fn assign_rooms(
 
     let mut room_idx = 0usize;
     let mut count_in_room = 0i64;
+    let mut assigned_count = 0usize;
 
     for (rank, row) in ranked.iter().enumerate() {
+        // ข้ามคนที่เกินความจุรวม
+        if (rank as i64) >= total_capacity {
+            continue;
+        }
+
         let room = &rooms[room_idx];
 
         let rank_in_room = count_in_room + 1;
         count_in_room += 1;
+        assigned_count += 1;
 
         sqlx::query(
             r#"
@@ -468,7 +477,8 @@ pub async fn assign_rooms(
 
     Ok(Json(json!({
         "success": true,
-        "message": format!("จัดห้องสำเร็จ {} คน", ranked.len()),
-        "data": { "assigned_count": ranked.len() }
+        "message": format!("จัดห้องสำเร็จ {} คน (ทั้งหมด {} คน, เกินความจุ {} คน)",
+            assigned_count, ranked.len(), ranked.len().saturating_sub(assigned_count)),
+        "data": { "assigned_count": assigned_count, "total_applicants": ranked.len() }
     })).into_response())
 }

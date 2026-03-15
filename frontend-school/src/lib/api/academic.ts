@@ -49,6 +49,7 @@ export interface Classroom {
     advisor_id?: string;
     co_advisor_id?: string;
     study_plan_version_id?: string; // Required - ห้องเรียนทุกห้องต้องใช้หลักสูตร
+    capacity?: number;
     is_active: boolean;
     grade_level_name?: string;
     academic_year_label?: string;
@@ -176,6 +177,8 @@ export const createClassroom = async (data: {
     room_number: string;
     advisor_id?: string;
     co_advisor_id?: string;
+    capacity?: number;
+    study_plan_version_id?: string;
 }) => {
     return await fetchApi('/api/academic/classrooms', {
         method: 'POST',
@@ -188,6 +191,7 @@ export const updateClassroom = async (id: string, data: {
     advisor_id?: string;
     co_advisor_id?: string;
     study_plan_version_id?: string;
+    capacity?: number;
     is_active?: boolean;
 }) => {
     return await fetchApi(`/api/academic/classrooms/${id}`, {

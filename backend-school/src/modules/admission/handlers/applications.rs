@@ -36,16 +36,16 @@ async fn generate_application_number(pool: &sqlx::PgPool, round_id: Uuid) -> Res
     .await
     .map_err(|_| AppError::InternalServerError("Failed to get academic year".to_string()))?;
 
-    // นับจำนวนใบสมัครในรอบนี้
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM admission_applications WHERE admission_round_id = $1"
+    // ใช้ MAX แทน COUNT เพื่อป้องกัน race condition
+    let max_seq: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(CAST(SPLIT_PART(application_number, '-', 2) AS INT)), 0) FROM admission_applications WHERE admission_round_id = $1"
     )
     .bind(round_id)
     .fetch_one(pool)
     .await
     .unwrap_or(0);
 
-    Ok(format!("{}-{:04}", year, count + 1))
+    Ok(format!("{}-{:04}", year, max_seq + 1))
 }
 
 // ==========================================
@@ -316,7 +316,7 @@ pub async fn verify_application(
         Err(r) => return Ok(r),
     };
 
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         UPDATE admission_applications
         SET status = 'verified',
@@ -335,6 +335,12 @@ pub async fn verify_application(
         eprintln!("Failed to verify application: {}", e);
         AppError::InternalServerError("ไม่สามารถยืนยันใบสมัครได้".to_string())
     })?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::BadRequest(
+            "ไม่พบใบสมัคร หรือสถานะไม่ใช่ 'รอตรวจสอบ'".to_string()
+        ));
+    }
 
     Ok(Json(json!({ "success": true, "message": "ยืนยันใบสมัครแล้ว" })).into_response())
 }
@@ -358,6 +364,7 @@ pub async fn reject_application(
             rejection_reason = $1,
             updated_at = NOW()
         WHERE id = $2
+          AND status NOT IN ('enrolled', 'withdrawn')
         "#
     )
     .bind(&payload.rejection_reason)

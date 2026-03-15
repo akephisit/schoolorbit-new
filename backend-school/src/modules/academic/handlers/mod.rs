@@ -394,10 +394,10 @@ pub async fn create_classroom(
 
     // 5. Insert
     let classroom = sqlx::query_as::<_, Classroom>(
-        "INSERT INTO class_rooms (code, name, academic_year_id, grade_level_id, room_number, advisor_id, co_advisor_id, study_plan_version_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING *, 
-            (SELECT CASE level_type 
+        "INSERT INTO class_rooms (code, name, academic_year_id, grade_level_id, room_number, advisor_id, co_advisor_id, study_plan_version_id, capacity)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING *,
+            (SELECT CASE level_type
                 WHEN 'kindergarten' THEN CONCAT('อ.', year)
                 WHEN 'primary' THEN CONCAT('ป.', year)
                 WHEN 'secondary' THEN CONCAT('ม.', year)
@@ -415,6 +415,7 @@ pub async fn create_classroom(
     .bind(payload.advisor_id)
     .bind(payload.co_advisor_id)
     .bind(payload.study_plan_version_id)
+    .bind(payload.capacity.unwrap_or(40))
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -530,15 +531,16 @@ pub async fn update_classroom(
     // That is acceptable for now.
     
     let result = sqlx::query_as::<_, Classroom>(
-        "UPDATE class_rooms SET 
+        "UPDATE class_rooms SET
             advisor_id = COALESCE($1, advisor_id),
             co_advisor_id = COALESCE($2, co_advisor_id),
             study_plan_version_id = COALESCE($3, study_plan_version_id),
-            is_active = COALESCE($4, is_active),
+            capacity = COALESCE($4, capacity),
+            is_active = COALESCE($5, is_active),
             updated_at = NOW()
-         WHERE id = $5
-         RETURNING *, 
-            (SELECT CASE level_type 
+         WHERE id = $6
+         RETURNING *,
+            (SELECT CASE level_type
                 WHEN 'kindergarten' THEN CONCAT('อ.', year)
                 WHEN 'primary' THEN CONCAT('ป.', year)
                 WHEN 'secondary' THEN CONCAT('ม.', year)
@@ -551,6 +553,7 @@ pub async fn update_classroom(
     .bind(payload.advisor_id)
     .bind(payload.co_advisor_id)
     .bind(payload.study_plan_version_id)
+    .bind(payload.capacity)
     .bind(payload.is_active)
     .bind(id)
     .fetch_one(&mut *tx)

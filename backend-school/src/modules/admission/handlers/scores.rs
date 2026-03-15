@@ -241,6 +241,35 @@ pub async fn bulk_update_scores(
     tx.commit().await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
+    // อัปเดต status เป็น 'scored' สำหรับ application ที่กรอกครบ
+    for entry in &payload.entries {
+        let total_subjects: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = $1"
+        )
+        .bind(round_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+
+        let scored_subjects: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM admission_exam_scores WHERE application_id = $1 AND score IS NOT NULL"
+        )
+        .bind(entry.application_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+
+        if total_subjects > 0 && scored_subjects >= total_subjects {
+            sqlx::query(
+                "UPDATE admission_applications SET status = 'scored', updated_at = NOW() WHERE id = $1 AND status = 'verified'"
+            )
+            .bind(entry.application_id)
+            .execute(&pool)
+            .await
+            .ok();
+        }
+    }
+
     Ok(Json(json!({
         "success": true,
         "message": format!("อัปเดต {} รายการ", updated),

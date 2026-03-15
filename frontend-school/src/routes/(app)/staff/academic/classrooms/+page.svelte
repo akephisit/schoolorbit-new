@@ -47,7 +47,8 @@
 		room_number: '',
 		advisor_id: '',
 		co_advisor_id: '',
-		study_plan_version_id: ''
+		study_plan_version_id: '',
+		capacity: 40
 	});
 
 	// Edit Classroom Form
@@ -56,7 +57,8 @@
 		room_number: '',
 		advisor_id: '',
 		co_advisor_id: '',
-		study_plan_version_id: ''
+		study_plan_version_id: '',
+		capacity: 40
 	});
 
 	async function loadInitData() {
@@ -132,6 +134,7 @@
 			newClassroom.room_number = '';
 			newClassroom.advisor_id = '';
 			newClassroom.co_advisor_id = '';
+			newClassroom.capacity = 40;
 		} catch (error) {
 			console.error(error);
 			toast.error('สร้างห้องเรียนไม่สำเร็จ (ชื่อห้องซ้ำหรือข้อมูลไม่ถูกต้อง)');
@@ -146,7 +149,8 @@
 			room_number: room.room_number || '',
 			advisor_id: room.advisor_id || '',
 			co_advisor_id: room.co_advisor_id || '',
-			study_plan_version_id: room.study_plan_version_id || ''
+			study_plan_version_id: room.study_plan_version_id || '',
+			capacity: room.capacity ?? 40
 		};
 		showEditDialog = true;
 	}
@@ -161,7 +165,8 @@
 			await updateClassroom(editingClassroom.id, {
 				room_number: editingClassroom.room_number,
 				advisor_id: editingClassroom.advisor_id || undefined,
-				study_plan_version_id: editingClassroom.study_plan_version_id || undefined
+				study_plan_version_id: editingClassroom.study_plan_version_id || undefined,
+				capacity: editingClassroom.capacity
 			});
 			toast.success('บันทึกข้อมูลสำเร็จ');
 			showEditDialog = false;
@@ -236,6 +241,7 @@
 						<Table.Head>ระดับชั้น</Table.Head>
 						<Table.Head>ชื่อห้อง</Table.Head>
 						<Table.Head>จำนวนนักเรียน</Table.Head>
+						<Table.Head>รับได้</Table.Head>
 						<Table.Head>ครูที่ปรึกษา</Table.Head>
 						<Table.Head class="text-right">จัดการ</Table.Head>
 					</Table.Row>
@@ -259,6 +265,9 @@
 								</div>
 							</Table.Cell>
 							<Table.Cell>
+								<span class="text-sm">{room.capacity ?? 40} คน</span>
+							</Table.Cell>
+							<Table.Cell>
 								{#if room.advisor_name}
 									{room.advisor_name}
 								{:else}
@@ -274,7 +283,7 @@
 					{/each}
 					{#if classrooms.length === 0}
 						<Table.Row>
-							<Table.Cell colspan={5} class="h-32 text-center text-muted-foreground">
+							<Table.Cell colspan={6} class="h-32 text-center text-muted-foreground">
 								ไม่พบห้องเรียนในปีการศึกษานี้
 							</Table.Cell>
 						</Table.Row>
@@ -314,6 +323,11 @@
 						<Label>ชื่อห้อง/เลขห้อง <span class="text-red-500">*</span></Label>
 						<Input placeholder="เช่น 1, 2, EP, Gifted" bind:value={newClassroom.room_number} />
 					</div>
+				</div>
+
+				<div class="grid gap-2">
+					<Label>จำนวนที่รับ (คน)</Label>
+					<Input type="number" min="1" placeholder="40" bind:value={newClassroom.capacity} />
 				</div>
 
 				<div class="grid gap-2">
@@ -394,6 +408,11 @@
 					<p class="text-xs text-muted-foreground">
 						⚠️ การเปลี่ยนเลขห้องจะทำให้ รหัสห้องและชื่อห้องเปลี่ยนไปด้วย
 					</p>
+				</div>
+
+				<div class="grid gap-2">
+					<Label>จำนวนที่รับ (คน)</Label>
+					<Input type="number" min="1" placeholder="40" bind:value={editingClassroom.capacity} />
 				</div>
 
 				<div class="grid gap-2">

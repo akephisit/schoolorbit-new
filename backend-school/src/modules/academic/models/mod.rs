@@ -191,6 +191,7 @@ pub struct Classroom {
     pub advisor_id: Option<Uuid>,
     pub co_advisor_id: Option<Uuid>,
     pub study_plan_version_id: Option<Uuid>, // Added for course generation
+    pub capacity: i32,
     pub is_active: bool,
     // Joined fields
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -211,6 +212,7 @@ pub struct CreateClassroomRequest {
     pub advisor_id: Option<Uuid>,
     pub co_advisor_id: Option<Uuid>,
     pub study_plan_version_id: Uuid, // Required - ห้องเรียนทุกห้องต้องใช้หลักสูตร
+    pub capacity: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -219,6 +221,7 @@ pub struct UpdateClassroomRequest {
     pub advisor_id: Option<Uuid>,
     pub co_advisor_id: Option<Uuid>,
     pub study_plan_version_id: Option<Uuid>,
+    pub capacity: Option<i32>,
     pub is_active: Option<bool>,
 }
 

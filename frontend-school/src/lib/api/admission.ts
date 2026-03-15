@@ -535,6 +535,7 @@ export const roundStatusColor: Record<string, string> = {
 export const applicationStatusLabel: Record<string, string> = {
     submitted: 'รอตรวจสอบ',
     verified: 'ผ่านการตรวจสอบ',
+    scored: 'กรอกคะแนนแล้ว',
     rejected: 'ไม่ผ่าน',
     accepted: 'ได้รับการคัดเลือก',
     enrolled: 'มอบตัวแล้ว',
@@ -544,6 +545,7 @@ export const applicationStatusLabel: Record<string, string> = {
 export const applicationStatusColor: Record<string, string> = {
     submitted: 'bg-yellow-100 text-yellow-700',
     verified: 'bg-blue-100 text-blue-700',
+    scored: 'bg-cyan-100 text-cyan-700',
     rejected: 'bg-red-100 text-red-700',
     accepted: 'bg-green-100 text-green-700',
     enrolled: 'bg-purple-100 text-purple-700',
