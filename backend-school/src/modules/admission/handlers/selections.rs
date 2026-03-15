@@ -84,7 +84,7 @@ pub async fn get_ranking(
                 aa.application_number,
                 aa.national_id,
                 CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
-                COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1::uuid[]) THEN esc.score ELSE 0 END), 0) AS total_score,
+                COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1) THEN esc.score ELSE 0 END), 0) AS total_score,
                 COALESCE(SUM(esc.score), 0) AS full_score
             FROM admission_applications aa
             LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
@@ -166,7 +166,7 @@ pub async fn get_track_ranking(
     struct RoomRow {
         room_id: Uuid,
         room_name: String,
-        capacity: i64,
+        capacity: i32,
     }
 
     let rooms = sqlx::query_as::<_, RoomRow>(
@@ -209,7 +209,7 @@ pub async fn get_track_ranking(
             aa.application_number,
             aa.national_id,
             CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
-            COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1::uuid[]) THEN esc.score ELSE 0 END), 0) AS total_score,
+            COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1) THEN esc.score ELSE 0 END), 0) AS total_score,
             COALESCE(SUM(esc.score), 0) AS full_score
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
@@ -229,7 +229,7 @@ pub async fn get_track_ranking(
         .unwrap_or_default();
 
     // Preview การจัดห้อง — คนที่เกินความจุรวมได้ assignedRoom = null
-    let total_capacity: i64 = rooms.iter().map(|r| r.capacity).sum();
+    let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
     let mut room_idx = 0usize;
     let mut count_in_room = 0i64;
 
@@ -253,7 +253,7 @@ pub async fn get_track_ranking(
         let current_room_id = rooms[room_idx].room_id;
 
         count_in_room += 1;
-        if count_in_room >= rooms[room_idx].capacity && room_idx + 1 < rooms.len() {
+        if count_in_room >= rooms[room_idx].capacity as i64 && room_idx + 1 < rooms.len() {
             room_idx += 1;
             count_in_room = 0;
         }
@@ -329,7 +329,7 @@ pub async fn assign_rooms(
 
     // ดึง rooms
     #[derive(sqlx::FromRow)]
-    struct RoomRow { room_id: Uuid, capacity: i64 }
+    struct RoomRow { room_id: Uuid, capacity: i32 }
 
     let rooms = sqlx::query_as::<_, RoomRow>(
         r#"
@@ -372,7 +372,7 @@ pub async fn assign_rooms(
         r#"
         SELECT
             aa.id AS application_id,
-            COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1::uuid[]) THEN esc.score ELSE 0 END), 0) AS total_score,
+            COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1) THEN esc.score ELSE 0 END), 0) AS total_score,
             COALESCE(SUM(esc.score), 0) AS full_score
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
@@ -392,7 +392,7 @@ pub async fn assign_rooms(
         .map_err(|_| AppError::InternalServerError("Failed to compute ranking".to_string()))?;
 
     // คำนวณความจุรวม — คนที่เกินจะถูก skip (ไม่ได้รับการจัดห้อง)
-    let total_capacity: i64 = rooms.iter().map(|r| r.capacity).sum();
+    let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
 
     // จัดห้อง + บันทึก
     let mut tx = pool.begin().await
@@ -466,7 +466,7 @@ pub async fn assign_rooms(
         .ok();
 
         // เลื่อนห้อง
-        if count_in_room >= room.capacity && room_idx + 1 < rooms.len() {
+        if count_in_room >= room.capacity as i64 && room_idx + 1 < rooms.len() {
             room_idx += 1;
             count_in_room = 0;
         }
