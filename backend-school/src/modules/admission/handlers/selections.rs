@@ -63,9 +63,20 @@ pub async fn get_ranking(
             "aa.created_at ASC"
         };
 
-        let scoring_uuids_parsed: Vec<Uuid> = scoring_uuids.iter()
+        let mut scoring_uuids_parsed: Vec<Uuid> = scoring_uuids.iter()
             .filter_map(|s| Uuid::parse_str(s).ok())
             .collect();
+
+        // ถ้าไม่ได้ตั้งค่าวิชาคะแนน ใช้ทุกวิชาของรอบ
+        if scoring_uuids_parsed.is_empty() {
+            scoring_uuids_parsed = sqlx::query_scalar(
+                "SELECT id FROM admission_exam_subjects WHERE admission_round_id = $1"
+            )
+            .bind(round_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default();
+        }
 
         #[derive(sqlx::FromRow)]
         struct RankRow {
@@ -176,9 +187,6 @@ pub async fn get_track_ranking(
         JOIN study_plans sp ON t.study_plan_id = sp.id
         JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
         JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
-            AND cr.academic_year_id = (
-                SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id
-            )
         WHERE t.id = $1
         ORDER BY cr.name ASC
         "#
@@ -198,9 +206,20 @@ pub async fn get_track_ranking(
         full_score: Option<f64>,
     }
 
-    let scoring_uuids_parsed: Vec<Uuid> = scoring_uuids.iter()
+    let mut scoring_uuids_parsed: Vec<Uuid> = scoring_uuids.iter()
         .filter_map(|s| Uuid::parse_str(s).ok())
         .collect();
+
+    // ถ้าไม่ได้ตั้งค่าวิชาคะแนน ใช้ทุกวิชาของรอบ
+    if scoring_uuids_parsed.is_empty() {
+        scoring_uuids_parsed = sqlx::query_scalar(
+            "SELECT id FROM admission_exam_subjects WHERE admission_round_id = (SELECT admission_round_id FROM admission_tracks WHERE id = $1)"
+        )
+        .bind(track_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+    }
 
     let query = format!(
         r#"
@@ -338,9 +357,6 @@ pub async fn assign_rooms(
         JOIN study_plans sp ON t.study_plan_id = sp.id
         JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
         JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
-            AND cr.academic_year_id = (
-                SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id
-            )
         WHERE t.id = $1
         ORDER BY cr.name ASC
         "#
@@ -364,9 +380,20 @@ pub async fn assign_rooms(
         full_score: Option<f64>,
     }
 
-    let scoring_uuids_parsed: Vec<Uuid> = scoring_uuids.iter()
+    let mut scoring_uuids_parsed: Vec<Uuid> = scoring_uuids.iter()
         .filter_map(|s| Uuid::parse_str(s).ok())
         .collect();
+
+    // ถ้าไม่ได้ตั้งค่าวิชาคะแนน ใช้ทุกวิชาของรอบ
+    if scoring_uuids_parsed.is_empty() {
+        scoring_uuids_parsed = sqlx::query_scalar(
+            "SELECT id FROM admission_exam_subjects WHERE admission_round_id = $1"
+        )
+        .bind(round_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+    }
 
     let query = format!(
         r#"
