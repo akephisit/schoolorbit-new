@@ -533,7 +533,7 @@ pub async fn complete_enrollment(
 
     sqlx::query(
         r#"
-        INSERT INTO student_info (user_id, student_id, admission_date)
+        INSERT INTO student_info (user_id, student_id, enrollment_date)
         VALUES ($1, $2, CURRENT_DATE)
         ON CONFLICT (user_id) DO NOTHING
         "#
