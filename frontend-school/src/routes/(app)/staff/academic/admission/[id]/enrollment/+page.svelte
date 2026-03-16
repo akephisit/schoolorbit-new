@@ -219,8 +219,7 @@
 				/>
 			</div>
 			<div class="text-xs text-muted-foreground bg-muted rounded p-2 space-y-0.5">
-				<p>• Username: <code>s{enrollingApp?.nationalId}</code></p>
-				<p>• Password เริ่มต้น: เลขบัตรประชาชน</p>
+				<p>• Username และ Password เริ่มต้น: รหัสนักเรียน (ที่กรอกด้านบน หรือที่ระบบสร้างให้)</p>
 			</div>
 		</div>
 		<Dialog.Footer>

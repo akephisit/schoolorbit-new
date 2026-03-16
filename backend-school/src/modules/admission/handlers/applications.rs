@@ -482,9 +482,19 @@ pub async fn complete_enrollment(
         .ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลห้องเรียน กรุณาตรวจสอบการจัดห้อง".to_string()))?;
 
     // 2. สร้าง User account
-    let username = format!("s{}", application.national_id);
-    let password_hash = bcrypt::hash(&application.national_id, 8)
+    let student_code = payload.student_code.unwrap_or_else(|| {
+        format!("STD{}", &application.national_id[application.national_id.len().saturating_sub(6)..])
+    });
+
+    let username = student_code.clone();
+    let password_hash = bcrypt::hash(&student_code, 8)
         .map_err(|_| AppError::InternalServerError("Password hash failed".to_string()))?;
+
+    let gender_normalized = application.gender.as_deref().map(|g| match g.to_lowercase().as_str() {
+        "male" | "m" => "male",
+        "female" | "f" => "female",
+        _ => "other",
+    });
 
     let new_user_id: Uuid = sqlx::query_scalar(
         r#"
@@ -504,7 +514,7 @@ pub async fn complete_enrollment(
     .bind(&application.last_name)
     .bind(&application.phone)
     .bind(application.date_of_birth)
-    .bind(&application.gender)
+    .bind(&gender_normalized)
     .bind(&application.address_line)
     .fetch_one(&mut *tx)
     .await
@@ -518,9 +528,6 @@ pub async fn complete_enrollment(
     })?;
 
     // 3. สร้าง student_info
-    let student_code = payload.student_code.unwrap_or_else(|| {
-        format!("STD{}", &application.national_id[application.national_id.len().saturating_sub(6)..])
-    });
 
     sqlx::query(
         r#"
