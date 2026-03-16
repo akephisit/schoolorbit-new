@@ -490,10 +490,12 @@ pub async fn complete_enrollment(
     let password_hash = bcrypt::hash(&student_code, 8)
         .map_err(|_| AppError::InternalServerError("Password hash failed".to_string()))?;
 
-    let gender_normalized = application.gender.as_deref().map(|g| match g.to_lowercase().as_str() {
-        "male" | "m" => "male",
-        "female" | "f" => "female",
-        _ => "other",
+    let gender_normalized: Option<String> = application.gender.as_deref().map(|g| {
+        match g.to_lowercase().as_str() {
+            "male" | "m" => "male",
+            "female" | "f" => "female",
+            _ => "other",
+        }.to_string()
     });
 
     let new_user_id: Uuid = sqlx::query_scalar(
