@@ -72,9 +72,13 @@ pub async fn submit_application(
     let mut tx = pool.begin().await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    // ดึง academic year ก่อน (ใช้เป็น lock key + prefix เลขใบสมัคร)
-    let year: i32 = sqlx::query_scalar(
-        "SELECT ay.year FROM admission_rounds ar JOIN academic_years ay ON ar.academic_year_id = ay.id WHERE ar.id = $1"
+    // ดึง academic year + ลำดับรอบในปีนั้น (ใช้เป็น lock key + prefix เลขใบสมัคร)
+    let (year, round_number): (i32, i64) = sqlx::query_as(
+        r#"SELECT ay.year,
+                  ROW_NUMBER() OVER (PARTITION BY ar.academic_year_id ORDER BY ar.created_at ASC)
+           FROM admission_rounds ar
+           JOIN academic_years ay ON ar.academic_year_id = ay.id
+           WHERE ar.id = $1"#
     )
     .bind(round_id)
     .fetch_one(&mut *tx)
@@ -103,29 +107,29 @@ pub async fn submit_application(
         return Err(AppError::BadRequest("เลขบัตรประชาชนนี้ได้สมัครรอบนี้ไปแล้ว".to_string()));
     }
 
-    // คำนวณ date prefix ในรูปแบบ YYMMDД (พ.ศ.) สำหรับ เลขที่ใบสมัคร
-    // เช่น 17/03/2569 → "690317", เลขที่ใบสมัคร = "69031700001"
+    // คำนวณ prefix เลขที่ใบสมัคร: YYMMDDRR (พ.ศ.)
+    // เช่น 14/03/2569 รอบ 1 → "6903140100001", รอบ 2 → "6903140200001"
     let _ = year; // ยังคงใช้ year สำหรับ advisory lock ข้างบน
     let bangkok = FixedOffset::east_opt(7 * 3600).unwrap();
     let now = Utc::now().with_timezone(&bangkok);
     let be_year = now.year() + 543;
-    let date_prefix = format!("{:02}{:02}{:02}", be_year % 100, now.month(), now.day());
-    let date_pattern = format!("{}%", date_prefix);
+    let app_prefix = format!("{:02}{:02}{:02}{:02}", be_year % 100, now.month(), now.day(), round_number);
+    let app_pattern = format!("{}%", app_prefix);
 
-    // หา MAX sequence ของวันนี้ข้ามทุก round (format ใหม่: YYMMDДНNNNN = 11 หลัก)
+    // หา MAX sequence ของวันนี้ในรอบนี้ (format ใหม่: YYMMDDRRNNNNN = 13 หลัก)
     let max_seq: i64 = sqlx::query_scalar(
         r#"SELECT COALESCE(MAX(
-            CASE WHEN application_number ~ '^[0-9]{11}$'
-            THEN CAST(SUBSTRING(application_number, 7, 5) AS BIGINT)
+            CASE WHEN application_number ~ '^[0-9]{13}$'
+            THEN CAST(SUBSTRING(application_number, 9, 5) AS BIGINT)
             ELSE 0::BIGINT END
         ), 0::BIGINT) FROM admission_applications WHERE application_number LIKE $1"#
     )
-    .bind(&date_pattern)
+    .bind(&app_pattern)
     .fetch_one(&mut *tx)
     .await
     .map_err(|_| AppError::InternalServerError("Failed to compute application number".to_string()))?;
 
-    let application_number = format!("{}{:05}", date_prefix, max_seq + 1);
+    let application_number = format!("{}{:05}", app_prefix, max_seq + 1);
 
     // Insert
     let application = sqlx::query_as::<_, AdmissionApplication>(
