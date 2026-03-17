@@ -108,9 +108,9 @@ pub async fn submit_application(
     let max_seq: i64 = sqlx::query_scalar(
         r#"SELECT COALESCE(MAX(
             CASE WHEN application_number ~ '^[0-9]{4}-[0-9]+$'
-            THEN CAST(SPLIT_PART(application_number, '-', 2) AS INT)
-            ELSE 0 END
-        ), 0) FROM admission_applications WHERE application_number LIKE $1"#
+            THEN CAST(SPLIT_PART(application_number, '-', 2) AS BIGINT)
+            ELSE 0::BIGINT END
+        ), 0::BIGINT) FROM admission_applications WHERE application_number LIKE $1"#
     )
     .bind(&year_prefix)
     .fetch_one(&mut *tx)
