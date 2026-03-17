@@ -558,7 +558,7 @@ pub async fn list_tracks(
                ) AS room_count,
                COALESCE(
                    t.capacity_override::bigint,
-                   (SELECT COUNT(DISTINCT cr.id) * 40
+                   (SELECT SUM(cr.capacity)
                     FROM study_plan_versions spv
                     JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
                     WHERE spv.study_plan_id = t.study_plan_id
