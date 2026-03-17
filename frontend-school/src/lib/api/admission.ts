@@ -393,9 +393,14 @@ export async function listEnrollmentPending(roundId: string) {
     return res.data;
 }
 
-export async function completeEnrollment(id: string, studentCode?: string) {
+export async function completeEnrollment(
+    id: string,
+    studentCode?: string,
+    formData?: Record<string, unknown>
+) {
     const res = await apiClient.post(`/api/admission/applications/${id}/enroll`, {
-        studentCode
+        studentCode,
+        formData
     });
     if (!res.success) throw new Error(res.error);
     return res.data;

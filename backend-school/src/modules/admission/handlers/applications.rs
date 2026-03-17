@@ -605,7 +605,23 @@ pub async fn complete_enrollment(
         AppError::InternalServerError("ไม่สามารถลงทะเบียนเข้าห้องเรียนได้".to_string())
     })?;
 
-    // 5. ยืนยัน enrollment form
+    // 5. ยืนยัน enrollment form (upsert ถ้า staff กรอกข้อมูลแทน)
+    if let Some(fd) = payload.form_data {
+        sqlx::query(
+            r#"
+            INSERT INTO admission_enrollment_forms (application_id, form_data, pre_submitted_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (application_id) DO UPDATE SET
+                form_data = $2,
+                pre_submitted_at = NOW()
+            "#
+        )
+        .bind(id)
+        .bind(fd)
+        .execute(&mut *tx)
+        .await
+        .ok();
+    }
     sqlx::query(
         r#"
         UPDATE admission_enrollment_forms

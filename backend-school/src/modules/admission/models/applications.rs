@@ -377,4 +377,6 @@ pub struct ApplicationFilter {
 pub struct CompleteEnrollmentRequest {
     /// รหัสนักเรียน (student_id field ใน student_info)
     pub student_code: Option<String>,
+    /// ข้อมูลมอบตัวที่ staff กรอกแทน (เมื่อนักเรียนยังไม่ pre-submit)
+    pub form_data: Option<serde_json::Value>,
 }

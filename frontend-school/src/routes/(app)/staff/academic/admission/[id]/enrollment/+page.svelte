@@ -6,9 +6,11 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, ClipboardCheck, Check, UserCheck, Loader2 } from 'lucide-svelte';
 
@@ -32,9 +34,35 @@
 	let loading = $state(true);
 
 	let showEnrollDialog = $state(false);
-	let enrollingApp: EnrollRow | null = $state(null);
+	let enrollingApp = $state<EnrollRow | null>(null);
 	let studentCode = $state('');
 	let enrolling = $state(false);
+
+	let enrollFormData = $state({
+		shirtSize: '',
+		bloodType: '',
+		emergencyContact: '',
+		emergencyPhone: '',
+		allergy: ''
+	});
+
+	function resetDialog() {
+		enrollingApp = null;
+		studentCode = '';
+		enrollFormData = {
+			shirtSize: '',
+			bloodType: '',
+			emergencyContact: '',
+			emergencyPhone: '',
+			allergy: ''
+		};
+	}
+
+	let needsForm = $derived(enrollingApp !== null && enrollingApp.preSubmitted === false);
+	let formValid = $derived(
+		!needsForm ||
+			(enrollFormData.emergencyContact.trim() !== '' && enrollFormData.emergencyPhone.trim() !== '')
+	);
 
 	async function load() {
 		if (!id) return;
@@ -54,13 +82,24 @@
 		if (!enrollingApp) return;
 		enrolling = true;
 		try {
-			const res = (await completeEnrollment(enrollingApp.id, studentCode || undefined)) as {
-				username?: string;
-			};
+			const fd = needsForm
+				? {
+						shirtSize: enrollFormData.shirtSize || undefined,
+						bloodType: enrollFormData.bloodType || undefined,
+						emergencyContact: enrollFormData.emergencyContact,
+						emergencyPhone: enrollFormData.emergencyPhone,
+						allergy: enrollFormData.allergy || undefined
+					}
+				: undefined;
+
+			const res = (await completeEnrollment(
+				enrollingApp.id,
+				studentCode || undefined,
+				fd
+			)) as { username?: string };
 			toast.success(`มอบตัวสำเร็จ! Username: ${res?.username}`);
 			showEnrollDialog = false;
-			enrollingApp = null;
-			studentCode = '';
+			resetDialog();
 			await load();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'มอบตัวไม่สำเร็จ');
@@ -200,8 +239,13 @@
 </div>
 
 <!-- Enroll Dialog -->
-<Dialog.Root bind:open={showEnrollDialog}>
-	<Dialog.Content>
+<Dialog.Root
+	bind:open={showEnrollDialog}
+	onOpenChange={(open) => {
+		if (!open) resetDialog();
+	}}
+>
+	<Dialog.Content class="max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>รับมอบตัว — สร้าง Account</Dialog.Title>
 			<Dialog.Description>
@@ -221,10 +265,71 @@
 			<div class="text-xs text-muted-foreground bg-muted rounded p-2 space-y-0.5">
 				<p>• Username และ Password เริ่มต้น: รหัสนักเรียน (ที่กรอกด้านบน หรือที่ระบบสร้างให้)</p>
 			</div>
+
+			{#if needsForm}
+				<div class="border rounded-lg p-3 space-y-3 bg-amber-50 dark:bg-amber-950/20 border-amber-200">
+					<p class="text-xs font-medium text-amber-700 dark:text-amber-400">
+						นักเรียนยังไม่ได้กรอกฟอร์มมอบตัว — กรุณากรอกข้อมูลแทน
+					</p>
+					<div class="grid grid-cols-2 gap-3">
+						<div class="space-y-1">
+							<Label class="text-xs">ไซส์เสื้อ</Label>
+							<Select.Root type="single" bind:value={enrollFormData.shirtSize}>
+								<Select.Trigger class="h-8 text-sm">
+									{enrollFormData.shirtSize || '-- เลือก --'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as s}
+										<Select.Item value={s}>{s}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="space-y-1">
+							<Label class="text-xs">กลุ่มเลือด</Label>
+							<Select.Root type="single" bind:value={enrollFormData.bloodType}>
+								<Select.Trigger class="h-8 text-sm">
+									{enrollFormData.bloodType || '-- เลือก --'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each ['A', 'B', 'AB', 'O'] as b}
+										<Select.Item value={b}>{b}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+					</div>
+					<div class="space-y-1">
+						<Label class="text-xs">ผู้ติดต่อฉุกเฉิน <span class="text-red-500">*</span></Label>
+						<Input
+							bind:value={enrollFormData.emergencyContact}
+							placeholder="ชื่อ-สกุล ผู้ติดต่อ"
+							class="h-8 text-sm"
+						/>
+					</div>
+					<div class="space-y-1">
+						<Label class="text-xs">เบอร์โทรฉุกเฉิน <span class="text-red-500">*</span></Label>
+						<Input
+							bind:value={enrollFormData.emergencyPhone}
+							placeholder="0XX-XXX-XXXX"
+							class="h-8 text-sm"
+						/>
+					</div>
+					<div class="space-y-1">
+						<Label class="text-xs">โรคประจำตัว / แพ้ยา</Label>
+						<Textarea
+							bind:value={enrollFormData.allergy}
+							rows={2}
+							class="text-sm resize-none"
+							placeholder="ถ้าไม่มีใส่ - ไม่มี"
+						/>
+					</div>
+				</div>
+			{/if}
 		</div>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showEnrollDialog = false)}>ยกเลิก</Button>
-			<Button onclick={handleEnroll} disabled={enrolling}>
+			<Button variant="outline" onclick={() => { showEnrollDialog = false; resetDialog(); }}>ยกเลิก</Button>
+			<Button onclick={handleEnroll} disabled={enrolling || !formValid}>
 				{#if enrolling}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
 				{enrolling ? 'กำลังสร้าง Account...' : 'ยืนยันมอบตัว'}
 			</Button>
