@@ -201,6 +201,9 @@ pub async fn get_track_ranking(
           AND cr.academic_year_id = (
               SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id
           )
+          AND cr.grade_level_id = (
+              SELECT grade_level_id FROM admission_rounds WHERE id = t.admission_round_id
+          )
         ORDER BY cr.name ASC
         "#
     )
@@ -382,6 +385,9 @@ pub async fn assign_rooms(
         WHERE t.id = $1
           AND cr.academic_year_id = (
               SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id
+          )
+          AND cr.grade_level_id = (
+              SELECT grade_level_id FROM admission_rounds WHERE id = t.admission_round_id
           )
         ORDER BY cr.name ASC
         "#
