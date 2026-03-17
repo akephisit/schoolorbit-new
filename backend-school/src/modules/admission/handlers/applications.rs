@@ -482,9 +482,23 @@ pub async fn complete_enrollment(
         .ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลห้องเรียน กรุณาตรวจสอบการจัดห้อง".to_string()))?;
 
     // 2. สร้าง User account
-    let student_code = payload.student_code.unwrap_or_else(|| {
-        format!("STD{}", &application.national_id[application.national_id.len().saturating_sub(6)..])
-    });
+    let student_code = if let Some(code) = payload.student_code {
+        code
+    } else {
+        // Auto-increment: หาเลข MAX ที่เป็น numeric แล้ว +1
+        let max_id: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COALESCE(MAX(student_id::bigint), 0)
+            FROM student_info
+            WHERE student_id ~ '^\d+$'
+            "#
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or(0);
+
+        (max_id + 1).to_string()
+    };
 
     let username = student_code.clone();
     let password_hash = bcrypt::hash(&student_code, 8)
