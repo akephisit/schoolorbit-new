@@ -2,7 +2,7 @@ pub mod models;
 pub mod handlers;
 
 use axum::{
-    routing::{get, post, put, delete},
+    routing::{get, post, put, delete, patch},
     Router,
 };
 use crate::AppState;
@@ -38,6 +38,7 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/applications/{id}", get(handlers::applications::get_application))
         .route("/applications/{id}/verify", put(handlers::applications::verify_application))
         .route("/applications/{id}/reject", put(handlers::applications::reject_application))
+        .route("/applications/{id}/track", patch(handlers::applications::change_application_track))
 
         // === Scores ===
         .route("/rounds/{id}/scores", get(handlers::scores::get_all_scores))

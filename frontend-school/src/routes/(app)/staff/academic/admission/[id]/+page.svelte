@@ -66,8 +66,7 @@
 		studyPlanId: '',
 		name: '',
 		capacityOverride: '',
-		tiebreakMethod: 'applied_at',
-		scoringSubjectIds: [] as string[]
+		tiebreakMethod: 'applied_at'
 	});
 	let savingTrack = $state(false);
 
@@ -149,7 +148,7 @@
 	// Track CRUD
 	function openNewTrack() {
 		editingTrack = null;
-		trackForm = { studyPlanId: '', name: '', capacityOverride: '', tiebreakMethod: 'applied_at', scoringSubjectIds: [] };
+		trackForm = { studyPlanId: '', name: '', capacityOverride: '', tiebreakMethod: 'applied_at' };
 		showTrackForm = true;
 	}
 	function openEditTrack(t: AdmissionTrack) {
@@ -158,8 +157,7 @@
 			studyPlanId: t.studyPlanId,
 			name: t.name,
 			capacityOverride: t.capacityOverride?.toString() ?? '',
-			tiebreakMethod: t.tiebreakMethod,
-			scoringSubjectIds: t.scoringSubjectIds ?? []
+			tiebreakMethod: t.tiebreakMethod
 		};
 		showTrackForm = true;
 	}
@@ -173,8 +171,7 @@
 					capacityOverride: trackForm.capacityOverride
 						? parseInt(trackForm.capacityOverride)
 						: undefined,
-					tiebreakMethod: trackForm.tiebreakMethod as 'applied_at' | 'gpa',
-					scoringSubjectIds: trackForm.scoringSubjectIds
+					tiebreakMethod: trackForm.tiebreakMethod as 'applied_at' | 'gpa'
 				});
 				toast.success('อัปเดตสายแล้ว');
 			} else {
@@ -184,8 +181,7 @@
 					capacityOverride: trackForm.capacityOverride
 						? parseInt(trackForm.capacityOverride)
 						: undefined,
-					tiebreakMethod: trackForm.tiebreakMethod,
-					scoringSubjectIds: trackForm.scoringSubjectIds
+					tiebreakMethod: trackForm.tiebreakMethod
 				});
 				toast.success('เพิ่มสายการเรียนแล้ว');
 			}
@@ -494,31 +490,6 @@
 								</Select.Root>
 							</div>
 						</div>
-						{#if subjects.length > 0}
-							<div class="space-y-1.5">
-								<Label>วิชาที่นับคะแนน <span class="text-xs text-muted-foreground">(ไม่เลือก = ใช้ทุกวิชา)</span></Label>
-								<div class="flex flex-wrap gap-2">
-									{#each subjects as s (s.id)}
-										<label class="flex items-center gap-1.5 text-sm cursor-pointer">
-											<input
-												type="checkbox"
-												value={s.id}
-												checked={trackForm.scoringSubjectIds.includes(s.id)}
-												onchange={(e) => {
-													if (e.currentTarget.checked) {
-														trackForm.scoringSubjectIds = [...trackForm.scoringSubjectIds, s.id];
-													} else {
-														trackForm.scoringSubjectIds = trackForm.scoringSubjectIds.filter(x => x !== s.id);
-													}
-												}}
-											/>
-											{s.name}
-											<span class="text-xs text-muted-foreground">({s.maxScore})</span>
-										</label>
-									{/each}
-								</div>
-							</div>
-						{/if}
 						<div class="flex gap-2">
 							<Button size="sm" onclick={saveTrack} disabled={savingTrack} class="h-7 text-xs">
 								{#if savingTrack}<Loader2 class="w-3 h-3 mr-1 animate-spin" />{/if}

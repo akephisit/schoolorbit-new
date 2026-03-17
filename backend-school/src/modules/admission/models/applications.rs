@@ -298,6 +298,14 @@ pub struct SubjectScore {
 #[serde(rename_all = "camelCase")]
 pub struct AssignRoomsRequest {
     pub track_id: Uuid,
+    pub selection_subject_ids: Option<Vec<Uuid>>,
+}
+
+/// Request สำหรับย้ายสายการเรียน
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeTrackRequest {
+    pub track_id: Uuid,
 }
 
 // ==========================================

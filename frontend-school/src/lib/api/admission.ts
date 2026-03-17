@@ -131,15 +131,17 @@ export interface RoomAssignment {
 }
 
 export interface RankingEntry {
-    rank: number;
     applicationId: string;
     applicationNumber?: string;
     nationalId: string;
     fullName: string;
+    selectionScore: number;
     totalScore: number;
-    fullScore: number;
+    selectionRank: number;
+    finalRank?: number;
     assignedRoom?: string;
     assignedRoomId?: string;
+    isOverflow: boolean;
 }
 
 export interface TrackRankingResult {
@@ -357,16 +359,28 @@ export async function getRanking(roundId: string) {
     return res.data ?? [];
 }
 
-export async function getTrackRanking(trackId: string) {
-    const res = await apiClient.get<TrackRankingResult>(`/api/admission/tracks/${trackId}/ranking`);
+export async function getTrackRanking(trackId: string, selectionSubjectIds?: string[]) {
+    let url = `/api/admission/tracks/${trackId}/ranking`;
+    if (selectionSubjectIds && selectionSubjectIds.length > 0) {
+        url += `?selection_subject_ids=${selectionSubjectIds.join(',')}`;
+    }
+    const res = await apiClient.get<TrackRankingResult>(url);
     if (!res.success) throw new Error(res.error);
     return res.data!;
 }
 
-export async function assignRooms(roundId: string, trackId: string) {
-    const res = await apiClient.post(`/api/admission/rounds/${roundId}/assign-rooms`, { trackId });
+export async function assignRooms(roundId: string, trackId: string, selectionSubjectIds?: string[]) {
+    const res = await apiClient.post(`/api/admission/rounds/${roundId}/assign-rooms`, {
+        trackId,
+        selectionSubjectIds: selectionSubjectIds && selectionSubjectIds.length > 0 ? selectionSubjectIds : undefined,
+    });
     if (!res.success) throw new Error(res.error);
     return res;
+}
+
+export async function changeApplicationTrack(applicationId: string, trackId: string) {
+    const res = await apiClient.patch(`/api/admission/applications/${applicationId}/track`, { trackId });
+    if (!res.success) throw new Error(res.error);
 }
 
 // ==========================================

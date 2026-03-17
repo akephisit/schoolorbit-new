@@ -627,3 +627,35 @@ pub async fn complete_enrollment(
         }
     })).into_response())
 }
+
+/// PATCH /api/admission/applications/:id/track — ย้ายนักเรียนไปสายการเรียนอื่น
+pub async fn change_application_track(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(application_id): Path<Uuid>,
+    Json(payload): Json<ChangeTrackRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES).await {
+        return Ok(r);
+    }
+
+    sqlx::query(
+        "UPDATE admission_applications SET admission_track_id = $1, updated_at = NOW() WHERE id = $2"
+    )
+    .bind(payload.track_id)
+    .bind(application_id)
+    .execute(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("ย้ายสายไม่สำเร็จ".to_string()))?;
+
+    sqlx::query(
+        "DELETE FROM admission_room_assignments WHERE application_id = $1"
+    )
+    .bind(application_id)
+    .execute(&pool)
+    .await
+    .ok();
+
+    Ok(Json(json!({ "success": true })).into_response())
+}
