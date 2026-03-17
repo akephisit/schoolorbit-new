@@ -24,29 +24,6 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
-/// สร้างเลขที่ใบสมัคร running per round
-/// Format: YYYY-NNNN  e.g. "2569-0001"
-async fn generate_application_number(pool: &sqlx::PgPool, round_id: Uuid) -> Result<String, AppError> {
-    // ดึง academic year บน round
-    let year: i32 = sqlx::query_scalar(
-        "SELECT ay.year FROM admission_rounds ar JOIN academic_years ay ON ar.academic_year_id = ay.id WHERE ar.id = $1"
-    )
-    .bind(round_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to get academic year".to_string()))?;
-
-    // ใช้ MAX แทน COUNT เพื่อป้องกัน race condition
-    let max_seq: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(CAST(SPLIT_PART(application_number, '-', 2) AS INT)), 0) FROM admission_applications WHERE admission_round_id = $1"
-    )
-    .bind(round_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
-
-    Ok(format!("{}-{:04}", year, max_seq + 1))
-}
 
 // ==========================================
 // Submit Application (Public — no auth required)
@@ -90,13 +67,25 @@ pub async fn submit_application(
         return Err(AppError::BadRequest("สายการเรียนไม่ถูกต้อง".to_string()));
     }
 
-    // 3. ตรวจสอบ national_id ไม่ซ้ำในรอบนี้
+    // 3–5. Lock per round → ตรวจซ้ำ → generate number → insert (atomic)
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    // Advisory lock ต่อ round เพื่อ serialize การออกเลขใบสมัคร
+    let lock_key = i64::from_le_bytes(round_id.as_bytes()[..8].try_into().unwrap());
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(lock_key)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| AppError::InternalServerError("Lock failed".to_string()))?;
+
+    // ตรวจสอบ national_id ไม่ซ้ำในรอบนี้
     let already_applied: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE national_id = $1 AND admission_round_id = $2)"
     )
     .bind(&payload.national_id)
     .bind(round_id)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await
     .unwrap_or(false);
 
@@ -104,10 +93,26 @@ pub async fn submit_application(
         return Err(AppError::BadRequest("เลขบัตรประชาชนนี้ได้สมัครรอบนี้ไปแล้ว".to_string()));
     }
 
-    // 4. สร้างเลขที่ใบสมัคร
-    let application_number = generate_application_number(&pool, round_id).await?;
+    // สร้างเลขที่ใบสมัคร (ปลอดภัยเพราะอยู่ใน advisory lock แล้ว)
+    let year: i32 = sqlx::query_scalar(
+        "SELECT ay.year FROM admission_rounds ar JOIN academic_years ay ON ar.academic_year_id = ay.id WHERE ar.id = $1"
+    )
+    .bind(round_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to get academic year".to_string()))?;
 
-    // 5. Insert
+    let max_seq: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(CAST(SPLIT_PART(application_number, '-', 2) AS INT)), 0) FROM admission_applications WHERE admission_round_id = $1"
+    )
+    .bind(round_id)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap_or(0);
+
+    let application_number = format!("{}-{:04}", year, max_seq + 1);
+
+    // Insert
     let application = sqlx::query_as::<_, AdmissionApplication>(
         r#"
         INSERT INTO admission_applications (
@@ -164,12 +169,15 @@ pub async fn submit_application(
     .bind(&payload.guardian_phone)
     .bind(&payload.guardian_relation)
     .bind(&payload.guardian_national_id)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         eprintln!("Failed to submit application: {}", e);
         AppError::InternalServerError("ไม่สามารถยื่นใบสมัครได้".to_string())
     })?;
+
+    tx.commit().await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok((StatusCode::CREATED, Json(json!({
         "success": true,
