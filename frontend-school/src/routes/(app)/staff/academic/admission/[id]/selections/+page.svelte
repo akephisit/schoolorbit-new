@@ -19,6 +19,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Select from '$lib/components/ui/select';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, GraduationCap, Trophy, Check, LoaderCircle } from 'lucide-svelte';
 
@@ -30,12 +31,13 @@
 	let subjects: AdmissionExamSubject[] = $state([]);
 	let selectedTrack = $state('');
 	let selectedSubjectIds: string[] = $state([]);
-	let ranking: TrackRankingResult | null = $state(null);
+	let ranking = $state<TrackRankingResult | null>(null);
 	let loading = $state(false);
 	let assigning = $state(false);
 	let assigned = $state(false);
 	let moveTargetTrackId: Record<string, string> = $state({});
 	let moving: Record<string, boolean> = $state({});
+	let showAssignDialog = $state(false);
 
 	let acceptedApps = $derived(ranking?.applications.filter((a) => !a.isOverflow) ?? []);
 	let overflowApps = $derived(ranking?.applications.filter((a) => a.isOverflow) ?? []);
@@ -65,9 +67,14 @@
 		}
 	}
 
-	async function handleAssignRooms() {
+	function handleAssignRooms() {
 		if (!id || !selectedTrack) return;
-		if (!confirm('ยืนยันการจัดห้อง? การดำเนินการนี้จะลบผลจัดห้องเดิมและจัดใหม่')) return;
+		showAssignDialog = true;
+	}
+
+	async function confirmAssignRooms() {
+		showAssignDialog = false;
+		if (!id || !selectedTrack) return;
 		assigning = true;
 		try {
 			await assignRooms(id, selectedTrack, selectedSubjectIds);
@@ -387,3 +394,18 @@
 		{/if}
 	{/if}
 </div>
+
+<Dialog.Root bind:open={showAssignDialog}>
+	<Dialog.Content class="sm:max-w-[400px]">
+		<Dialog.Header>
+			<Dialog.Title>ยืนยันการจัดห้อง</Dialog.Title>
+			<Dialog.Description>
+				การดำเนินการนี้จะลบผลจัดห้องเดิมและจัดใหม่ทั้งหมด ต้องการดำเนินการต่อหรือไม่?
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer class="flex-col sm:flex-row gap-2">
+			<Button variant="outline" onclick={() => (showAssignDialog = false)}>ยกเลิก</Button>
+			<Button onclick={confirmAssignRooms}>ยืนยัน</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
