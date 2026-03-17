@@ -188,6 +188,9 @@ pub async fn get_track_ranking(
         JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
         JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
         WHERE t.id = $1
+          AND cr.academic_year_id = (
+              SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id
+          )
         ORDER BY cr.name ASC
         "#
     )
@@ -358,6 +361,9 @@ pub async fn assign_rooms(
         JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
         JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
         WHERE t.id = $1
+          AND cr.academic_year_id = (
+              SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id
+          )
         ORDER BY cr.name ASC
         "#
     )
