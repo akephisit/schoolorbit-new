@@ -903,24 +903,50 @@ pub async fn delete_student(
     // Check permission
     check_user_permission(&headers, &pool, "student.delete").await?;
     
-    // Soft delete by setting status to inactive
+    // Soft delete — wrap in transaction to also drop enrollments
+    let mut tx = pool.begin().await
+        .map_err(|e| {
+            eprintln!("❌ Failed to begin transaction: {}", e);
+            AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
+        })?;
+
     sqlx::query(
         r#"
-        UPDATE users 
-        SET 
-            status = 'inactive', 
+        UPDATE users
+        SET status = 'inactive',
             username = username || '_del_' || CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT),
-            updated_at = NOW() 
+            updated_at = NOW()
         WHERE id = $1 AND user_type = 'student'
         "#
     )
     .bind(student_id)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| {
         eprintln!("❌ Failed to delete student: {}", e);
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
+
+    sqlx::query(
+        r#"
+        UPDATE student_class_enrollments
+        SET status = 'dropped', updated_at = NOW()
+        WHERE student_id = $1 AND status = 'active'
+        "#
+    )
+    .bind(student_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        eprintln!("❌ Failed to drop enrollments: {}", e);
+        AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
+    })?;
+
+    tx.commit().await
+        .map_err(|e| {
+            eprintln!("❌ Failed to commit transaction: {}", e);
+            AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
+        })?;
 
     Ok((
         StatusCode::OK,
