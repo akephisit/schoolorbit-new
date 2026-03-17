@@ -42,12 +42,7 @@
 			if (!selectedYear) return true;
 			const startYear = structure.years.find((y) => y.id === v.start_academic_year_id);
 			if (!startYear) return true;
-			const endYear = v.end_academic_year_id
-				? structure.years.find((y) => y.id === v.end_academic_year_id)
-				: null;
-			return endYear
-				? startYear.year <= selectedYear.year && endYear.year >= selectedYear.year
-				: startYear.year === selectedYear.year;
+			return startYear.year === selectedYear.year;
 		})
 	);
 
