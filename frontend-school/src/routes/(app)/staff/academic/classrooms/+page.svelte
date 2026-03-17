@@ -45,9 +45,9 @@
 			const endYear = v.end_academic_year_id
 				? structure.years.find((y) => y.id === v.end_academic_year_id)
 				: null;
-			return (
-				startYear.year <= selectedYear.year && (!endYear || endYear.year >= selectedYear.year)
-			);
+			return endYear
+				? startYear.year <= selectedYear.year && endYear.year >= selectedYear.year
+				: startYear.year === selectedYear.year;
 		})
 	);
 
