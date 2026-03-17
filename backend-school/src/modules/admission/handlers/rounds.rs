@@ -555,6 +555,7 @@ pub async fn list_tracks(
                 JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
                 WHERE spv.study_plan_id = t.study_plan_id
                   AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id)
+                  AND cr.grade_level_id = (SELECT grade_level_id FROM admission_rounds WHERE id = t.admission_round_id)
                ) AS room_count,
                COALESCE(
                    t.capacity_override::bigint,
@@ -563,6 +564,7 @@ pub async fn list_tracks(
                     JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
                     WHERE spv.study_plan_id = t.study_plan_id
                       AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id)
+                      AND cr.grade_level_id = (SELECT grade_level_id FROM admission_rounds WHERE id = t.admission_round_id)
                    )
                ) AS computed_capacity,
                (SELECT COUNT(*) FROM admission_applications aa WHERE aa.admission_track_id = t.id) AS application_count
