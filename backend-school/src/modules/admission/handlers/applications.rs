@@ -71,10 +71,19 @@ pub async fn submit_application(
     let mut tx = pool.begin().await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    // Advisory lock ต่อ round เพื่อ serialize การออกเลขใบสมัคร
-    let lock_key = i64::from_le_bytes(round_id.as_bytes()[..8].try_into().unwrap());
+    // ดึง academic year ก่อน (ใช้เป็น lock key + prefix เลขใบสมัคร)
+    let year: i32 = sqlx::query_scalar(
+        "SELECT ay.year FROM admission_rounds ar JOIN academic_years ay ON ar.academic_year_id = ay.id WHERE ar.id = $1"
+    )
+    .bind(round_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to get academic year".to_string()))?;
+
+    // Advisory lock ต่อปีการศึกษา (ไม่ใช่ต่อ round)
+    // เพราะ application_number มี unique constraint ระดับโรงเรียน ข้ามทุก round
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(lock_key)
+        .bind(year as i64)
         .execute(&mut *tx)
         .await
         .map_err(|_| AppError::InternalServerError("Lock failed".to_string()))?;
@@ -93,22 +102,20 @@ pub async fn submit_application(
         return Err(AppError::BadRequest("เลขบัตรประชาชนนี้ได้สมัครรอบนี้ไปแล้ว".to_string()));
     }
 
-    // สร้างเลขที่ใบสมัคร (ปลอดภัยเพราะอยู่ใน advisory lock แล้ว)
-    let year: i32 = sqlx::query_scalar(
-        "SELECT ay.year FROM admission_rounds ar JOIN academic_years ay ON ar.academic_year_id = ay.id WHERE ar.id = $1"
-    )
-    .bind(round_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to get academic year".to_string()))?;
-
+    // หา MAX sequence ข้าม *ทุก round* ของปีนี้
+    // ใช้ regex กรอง format ที่ถูกต้องเพื่อป้องกัน CAST error จากข้อมูลผิด format
+    let year_prefix = format!("{}-%", year);
     let max_seq: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(CAST(SPLIT_PART(application_number, '-', 2) AS INT)), 0) FROM admission_applications WHERE admission_round_id = $1"
+        r#"SELECT COALESCE(MAX(
+            CASE WHEN application_number ~ '^\d{4}-\d+$'
+            THEN CAST(SPLIT_PART(application_number, '-', 2) AS INT)
+            ELSE 0 END
+        ), 0) FROM admission_applications WHERE application_number LIKE $1"#
     )
-    .bind(round_id)
+    .bind(&year_prefix)
     .fetch_one(&mut *tx)
     .await
-    .unwrap_or(0);
+    .map_err(|_| AppError::InternalServerError("Failed to compute application number".to_string()))?;
 
     let application_number = format!("{}-{:04}", year, max_seq + 1);
 
