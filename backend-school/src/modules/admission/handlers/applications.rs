@@ -4,6 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use chrono::{Datelike, FixedOffset, Utc};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -102,22 +103,29 @@ pub async fn submit_application(
         return Err(AppError::BadRequest("เลขบัตรประชาชนนี้ได้สมัครรอบนี้ไปแล้ว".to_string()));
     }
 
-    // หา MAX sequence ข้าม *ทุก round* ของปีนี้
-    // ใช้ regex กรอง format ที่ถูกต้องเพื่อป้องกัน CAST error จากข้อมูลผิด format
-    let year_prefix = format!("{}-%", year);
+    // คำนวณ date prefix ในรูปแบบ YYMMDД (พ.ศ.) สำหรับ เลขที่ใบสมัคร
+    // เช่น 17/03/2569 → "690317", เลขที่ใบสมัคร = "69031700001"
+    let _ = year; // ยังคงใช้ year สำหรับ advisory lock ข้างบน
+    let bangkok = FixedOffset::east_opt(7 * 3600).unwrap();
+    let now = Utc::now().with_timezone(&bangkok);
+    let be_year = now.year() + 543;
+    let date_prefix = format!("{:02}{:02}{:02}", be_year % 100, now.month(), now.day());
+    let date_pattern = format!("{}%", date_prefix);
+
+    // หา MAX sequence ของวันนี้ข้ามทุก round (format ใหม่: YYMMDДНNNNN = 11 หลัก)
     let max_seq: i64 = sqlx::query_scalar(
         r#"SELECT COALESCE(MAX(
-            CASE WHEN application_number ~ '^[0-9]{4}-[0-9]+$'
-            THEN CAST(SPLIT_PART(application_number, '-', 2) AS BIGINT)
+            CASE WHEN application_number ~ '^[0-9]{11}$'
+            THEN CAST(SUBSTRING(application_number, 7, 5) AS BIGINT)
             ELSE 0::BIGINT END
         ), 0::BIGINT) FROM admission_applications WHERE application_number LIKE $1"#
     )
-    .bind(&year_prefix)
+    .bind(&date_pattern)
     .fetch_one(&mut *tx)
     .await
     .map_err(|_| AppError::InternalServerError("Failed to compute application number".to_string()))?;
 
-    let application_number = format!("{}-{:04}", year, max_seq + 1);
+    let application_number = format!("{}{:05}", date_prefix, max_seq + 1);
 
     // Insert
     let application = sqlx::query_as::<_, AdmissionApplication>(
