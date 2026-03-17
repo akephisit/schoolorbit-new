@@ -33,12 +33,27 @@
 	let activeLevelIds = $state<string[]>([]);
 	let studyPlanVersions = $state<StudyPlanVersion[]>([]);
 
+	// Filter State
+	let selectedYearId = $state('');
+
+	let filteredStudyPlanVersions = $derived(
+		studyPlanVersions.filter((v) => {
+			const selectedYear = structure.years.find((y) => y.id === selectedYearId);
+			if (!selectedYear) return true;
+			const startYear = structure.years.find((y) => y.id === v.start_academic_year_id);
+			if (!startYear) return true;
+			const endYear = v.end_academic_year_id
+				? structure.years.find((y) => y.id === v.end_academic_year_id)
+				: null;
+			return (
+				startYear.year <= selectedYear.year && (!endYear || endYear.year >= selectedYear.year)
+			);
+		})
+	);
+
 	let showCreateDialog = $state(false);
 	let showEditDialog = $state(false);
 	let isSubmitting = $state(false);
-
-	// Filter State
-	let selectedYearId = $state('');
 
 	// New Classroom Form
 	let newClassroom = $state({
@@ -49,6 +64,11 @@
 		co_advisor_id: '',
 		study_plan_version_id: '',
 		capacity: 40
+	});
+
+	$effect(() => {
+		newClassroom.academic_year_id = selectedYearId;
+		newClassroom.study_plan_version_id = '';
 	});
 
 	// Edit Classroom Form
@@ -77,7 +97,6 @@
 			const activeYear = structure.years.find((y) => y.is_active) || structure.years[0];
 			if (activeYear) {
 				selectedYearId = activeYear.id;
-				newClassroom.academic_year_id = activeYear.id;
 			}
 
 			await fetchClassrooms();
@@ -355,14 +374,14 @@
 					<Select.Root type="single" bind:value={newClassroom.study_plan_version_id}>
 						<Select.Trigger class="w-full">
 							{(() => {
-								const v = studyPlanVersions.find(
+								const v = filteredStudyPlanVersions.find(
 									(v) => v.id === newClassroom.study_plan_version_id
 								);
 								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
 							})()}
 						</Select.Trigger>
 						<Select.Content>
-							{#each studyPlanVersions as version}
+							{#each filteredStudyPlanVersions as version}
 								<Select.Item value={version.id}>
 									{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
 								</Select.Item>
@@ -440,14 +459,14 @@
 					<Select.Root type="single" bind:value={editingClassroom.study_plan_version_id}>
 						<Select.Trigger class="w-full">
 							{(() => {
-								const v = studyPlanVersions.find(
+								const v = filteredStudyPlanVersions.find(
 									(v) => v.id === editingClassroom.study_plan_version_id
 								);
 								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
 							})()}
 						</Select.Trigger>
 						<Select.Content>
-							{#each studyPlanVersions as version}
+							{#each filteredStudyPlanVersions as version}
 								<Select.Item value={version.id}>
 									{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
 								</Select.Item>
