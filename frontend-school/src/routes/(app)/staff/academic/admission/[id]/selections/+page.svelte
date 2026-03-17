@@ -229,6 +229,7 @@
 						<Table.Head class="text-center">คะแนนรวม</Table.Head>
 						<Table.Head class="text-center">อันดับสุดท้าย</Table.Head>
 						<Table.Head class="text-center">ห้องที่ได้</Table.Head>
+						<Table.Head>ย้ายสาย</Table.Head>
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
@@ -267,6 +268,40 @@
 								{:else}
 									<span class="text-xs text-muted-foreground">ยังไม่จัดห้อง</span>
 								{/if}
+							</Table.Cell>
+							<Table.Cell>
+								<div class="flex gap-2 items-center">
+									<Select.Root
+										type="single"
+										value={moveTargetTrackId[app.applicationId] ?? ''}
+										onValueChange={(v) => {
+											moveTargetTrackId = { ...moveTargetTrackId, [app.applicationId]: v };
+										}}
+									>
+										<Select.Trigger class="h-8 text-xs w-40">
+											{otherTracks.find(
+												(t) => t.id === moveTargetTrackId[app.applicationId]
+											)?.name ?? 'เลือกสาย'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each otherTracks as t (t.id)}
+												<Select.Item value={t.id}>{t.name}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+									<Button
+										size="sm"
+										class="h-8 text-xs"
+										disabled={!moveTargetTrackId[app.applicationId] || moving[app.applicationId]}
+										onclick={() => moveToTrack(app.applicationId)}
+									>
+										{#if moving[app.applicationId]}
+											<LoaderCircle class="w-3 h-3 animate-spin" />
+										{:else}
+											ย้าย
+										{/if}
+									</Button>
+								</div>
 							</Table.Cell>
 						</Table.Row>
 					{/each}
