@@ -655,6 +655,7 @@ export async function portalUploadTempFile(
 
     const res = await fetch(`${PUBLIC_BACKEND_URL}/api/admission/portal/upload`, {
         method: 'POST',
+        credentials: 'include',
         body: formData,
     });
     if (!res.ok) {
