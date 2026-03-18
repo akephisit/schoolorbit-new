@@ -52,12 +52,19 @@
 	let dispOffsetY = $state(0);
 	let dispScale = $state(1);
 	let perspDraggingIdx = $state<number | null>(null);
+	// Ready flag: true only after image has loaded and geometry computed
+	let dispReady = $state(false);
+	// Magnifier
+	const MAG_SIZE = 128;
+	const MAG_ZOOM = 4;
+	let magnCanvasEl = $state<HTMLCanvasElement>();
 
 	// ===========================
 	// Reset corners on new image
 	// ===========================
 	$effect(() => {
 		if (imageSrc) {
+			dispReady = false;
 			corners = initialCorners
 				? initialCorners.map((c) => ({ ...c })) as [Point, Point, Point, Point]
 				: [
@@ -75,6 +82,7 @@
 	function onPerspLoad() {
 		if (!perspImgEl || !perspContainer) return;
 		computeDispGeometry();
+		dispReady = true;
 	}
 
 	function computeDispGeometry() {
@@ -171,6 +179,40 @@
 			return `${d.x},${d.y}`;
 		}).join(' ');
 	}
+
+	// ===========================
+	// Magnifier (loupe)
+	// ===========================
+	let magnPos = $derived.by(() => {
+		if (perspDraggingIdx === null || !perspContainer || !dispReady) return null;
+		const dp = cornerToDisplay(corners[perspDraggingIdx]);
+		const cw = perspContainer.clientWidth;
+		const ch = perspContainer.clientHeight;
+		let x = Math.max(6, Math.min(cw - MAG_SIZE - 6, dp.x - MAG_SIZE / 2));
+		let y = dp.y - MAG_SIZE - 28;
+		if (y < 6) y = dp.y + 28;
+		if (y + MAG_SIZE > ch - 6) y = Math.max(6, ch - MAG_SIZE - 6);
+		return { x, y };
+	});
+
+	$effect(() => {
+		if (perspDraggingIdx === null || !magnCanvasEl || !perspImgEl || !dispReady) return;
+		const corner = corners[perspDraggingIdx]; // reactive dep
+		const nx = corner.x * perspImgEl.naturalWidth;
+		const ny = corner.y * perspImgEl.naturalHeight;
+		const srcW = MAG_SIZE / MAG_ZOOM;
+		const srcH = MAG_SIZE / MAG_ZOOM;
+		const ctx = magnCanvasEl.getContext('2d')!;
+		ctx.clearRect(0, 0, MAG_SIZE, MAG_SIZE);
+		ctx.drawImage(perspImgEl, nx - srcW / 2, ny - srcH / 2, srcW, srcH, 0, 0, MAG_SIZE, MAG_SIZE);
+		// Crosshair
+		ctx.strokeStyle = 'rgba(59,130,246,0.9)';
+		ctx.lineWidth = 1.5;
+		ctx.beginPath();
+		ctx.moveTo(MAG_SIZE / 2, 0); ctx.lineTo(MAG_SIZE / 2, MAG_SIZE);
+		ctx.moveTo(0, MAG_SIZE / 2); ctx.lineTo(MAG_SIZE, MAG_SIZE / 2);
+		ctx.stroke();
+	});
 
 	// ===========================
 	// Math: Gaussian elimination
@@ -345,7 +387,7 @@
 					ondragstart={(e) => e.preventDefault()}
 				/>
 
-				{#if perspImgEl}
+				{#if perspImgEl && dispReady}
 					<svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
 						<polygon
 							points={polygonPoints()}
@@ -374,6 +416,15 @@
 							/>
 						{/each}
 					</svg>
+					{#if magnPos !== null}
+						<canvas
+							bind:this={magnCanvasEl}
+							width={MAG_SIZE}
+							height={MAG_SIZE}
+							class="absolute rounded-lg border-2 border-blue-500 shadow-xl pointer-events-none"
+							style="left: {magnPos.x}px; top: {magnPos.y}px; z-index: 20; image-rendering: pixelated;"
+						></canvas>
+					{/if}
 				{/if}
 			</div>
 		{/if}
