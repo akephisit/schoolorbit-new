@@ -30,11 +30,12 @@
 		CircleAlert,
 		ChevronRight,
 		LoaderCircle,
-		Upload,
+		Camera,
 		X,
 		FileText,
 		Copy
 	} from 'lucide-svelte';
+	import DocumentCropperModal from '$lib/components/DocumentCropperModal.svelte';
 
 	let { data } = $props();
 
@@ -163,6 +164,7 @@
 		name?: string;
 		size?: number;
 		url?: string;
+		preview?: string; // local blob URL for thumbnail display
 		uploading: boolean;
 	};
 	let uploadedDocs = $state<Record<string, DocSlot>>({});
@@ -171,35 +173,65 @@
 	let existingDocs = $state<ApplicationDocument[]>([]);
 	let deletingDoc = $state<string | null>(null);
 
+	// Crop modal state
+	let cropTarget = $state<{ docType: string; imageUrl: string } | null>(null);
+	let cropperOpen = $state(false);
+	// File input refs per docType
+	let fileInputRefs = $state<Record<string, HTMLInputElement>>({});
+
 	const DOC_TYPE_ORDER = Object.keys(DOC_TYPE_LABELS);
 
-	async function handleDocUpload(docType: string, e: Event) {
+	function handleDocFileSelected(docType: string, e: Event) {
 		const input = e.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
+		input.value = '';
+		const imageUrl = URL.createObjectURL(file);
+		cropTarget = { docType, imageUrl };
+		cropperOpen = true;
+	}
 
-		uploadedDocs[docType] = { uploading: true };
+	async function handleCropComplete(blob: Blob) {
+		if (!cropTarget) return;
+		const { docType, imageUrl } = cropTarget;
+		cropperOpen = false;
+		const preview = URL.createObjectURL(blob);
+		// Release the original file blob URL
+		URL.revokeObjectURL(imageUrl);
+		cropTarget = null;
+
+		uploadedDocs[docType] = { uploading: true, preview };
 		try {
+			const file = new File([blob], `${docType}.jpg`, { type: 'image/jpeg' });
 			const res = await portalUploadTempFile(file, docType);
 			uploadedDocs[docType] = {
 				tempFileId: res.tempFileId,
 				name: res.originalFilename,
 				size: res.fileSize,
 				url: res.url,
+				preview,
 				uploading: false
 			};
 			toast.success(`อัปโหลด "${DOC_TYPE_LABELS[docType]?.label}" แล้ว`);
 		} catch (err) {
 			const copy = { ...uploadedDocs };
+			URL.revokeObjectURL(preview);
 			delete copy[docType];
 			uploadedDocs = copy;
 			toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ');
 		}
-		// Reset input
-		input.value = '';
+	}
+
+	function handleCropCancel() {
+		if (cropTarget) {
+			URL.revokeObjectURL(cropTarget.imageUrl);
+			cropTarget = null;
+		}
 	}
 
 	function handleDocRemoveNew(docType: string) {
+		const slot = uploadedDocs[docType];
+		if (slot?.preview) URL.revokeObjectURL(slot.preview);
 		const copy = { ...uploadedDocs };
 		delete copy[docType];
 		uploadedDocs = copy;
@@ -1052,7 +1084,7 @@
 					<Card.Root class="shadow-sm">
 						<Card.Header class="pb-2">
 							<Card.Title class="text-base">6. เอกสารประกอบการสมัคร</Card.Title>
-							<p class="text-xs text-muted-foreground mt-1">รองรับไฟล์ JPG, PNG, PDF ขนาดไม่เกิน 20MB</p>
+							<p class="text-xs text-muted-foreground mt-1">ถ่ายรูปหรือเลือกรูปจากคลัง — สามารถ crop และปรับมุมเอียงได้</p>
 						</Card.Header>
 						<Card.Content class="space-y-2">
 							{#each DOC_TYPE_ORDER as docType}
@@ -1060,9 +1092,27 @@
 								{@const existing = existingDocs.find((d) => d.docType === docType)}
 								{@const newDoc = uploadedDocs[docType]}
 								{@const hasFile = existing || (newDoc && newDoc.tempFileId)}
+								{@const thumbSrc = newDoc?.preview ?? existing?.fileUrl}
+
+								<!-- Hidden file input -->
+								<input
+									type="file"
+									class="hidden"
+									accept="image/*"
+									bind:this={fileInputRefs[docType]}
+									onchange={(e) => handleDocFileSelected(docType, e)}
+								/>
 
 								<div class="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
-									<FileText class="w-5 h-5 text-muted-foreground shrink-0" />
+									<!-- Thumbnail or icon -->
+									{#if thumbSrc}
+										<div class="w-12 h-12 rounded-md overflow-hidden border bg-gray-100 shrink-0">
+											<img src={thumbSrc} alt={info.label} class="w-full h-full object-cover" />
+										</div>
+									{:else}
+										<FileText class="w-5 h-5 text-muted-foreground shrink-0" />
+									{/if}
+
 									<div class="flex-1 min-w-0">
 										<p class="text-sm font-medium leading-tight">
 											{info.label}
@@ -1074,7 +1124,7 @@
 										</p>
 										{#if hasFile}
 											<p class="text-xs text-green-600 truncate mt-0.5">
-												✓ {existing?.originalFilename ?? newDoc?.name ?? 'ไฟล์แนบ'}
+												✓ {existing?.originalFilename ?? newDoc?.name ?? 'อัปโหลดแล้ว'}
 												{#if existing?.fileSize || newDoc?.size}
 													<span class="text-muted-foreground">({formatBytes((existing?.fileSize ?? newDoc?.size)!)})</span>
 												{/if}
@@ -1087,15 +1137,13 @@
 											<LoaderCircle class="w-4 h-4 animate-spin text-blue-500" />
 										{:else if hasFile}
 											<!-- Replace button -->
-											<label class="cursor-pointer">
-												<input
-													type="file"
-													class="hidden"
-													accept=".jpg,.jpeg,.png,.pdf,.webp"
-													onchange={(e) => handleDocUpload(docType, e)}
-												/>
-												<span class="text-xs text-blue-600 hover:underline">เปลี่ยน</span>
-											</label>
+											<button
+												type="button"
+												class="text-xs text-blue-600 hover:underline"
+												onclick={() => fileInputRefs[docType]?.click()}
+											>
+												เปลี่ยน
+											</button>
 											<!-- Delete button -->
 											{#if existing}
 												<button
@@ -1121,24 +1169,29 @@
 											{/if}
 										{:else}
 											<!-- Upload button -->
-											<label class="cursor-pointer">
-												<input
-													type="file"
-													class="hidden"
-													accept=".jpg,.jpeg,.png,.pdf,.webp"
-													onchange={(e) => handleDocUpload(docType, e)}
-												/>
-												<span class="flex items-center gap-1 text-xs text-blue-600 hover:underline border border-blue-200 rounded px-2 py-1">
-													<Upload class="w-3 h-3" />
-													อัปโหลด
-												</span>
-											</label>
+											<button
+												type="button"
+												class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-400 rounded-md px-2.5 py-1.5 transition-colors"
+												onclick={() => fileInputRefs[docType]?.click()}
+											>
+												<Camera class="w-3.5 h-3.5" />
+												เลือก/ถ่ายรูป
+											</button>
 										{/if}
 									</div>
 								</div>
 							{/each}
 						</Card.Content>
 					</Card.Root>
+
+					<!-- Document Cropper Modal -->
+					<DocumentCropperModal
+						bind:open={cropperOpen}
+						imageSrc={cropTarget?.imageUrl ?? null}
+						docLabel={cropTarget ? (DOC_TYPE_LABELS[cropTarget.docType]?.label ?? 'เอกสาร') : ''}
+						onComplete={handleCropComplete}
+						onCancel={handleCropCancel}
+					/>
 
 					<!-- ===== Submit Bar ===== -->
 					<div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 pb-8">
