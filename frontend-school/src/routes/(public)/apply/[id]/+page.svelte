@@ -23,6 +23,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
+	import SchoolCombobox from '$lib/components/ui/SchoolCombobox.svelte';
 	import {
 		GraduationCap,
 		CircleCheck,
@@ -105,7 +106,6 @@
 	// ===== โรงเรียนเดิม =====
 	let previousSchool = $state('');
 	let previousGrade = $state('');
-	let previousStudyYear = $state('');
 	let previousSchoolProvince = $state('');
 	let previousGpa = $state('');
 
@@ -395,8 +395,7 @@
 					// Previous school
 					previousSchool = app.previousSchool || '';
 					previousGrade = app.previousGrade || '';
-					previousStudyYear = app.previousStudyYear || '';
-					previousSchoolProvince = app.previousSchoolProvince || '';
+		previousSchoolProvince = app.previousSchoolProvince || '';
 					previousGpa = app.previousGpa ? app.previousGpa.toString() : '';
 
 					// Family
@@ -549,7 +548,6 @@
 				previousSchool: previousSchool || undefined,
 				previousGrade: previousGrade || undefined,
 				previousGpa: previousGpa ? parseFloat(previousGpa) : undefined,
-				previousStudyYear: previousStudyYear || undefined,
 				previousSchoolProvince: previousSchoolProvince || undefined,
 				// Father
 				fatherName: fatherFirstName ? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim() : undefined,
@@ -924,15 +922,14 @@
 										</Select.Content>
 									</Select.Root>
 								</div>
-								<div class="space-y-2">
-									<Label for="previousStudyYear">ศึกษาปีที่ (ระบุปีที่กำลังศึกษา)</Label>
-									<Input id="previousStudyYear" bind:value={previousStudyYear} placeholder="เช่น 6" />
-								</div>
 							</div>
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 								<div class="space-y-2">
-									<Label for="previousSchool">ชื่อโรงเรียนเดิม</Label>
-									<Input id="previousSchool" bind:value={previousSchool} placeholder="โรงเรียน..." />
+									<Label>ชื่อโรงเรียนเดิม</Label>
+									<SchoolCombobox
+										bind:value={previousSchool}
+										onProvinceSelect={(p) => (previousSchoolProvince = p)}
+									/>
 								</div>
 								<div class="space-y-2">
 									<Label for="previousSchoolProvince">จังหวัด</Label>
