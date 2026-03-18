@@ -393,6 +393,11 @@ export async function rejectApplication(id: string, rejectionReason: string) {
     if (!res.success) throw new Error(res.error);
 }
 
+export async function deleteApplication(id: string) {
+    const res = await apiClient.delete(`/api/admission/applications/${id}`);
+    if (!res.success) throw new Error(res.error);
+}
+
 // ==========================================
 // Scores API
 // ==========================================

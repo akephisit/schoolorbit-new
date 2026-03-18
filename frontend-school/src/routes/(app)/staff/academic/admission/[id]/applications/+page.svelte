@@ -5,6 +5,7 @@
 		listApplications,
 		verifyApplication,
 		rejectApplication,
+		deleteApplication,
 		type ApplicationListItem,
 		applicationStatusLabel,
 		applicationStatusColor
@@ -19,7 +20,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, Loader2 } from 'lucide-svelte';
+	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, LoaderCircle, Trash2 } from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -33,6 +34,10 @@
 	let rejectingApp: ApplicationListItem | null = $state(null);
 	let rejectReason = $state('');
 	let rejecting = $state(false);
+
+	let showDeleteDialog = $state(false);
+	let deletingApp: ApplicationListItem | null = $state(null);
+	let deleting = $state(false);
 
 	const statusVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
 		submitted: 'secondary',
@@ -82,6 +87,22 @@
 			toast.error(e instanceof Error ? e.message : 'ปฏิเสธไม่สำเร็จ');
 		} finally {
 			rejecting = false;
+		}
+	}
+
+	async function handleDeleteConfirm() {
+		if (!deletingApp) return;
+		deleting = true;
+		try {
+			await deleteApplication(deletingApp.id);
+			toast.success(`ลบใบสมัครของ ${deletingApp.fullName} แล้ว`);
+			showDeleteDialog = false;
+			deletingApp = null;
+			await loadApps();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -141,7 +162,7 @@
 	{#if loading}
 		<Card.Root>
 			<Card.Content class="flex justify-center py-16">
-				<Loader2 class="w-8 h-8 animate-spin text-primary" />
+				<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
 			</Card.Content>
 		</Card.Root>
 	{:else if applications.length === 0}
@@ -212,6 +233,15 @@
 											<X class="w-3.5 h-3.5" />
 										</Button>
 									{/if}
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-8 w-8 text-muted-foreground hover:text-destructive"
+									onclick={() => { deletingApp = app; showDeleteDialog = true; }}
+									title="ลบใบสมัคร"
+								>
+									<Trash2 class="w-3.5 h-3.5" />
+								</Button>
 								</div>
 							</Table.Cell>
 						</Table.Row>
@@ -251,8 +281,27 @@
 				onclick={handleRejectConfirm}
 				disabled={rejecting || !rejectReason.trim()}
 			>
-				{#if rejecting}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
+				{#if rejecting}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
 				{rejecting ? 'กำลังดำเนินการ...' : 'ปฏิเสธ'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Delete Dialog -->
+<Dialog.Root bind:open={showDeleteDialog}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>ลบใบสมัคร</Dialog.Title>
+			<Dialog.Description>
+				ลบใบสมัครของ <strong>{deletingApp?.fullName}</strong> ออกจากระบบ การดำเนินการนี้ไม่สามารถยกเลิกได้
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
+			<Button variant="destructive" onclick={handleDeleteConfirm} disabled={deleting}>
+				{#if deleting}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
+				{deleting ? 'กำลังลบ...' : 'ยืนยันการลบ'}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

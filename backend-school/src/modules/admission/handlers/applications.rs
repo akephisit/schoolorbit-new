@@ -502,6 +502,37 @@ pub async fn reject_application(
 }
 
 // ==========================================
+// Staff: Delete Application
+// ==========================================
+
+/// DELETE /api/admission/applications/:id
+pub async fn delete_application(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+        return Ok(r);
+    }
+
+    let result = sqlx::query("DELETE FROM admission_applications WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to delete application {}: {}", id, e);
+            AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
+        })?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
+    }
+
+    Ok(Json(json!({ "success": true, "message": "ลบใบสมัครแล้ว" })).into_response())
+}
+
+// ==========================================
 // Staff: Enrollment
 // ==========================================
 

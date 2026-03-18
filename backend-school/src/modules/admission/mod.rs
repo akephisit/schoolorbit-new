@@ -38,6 +38,7 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/applications/{id}", get(handlers::applications::get_application))
         .route("/applications/{id}/verify", put(handlers::applications::verify_application))
         .route("/applications/{id}/reject", put(handlers::applications::reject_application))
+        .route("/applications/{id}", delete(handlers::applications::delete_application))
         .route("/applications/{id}/track", patch(handlers::applications::change_application_track))
 
         // === Scores ===
