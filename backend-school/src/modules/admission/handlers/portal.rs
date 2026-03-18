@@ -227,6 +227,17 @@ pub async fn get_status(
     .await
     .unwrap_or_default();
 
+    let url_builder = FileUrlBuilder::new().unwrap_or_default();
+    let documents: Vec<ApplicationDocument> = documents
+        .into_iter()
+        .map(|mut doc| {
+            if let Some(path) = doc.file_url.as_deref() {
+                doc.file_url = Some(url_builder.build_url(path));
+            }
+            doc
+        })
+        .collect();
+
     Ok(Json(json!({
         "success": true,
         "data": {

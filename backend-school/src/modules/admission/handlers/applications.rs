@@ -12,6 +12,7 @@ use crate::AppState;
 use crate::error::AppError;
 use crate::db::school_mapping::get_school_database_url;
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::file_url::FileUrlBuilder;
 use crate::middleware::permission::check_permission;
 use crate::permissions::registry::codes;
 use crate::modules::admission::models::applications::*;
@@ -418,6 +419,17 @@ pub async fn get_application(
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
+
+    let url_builder = FileUrlBuilder::new().unwrap_or_default();
+    let documents: Vec<ApplicationDocument> = documents
+        .into_iter()
+        .map(|mut doc| {
+            if let Some(path) = doc.file_url.as_deref() {
+                doc.file_url = Some(url_builder.build_url(path));
+            }
+            doc
+        })
+        .collect();
 
     Ok(Json(json!({ "success": true, "data": application, "documents": documents })).into_response())
 }
