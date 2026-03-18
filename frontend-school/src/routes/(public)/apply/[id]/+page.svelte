@@ -32,7 +32,9 @@
 		Camera,
 		X,
 		FileText,
-		Copy
+		Copy,
+		ZoomIn,
+		ZoomOut
 	} from 'lucide-svelte';
 	import DocumentCropperModal from '$lib/components/DocumentCropperModal.svelte';
 
@@ -181,6 +183,49 @@
 	let cropperOpen = $state(false);
 	// Lightbox
 	let lightboxSrc = $state<string | null>(null);
+	let lightboxLabel = $state('');
+	let lbZoom = $state(1);
+	let lbPan = $state({ x: 0, y: 0 });
+	let lbDragging = $state(false);
+	let lbDragStart = { mx: 0, my: 0, px: 0, py: 0 };
+
+	function openLightbox(src: string, label: string) {
+		lightboxSrc = src;
+		lightboxLabel = label;
+		lbZoom = 1;
+		lbPan = { x: 0, y: 0 };
+	}
+
+	function closeLightbox() {
+		lightboxSrc = null;
+	}
+
+	function onLbWheel(e: WheelEvent) {
+		e.preventDefault();
+		lbZoom = Math.max(0.5, Math.min(8, lbZoom + (e.deltaY > 0 ? -0.2 : 0.2)));
+	}
+
+	function onLbMouseDown(e: MouseEvent) {
+		e.preventDefault();
+		lbDragging = true;
+		lbDragStart = { mx: e.clientX, my: e.clientY, px: lbPan.x, py: lbPan.y };
+		window.addEventListener('mousemove', onLbMouseMove);
+		window.addEventListener('mouseup', onLbMouseUp, { once: true });
+	}
+
+	function onLbMouseMove(e: MouseEvent) {
+		if (!lbDragging) return;
+		lbPan = { x: lbDragStart.px + e.clientX - lbDragStart.mx, y: lbDragStart.py + e.clientY - lbDragStart.my };
+	}
+
+	function onLbMouseUp() {
+		lbDragging = false;
+		window.removeEventListener('mousemove', onLbMouseMove);
+	}
+
+	function onLbKeyDown(e: KeyboardEvent) {
+		if (lightboxSrc && e.key === 'Escape') closeLightbox();
+	}
 	// File input refs per docType
 	let fileInputRefs = $state<Record<string, HTMLInputElement>>({});
 
@@ -556,6 +601,8 @@
 	const FEMALE_TITLES = ['นาง', 'นางสาว', 'ม.ร.ว.', 'ม.ล.', 'ดร.'];
 	const GUARDIAN_TITLES = ['นาย', 'นาง', 'นางสาว', 'ปู่', 'ย่า', 'ตา', 'ยาย', 'ดร.'];
 </script>
+
+<svelte:window onkeydown={onLbKeyDown} />
 
 <svelte:head>
 	<title>{round ? `สมัครเรียน – ${round.name}` : 'สมัครเรียน'} | SchoolOrbit</title>
@@ -1132,7 +1179,7 @@
 										<button
 											type="button"
 											class="w-12 h-12 rounded-md overflow-hidden border bg-gray-100 shrink-0 cursor-zoom-in hover:ring-2 hover:ring-blue-400 transition-all"
-											onclick={() => (lightboxSrc = thumbSrc!)}
+											onclick={() => openLightbox(thumbSrc!, info.label)}
 											title="กดดูรูป"
 										>
 											<img src={thumbSrc} alt={info.label} class="w-full h-full object-cover pointer-events-none" />
@@ -1234,18 +1281,42 @@
 
 					<!-- Lightbox -->
 					{#if lightboxSrc}
-						<button
-							type="button"
-							class="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
-							onclick={() => (lightboxSrc = null)}
-							aria-label="ปิดรูป"
-						>
-							<img
-								src={lightboxSrc}
-								alt="ดูรูปเอกสาร"
-								class="max-w-full max-h-full object-contain rounded-lg shadow-2xl pointer-events-none"
-							/>
-						</button>
+						<div class="fixed inset-0 z-50 bg-black/90 flex flex-col" role="dialog" aria-modal="true">
+							<!-- Header -->
+							<div class="flex items-center justify-between px-4 py-3 bg-black/60 shrink-0">
+								<p class="text-white text-sm font-medium truncate pr-4">{lightboxLabel}</p>
+								<div class="flex items-center gap-3 shrink-0">
+									<button type="button" class="text-white/70 hover:text-white transition-colors" onclick={() => { lbZoom = Math.max(0.5, lbZoom - 0.5); }} title="ย่อ">
+										<ZoomOut class="w-5 h-5" />
+									</button>
+									<span class="text-white/60 text-xs w-10 text-center">{Math.round(lbZoom * 100)}%</span>
+									<button type="button" class="text-white/70 hover:text-white transition-colors" onclick={() => { lbZoom = Math.min(8, lbZoom + 0.5); }} title="ขยาย">
+										<ZoomIn class="w-5 h-5" />
+									</button>
+									<button type="button" class="text-white/70 hover:text-white transition-colors ml-2" onclick={closeLightbox} title="ปิด (ESC)">
+										<X class="w-5 h-5" />
+									</button>
+								</div>
+							</div>
+							<!-- Image area -->
+							<div
+								class="flex-1 overflow-hidden flex items-center justify-center"
+								style="cursor: {lbDragging ? 'grabbing' : lbZoom > 1 ? 'grab' : 'default'}"
+								onwheel={onLbWheel}
+								onmousedown={onLbMouseDown}
+								role="presentation"
+							>
+								<img
+									src={lightboxSrc}
+									alt={lightboxLabel}
+									class="max-w-none pointer-events-none select-none"
+									style="transform: translate({lbPan.x}px, {lbPan.y}px) scale({lbZoom}); transition: {lbDragging ? 'none' : 'transform 0.1s ease'}; max-height: 80vh; max-width: 90vw;"
+									draggable="false"
+								/>
+							</div>
+							<!-- Backdrop close -->
+							<button type="button" class="absolute inset-0 -z-10 w-full h-full" onclick={closeLightbox} aria-label="ปิด"></button>
+						</div>
 					{/if}
 
 					<!-- ===== Submit Bar ===== -->
