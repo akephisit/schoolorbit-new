@@ -377,10 +377,10 @@ export async function listApplications(
     return res.data ?? [];
 }
 
-export async function getApplication(id: string) {
-    const res = await apiClient.get<AdmissionApplication>(`/api/admission/applications/${id}`);
+export async function getApplication(id: string): Promise<{ application: AdmissionApplication; documents: ApplicationDocument[] }> {
+    const res = await apiClient.get<AdmissionApplication>(`/api/admission/applications/${id}`) as unknown as { success: boolean; error?: string; data: AdmissionApplication; documents: ApplicationDocument[] };
     if (!res.success) throw new Error(res.error);
-    return res.data!;
+    return { application: res.data, documents: res.documents ?? [] };
 }
 
 export async function verifyApplication(id: string) {
