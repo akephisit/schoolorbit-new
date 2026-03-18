@@ -1,15 +1,18 @@
 use axum::{
-    extract::State,
+    extract::{Multipart, Path, Query, State},
     http::HeaderMap,
     response::IntoResponse,
     Json,
 };
 use serde_json::json;
+use uuid::Uuid;
 
 use crate::AppState;
 use crate::error::AppError;
 use crate::db::school_mapping::get_school_database_url;
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::file_url::FileUrlBuilder;
+use crate::services::r2_client::R2Client;
 use crate::modules::admission::models::applications::*;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
@@ -207,6 +210,23 @@ pub async fn get_status(
     .await
     .unwrap_or(None);
 
+    // ดึงเอกสารที่แนบไว้
+    let documents = sqlx::query_as::<_, ApplicationDocument>(
+        r#"
+        SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
+               f.storage_path AS file_url,
+               f.original_filename, f.file_size, f.mime_type
+        FROM admission_application_documents d
+        JOIN files f ON f.id = d.file_id
+        WHERE d.application_id = $1 AND d.deleted_at IS NULL
+        ORDER BY d.created_at ASC
+        "#
+    )
+    .bind(application_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
     Ok(Json(json!({
         "success": true,
         "data": {
@@ -214,6 +234,7 @@ pub async fn get_status(
             "assignment": assignment,
             "scores": scores,
             "enrollmentForm": form,
+            "documents": documents,
         }
     })).into_response())
 }
@@ -392,10 +413,19 @@ pub async fn update_application(
             mother_name = $20, mother_phone = $21, mother_occupation = $22, mother_national_id = $23,
             guardian_name = $24, guardian_phone = $25, guardian_relation = $26, guardian_national_id = $27,
             national_id = $28, date_of_birth = $29,
-            status = 'submitted', -- คืนสถานะกลับเป็น Submitted เพื่อให้ครูรอตรวจใหม่
+            guardian_occupation = $30, guardian_income = $31, guardian_is = $32,
+            religion = $33, ethnicity = $34, nationality = $35,
+            home_house_no = $36, home_moo = $37, home_soi = $38, home_road = $39, home_phone = $40,
+            current_house_no = $41, current_moo = $42, current_soi = $43, current_road = $44,
+            current_sub_district = $45, current_district = $46, current_province = $47,
+            current_postal_code = $48, current_phone = $49,
+            previous_study_year = $50, previous_school_province = $51,
+            father_income = $52, mother_income = $53,
+            parent_status = $54, parent_status_other = $55,
+            status = 'submitted',
             rejection_reason = NULL,
             updated_at = NOW()
-        WHERE id = $30
+        WHERE id = $56
         "#
     )
     .bind(payload.data.admission_track_id)
@@ -427,6 +457,32 @@ pub async fn update_application(
     .bind(&payload.data.guardian_national_id)
     .bind(&payload.data.national_id)
     .bind(payload.data.date_of_birth)
+    .bind(&payload.data.guardian_occupation)
+    .bind(payload.data.guardian_income)
+    .bind(&payload.data.guardian_is)
+    .bind(&payload.data.religion)
+    .bind(&payload.data.ethnicity)
+    .bind(&payload.data.nationality)
+    .bind(&payload.data.home_house_no)
+    .bind(&payload.data.home_moo)
+    .bind(&payload.data.home_soi)
+    .bind(&payload.data.home_road)
+    .bind(&payload.data.home_phone)
+    .bind(&payload.data.current_house_no)
+    .bind(&payload.data.current_moo)
+    .bind(&payload.data.current_soi)
+    .bind(&payload.data.current_road)
+    .bind(&payload.data.current_sub_district)
+    .bind(&payload.data.current_district)
+    .bind(&payload.data.current_province)
+    .bind(&payload.data.current_postal_code)
+    .bind(&payload.data.current_phone)
+    .bind(&payload.data.previous_study_year)
+    .bind(&payload.data.previous_school_province)
+    .bind(payload.data.father_income)
+    .bind(payload.data.mother_income)
+    .bind(&payload.data.parent_status)
+    .bind(&payload.data.parent_status_other)
     .bind(application_id)
     .execute(&pool)
     .await
@@ -441,3 +497,180 @@ pub async fn update_application(
     })).into_response())
 }
 
+
+// ==========================================
+// Portal: Anonymous Document Upload
+// ==========================================
+
+const VALID_DOC_TYPES: &[&str] = &[
+    "photo_1_5inch", "transcript_por", "certificate_por7",
+    "id_card_student", "id_card_father", "id_card_mother", "id_card_guardian",
+    "house_reg_student", "house_reg_father", "house_reg_mother", "house_reg_guardian",
+    "name_change_doc", "birth_cert",
+];
+
+const ALLOWED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "pdf", "webp"];
+
+/// POST /api/admission/portal/upload
+/// Upload เอกสารหลักฐาน (ไม่ต้องการ JWT — applicant ยังไม่มี account)
+/// multipart: national_id, date_of_birth (DDMMYYYY), doc_type, file
+pub async fn portal_upload_document(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+
+    // Parse multipart
+    let mut doc_type: Option<String> = None;
+    let mut file_data: Option<Vec<u8>> = None;
+    let mut original_filename: Option<String> = None;
+    let mut mime_type = "application/octet-stream".to_string();
+
+    while let Some(field) = multipart.next_field().await
+        .map_err(|_| AppError::BadRequest("Invalid multipart data".to_string()))? {
+        match field.name().unwrap_or("") {
+            "doc_type" => {
+                doc_type = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string());
+            }
+            "file" => {
+                original_filename = field.file_name().map(|s| s.to_string()).or(Some("document".to_string()));
+                if let Some(ct) = field.content_type() {
+                    mime_type = ct.to_string();
+                }
+                file_data = Some(field.bytes().await
+                    .map_err(|_| AppError::BadRequest("Failed to read file".to_string()))?.to_vec());
+            }
+            _ => { let _ = field.bytes().await; }
+        }
+    }
+
+    let doc_type = doc_type.ok_or_else(|| AppError::BadRequest("Missing doc_type".to_string()))?;
+    let file_data = file_data.ok_or_else(|| AppError::BadRequest("Missing file".to_string()))?;
+    let original_filename = original_filename.unwrap_or_else(|| "document".to_string());
+
+    // Validate doc_type
+    if !VALID_DOC_TYPES.contains(&doc_type.as_str()) {
+        return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
+    }
+
+    // Validate extension
+    let ext = std::path::Path::new(&original_filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin")
+        .to_lowercase();
+    if !ALLOWED_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(AppError::BadRequest(format!("File extension .{} not allowed. Use: jpg, png, pdf", ext)));
+    }
+
+    // Validate size (20MB max for documents)
+    if file_data.len() > 20 * 1024 * 1024 {
+        return Err(AppError::BadRequest("File size exceeds 20MB".to_string()));
+    }
+
+    // Upload to R2
+    let file_id = Uuid::new_v4();
+    let storage_path = format!(
+        "school-{}/admission/temp/{}.{}",
+        subdomain, file_id, ext
+    );
+
+    let r2_client = R2Client::new().await
+        .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
+
+    r2_client.upload_file(&storage_path, file_data.clone(), &mime_type).await
+        .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;
+
+    // Save file metadata (is_temporary=true, expires in 7 days)
+    let file_size = file_data.len() as i64;
+    sqlx::query(
+        r#"
+        INSERT INTO files (id, user_id, school_id, filename, original_filename,
+            file_size, mime_type, storage_path, file_type,
+            is_temporary, is_public, expires_at, uploaded_by)
+        VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document',
+            true, false, NOW() + INTERVAL '7 days', NULL)
+        "#
+    )
+    .bind(file_id)
+    .bind(&subdomain)
+    .bind(format!("{}.{}", file_id, ext))
+    .bind(&original_filename)
+    .bind(file_size)
+    .bind(&mime_type)
+    .bind(&storage_path)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to save file metadata: {}", e);
+        AppError::InternalServerError("Failed to save file metadata".to_string())
+    })?;
+
+    let url_builder = FileUrlBuilder::new()
+        .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
+    let file_url = format!("{}/{}", url_builder.base_url(), storage_path);
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "tempFileId": file_id,
+            "originalFilename": original_filename,
+            "fileSize": file_size,
+            "docType": doc_type,
+            "url": file_url,
+        }
+    })).into_response())
+}
+
+/// DELETE /api/admission/portal/documents/:doc_type?national_id=...&date_of_birth=...
+/// ลบเอกสาร (soft-delete) ของ applicant ที่ผ่านการ verify credentials แล้ว
+pub async fn portal_delete_document(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(doc_type): Path<String>,
+    Query(query): Query<PortalDeleteDocumentQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if !VALID_DOC_TYPES.contains(&doc_type.as_str()) {
+        return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
+    }
+
+    let application_id = verify_credentials(&pool, &query.national_id, &query.date_of_birth).await?;
+
+    // หา active document
+    let doc_row = sqlx::query_as::<_, (Uuid, Uuid)>(
+        "SELECT id, file_id FROM admission_application_documents WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL"
+    )
+    .bind(application_id)
+    .bind(&doc_type)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+    let Some((doc_id, file_id)) = doc_row else {
+        return Err(AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()));
+    };
+
+    // Soft-delete document record
+    sqlx::query("UPDATE admission_application_documents SET deleted_at = NOW() WHERE id = $1")
+        .bind(doc_id)
+        .execute(&pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to delete document".to_string()))?;
+
+    // Soft-delete file record
+    sqlx::query("UPDATE files SET deleted_at = NOW() WHERE id = $1")
+        .bind(file_id)
+        .execute(&pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to delete file record".to_string()))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "ลบเอกสารเรียบร้อยแล้ว",
+    })).into_response())
+}

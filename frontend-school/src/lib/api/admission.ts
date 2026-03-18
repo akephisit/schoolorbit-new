@@ -65,26 +65,61 @@ export interface AdmissionApplication {
     dateOfBirth?: string;
     phone?: string;
     email?: string;
-    addressLine?: string;
-    subDistrict?: string;
-    district?: string;
-    province?: string;
-    postalCode?: string;
+    // ข้อมูลส่วนตัวเพิ่มเติม
+    religion?: string;
+    ethnicity?: string;
+    nationality?: string;
+    // ที่อยู่ตามทะเบียนบ้าน
+    addressLine?: string;    // home address line (legacy + backward compat)
+    subDistrict?: string;    // ตำบล/แขวง (home)
+    district?: string;       // อำเภอ/เขต (home)
+    province?: string;       // จังหวัด (home)
+    postalCode?: string;     // รหัสไปรษณีย์ (home)
+    homeHouseNo?: string;
+    homeMoo?: string;
+    homeSoi?: string;
+    homeRoad?: string;
+    homePhone?: string;
+    // ที่อยู่ปัจจุบัน
+    currentHouseNo?: string;
+    currentMoo?: string;
+    currentSoi?: string;
+    currentRoad?: string;
+    currentSubDistrict?: string;
+    currentDistrict?: string;
+    currentProvince?: string;
+    currentPostalCode?: string;
+    currentPhone?: string;
+    // โรงเรียนเดิม
     previousSchool?: string;
     previousGrade?: string;
     previousGpa?: number;
+    previousStudyYear?: string;
+    previousSchoolProvince?: string;
+    // บิดา
     fatherName?: string;
     fatherPhone?: string;
     fatherOccupation?: string;
     fatherNationalId?: string;
+    fatherIncome?: number;
+    // มารดา
     motherName?: string;
     motherPhone?: string;
     motherOccupation?: string;
     motherNationalId?: string;
+    motherIncome?: number;
+    // ผู้ปกครอง
     guardianName?: string;
     guardianPhone?: string;
     guardianRelation?: string;
     guardianNationalId?: string;
+    guardianOccupation?: string;
+    guardianIncome?: number;
+    guardianIs?: 'father' | 'mother' | 'other';
+    // ครอบครัว
+    parentStatus?: string[];
+    parentStatusOther?: string;
+    // Status
     status: string;
     verifiedBy?: string;
     verifiedAt?: string;
@@ -98,6 +133,47 @@ export interface AdmissionApplication {
     trackName?: string;
     roundName?: string;
 }
+
+export interface DocumentRef {
+    tempFileId: string;
+    docType: string;
+}
+
+export interface ApplicationDocument {
+    id: string;
+    applicationId: string;
+    fileId: string;
+    docType: string;
+    createdAt: string;
+    fileUrl?: string;
+    originalFilename?: string;
+    fileSize?: number;
+    mimeType?: string;
+}
+
+export interface TempUploadResponse {
+    tempFileId: string;
+    originalFilename: string;
+    fileSize: number;
+    docType: string;
+    url: string;
+}
+
+export const DOC_TYPE_LABELS: Record<string, { label: string; required: boolean }> = {
+    photo_1_5inch:    { label: 'รูปถ่าย 1.5 นิ้ว', required: true },
+    transcript_por:   { label: 'สำเนาเอกสารแสดงผลการเรียน (ปพ.)', required: true },
+    certificate_por7: { label: 'หลักฐานใบรับรอง ปพ.7', required: true },
+    id_card_student:  { label: 'สำเนาบัตรประชาชนนักเรียน', required: true },
+    id_card_father:   { label: 'สำเนาบัตรประชาชนบิดา', required: false },
+    id_card_mother:   { label: 'สำเนาบัตรประชาชนมารดา', required: false },
+    id_card_guardian: { label: 'สำเนาบัตรประชาชนผู้ปกครอง (ถ้าอยู่กับผู้ปกครอง)', required: false },
+    house_reg_student: { label: 'สำเนาทะเบียนบ้านนักเรียน', required: true },
+    house_reg_father:  { label: 'สำเนาทะเบียนบ้านบิดา', required: false },
+    house_reg_mother:  { label: 'สำเนาทะเบียนบ้านมารดา', required: false },
+    house_reg_guardian: { label: 'สำเนาทะเบียนบ้านผู้ปกครอง (หากอยู่กับผู้ปกครอง)', required: false },
+    name_change_doc:  { label: 'เอกสารเปลี่ยนชื่อ-นามสกุล (ถ้ามี)', required: false },
+    birth_cert:       { label: 'สำเนาสูติบัตร (กรณีไม่มีบัตรประชาชนและทะเบียนบ้านบิดา/มารดา)', required: false },
+};
 
 export interface ApplicationListItem {
     id: string;
@@ -463,7 +539,7 @@ export async function portalSubmitForm(
 export async function updateApplication(
     authNationalId: string,
     authDateOfBirth: string,
-    data: any
+    data: Partial<SubmitApplicationData>
 ) {
     const res = await apiClient.put('/api/admission/portal/application', {
         authNationalId,
@@ -491,7 +567,7 @@ export async function getPublicRoundInfo(roundId: string) {
     return res.data!;
 }
 
-export async function submitApplication(roundId: string, data: {
+export type SubmitApplicationData = {
     admissionTrackId: string;
     nationalId: string;
     title?: string;
@@ -501,30 +577,104 @@ export async function submitApplication(roundId: string, data: {
     dateOfBirth?: string;
     phone?: string;
     email?: string;
+    religion?: string;
+    ethnicity?: string;
+    nationality?: string;
+    // Home address
     addressLine?: string;
     subDistrict?: string;
     district?: string;
     province?: string;
     postalCode?: string;
+    homeHouseNo?: string;
+    homeMoo?: string;
+    homeSoi?: string;
+    homeRoad?: string;
+    homePhone?: string;
+    // Current address
+    currentHouseNo?: string;
+    currentMoo?: string;
+    currentSoi?: string;
+    currentRoad?: string;
+    currentSubDistrict?: string;
+    currentDistrict?: string;
+    currentProvince?: string;
+    currentPostalCode?: string;
+    currentPhone?: string;
+    // Previous school
     previousSchool?: string;
     previousGrade?: string;
     previousGpa?: number;
+    previousStudyYear?: string;
+    previousSchoolProvince?: string;
+    // Father
     fatherName?: string;
     fatherPhone?: string;
     fatherOccupation?: string;
     fatherNationalId?: string;
+    fatherIncome?: number;
+    // Mother
     motherName?: string;
     motherPhone?: string;
     motherOccupation?: string;
     motherNationalId?: string;
+    motherIncome?: number;
+    // Guardian
     guardianName?: string;
     guardianPhone?: string;
     guardianRelation?: string;
     guardianNationalId?: string;
-}) {
+    guardianOccupation?: string;
+    guardianIncome?: number;
+    guardianIs?: string;
+    // Family status
+    parentStatus?: string[];
+    parentStatusOther?: string;
+    // Documents
+    documents?: DocumentRef[];
+};
+
+export async function submitApplication(roundId: string, data: SubmitApplicationData) {
     const res = await apiClient.post<{ applicationNumber: string }>(`/api/admission/apply/${roundId}`, data);
     if (!res.success) throw new Error(res.error || 'ไม่สามารถยื่นใบสมัครได้');
     return res.data!;
+}
+
+// ==========================================
+// Portal Document Upload API
+// ==========================================
+
+export async function portalUploadTempFile(
+    file: File,
+    docType: string,
+): Promise<TempUploadResponse> {
+    const { PUBLIC_BACKEND_URL } = await import('$env/static/public');
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('doc_type', docType);
+
+    const subdomain = window.location.hostname.split('.')[0];
+    const res = await fetch(`${PUBLIC_BACKEND_URL}/api/admission/portal/upload`, {
+        method: 'POST',
+        headers: { 'X-Subdomain': subdomain },
+        body: formData,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error || 'ไม่สามารถอัปโหลดไฟล์ได้');
+    }
+    const json = await res.json();
+    return json.data as TempUploadResponse;
+}
+
+export async function portalDeleteDocument(
+    nationalId: string,
+    dateOfBirth: string,
+    docType: string,
+): Promise<void> {
+    const params = new URLSearchParams({ national_id: nationalId, date_of_birth: dateOfBirth });
+    const res = await apiClient.delete(`/api/admission/portal/documents/${docType}?${params}`);
+    if (!res.success) throw new Error((res as any).error || 'ไม่สามารถลบเอกสารได้');
 }
 
 // ==========================================

@@ -5,25 +5,35 @@
 		submitApplication,
 		getPublicRoundInfo,
 		updateApplication,
-		portalGetStatus
+		portalGetStatus,
+		portalUploadTempFile,
+		portalDeleteDocument,
+		DOC_TYPE_LABELS
 	} from '$lib/api/admission';
-	import type { AdmissionRound, AdmissionTrack } from '$lib/api/admission';
+	import type {
+		AdmissionRound,
+		AdmissionTrack,
+		ApplicationDocument,
+		TempUploadResponse
+	} from '$lib/api/admission';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import {
 		GraduationCap,
-		CheckCircle2,
-		AlertCircle,
+		CircleCheck,
+		CircleAlert,
 		ChevronRight,
-		Loader2,
-		Save
+		LoaderCircle,
+		Upload,
+		X,
+		FileText,
+		Copy
 	} from 'lucide-svelte';
 
 	let { data } = $props();
@@ -39,6 +49,205 @@
 	let isEditMode = $state(false);
 	let authNid = '';
 	let authDob = '';
+
+	// ===== ข้อมูลผู้สมัคร =====
+	let trackId = $state('');
+	let nationalId = $state('');
+	let title = $state('');
+	let firstName = $state('');
+	let lastName = $state('');
+	let gender = $state('');
+	let dob = $state('');
+	let phone = $state('');
+	let email = $state('');
+	let religion = $state('');
+	let ethnicity = $state('');
+	let nationality = $state('ไทย');
+
+	// ===== ที่อยู่ตามทะเบียนบ้าน =====
+	let homeHouseNo = $state('');
+	let homeMoo = $state('');
+	let homeSoi = $state('');
+	let homeRoad = $state('');
+	let addressLine = $state(''); // sub-address line (backward compat: home address_line)
+	let subDistrict = $state('');
+	let district = $state('');
+	let province = $state('');
+	let postalCode = $state('');
+	let homePhone = $state('');
+
+	// ===== ที่อยู่ปัจจุบัน =====
+	let currentHouseNo = $state('');
+	let currentMoo = $state('');
+	let currentSoi = $state('');
+	let currentRoad = $state('');
+	let currentSubDistrict = $state('');
+	let currentDistrict = $state('');
+	let currentProvince = $state('');
+	let currentPostalCode = $state('');
+	let currentPhone = $state('');
+
+	function copyHomeAddressToCurrent() {
+		currentHouseNo = homeHouseNo;
+		currentMoo = homeMoo;
+		currentSoi = homeSoi;
+		currentRoad = homeRoad;
+		currentSubDistrict = subDistrict;
+		currentDistrict = district;
+		currentProvince = province;
+		currentPostalCode = postalCode;
+		currentPhone = homePhone;
+		toast.success('คัดลอกที่อยู่ตามทะเบียนบ้านแล้ว');
+	}
+
+	// ===== โรงเรียนเดิม =====
+	let previousSchool = $state('');
+	let previousGrade = $state('');
+	let previousStudyYear = $state('');
+	let previousSchoolProvince = $state('');
+	let previousGpa = $state('');
+
+	// ===== ครอบครัว =====
+	let parentStatus = $state<string[]>([]);
+	let parentStatusOther = $state('');
+
+	const PARENT_STATUS_OPTIONS = [
+		'อยู่ร่วมกัน',
+		'แยกกันอยู่',
+		'หย่าร้าง',
+		'บิดาเสียชีวิต',
+		'มารดาเสียชีวิต',
+		'อื่นๆ'
+	];
+
+	function toggleParentStatus(val: string) {
+		if (parentStatus.includes(val)) {
+			parentStatus = parentStatus.filter((s) => s !== val);
+		} else {
+			parentStatus = [...parentStatus, val];
+		}
+	}
+
+	// บิดา
+	let fatherTitle = $state('');
+	let fatherFirstName = $state('');
+	let fatherLastName = $state('');
+	let fatherPhone = $state('');
+	let fatherOccupation = $state('');
+	let fatherNationalId = $state('');
+	let fatherIncome = $state('');
+
+	// มารดา
+	let motherTitle = $state('');
+	let motherFirstName = $state('');
+	let motherLastName = $state('');
+	let motherPhone = $state('');
+	let motherOccupation = $state('');
+	let motherNationalId = $state('');
+	let motherIncome = $state('');
+
+	// ผู้ปกครอง
+	let guardianIs = $state<'father' | 'mother' | 'other'>('other');
+	let guardianTitle = $state('');
+	let guardianFirstName = $state('');
+	let guardianLastName = $state('');
+	let guardianPhone = $state('');
+	let guardianRelation = $state('');
+	let guardianNationalId = $state('');
+	let guardianOccupation = $state('');
+	let guardianIncome = $state('');
+
+	// ===== เอกสาร =====
+	type DocSlot = {
+		tempFileId?: string;
+		name?: string;
+		size?: number;
+		url?: string;
+		uploading: boolean;
+	};
+	let uploadedDocs = $state<Record<string, DocSlot>>({});
+
+	// In edit mode: existing linked documents
+	let existingDocs = $state<ApplicationDocument[]>([]);
+	let deletingDoc = $state<string | null>(null);
+
+	const DOC_TYPE_ORDER = Object.keys(DOC_TYPE_LABELS);
+
+	async function handleDocUpload(docType: string, e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+
+		uploadedDocs[docType] = { uploading: true };
+		try {
+			const res = await portalUploadTempFile(file, docType);
+			uploadedDocs[docType] = {
+				tempFileId: res.tempFileId,
+				name: res.originalFilename,
+				size: res.fileSize,
+				url: res.url,
+				uploading: false
+			};
+			toast.success(`อัปโหลด "${DOC_TYPE_LABELS[docType]?.label}" แล้ว`);
+		} catch (err) {
+			const copy = { ...uploadedDocs };
+			delete copy[docType];
+			uploadedDocs = copy;
+			toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ');
+		}
+		// Reset input
+		input.value = '';
+	}
+
+	function handleDocRemoveNew(docType: string) {
+		const copy = { ...uploadedDocs };
+		delete copy[docType];
+		uploadedDocs = copy;
+	}
+
+	async function handleDocDeleteExisting(docType: string) {
+		if (!authNid || !authDob) return;
+		deletingDoc = docType;
+		try {
+			await portalDeleteDocument(authNid, authDob, docType);
+			existingDocs = existingDocs.filter((d) => d.docType !== docType);
+			toast.success('ลบเอกสารแล้ว');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ');
+		} finally {
+			deletingDoc = null;
+		}
+	}
+
+	function formatBytes(bytes: number) {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+	}
+
+	const parseName = (
+		fullName: string,
+		setTitle: (v: string) => void,
+		setFirst: (v: string) => void,
+		setLast: (v: string) => void
+	) => {
+		if (!fullName) return;
+		let f = fullName.trim();
+		const prefixes = ['นางสาว', 'นาง', 'นาย', 'ด.ช.', 'ด.ญ.'];
+		let found = false;
+		for (const p of prefixes) {
+			if (f.startsWith(p)) {
+				setTitle(p);
+				f = f.substring(p.length).trim();
+				found = true;
+				break;
+			}
+		}
+		if (!found) setTitle('');
+		const parts = f.split(' ').filter(Boolean);
+		setFirst(parts[0] || '');
+		setLast(parts.slice(1).join(' '));
+	};
 
 	onMount(async () => {
 		const id = page.params.id;
@@ -70,84 +279,85 @@
 					firstName = app.firstName || '';
 					lastName = app.lastName || '';
 					gender = app.gender || '';
-					if (app.dateOfBirth) {
-						if (app.dateOfBirth.length === 10) {
-							// dateOfBirth is returned as YYYY-MM-DD from the backend (NaiveDate)
-							dob = app.dateOfBirth;
-						}
-					}
+					if (app.dateOfBirth?.length === 10) dob = app.dateOfBirth;
 					phone = app.phone || '';
 					email = app.email || '';
+					religion = app.religion || '';
+					ethnicity = app.ethnicity || '';
+					nationality = app.nationality || 'ไทย';
+
+					// Home address
+					homeHouseNo = app.homeHouseNo || '';
+					homeMoo = app.homeMoo || '';
+					homeSoi = app.homeSoi || '';
+					homeRoad = app.homeRoad || '';
 					addressLine = app.addressLine || '';
 					subDistrict = app.subDistrict || '';
 					district = app.district || '';
 					province = app.province || '';
 					postalCode = app.postalCode || '';
+					homePhone = app.homePhone || '';
+
+					// Current address
+					currentHouseNo = app.currentHouseNo || '';
+					currentMoo = app.currentMoo || '';
+					currentSoi = app.currentSoi || '';
+					currentRoad = app.currentRoad || '';
+					currentSubDistrict = app.currentSubDistrict || '';
+					currentDistrict = app.currentDistrict || '';
+					currentProvince = app.currentProvince || '';
+					currentPostalCode = app.currentPostalCode || '';
+					currentPhone = app.currentPhone || '';
+
+					// Previous school
 					previousSchool = app.previousSchool || '';
 					previousGrade = app.previousGrade || '';
+					previousStudyYear = app.previousStudyYear || '';
+					previousSchoolProvince = app.previousSchoolProvince || '';
 					previousGpa = app.previousGpa ? app.previousGpa.toString() : '';
 
-					const parseName = (
-						fullName: string,
-						setTitle: (v: string) => void,
-						setFirst: (v: string) => void,
-						setLast: (v: string) => void
-					) => {
-						if (!fullName) return;
-						let f = fullName.trim();
-						if (f.startsWith('นาย')) {
-							setTitle('นาย');
-							f = f.substring(3).trim();
-						} else if (f.startsWith('นางสาว')) {
-							setTitle('นางสาว');
-							f = f.substring(6).trim();
-						} else if (f.startsWith('นาง')) {
-							setTitle('นาง');
-							f = f.substring(3).trim();
-						} else if (f.startsWith('ด.ช.')) {
-							setTitle('ด.ช.');
-							f = f.substring(4).trim();
-						} else if (f.startsWith('ด.ญ.')) {
-							setTitle('ด.ญ.');
-							f = f.substring(4).trim();
-						} else {
-							setTitle('');
-						}
-						const parts = f.split(' ').filter(Boolean);
-						setFirst(parts[0] || '');
-						setLast(parts.slice(1).join(' '));
-					};
+					// Family
+					parentStatus = Array.isArray(app.parentStatus) ? app.parentStatus : [];
+					parentStatusOther = app.parentStatusOther || '';
+					guardianIs = app.guardianIs || 'other';
 
 					parseName(
 						app.fatherName || '',
-						(v: string) => (fatherTitle = v),
-						(v: string) => (fatherFirstName = v),
-						(v: string) => (fatherLastName = v)
+						(v) => (fatherTitle = v),
+						(v) => (fatherFirstName = v),
+						(v) => (fatherLastName = v)
 					);
-					parseName(
-						app.motherName || '',
-						(v: string) => (motherTitle = v),
-						(v: string) => (motherFirstName = v),
-						(v: string) => (motherLastName = v)
-					);
-					parseName(
-						app.guardianName || '',
-						(v: string) => (guardianTitle = v),
-						(v: string) => (guardianFirstName = v),
-						(v: string) => (guardianLastName = v)
-					);
-
 					fatherPhone = app.fatherPhone || '';
 					fatherOccupation = app.fatherOccupation || '';
 					fatherNationalId = app.fatherNationalId || '';
+					fatherIncome = app.fatherIncome ? app.fatherIncome.toString() : '';
 
+					parseName(
+						app.motherName || '',
+						(v) => (motherTitle = v),
+						(v) => (motherFirstName = v),
+						(v) => (motherLastName = v)
+					);
 					motherPhone = app.motherPhone || '';
 					motherOccupation = app.motherOccupation || '';
 					motherNationalId = app.motherNationalId || '';
+					motherIncome = app.motherIncome ? app.motherIncome.toString() : '';
 
-					guardianRelation = app.guardianRelation || '';
+					parseName(
+						app.guardianName || '',
+						(v) => (guardianTitle = v),
+						(v) => (guardianFirstName = v),
+						(v) => (guardianLastName = v)
+					);
 					guardianPhone = app.guardianPhone || '';
+					guardianRelation = app.guardianRelation || '';
 					guardianNationalId = app.guardianNationalId || '';
+					guardianOccupation = app.guardianOccupation || '';
+					guardianIncome = app.guardianIncome ? app.guardianIncome.toString() : '';
+				}
+				// Load existing documents
+				if (statusData?.documents) {
+					existingDocs = statusData.documents;
 				}
 			}
 		} catch (e) {
@@ -157,44 +367,21 @@
 		}
 	});
 
-	let trackId = $state('');
-	let nationalId = $state('');
-	let title = $state('');
-	let firstName = $state('');
-	let lastName = $state('');
-	let gender = $state('');
-	let dob = $state('');
-	let phone = $state('');
-	let email = $state('');
-	let addressLine = $state('');
-	let subDistrict = $state('');
-	let district = $state('');
-	let province = $state('');
-	let postalCode = $state('');
-	let previousSchool = $state('');
-	let previousGrade = $state('');
-	let previousGpa = $state('');
-
-	let fatherTitle = $state('');
-	let fatherFirstName = $state('');
-	let fatherLastName = $state('');
-	let fatherPhone = $state('');
-	let fatherOccupation = $state('');
-	let fatherNationalId = $state('');
-
-	let motherTitle = $state('');
-	let motherFirstName = $state('');
-	let motherLastName = $state('');
-	let motherPhone = $state('');
-	let motherOccupation = $state('');
-	let motherNationalId = $state('');
-
-	let guardianTitle = $state('');
-	let guardianFirstName = $state('');
-	let guardianLastName = $state('');
-	let guardianPhone = $state('');
-	let guardianRelation = $state('');
-	let guardianNationalId = $state('');
+	function buildGuardianName() {
+		if (guardianIs === 'father') {
+			return fatherFirstName
+				? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim()
+				: undefined;
+		}
+		if (guardianIs === 'mother') {
+			return motherFirstName
+				? `${motherTitle}${motherFirstName} ${motherLastName}`.trim()
+				: undefined;
+		}
+		return guardianFirstName
+			? `${guardianTitle}${guardianFirstName} ${guardianLastName}`.trim()
+			: undefined;
+	}
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
@@ -210,85 +397,93 @@
 
 		submitting = true;
 		try {
+			// Concat addressLine for backward compat with enrollment handler
+			const homeAddressLine = [homeHouseNo, homeMoo ? `หมู่ ${homeMoo}` : '', homeSoi ? `ซ.${homeSoi}` : '', homeRoad ? `ถ.${homeRoad}` : '']
+				.filter(Boolean)
+				.join(' ')
+				.trim() || addressLine;
+
+			const guardianName = buildGuardianName();
+			const guardianPhoneVal = guardianIs === 'father' ? fatherPhone : guardianIs === 'mother' ? motherPhone : guardianPhone;
+			const guardianNationalIdVal = guardianIs === 'father' ? fatherNationalId : guardianIs === 'mother' ? motherNationalId : guardianNationalId;
+			const guardianOccupationVal = guardianIs === 'father' ? fatherOccupation : guardianIs === 'mother' ? motherOccupation : guardianOccupation;
+			const guardianIncomeVal = guardianIs === 'father' ? (fatherIncome ? parseFloat(fatherIncome) : undefined) : guardianIs === 'mother' ? (motherIncome ? parseFloat(motherIncome) : undefined) : (guardianIncome ? parseFloat(guardianIncome) : undefined);
+
+			const payload = {
+				admissionTrackId: trackId,
+				nationalId,
+				title,
+				firstName,
+				lastName,
+				gender,
+				dateOfBirth: dob || undefined,
+				phone,
+				email,
+				religion: religion || undefined,
+				ethnicity: ethnicity || undefined,
+				nationality: nationality || undefined,
+				// Home address
+				addressLine: homeAddressLine || undefined,
+				homeHouseNo: homeHouseNo || undefined,
+				homeMoo: homeMoo || undefined,
+				homeSoi: homeSoi || undefined,
+				homeRoad: homeRoad || undefined,
+				subDistrict: subDistrict || undefined,
+				district: district || undefined,
+				province: province || undefined,
+				postalCode: postalCode || undefined,
+				homePhone: homePhone || undefined,
+				// Current address
+				currentHouseNo: currentHouseNo || undefined,
+				currentMoo: currentMoo || undefined,
+				currentSoi: currentSoi || undefined,
+				currentRoad: currentRoad || undefined,
+				currentSubDistrict: currentSubDistrict || undefined,
+				currentDistrict: currentDistrict || undefined,
+				currentProvince: currentProvince || undefined,
+				currentPostalCode: currentPostalCode || undefined,
+				currentPhone: currentPhone || undefined,
+				// Previous school
+				previousSchool: previousSchool || undefined,
+				previousGrade: previousGrade || undefined,
+				previousGpa: previousGpa ? parseFloat(previousGpa) : undefined,
+				previousStudyYear: previousStudyYear || undefined,
+				previousSchoolProvince: previousSchoolProvince || undefined,
+				// Father
+				fatherName: fatherFirstName ? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim() : undefined,
+				fatherPhone: fatherPhone || undefined,
+				fatherOccupation: fatherOccupation || undefined,
+				fatherNationalId: fatherNationalId || undefined,
+				fatherIncome: fatherIncome ? parseFloat(fatherIncome) : undefined,
+				// Mother
+				motherName: motherFirstName ? `${motherTitle}${motherFirstName} ${motherLastName}`.trim() : undefined,
+				motherPhone: motherPhone || undefined,
+				motherOccupation: motherOccupation || undefined,
+				motherNationalId: motherNationalId || undefined,
+				motherIncome: motherIncome ? parseFloat(motherIncome) : undefined,
+				// Guardian
+				guardianName,
+				guardianPhone: guardianPhoneVal || undefined,
+				guardianRelation: guardianIs === 'other' ? (guardianRelation || undefined) : undefined,
+				guardianNationalId: guardianNationalIdVal || undefined,
+				guardianOccupation: guardianOccupationVal || undefined,
+				guardianIncome: guardianIncomeVal,
+				guardianIs,
+				// Family status
+				parentStatus: parentStatus.length > 0 ? parentStatus : undefined,
+				parentStatusOther: parentStatus.includes('อื่นๆ') ? (parentStatusOther || undefined) : undefined,
+				// Documents (new upload)
+				documents: Object.entries(uploadedDocs)
+					.filter(([, d]) => d.tempFileId)
+					.map(([docType, d]) => ({ tempFileId: d.tempFileId!, docType })),
+			};
+
 			let res;
 			if (isEditMode) {
-				const payload = {
-					admissionTrackId: trackId,
-					nationalId,
-					title,
-					firstName,
-					lastName,
-					gender,
-					dateOfBirth: dob || undefined,
-					phone,
-					email,
-					addressLine,
-					subDistrict,
-					district,
-					province,
-					postalCode,
-					previousSchool,
-					previousGrade,
-					previousGpa: previousGpa ? parseFloat(previousGpa) : undefined,
-					fatherName: fatherFirstName
-						? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim()
-						: undefined,
-					fatherPhone,
-					fatherOccupation,
-					fatherNationalId,
-					motherName: motherFirstName
-						? `${motherTitle}${motherFirstName} ${motherLastName}`.trim()
-						: undefined,
-					motherPhone,
-					motherOccupation,
-					motherNationalId,
-					guardianName: guardianFirstName
-						? `${guardianTitle}${guardianFirstName} ${guardianLastName}`.trim()
-						: undefined,
-					guardianPhone,
-					guardianRelation,
-					guardianNationalId
-				};
 				await updateApplication(authNid, authDob, payload);
 				res = { message: 'อัปเดตใบสมัครเรียบร้อยแล้ว' };
 			} else {
-				res = await submitApplication(page.params.id!, {
-					admissionTrackId: trackId,
-					nationalId,
-					title,
-					firstName,
-					lastName,
-					gender,
-					dateOfBirth: dob || undefined,
-					phone,
-					email,
-					addressLine,
-					subDistrict,
-					district,
-					province,
-					postalCode,
-					previousSchool,
-					previousGrade,
-					previousGpa: previousGpa ? parseFloat(previousGpa) : undefined,
-					fatherName: fatherFirstName
-						? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim()
-						: undefined,
-					fatherPhone,
-					fatherOccupation,
-					fatherNationalId,
-					motherName: motherFirstName
-						? `${motherTitle}${motherFirstName} ${motherLastName}`.trim()
-						: undefined,
-					motherPhone,
-					motherOccupation,
-					motherNationalId,
-					guardianName: guardianFirstName
-						? `${guardianTitle}${guardianFirstName} ${guardianLastName}`.trim()
-						: undefined,
-					guardianPhone,
-					guardianRelation,
-					guardianNationalId
-				});
+				res = await submitApplication(page.params.id!, payload);
 			}
 
 			successResult = res;
@@ -299,6 +494,12 @@
 			submitting = false;
 		}
 	}
+
+	// Helper: title options
+	const STUDENT_TITLES = ['ด.ช.', 'ด.ญ.', 'นาย', 'นางสาว'];
+	const MALE_TITLES = ['นาย', 'ม.ร.ว.', 'ม.ล.', 'ดร.'];
+	const FEMALE_TITLES = ['นาง', 'นางสาว', 'ม.ร.ว.', 'ม.ล.', 'ดร.'];
+	const GUARDIAN_TITLES = ['นาย', 'นาง', 'นางสาว', 'ปู่', 'ย่า', 'ตา', 'ยาย', 'ดร.'];
 </script>
 
 <svelte:head>
@@ -310,14 +511,13 @@
 		<!-- Loading -->
 		{#if loading}
 			<div class="flex flex-col items-center justify-center py-24 gap-4 text-muted-foreground">
-				<Loader2 class="w-10 h-10 animate-spin text-blue-500" />
+				<LoaderCircle class="w-10 h-10 animate-spin text-blue-500" />
 				<p>กำลังโหลดข้อมูลรอบรับสมัคร...</p>
 			</div>
 
-			<!-- Error -->
 		{:else if loadError}
 			<div class="flex flex-col items-center justify-center py-24 gap-4 text-center">
-				<AlertCircle class="w-12 h-12 text-red-400" />
+				<CircleAlert class="w-12 h-12 text-red-400" />
 				<p class="text-gray-700 font-medium">{loadError}</p>
 				<Button onclick={() => window.location.reload()} variant="outline">ลองใหม่</Button>
 			</div>
@@ -336,16 +536,8 @@
 						ระดับชั้น {round.gradeLevelName} | ปีการศึกษา {round.academicYearName}
 					</p>
 					<p class="text-xs text-gray-400 mt-1">
-						รับสมัคร {new Date(round.applyStartDate).toLocaleDateString('th-TH', {
-							year: 'numeric',
-							month: 'short',
-							day: 'numeric'
-						})}
-						– {new Date(round.applyEndDate).toLocaleDateString('th-TH', {
-							year: 'numeric',
-							month: 'short',
-							day: 'numeric'
-						})}
+						รับสมัคร {new Date(round.applyStartDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
+						– {new Date(round.applyEndDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
 					</p>
 				{/if}
 			</div>
@@ -354,27 +546,19 @@
 			{#if successResult}
 				<Card.Root class="border-green-200 shadow-lg">
 					<Card.Content class="pt-8 pb-8 text-center space-y-5">
-						<CheckCircle2 class="w-20 h-20 text-green-500 mx-auto" />
+						<CircleCheck class="w-20 h-20 text-green-500 mx-auto" />
 						<div>
 							<h2 class="text-2xl font-bold text-green-800 mb-1">
 								{isEditMode ? 'อัปเดตใบสมัครสำเร็จ!' : 'ส่งใบสมัครสำเร็จ!'}
 							</h2>
 							<p class="text-gray-600">ได้รับข้อมูลใบสมัครของท่านเรียบร้อยแล้ว</p>
 						</div>
-						<div
-							class="flex items-start gap-3 max-w-sm mx-auto bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4 text-sm text-left"
-						>
-							<AlertCircle class="w-5 h-5 shrink-0 mt-0.5" />
+						<div class="flex items-start gap-3 max-w-sm mx-auto bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4 text-sm text-left">
+							<CircleAlert class="w-5 h-5 shrink-0 mt-0.5" />
 							{#if !isEditMode}
-								<p>
-									ระบบใช้ <strong>เลขบัตรประชาชน</strong> และ
-									<strong>วัน/เดือน/ปีเกิด (พ.ศ.)</strong>
-									ของผู้สมัครในการตรวจสอบสถานะในภายหลัง
-								</p>
+								<p>ระบบใช้ <strong>เลขบัตรประชาชน</strong> และ <strong>วัน/เดือน/ปีเกิด (พ.ศ.)</strong> ของผู้สมัครในการตรวจสอบสถานะในภายหลัง</p>
 							{:else}
-								<p>
-									ข้อมูลใบสมัครของคุณได้รับการแก้ไขและอัปเดตเรียบร้อยแล้ว <br /> กรุณารอการตรวจสอบจากฝั่งเจ้าหน้าที่อีกครั้ง
-								</p>
+								<p>ข้อมูลใบสมัครได้รับการแก้ไขและอัปเดตเรียบร้อยแล้ว กรุณารอการตรวจสอบจากฝั่งเจ้าหน้าที่อีกครั้ง</p>
 							{/if}
 						</div>
 						<Button href="/apply" class="gap-2 mt-2">
@@ -383,11 +567,11 @@
 					</Card.Content>
 				</Card.Root>
 
-				<!-- Form -->
 			{:else}
-				<form onsubmit={handleSubmit} novalidate>
-					<!-- Step 1: เลือกสายการเรียน -->
-					<Card.Root class="mb-5 shadow-sm">
+				<form onsubmit={handleSubmit} novalidate class="space-y-5">
+
+					<!-- ===== Card 1: เลือกสายการเรียน ===== -->
+					<Card.Root class="shadow-sm">
 						<Card.Header class="pb-2">
 							<Card.Title class="text-base">
 								1. เลือกสายการเรียน <span class="text-red-500">*</span>
@@ -395,9 +579,7 @@
 						</Card.Header>
 						<Card.Content>
 							{#if tracks.length === 0}
-								<p class="text-sm text-muted-foreground py-4 text-center">
-									ไม่มีสายการเรียนที่เปิดรับในรอบนี้
-								</p>
+								<p class="text-sm text-muted-foreground py-4 text-center">ไม่มีสายการเรียนที่เปิดรับในรอบนี้</p>
 							{:else}
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 									{#each tracks as t}
@@ -405,15 +587,11 @@
 											type="button"
 											onclick={() => (trackId = t.id)}
 											class="text-left border-2 rounded-xl p-4 transition-all
-											{trackId === t.id
-												? 'border-primary bg-primary/5'
-												: 'border-border hover:border-primary/40 bg-card'}"
+											{trackId === t.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 bg-card'}"
 										>
 											<div class="flex items-center gap-2">
-												<div
-													class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
-													{trackId === t.id ? 'border-primary' : 'border-muted-foreground'}"
-												>
+												<div class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
+													{trackId === t.id ? 'border-primary' : 'border-muted-foreground'}">
 													{#if trackId === t.id}
 														<div class="w-2 h-2 rounded-full bg-primary"></div>
 													{/if}
@@ -430,16 +608,14 @@
 						</Card.Content>
 					</Card.Root>
 
-					<!-- Step 2: ข้อมูลผู้สมัคร -->
-					<Card.Root class="mb-5 shadow-sm">
+					<!-- ===== Card 2: ข้อมูลผู้สมัคร ===== -->
+					<Card.Root class="shadow-sm">
 						<Card.Header class="pb-2">
 							<Card.Title class="text-base">2. ข้อมูลผู้สมัคร</Card.Title>
 						</Card.Header>
-						<Card.Content class="space-y-5">
+						<Card.Content class="space-y-4">
 							<div class="space-y-2">
-								<Label for="nationalId"
-									>เลขประจำตัวประชาชน <span class="text-red-500">*</span></Label
-								>
+								<Label for="nationalId">เลขประจำตัวประชาชน <span class="text-red-500">*</span></Label>
 								<Input
 									id="nationalId"
 									bind:value={nationalId}
@@ -452,16 +628,13 @@
 
 							<div class="grid grid-cols-12 gap-3">
 								<div class="col-span-12 sm:col-span-3 space-y-2">
-									<Label for="title-select">คำนำหน้า <span class="text-red-500">*</span></Label>
+									<Label>คำนำหน้า <span class="text-red-500">*</span></Label>
 									<Select.Root type="single" bind:value={title} required>
-										<Select.Trigger id="title-select">
-											{title || '-- เลือก --'}
-										</Select.Trigger>
+										<Select.Trigger>{title || '-- เลือก --'}</Select.Trigger>
 										<Select.Content>
-											<Select.Item value="ด.ช.">เด็กชาย (ด.ช.)</Select.Item>
-											<Select.Item value="ด.ญ.">เด็กหญิง (ด.ญ.)</Select.Item>
-											<Select.Item value="นาย">นาย</Select.Item>
-											<Select.Item value="นางสาว">นางสาว</Select.Item>
+											{#each STUDENT_TITLES as t}
+												<Select.Item value={t}>{t}</Select.Item>
+											{/each}
 										</Select.Content>
 									</Select.Root>
 								</div>
@@ -475,24 +648,22 @@
 								</div>
 							</div>
 
-							<div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-								<div class="md:col-span-3 space-y-2 flex flex-col justify-end">
-									<Label for="gender-select">เพศ</Label>
+							<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+								<div class="space-y-2">
+									<Label>เพศ</Label>
 									<Select.Root type="single" bind:value={gender}>
-										<Select.Trigger id="gender-select">
-											{gender === 'Male' ? 'ชาย' : gender === 'Female' ? 'หญิง' : '-- เลือก --'}
-										</Select.Trigger>
+										<Select.Trigger>{gender === 'Male' ? 'ชาย' : gender === 'Female' ? 'หญิง' : '-- เลือก --'}</Select.Trigger>
 										<Select.Content>
 											<Select.Item value="Male">ชาย</Select.Item>
 											<Select.Item value="Female">หญิง</Select.Item>
 										</Select.Content>
 									</Select.Root>
 								</div>
-								<div class="md:col-span-5 space-y-2 flex flex-col justify-end">
-									<Label for="dob">วันเกิด (ปฏิทินไทย)</Label>
+								<div class="space-y-2">
+									<Label>วันเกิด (ปฏิทินไทย)</Label>
 									<DatePicker bind:value={dob} />
 								</div>
-								<div class="md:col-span-4 space-y-2 flex flex-col justify-end">
+								<div class="space-y-2">
 									<Label for="phone">เบอร์โทร</Label>
 									<Input id="phone" type="tel" bind:value={phone} placeholder="08XXXXXXXX" />
 								</div>
@@ -504,45 +675,145 @@
 							</div>
 
 							<Separator />
+							<p class="text-sm font-semibold text-muted-foreground">ข้อมูลเพิ่มเติม</p>
 
-							<p class="text-sm font-semibold">ที่อยู่ปัจจุบัน</p>
-							<div class="space-y-2">
-								<Label for="addressLine">บ้านเลขที่ / ซอย / ถนน</Label>
-								<Input id="addressLine" bind:value={addressLine} />
+							<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+								<div class="space-y-2">
+									<Label for="religion">ศาสนา</Label>
+									<Input id="religion" bind:value={religion} placeholder="พุทธ, คริสต์, อิสลาม..." />
+								</div>
+								<div class="space-y-2">
+									<Label for="ethnicity">เชื้อชาติ</Label>
+									<Input id="ethnicity" bind:value={ethnicity} placeholder="ไทย..." />
+								</div>
+								<div class="space-y-2">
+									<Label for="nationality">สัญชาติ</Label>
+									<Input id="nationality" bind:value={nationality} placeholder="ไทย..." />
+								</div>
+							</div>
+						</Card.Content>
+					</Card.Root>
+
+					<!-- ===== Card 3: ที่อยู่ ===== -->
+					<Card.Root class="shadow-sm">
+						<Card.Header class="pb-2">
+							<Card.Title class="text-base">3. ที่อยู่</Card.Title>
+						</Card.Header>
+						<Card.Content class="space-y-5">
+							<!-- ที่อยู่ตามทะเบียนบ้าน -->
+							<p class="text-sm font-semibold">ที่อยู่ตามทะเบียนบ้าน</p>
+							<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+								<div class="space-y-2">
+									<Label for="homeHouseNo">บ้านเลขที่</Label>
+									<Input id="homeHouseNo" bind:value={homeHouseNo} placeholder="123/4" />
+								</div>
+								<div class="space-y-2">
+									<Label for="homeMoo">หมู่ที่</Label>
+									<Input id="homeMoo" bind:value={homeMoo} placeholder="5" />
+								</div>
+								<div class="space-y-2">
+									<Label for="homeSoi">ซอย</Label>
+									<Input id="homeSoi" bind:value={homeSoi} />
+								</div>
+								<div class="space-y-2">
+									<Label for="homeRoad">ถนน</Label>
+									<Input id="homeRoad" bind:value={homeRoad} />
+								</div>
 							</div>
 							<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 								<div class="col-span-2 space-y-2">
-									<Label for="subDistrict">แขวง / ตำบล</Label>
+									<Label for="subDistrict">ตำบล/แขวง</Label>
 									<Input id="subDistrict" bind:value={subDistrict} />
 								</div>
-								<div class="col-span-1 space-y-2">
-									<Label for="district">เขต / อำเภอ</Label>
+								<div class="space-y-2">
+									<Label for="district">อำเภอ/เขต</Label>
 									<Input id="district" bind:value={district} />
 								</div>
-								<div class="col-span-1 space-y-2">
+								<div class="space-y-2">
 									<Label for="province">จังหวัด</Label>
 									<Input id="province" bind:value={province} />
 								</div>
-								<div class="col-span-1 space-y-2">
+								<div class="space-y-2">
 									<Label for="postalCode">รหัสไปรษณีย์</Label>
 									<Input id="postalCode" bind:value={postalCode} maxlength={5} />
+								</div>
+								<div class="space-y-2">
+									<Label for="homePhone">โทรศัพท์</Label>
+									<Input id="homePhone" type="tel" bind:value={homePhone} placeholder="02XXXXXXX" />
 								</div>
 							</div>
 
 							<Separator />
 
-							<p class="text-sm font-semibold">ข้อมูลโรงเรียนเดิม</p>
-							<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-								<div class="col-span-2 space-y-2">
-									<Label for="prevSchool">ชื่อโรงเรียนเดิม</Label>
-									<Input id="prevSchool" bind:value={previousSchool} />
+							<!-- ที่อยู่ปัจจุบัน -->
+							<div class="flex items-center justify-between">
+								<p class="text-sm font-semibold">ที่อยู่ปัจจุบัน</p>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onclick={copyHomeAddressToCurrent}
+									class="gap-1.5 text-xs"
+								>
+									<Copy class="w-3 h-3" />
+									คัดลอกจากที่อยู่ตามทะเบียนบ้าน
+								</Button>
+							</div>
+							<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+								<div class="space-y-2">
+									<Label for="currentHouseNo">บ้านเลขที่</Label>
+									<Input id="currentHouseNo" bind:value={currentHouseNo} placeholder="123/4" />
 								</div>
 								<div class="space-y-2">
-									<Label for="prevGrade">ชั้นที่จบ</Label>
+									<Label for="currentMoo">หมู่ที่</Label>
+									<Input id="currentMoo" bind:value={currentMoo} placeholder="5" />
+								</div>
+								<div class="space-y-2">
+									<Label for="currentSoi">ซอย</Label>
+									<Input id="currentSoi" bind:value={currentSoi} />
+								</div>
+								<div class="space-y-2">
+									<Label for="currentRoad">ถนน</Label>
+									<Input id="currentRoad" bind:value={currentRoad} />
+								</div>
+							</div>
+							<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+								<div class="col-span-2 space-y-2">
+									<Label for="currentSubDistrict">ตำบล/แขวง</Label>
+									<Input id="currentSubDistrict" bind:value={currentSubDistrict} />
+								</div>
+								<div class="space-y-2">
+									<Label for="currentDistrict">อำเภอ/เขต</Label>
+									<Input id="currentDistrict" bind:value={currentDistrict} />
+								</div>
+								<div class="space-y-2">
+									<Label for="currentProvince">จังหวัด</Label>
+									<Input id="currentProvince" bind:value={currentProvince} />
+								</div>
+								<div class="space-y-2">
+									<Label for="currentPostalCode">รหัสไปรษณีย์</Label>
+									<Input id="currentPostalCode" bind:value={currentPostalCode} maxlength={5} />
+								</div>
+								<div class="space-y-2">
+									<Label for="currentPhone">โทรศัพท์</Label>
+									<Input id="currentPhone" type="tel" bind:value={currentPhone} placeholder="02XXXXXXX" />
+								</div>
+							</div>
+						</Card.Content>
+					</Card.Root>
+
+					<!-- ===== Card 4: การศึกษาเดิม ===== -->
+					<Card.Root class="shadow-sm">
+						<Card.Header class="pb-2">
+							<Card.Title class="text-base">4. ข้อมูลการศึกษาเดิม</Card.Title>
+						</Card.Header>
+						<Card.Content class="space-y-4">
+							<p class="text-sm text-muted-foreground">สำเร็จการศึกษา / กำลังศึกษาชั้น:</p>
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+								<div class="space-y-2">
+									<Label>ระดับชั้น</Label>
 									<Select.Root type="single" bind:value={previousGrade}>
-										<Select.Trigger id="prevGrade" class="w-full">
-											{previousGrade || '-- เลือกระดับชั้น --'}
-										</Select.Trigger>
+										<Select.Trigger class="w-full">{previousGrade || '-- เลือกระดับชั้น --'}</Select.Trigger>
 										<Select.Content>
 											<Select.Item value="อนุบาล 3">อนุบาล 3</Select.Item>
 											<Select.Item value="ประถมศึกษาปีที่ 6">ประถมศึกษาปีที่ 6</Select.Item>
@@ -552,77 +823,108 @@
 									</Select.Root>
 								</div>
 								<div class="space-y-2">
-									<Label for="prevGpa">เกรดเฉลี่ย (GPA)</Label>
-									<Input
-										id="prevGpa"
-										type="number"
-										bind:value={previousGpa}
-										step="0.01"
-										min="0"
-										max="4"
-										placeholder="0.00 – 4.00"
-									/>
+									<Label for="previousStudyYear">ศึกษาปีที่ (ระบุปีที่กำลังศึกษา)</Label>
+									<Input id="previousStudyYear" bind:value={previousStudyYear} placeholder="เช่น 6" />
 								</div>
+							</div>
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+								<div class="space-y-2">
+									<Label for="previousSchool">ชื่อโรงเรียนเดิม</Label>
+									<Input id="previousSchool" bind:value={previousSchool} placeholder="โรงเรียน..." />
+								</div>
+								<div class="space-y-2">
+									<Label for="previousSchoolProvince">จังหวัด</Label>
+									<Input id="previousSchoolProvince" bind:value={previousSchoolProvince} placeholder="จังหวัด..." />
+								</div>
+							</div>
+							<div class="max-w-xs space-y-2">
+								<Label for="prevGpa">ผลการเรียนเฉลี่ยสะสม (GPA)</Label>
+								<Input
+									id="prevGpa"
+									type="number"
+									bind:value={previousGpa}
+									step="0.01"
+									min="0"
+									max="4"
+									placeholder="0.00 – 4.00"
+								/>
 							</div>
 						</Card.Content>
 					</Card.Root>
 
-					<!-- Step 3: ข้อมูลครอบครัว -->
-					<Card.Root class="mb-5 shadow-sm">
+					<!-- ===== Card 5: ครอบครัว ===== -->
+					<Card.Root class="shadow-sm">
 						<Card.Header class="pb-2">
-							<Card.Title class="text-base">3. ข้อมูลครอบครัว</Card.Title>
+							<Card.Title class="text-base">5. ข้อมูลครอบครัว</Card.Title>
 						</Card.Header>
 						<Card.Content class="space-y-6">
+
+							<!-- สถานภาพบิดามารดา -->
+							<div class="space-y-3">
+								<p class="text-sm font-semibold">สถานภาพบิดามารดา <span class="font-normal text-muted-foreground">(เลือกได้มากกว่า 1)</span></p>
+								<div class="flex flex-wrap gap-2">
+									{#each PARENT_STATUS_OPTIONS as opt}
+										<button
+											type="button"
+											onclick={() => toggleParentStatus(opt)}
+											class="px-3 py-1.5 rounded-full text-sm border transition-all
+											{parentStatus.includes(opt)
+												? 'bg-primary text-primary-foreground border-primary'
+												: 'bg-background border-border hover:border-primary/50'}"
+										>
+											{opt}
+										</button>
+									{/each}
+								</div>
+								{#if parentStatus.includes('อื่นๆ')}
+									<Input
+										bind:value={parentStatusOther}
+										placeholder="ระบุ..."
+										class="max-w-xs"
+									/>
+								{/if}
+							</div>
+
+							<Separator />
+
 							<!-- บิดา -->
 							<div class="space-y-3">
-								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-									บิดา
-								</p>
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div class="grid grid-cols-12 gap-3 sm:col-span-2">
-										<div class="col-span-12 sm:col-span-3 space-y-2">
-											<Label for="fatherTitle">คำนำหน้า</Label>
-											<Select.Root type="single" bind:value={fatherTitle}>
-												<Select.Trigger id="fatherTitle"
-													>{fatherTitle || '-- เลือก --'}</Select.Trigger
-												>
-												<Select.Content>
-													<Select.Item value="นาย">นาย</Select.Item>
-													<Select.Item value="ม.ร.ว.">ม.ร.ว.</Select.Item>
-													<Select.Item value="ม.ล.">ม.ล.</Select.Item>
-													<Select.Item value="ดร.">ดร.</Select.Item>
-												</Select.Content>
-											</Select.Root>
-										</div>
-										<div class="col-span-12 sm:col-span-5 space-y-2">
-											<Label for="fatherFirstName">ชื่อ</Label>
-											<Input
-												id="fatherFirstName"
-												bind:value={fatherFirstName}
-												placeholder="สมชาย"
-											/>
-										</div>
-										<div class="col-span-12 sm:col-span-4 space-y-2">
-											<Label for="fatherLastName">นามสกุล</Label>
-											<Input id="fatherLastName" bind:value={fatherLastName} placeholder="ใจดี" />
-										</div>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">บิดา</p>
+								<div class="grid grid-cols-12 gap-3">
+									<div class="col-span-12 sm:col-span-3 space-y-2">
+										<Label>คำนำหน้า</Label>
+										<Select.Root type="single" bind:value={fatherTitle}>
+											<Select.Trigger>{fatherTitle || '-- เลือก --'}</Select.Trigger>
+											<Select.Content>
+												{#each MALE_TITLES as t}<Select.Item value={t}>{t}</Select.Item>{/each}
+											</Select.Content>
+										</Select.Root>
 									</div>
+									<div class="col-span-12 sm:col-span-5 space-y-2">
+										<Label for="fatherFirstName">ชื่อ</Label>
+										<Input id="fatherFirstName" bind:value={fatherFirstName} />
+									</div>
+									<div class="col-span-12 sm:col-span-4 space-y-2">
+										<Label for="fatherLastName">นามสกุล</Label>
+										<Input id="fatherLastName" bind:value={fatherLastName} />
+									</div>
+								</div>
+								<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 									<div class="space-y-2">
 										<Label for="fatherNationalId">เลขประชาชน</Label>
-										<Input
-											id="fatherNationalId"
-											bind:value={fatherNationalId}
-											maxlength={13}
-											class="font-mono"
-										/>
+										<Input id="fatherNationalId" bind:value={fatherNationalId} maxlength={13} class="font-mono" />
 									</div>
 									<div class="space-y-2">
-										<Label for="fatherPhone">เบอร์โทร</Label>
+										<Label for="fatherPhone">โทรศัพท์</Label>
 										<Input id="fatherPhone" bind:value={fatherPhone} type="tel" />
 									</div>
 									<div class="space-y-2">
-										<Label for="fatherOcc">อาชีพ</Label>
-										<Input id="fatherOcc" bind:value={fatherOccupation} />
+										<Label for="fatherOccupation">อาชีพ</Label>
+										<Input id="fatherOccupation" bind:value={fatherOccupation} />
+									</div>
+									<div class="space-y-2">
+										<Label for="fatherIncome">รายได้ต่อเดือน (บาท)</Label>
+										<Input id="fatherIncome" type="number" bind:value={fatherIncome} min="0" placeholder="0" />
 									</div>
 								</div>
 							</div>
@@ -631,55 +933,42 @@
 
 							<!-- มารดา -->
 							<div class="space-y-3">
-								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-									มารดา
-								</p>
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div class="grid grid-cols-12 gap-3 sm:col-span-2">
-										<div class="col-span-12 sm:col-span-3 space-y-2">
-											<Label for="motherTitle">คำนำหน้า</Label>
-											<Select.Root type="single" bind:value={motherTitle}>
-												<Select.Trigger id="motherTitle"
-													>{motherTitle || '-- เลือก --'}</Select.Trigger
-												>
-												<Select.Content>
-													<Select.Item value="นาง">นาง</Select.Item>
-													<Select.Item value="นางสาว">นางสาว</Select.Item>
-													<Select.Item value="ม.ร.ว.">ม.ร.ว.</Select.Item>
-													<Select.Item value="ม.ล.">ม.ล.</Select.Item>
-													<Select.Item value="ดร.">ดร.</Select.Item>
-												</Select.Content>
-											</Select.Root>
-										</div>
-										<div class="col-span-12 sm:col-span-5 space-y-2">
-											<Label for="motherFirstName">ชื่อ</Label>
-											<Input
-												id="motherFirstName"
-												bind:value={motherFirstName}
-												placeholder="สมศรี"
-											/>
-										</div>
-										<div class="col-span-12 sm:col-span-4 space-y-2">
-											<Label for="motherLastName">นามสกุล</Label>
-											<Input id="motherLastName" bind:value={motherLastName} placeholder="ใจดี" />
-										</div>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">มารดา</p>
+								<div class="grid grid-cols-12 gap-3">
+									<div class="col-span-12 sm:col-span-3 space-y-2">
+										<Label>คำนำหน้า</Label>
+										<Select.Root type="single" bind:value={motherTitle}>
+											<Select.Trigger>{motherTitle || '-- เลือก --'}</Select.Trigger>
+											<Select.Content>
+												{#each FEMALE_TITLES as t}<Select.Item value={t}>{t}</Select.Item>{/each}
+											</Select.Content>
+										</Select.Root>
 									</div>
+									<div class="col-span-12 sm:col-span-5 space-y-2">
+										<Label for="motherFirstName">ชื่อ</Label>
+										<Input id="motherFirstName" bind:value={motherFirstName} />
+									</div>
+									<div class="col-span-12 sm:col-span-4 space-y-2">
+										<Label for="motherLastName">นามสกุล</Label>
+										<Input id="motherLastName" bind:value={motherLastName} />
+									</div>
+								</div>
+								<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 									<div class="space-y-2">
 										<Label for="motherNationalId">เลขประชาชน</Label>
-										<Input
-											id="motherNationalId"
-											bind:value={motherNationalId}
-											maxlength={13}
-											class="font-mono"
-										/>
+										<Input id="motherNationalId" bind:value={motherNationalId} maxlength={13} class="font-mono" />
 									</div>
 									<div class="space-y-2">
-										<Label for="motherPhone">เบอร์โทร</Label>
+										<Label for="motherPhone">โทรศัพท์</Label>
 										<Input id="motherPhone" bind:value={motherPhone} type="tel" />
 									</div>
 									<div class="space-y-2">
-										<Label for="motherOcc">อาชีพ</Label>
-										<Input id="motherOcc" bind:value={motherOccupation} />
+										<Label for="motherOccupation">อาชีพ</Label>
+										<Input id="motherOccupation" bind:value={motherOccupation} />
+									</div>
+									<div class="space-y-2">
+										<Label for="motherIncome">รายได้ต่อเดือน (บาท)</Label>
+										<Input id="motherIncome" type="number" bind:value={motherIncome} min="0" placeholder="0" />
 									</div>
 								</div>
 							</div>
@@ -688,98 +977,185 @@
 
 							<!-- ผู้ปกครอง -->
 							<div class="space-y-3">
-								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-									ผู้ปกครอง
-									<span class="normal-case font-normal text-muted-foreground/70">
-										(กรณีไม่ใช่บิดา-มารดา)
-									</span>
-								</p>
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div class="grid grid-cols-12 gap-3 sm:col-span-2">
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">ผู้ปกครอง</p>
+								<div class="flex flex-wrap gap-2">
+									{#each [['father', 'บิดา'], ['mother', 'มารดา'], ['other', 'บุคคลอื่น']] as [val, label]}
+										<button
+											type="button"
+											onclick={() => (guardianIs = val as 'father' | 'mother' | 'other')}
+											class="px-4 py-2 rounded-full text-sm border transition-all
+											{guardianIs === val
+												? 'bg-primary text-primary-foreground border-primary'
+												: 'bg-background border-border hover:border-primary/50'}"
+										>
+											{label}
+										</button>
+									{/each}
+								</div>
+
+								{#if guardianIs === 'father'}
+									<p class="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-2">
+										ใช้ข้อมูลบิดาที่กรอกไว้ข้างต้น
+									</p>
+								{:else if guardianIs === 'mother'}
+									<p class="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-2">
+										ใช้ข้อมูลมารดาที่กรอกไว้ข้างต้น
+									</p>
+								{:else}
+									<div class="grid grid-cols-12 gap-3">
 										<div class="col-span-12 sm:col-span-3 space-y-2">
-											<Label for="guardianTitle">คำนำหน้า <span class="text-red-500">*</span></Label
-											>
+											<Label>คำนำหน้า <span class="text-red-500">*</span></Label>
 											<Select.Root type="single" bind:value={guardianTitle} required>
-												<Select.Trigger id="guardianTitle"
-													>{guardianTitle || '-- เลือก --'}</Select.Trigger
-												>
+												<Select.Trigger>{guardianTitle || '-- เลือก --'}</Select.Trigger>
 												<Select.Content>
-													<Select.Item value="นาย">นาย</Select.Item>
-													<Select.Item value="นาง">นาง</Select.Item>
-													<Select.Item value="นางสาว">นางสาว</Select.Item>
-													<Select.Item value="ปู่">ปู่</Select.Item>
-													<Select.Item value="ย่า">ย่า</Select.Item>
-													<Select.Item value="ตา">ตา</Select.Item>
-													<Select.Item value="ยาย">ยาย</Select.Item>
-													<Select.Item value="ดร.">ดร.</Select.Item>
+													{#each GUARDIAN_TITLES as t}<Select.Item value={t}>{t}</Select.Item>{/each}
 												</Select.Content>
 											</Select.Root>
 										</div>
 										<div class="col-span-12 sm:col-span-5 space-y-2">
-											<Label for="guardianFirstName">ชื่อ <span class="text-red-500">*</span></Label
-											>
-											<Input
-												id="guardianFirstName"
-												bind:value={guardianFirstName}
-												placeholder="สมศักดิ์"
-												required
-											/>
+											<Label for="guardianFirstName">ชื่อ <span class="text-red-500">*</span></Label>
+											<Input id="guardianFirstName" bind:value={guardianFirstName} required />
 										</div>
 										<div class="col-span-12 sm:col-span-4 space-y-2">
-											<Label for="guardianLastName"
-												>นามสกุล <span class="text-red-500">*</span></Label
-											>
-											<Input
-												id="guardianLastName"
-												bind:value={guardianLastName}
-												placeholder="ใจดี"
-												required
-											/>
+											<Label for="guardianLastName">นามสกุล <span class="text-red-500">*</span></Label>
+											<Input id="guardianLastName" bind:value={guardianLastName} required />
 										</div>
 									</div>
-									<div class="space-y-2">
-										<Label for="guardianRelation">ความสัมพันธ์</Label>
-										<Input
-											id="guardianRelation"
-											bind:value={guardianRelation}
-											placeholder="เช่น ปู่, ย่า, ลุง"
-										/>
+									<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+										<div class="space-y-2">
+											<Label for="guardianRelation">ความสัมพันธ์</Label>
+											<Input id="guardianRelation" bind:value={guardianRelation} placeholder="เช่น ปู่, ย่า, ลุง" />
+										</div>
+										<div class="space-y-2">
+											<Label for="guardianNationalId">เลขประชาชน</Label>
+											<Input id="guardianNationalId" bind:value={guardianNationalId} maxlength={13} class="font-mono" />
+										</div>
+										<div class="space-y-2">
+											<Label for="guardianPhone">โทรศัพท์</Label>
+											<Input id="guardianPhone" bind:value={guardianPhone} type="tel" />
+										</div>
+										<div class="space-y-2">
+											<Label for="guardianOccupation">อาชีพ</Label>
+											<Input id="guardianOccupation" bind:value={guardianOccupation} />
+										</div>
+										<div class="space-y-2">
+											<Label for="guardianIncome">รายได้ต่อเดือน (บาท)</Label>
+											<Input id="guardianIncome" type="number" bind:value={guardianIncome} min="0" placeholder="0" />
+										</div>
 									</div>
-									<div class="space-y-2">
-										<Label for="guardianPhone">เบอร์โทร</Label>
-										<Input id="guardianPhone" bind:value={guardianPhone} type="tel" />
-									</div>
-									<div class="space-y-2">
-										<Label for="guardianNationalId">เลขประชาชน</Label>
-										<Input
-											id="guardianNationalId"
-											bind:value={guardianNationalId}
-											maxlength={13}
-											class="font-mono"
-										/>
-									</div>
-								</div>
+								{/if}
 							</div>
 						</Card.Content>
 					</Card.Root>
 
-					<!-- Submit -->
+					<!-- ===== Card 6: เอกสารประกอบ ===== -->
+					<Card.Root class="shadow-sm">
+						<Card.Header class="pb-2">
+							<Card.Title class="text-base">6. เอกสารประกอบการสมัคร</Card.Title>
+							<p class="text-xs text-muted-foreground mt-1">รองรับไฟล์ JPG, PNG, PDF ขนาดไม่เกิน 20MB</p>
+						</Card.Header>
+						<Card.Content class="space-y-2">
+							{#each DOC_TYPE_ORDER as docType}
+								{@const info = DOC_TYPE_LABELS[docType]}
+								{@const existing = existingDocs.find((d) => d.docType === docType)}
+								{@const newDoc = uploadedDocs[docType]}
+								{@const hasFile = existing || (newDoc && newDoc.tempFileId)}
+
+								<div class="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
+									<FileText class="w-5 h-5 text-muted-foreground shrink-0" />
+									<div class="flex-1 min-w-0">
+										<p class="text-sm font-medium leading-tight">
+											{info.label}
+											{#if info.required}
+												<span class="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">จำเป็น</span>
+											{:else}
+												<span class="ml-1 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">ถ้ามี</span>
+											{/if}
+										</p>
+										{#if hasFile}
+											<p class="text-xs text-green-600 truncate mt-0.5">
+												✓ {existing?.originalFilename ?? newDoc?.name ?? 'ไฟล์แนบ'}
+												{#if existing?.fileSize || newDoc?.size}
+													<span class="text-muted-foreground">({formatBytes((existing?.fileSize ?? newDoc?.size)!)})</span>
+												{/if}
+											</p>
+										{/if}
+									</div>
+
+									<div class="flex items-center gap-2 shrink-0">
+										{#if newDoc?.uploading}
+											<LoaderCircle class="w-4 h-4 animate-spin text-blue-500" />
+										{:else if hasFile}
+											<!-- Replace button -->
+											<label class="cursor-pointer">
+												<input
+													type="file"
+													class="hidden"
+													accept=".jpg,.jpeg,.png,.pdf,.webp"
+													onchange={(e) => handleDocUpload(docType, e)}
+												/>
+												<span class="text-xs text-blue-600 hover:underline">เปลี่ยน</span>
+											</label>
+											<!-- Delete button -->
+											{#if existing}
+												<button
+													type="button"
+													class="text-red-400 hover:text-red-600 disabled:opacity-50"
+													disabled={deletingDoc === docType}
+													onclick={() => handleDocDeleteExisting(docType)}
+												>
+													{#if deletingDoc === docType}
+														<LoaderCircle class="w-4 h-4 animate-spin" />
+													{:else}
+														<X class="w-4 h-4" />
+													{/if}
+												</button>
+											{:else}
+												<button
+													type="button"
+													class="text-red-400 hover:text-red-600"
+													onclick={() => handleDocRemoveNew(docType)}
+												>
+													<X class="w-4 h-4" />
+												</button>
+											{/if}
+										{:else}
+											<!-- Upload button -->
+											<label class="cursor-pointer">
+												<input
+													type="file"
+													class="hidden"
+													accept=".jpg,.jpeg,.png,.pdf,.webp"
+													onchange={(e) => handleDocUpload(docType, e)}
+												/>
+												<span class="flex items-center gap-1 text-xs text-blue-600 hover:underline border border-blue-200 rounded px-2 py-1">
+													<Upload class="w-3 h-3" />
+													อัปโหลด
+												</span>
+											</label>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</Card.Content>
+					</Card.Root>
+
+					<!-- ===== Submit Bar ===== -->
 					<div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 pb-8">
 						<p class="text-xs text-muted-foreground text-center sm:text-left max-w-sm">
 							ข้าพเจ้าขอรับรองว่าข้อมูลที่กรอกทั้งหมดเป็นความจริง
 						</p>
 						<Button type="submit" size="lg" disabled={submitting} class="w-full sm:w-auto px-10">
-							{submitting
-								? isEditMode
-									? '⏳ กำลังบันทึก...'
-									: '⏳ กำลังส่งข้อมูล...'
-								: isEditMode
-									? '💾 บันทึกการแก้ไข'
-									: '📨 ส่งใบสมัคร'}
+							{#if submitting}
+								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+								{isEditMode ? 'กำลังบันทึก...' : 'กำลังส่งข้อมูล...'}
+							{:else}
+								{isEditMode ? 'บันทึกการแก้ไข' : 'ส่งใบสมัคร'}
+							{/if}
 						</Button>
 					</div>
 				</form>
 			{/if}
-		{/if}<!-- /loading block -->
+		{/if}
 	</div>
 </div>

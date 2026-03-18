@@ -80,6 +80,68 @@ pub struct AdmissionApplication {
     pub guardian_relation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub guardian_national_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guardian_occupation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guardian_income: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guardian_is: Option<String>,
+
+    // ข้อมูลส่วนตัวเพิ่มเติม
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub religion: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ethnicity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nationality: Option<String>,
+
+    // ที่อยู่ตามทะเบียนบ้าน (เพิ่มเติมจาก address_line/sub_district/district/province/postal_code)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_house_no: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_moo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_soi: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_road: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_phone: Option<String>,
+
+    // ที่อยู่ปัจจุบัน
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_house_no: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_moo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_soi: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_road: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_sub_district: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_district: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_province: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_postal_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_phone: Option<String>,
+
+    // โรงเรียนเดิม เพิ่มเติม
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_study_year: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_school_province: Option<String>,
+
+    // ครอบครัว เพิ่มเติม
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub father_income: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mother_income: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_status: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_status_other: Option<String>,
 
     pub status: String,
 
@@ -152,6 +214,97 @@ pub struct SubmitApplicationRequest {
     pub guardian_phone: Option<String>,
     pub guardian_relation: Option<String>,
     pub guardian_national_id: Option<String>,
+    pub guardian_occupation: Option<String>,
+    pub guardian_income: Option<f64>,
+    pub guardian_is: Option<String>,
+
+    // ข้อมูลส่วนตัวเพิ่มเติม
+    pub religion: Option<String>,
+    pub ethnicity: Option<String>,
+    pub nationality: Option<String>,
+
+    // ที่อยู่ตามทะเบียนบ้าน (เพิ่มเติม)
+    pub home_house_no: Option<String>,
+    pub home_moo: Option<String>,
+    pub home_soi: Option<String>,
+    pub home_road: Option<String>,
+    pub home_phone: Option<String>,
+
+    // ที่อยู่ปัจจุบัน
+    pub current_house_no: Option<String>,
+    pub current_moo: Option<String>,
+    pub current_soi: Option<String>,
+    pub current_road: Option<String>,
+    pub current_sub_district: Option<String>,
+    pub current_district: Option<String>,
+    pub current_province: Option<String>,
+    pub current_postal_code: Option<String>,
+    pub current_phone: Option<String>,
+
+    // โรงเรียนเดิม เพิ่มเติม
+    pub previous_study_year: Option<String>,
+    pub previous_school_province: Option<String>,
+
+    // ครอบครัว เพิ่มเติม
+    pub father_income: Option<f64>,
+    pub mother_income: Option<f64>,
+    pub parent_status: Option<serde_json::Value>,
+    pub parent_status_other: Option<String>,
+
+    // เอกสารประกอบ (temp file ids จาก portal upload)
+    pub documents: Option<Vec<DocumentRef>>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentRef {
+    pub temp_file_id: Uuid,
+    pub doc_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationDocument {
+    pub id: Uuid,
+    pub application_id: Uuid,
+    pub file_id: Uuid,
+    pub doc_type: String,
+    pub created_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<DateTime<Utc>>,
+    // Joined from files
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_size: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TempUploadResponse {
+    pub temp_file_id: Uuid,
+    pub original_filename: String,
+    pub file_size: i64,
+    pub doc_type: String,
+    pub url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortalDeleteDocumentQuery {
+    pub national_id: String,
+    pub date_of_birth: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortalStatusQuery {
+    pub national_id: String,
+    pub date_of_birth: String,
 }
 
 #[derive(Debug, Deserialize)]

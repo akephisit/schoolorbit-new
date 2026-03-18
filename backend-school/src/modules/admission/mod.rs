@@ -62,4 +62,6 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/portal/form", post(handlers::portal::get_enrollment_form)
                                .put(handlers::portal::submit_enrollment_form))
         .route("/portal/application", put(handlers::portal::update_application))
+        .route("/portal/upload", post(handlers::portal::portal_upload_document))
+        .route("/portal/documents/{doc_type}", delete(handlers::portal::portal_delete_document))
 }

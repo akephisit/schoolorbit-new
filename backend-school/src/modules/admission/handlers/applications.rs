@@ -141,7 +141,15 @@ pub async fn submit_application(
             previous_school, previous_grade, previous_gpa,
             father_name, father_phone, father_occupation, father_national_id,
             mother_name, mother_phone, mother_occupation, mother_national_id,
-            guardian_name, guardian_phone, guardian_relation, guardian_national_id
+            guardian_name, guardian_phone, guardian_relation, guardian_national_id,
+            guardian_occupation, guardian_income, guardian_is,
+            religion, ethnicity, nationality,
+            home_house_no, home_moo, home_soi, home_road, home_phone,
+            current_house_no, current_moo, current_soi, current_road,
+            current_sub_district, current_district, current_province, current_postal_code, current_phone,
+            previous_study_year, previous_school_province,
+            father_income, mother_income,
+            parent_status, parent_status_other
         )
         VALUES (
             $1, $2, $3,
@@ -150,7 +158,15 @@ pub async fn submit_application(
             $17, $18, $19,
             $20, $21, $22, $23,
             $24, $25, $26, $27,
-            $28, $29, $30, $31
+            $28, $29, $30, $31,
+            $32, $33, $34,
+            $35, $36, $37,
+            $38, $39, $40, $41, $42,
+            $43, $44, $45, $46,
+            $47, $48, $49, $50, $51,
+            $52, $53,
+            $54, $55,
+            $56, $57
         )
         RETURNING *,
             (SELECT name FROM admission_tracks WHERE id = $2) AS track_name,
@@ -188,12 +204,74 @@ pub async fn submit_application(
     .bind(&payload.guardian_phone)
     .bind(&payload.guardian_relation)
     .bind(&payload.guardian_national_id)
+    .bind(&payload.guardian_occupation)
+    .bind(payload.guardian_income)
+    .bind(&payload.guardian_is)
+    .bind(&payload.religion)
+    .bind(&payload.ethnicity)
+    .bind(&payload.nationality)
+    .bind(&payload.home_house_no)
+    .bind(&payload.home_moo)
+    .bind(&payload.home_soi)
+    .bind(&payload.home_road)
+    .bind(&payload.home_phone)
+    .bind(&payload.current_house_no)
+    .bind(&payload.current_moo)
+    .bind(&payload.current_soi)
+    .bind(&payload.current_road)
+    .bind(&payload.current_sub_district)
+    .bind(&payload.current_district)
+    .bind(&payload.current_province)
+    .bind(&payload.current_postal_code)
+    .bind(&payload.current_phone)
+    .bind(&payload.previous_study_year)
+    .bind(&payload.previous_school_province)
+    .bind(payload.father_income)
+    .bind(payload.mother_income)
+    .bind(&payload.parent_status)
+    .bind(&payload.parent_status_other)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         eprintln!("Failed to submit application: {}", e);
         AppError::InternalServerError("ไม่สามารถยื่นใบสมัครได้".to_string())
     })?;
+
+    // Link uploaded documents (temp files → permanent)
+    if let Some(docs) = &payload.documents {
+        for doc in docs {
+            let valid_types = [
+                "photo_1_5inch", "transcript_por", "certificate_por7",
+                "id_card_student", "id_card_father", "id_card_mother", "id_card_guardian",
+                "house_reg_student", "house_reg_father", "house_reg_mother", "house_reg_guardian",
+                "name_change_doc", "birth_cert",
+            ];
+            if !valid_types.contains(&doc.doc_type.as_str()) {
+                continue;
+            }
+            // Mark file as permanent
+            let _ = sqlx::query(
+                "UPDATE files SET is_temporary = false, expires_at = NULL WHERE id = $1"
+            )
+            .bind(doc.temp_file_id)
+            .execute(&mut *tx)
+            .await;
+
+            // Link to application (ignore conflict — partial unique on active only)
+            let _ = sqlx::query(
+                r#"
+                INSERT INTO admission_application_documents (application_id, file_id, doc_type)
+                VALUES ($1, $2, $3)
+                ON CONFLICT DO NOTHING
+                "#
+            )
+            .bind(application.id)
+            .bind(doc.temp_file_id)
+            .bind(&doc.doc_type)
+            .execute(&mut *tx)
+            .await;
+        }
+    }
 
     tx.commit().await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
@@ -324,7 +402,24 @@ pub async fn get_application(
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
 
-    Ok(Json(json!({ "success": true, "data": application })).into_response())
+    // Fetch linked documents
+    let documents = sqlx::query_as::<_, ApplicationDocument>(
+        r#"
+        SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
+               f.storage_path AS file_url,
+               f.original_filename, f.file_size, f.mime_type
+        FROM admission_application_documents d
+        JOIN files f ON f.id = d.file_id
+        WHERE d.application_id = $1 AND d.deleted_at IS NULL
+        ORDER BY d.created_at ASC
+        "#
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    Ok(Json(json!({ "success": true, "data": application, "documents": documents })).into_response())
 }
 
 // ==========================================
