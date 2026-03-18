@@ -13,8 +13,7 @@
 	import type {
 		AdmissionRound,
 		AdmissionTrack,
-		ApplicationDocument,
-		TempUploadResponse
+		ApplicationDocument
 	} from '$lib/api/admission';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -165,6 +164,7 @@
 		size?: number;
 		url?: string;
 		preview?: string; // local blob URL for thumbnail display
+		blob?: Blob; // pending blob — uploaded at submit time
 		uploading: boolean;
 	};
 	let uploadedDocs = $state<Record<string, DocSlot>>({});
@@ -191,35 +191,22 @@
 		cropperOpen = true;
 	}
 
-	async function handleCropComplete(blob: Blob) {
+	function handleCropComplete(blob: Blob) {
 		if (!cropTarget) return;
 		const { docType, imageUrl } = cropTarget;
 		cropperOpen = false;
 		const preview = URL.createObjectURL(blob);
-		// Release the original file blob URL
 		URL.revokeObjectURL(imageUrl);
 		cropTarget = null;
 
-		uploadedDocs[docType] = { uploading: true, preview };
-		try {
-			const file = new File([blob], `${docType}.jpg`, { type: 'image/jpeg' });
-			const res = await portalUploadTempFile(file, docType);
-			uploadedDocs[docType] = {
-				tempFileId: res.tempFileId,
-				name: res.originalFilename,
-				size: res.fileSize,
-				url: res.url,
-				preview,
-				uploading: false
-			};
-			toast.success(`อัปโหลด "${DOC_TYPE_LABELS[docType]?.label}" แล้ว`);
-		} catch (err) {
-			const copy = { ...uploadedDocs };
-			URL.revokeObjectURL(preview);
-			delete copy[docType];
-			uploadedDocs = copy;
-			toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ');
-		}
+		// เก็บ blob ไว้ก่อน — จะ upload ตอนกดส่งใบสมัคร
+		uploadedDocs[docType] = {
+			blob,
+			preview,
+			name: `${docType}.jpg`,
+			size: blob.size,
+			uploading: false
+		};
 	}
 
 	function handleCropCancel() {
@@ -441,6 +428,25 @@
 			const guardianOccupationVal = guardianIs === 'father' ? fatherOccupation : guardianIs === 'mother' ? motherOccupation : guardianOccupation;
 			const guardianIncomeVal = guardianIs === 'father' ? (fatherIncome ? parseFloat(fatherIncome) : undefined) : guardianIs === 'mother' ? (motherIncome ? parseFloat(motherIncome) : undefined) : (guardianIncome ? parseFloat(guardianIncome) : undefined);
 
+			// Upload pending blobs ก่อน submit
+			const pendingEntries = Object.entries(uploadedDocs).filter(([, d]) => d.blob);
+			if (pendingEntries.length > 0) {
+				toast.info(`กำลังอัปโหลดเอกสาร ${pendingEntries.length} ไฟล์...`);
+			}
+			const uploadedRefs: { tempFileId: string; docType: string }[] = [];
+			for (const [docType, slot] of pendingEntries) {
+				uploadedDocs[docType] = { ...slot, uploading: true };
+				const file = new File([slot.blob!], `${docType}.jpg`, { type: 'image/jpeg' });
+				const res = await portalUploadTempFile(file, docType);
+				uploadedDocs[docType] = { ...slot, uploading: false, tempFileId: res.tempFileId, blob: undefined };
+				uploadedRefs.push({ tempFileId: res.tempFileId, docType });
+			}
+
+			// เพิ่ม tempFileIds ที่มีอยู่แล้ว (edit mode หรือ upload ก่อนหน้า)
+			const existingRefs = Object.entries(uploadedDocs)
+				.filter(([, d]) => d.tempFileId && !d.blob)
+				.map(([docType, d]) => ({ tempFileId: d.tempFileId!, docType }));
+
 			const payload = {
 				admissionTrackId: trackId,
 				nationalId,
@@ -504,10 +510,8 @@
 				// Family status
 				parentStatus: parentStatus.length > 0 ? parentStatus : undefined,
 				parentStatusOther: parentStatus.includes('อื่นๆ') ? (parentStatusOther || undefined) : undefined,
-				// Documents (new upload)
-				documents: Object.entries(uploadedDocs)
-					.filter(([, d]) => d.tempFileId)
-					.map(([docType, d]) => ({ tempFileId: d.tempFileId!, docType })),
+				// Documents
+				documents: [...uploadedRefs, ...existingRefs],
 			};
 
 			let res;
@@ -1091,7 +1095,7 @@
 								{@const info = DOC_TYPE_LABELS[docType]}
 								{@const existing = existingDocs.find((d) => d.docType === docType)}
 								{@const newDoc = uploadedDocs[docType]}
-								{@const hasFile = existing || (newDoc && newDoc.tempFileId)}
+								{@const hasFile = existing || (newDoc && (newDoc.blob || newDoc.tempFileId))}
 								{@const thumbSrc = newDoc?.preview ?? existing?.fileUrl}
 
 								<!-- Hidden file input -->
