@@ -158,6 +158,7 @@
 	let guardianIncome = $state('');
 
 	// ===== เอกสาร =====
+	type CropPoint = { x: number; y: number };
 	type DocSlot = {
 		tempFileId?: string;
 		name?: string;
@@ -166,6 +167,7 @@
 		preview?: string; // local blob URL for thumbnail display
 		blob?: Blob; // pending blob — uploaded at submit time
 		originalBlob?: Blob; // original uncropped file — for re-crop
+		savedCorners?: [CropPoint, CropPoint, CropPoint, CropPoint]; // last crop positions
 		uploading: boolean;
 	};
 	let uploadedDocs = $state<Record<string, DocSlot>>({});
@@ -175,8 +177,10 @@
 	let deletingDoc = $state<string | null>(null);
 
 	// Crop modal state
-	let cropTarget = $state<{ docType: string; imageUrl: string } | null>(null);
+	let cropTarget = $state<{ docType: string; imageUrl: string; initialCorners?: [CropPoint, CropPoint, CropPoint, CropPoint] } | null>(null);
 	let cropperOpen = $state(false);
+	// Lightbox
+	let lightboxSrc = $state<string | null>(null);
 	// File input refs per docType
 	let fileInputRefs = $state<Record<string, HTMLInputElement>>({});
 
@@ -198,11 +202,11 @@
 		const slot = uploadedDocs[docType];
 		if (!slot?.originalBlob) return;
 		const imageUrl = URL.createObjectURL(slot.originalBlob);
-		cropTarget = { docType, imageUrl };
+		cropTarget = { docType, imageUrl, initialCorners: slot.savedCorners };
 		cropperOpen = true;
 	}
 
-	function handleCropComplete(blob: Blob) {
+	function handleCropComplete(blob: Blob, corners: [CropPoint, CropPoint, CropPoint, CropPoint]) {
 		if (!cropTarget) return;
 		const { docType, imageUrl } = cropTarget;
 		cropperOpen = false;
@@ -212,14 +216,15 @@
 		URL.revokeObjectURL(imageUrl);
 		cropTarget = null;
 
-		// เก็บ blob ไว้ก่อน — จะ upload ตอนกดส่งใบสมัคร (คง originalBlob ไว้)
+		// เก็บ blob + corners ไว้ก่อน — จะ upload ตอนกดส่งใบสมัคร (คง originalBlob ไว้)
 		uploadedDocs[docType] = {
 			...uploadedDocs[docType],
 			blob,
 			preview,
 			name: `${docType}.jpg`,
 			size: blob.size,
-			uploading: false
+			uploading: false,
+			savedCorners: corners
 		};
 	}
 
@@ -1124,9 +1129,14 @@
 								<div class="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
 									<!-- Thumbnail or icon -->
 									{#if thumbSrc}
-										<div class="w-12 h-12 rounded-md overflow-hidden border bg-gray-100 shrink-0">
-											<img src={thumbSrc} alt={info.label} class="w-full h-full object-cover" />
-										</div>
+										<button
+											type="button"
+											class="w-12 h-12 rounded-md overflow-hidden border bg-gray-100 shrink-0 cursor-zoom-in hover:ring-2 hover:ring-blue-400 transition-all"
+											onclick={() => (lightboxSrc = thumbSrc!)}
+											title="กดดูรูป"
+										>
+											<img src={thumbSrc} alt={info.label} class="w-full h-full object-cover pointer-events-none" />
+										</button>
 									{:else}
 										<FileText class="w-5 h-5 text-muted-foreground shrink-0" />
 									{/if}
@@ -1217,9 +1227,26 @@
 						bind:open={cropperOpen}
 						imageSrc={cropTarget?.imageUrl ?? null}
 						docLabel={cropTarget ? (DOC_TYPE_LABELS[cropTarget.docType]?.label ?? 'เอกสาร') : ''}
+						initialCorners={cropTarget?.initialCorners}
 						onComplete={handleCropComplete}
 						onCancel={handleCropCancel}
 					/>
+
+					<!-- Lightbox -->
+					{#if lightboxSrc}
+						<button
+							type="button"
+							class="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+							onclick={() => (lightboxSrc = null)}
+							aria-label="ปิดรูป"
+						>
+							<img
+								src={lightboxSrc}
+								alt="ดูรูปเอกสาร"
+								class="max-w-full max-h-full object-contain rounded-lg shadow-2xl pointer-events-none"
+							/>
+						</button>
+					{/if}
 
 					<!-- ===== Submit Bar ===== -->
 					<div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 pb-8">

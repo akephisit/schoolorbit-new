@@ -18,7 +18,8 @@
 		open: boolean;
 		imageSrc: string | null;
 		docLabel: string;
-		onComplete: (blob: Blob) => void;
+		initialCorners?: [Point, Point, Point, Point];
+		onComplete: (blob: Blob, corners: [Point, Point, Point, Point]) => void;
 		onCancel: () => void;
 	}
 
@@ -26,6 +27,7 @@
 		open = $bindable(false),
 		imageSrc = null,
 		docLabel,
+		initialCorners,
 		onComplete,
 		onCancel
 	}: Props = $props();
@@ -56,12 +58,14 @@
 	// ===========================
 	$effect(() => {
 		if (imageSrc) {
-			corners = [
-				{ x: 0.08, y: 0.08 },
-				{ x: 0.92, y: 0.08 },
-				{ x: 0.92, y: 0.92 },
-				{ x: 0.08, y: 0.92 }
-			];
+			corners = initialCorners
+				? initialCorners.map((c) => ({ ...c })) as [Point, Point, Point, Point]
+				: [
+					{ x: 0.08, y: 0.08 },
+					{ x: 0.92, y: 0.08 },
+					{ x: 0.92, y: 0.92 },
+					{ x: 0.08, y: 0.92 }
+				];
 		}
 	});
 
@@ -334,7 +338,7 @@
 		processing = true;
 		try {
 			const blob = await renderPerspective();
-			onComplete(blob);
+			onComplete(blob, corners.map((c) => ({ ...c })) as [Point, Point, Point, Point]);
 			open = false;
 		} catch (err) {
 			console.error('Crop failed:', err);
