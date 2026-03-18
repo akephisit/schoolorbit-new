@@ -653,10 +653,8 @@ export async function portalUploadTempFile(
     formData.append('file', file);
     formData.append('doc_type', docType);
 
-    const subdomain = window.location.hostname.split('.')[0];
     const res = await fetch(`${PUBLIC_BACKEND_URL}/api/admission/portal/upload`, {
         method: 'POST',
-        headers: { 'X-Subdomain': subdomain },
         body: formData,
     });
     if (!res.ok) {
