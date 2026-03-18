@@ -18,7 +18,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM base AS builder
 # target-cpu=x86-64 คือ baseline ที่ไม่ใช้ SSE4.1/PCLMULQDQ
 # ป้องกัน crc-fast panic บน server ที่ CPU ไม่มี SSE4.1
-ENV RUSTFLAGS="-C target-feature=-sse4.1,-pclmulqdq,-avx,-avx2"
+ENV RUSTFLAGS="-C target-cpu=x86-64"
 COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies - this is the caching layer!
 RUN cargo chef cook --release --recipe-path recipe.json
