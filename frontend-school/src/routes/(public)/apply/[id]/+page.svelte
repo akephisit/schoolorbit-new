@@ -165,6 +165,7 @@
 		url?: string;
 		preview?: string; // local blob URL for thumbnail display
 		blob?: Blob; // pending blob — uploaded at submit time
+		originalBlob?: Blob; // original uncropped file — for re-crop
 		uploading: boolean;
 	};
 	let uploadedDocs = $state<Record<string, DocSlot>>({});
@@ -186,7 +187,17 @@
 		const file = input.files?.[0];
 		if (!file) return;
 		input.value = '';
+		// เก็บ original ไว้เผื่อ re-crop
+		uploadedDocs[docType] = { ...(uploadedDocs[docType] ?? { uploading: false }), originalBlob: file };
 		const imageUrl = URL.createObjectURL(file);
+		cropTarget = { docType, imageUrl };
+		cropperOpen = true;
+	}
+
+	function handleReCrop(docType: string) {
+		const slot = uploadedDocs[docType];
+		if (!slot?.originalBlob) return;
+		const imageUrl = URL.createObjectURL(slot.originalBlob);
 		cropTarget = { docType, imageUrl };
 		cropperOpen = true;
 	}
@@ -195,12 +206,15 @@
 		if (!cropTarget) return;
 		const { docType, imageUrl } = cropTarget;
 		cropperOpen = false;
+		const prev = uploadedDocs[docType]?.preview;
+		if (prev) URL.revokeObjectURL(prev);
 		const preview = URL.createObjectURL(blob);
 		URL.revokeObjectURL(imageUrl);
 		cropTarget = null;
 
-		// เก็บ blob ไว้ก่อน — จะ upload ตอนกดส่งใบสมัคร
+		// เก็บ blob ไว้ก่อน — จะ upload ตอนกดส่งใบสมัคร (คง originalBlob ไว้)
 		uploadedDocs[docType] = {
+			...uploadedDocs[docType],
 			blob,
 			preview,
 			name: `${docType}.jpg`,
@@ -1140,6 +1154,16 @@
 										{#if newDoc?.uploading}
 											<LoaderCircle class="w-4 h-4 animate-spin text-blue-500" />
 										{:else if hasFile}
+											<!-- Re-crop button (only for newly selected files with original) -->
+											{#if newDoc?.originalBlob}
+												<button
+													type="button"
+													class="text-xs text-muted-foreground hover:text-blue-600 hover:underline"
+													onclick={() => handleReCrop(docType)}
+												>
+													แก้ crop
+												</button>
+											{/if}
 											<!-- Replace button -->
 											<button
 												type="button"
