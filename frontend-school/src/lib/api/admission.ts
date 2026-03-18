@@ -653,21 +653,22 @@ export async function portalUploadTempFile(
     file: File,
     docType: string,
 ): Promise<TempUploadResponse> {
+    const { PUBLIC_BACKEND_URL } = await import('$env/static/public');
     const formData = new FormData();
     formData.append('file', file);
     formData.append('doc_type', docType);
 
-    // เรียกผ่าน SvelteKit server proxy (same-origin) เพื่อหลีกเลี่ยง CORS
-    const res = await fetch('/api/admission/portal/upload', {
+    const res = await fetch(`${PUBLIC_BACKEND_URL}/api/admission/portal/upload`, {
         method: 'POST',
+        credentials: 'include',
         body: formData,
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as any)?.error || 'ไม่สามารถอัปโหลดไฟล์ได้');
     }
-    const data = await res.json();
-    return data.data as TempUploadResponse;
+    const json = await res.json();
+    return json.data as TempUploadResponse;
 }
 
 export async function portalDeleteDocument(
