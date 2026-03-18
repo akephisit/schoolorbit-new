@@ -72,7 +72,10 @@ impl R2Client {
         let region_provider = RegionProviderChain::default_provider().or_else(region);
         
         // Build S3 config for R2
-        let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        // ใช้ v2023_11_09 แทน latest() เพื่อหลีกเลี่ยง automatic CRC checksum
+        // ที่ BehaviorVersion::latest() เปิดไว้ ซึ่ง trigger crc-fast panic
+        // บน CPU ที่ไม่มี SSE4.1 + PCLMULQDQ
+        let aws_config = aws_config::defaults(aws_config::BehaviorVersion::v2023_11_09())
             .region(region_provider)
             .credentials_provider(credentials)
             .load()
