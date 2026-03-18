@@ -234,39 +234,6 @@
 	}
 
 	// ===========================
-	// Sharpen helper
-	// ===========================
-	function sharpenCanvas(canvas: HTMLCanvasElement): void {
-		const ctx = canvas.getContext('2d')!;
-		const w = canvas.width;
-		const h = canvas.height;
-		const src = ctx.getImageData(0, 0, w, h);
-		const dst = ctx.createImageData(w, h);
-		const s = src.data;
-		const d = dst.data;
-		for (let y = 1; y < h - 1; y++) {
-			for (let x = 1; x < w - 1; x++) {
-				for (let c = 0; c < 3; c++) {
-					const i = (y * w + x) * 4 + c;
-					d[i] = Math.max(
-						0,
-						Math.min(
-							255,
-							-s[((y - 1) * w + x) * 4 + c] -
-								s[(y * w + x - 1) * 4 + c] +
-								5 * s[i] -
-								s[(y * w + x + 1) * 4 + c] -
-								s[((y + 1) * w + x) * 4 + c]
-						)
-					);
-				}
-				d[(y * w + x) * 4 + 3] = s[(y * w + x) * 4 + 3];
-			}
-		}
-		ctx.putImageData(dst, 0, 0);
-	}
-
-	// ===========================
 	// Final render
 	// ===========================
 	async function renderPerspective(): Promise<Blob> {
@@ -330,7 +297,6 @@
 			}
 		}
 
-		sharpenCanvas(outCanvas);
 		return new Promise((res) => outCanvas.toBlob((b) => res(b!), 'image/jpeg', 0.92));
 	}
 
