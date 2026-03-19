@@ -21,7 +21,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, LoaderCircle, Trash2, School, RotateCcw } from 'lucide-svelte';
+	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, LoaderCircle, Trash2, RotateCcw } from 'lucide-svelte';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 
 	let { data } = $props();
@@ -33,31 +33,11 @@
 	let statusFilter = $state('');
 	let dateFilter = $state('');
 
-	const APPROVED_STATUSES = ['verified', 'scored', 'accepted', 'enrolled'];
-
 	const displayedApps = $derived(
 		dateFilter
 			? applications.filter((a) => a.createdAt?.slice(0, 10) === dateFilter)
 			: applications
 	);
-
-	const stats = $derived({
-		total: displayedApps.length,
-		approved: displayedApps.filter((a) => APPROVED_STATUSES.includes(a.status)).length,
-		rejected: displayedApps.filter((a) => a.status === 'rejected').length,
-		schoolBreakdown: Object.entries(
-			displayedApps
-				.filter((a) => APPROVED_STATUSES.includes(a.status))
-				.reduce(
-					(acc, a) => {
-						const school = a.previousSchool || 'ไม่ระบุ';
-						acc[school] = (acc[school] ?? 0) + 1;
-						return acc;
-					},
-					{} as Record<string, number>
-				)
-		).sort((a, b) => b[1] - a[1])
-	});
 
 	let showRejectDialog = $state(false);
 	let rejectingApp: ApplicationListItem | null = $state(null);
@@ -214,58 +194,6 @@
 			</div>
 		</Card.Content>
 	</Card.Root>
-
-	<!-- Summary -->
-	{#if !loading && displayedApps.length > 0}
-		<Card.Root>
-			<Card.Content class="pt-4 pb-4 space-y-4">
-				<div class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-					{dateFilter
-						? `สรุปวันที่ ${new Date(dateFilter + 'T00:00:00').toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}`
-						: 'สรุปทั้งหมด'}
-				</div>
-				<div class="grid grid-cols-3 gap-3">
-					<div class="rounded-lg bg-muted/50 px-4 py-3 text-center">
-						<p class="text-2xl font-bold">{stats.total}</p>
-						<p class="text-xs text-muted-foreground mt-0.5">สมัครทั้งหมด</p>
-					</div>
-					<div class="rounded-lg bg-green-50 dark:bg-green-950/20 px-4 py-3 text-center">
-						<p class="text-2xl font-bold text-green-600 dark:text-green-400">{stats.approved}</p>
-						<p class="text-xs text-muted-foreground mt-0.5">ผ่านการอนุมัติ</p>
-					</div>
-					<div class="rounded-lg bg-red-50 dark:bg-red-950/20 px-4 py-3 text-center">
-						<p class="text-2xl font-bold text-destructive">{stats.rejected}</p>
-						<p class="text-xs text-muted-foreground mt-0.5">ไม่ผ่าน</p>
-					</div>
-				</div>
-				{#if stats.schoolBreakdown.length > 0}
-					<div class="space-y-2">
-						<p class="text-sm font-medium flex items-center gap-1.5">
-							<School class="w-4 h-4" /> โรงเรียนของผู้ผ่านการอนุมัติ
-						</p>
-						<div class="space-y-1.5">
-							{#each stats.schoolBreakdown as [school, count]}
-								<div class="flex items-center gap-2">
-									<div class="flex-1 min-w-0">
-										<div class="flex items-center justify-between gap-2 mb-0.5">
-											<span class="text-sm truncate">{school}</span>
-											<span class="text-sm font-medium shrink-0">{count} คน</span>
-										</div>
-										<div class="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-											<div
-												class="h-full rounded-full bg-green-500"
-												style="width: {Math.round((count / stats.approved) * 100)}%"
-											></div>
-										</div>
-									</div>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-			</Card.Content>
-		</Card.Root>
-	{/if}
 
 	<!-- Table -->
 	{#if loading}
