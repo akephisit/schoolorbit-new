@@ -79,6 +79,8 @@ export interface LookupOptions {
     /** Maximum items to return (default: 100, max: 500) */
     limit?: number;
     subjectType?: string;
+    /** Filter grade levels by academic year */
+    academicYearId?: string;
 }
 
 // ===================================================================
@@ -98,6 +100,9 @@ function buildQueryString(options?: LookupOptions): string {
     }
     if (options?.subjectType) {
         params.set('subject_type', options.subjectType);
+    }
+    if (options?.academicYearId) {
+        params.set('academic_year_id', options.academicYearId);
     }
     const queryString = params.toString();
     return queryString ? `?${queryString}` : '';

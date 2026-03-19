@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { createRound } from '$lib/api/admission';
-	import { getAcademicStructure, type AcademicYear, type GradeLevel } from '$lib/api/academic';
+	import { type AcademicYear } from '$lib/api/academic';
+	import { lookupAcademicYears, lookupGradeLevels, type AcademicYearLookupItem, type GradeLevelLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -16,8 +17,9 @@
 
 	let { data } = $props();
 
-	let years: AcademicYear[] = $state([]);
-	let gradeLevels: GradeLevel[] = $state([]);
+	let years: AcademicYearLookupItem[] = $state([]);
+	let gradeLevels: GradeLevelLookupItem[] = $state([]);
+	let loadingGrades = $state(false);
 	let saving = $state(false);
 
 	let form = $state({
@@ -33,15 +35,28 @@
 		enrollmentEndDate: ''
 	});
 
+	async function loadGradeLevels(yearId: string) {
+		if (!yearId) { gradeLevels = []; return; }
+		loadingGrades = true;
+		try {
+			gradeLevels = await lookupGradeLevels({ academicYearId: yearId });
+		} catch {
+			gradeLevels = [];
+			toast.error('โหลดระดับชั้นไม่สำเร็จ');
+		} finally {
+			loadingGrades = false;
+		}
+	}
+
 	async function load() {
 		try {
-			const res = await getAcademicStructure();
-			years = res.data.years;
-			gradeLevels = res.data.levels.filter((l) => l.is_active);
-			// Auto-select active year
-			const activeYear = years.find((y) => y.is_active) ?? years[0];
-			if (activeYear) form.academicYearId = activeYear.id;
-		} catch (e) {
+			years = await lookupAcademicYears();
+			const activeYear = years.find((y) => y.is_current) ?? years[0];
+			if (activeYear) {
+				form.academicYearId = activeYear.id;
+				await loadGradeLevels(activeYear.id);
+			}
+		} catch {
 			toast.error('โหลดข้อมูลปีการศึกษาไม่สำเร็จ');
 		}
 	}
@@ -104,14 +119,15 @@
 				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					<div class="space-y-2">
 						<Label for="year-select">ปีการศึกษา <span class="text-destructive">*</span></Label>
-						<Select.Root type="single" bind:value={form.academicYearId}>
+						<Select.Root type="single" bind:value={form.academicYearId}
+							onValueChange={(v) => { form.gradeLevelId = ''; loadGradeLevels(v ?? ''); }}>
 							<Select.Trigger id="year-select" class="w-full">
 								{years.find((y) => y.id === form.academicYearId)?.name ?? '-- เลือกปีการศึกษา --'}
 							</Select.Trigger>
 							<Select.Content>
 								{#each years as y (y.id)}
 									<Select.Item value={y.id}>
-										{y.name}{y.is_active ? ' (ปัจจุบัน)' : ''}
+										{y.name}{y.is_current ? ' (ปัจจุบัน)' : ''}
 									</Select.Item>
 								{/each}
 							</Select.Content>
@@ -119,10 +135,9 @@
 					</div>
 					<div class="space-y-2">
 						<Label for="grade-select">ระดับชั้น <span class="text-destructive">*</span></Label>
-						<Select.Root type="single" bind:value={form.gradeLevelId}>
+						<Select.Root type="single" bind:value={form.gradeLevelId} disabled={loadingGrades || !form.academicYearId}>
 							<Select.Trigger id="grade-select" class="w-full">
-								{gradeLevels.find((g) => g.id === form.gradeLevelId)?.short_name ??
-									'-- เลือกระดับชั้น --'}
+								{loadingGrades ? 'กำลังโหลด...' : (gradeLevels.find((g) => g.id === form.gradeLevelId)?.short_name ?? (gradeLevels.length === 0 && form.academicYearId ? 'ไม่มีระดับชั้นที่เปิด' : '-- เลือกระดับชั้น --'))}
 							</Select.Trigger>
 							<Select.Content>
 								{#each gradeLevels as g (g.id)}
