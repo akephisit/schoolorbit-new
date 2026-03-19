@@ -14,7 +14,8 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Loader2, ArrowLeft, Settings } from 'lucide-svelte';
+	import { Loader2, ArrowLeft, Settings, X } from 'lucide-svelte';
+	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { toast } from 'svelte-sonner';
 
 	let { data } = $props();
@@ -24,6 +25,7 @@
 	let applications: ApplicationListItem[] = $state([]);
 	let loading = $state(true);
 	let statusFilter = $state('all');
+	let dateFilter = $state('');
 
 	async function load() {
 		if (!id) return;
@@ -42,9 +44,9 @@
 	let reportConfig = $derived(round?.reportConfig ?? null);
 
 	let filteredApps = $derived(
-		statusFilter === 'all'
-			? applications
-			: applications.filter((a) => a.status === statusFilter)
+		applications
+			.filter((a) => !dateFilter || a.createdAt?.slice(0, 10) === dateFilter)
+			.filter((a) => statusFilter === 'all' || a.status === statusFilter)
 	);
 
 	// Zone stats
@@ -136,24 +138,37 @@
 					<Card.Content class="p-4">
 						<p class="text-xs text-muted-foreground">แสดง (ตามตัวกรอง)</p>
 						<p class="font-semibold mt-0.5">{filteredApps.length} คน</p>
+						{#if dateFilter}
+							<p class="text-xs text-muted-foreground mt-0.5">
+								{new Date(dateFilter + 'T00:00:00').toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
+							</p>
+						{/if}
 					</Card.Content>
 				</Card.Root>
 			</div>
 
-			<!-- Status filter -->
-			<div class="flex items-center gap-3">
-				<span class="text-sm font-medium">กรองสถานะ:</span>
+			<!-- Filters -->
+			<div class="flex flex-wrap items-center gap-3">
+				<span class="text-sm font-medium">กรอง:</span>
 				<Select.Root type="single" bind:value={statusFilter}>
 					<Select.Trigger class="w-48">
-						{statusFilter === 'all' ? 'ทั้งหมด' : (applicationStatusLabel[statusFilter] ?? statusFilter)}
+						{statusFilter === 'all' ? 'สถานะทั้งหมด' : (applicationStatusLabel[statusFilter] ?? statusFilter)}
 					</Select.Trigger>
 					<Select.Content>
-						<Select.Item value="all">ทั้งหมด</Select.Item>
+						<Select.Item value="all">สถานะทั้งหมด</Select.Item>
 						{#each allStatuses as s}
 							<Select.Item value={s}>{applicationStatusLabel[s] ?? s}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
+				<div class="flex items-center gap-1">
+					<DatePicker bind:value={dateFilter} placeholder="กรองตามวันที่" class="w-44" />
+					{#if dateFilter}
+						<Button variant="ghost" size="icon" class="h-9 w-9 shrink-0" onclick={() => (dateFilter = '')} title="ล้างวันที่">
+							<X class="w-3.5 h-3.5" />
+						</Button>
+					{/if}
+				</div>
 			</div>
 
 			<!-- Zone section -->
