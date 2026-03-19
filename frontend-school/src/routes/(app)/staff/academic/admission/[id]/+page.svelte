@@ -23,6 +23,7 @@
 		roundStatusColor
 	} from '$lib/api/admission';
 	import { listStudyPlans } from '$lib/api/academic';
+	import SchoolCombobox from '$lib/components/ui/SchoolCombobox.svelte';
 
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -83,7 +84,7 @@
 	// Report config
 	let reportConfig: ReportConfig = $state({ reportMode: null, zone: { schools: [] }, institution: { ownSchool: '' } });
 	let savingReportConfig = $state(false);
-	let zoneSchoolInput = $state('');
+	let zoneSchoolPicker = $state('');
 
 	const statusFlow: AdmissionRound['status'][] = [
 		'draft',
@@ -294,17 +295,13 @@
 		}
 	}
 
-	function addZoneSchool(e: KeyboardEvent) {
-		const val = zoneSchoolInput.trim();
-		if (!val) return;
-		if (e.key === 'Enter' || e.key === ',') {
-			e.preventDefault();
-			const schools = reportConfig.zone?.schools ?? [];
-			if (!schools.includes(val)) {
-				reportConfig = { ...reportConfig, zone: { schools: [...schools, val] } };
-			}
-			zoneSchoolInput = '';
+	function addZoneSchool(name: string) {
+		if (!name) return;
+		const schools = reportConfig.zone?.schools ?? [];
+		if (!schools.includes(name)) {
+			reportConfig = { ...reportConfig, zone: { schools: [...schools, name] } };
 		}
+		zoneSchoolPicker = '';
 	}
 
 	function removeZoneSchool(school: string) {
@@ -727,7 +724,13 @@
 					type="single"
 					value={reportConfig.reportMode ?? 'none'}
 					onValueChange={(v) => {
-						reportConfig = { ...reportConfig, reportMode: v === 'none' ? null : (v as ReportConfig['reportMode']) };
+						const mode = v === 'none' ? null : (v as ReportConfig['reportMode']);
+					reportConfig = {
+						...reportConfig,
+						reportMode: mode,
+						zone: reportConfig.zone ?? { schools: [] },
+						institution: reportConfig.institution ?? { ownSchool: '' }
+					};
 					}}
 				>
 					<Select.Trigger class="w-full max-w-xs">
@@ -746,42 +749,51 @@
 			</div>
 
 			{#if reportConfig.reportMode === 'zone' || reportConfig.reportMode === 'both'}
-				<!-- Zone schools tag input -->
-				<div class="space-y-1.5">
+				<!-- Zone schools -->
+				<div class="space-y-2">
 					<Label>โรงเรียนในเขตพื้นที่บริการ</Label>
-					<p class="text-xs text-muted-foreground">พิมพ์ชื่อโรงเรียนแล้วกด Enter หรือ , เพื่อเพิ่ม</p>
-					<div class="flex flex-wrap gap-1.5 p-2 border rounded-md min-h-[42px]">
-						{#each reportConfig.zone?.schools ?? [] as school (school)}
-							<span class="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-								{school}
-								<button onclick={() => removeZoneSchool(school)} class="hover:text-destructive">
-									<X class="w-3 h-3" />
-								</button>
-							</span>
-						{/each}
-						<input
-							bind:value={zoneSchoolInput}
-							onkeydown={addZoneSchool}
-							placeholder="ชื่อโรงเรียน..."
-							class="flex-1 min-w-32 text-sm outline-none bg-transparent"
-						/>
+					<div class="flex gap-2 max-w-sm">
+						<div class="flex-1">
+							<SchoolCombobox
+								bind:value={zoneSchoolPicker}
+								onProvinceSelect={() => {}}
+							/>
+						</div>
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							onclick={() => addZoneSchool(zoneSchoolPicker)}
+							disabled={!zoneSchoolPicker}
+						>
+							<Plus class="w-3.5 h-3.5" />
+						</Button>
 					</div>
+					{#if (reportConfig.zone?.schools ?? []).length > 0}
+						<div class="flex flex-wrap gap-1.5 mt-1">
+							{#each reportConfig.zone?.schools ?? [] as school (school)}
+								<span class="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+									{school}
+									<button onclick={() => removeZoneSchool(school)} class="hover:text-destructive">
+										<X class="w-3 h-3" />
+									</button>
+								</span>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{/if}
 
 			{#if reportConfig.reportMode === 'institution' || reportConfig.reportMode === 'both'}
-				<!-- Own school input -->
+				<!-- Own school -->
 				<div class="space-y-1.5">
-					<Label for="own-school">ชื่อโรงเรียนตนเอง</Label>
-					<Input
-						id="own-school"
-						value={reportConfig.institution?.ownSchool ?? ''}
-						oninput={(e) => {
-							reportConfig = { ...reportConfig, institution: { ownSchool: (e.target as HTMLInputElement).value } };
-						}}
-						placeholder="เช่น โรงเรียนสาธิตมหาวิทยาลัย"
-						class="max-w-sm"
-					/>
+					<Label>ชื่อโรงเรียนตนเอง</Label>
+					<div class="max-w-sm">
+						<SchoolCombobox
+							bind:value={reportConfig.institution!.ownSchool}
+							onProvinceSelect={() => {}}
+						/>
+					</div>
 				</div>
 			{/if}
 
