@@ -5,6 +5,8 @@
 		getApplication,
 		verifyApplication,
 		rejectApplication,
+		updateApplicationByStaff,
+		unverifyApplication,
 		DOC_TYPE_LABELS,
 		type AdmissionApplication,
 		type ApplicationDocument,
@@ -12,11 +14,12 @@
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import * as Card from '$lib/components/ui/card';
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { Label } from '$lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
 	import {
 		ArrowLeft,
@@ -30,7 +33,10 @@
 		LoaderCircle,
 		ImageIcon,
 		ZoomIn,
-		ZoomOut
+		ZoomOut,
+		Pencil,
+		RotateCcw,
+		Save
 	} from 'lucide-svelte';
 
 	let { data } = $props();
@@ -42,9 +48,19 @@
 	let documents: ApplicationDocument[] = $state([]);
 	let loading = $state(true);
 
+	// Reject
 	let showRejectDialog = $state(false);
 	let rejectReason = $state('');
 	let rejecting = $state(false);
+
+	// Unverify
+	let showUnverifyDialog = $state(false);
+	let unverifying = $state(false);
+
+	// Edit mode
+	let editMode = $state(false);
+	let saving = $state(false);
+	let editData = $state<Partial<AdmissionApplication>>({});
 
 	// Lightbox
 	let lightboxDoc = $state<ApplicationDocument | null>(null);
@@ -100,6 +116,48 @@
 			toast.error(e instanceof Error ? e.message : 'ปฏิเสธไม่สำเร็จ');
 		} finally {
 			rejecting = false;
+		}
+	}
+
+	async function handleUnverifyConfirm() {
+		if (!application) return;
+		unverifying = true;
+		try {
+			await unverifyApplication(application.id);
+			toast.success('ยกเลิกการอนุมัติแล้ว');
+			showUnverifyDialog = false;
+			await loadApp();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ยกเลิกการอนุมัติไม่สำเร็จ');
+		} finally {
+			unverifying = false;
+		}
+	}
+
+	function startEdit() {
+		if (!application) return;
+		editData = { ...application };
+		editMode = true;
+	}
+
+	function cancelEdit() {
+		editMode = false;
+		editData = {};
+	}
+
+	async function handleSave() {
+		if (!application) return;
+		saving = true;
+		try {
+			await updateApplicationByStaff(application.id, editData);
+			toast.success('บันทึกข้อมูลแล้ว');
+			editMode = false;
+			editData = {};
+			await loadApp();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
+		} finally {
+			saving = false;
 		}
 	}
 
@@ -205,6 +263,23 @@
 		<h1 class="text-2xl font-bold flex items-center gap-2">
 			<FileText class="w-6 h-6" /> รายละเอียดใบสมัคร
 		</h1>
+		{#if application?.status === 'submitted'}
+			{#if editMode}
+				<div class="ml-auto flex gap-2">
+					<Button variant="outline" size="sm" onclick={cancelEdit} disabled={saving}>
+						<X class="w-4 h-4 mr-1" /> ยกเลิก
+					</Button>
+					<Button size="sm" onclick={handleSave} disabled={saving}>
+						{#if saving}<LoaderCircle class="w-4 h-4 mr-1 animate-spin" />{:else}<Save class="w-4 h-4 mr-1" />{/if}
+						{saving ? 'กำลังบันทึก...' : 'บันทึก'}
+					</Button>
+				</div>
+			{:else}
+				<Button variant="outline" size="sm" class="ml-auto" onclick={startEdit}>
+					<Pencil class="w-4 h-4 mr-1" /> แก้ไขใบสมัคร
+				</Button>
+			{/if}
+		{/if}
 	</div>
 
 	{#if loading}
@@ -237,36 +312,88 @@
 								<p class="font-mono font-medium">{application.nationalId}</p>
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">ชื่อ-นามสกุล</p>
-								<p class="font-medium">{application.title ?? ''}{application.firstName} {application.lastName}</p>
+								<p class="text-xs text-muted-foreground mb-1">คำนำหน้า</p>
+								{#if editMode}
+									<Input bind:value={editData.title} placeholder="นาย / นาง / นางสาว" class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.title || '-'}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">เพศ</p>
-								<p class="font-medium">{application.gender === 'Male' ? 'ชาย' : application.gender === 'Female' ? 'หญิง' : '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">เพศ</p>
+								{#if editMode}
+									<select bind:value={editData.gender} class="w-full h-8 rounded-md border border-input bg-background px-3 text-sm">
+										<option value="">-- เลือก --</option>
+										<option value="Male">ชาย</option>
+										<option value="Female">หญิง</option>
+									</select>
+								{:else}
+									<p class="font-medium">{application.gender === 'Male' ? 'ชาย' : application.gender === 'Female' ? 'หญิง' : '-'}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">วันเกิด</p>
-								<p class="font-medium">{application.dateOfBirth ? formatThaiDateFull(application.dateOfBirth) : '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">ชื่อ</p>
+								{#if editMode}
+									<Input bind:value={editData.firstName} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.firstName}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">เบอร์โทรศัพท์</p>
-								<p class="font-medium">{application.phone || '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">นามสกุล</p>
+								{#if editMode}
+									<Input bind:value={editData.lastName} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.lastName}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">อีเมล</p>
-								<p class="font-medium">{application.email || '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">วันเกิด</p>
+								{#if editMode}
+									<Input type="date" bind:value={editData.dateOfBirth} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.dateOfBirth ? formatThaiDateFull(application.dateOfBirth) : '-'}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">ศาสนา</p>
-								<p class="font-medium">{application.religion || '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
+								{#if editMode}
+									<Input bind:value={editData.phone} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.phone || '-'}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">เชื้อชาติ</p>
-								<p class="font-medium">{application.ethnicity || '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">อีเมล</p>
+								{#if editMode}
+									<Input bind:value={editData.email} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.email || '-'}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">สัญชาติ</p>
-								<p class="font-medium">{application.nationality || '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">ศาสนา</p>
+								{#if editMode}
+									<Input bind:value={editData.religion} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.religion || '-'}</p>
+								{/if}
+							</div>
+							<div>
+								<p class="text-xs text-muted-foreground mb-1">เชื้อชาติ</p>
+								{#if editMode}
+									<Input bind:value={editData.ethnicity} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.ethnicity || '-'}</p>
+								{/if}
+							</div>
+							<div>
+								<p class="text-xs text-muted-foreground mb-1">สัญชาติ</p>
+								{#if editMode}
+									<Input bind:value={editData.nationality} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.nationality || '-'}</p>
+								{/if}
 							</div>
 						</div>
 					</Card.Content>
@@ -283,21 +410,51 @@
 					<Card.Content class="pt-6 space-y-5">
 						<div>
 							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">ที่อยู่ตามทะเบียนบ้าน</p>
-							<p class="font-medium leading-relaxed">{formatHomeAddress(application)}</p>
-							{#if application.homePhone}
-								<p class="text-sm text-muted-foreground mt-1">โทร. {application.homePhone}</p>
+							{#if editMode}
+								<div class="grid grid-cols-2 gap-3">
+									<div><Label class="text-xs">บ้านเลขที่</Label><Input bind:value={editData.homeHouseNo} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">หมู่</Label><Input bind:value={editData.homeMoo} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">ซอย</Label><Input bind:value={editData.homeSoi} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">ถนน</Label><Input bind:value={editData.homeRoad} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">ตำบล/แขวง</Label><Input bind:value={editData.subDistrict} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">อำเภอ/เขต</Label><Input bind:value={editData.district} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">จังหวัด</Label><Input bind:value={editData.province} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">รหัสไปรษณีย์</Label><Input bind:value={editData.postalCode} class="h-8 text-sm mt-0.5" /></div>
+									<div class="col-span-2"><Label class="text-xs">โทรศัพท์บ้าน</Label><Input bind:value={editData.homePhone} class="h-8 text-sm mt-0.5" /></div>
+								</div>
+							{:else}
+								<p class="font-medium leading-relaxed">{formatHomeAddress(application)}</p>
+								{#if application.homePhone}
+									<p class="text-sm text-muted-foreground mt-1">โทร. {application.homePhone}</p>
+								{/if}
 							{/if}
 						</div>
-						{#if application.currentHouseNo || application.currentSubDistrict || application.currentProvince}
-							<Separator />
-							<div>
-								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">ที่อยู่ปัจจุบัน</p>
-								<p class="font-medium leading-relaxed">{formatCurrentAddress(application)}</p>
-								{#if application.currentPhone}
-									<p class="text-sm text-muted-foreground mt-1">โทร. {application.currentPhone}</p>
+						<Separator />
+						<div>
+							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">ที่อยู่ปัจจุบัน</p>
+							{#if editMode}
+								<div class="grid grid-cols-2 gap-3">
+									<div><Label class="text-xs">บ้านเลขที่</Label><Input bind:value={editData.currentHouseNo} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">หมู่</Label><Input bind:value={editData.currentMoo} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">ซอย</Label><Input bind:value={editData.currentSoi} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">ถนน</Label><Input bind:value={editData.currentRoad} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">ตำบล/แขวง</Label><Input bind:value={editData.currentSubDistrict} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">อำเภอ/เขต</Label><Input bind:value={editData.currentDistrict} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">จังหวัด</Label><Input bind:value={editData.currentProvince} class="h-8 text-sm mt-0.5" /></div>
+									<div><Label class="text-xs">รหัสไปรษณีย์</Label><Input bind:value={editData.currentPostalCode} class="h-8 text-sm mt-0.5" /></div>
+									<div class="col-span-2"><Label class="text-xs">โทรศัพท์</Label><Input bind:value={editData.currentPhone} class="h-8 text-sm mt-0.5" /></div>
+								</div>
+							{:else}
+								{#if application.currentHouseNo || application.currentSubDistrict || application.currentProvince}
+									<p class="font-medium leading-relaxed">{formatCurrentAddress(application)}</p>
+									{#if application.currentPhone}
+										<p class="text-sm text-muted-foreground mt-1">โทร. {application.currentPhone}</p>
+									{/if}
+								{:else}
+									<p class="text-sm text-muted-foreground">ไม่มีข้อมูล</p>
 								{/if}
-							</div>
-						{/if}
+							{/if}
+						</div>
 					</Card.Content>
 				</Card.Root>
 
@@ -312,24 +469,44 @@
 					<Card.Content class="pt-6">
 						<div class="grid grid-cols-2 gap-x-6 gap-y-4">
 							<div class="col-span-2">
-								<p class="text-xs text-muted-foreground">ชื่อโรงเรียน</p>
-								<p class="font-medium">{application.previousSchool || '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">ชื่อโรงเรียน</p>
+								{#if editMode}
+									<Input bind:value={editData.previousSchool} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.previousSchool || '-'}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">จังหวัด</p>
-								<p class="font-medium">{application.previousSchoolProvince || '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">จังหวัด</p>
+								{#if editMode}
+									<Input bind:value={editData.previousSchoolProvince} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.previousSchoolProvince || '-'}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">ระดับชั้น</p>
-								<p class="font-medium">{application.previousGrade || '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">ระดับชั้น</p>
+								{#if editMode}
+									<Input bind:value={editData.previousGrade} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.previousGrade || '-'}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">ปีการศึกษา</p>
-								<p class="font-medium">{application.previousStudyYear || '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">ปีการศึกษา</p>
+								{#if editMode}
+									<Input bind:value={editData.previousStudyYear} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.previousStudyYear || '-'}</p>
+								{/if}
 							</div>
 							<div>
-								<p class="text-xs text-muted-foreground">เกรดเฉลี่ยสะสม (GPA)</p>
-								<p class="font-medium">{application.previousGpa ? application.previousGpa.toFixed(2) : '-'}</p>
+								<p class="text-xs text-muted-foreground mb-1">เกรดเฉลี่ยสะสม (GPA)</p>
+								{#if editMode}
+									<Input type="number" step="0.01" min="0" max="4" bind:value={editData.previousGpa} class="h-8 text-sm" />
+								{:else}
+									<p class="font-medium">{application.previousGpa ? application.previousGpa.toFixed(2) : '-'}</p>
+								{/if}
 							</div>
 						</div>
 					</Card.Content>
@@ -360,24 +537,44 @@
 							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">บิดา</p>
 							<div class="grid grid-cols-2 gap-x-6 gap-y-3">
 								<div>
-									<p class="text-xs text-muted-foreground">ชื่อ-นามสกุล</p>
-									<p class="font-medium">{application.fatherName || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
+									{#if editMode}
+										<Input bind:value={editData.fatherName} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.fatherName || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">เบอร์โทรศัพท์</p>
-									<p class="font-medium">{application.fatherPhone || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
+									{#if editMode}
+										<Input bind:value={editData.fatherPhone} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.fatherPhone || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">เลขประชาชน</p>
-									<p class="font-mono font-medium">{application.fatherNationalId || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
+									{#if editMode}
+										<Input bind:value={editData.fatherNationalId} class="h-8 text-sm font-mono" />
+									{:else}
+										<p class="font-mono font-medium">{application.fatherNationalId || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">อาชีพ</p>
-									<p class="font-medium">{application.fatherOccupation || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">อาชีพ</p>
+									{#if editMode}
+										<Input bind:value={editData.fatherOccupation} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.fatherOccupation || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">รายได้</p>
-									<p class="font-medium">{formatCurrency(application.fatherIncome)}</p>
+									<p class="text-xs text-muted-foreground mb-1">รายได้ (บาท/เดือน)</p>
+									{#if editMode}
+										<Input type="number" bind:value={editData.fatherIncome} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{formatCurrency(application.fatherIncome)}</p>
+									{/if}
 								</div>
 							</div>
 						</div>
@@ -389,24 +586,44 @@
 							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">มารดา</p>
 							<div class="grid grid-cols-2 gap-x-6 gap-y-3">
 								<div>
-									<p class="text-xs text-muted-foreground">ชื่อ-นามสกุล</p>
-									<p class="font-medium">{application.motherName || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
+									{#if editMode}
+										<Input bind:value={editData.motherName} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.motherName || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">เบอร์โทรศัพท์</p>
-									<p class="font-medium">{application.motherPhone || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
+									{#if editMode}
+										<Input bind:value={editData.motherPhone} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.motherPhone || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">เลขประชาชน</p>
-									<p class="font-mono font-medium">{application.motherNationalId || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
+									{#if editMode}
+										<Input bind:value={editData.motherNationalId} class="h-8 text-sm font-mono" />
+									{:else}
+										<p class="font-mono font-medium">{application.motherNationalId || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">อาชีพ</p>
-									<p class="font-medium">{application.motherOccupation || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">อาชีพ</p>
+									{#if editMode}
+										<Input bind:value={editData.motherOccupation} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.motherOccupation || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">รายได้</p>
-									<p class="font-medium">{formatCurrency(application.motherIncome)}</p>
+									<p class="text-xs text-muted-foreground mb-1">รายได้ (บาท/เดือน)</p>
+									{#if editMode}
+										<Input type="number" bind:value={editData.motherIncome} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{formatCurrency(application.motherIncome)}</p>
+									{/if}
 								</div>
 							</div>
 						</div>
@@ -421,28 +638,52 @@
 							</p>
 							<div class="grid grid-cols-2 gap-x-6 gap-y-3">
 								<div>
-									<p class="text-xs text-muted-foreground">ชื่อ-นามสกุล</p>
-									<p class="font-medium">{application.guardianName || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
+									{#if editMode}
+										<Input bind:value={editData.guardianName} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.guardianName || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">เบอร์โทรศัพท์</p>
-									<p class="font-medium">{application.guardianPhone || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
+									{#if editMode}
+										<Input bind:value={editData.guardianPhone} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.guardianPhone || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">ความสัมพันธ์</p>
-									<p class="font-medium">{application.guardianRelation || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">ความสัมพันธ์</p>
+									{#if editMode}
+										<Input bind:value={editData.guardianRelation} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.guardianRelation || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">เลขประชาชน</p>
-									<p class="font-mono font-medium">{application.guardianNationalId || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
+									{#if editMode}
+										<Input bind:value={editData.guardianNationalId} class="h-8 text-sm font-mono" />
+									{:else}
+										<p class="font-mono font-medium">{application.guardianNationalId || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">อาชีพ</p>
-									<p class="font-medium">{application.guardianOccupation || '-'}</p>
+									<p class="text-xs text-muted-foreground mb-1">อาชีพ</p>
+									{#if editMode}
+										<Input bind:value={editData.guardianOccupation} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.guardianOccupation || '-'}</p>
+									{/if}
 								</div>
 								<div>
-									<p class="text-xs text-muted-foreground">รายได้</p>
-									<p class="font-medium">{formatCurrency(application.guardianIncome)}</p>
+									<p class="text-xs text-muted-foreground mb-1">รายได้ (บาท/เดือน)</p>
+									{#if editMode}
+										<Input type="number" bind:value={editData.guardianIncome} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{formatCurrency(application.guardianIncome)}</p>
+									{/if}
 								</div>
 							</div>
 						</div>
@@ -555,6 +796,17 @@
 								</Button>
 							</div>
 						{/if}
+
+						{#if application.status === 'verified'}
+							<Separator />
+							<Button
+								variant="outline"
+								class="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
+								onclick={() => { showUnverifyDialog = true; }}
+							>
+								<RotateCcw class="w-4 h-4 mr-1" /> ยกเลิกการอนุมัติ
+							</Button>
+						{/if}
 					</Card.Content>
 				</Card.Root>
 			</div>
@@ -578,6 +830,26 @@
 					<Button variant="destructive" onclick={handleRejectConfirm} disabled={rejecting || !rejectReason.trim()}>
 						{#if rejecting}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
 						{rejecting ? 'กำลังดำเนินการ...' : 'ยืนยันการปฏิเสธ'}
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+
+		<!-- Unverify Dialog -->
+		<Dialog.Root bind:open={showUnverifyDialog}>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title>ยกเลิกการอนุมัติ</Dialog.Title>
+					<Dialog.Description>
+						ยืนยันการยกเลิกการอนุมัติใบสมัครของ <strong>{application.firstName} {application.lastName}</strong>?
+						ใบสมัครจะกลับสู่สถานะ "รอตรวจสอบ"
+					</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showUnverifyDialog = false)}>ยกเลิก</Button>
+					<Button variant="destructive" onclick={handleUnverifyConfirm} disabled={unverifying}>
+						{#if unverifying}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
+						{unverifying ? 'กำลังดำเนินการ...' : 'ยืนยัน'}
 					</Button>
 				</Dialog.Footer>
 			</Dialog.Content>

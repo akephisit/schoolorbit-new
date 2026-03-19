@@ -514,6 +514,155 @@ pub async fn reject_application(
 }
 
 // ==========================================
+// Staff: Update Application (submitted only)
+// ==========================================
+
+/// PUT /api/admission/applications/:id
+pub async fn update_application(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateApplicationRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY).await {
+        return Ok(r);
+    }
+
+    let result = sqlx::query(
+        r#"
+        UPDATE admission_applications
+        SET title = $1, first_name = $2, last_name = $3, gender = $4, date_of_birth = $5,
+            phone = $6, email = $7, religion = $8, ethnicity = $9, nationality = $10,
+            address_line = $11, sub_district = $12, district = $13, province = $14, postal_code = $15,
+            home_house_no = $16, home_moo = $17, home_soi = $18, home_road = $19, home_phone = $20,
+            current_house_no = $21, current_moo = $22, current_soi = $23, current_road = $24,
+            current_sub_district = $25, current_district = $26, current_province = $27,
+            current_postal_code = $28, current_phone = $29,
+            previous_school = $30, previous_grade = $31, previous_gpa = $32,
+            previous_study_year = $33, previous_school_province = $34,
+            father_name = $35, father_phone = $36, father_occupation = $37, father_national_id = $38, father_income = $39,
+            mother_name = $40, mother_phone = $41, mother_occupation = $42, mother_national_id = $43, mother_income = $44,
+            guardian_name = $45, guardian_phone = $46, guardian_relation = $47, guardian_national_id = $48,
+            guardian_occupation = $49, guardian_income = $50, guardian_is = $51,
+            parent_status = $52, parent_status_other = $53,
+            updated_at = NOW()
+        WHERE id = $54 AND status = 'submitted'
+        "#
+    )
+    .bind(&payload.title)
+    .bind(&payload.first_name)
+    .bind(&payload.last_name)
+    .bind(&payload.gender)
+    .bind(payload.date_of_birth)
+    .bind(&payload.phone)
+    .bind(&payload.email)
+    .bind(&payload.religion)
+    .bind(&payload.ethnicity)
+    .bind(&payload.nationality)
+    .bind(&payload.address_line)
+    .bind(&payload.sub_district)
+    .bind(&payload.district)
+    .bind(&payload.province)
+    .bind(&payload.postal_code)
+    .bind(&payload.home_house_no)
+    .bind(&payload.home_moo)
+    .bind(&payload.home_soi)
+    .bind(&payload.home_road)
+    .bind(&payload.home_phone)
+    .bind(&payload.current_house_no)
+    .bind(&payload.current_moo)
+    .bind(&payload.current_soi)
+    .bind(&payload.current_road)
+    .bind(&payload.current_sub_district)
+    .bind(&payload.current_district)
+    .bind(&payload.current_province)
+    .bind(&payload.current_postal_code)
+    .bind(&payload.current_phone)
+    .bind(&payload.previous_school)
+    .bind(&payload.previous_grade)
+    .bind(payload.previous_gpa)
+    .bind(&payload.previous_study_year)
+    .bind(&payload.previous_school_province)
+    .bind(&payload.father_name)
+    .bind(&payload.father_phone)
+    .bind(&payload.father_occupation)
+    .bind(&payload.father_national_id)
+    .bind(payload.father_income)
+    .bind(&payload.mother_name)
+    .bind(&payload.mother_phone)
+    .bind(&payload.mother_occupation)
+    .bind(&payload.mother_national_id)
+    .bind(payload.mother_income)
+    .bind(&payload.guardian_name)
+    .bind(&payload.guardian_phone)
+    .bind(&payload.guardian_relation)
+    .bind(&payload.guardian_national_id)
+    .bind(&payload.guardian_occupation)
+    .bind(payload.guardian_income)
+    .bind(&payload.guardian_is)
+    .bind(&payload.parent_status)
+    .bind(&payload.parent_status_other)
+    .bind(id)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to update application {}: {}", id, e);
+        AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
+    })?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::BadRequest(
+            "ไม่พบใบสมัคร หรือไม่สามารถแก้ไขได้ (สถานะไม่ใช่รอตรวจสอบ)".to_string()
+        ));
+    }
+
+    Ok(Json(json!({ "success": true, "message": "แก้ไขใบสมัครแล้ว" })).into_response())
+}
+
+// ==========================================
+// Staff: Unverify Application (verified → submitted)
+// ==========================================
+
+/// PUT /api/admission/applications/:id/unverify
+pub async fn unverify_application(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY).await {
+        return Ok(r);
+    }
+
+    let result = sqlx::query(
+        r#"
+        UPDATE admission_applications
+        SET status = 'submitted',
+            verified_by = NULL,
+            verified_at = NULL,
+            updated_at = NOW()
+        WHERE id = $1 AND status = 'verified'
+        "#
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to unverify application {}: {}", id, e);
+        AppError::InternalServerError("ไม่สามารถยกเลิกการอนุมัติได้".to_string())
+    })?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::BadRequest(
+            "ไม่พบใบสมัคร หรือสถานะไม่ใช่ 'ผ่านการตรวจสอบ'".to_string()
+        ));
+    }
+
+    Ok(Json(json!({ "success": true, "message": "ยกเลิกการอนุมัติแล้ว" })).into_response())
+}
+
+// ==========================================
 // Staff: Delete Application
 // ==========================================
 

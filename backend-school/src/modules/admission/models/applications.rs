@@ -511,6 +511,72 @@ pub struct PortalFormRequest {
 }
 
 // ==========================================
+// Staff Update Application Request
+// ==========================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateApplicationRequest {
+    pub title: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub gender: Option<String>,
+    pub date_of_birth: Option<NaiveDate>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub religion: Option<String>,
+    pub ethnicity: Option<String>,
+    pub nationality: Option<String>,
+    // ที่อยู่ตามทะเบียนบ้าน
+    pub address_line: Option<String>,
+    pub sub_district: Option<String>,
+    pub district: Option<String>,
+    pub province: Option<String>,
+    pub postal_code: Option<String>,
+    pub home_house_no: Option<String>,
+    pub home_moo: Option<String>,
+    pub home_soi: Option<String>,
+    pub home_road: Option<String>,
+    pub home_phone: Option<String>,
+    // ที่อยู่ปัจจุบัน
+    pub current_house_no: Option<String>,
+    pub current_moo: Option<String>,
+    pub current_soi: Option<String>,
+    pub current_road: Option<String>,
+    pub current_sub_district: Option<String>,
+    pub current_district: Option<String>,
+    pub current_province: Option<String>,
+    pub current_postal_code: Option<String>,
+    pub current_phone: Option<String>,
+    // โรงเรียนเดิม
+    pub previous_school: Option<String>,
+    pub previous_grade: Option<String>,
+    pub previous_gpa: Option<f64>,
+    pub previous_study_year: Option<String>,
+    pub previous_school_province: Option<String>,
+    // ครอบครัว
+    pub father_name: Option<String>,
+    pub father_phone: Option<String>,
+    pub father_occupation: Option<String>,
+    pub father_national_id: Option<String>,
+    pub father_income: Option<f64>,
+    pub mother_name: Option<String>,
+    pub mother_phone: Option<String>,
+    pub mother_occupation: Option<String>,
+    pub mother_national_id: Option<String>,
+    pub mother_income: Option<f64>,
+    pub guardian_name: Option<String>,
+    pub guardian_phone: Option<String>,
+    pub guardian_relation: Option<String>,
+    pub guardian_national_id: Option<String>,
+    pub guardian_occupation: Option<String>,
+    pub guardian_income: Option<f64>,
+    pub guardian_is: Option<String>,
+    pub parent_status: Option<serde_json::Value>,
+    pub parent_status_other: Option<String>,
+}
+
+// ==========================================
 // Application Filter
 // ==========================================
 

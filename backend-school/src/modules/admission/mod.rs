@@ -35,10 +35,12 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/apply/round/{id}", get(handlers::rounds::get_public_round_info))
         .route("/apply/{round_id}", post(handlers::applications::submit_application))
         .route("/rounds/{id}/applications", get(handlers::applications::list_applications))
-        .route("/applications/{id}", get(handlers::applications::get_application))
+        .route("/applications/{id}", get(handlers::applications::get_application)
+                                    .put(handlers::applications::update_application)
+                                    .delete(handlers::applications::delete_application))
         .route("/applications/{id}/verify", put(handlers::applications::verify_application))
         .route("/applications/{id}/reject", put(handlers::applications::reject_application))
-        .route("/applications/{id}", delete(handlers::applications::delete_application))
+        .route("/applications/{id}/unverify", put(handlers::applications::unverify_application))
         .route("/applications/{id}/track", patch(handlers::applications::change_application_track))
 
         // === Scores ===

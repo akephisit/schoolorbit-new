@@ -6,6 +6,7 @@
 		verifyApplication,
 		rejectApplication,
 		deleteApplication,
+		unverifyApplication,
 		type ApplicationListItem,
 		applicationStatusLabel,
 		applicationStatusColor
@@ -20,7 +21,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, LoaderCircle, Trash2, School } from 'lucide-svelte';
+	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, LoaderCircle, Trash2, School, RotateCcw } from 'lucide-svelte';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 
 	let { data } = $props();
@@ -66,6 +67,10 @@
 	let showDeleteDialog = $state(false);
 	let deletingApp: ApplicationListItem | null = $state(null);
 	let deleting = $state(false);
+
+	let showUnverifyDialog = $state(false);
+	let unverifyingApp: ApplicationListItem | null = $state(null);
+	let unverifying = $state(false);
 
 	const statusVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
 		submitted: 'secondary',
@@ -131,6 +136,22 @@
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
 		} finally {
 			deleting = false;
+		}
+	}
+
+	async function handleUnverifyConfirm() {
+		if (!unverifyingApp) return;
+		unverifying = true;
+		try {
+			await unverifyApplication(unverifyingApp.id);
+			toast.success(`ยกเลิกการอนุมัติ ${unverifyingApp.fullName} แล้ว`);
+			showUnverifyDialog = false;
+			unverifyingApp = null;
+			await loadApps();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ยกเลิกการอนุมัติไม่สำเร็จ');
+		} finally {
+			unverifying = false;
 		}
 	}
 
@@ -306,6 +327,7 @@
 											size="icon"
 											class="h-8 w-8 text-green-600 hover:text-green-700"
 											onclick={() => handleVerify(app)}
+											title="อนุมัติ"
 										>
 											<Check class="w-3.5 h-3.5" />
 										</Button>
@@ -317,8 +339,20 @@
 												rejectingApp = app;
 												showRejectDialog = true;
 											}}
+											title="ไม่อนุมัติ"
 										>
 											<X class="w-3.5 h-3.5" />
+										</Button>
+									{/if}
+									{#if app.status === 'verified'}
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-8 w-8 text-muted-foreground hover:text-destructive"
+											onclick={() => { unverifyingApp = app; showUnverifyDialog = true; }}
+											title="ยกเลิกการอนุมัติ"
+										>
+											<RotateCcw class="w-3.5 h-3.5" />
 										</Button>
 									{/if}
 								<Button
@@ -371,6 +405,26 @@
 			>
 				{#if rejecting}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
 				{rejecting ? 'กำลังดำเนินการ...' : 'ปฏิเสธ'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Unverify Dialog -->
+<Dialog.Root bind:open={showUnverifyDialog}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>ยกเลิกการอนุมัติ</Dialog.Title>
+			<Dialog.Description>
+				ยืนยันการยกเลิกการอนุมัติใบสมัครของ <strong>{unverifyingApp?.fullName}</strong>?
+				ใบสมัครจะกลับสู่สถานะ "รอตรวจสอบ"
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showUnverifyDialog = false)}>ยกเลิก</Button>
+			<Button variant="destructive" onclick={handleUnverifyConfirm} disabled={unverifying}>
+				{#if unverifying}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
+				{unverifying ? 'กำลังดำเนินการ...' : 'ยืนยัน'}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

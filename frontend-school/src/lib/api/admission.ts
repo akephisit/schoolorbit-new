@@ -398,6 +398,16 @@ export async function deleteApplication(id: string) {
     if (!res.success) throw new Error(res.error);
 }
 
+export async function updateApplicationByStaff(id: string, data: Partial<AdmissionApplication>) {
+    const res = await apiClient.put(`/api/admission/applications/${id}`, data);
+    if (!res.success) throw new Error(res.error);
+}
+
+export async function unverifyApplication(id: string) {
+    const res = await apiClient.put(`/api/admission/applications/${id}/unverify`, {});
+    if (!res.success) throw new Error(res.error);
+}
+
 // ==========================================
 // Scores API
 // ==========================================
