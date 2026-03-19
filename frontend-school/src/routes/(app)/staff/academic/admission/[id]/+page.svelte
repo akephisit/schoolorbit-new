@@ -6,6 +6,7 @@
 		getRound,
 		listTracks,
 		listSubjects,
+		listRounds,
 		createTrack,
 		updateTrack,
 		deleteTrack,
@@ -84,7 +85,17 @@
 	// Report config
 	let reportConfig: ReportConfig = $state({ reportMode: null, zone: { schools: [] }, institution: { ownSchool: '' } });
 	let savingReportConfig = $state(false);
-	let zoneSchoolPicker = $state('');
+	let allRounds: AdmissionRound[] = $state([]);
+
+	const reportModeLabel: Record<string, string> = {
+		zone: 'เขตพื้นที่',
+		institution: 'สถานศึกษาเดิม',
+		both: 'ทั้งสองประเภท'
+	};
+
+	let copyableRounds = $derived(
+		allRounds.filter(r => r.id !== id && r.reportConfig?.reportMode != null)
+	);
 
 	const statusFlow: AdmissionRound['status'][] = [
 		'draft',
@@ -116,10 +127,11 @@
 		if (!id) return;
 		loading = true;
 		try {
-			const [r, t, s] = await Promise.all([getRound(id), listTracks(id), listSubjects(id)]);
+			const [r, t, s, allR] = await Promise.all([getRound(id), listTracks(id), listSubjects(id), listRounds()]);
 			round = r;
 			tracks = t;
 			subjects = s;
+			allRounds = allR;
 			reportConfig = {
 				reportMode: r.reportConfig?.reportMode ?? null,
 				zone: { schools: r.reportConfig?.zone?.schools ?? [] },
@@ -301,7 +313,16 @@
 		if (!schools.includes(name)) {
 			reportConfig = { ...reportConfig, zone: { schools: [...schools, name] } };
 		}
-		zoneSchoolPicker = '';
+	}
+
+	function copyConfigFromRound(source: AdmissionRound) {
+		const cfg = source.reportConfig!;
+		reportConfig = {
+			reportMode: cfg.reportMode,
+			zone: { schools: cfg.zone?.schools ? [...cfg.zone.schools] : [] },
+			institution: { ownSchool: cfg.institution?.ownSchool ?? '' }
+		};
+		toast.info(`คัดลอก config จาก "${source.name}" แล้ว`);
 	}
 
 	function removeZoneSchool(school: string) {
@@ -711,10 +732,37 @@
 	<!-- Report Config Card -->
 	<Card.Root>
 		<Card.Header class="pb-3">
-			<Card.Title class="flex items-center gap-2 text-base">
-				<BarChart2 class="w-4 h-4" /> การรายงาน
-			</Card.Title>
-			<Card.Description>ตั้งค่าการแบ่งกลุ่มผู้สมัครสำหรับรายงานสถิติ</Card.Description>
+			<div class="flex items-start justify-between gap-2">
+				<div>
+					<Card.Title class="flex items-center gap-2 text-base">
+						<BarChart2 class="w-4 h-4" /> การรายงาน
+					</Card.Title>
+					<Card.Description>ตั้งค่าการแบ่งกลุ่มผู้สมัครสำหรับรายงานสถิติ</Card.Description>
+				</div>
+				{#if copyableRounds.length > 0}
+					<Select.Root
+						type="single"
+						onValueChange={(roundId) => {
+							const src = copyableRounds.find(r => r.id === roundId);
+							if (src) copyConfigFromRound(src);
+						}}
+					>
+						<Select.Trigger class="h-8 text-xs gap-1.5 w-auto shrink-0">
+							<Copy class="w-3.5 h-3.5" /> คัดลอกจากรอบอื่น
+						</Select.Trigger>
+						<Select.Content>
+							{#each copyableRounds as r (r.id)}
+								<Select.Item value={r.id}>
+									<span>{r.name}</span>
+									<span class="ml-2 text-xs text-muted-foreground">
+										({reportModeLabel[r.reportConfig!.reportMode!]}{#if r.reportConfig?.zone?.schools?.length} · {r.reportConfig.zone.schools.length} โรงเรียน{/if})
+									</span>
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				{/if}
+			</div>
 		</Card.Header>
 		<Card.Content class="space-y-4">
 			<!-- Mode selector -->
@@ -752,22 +800,12 @@
 				<!-- Zone schools -->
 				<div class="space-y-2">
 					<Label>โรงเรียนในเขตพื้นที่บริการ</Label>
-					<div class="flex gap-2 max-w-sm">
-						<div class="flex-1">
-							<SchoolCombobox
-								bind:value={zoneSchoolPicker}
-								onProvinceSelect={() => {}}
-							/>
-						</div>
-						<Button
-							type="button"
-							variant="secondary"
-							size="sm"
-							onclick={() => addZoneSchool(zoneSchoolPicker)}
-							disabled={!zoneSchoolPicker}
-						>
-							<Plus class="w-3.5 h-3.5" />
-						</Button>
+					<div class="max-w-sm">
+						<SchoolCombobox
+							value=""
+							onProvinceSelect={() => {}}
+							onSelect={(name) => addZoneSchool(name)}
+						/>
 					</div>
 					{#if (reportConfig.zone?.schools ?? []).length > 0}
 						<div class="flex flex-wrap gap-1.5 mt-1">

@@ -13,9 +13,10 @@
 	interface Props {
 		value?: string;
 		onProvinceSelect?: ((province: string) => void) | null;
+		onSelect?: ((name: string) => void) | null;
 	}
 
-	let { value = $bindable(''), onProvinceSelect = null }: Props = $props();
+	let { value = $bindable(''), onProvinceSelect = null, onSelect = null }: Props = $props();
 
 	const MAX_RESULTS = 80;
 
@@ -47,6 +48,7 @@
 	function selectSchool(school: School) {
 		value = school.name;
 		onProvinceSelect?.(school.province);
+		onSelect?.(school.name);
 		open = false;
 		searchInput = '';
 	}
@@ -55,6 +57,7 @@
 		const name = searchInput.trim();
 		if (name) {
 			value = name;
+			onSelect?.(name);
 			open = false;
 			searchInput = '';
 		}
