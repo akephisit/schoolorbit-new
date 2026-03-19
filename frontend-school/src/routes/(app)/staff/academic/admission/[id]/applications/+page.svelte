@@ -100,7 +100,7 @@
 		try {
 			await verifyApplication(app.id);
 			toast.success(`ยืนยัน ${app.fullName} แล้ว`);
-			await loadApps();
+			applications = applications.map(a => a.id === app.id ? { ...a, status: 'verified' } : a);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ยืนยันไม่สำเร็จ');
 		}
@@ -112,10 +112,10 @@
 		try {
 			await rejectApplication(rejectingApp.id, rejectReason);
 			toast.success('ปฏิเสธใบสมัครแล้ว');
+			applications = applications.map(a => a.id === rejectingApp!.id ? { ...a, status: 'rejected' } : a);
 			showRejectDialog = false;
 			rejectingApp = null;
 			rejectReason = '';
-			await loadApps();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ปฏิเสธไม่สำเร็จ');
 		} finally {
@@ -129,9 +129,9 @@
 		try {
 			await deleteApplication(deletingApp.id);
 			toast.success(`ลบใบสมัครของ ${deletingApp.fullName} แล้ว`);
+			applications = applications.filter(a => a.id !== deletingApp!.id);
 			showDeleteDialog = false;
 			deletingApp = null;
-			await loadApps();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
 		} finally {
@@ -145,9 +145,9 @@
 		try {
 			await unverifyApplication(unverifyingApp.id);
 			toast.success(`ยกเลิกการอนุมัติ ${unverifyingApp.fullName} แล้ว`);
+			applications = applications.map(a => a.id === unverifyingApp!.id ? { ...a, status: 'submitted' } : a);
 			showUnverifyDialog = false;
 			unverifyingApp = null;
-			await loadApps();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ยกเลิกการอนุมัติไม่สำเร็จ');
 		} finally {

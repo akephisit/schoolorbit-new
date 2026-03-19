@@ -99,7 +99,7 @@
 		try {
 			await verifyApplication(application.id);
 			toast.success('ยืนยันข้อมูลแล้ว');
-			await loadApp();
+			application = { ...application, status: 'verified' };
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ยืนยันไม่สำเร็จ');
 		}
@@ -111,9 +111,9 @@
 		try {
 			await rejectApplication(application.id, rejectReason);
 			toast.success('ปฏิเสธใบสมัครแล้ว');
+			application = { ...application, status: 'rejected', rejectionReason: rejectReason };
 			showRejectDialog = false;
 			rejectReason = '';
-			await loadApp();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ปฏิเสธไม่สำเร็จ');
 		} finally {
@@ -127,8 +127,8 @@
 		try {
 			await unverifyApplication(application.id);
 			toast.success('ยกเลิกการอนุมัติแล้ว');
+			application = { ...application, status: 'submitted' };
 			showUnverifyDialog = false;
-			await loadApp();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ยกเลิกการอนุมัติไม่สำเร็จ');
 		} finally {
@@ -153,9 +153,9 @@
 		try {
 			await updateApplicationByStaff(application.id, editData);
 			toast.success('บันทึกข้อมูลแล้ว');
+			application = { ...application, ...editData };
 			editMode = false;
 			editData = {};
-			await loadApp();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
 		} finally {
