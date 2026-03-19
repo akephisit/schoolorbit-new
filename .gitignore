@@ -4,6 +4,8 @@ target/
 **/*.rs.bk
 *.pdb
 
+.claude
+
 # Node
 node_modules/
 .svelte-kit/
