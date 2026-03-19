@@ -27,6 +27,8 @@ pub struct AdmissionRound {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enrollment_end_date: Option<NaiveDate>,
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report_config: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 
@@ -65,6 +67,7 @@ pub struct UpdateAdmissionRoundRequest {
     pub result_announce_date: Option<NaiveDate>,
     pub enrollment_start_date: Option<NaiveDate>,
     pub enrollment_end_date: Option<NaiveDate>,
+    pub report_config: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]

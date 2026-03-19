@@ -13,10 +13,12 @@
 		updateSubject,
 		deleteSubject,
 		updateRoundStatus,
+		updateRound,
 		deleteRound,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
+		type ReportConfig,
 		roundStatusLabel,
 		roundStatusColor
 	} from '$lib/api/admission';
@@ -44,7 +46,9 @@
 		Users,
 		Loader2,
 		Copy,
-		Link as LinkIcon
+		Link as LinkIcon,
+		BarChart2,
+		X
 	} from 'lucide-svelte';
 
 	let { data } = $props();
@@ -75,6 +79,11 @@
 	let editingSubject: AdmissionExamSubject | null = $state(null);
 	let subjectForm = $state({ name: '', code: '', maxScore: '100', displayOrder: '0' });
 	let savingSubject = $state(false);
+
+	// Report config
+	let reportConfig: ReportConfig = $state({ reportMode: null, zone: { schools: [] }, institution: { ownSchool: '' } });
+	let savingReportConfig = $state(false);
+	let zoneSchoolInput = $state('');
 
 	const statusFlow: AdmissionRound['status'][] = [
 		'draft',
@@ -110,6 +119,11 @@
 			round = r;
 			tracks = t;
 			subjects = s;
+			reportConfig = {
+				reportMode: r.reportConfig?.reportMode ?? null,
+				zone: { schools: r.reportConfig?.zone?.schools ?? [] },
+				institution: { ownSchool: r.reportConfig?.institution?.ownSchool ?? '' }
+			};
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
 		} finally {
@@ -258,6 +272,46 @@
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
 		}
+	}
+
+	async function saveReportConfig() {
+		if (!id) return;
+		savingReportConfig = true;
+		try {
+			const payload: ReportConfig = { reportMode: reportConfig.reportMode };
+			if (reportConfig.reportMode === 'zone' || reportConfig.reportMode === 'both') {
+				payload.zone = { schools: reportConfig.zone?.schools ?? [] };
+			}
+			if (reportConfig.reportMode === 'institution' || reportConfig.reportMode === 'both') {
+				payload.institution = { ownSchool: reportConfig.institution?.ownSchool ?? '' };
+			}
+			await updateRound(id, { reportConfig: payload });
+			toast.success('บันทึกการตั้งค่ารายงานแล้ว');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
+		} finally {
+			savingReportConfig = false;
+		}
+	}
+
+	function addZoneSchool(e: KeyboardEvent) {
+		const val = zoneSchoolInput.trim();
+		if (!val) return;
+		if (e.key === 'Enter' || e.key === ',') {
+			e.preventDefault();
+			const schools = reportConfig.zone?.schools ?? [];
+			if (!schools.includes(val)) {
+				reportConfig = { ...reportConfig, zone: { schools: [...schools, val] } };
+			}
+			zoneSchoolInput = '';
+		}
+	}
+
+	function removeZoneSchool(school: string) {
+		reportConfig = {
+			...reportConfig,
+			zone: { schools: (reportConfig.zone?.schools ?? []).filter((s) => s !== school) }
+		};
 	}
 
 	function formatDate(d?: string) {
@@ -423,6 +477,16 @@
 					>
 						<Check class="w-3.5 h-3.5" /> รับมอบตัว
 					</Button>
+					{#if reportConfig.reportMode !== null}
+						<Button
+							href="/staff/academic/admission/{id}/report"
+							variant="outline"
+							size="sm"
+							class="gap-1.5"
+						>
+							<BarChart2 class="w-3.5 h-3.5" /> ดูรายงาน
+						</Button>
+					{/if}
 				</div>
 			</Card.Content>
 		</Card.Root>
@@ -646,6 +710,87 @@
 				</Card.Content>
 			</Card.Root>
 		</div>
+
+	<!-- Report Config Card -->
+	<Card.Root>
+		<Card.Header class="pb-3">
+			<Card.Title class="flex items-center gap-2 text-base">
+				<BarChart2 class="w-4 h-4" /> การรายงาน
+			</Card.Title>
+			<Card.Description>ตั้งค่าการแบ่งกลุ่มผู้สมัครสำหรับรายงานสถิติ</Card.Description>
+		</Card.Header>
+		<Card.Content class="space-y-4">
+			<!-- Mode selector -->
+			<div class="space-y-1.5">
+				<Label>ประเภทรายงาน</Label>
+				<Select.Root
+					type="single"
+					value={reportConfig.reportMode ?? 'none'}
+					onValueChange={(v) => {
+						reportConfig = { ...reportConfig, reportMode: v === 'none' ? null : (v as ReportConfig['reportMode']) };
+					}}
+				>
+					<Select.Trigger class="w-full max-w-xs">
+						{#if reportConfig.reportMode === null}ปิด (ไม่ใช้)
+						{:else if reportConfig.reportMode === 'zone'}เขตพื้นที่บริการ
+						{:else if reportConfig.reportMode === 'institution'}สถานศึกษาเดิม
+						{:else}ทั้งสองประเภท{/if}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="none">ปิด (ไม่ใช้)</Select.Item>
+						<Select.Item value="zone">เขตพื้นที่บริการ</Select.Item>
+						<Select.Item value="institution">สถานศึกษาเดิม</Select.Item>
+						<Select.Item value="both">ทั้งสองประเภท</Select.Item>
+					</Select.Content>
+				</Select.Root>
+			</div>
+
+			{#if reportConfig.reportMode === 'zone' || reportConfig.reportMode === 'both'}
+				<!-- Zone schools tag input -->
+				<div class="space-y-1.5">
+					<Label>โรงเรียนในเขตพื้นที่บริการ</Label>
+					<p class="text-xs text-muted-foreground">พิมพ์ชื่อโรงเรียนแล้วกด Enter หรือ , เพื่อเพิ่ม</p>
+					<div class="flex flex-wrap gap-1.5 p-2 border rounded-md min-h-[42px]">
+						{#each reportConfig.zone?.schools ?? [] as school (school)}
+							<span class="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+								{school}
+								<button onclick={() => removeZoneSchool(school)} class="hover:text-destructive">
+									<X class="w-3 h-3" />
+								</button>
+							</span>
+						{/each}
+						<input
+							bind:value={zoneSchoolInput}
+							onkeydown={addZoneSchool}
+							placeholder="ชื่อโรงเรียน..."
+							class="flex-1 min-w-32 text-sm outline-none bg-transparent"
+						/>
+					</div>
+				</div>
+			{/if}
+
+			{#if reportConfig.reportMode === 'institution' || reportConfig.reportMode === 'both'}
+				<!-- Own school input -->
+				<div class="space-y-1.5">
+					<Label for="own-school">ชื่อโรงเรียนตนเอง</Label>
+					<Input
+						id="own-school"
+						value={reportConfig.institution?.ownSchool ?? ''}
+						oninput={(e) => {
+							reportConfig = { ...reportConfig, institution: { ownSchool: (e.target as HTMLInputElement).value } };
+						}}
+						placeholder="เช่น โรงเรียนสาธิตมหาวิทยาลัย"
+						class="max-w-sm"
+					/>
+				</div>
+			{/if}
+
+			<Button onclick={saveReportConfig} disabled={savingReportConfig} size="sm" class="gap-1.5">
+				{#if savingReportConfig}<Loader2 class="w-3.5 h-3.5 animate-spin" />{/if}
+				บันทึกการตั้งค่า
+			</Button>
+		</Card.Content>
+	</Card.Root>
 	</div>
 
 	<!-- Delete Confirm Dialog -->

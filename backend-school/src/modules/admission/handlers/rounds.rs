@@ -285,8 +285,9 @@ pub async fn update_round(
             result_announce_date   = COALESCE($6, result_announce_date),
             enrollment_start_date  = COALESCE($7, enrollment_start_date),
             enrollment_end_date    = COALESCE($8, enrollment_end_date),
+            report_config          = COALESCE($9, report_config),
             updated_at             = NOW()
-        WHERE id = $9
+        WHERE id = $10
         RETURNING *,
             (SELECT name FROM academic_years WHERE id = academic_year_id) AS academic_year_name,
             (SELECT CASE level_type
@@ -295,7 +296,7 @@ pub async fn update_round(
                         WHEN 'secondary'    THEN CONCAT('ม.', year)
                         ELSE CONCAT('?.', year)
                     END FROM grade_levels WHERE id = grade_level_id) AS grade_level_name,
-            (SELECT COUNT(*) FROM admission_applications WHERE admission_round_id = $9) AS application_count
+            (SELECT COUNT(*) FROM admission_applications WHERE admission_round_id = $10) AS application_count
         "#
     )
     .bind(&payload.name)
@@ -306,6 +307,7 @@ pub async fn update_round(
     .bind(payload.result_announce_date)
     .bind(payload.enrollment_start_date)
     .bind(payload.enrollment_end_date)
+    .bind(payload.report_config.map(|v| sqlx::types::Json(v)))
     .bind(id)
     .fetch_one(&pool)
     .await

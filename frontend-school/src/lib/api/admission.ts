@@ -4,6 +4,16 @@ import { apiClient } from './client';
 // Types
 // ==========================================
 
+export interface ReportConfig {
+    reportMode: 'zone' | 'institution' | 'both' | null;
+    zone?: {
+        schools: string[];
+    };
+    institution?: {
+        ownSchool: string;
+    };
+}
+
 export interface AdmissionRound {
     id: string;
     academicYearId: string;
@@ -23,6 +33,7 @@ export interface AdmissionRound {
     academicYearName?: string;
     gradeLevelName?: string;
     applicationCount?: number;
+    reportConfig?: ReportConfig;
 }
 
 export interface AdmissionTrack {
