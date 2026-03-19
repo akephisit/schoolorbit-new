@@ -925,7 +925,7 @@
 							</div>
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 								<div class="space-y-2">
-									<Label>ชื่อโรงเรียนเดิม</Label>
+									<Label>ชื่อโรงเรียนเดิม (ไม่ต้องมีคำว่า "โรงเรียน")</Label>
 									<SchoolCombobox
 										bind:value={previousSchool}
 										onProvinceSelect={(p) => (previousSchoolProvince = p)}
