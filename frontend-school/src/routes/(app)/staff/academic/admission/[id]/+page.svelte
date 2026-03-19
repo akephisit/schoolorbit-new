@@ -65,6 +65,12 @@
 	let showDeleteDialog = $state(false);
 	let deletingRound = $state(false);
 
+	let deletingTrackTarget: AdmissionTrack | null = $state(null);
+	let deletingTrack = $state(false);
+
+	let deletingSubjectTarget: AdmissionExamSubject | null = $state(null);
+	let deletingSubject = $state(false);
+
 	// Track form
 	let showTrackForm = $state(false);
 	let editingTrack: AdmissionTrack | null = $state(null);
@@ -220,14 +226,21 @@
 			savingTrack = false;
 		}
 	}
-	async function removeTrack(t: AdmissionTrack) {
-		if (!confirm(`ลบสาย "${t.name}"?`)) return;
+	function removeTrack(t: AdmissionTrack) {
+		deletingTrackTarget = t;
+	}
+	async function confirmDeleteTrack() {
+		if (!deletingTrackTarget) return;
+		deletingTrack = true;
 		try {
-			await deleteTrack(t.id);
+			await deleteTrack(deletingTrackTarget.id);
 			toast.success('ลบสายแล้ว');
 			await load();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
+		} finally {
+			deletingTrack = false;
+			deletingTrackTarget = null;
 		}
 	}
 
@@ -276,14 +289,21 @@
 			savingSubject = false;
 		}
 	}
-	async function removeSubject(s: AdmissionExamSubject) {
-		if (!confirm(`ลบวิชา "${s.name}"?`)) return;
+	function removeSubject(s: AdmissionExamSubject) {
+		deletingSubjectTarget = s;
+	}
+	async function confirmDeleteSubject() {
+		if (!deletingSubjectTarget) return;
+		deletingSubject = true;
 		try {
-			await deleteSubject(s.id);
+			await deleteSubject(deletingSubjectTarget.id);
 			toast.success('ลบวิชาแล้ว');
 			await load();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
+		} finally {
+			deletingSubject = false;
+			deletingSubjectTarget = null;
 		}
 	}
 
@@ -842,6 +862,56 @@
 		</Card.Content>
 	</Card.Root>
 	</div>
+
+	<!-- Delete Track Dialog -->
+	<Dialog.Root open={deletingTrackTarget !== null} onOpenChange={(o) => { if (!o) deletingTrackTarget = null; }}>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการลบสายการเรียน</Dialog.Title>
+				<Dialog.Description>
+					ลบสาย <strong>{deletingTrackTarget?.name}</strong>? ข้อมูลใบสมัครและคะแนนที่เกี่ยวข้องกับสายนี้อาจถูกลบด้วย
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => (deletingTrackTarget = null)}
+					disabled={deletingTrack}
+				>
+					ยกเลิก
+				</Button>
+				<Button variant="destructive" onclick={confirmDeleteTrack} disabled={deletingTrack}>
+					{#if deletingTrack}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
+					{deletingTrack ? 'กำลังลบ...' : 'ลบสาย'}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Delete Subject Dialog -->
+	<Dialog.Root open={deletingSubjectTarget !== null} onOpenChange={(o) => { if (!o) deletingSubjectTarget = null; }}>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการลบวิชา</Dialog.Title>
+				<Dialog.Description>
+					ลบวิชา <strong>{deletingSubjectTarget?.name}</strong>? คะแนนของผู้สมัครทุกคนในวิชานี้จะถูกลบด้วย
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => (deletingSubjectTarget = null)}
+					disabled={deletingSubject}
+				>
+					ยกเลิก
+				</Button>
+				<Button variant="destructive" onclick={confirmDeleteSubject} disabled={deletingSubject}>
+					{#if deletingSubject}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
+					{deletingSubject ? 'กำลังลบ...' : 'ลบวิชา'}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 
 	<!-- Delete Confirm Dialog -->
 	<Dialog.Root bind:open={showDeleteDialog}>
