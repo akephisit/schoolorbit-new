@@ -20,7 +20,8 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, LoaderCircle, Trash2, CalendarDays, School } from 'lucide-svelte';
+	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, LoaderCircle, Trash2, School } from 'lucide-svelte';
+	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 
 	let { data } = $props();
 
@@ -178,15 +179,10 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
-				<div class="flex items-center gap-1.5">
-					<CalendarDays class="w-4 h-4 text-muted-foreground shrink-0" />
-					<input
-						type="date"
-						bind:value={dateFilter}
-						class="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-					/>
+				<div class="flex items-center gap-1.5 w-48">
+					<DatePicker bind:value={dateFilter} placeholder="กรองตามวันที่" class="w-full" />
 					{#if dateFilter}
-						<Button variant="ghost" size="icon" class="h-9 w-9" onclick={() => (dateFilter = '')} title="ล้างวันที่">
+						<Button variant="ghost" size="icon" class="h-9 w-9 shrink-0" onclick={() => (dateFilter = '')} title="ล้างวันที่">
 							<X class="w-3.5 h-3.5" />
 						</Button>
 					{/if}
@@ -203,7 +199,6 @@
 		<Card.Root>
 			<Card.Content class="pt-4 pb-4 space-y-4">
 				<div class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-					<CalendarDays class="w-4 h-4" />
 					{dateFilter
 						? `สรุปวันที่ ${new Date(dateFilter + 'T00:00:00').toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}`
 						: 'สรุปทั้งหมด'}
