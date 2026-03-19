@@ -50,7 +50,7 @@
 
 	async function load() {
 		try {
-			years = await lookupAcademicYears();
+			years = await lookupAcademicYears({ activeOnly: false });
 			const activeYear = years.find((y) => y.is_current) ?? years[0];
 			if (activeYear) {
 				form.academicYearId = activeYear.id;
