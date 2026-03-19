@@ -16,6 +16,8 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
+	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -246,6 +248,29 @@
 		if (e.key === 'Escape') closeLightbox();
 	}
 
+	const STUDENT_TITLES = ['เด็กชาย', 'เด็กหญิง', 'นาย', 'นางสาว'];
+
+	const PARENT_STATUS_OPTIONS = [
+		'อยู่ร่วมกัน', 'แยกกันอยู่', 'หย่าร้าง',
+		'บิดาเสียชีวิต', 'มารดาเสียชีวิต', 'อื่นๆ'
+	];
+
+	const PREVIOUS_GRADE_OPTIONS = [
+		'อนุบาล 3',
+		'ประถมศึกษาปีที่ 6',
+		'มัธยมศึกษาปีที่ 3',
+		'เทียบเท่า / อื่นๆ'
+	];
+
+	function toggleEditParentStatus(val: string) {
+		const current = editData.parentStatus as string[] ?? [];
+		if (current.includes(val)) {
+			editData.parentStatus = current.filter((s: string) => s !== val) as unknown as typeof editData.parentStatus;
+		} else {
+			editData.parentStatus = [...current, val] as unknown as typeof editData.parentStatus;
+		}
+	}
+
 	onMount(loadApp);
 </script>
 
@@ -314,7 +339,14 @@
 							<div>
 								<p class="text-xs text-muted-foreground mb-1">คำนำหน้า</p>
 								{#if editMode}
-									<Input bind:value={editData.title} placeholder="นาย / นาง / นางสาว" class="h-8 text-sm" />
+									<Select.Root type="single" bind:value={editData.title}>
+										<Select.Trigger class="h-8 text-sm">{editData.title || '-- เลือก --'}</Select.Trigger>
+										<Select.Content>
+											{#each STUDENT_TITLES as t}
+												<Select.Item value={t}>{t}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
 								{:else}
 									<p class="font-medium">{application.title || '-'}</p>
 								{/if}
@@ -322,11 +354,13 @@
 							<div>
 								<p class="text-xs text-muted-foreground mb-1">เพศ</p>
 								{#if editMode}
-									<select bind:value={editData.gender} class="w-full h-8 rounded-md border border-input bg-background px-3 text-sm">
-										<option value="">-- เลือก --</option>
-										<option value="Male">ชาย</option>
-										<option value="Female">หญิง</option>
-									</select>
+									<Select.Root type="single" bind:value={editData.gender}>
+										<Select.Trigger class="h-8 text-sm">{editData.gender === 'Male' ? 'ชาย' : editData.gender === 'Female' ? 'หญิง' : '-- เลือก --'}</Select.Trigger>
+										<Select.Content>
+											<Select.Item value="Male">ชาย</Select.Item>
+											<Select.Item value="Female">หญิง</Select.Item>
+										</Select.Content>
+									</Select.Root>
 								{:else}
 									<p class="font-medium">{application.gender === 'Male' ? 'ชาย' : application.gender === 'Female' ? 'หญิง' : '-'}</p>
 								{/if}
@@ -350,7 +384,7 @@
 							<div>
 								<p class="text-xs text-muted-foreground mb-1">วันเกิด</p>
 								{#if editMode}
-									<Input type="date" bind:value={editData.dateOfBirth} class="h-8 text-sm" />
+									<DatePicker bind:value={editData.dateOfBirth} />
 								{:else}
 									<p class="font-medium">{application.dateOfBirth ? formatThaiDateFull(application.dateOfBirth) : '-'}</p>
 								{/if}
@@ -487,7 +521,14 @@
 							<div>
 								<p class="text-xs text-muted-foreground mb-1">ระดับชั้น</p>
 								{#if editMode}
-									<Input bind:value={editData.previousGrade} class="h-8 text-sm" />
+									<Select.Root type="single" bind:value={editData.previousGrade}>
+										<Select.Trigger class="h-8 text-sm">{editData.previousGrade || '-- เลือกระดับชั้น --'}</Select.Trigger>
+										<Select.Content>
+											{#each PREVIOUS_GRADE_OPTIONS as g}
+												<Select.Item value={g}>{g}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
 								{:else}
 									<p class="font-medium">{application.previousGrade || '-'}</p>
 								{/if}
@@ -521,7 +562,40 @@
 					</Card.Header>
 					<Separator />
 					<Card.Content class="pt-6 space-y-6">
-						{#if application.parentStatus && application.parentStatus.length > 0}
+						{#if editMode}
+							<div>
+								<p class="text-xs text-muted-foreground mb-1">สถานภาพครอบครัว</p>
+								<div class="flex flex-wrap gap-2">
+									{#each PARENT_STATUS_OPTIONS as opt}
+										<button
+											type="button"
+											onclick={() => toggleEditParentStatus(opt)}
+											class="px-3 py-1.5 rounded-full text-sm border transition-all {(editData.parentStatus as string[] ?? []).includes(opt) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/50'}"
+										>
+											{opt}
+										</button>
+									{/each}
+								</div>
+								{#if (editData.parentStatus as string[] ?? []).includes('อื่นๆ')}
+									<Input bind:value={editData.parentStatusOther} placeholder="ระบุ..." class="max-w-xs mt-2" />
+								{/if}
+							</div>
+							<div>
+								<p class="text-xs text-muted-foreground mb-1">ผู้ปกครองเป็น</p>
+								<div class="flex flex-wrap gap-2">
+									{#each [['father', 'บิดา'], ['mother', 'มารดา'], ['other', 'บุคคลอื่น']] as [val, label]}
+										<button
+											type="button"
+											onclick={() => editData.guardianIs = val as typeof editData.guardianIs}
+											class="px-3 py-1.5 rounded-full text-sm border transition-all {editData.guardianIs === val ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/50'}"
+										>
+											{label}
+										</button>
+									{/each}
+								</div>
+							</div>
+							<Separator />
+						{:else if application.parentStatus && application.parentStatus.length > 0}
 							<div>
 								<p class="text-xs text-muted-foreground mb-1">สถานภาพครอบครัว</p>
 								<p class="font-medium">

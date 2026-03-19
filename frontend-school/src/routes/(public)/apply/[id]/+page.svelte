@@ -594,7 +594,7 @@
 	}
 
 	// Helper: title options
-	const STUDENT_TITLES = ['ด.ช.', 'ด.ญ.', 'นาย', 'นางสาว'];
+	const STUDENT_TITLES = ['เด็กชาย', 'เด็กหญิง', 'นาย', 'นางสาว'];
 	const MALE_TITLES = ['นาย', 'ม.ร.ว.', 'ม.ล.', 'ดร.'];
 	const FEMALE_TITLES = ['นาง', 'นางสาว', 'ม.ร.ว.', 'ม.ล.', 'ดร.'];
 	const GUARDIAN_TITLES = ['นาย', 'นาง', 'นางสาว', 'ปู่', 'ย่า', 'ตา', 'ยาย', 'ดร.'];
