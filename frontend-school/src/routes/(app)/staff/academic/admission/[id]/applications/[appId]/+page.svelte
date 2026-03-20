@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import {
 		getApplication,
 		verifyApplication,
@@ -25,6 +26,8 @@
 	import { toast } from 'svelte-sonner';
 	import {
 		ArrowLeft,
+		ChevronLeft,
+		ChevronRight,
 		Check,
 		X,
 		FileText,
@@ -63,6 +66,12 @@
 	let editMode = $state(false);
 	let saving = $state(false);
 	let editData = $state<Partial<AdmissionApplication>>({});
+
+	// Navigation
+	let navIds: string[] = $state([]);
+	let navIdx = $derived(navIds.indexOf(appId));
+	let prevId = $derived(navIdx > 0 ? navIds[navIdx - 1] : null);
+	let nextId = $derived(navIdx < navIds.length - 1 ? navIds[navIdx + 1] : null);
 
 	// Lightbox
 	let lightboxDoc = $state<ApplicationDocument | null>(null);
@@ -271,7 +280,22 @@
 		}
 	}
 
-	onMount(loadApp);
+	onMount(() => {
+		try {
+			const stored = sessionStorage.getItem('appNavIds');
+			if (stored) navIds = JSON.parse(stored);
+		} catch {
+			navIds = [];
+		}
+	});
+
+	$effect(() => {
+		// Run on mount and whenever appId changes (goto() navigation)
+		appId;
+		loadApp();
+		editMode = false;
+		editData = {};
+	});
 </script>
 
 <svelte:head>
@@ -285,6 +309,31 @@
 		<Button href="/staff/academic/admission/{roundId}/applications" variant="ghost" size="sm">
 			<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
 		</Button>
+		{#if navIds.length > 0 && navIdx !== -1}
+			<div class="flex items-center gap-1">
+				<Button
+					variant="outline"
+					size="icon"
+					class="h-8 w-8"
+					disabled={!prevId}
+					onclick={() => prevId && goto(`/staff/academic/admission/${roundId}/applications/${prevId}`)}
+					title="ผู้สมัครก่อนหน้า"
+				>
+					<ChevronLeft class="w-4 h-4" />
+				</Button>
+				<span class="text-sm text-muted-foreground px-1 tabular-nums">{navIdx + 1} / {navIds.length}</span>
+				<Button
+					variant="outline"
+					size="icon"
+					class="h-8 w-8"
+					disabled={!nextId}
+					onclick={() => nextId && goto(`/staff/academic/admission/${roundId}/applications/${nextId}`)}
+					title="ผู้สมัครคนถัดไป"
+				>
+					<ChevronRight class="w-4 h-4" />
+				</Button>
+			</div>
+		{/if}
 		<h1 class="text-2xl font-bold flex items-center gap-2">
 			<FileText class="w-6 h-6" /> รายละเอียดใบสมัคร
 		</h1>

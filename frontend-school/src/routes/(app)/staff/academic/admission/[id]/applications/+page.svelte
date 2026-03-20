@@ -135,6 +135,10 @@
 		}
 	}
 
+	function saveNavContext(apps: ApplicationListItem[]) {
+		sessionStorage.setItem('appNavIds', JSON.stringify(apps.map((a) => a.id)));
+	}
+
 	onMount(loadApps);
 </script>
 
@@ -246,6 +250,7 @@
 										variant="ghost"
 										size="icon"
 										class="h-8 w-8"
+										onclick={() => saveNavContext(displayedApps)}
 									>
 										<Eye class="w-3.5 h-3.5" />
 									</Button>
