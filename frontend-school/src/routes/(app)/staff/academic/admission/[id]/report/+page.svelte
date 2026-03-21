@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
 	import {
 		getRound,
 		listApplications,
@@ -18,10 +17,11 @@
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { toast } from 'svelte-sonner';
 
-	let { data } = $props();
+	import type { PageProps } from './$types';
+	let { data, params }: PageProps = $props();
 
-	let id = $derived($page.params.id);
-	let round: AdmissionRound | null = $state(null);
+	let id = $derived(params.id);
+	let round = $state<AdmissionRound | null>(null);
 	let applications: ApplicationListItem[] = $state([]);
 	let loading = $state(true);
 	let statusFilter = $state('all');
@@ -41,7 +41,7 @@
 		}
 	}
 
-	let reportConfig = $derived(round ? ((round as AdmissionRound).reportConfig ?? null) : null);
+	let reportConfig = $derived(round?.reportConfig ?? null);
 
 	let filteredApps = $derived(
 		applications

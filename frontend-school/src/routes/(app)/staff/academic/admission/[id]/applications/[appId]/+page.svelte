@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
 		getApplication,
@@ -44,10 +43,11 @@
 		Save
 	} from 'lucide-svelte';
 
-	let { data } = $props();
+	import type { PageProps } from './$types';
+	let { data, params }: PageProps = $props();
 
-	let roundId = $derived($page.params.id);
-	let appId = $derived($page.params.appId);
+	let roundId = $derived(params.id);
+	let appId = $derived(params.appId);
 
 	let application: AdmissionApplication | null = $state(null);
 	let documents: ApplicationDocument[] = $state([]);
@@ -69,7 +69,7 @@
 
 	// Navigation
 	let navIds: string[] = $state([]);
-	let navIdx = $derived(navIds.indexOf(appId ?? ''));
+	let navIdx = $derived(navIds.indexOf(appId));
 	let prevId = $derived(navIdx > 0 ? navIds[navIdx - 1] : null);
 	let nextId = $derived(navIdx < navIds.length - 1 ? navIds[navIdx + 1] : null);
 
