@@ -42,7 +42,7 @@ pub async fn list_schools_internal(
 ) -> Result<Json<ListSchoolsResponse>, (StatusCode, String)> {
     // Verify internal API secret
     let internal_secret = std::env::var("INTERNAL_API_SECRET")
-        .unwrap_or_else(|_| "default-secret".to_string());
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Server configuration error".to_string()))?;
 
     let auth_header = headers
         .get("X-Internal-Secret")

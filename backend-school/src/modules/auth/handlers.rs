@@ -148,7 +148,8 @@ pub async fn login(
     cookie.set_http_only(true);
     cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
     cookie.set_max_age(time::Duration::seconds(max_age));
-    
+    cookie.set_secure(true);
+
     cookies.add(cookie);
 
     Ok((

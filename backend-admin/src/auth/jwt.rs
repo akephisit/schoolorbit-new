@@ -4,7 +4,8 @@ use super::types::Claims;
 use crate::error::AppError;
 
 pub fn generate_token(claims: Claims) -> Result<String, AppError> {
-    let secret = env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key".to_string());
+    let secret = env::var("JWT_SECRET")
+        .expect("JWT_SECRET environment variable must be set");
     let token = encode(
         &Header::new(Algorithm::HS256),
         &claims,
@@ -16,7 +17,8 @@ pub fn generate_token(claims: Claims) -> Result<String, AppError> {
 }
 
 pub fn validate_token(token: &str) -> Result<Claims, AppError> {
-    let secret = env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key".to_string());
+    let secret = env::var("JWT_SECRET")
+        .expect("JWT_SECRET environment variable must be set");
     let token_data = decode::<Claims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),

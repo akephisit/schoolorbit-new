@@ -30,7 +30,7 @@ async fn verify_authenticated(
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
-    
+
     let token_from_header = auth_header
         .and_then(|h| {
             if h.starts_with("Bearer ") {
@@ -53,11 +53,11 @@ async fn verify_authenticated(
     // Verify token
     let claims = crate::utils::jwt::JwtService::verify_token(&token)
         .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
-    
+
     // Verify user exists in database
     let user_id = uuid::Uuid::parse_str(&claims.sub)
         .map_err(|_| AppError::AuthError("Invalid user ID".to_string()))?;
-    
+
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND status = 'active')"
     )
@@ -65,11 +65,11 @@ async fn verify_authenticated(
     .fetch_one(pool)
     .await
     .unwrap_or(false);
-    
+
     if !exists {
         return Err(AppError::AuthError("ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string()));
     }
-    
+
     Ok(user_id)
 }
 
@@ -109,40 +109,44 @@ pub async fn lookup_staff(
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-    
+
     // Only requires authentication
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
-    
+
     let mut sql = String::from(
-        "SELECT id, title, first_name, last_name, username 
-         FROM users 
+        "SELECT id, title, first_name, last_name, username
+         FROM users
          WHERE user_type = 'staff'"
     );
-    
+
     if active_only {
         sql.push_str(" AND status = 'active'");
     }
-    
-    if let Some(ref search) = query.search {
-        sql.push_str(&format!(
-            " AND (first_name ILIKE '%{}%' OR last_name ILIKE '%{}%' OR username ILIKE '%{}%')",
-            search, search, search
-        ));
+
+    let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
+    if search_pattern.is_some() {
+        sql.push_str(
+            " AND (first_name ILIKE $1 OR last_name ILIKE $1 OR username ILIKE $1)",
+        );
     }
-    
+
     sql.push_str(&format!(" ORDER BY first_name, last_name LIMIT {}", limit));
-    
-    let rows = sqlx::query_as::<_, StaffRow>(&sql)
+
+    let mut q = sqlx::query_as::<_, StaffRow>(&sql);
+    if let Some(ref pattern) = search_pattern {
+        q = q.bind(pattern);
+    }
+    let rows = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
             eprintln!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    
+
     let data: Vec<StaffLookupItem> = rows.into_iter().map(|r| {
         let name = format!("{} {}", r.first_name, r.last_name);
         StaffLookupItem {
@@ -152,7 +156,7 @@ pub async fn lookup_staff(
             username: Some(r.username),
         }
     }).collect();
-    
+
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
 }
 
@@ -185,39 +189,44 @@ pub async fn lookup_roles(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
-    
+
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
-    
+
     let mut sql = String::from("SELECT id, code, name, user_type FROM roles WHERE 1=1");
-    
+
     if active_only {
         sql.push_str(" AND is_active = true");
     }
-    
-    if let Some(ref search) = query.search {
-        sql.push_str(&format!(" AND (name ILIKE '%{}%' OR code ILIKE '%{}%')", search, search));
+
+    let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
+    if search_pattern.is_some() {
+        sql.push_str(" AND (name ILIKE $1 OR code ILIKE $1)");
     }
-    
+
     sql.push_str(&format!(" ORDER BY level DESC, name LIMIT {}", limit));
-    
-    let rows = sqlx::query_as::<_, RoleRow>(&sql)
+
+    let mut q = sqlx::query_as::<_, RoleRow>(&sql);
+    if let Some(ref pattern) = search_pattern {
+        q = q.bind(pattern);
+    }
+    let rows = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
             eprintln!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    
+
     let data: Vec<RoleLookupItem> = rows.into_iter().map(|r| RoleLookupItem {
         id: r.id,
         code: r.code,
         name: r.name,
         user_type: r.user_type,
     }).collect();
-    
+
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
 }
 
@@ -249,38 +258,43 @@ pub async fn lookup_departments(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
-    
+
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
-    
+
     let mut sql = String::from("SELECT id, code, name FROM departments WHERE 1=1");
-    
+
     if active_only {
         sql.push_str(" AND is_active = true");
     }
-    
-    if let Some(ref search) = query.search {
-        sql.push_str(&format!(" AND (name ILIKE '%{}%' OR code ILIKE '%{}%')", search, search));
+
+    let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
+    if search_pattern.is_some() {
+        sql.push_str(" AND (name ILIKE $1 OR code ILIKE $1)");
     }
-    
+
     sql.push_str(&format!(" ORDER BY name LIMIT {}", limit));
-    
-    let rows = sqlx::query_as::<_, DepartmentRow>(&sql)
+
+    let mut q = sqlx::query_as::<_, DepartmentRow>(&sql);
+    if let Some(ref pattern) = search_pattern {
+        q = q.bind(pattern);
+    }
+    let rows = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
             eprintln!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    
+
     let data: Vec<DepartmentLookupItem> = rows.into_iter().map(|r| DepartmentLookupItem {
         id: r.id,
         code: r.code,
         name: r.name,
     }).collect();
-    
+
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
 }
 
@@ -312,14 +326,14 @@ pub async fn lookup_grade_levels(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
-    
+
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
-    
+
     // Determine target year for filtering
     let mut target_year_id = query.academic_year_id;
-    
+
     // Default to current active year if not specified and current_year is not explicitly false
     // (This ensures dropdowns show only configured levels by default)
     if target_year_id.is_none() && query.current_year.unwrap_or(true) {
@@ -329,45 +343,61 @@ pub async fn lookup_grade_levels(
          .fetch_optional(&pool)
          .await
          .unwrap_or(None);
-         
+
          target_year_id = active_year_id;
     }
 
-    // Build SQL
+    // Build SQL with parameterized queries
+    // Track bind parameter index (1-based for PostgreSQL)
+    let mut param_idx: i32 = 1;
+    let mut bind_year_id: Option<Uuid> = None;
+    let mut bind_level_type: Option<String> = None;
+
     let mut sql = String::from("SELECT gl.id, gl.level_type, gl.year FROM grade_levels gl");
-    
+
     // Apply Year Filter via Join
     if let Some(yid) = target_year_id {
         sql.push_str(" JOIN academic_year_grade_levels aygl ON gl.id = aygl.grade_level_id");
-        // Use WHERE 1=1 trick to handle subsequent ANDs easily, but here update condition
-        sql.push_str(&format!(" WHERE aygl.academic_year_id = '{}'", yid));
+        sql.push_str(&format!(" WHERE aygl.academic_year_id = ${}", param_idx));
+        bind_year_id = Some(yid);
+        param_idx += 1;
     } else {
         sql.push_str(" WHERE 1=1");
     }
-    
+
     if query.active_only.unwrap_or(true) {
         sql.push_str(" AND gl.is_active = true");
     }
 
-    if let Some(ltype) = &query.level_type {
-        sql.push_str(&format!(" AND gl.level_type = '{}'", ltype));
+    if let Some(ref ltype) = query.level_type {
+        sql.push_str(&format!(" AND gl.level_type = ${}", param_idx));
+        bind_level_type = Some(ltype.clone());
+        param_idx += 1;
     }
-    
-    sql.push_str(" ORDER BY CASE gl.level_type 
-            WHEN 'kindergarten' THEN 1 
-            WHEN 'primary' THEN 2 
-            WHEN 'secondary' THEN 3 
-            ELSE 4 
+
+    let _ = param_idx; // suppress unused warning
+    sql.push_str(" ORDER BY CASE gl.level_type
+            WHEN 'kindergarten' THEN 1
+            WHEN 'primary' THEN 2
+            WHEN 'secondary' THEN 3
+            ELSE 4
          END, gl.year ASC LIMIT 500");
-    
-    let rows = sqlx::query_as::<_, GradeLevelRow>(&sql)
+
+    let mut q = sqlx::query_as::<_, GradeLevelRow>(&sql);
+    if let Some(yid) = bind_year_id {
+        q = q.bind(yid);
+    }
+    if let Some(ref ltype) = bind_level_type {
+        q = q.bind(ltype);
+    }
+    let rows = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
             eprintln!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    
+
     let data: Vec<GradeLevelLookupItem> = rows.into_iter().map(|r| {
         let (name, code, short_name) = match r.level_type.as_str() {
             "kindergarten" => (format!("อนุบาลปีที่ {}", r.year), format!("K{}", r.year), format!("อ.{}", r.year)),
@@ -375,14 +405,14 @@ pub async fn lookup_grade_levels(
             "secondary" => (format!("มัธยมศึกษาปีที่ {}", r.year), format!("M{}", r.year), format!("ม.{}", r.year)),
             _ => (format!("Other {}", r.year), format!("O{}", r.year), format!("?{}", r.year)),
         };
-        
+
         let order_base = match r.level_type.as_str() {
             "kindergarten" => 1,
             "primary" => 2,
             "secondary" => 3,
             _ => 4,
         };
-        
+
         GradeLevelLookupItem {
             id: r.id,
             code,
@@ -392,14 +422,14 @@ pub async fn lookup_grade_levels(
             level_order: order_base * 100 + r.year,
         }
     }).collect();
-    
+
     // Filter by search in memory if needed
     let final_data = if let Some(search) = query.search {
          data.into_iter().filter(|i| i.name.contains(&search) || i.code.contains(&search)).take(limit as usize).collect()
     } else {
          data
     };
-    
+
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data: final_data })))
 }
 
@@ -433,12 +463,11 @@ pub async fn lookup_classrooms(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
-    
+
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
-    // let active_only = query.active_only.unwrap_or(true); // class_rooms might not have is_active
-    
+
     let mut sql = String::from(
         "SELECT c.id, c.name, g.level_type, g.year, c.grade_level_id
          FROM class_rooms c
@@ -446,27 +475,32 @@ pub async fn lookup_classrooms(
          LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
          WHERE 1=1"
     );
-    
+
     // Filter by active academic year by default
     let active_only_flag = query.active_only.unwrap_or(true);
     if active_only_flag {
         sql.push_str(" AND ay.is_active = true");
     }
-    
-    if let Some(ref search) = query.search {
-        sql.push_str(&format!(" AND c.name ILIKE '%{}%'", search));
+
+    let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
+    if search_pattern.is_some() {
+        sql.push_str(" AND c.name ILIKE $1");
     }
-    
+
     sql.push_str(&format!(" ORDER BY g.year, c.name LIMIT {}", limit));
-    
-    let rows = sqlx::query_as::<_, ClassroomRow>(&sql)
+
+    let mut q = sqlx::query_as::<_, ClassroomRow>(&sql);
+    if let Some(ref pattern) = search_pattern {
+        q = q.bind(pattern);
+    }
+    let rows = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
             eprintln!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    
+
     let data: Vec<ClassroomLookupItem> = rows.into_iter().map(|r| {
         let grade_level_name = match (r.level_type.as_deref(), r.year) {
             (Some("kindergarten"), Some(y)) => Some(format!("อ.{}", y)),
@@ -474,7 +508,7 @@ pub async fn lookup_classrooms(
             (Some("secondary"), Some(y)) => Some(format!("ม.{}", y)),
             _ => None,
         };
-        
+
         ClassroomLookupItem {
             id: r.id,
             name: r.name,
@@ -482,7 +516,7 @@ pub async fn lookup_classrooms(
             grade_level_id: r.grade_level_id,
         }
     }).collect();
-    
+
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
 }
 
@@ -515,54 +549,51 @@ pub async fn lookup_academic_years(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
-    
+
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
-    
+
     let mut sql = String::from("SELECT id, name, year, is_active FROM academic_years WHERE 1=1");
-    
+
     if active_only {
         sql.push_str(" AND is_active = true");
     }
-    
-    if let Some(ref search) = query.search {
-        sql.push_str(&format!(" AND name ILIKE '%{}%'", search));
+
+    let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
+    if search_pattern.is_some() {
+        sql.push_str(" AND name ILIKE $1");
     }
-    
+
     // Order by active first, then by year descending (latest year first)
     sql.push_str(&format!(" ORDER BY is_active DESC, year DESC LIMIT {}", limit));
-    
-    let rows = sqlx::query_as::<_, AcademicYearRow>(&sql)
+
+    let mut q = sqlx::query_as::<_, AcademicYearRow>(&sql);
+    if let Some(ref pattern) = search_pattern {
+        q = q.bind(pattern);
+    }
+    let rows = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
             eprintln!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    
+
     let data: Vec<AcademicYearLookupItem> = rows.into_iter().map(|r| AcademicYearLookupItem {
         id: r.id,
         name: r.name,
         year: r.year,
         is_current: r.is_active, // Map is_active to is_current for API compatibility
     }).collect();
-    
+
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
 }
 
 // ===================================================================
 // Students Lookup
 // ===================================================================
-
-#[derive(Debug, FromRow)]
-struct StudentRow {
-    id: Uuid,
-    first_name: String,
-    last_name: String,
-    username: String,
-}
 
 /// GET /api/lookup/students
 /// Returns minimal student data for dropdowns (with student_id and class_room)
@@ -581,12 +612,12 @@ pub async fn lookup_students(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
-    
+
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
-    
+
     // Query with student_id from student_info and current classroom from enrollments
     let mut sql = String::from(
         "SELECT u.id, u.title, u.first_name, u.last_name, u.username,
@@ -598,20 +629,20 @@ pub async fn lookup_students(
          LEFT JOIN class_rooms c ON e.class_room_id = c.id
          WHERE u.user_type = 'student'"
     );
-    
+
     if active_only {
         sql.push_str(" AND u.status = 'active'");
     }
-    
-    if let Some(ref search) = query.search {
-        sql.push_str(&format!(
-            " AND (u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%' OR u.username ILIKE '%{}%' OR si.student_id ILIKE '%{}%')",
-            search, search, search, search
-        ));
+
+    let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
+    if search_pattern.is_some() {
+        sql.push_str(
+            " AND (u.first_name ILIKE $1 OR u.last_name ILIKE $1 OR u.username ILIKE $1 OR si.student_id ILIKE $1)",
+        );
     }
-    
+
     sql.push_str(&format!(" ORDER BY u.first_name, u.last_name LIMIT {}", limit));
-    
+
     #[derive(Debug, FromRow)]
     struct StudentWithInfoRow {
         id: Uuid,
@@ -623,15 +654,19 @@ pub async fn lookup_students(
         student_id: Option<String>,
         class_room: Option<String>,
     }
-    
-    let rows = sqlx::query_as::<_, StudentWithInfoRow>(&sql)
+
+    let mut q = sqlx::query_as::<_, StudentWithInfoRow>(&sql);
+    if let Some(ref pattern) = search_pattern {
+        q = q.bind(pattern);
+    }
+    let rows = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
             eprintln!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    
+
     let data: Vec<StudentLookupItem> = rows.into_iter().map(|r| {
         let name = format!("{} {}", r.first_name, r.last_name);
         StudentLookupItem {
@@ -642,7 +677,7 @@ pub async fn lookup_students(
             class_room: r.class_room,
         }
     }).collect();
-    
+
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
 }
 
@@ -675,8 +710,8 @@ pub async fn lookup_rooms(
 
     let rooms = sqlx::query_as::<_, Room>(
         r#"
-        SELECT r.id, r.building_id, r.name_th, r.name_en, r.code, 
-               r.room_type, r.capacity, r.floor, r.status, r.description, 
+        SELECT r.id, r.building_id, r.name_th, r.name_en, r.code,
+               r.room_type, r.capacity, r.floor, r.status, r.description,
                r.created_at, r.updated_at, b.name_th as building_name
         FROM rooms r
         LEFT JOIN buildings b ON r.building_id = b.id
@@ -725,42 +760,59 @@ pub async fn lookup_subjects(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
-    
+
     verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
-    
+
     let mut sql = String::from("SELECT id, code, name_th, (SELECT array_agg(grade_level_id) FROM subject_grade_levels WHERE subject_id = subjects.id) as grade_level_ids FROM subjects WHERE 1=1");
-    
+
     if active_only {
         sql.push_str(" AND is_active = true");
     }
-    
+
+    // Track bind parameters
+    let mut param_idx: i32 = 1;
+    let mut bind_subject_type: Option<String> = None;
+    let mut bind_search: Option<String> = None;
+
     if let Some(ref stype) = query.subject_type {
-        sql.push_str(&format!(" AND type = '{}'", stype));
+        sql.push_str(&format!(" AND type = ${}", param_idx));
+        bind_subject_type = Some(stype.clone());
+        param_idx += 1;
     }
 
-    if let Some(ref search) = query.search {
-        sql.push_str(&format!(" AND (name_th ILIKE '%{}%' OR code ILIKE '%{}%')", search, search));
+    if let Some(ref s) = query.search {
+        sql.push_str(&format!(" AND (name_th ILIKE ${0} OR code ILIKE ${0})", param_idx));
+        bind_search = Some(format!("%{}%", s));
+        param_idx += 1;
     }
-    
+
+    let _ = param_idx; // suppress unused warning
     sql.push_str(&format!(" ORDER BY code, name_th LIMIT {}", limit));
-    
-    let rows = sqlx::query_as::<_, SubjectRow>(&sql)
+
+    let mut q = sqlx::query_as::<_, SubjectRow>(&sql);
+    if let Some(ref stype) = bind_subject_type {
+        q = q.bind(stype);
+    }
+    if let Some(ref pattern) = bind_search {
+        q = q.bind(pattern);
+    }
+    let rows = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
             eprintln!("Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    
+
     let data: Vec<LookupItem> = rows.into_iter().map(|r| LookupItem {
         id: r.id,
         name: r.name_th,
         code: Some(r.code),
         grade_level_ids: r.grade_level_ids,
     }).collect();
-    
+
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
 }

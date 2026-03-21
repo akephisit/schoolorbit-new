@@ -25,7 +25,7 @@ impl PoolManager {
             pools: Arc::new(RwLock::new(HashMap::new())),
             migration_tracker: MigrationTracker::new(),
             max_connections_per_school: 5,
-            pool_ttl: Duration::from_secs(300), // 5 minutes TTL
+            pool_ttl: Duration::from_secs(1800), // 30 minutes TTL
         }
     }
 
@@ -56,9 +56,10 @@ impl PoolManager {
                 // Create new connection pool
                 println!("🔄 Creating new connection pool for: {}", subdomain);
                 let pool = PgPoolOptions::new()
-                    .min_connections(1)
+                    .min_connections(0) // allow pool to reach 0 connections so Neon can scale-down
                     .max_connections(self.max_connections_per_school)
                     .acquire_timeout(Duration::from_secs(10))
+                    .idle_timeout(Duration::from_secs(300)) // close idle connections before Neon scale-down
                     .connect(&database_url)
                     .await
                     .map_err(|e| format!("Failed to connect to database for {}: {}", subdomain, e))?;
