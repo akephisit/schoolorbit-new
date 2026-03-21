@@ -69,7 +69,7 @@
 
 	// Navigation
 	let navIds: string[] = $state([]);
-	let navIdx = $derived(navIds.indexOf(appId));
+	let navIdx = $derived(navIds.indexOf(appId ?? ''));
 	let prevId = $derived(navIdx > 0 ? navIds[navIdx - 1] : null);
 	let nextId = $derived(navIdx < navIds.length - 1 ? navIds[navIdx + 1] : null);
 

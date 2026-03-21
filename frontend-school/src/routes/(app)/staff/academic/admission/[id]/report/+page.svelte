@@ -41,7 +41,7 @@
 		}
 	}
 
-	let reportConfig = $derived(round?.reportConfig ?? null);
+	let reportConfig = $derived(round ? ((round as AdmissionRound).reportConfig ?? null) : null);
 
 	let filteredApps = $derived(
 		applications
