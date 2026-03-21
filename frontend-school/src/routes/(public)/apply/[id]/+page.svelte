@@ -465,8 +465,7 @@
 			: undefined;
 	}
 
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
+	async function handleSubmit() {
 
 		if (!trackId) {
 			toast.error('กรุณาเลือกสายการเรียน');
@@ -668,7 +667,7 @@
 				</Card.Root>
 
 			{:else}
-				<form onsubmit={handleSubmit} novalidate class="space-y-5">
+				<div class="space-y-5">
 
 					<!-- ===== Card 1: เลือกสายการเรียน ===== -->
 					<Card.Root class="shadow-sm">
@@ -1321,7 +1320,7 @@
 						<p class="text-xs text-muted-foreground text-center sm:text-left max-w-sm">
 							ข้าพเจ้าขอรับรองว่าข้อมูลที่กรอกทั้งหมดเป็นความจริง
 						</p>
-						<Button type="submit" size="lg" disabled={submitting} class="w-full sm:w-auto px-10">
+						<Button type="button" onclick={handleSubmit} size="lg" disabled={submitting} class="w-full sm:w-auto px-10">
 							{#if submitting}
 								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
 								{isEditMode ? 'กำลังบันทึก...' : 'กำลังส่งข้อมูล...'}
@@ -1330,7 +1329,7 @@
 							{/if}
 						</Button>
 					</div>
-				</form>
+				</div>
 			{/if}
 		{/if}
 	</div>
