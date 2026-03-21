@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import type { PageProps } from './$types';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
@@ -8,7 +8,8 @@
 	import { ArrowLeft, User, Shield } from 'lucide-svelte';
 	import UserRoleManager from '$lib/components/UserRoleManager.svelte';
 
-	let userId = $derived($page.params.id ?? '');
+	let { params }: PageProps = $props();
+	let userId = $derived(params.id);
 	let activeTab = $state('roles');
 </script>
 

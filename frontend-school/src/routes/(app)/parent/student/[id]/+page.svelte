@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page as pageState } from '$app/state';
+	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
 	import { getChildProfile } from '$lib/api/parents';
 	import { Card } from '$lib/components/ui/card';
@@ -10,7 +10,8 @@
 	import { goto } from '$app/navigation';
 	import { formatDate } from '$lib/utils/date';
 
-	let studentId = $derived(pageState.params.id as string);
+	let { params }: PageProps = $props();
+	let studentId = $derived(params.id);
 	let student = $state<any>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);

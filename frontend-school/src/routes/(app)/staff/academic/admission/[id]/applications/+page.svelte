@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import type { PageProps } from './$types';
 	import {
 		listApplications,
 		verifyApplication,
@@ -24,9 +24,9 @@
 	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, LoaderCircle, Trash2, RotateCcw } from 'lucide-svelte';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 
-	let { data } = $props();
+	let { data, params }: PageProps = $props();
 
-	let id = $derived($page.params.id);
+	let id = $derived(params.id);
 	let applications: ApplicationListItem[] = $state([]);
 	let loading = $state(true);
 	let search = $state('');

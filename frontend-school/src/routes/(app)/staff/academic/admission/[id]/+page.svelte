@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import type { PageProps } from './$types';
 	import {
 		getRound,
 		listTracks,
@@ -53,9 +54,9 @@
 		X
 	} from 'lucide-svelte';
 
-	let { data } = $props();
+	let { data, params }: PageProps = $props();
 
-	let id = $derived($page.params.id);
+	let id = $derived(params.id);
 	let round: AdmissionRound | null = $state(null);
 	let tracks: AdmissionTrack[] = $state([]);
 	let subjects: AdmissionExamSubject[] = $state([]);
@@ -114,7 +115,7 @@
 	];
 
 	function copyLink(path: string) {
-		const url = `${$page.url.origin}${path}`;
+		const url = `${page.url.origin}${path}`;
 		navigator.clipboard.writeText(url);
 		toast.success('คัดลอกลิงก์เรียบร้อยแล้ว');
 	}
@@ -444,7 +445,7 @@
 							>
 							<div class="flex items-center gap-2">
 								<Input
-									value={`${$page.url.origin}/apply/${id}`}
+									value={`${page.url.origin}/apply/${id}`}
 									readonly
 									class="h-9 bg-muted/50 font-mono text-xs"
 								/>
@@ -462,7 +463,7 @@
 							<Label class="text-xs text-muted-foreground">ลิงก์รวมรอบรับสมัคร / ระบบมอบตัว</Label>
 							<div class="flex items-center gap-2">
 								<Input
-									value={`${$page.url.origin}/apply`}
+									value={`${page.url.origin}/apply`}
 									readonly
 									class="h-9 bg-muted/50 font-mono text-xs"
 								/>

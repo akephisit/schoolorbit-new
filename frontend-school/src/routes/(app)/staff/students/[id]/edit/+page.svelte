@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -22,7 +22,8 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 
-	let studentId = $derived($page.params.id as string);
+	let { params }: PageProps = $props();
+	let studentId = $derived(params.id);
 	let student = $state<any>(null);
 	let loading = $state(true);
 	let editing = $state(false);

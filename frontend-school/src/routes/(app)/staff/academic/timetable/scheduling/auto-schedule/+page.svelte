@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
@@ -57,7 +57,7 @@
 		loading = false;
 
 		// Get semester from query params if available
-		const semesterId = $page.url.searchParams.get('semester_id');
+		const semesterId = page.url.searchParams.get('semester_id');
 		if (semesterId) {
 			selectedSemesterId = semesterId;
 		}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import type { PageProps } from './$types';
 	import {
 		getRound,
 		listTracks,
@@ -21,8 +21,8 @@
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, ClipboardList, Save, Loader2, ListFilter } from 'lucide-svelte';
 
-	let { data } = $props();
-	let id = $derived($page.params.id);
+	let { data, params }: PageProps = $props();
+	let id = $derived(params.id);
 
 	let round: AdmissionRound | null = $state(null);
 	let tracks: AdmissionTrack[] = $state([]);

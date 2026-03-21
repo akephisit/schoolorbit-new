@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import type { PageProps } from './$types';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
@@ -33,7 +33,8 @@
 	import { toast } from 'svelte-sonner';
 	import { LoaderCircle } from 'lucide-svelte';
 
-	const staffId = $page.params.id ?? '';
+	const { params }: PageProps = $props();
+	const staffId = params.id;
 	let staff = $state<StaffProfileResponse | null>(null);
 	let achievements = $state<Achievement[]>([]);
 	let loading = $state(true);

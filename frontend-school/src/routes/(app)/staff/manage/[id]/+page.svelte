@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/state';
+	import type { PageProps } from './$types';
 	import { getStaffProfile, type StaffProfileResponse } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -41,7 +41,8 @@
 	let showDeleteDialog = $state(false);
 	let deleteId = $state<string | null>(null);
 
-	const staffId = $derived(page.params.id);
+	const { params }: PageProps = $props();
+	const staffId = $derived(params.id);
 
 	async function loadStaffProfile() {
 		if (!staffId) return;

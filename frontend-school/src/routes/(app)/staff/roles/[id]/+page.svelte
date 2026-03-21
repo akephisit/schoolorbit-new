@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { roleAPI, permissionAPI, type Role, type PermissionsByModule } from '$lib/api/roles';
@@ -30,7 +30,8 @@
 	import { ArrowLeft, Save, Trash2, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
-	let roleId = $derived($page.params.id ?? 'new');
+	let { params }: PageProps = $props();
+	let roleId = $derived(params.id);
 	let isNew = $derived(roleId === 'new');
 
 	let loading = $state(true);

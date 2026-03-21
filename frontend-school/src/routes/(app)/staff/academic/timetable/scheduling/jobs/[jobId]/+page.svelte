@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
@@ -20,10 +20,11 @@
 	import type { SchedulingJobResponse } from '$lib/api/scheduling';
 	import { getSchedulingJob } from '$lib/api/scheduling';
 
-	const jobId = $page.params.jobId;
+	const { params }: PageProps = $props();
+	const jobId = params.jobId;
 
-	let job: SchedulingJobResponse | null = null;
-	let loading = true;
+	let job = $state<SchedulingJobResponse | null>(null);
+	let loading = $state(true);
 	let polling: ReturnType<typeof setInterval> | null = null;
 
 	onMount(async () => {
@@ -36,13 +37,8 @@
 	});
 
 	async function loadJob() {
-		if (!jobId) {
-			loading = false;
-			return;
-		}
-
 		try {
-			const res = await getSchedulingJob(jobId as string);
+			const res = await getSchedulingJob(jobId);
 			job = res.data || null;
 			loading = false;
 
@@ -98,8 +94,8 @@
 		return 'text-orange-600';
 	}
 
-	$: statusBadge = job ? getStatusBadge(job.status) : null;
-	$: isRunning = job?.status === 'RUNNING' || job?.status === 'PENDING';
+	let statusBadge = $derived(job ? getStatusBadge(job.status) : null);
+	let isRunning = $derived(job?.status === 'RUNNING' || job?.status === 'PENDING');
 </script>
 
 {#if loading}
@@ -124,7 +120,7 @@
 					<h1 class="text-3xl font-bold">สถานะการจัดตาราง</h1>
 					{#if statusBadge}
 						<Badge variant={statusBadge.variant} class="px-3 py-1">
-							<svelte:component this={statusBadge.icon} class="mr-1 h-4 w-4" />
+							<statusBadge.icon class="mr-1 h-4 w-4" />
 							{statusBadge.text}
 						</Badge>
 					{/if}

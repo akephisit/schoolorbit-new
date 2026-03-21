@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import type { PageProps } from './$types';
 	import { getRound, listEnrollmentPending, completeEnrollment } from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -26,8 +26,8 @@
 		preSubmitted: boolean;
 	}
 
-	let { data } = $props();
-	let id = $derived($page.params.id);
+	let { data, params }: PageProps = $props();
+	let id = $derived(params.id);
 
 	let round: Awaited<ReturnType<typeof getRound>> | null = $state(null);
 	let list: EnrollRow[] = $state([]);

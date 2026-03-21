@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { page } from '$app/state';
+	import type { PageProps } from './$types';
 	import {
 		getStaffProfile,
 		updateStaff,
@@ -23,7 +23,8 @@
 	import { ArrowLeft, LoaderCircle, Save, User, Building2, BookOpen, Check } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
-	const staffId = $derived(page.params.id);
+	const { params }: PageProps = $props();
+	const staffId = $derived(params.id);
 
 	// Form state
 	let currentStep = $state(1);

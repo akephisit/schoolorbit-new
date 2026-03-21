@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/state';
+	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
 	import { 
         getDepartment, 
@@ -14,7 +14,8 @@
         Briefcase, GraduationCap, Users, User
     } from 'lucide-svelte';
 
-	let deptId = $derived(page.params.id);
+	const { params }: PageProps = $props();
+	let deptId = $derived(params.id);
 	let department: Department | null = $state(null);
 	let members: StaffListItem[] = $state([]);
 	let loading = $state(true);

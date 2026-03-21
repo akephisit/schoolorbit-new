@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
 	import { resolve } from '$app/paths';
+	import type { PageProps } from './$types';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import { Card } from '$lib/components/ui/card';
@@ -10,7 +10,8 @@
 	import { ArrowLeft, Edit } from 'lucide-svelte';
 	import { getStudent } from '$lib/api/students';
 
-	let studentId = $derived($page.params.id as string);
+	let { params }: PageProps = $props();
+	let studentId = $derived(params.id);
 	let student = $state<any>(null);
 	let loading = $state(true);
 
