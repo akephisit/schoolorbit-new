@@ -159,8 +159,8 @@
 	<!-- Filters -->
 	<Card.Root>
 		<Card.Content class="pt-4 pb-4">
-			<div class="flex flex-wrap gap-3">
-				<div class="relative flex-1 min-w-48">
+			<div class="flex flex-col sm:flex-row flex-wrap gap-2">
+				<div class="relative flex-1 min-w-0 sm:min-w-48">
 					<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
 					<Input
 						bind:value={search}
@@ -169,7 +169,7 @@
 						onkeypress={(e: KeyboardEvent) => e.key === 'Enter' && loadApps()}
 					/>
 				</div>
-				<div class="w-44">
+				<div class="w-full sm:w-44">
 					<Select.Root type="single" bind:value={statusFilter} onValueChange={loadApps}>
 						<Select.Trigger>
 							{statusFilter ? applicationStatusLabel[statusFilter] : 'สถานะทั้งหมด'}
@@ -184,7 +184,7 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
-				<div class="flex items-center gap-1.5 w-48">
+				<div class="flex items-center gap-1.5 flex-1 sm:flex-none sm:w-48">
 					<DatePicker bind:value={dateFilter} placeholder="กรองตามวันที่" class="w-full" />
 					{#if dateFilter}
 						<Button variant="ghost" size="icon" class="h-9 w-9 shrink-0" onclick={() => (dateFilter = '')} title="ล้างวันที่">
@@ -192,7 +192,7 @@
 						</Button>
 					{/if}
 				</div>
-				<Button onclick={loadApps} variant="outline" size="sm" class="gap-1.5">
+				<Button onclick={loadApps} variant="outline" size="sm" class="gap-1.5 w-full sm:w-auto">
 					<Filter class="w-4 h-4" /> ค้นหา
 				</Button>
 			</div>
@@ -215,6 +215,7 @@
 		</Card.Root>
 	{:else}
 		<Card.Root>
+			<div class="overflow-x-auto">
 			<Table.Root>
 				<Table.Header>
 					<Table.Row>
@@ -303,6 +304,7 @@
 					{/each}
 				</Table.Body>
 			</Table.Root>
+			</div>
 
 			<div class="px-4 py-3 border-t border-border">
 				<p class="text-xs text-muted-foreground">แสดง {displayedApps.length} จาก {applications.length} รายการ</p>

@@ -191,7 +191,7 @@
 	{:else if ranking}
 		<!-- Room Summary -->
 		{#if ranking.rooms?.length > 0}
-			<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+			<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 				{#each ranking.rooms as room (room.roomId)}
 					<Card.Root>
 						<Card.Content class="pt-4 pb-4 text-center">
@@ -226,6 +226,7 @@
 				</Button>
 			</Card.Header>
 
+			<div class="overflow-x-auto">
 			<Table.Root>
 				<Table.Header>
 					<Table.Row>
@@ -314,6 +315,7 @@
 					{/each}
 				</Table.Body>
 			</Table.Root>
+			</div>
 		</Card.Root>
 
 		<!-- Overflow Section -->
@@ -327,6 +329,7 @@
 						นักเรียนกลุ่มนี้ไม่ผ่านการคัดเลือก สามารถย้ายไปสายอื่นได้
 					</p>
 				</Card.Header>
+				<div class="overflow-x-auto">
 				<Table.Root>
 					<Table.Header>
 						<Table.Row>
@@ -390,6 +393,7 @@
 						{/each}
 					</Table.Body>
 				</Table.Root>
+				</div>
 			</Card.Root>
 		{/if}
 	{/if}

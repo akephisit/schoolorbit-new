@@ -121,7 +121,7 @@
 			</Card.Root>
 		{:else}
 			<!-- Summary card -->
-			<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
 				<Card.Root>
 					<Card.Content class="p-4">
 						<p class="text-xs text-muted-foreground">ประเภทการรายงาน</p>
@@ -148,10 +148,10 @@
 			</div>
 
 			<!-- Filters -->
-			<div class="flex flex-wrap items-center gap-3">
+			<div class="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-2">
 				<span class="text-sm font-medium">กรอง:</span>
 				<Select.Root type="single" bind:value={statusFilter}>
-					<Select.Trigger class="w-48">
+					<Select.Trigger class="w-full sm:w-48">
 						{statusFilter === 'all' ? 'สถานะทั้งหมด' : (applicationStatusLabel[statusFilter] ?? statusFilter)}
 					</Select.Trigger>
 					<Select.Content>
@@ -162,7 +162,7 @@
 					</Select.Content>
 				</Select.Root>
 				<div class="flex items-center gap-1">
-					<DatePicker bind:value={dateFilter} placeholder="กรองตามวันที่" class="w-44" />
+					<DatePicker bind:value={dateFilter} placeholder="กรองตามวันที่" class="w-full sm:w-44" />
 					{#if dateFilter}
 						<Button variant="ghost" size="icon" class="h-9 w-9 shrink-0" onclick={() => (dateFilter = '')} title="ล้างวันที่">
 							<X class="w-3.5 h-3.5" />
@@ -183,7 +183,8 @@
 							</Card.Description>
 						</Card.Header>
 						<Card.Content>
-							<table class="w-full text-sm">
+							<div class="overflow-x-auto">
+							<table class="w-full text-sm min-w-[360px]">
 								<thead>
 									<tr class="border-b">
 										<th class="text-left py-2 font-medium text-muted-foreground">ประเภท</th>
@@ -231,6 +232,7 @@
 									</tr>
 								</tbody>
 							</table>
+						</div>
 						</Card.Content>
 					</Card.Root>
 				{/if}
@@ -248,7 +250,8 @@
 							</Card.Description>
 						</Card.Header>
 						<Card.Content>
-							<table class="w-full text-sm">
+							<div class="overflow-x-auto">
+							<table class="w-full text-sm min-w-[360px]">
 								<thead>
 									<tr class="border-b">
 										<th class="text-left py-2 font-medium text-muted-foreground">ประเภท</th>
@@ -296,6 +299,7 @@
 									</tr>
 								</tbody>
 							</table>
+						</div>
 						</Card.Content>
 					</Card.Root>
 				{/if}

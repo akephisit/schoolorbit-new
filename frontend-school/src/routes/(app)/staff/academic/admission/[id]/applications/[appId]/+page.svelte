@@ -305,7 +305,7 @@
 <svelte:window onkeydown={onLbKeyDown} />
 
 <div class="space-y-6">
-	<div class="flex items-center gap-3">
+	<div class="flex flex-wrap items-center gap-2">
 		<Button href="/staff/academic/admission/{roundId}/applications" variant="ghost" size="sm">
 			<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
 		</Button>
@@ -334,7 +334,7 @@
 				</Button>
 			</div>
 		{/if}
-		<h1 class="text-2xl font-bold flex items-center gap-2">
+		<h1 class="text-xl sm:text-2xl font-bold flex items-center gap-2">
 			<FileText class="w-6 h-6" /> รายละเอียดใบสมัคร
 		</h1>
 		{#if application?.status === 'submitted'}
@@ -376,7 +376,7 @@
 					</Card.Header>
 					<Separator />
 					<Card.Content class="pt-6">
-						<div class="grid grid-cols-2 gap-x-6 gap-y-4">
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
 							<div>
 								<p class="text-xs text-muted-foreground">เลขที่ใบสมัคร</p>
 								<p class="font-mono font-medium">{application.applicationNumber ?? '-'}</p>
@@ -494,7 +494,7 @@
 						<div>
 							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">ที่อยู่ตามทะเบียนบ้าน</p>
 							{#if editMode}
-								<div class="grid grid-cols-2 gap-3">
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 									<div><Label class="text-xs">บ้านเลขที่</Label><Input bind:value={editData.homeHouseNo} class="h-8 text-sm mt-0.5" /></div>
 									<div><Label class="text-xs">หมู่</Label><Input bind:value={editData.homeMoo} class="h-8 text-sm mt-0.5" /></div>
 									<div><Label class="text-xs">ซอย</Label><Input bind:value={editData.homeSoi} class="h-8 text-sm mt-0.5" /></div>
@@ -503,7 +503,7 @@
 									<div><Label class="text-xs">อำเภอ/เขต</Label><Input bind:value={editData.district} class="h-8 text-sm mt-0.5" /></div>
 									<div><Label class="text-xs">จังหวัด</Label><Input bind:value={editData.province} class="h-8 text-sm mt-0.5" /></div>
 									<div><Label class="text-xs">รหัสไปรษณีย์</Label><Input bind:value={editData.postalCode} class="h-8 text-sm mt-0.5" /></div>
-									<div class="col-span-2"><Label class="text-xs">โทรศัพท์บ้าน</Label><Input bind:value={editData.homePhone} class="h-8 text-sm mt-0.5" /></div>
+									<div class="col-span-full"><Label class="text-xs">โทรศัพท์บ้าน</Label><Input bind:value={editData.homePhone} class="h-8 text-sm mt-0.5" /></div>
 								</div>
 							{:else}
 								<p class="font-medium leading-relaxed">{formatHomeAddress(application)}</p>
@@ -516,7 +516,7 @@
 						<div>
 							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">ที่อยู่ปัจจุบัน</p>
 							{#if editMode}
-								<div class="grid grid-cols-2 gap-3">
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 									<div><Label class="text-xs">บ้านเลขที่</Label><Input bind:value={editData.currentHouseNo} class="h-8 text-sm mt-0.5" /></div>
 									<div><Label class="text-xs">หมู่</Label><Input bind:value={editData.currentMoo} class="h-8 text-sm mt-0.5" /></div>
 									<div><Label class="text-xs">ซอย</Label><Input bind:value={editData.currentSoi} class="h-8 text-sm mt-0.5" /></div>
@@ -525,7 +525,7 @@
 									<div><Label class="text-xs">อำเภอ/เขต</Label><Input bind:value={editData.currentDistrict} class="h-8 text-sm mt-0.5" /></div>
 									<div><Label class="text-xs">จังหวัด</Label><Input bind:value={editData.currentProvince} class="h-8 text-sm mt-0.5" /></div>
 									<div><Label class="text-xs">รหัสไปรษณีย์</Label><Input bind:value={editData.currentPostalCode} class="h-8 text-sm mt-0.5" /></div>
-									<div class="col-span-2"><Label class="text-xs">โทรศัพท์</Label><Input bind:value={editData.currentPhone} class="h-8 text-sm mt-0.5" /></div>
+									<div class="col-span-full"><Label class="text-xs">โทรศัพท์</Label><Input bind:value={editData.currentPhone} class="h-8 text-sm mt-0.5" /></div>
 								</div>
 							{:else}
 								{#if application.currentHouseNo || application.currentSubDistrict || application.currentProvince}
@@ -550,7 +550,7 @@
 					</Card.Header>
 					<Separator />
 					<Card.Content class="pt-6">
-						<div class="grid grid-cols-2 gap-x-6 gap-y-4">
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
 							<div class="col-span-2">
 								<p class="text-xs text-muted-foreground mb-1">ชื่อโรงเรียน</p>
 								{#if editMode}
@@ -658,7 +658,7 @@
 						<!-- บิดา -->
 						<div>
 							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">บิดา</p>
-							<div class="grid grid-cols-2 gap-x-6 gap-y-3">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
 								<div>
 									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
 									{#if editMode}
@@ -707,7 +707,7 @@
 						<!-- มารดา -->
 						<div>
 							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">มารดา</p>
-							<div class="grid grid-cols-2 gap-x-6 gap-y-3">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
 								<div>
 									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
 									{#if editMode}
@@ -759,7 +759,7 @@
 								ผู้ปกครอง
 								{#if application.guardianIs === 'father'}(บิดา){:else if application.guardianIs === 'mother'}(มารดา){:else if application.guardianIs === 'other'}(บุคคลอื่น){/if}
 							</p>
-							<div class="grid grid-cols-2 gap-x-6 gap-y-3">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
 								<div>
 									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
 									{#if editMode}

@@ -177,6 +177,7 @@
 		</Card.Root>
 	{:else}
 		<Card.Root>
+			<div class="overflow-x-auto">
 			<Table.Root>
 				<Table.Header>
 					<Table.Row>
@@ -234,6 +235,7 @@
 					{/each}
 				</Table.Body>
 			</Table.Root>
+			</div>
 		</Card.Root>
 	{/if}
 </div>
