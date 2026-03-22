@@ -834,7 +834,7 @@ export interface ExamSeatDetail {
 // ==========================================
 
 export async function listExamRooms(roundId: string) {
-    const res = await apiClient.get(`/admission/rounds/${roundId}/exam-rooms`);
+    const res = await apiClient.get(`/api/admission/rounds/${roundId}/exam-rooms`);
     return res.data as { rooms: ExamRoom[]; totalCapacity: number; totalAssigned: number };
 }
 
@@ -844,7 +844,7 @@ export async function addExamRoom(roundId: string, data: {
     capacityOverride?: number;
     displayOrder?: number;
 }) {
-    const res = await apiClient.post(`/admission/rounds/${roundId}/exam-rooms`, data);
+    const res = await apiClient.post(`/api/admission/rounds/${roundId}/exam-rooms`, data);
     return res.data;
 }
 
@@ -853,27 +853,27 @@ export async function updateExamRoom(roundId: string, roomId: string, data: {
     displayOrder?: number;
     customName?: string;
 }) {
-    const res = await apiClient.put(`/admission/rounds/${roundId}/exam-rooms/${roomId}`, data);
+    const res = await apiClient.put(`/api/admission/rounds/${roundId}/exam-rooms/${roomId}`, data);
     return res.data;
 }
 
 export async function removeExamRoom(roundId: string, roomId: string) {
-    const res = await apiClient.delete(`/admission/rounds/${roundId}/exam-rooms/${roomId}`);
+    const res = await apiClient.delete(`/api/admission/rounds/${roundId}/exam-rooms/${roomId}`);
     return res.data;
 }
 
 export async function copyExamRoomsFromRound(roundId: string, fromRoundId: string) {
-    const res = await apiClient.post(`/admission/rounds/${roundId}/exam-rooms/copy-from/${fromRoundId}`);
+    const res = await apiClient.post(`/api/admission/rounds/${roundId}/exam-rooms/copy-from/${fromRoundId}`);
     return res.data as { message: string };
 }
 
 export async function getExamConfig(roundId: string) {
-    const res = await apiClient.get(`/admission/rounds/${roundId}/exam-config`);
+    const res = await apiClient.get(`/api/admission/rounds/${roundId}/exam-config`);
     return res.data as ExamConfig;
 }
 
 export async function updateExamConfig(roundId: string, config: ExamConfig) {
-    const res = await apiClient.put(`/admission/rounds/${roundId}/exam-config`, config);
+    const res = await apiClient.put(`/api/admission/rounds/${roundId}/exam-config`, config);
     return res.data;
 }
 
@@ -882,16 +882,16 @@ export async function assignExamSeats(roundId: string, options?: {
     examIdPrefix?: string;
     sortOrder?: string;
 }) {
-    const res = await apiClient.post(`/admission/rounds/${roundId}/assign-exam-seats`, options ?? {});
+    const res = await apiClient.post(`/api/admission/rounds/${roundId}/assign-exam-seats`, options ?? {});
     return res.data as { message: string; assignedCount: number; rooms: { roomName: string; count: number }[] };
 }
 
 export async function getExamSeats(roundId: string) {
-    const res = await apiClient.get(`/admission/rounds/${roundId}/exam-seats`);
+    const res = await apiClient.get(`/api/admission/rounds/${roundId}/exam-seats`);
     return res.data as ExamRoomGroup[];
 }
 
 export async function getApplicationExamSeat(applicationId: string) {
-    const res = await apiClient.get(`/admission/applications/${applicationId}/exam-seat`);
+    const res = await apiClient.get(`/api/admission/applications/${applicationId}/exam-seat`);
     return res.data as ExamSeatDetail | null;
 }
