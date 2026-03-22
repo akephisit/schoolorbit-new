@@ -415,7 +415,7 @@
 		for (let i = 0; i < allSeats.length; i += 2) {
 			const left = makeCard(allSeats[i]);
 			const right = allSeats[i + 1] ? makeCard(allSeats[i + 1]) : { text: '', margin: [4, 4, 4, 4] };
-			cardContent.push({ columns: [left, right], columnGap: 8 });
+			cardContent.push({ columns: [left, right], columnGap: 8, unbreakable: true });
 		}
 
 		const docDef: any = {
