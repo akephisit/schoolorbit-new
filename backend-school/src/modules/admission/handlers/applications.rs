@@ -1080,16 +1080,16 @@ pub async fn staff_upload_document(
         return Err(AppError::BadRequest("File size exceeds 20MB".to_string()));
     }
 
-    // Verify application exists and fetch application_number
-    let app_number: Option<String> = sqlx::query_scalar(
-        "SELECT application_number FROM admission_applications WHERE id = $1"
+    // Verify application exists and fetch application_number + round_id
+    let app_info: Option<(String, Uuid)> = sqlx::query_as(
+        "SELECT application_number, admission_round_id FROM admission_applications WHERE id = $1"
     )
     .bind(application_id)
     .fetch_optional(&pool)
     .await
     .unwrap_or(None);
 
-    let app_number = app_number.ok_or(AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
+    let (app_number, round_id) = app_info.ok_or(AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
 
     // Fetch existing doc's storage_path before upload (for cleanup after success)
     let old_doc: Option<(String, Uuid)> = sqlx::query_as(
@@ -1108,8 +1108,8 @@ pub async fn staff_upload_document(
     // Upload to R2
     let file_id = Uuid::new_v4();
     let storage_path = format!(
-        "school-{}/admission/documents/{}/{}.{}",
-        subdomain, app_number, file_id, ext
+        "school-{}/admission/{}/{}/{}.{}",
+        subdomain, round_id, app_number, file_id, ext
     );
 
     let r2_client = R2Client::new().await

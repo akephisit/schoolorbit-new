@@ -601,8 +601,8 @@ pub async fn portal_upload_document(
     if let (Some(nid), Some(dob)) = (&national_id, &date_of_birth) {
         let application_id = verify_credentials(&pool, nid, dob).await?;
 
-        let app_number: String = sqlx::query_scalar(
-            "SELECT application_number FROM admission_applications WHERE id = $1"
+        let (app_number, round_id): (String, Uuid) = sqlx::query_as(
+            "SELECT application_number, admission_round_id FROM admission_applications WHERE id = $1"
         )
         .bind(application_id)
         .fetch_one(&pool)
@@ -610,8 +610,8 @@ pub async fn portal_upload_document(
         .map_err(|_| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
 
         let storage_path = format!(
-            "school-{}/admission/documents/{}/{}.{}",
-            subdomain, app_number, file_id, ext
+            "school-{}/admission/{}/{}/{}.{}",
+            subdomain, round_id, app_number, file_id, ext
         );
 
         // Upload to R2
@@ -693,6 +693,7 @@ pub async fn portal_upload_document(
         "school-{}/admission/documents/{}.{}",
         subdomain, file_id, ext
     );
+
 
     r2_client.upload_file(&storage_path, file_data.clone(), &mime_type).await
         .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;

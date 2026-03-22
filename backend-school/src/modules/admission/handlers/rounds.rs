@@ -14,6 +14,7 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::middleware::permission::check_permission;
 use crate::permissions::registry::codes;
 use crate::modules::admission::models::rounds::*;
+use crate::services::r2_client::R2Client;
 
 /// Helper: get school DB pool
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
@@ -389,7 +390,37 @@ pub async fn delete_round(
         return Ok(r);
     }
 
-    // Delete all applications first (this will cascade to scores, room assignments, etc.)
+    // ดึง file records ทั้งหมดของทุกใบสมัครในรอบนี้
+    let file_rows: Vec<(Uuid, String)> = sqlx::query_as(
+        r#"SELECT f.id, f.storage_path
+           FROM admission_applications aa
+           JOIN admission_application_documents aad ON aad.application_id = aa.id
+           JOIN files f ON f.id = aad.file_id
+           WHERE aa.admission_round_id = $1 AND aad.deleted_at IS NULL"#,
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // ลบไฟล์ใน R2
+    if !file_rows.is_empty() {
+        if let Ok(r2) = R2Client::new().await {
+            for (_, storage_path) in &file_rows {
+                r2.delete_file(storage_path).await.ok();
+            }
+        }
+
+        // ลบ files records
+        let file_ids: Vec<Uuid> = file_rows.into_iter().map(|(fid, _)| fid).collect();
+        sqlx::query("DELETE FROM files WHERE id = ANY($1)")
+            .bind(&file_ids)
+            .execute(&pool)
+            .await
+            .ok();
+    }
+
+    // Delete all applications (CASCADE ลบ admission_application_documents, scores, etc.)
     sqlx::query("DELETE FROM admission_applications WHERE admission_round_id = $1")
         .bind(id)
         .execute(&pool)
