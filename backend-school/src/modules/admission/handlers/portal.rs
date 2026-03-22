@@ -502,70 +502,6 @@ pub async fn update_application(
         AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
     })?;
 
-    // Process document updates (safe replace: mark permanent → update DB → delete old R2)
-    if let Some(docs) = &payload.data.documents {
-        let r2_client = R2Client::new().await
-            .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
-
-        for doc in docs {
-            if !VALID_DOC_TYPES.contains(&doc.doc_type.as_str()) {
-                continue;
-            }
-
-            // Fetch existing active document (if any) to get old file_id + storage_path
-            let old_doc = sqlx::query_as::<_, (Uuid, Uuid, String)>(
-                r#"SELECT aad.id, aad.file_id, f.storage_path
-                   FROM admission_application_documents aad
-                   JOIN files f ON f.id = aad.file_id
-                   WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
-                   LIMIT 1"#
-            )
-            .bind(application_id)
-            .bind(&doc.doc_type)
-            .fetch_optional(&pool)
-            .await
-            .ok()
-            .flatten();
-
-            if let Some((old_doc_id, old_file_id, old_storage_path)) = old_doc {
-                // Hard delete old document record
-                let _ = sqlx::query(
-                    "DELETE FROM admission_application_documents WHERE id = $1"
-                )
-                .bind(old_doc_id)
-                .execute(&pool)
-                .await;
-
-                // Insert new document record
-                let _ = sqlx::query(
-                    "INSERT INTO admission_application_documents (application_id, file_id, doc_type) VALUES ($1, $2, $3)"
-                )
-                .bind(application_id)
-                .bind(doc.temp_file_id)
-                .bind(&doc.doc_type)
-                .execute(&pool)
-                .await;
-
-                // Hard delete old file record + R2 (after DB success)
-                let _ = sqlx::query("DELETE FROM files WHERE id = $1")
-                    .bind(old_file_id)
-                    .execute(&pool)
-                    .await;
-                r2_client.delete_file(&old_storage_path).await.ok();
-            } else {
-                // No existing document — just insert
-                let _ = sqlx::query(
-                    "INSERT INTO admission_application_documents (application_id, file_id, doc_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
-                )
-                .bind(application_id)
-                .bind(doc.temp_file_id)
-                .bind(&doc.doc_type)
-                .execute(&pool)
-                .await;
-            }
-        }
-    }
-
     Ok(Json(json!({
         "success": true,
         "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว",
@@ -588,7 +524,8 @@ const ALLOWED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "pdf", "webp"];
 
 /// POST /api/admission/portal/upload
 /// Upload เอกสารหลักฐาน (ไม่ต้องการ JWT — applicant ยังไม่มี account)
-/// multipart: national_id, date_of_birth (DDMMYYYY), doc_type, file
+/// multipart: national_id (optional), date_of_birth (optional, DDMMYYYY), doc_type, file
+/// ถ้ามี credentials → auto-link กับ application, ใช้ {app_number} เป็น folder
 pub async fn portal_upload_document(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -603,12 +540,20 @@ pub async fn portal_upload_document(
     let mut file_data: Option<Vec<u8>> = None;
     let mut original_filename: Option<String> = None;
     let mut mime_type = "application/octet-stream".to_string();
+    let mut national_id: Option<String> = None;
+    let mut date_of_birth: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await
         .map_err(|_| AppError::BadRequest("Invalid multipart data".to_string()))? {
         match field.name().unwrap_or("") {
             "doc_type" => {
                 doc_type = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string());
+            }
+            "national_id" => {
+                national_id = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string());
+            }
+            "date_of_birth" => {
+                date_of_birth = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string());
             }
             "file" => {
                 original_filename = field.file_name().map(|s| s.to_string()).or(Some("document".to_string()));
@@ -646,29 +591,117 @@ pub async fn portal_upload_document(
         return Err(AppError::BadRequest("File size exceeds 20MB".to_string()));
     }
 
-    // Upload to R2
     let file_id = Uuid::new_v4();
+    let file_size = file_data.len() as i64;
+
+    let r2_client = R2Client::new().await
+        .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
+
+    // ถ้ามี credentials → verify + ใช้ {app_number} เป็น folder + auto-link
+    if let (Some(nid), Some(dob)) = (&national_id, &date_of_birth) {
+        let application_id = verify_credentials(&pool, nid, dob).await?;
+
+        let app_number: String = sqlx::query_scalar(
+            "SELECT application_number FROM admission_applications WHERE id = $1"
+        )
+        .bind(application_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|_| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
+
+        let storage_path = format!(
+            "school-{}/admission/documents/{}/{}.{}",
+            subdomain, app_number, file_id, ext
+        );
+
+        // Upload to R2
+        r2_client.upload_file(&storage_path, file_data.clone(), &mime_type).await
+            .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;
+
+        // Save file metadata
+        sqlx::query(
+            r#"INSERT INTO files (id, user_id, school_id, filename, original_filename,
+                file_size, mime_type, storage_path, file_type,
+                is_temporary, is_public, expires_at, uploaded_by)
+               VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document', false, false, NULL, NULL)"#
+        )
+        .bind(file_id)
+        .bind(&subdomain)
+        .bind(format!("{}.{}", file_id, ext))
+        .bind(&original_filename)
+        .bind(file_size)
+        .bind(&mime_type)
+        .bind(&storage_path)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to save file metadata: {}", e);
+            AppError::InternalServerError("Failed to save file metadata".to_string())
+        })?;
+
+        // Hard-delete เอกสารเดิมของ doc_type นี้ (ถ้ามี)
+        let old_doc = sqlx::query_as::<_, (Uuid, Uuid, String)>(
+            r#"SELECT aad.id, aad.file_id, f.storage_path
+               FROM admission_application_documents aad
+               JOIN files f ON f.id = aad.file_id
+               WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
+               LIMIT 1"#
+        )
+        .bind(application_id)
+        .bind(&doc_type)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten();
+
+        if let Some((old_aad_id, old_file_id, old_path)) = old_doc {
+            let _ = sqlx::query("DELETE FROM admission_application_documents WHERE id = $1")
+                .bind(old_aad_id).execute(&pool).await;
+            let _ = sqlx::query("DELETE FROM files WHERE id = $1")
+                .bind(old_file_id).execute(&pool).await;
+            r2_client.delete_file(&old_path).await.ok();
+        }
+
+        // Link ไฟล์ใหม่กับ application
+        let _ = sqlx::query(
+            "INSERT INTO admission_application_documents (application_id, file_id, doc_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+        )
+        .bind(application_id)
+        .bind(file_id)
+        .bind(&doc_type)
+        .execute(&pool)
+        .await;
+
+        let url_builder = FileUrlBuilder::new()
+            .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
+        let file_url = format!("{}/{}", url_builder.base_url(), storage_path);
+
+        return Ok(Json(json!({
+            "success": true,
+            "data": {
+                "fileId": file_id,
+                "originalFilename": original_filename,
+                "fileSize": file_size,
+                "docType": doc_type,
+                "fileUrl": file_url,
+            }
+        })).into_response());
+    }
+
+    // Fallback (ไม่มี credentials) — upload flat ไม่ auto-link
     let storage_path = format!(
         "school-{}/admission/documents/{}.{}",
         subdomain, file_id, ext
     );
 
-    let r2_client = R2Client::new().await
-        .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
-
     r2_client.upload_file(&storage_path, file_data.clone(), &mime_type).await
         .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;
 
-    // Save file metadata (permanent — upload ตรงกับ submit เสมอ)
-    let file_size = file_data.len() as i64;
     sqlx::query(
-        r#"
-        INSERT INTO files (id, user_id, school_id, filename, original_filename,
+        r#"INSERT INTO files (id, user_id, school_id, filename, original_filename,
             file_size, mime_type, storage_path, file_type,
             is_temporary, is_public, expires_at, uploaded_by)
-        VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document',
-            false, false, NULL, NULL)
-        "#
+           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document', false, false, NULL, NULL)"#
     )
     .bind(file_id)
     .bind(&subdomain)
@@ -691,11 +724,11 @@ pub async fn portal_upload_document(
     Ok(Json(json!({
         "success": true,
         "data": {
-            "tempFileId": file_id,
+            "fileId": file_id,
             "originalFilename": original_filename,
             "fileSize": file_size,
             "docType": doc_type,
-            "url": file_url,
+            "fileUrl": file_url,
         }
     })).into_response())
 }

@@ -239,34 +239,6 @@ pub async fn submit_application(
         AppError::InternalServerError("ไม่สามารถยื่นใบสมัครได้".to_string())
     })?;
 
-    // Link uploaded documents
-    if let Some(docs) = &payload.documents {
-        for doc in docs {
-            let valid_types = [
-                "photo_1_5inch", "transcript_por", "certificate_por7",
-                "id_card_student", "id_card_father", "id_card_mother", "id_card_guardian",
-                "house_reg_student", "house_reg_father", "house_reg_mother", "house_reg_guardian",
-                "name_change_doc", "birth_cert",
-            ];
-            if !valid_types.contains(&doc.doc_type.as_str()) {
-                continue;
-            }
-
-            let _ = sqlx::query(
-                r#"
-                INSERT INTO admission_application_documents (application_id, file_id, doc_type)
-                VALUES ($1, $2, $3)
-                ON CONFLICT DO NOTHING
-                "#
-            )
-            .bind(application.id)
-            .bind(doc.temp_file_id)
-            .bind(&doc.doc_type)
-            .execute(&mut *tx)
-            .await;
-        }
-    }
-
     tx.commit().await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
@@ -1062,18 +1034,16 @@ pub async fn staff_upload_document(
         return Err(AppError::BadRequest("File size exceeds 20MB".to_string()));
     }
 
-    // Verify application exists
-    let app_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE id = $1)"
+    // Verify application exists and fetch application_number
+    let app_number: Option<String> = sqlx::query_scalar(
+        "SELECT application_number FROM admission_applications WHERE id = $1"
     )
     .bind(application_id)
-    .fetch_one(&pool)
+    .fetch_optional(&pool)
     .await
-    .unwrap_or(false);
+    .unwrap_or(None);
 
-    if !app_exists {
-        return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
-    }
+    let app_number = app_number.ok_or(AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
 
     // Fetch existing doc's storage_path before upload (for cleanup after success)
     let old_doc: Option<(String, Uuid)> = sqlx::query_as(
@@ -1092,8 +1062,8 @@ pub async fn staff_upload_document(
     // Upload to R2
     let file_id = Uuid::new_v4();
     let storage_path = format!(
-        "school-{}/admission/{}/{}.{}",
-        subdomain, application_id, file_id, ext
+        "school-{}/admission/documents/{}/{}.{}",
+        subdomain, app_number, file_id, ext
     );
 
     let r2_client = R2Client::new().await

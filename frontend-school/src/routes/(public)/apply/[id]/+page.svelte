@@ -504,25 +504,6 @@
 			const guardianOccupationVal = guardianIs === 'father' ? fatherOccupation : guardianIs === 'mother' ? motherOccupation : guardianOccupation;
 			const guardianIncomeVal = guardianIs === 'father' ? (fatherIncome ? parseFloat(fatherIncome) : undefined) : guardianIs === 'mother' ? (motherIncome ? parseFloat(motherIncome) : undefined) : (guardianIncome ? parseFloat(guardianIncome) : undefined);
 
-			// Upload pending blobs ก่อน submit
-			const pendingEntries = Object.entries(uploadedDocs).filter(([, d]) => d.blob);
-			if (pendingEntries.length > 0) {
-				toast.info(`กำลังอัปโหลดเอกสาร ${pendingEntries.length} ไฟล์...`);
-			}
-			const uploadedRefs: { tempFileId: string; docType: string }[] = [];
-			for (const [docType, slot] of pendingEntries) {
-				uploadedDocs[docType] = { ...slot, uploading: true };
-				const file = new File([slot.blob!], `${docType}.jpg`, { type: 'image/jpeg' });
-				const res = await portalUploadTempFile(file, docType);
-				uploadedDocs[docType] = { ...slot, uploading: false, tempFileId: res.tempFileId, blob: undefined };
-				uploadedRefs.push({ tempFileId: res.tempFileId, docType });
-			}
-
-			// เพิ่ม tempFileIds ที่มีอยู่แล้ว (edit mode หรือ upload ก่อนหน้า)
-			const existingRefs = Object.entries(uploadedDocs)
-				.filter(([, d]) => d.tempFileId && !d.blob)
-				.map(([docType, d]) => ({ tempFileId: d.tempFileId!, docType }));
-
 			const payload = {
 				admissionTrackId: trackId,
 				nationalId,
@@ -585,16 +566,45 @@
 				// Family status
 				parentStatus: parentStatus.length > 0 ? parentStatus : undefined,
 				parentStatusOther: parentStatus.includes('อื่นๆ') ? (parentStatusOther || undefined) : undefined,
-				// Documents
-				documents: [...uploadedRefs, ...existingRefs],
 			};
+
+			const pendingEntries = Object.entries(uploadedDocs).filter(([, d]) => d.blob);
+
+			// แปลง dob จาก YYYY-MM-DD (ค.ศ.) → DDMMYYYY (พ.ศ.) สำหรับ credentials
+			function dobToCredential(isoDate: string): string {
+				const [year, month, day] = isoDate.split('-');
+				return `${day}${month}${parseInt(year) + 543}`;
+			}
 
 			let res;
 			if (isEditMode) {
+				// 1. upload new docs ด้วย credentials (auto-link + replace เก่า)
+				if (pendingEntries.length > 0) {
+					toast.info(`กำลังอัปโหลดเอกสาร ${pendingEntries.length} ไฟล์...`);
+				}
+				for (const [docType, slot] of pendingEntries) {
+					uploadedDocs[docType] = { ...slot, uploading: true };
+					const file = new File([slot.blob!], `${docType}.jpg`, { type: 'image/jpeg' });
+					const result = await portalUploadTempFile(file, docType, authNid, authDob);
+					uploadedDocs[docType] = { ...slot, uploading: false, blob: undefined, preview: result.fileUrl };
+				}
+				// 2. update form data เท่านั้น (docs linked แล้ว)
 				await updateApplication(authNid, authDob, payload);
 				res = { message: 'อัปเดตใบสมัครเรียบร้อยแล้ว' };
 			} else {
+				// 1. สร้าง app ก่อน (ได้ application_number)
 				res = await submitApplication(page.params.id!, payload);
+				// 2. upload docs ด้วย credentials (app มีอยู่แล้ว → auto-link)
+				if (pendingEntries.length > 0) {
+					toast.info(`กำลังอัปโหลดเอกสาร ${pendingEntries.length} ไฟล์...`);
+					const dobCred = dob ? dobToCredential(dob) : '';
+					for (const [docType, slot] of pendingEntries) {
+						uploadedDocs[docType] = { ...slot, uploading: true };
+						const file = new File([slot.blob!], `${docType}.jpg`, { type: 'image/jpeg' });
+						await portalUploadTempFile(file, docType, nationalId, dobCred);
+						uploadedDocs[docType] = { ...slot, uploading: false, blob: undefined };
+					}
+				}
 			}
 
 			successResult = res;
