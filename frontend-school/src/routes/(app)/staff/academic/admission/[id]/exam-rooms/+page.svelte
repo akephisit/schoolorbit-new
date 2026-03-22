@@ -237,9 +237,9 @@
 
 	// ===== PDF/XLSX Download helpers =====
 
-	let pdfMakeInstance: any = null;
+	let pdfCtx: { pdfMake: any; fonts: any; vfs: any } | null = null;
 	async function getPdfMake() {
-		if (pdfMakeInstance) return pdfMakeInstance;
+		if (pdfCtx) return pdfCtx;
 		const { default: pdfMake } = await import('pdfmake/build/pdfmake');
 		const toBase64 = (buf: ArrayBuffer) => {
 			const bytes = new Uint8Array(buf);
@@ -251,13 +251,13 @@
 			fetch('/fonts/Sarabun-Regular.ttf').then((r) => r.arrayBuffer()),
 			fetch('/fonts/Sarabun-Bold.ttf').then((r) => r.arrayBuffer())
 		]);
-		pdfMake.vfs = {
+		const vfs = {
 			'Sarabun-Regular.ttf': toBase64(regularBuf),
 			'Sarabun-Bold.ttf': toBase64(boldBuf)
 		};
-		pdfMake.fonts = { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } };
-		pdfMakeInstance = pdfMake;
-		return pdfMake;
+		const fonts = { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } };
+		pdfCtx = { pdfMake, fonts, vfs };
+		return pdfCtx;
 	}
 
 	async function downloadRoomPdf(group: ExamRoomGroup) {
@@ -296,7 +296,7 @@
 			],
 			styles: { header: { fontSize: 14, bold: true, margin: [0, 0, 0, 4] } }
 		};
-		pm.createPdf(docDef).download(`ห้องสอบ-${group.roomName}.pdf`);
+		pm.pdfMake.createPdf(docDef, null, pm.fonts, pm.vfs).download(`ห้องสอบ-${group.roomName}.pdf`);
 	}
 
 	async function downloadRoomXlsx(group: ExamRoomGroup) {
@@ -357,7 +357,7 @@
 			pageMargins: [20, 20, 20, 20],
 			content: cardContent
 		};
-		pm.createPdf(docDef).download('บัตรสอบ.pdf');
+		pm.pdfMake.createPdf(docDef, null, pm.fonts, pm.vfs).download('บัตรสอบ.pdf');
 	}
 
 	async function downloadAllXlsx() {
