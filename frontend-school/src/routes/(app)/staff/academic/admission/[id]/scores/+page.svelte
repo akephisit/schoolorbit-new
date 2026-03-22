@@ -7,10 +7,12 @@
 		listSubjects,
 		listApplications,
 		bulkUpdateScores,
+		getExamSeats,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
 		type ApplicationListItem,
+		type ExamRoomGroup,
 		getAllScores
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
@@ -19,7 +21,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Switch } from '$lib/components/ui/switch';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, ClipboardList, Save, Loader2, ListFilter } from 'lucide-svelte';
+	import { ArrowLeft, ClipboardList, Save, Loader2, DoorOpen } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -28,6 +30,8 @@
 	let tracks: AdmissionTrack[] = $state([]);
 	let subjects: AdmissionExamSubject[] = $state([]);
 	let applications: ApplicationListItem[] = $state([]);
+	let seatGroups: ExamRoomGroup[] = $state([]);
+	let viewMode = $state<'track' | 'room'>('track');
 	let loading = $state(true);
 	let saving = $state(false);
 	let selectedTrack = $state('');
@@ -36,21 +40,49 @@
 
 	let scores: Record<string, Record<string, string>> = $state({});
 
+	// flat list in room order for Enter navigation
+	let appsInRoomOrder = $derived(
+		seatGroups.flatMap((g) =>
+			g.seats.map((s) => ({
+				id: s.applicationId,
+				applicationNumber: s.applicationNumber,
+				fullName: s.fullName
+			}))
+		)
+	);
+
 	async function loadAll() {
 		if (!id) return;
 		loading = true;
 		try {
-			const [r, t, s, allS] = await Promise.all([
+			const [r, t, s, allS, seatData] = await Promise.all([
 				getRound(id),
 				listTracks(id),
 				listSubjects(id),
-				getAllScores(id)
+				getAllScores(id),
+				getExamSeats(id)
 			]);
 			round = r;
 			tracks = t;
 			subjects = s;
 			activeSubjectIds = s.map((sub) => sub.id);
 			allRawScores = allS as any[];
+			seatGroups = Array.isArray(seatData) ? seatData : [];
+
+			// default to room view if seats are assigned
+			if (seatGroups.length > 0) {
+				viewMode = 'room';
+				// init scores for all seats
+				for (const group of seatGroups) {
+					for (const seat of group.seats) {
+						if (!scores[seat.applicationId]) scores[seat.applicationId] = {};
+						const appScores = allRawScores.filter((sc) => sc.applicationId === seat.applicationId);
+						for (const sc of appScores) {
+							if (sc.score != null) scores[seat.applicationId][sc.subjectId] = sc.score.toString();
+						}
+					}
+				}
+			}
 
 			if (t.length > 0 && !selectedTrack) selectedTrack = t[0].id;
 			await loadApps();
@@ -88,7 +120,7 @@
 				.map(([appId, subScores]) => ({
 					applicationId: appId,
 					scores: Object.entries(subScores)
-						.filter(([, v]) => v !== '') // บันทึกทุกช่องที่มีค่า แม้ว่าจะถูกซ่อน(ปิด switch) อยู่ก็ตาม
+						.filter(([, v]) => v !== '')
 						.map(([subId, v]) => ({ examSubjectId: subId, score: parseFloat(v) }))
 				}))
 				.filter((e) => e.scores.length > 0);
@@ -104,8 +136,8 @@
 	function handleKeydown(e: KeyboardEvent, appIndex: number, currentSubIndex: number) {
 		if (e.key === 'Enter') {
 			e.preventDefault();
+			const currentApps = viewMode === 'room' ? appsInRoomOrder : applications;
 
-			// ค้นหาวิชาถัดไปที่เปิดอยู่ (active) ในแถวเดียวกัน
 			let nextSubIdx = -1;
 			for (let i = currentSubIndex + 1; i < subjects.length; i++) {
 				if (activeSubjectIds.includes(subjects[i].id)) {
@@ -115,15 +147,12 @@
 			}
 
 			if (nextSubIdx !== -1) {
-				// ไปขวา (วิชาถัดไปที่เปิด)
-				const appId = applications[appIndex].id;
+				const appId = currentApps[appIndex].id;
 				const subId = subjects[nextSubIdx].id;
-				const nextInput = document.getElementById(`score-${appId}-${subId}`);
-				nextInput?.focus();
+				document.getElementById(`score-${appId}-${subId}`)?.focus();
 			} else {
-				// หมดวิชาในแถวนี้แล้ว -> ลงบรรทัดใหม่ไปคนถัดไป (วิชาแรกที่เปิด)
 				const nextAppIndex = appIndex + 1;
-				if (nextAppIndex < applications.length) {
+				if (nextAppIndex < currentApps.length) {
 					let firstVisSubIdx = -1;
 					for (let i = 0; i < subjects.length; i++) {
 						if (activeSubjectIds.includes(subjects[i].id)) {
@@ -132,10 +161,9 @@
 						}
 					}
 					if (firstVisSubIdx !== -1) {
-						const nextAppId = applications[nextAppIndex].id;
+						const nextAppId = currentApps[nextAppIndex].id;
 						const subId = subjects[firstVisSubIdx].id;
-						const nextInput = document.getElementById(`score-${nextAppId}-${subId}`);
-						nextInput?.focus();
+						document.getElementById(`score-${nextAppId}-${subId}`)?.focus();
 					}
 				}
 			}
@@ -166,24 +194,50 @@
 		<p class="text-muted-foreground text-sm">{round.name} — {subjects.length} วิชา</p>
 	{/if}
 
-	<!-- Track Selector -->
+	<!-- View mode + Track selector -->
 	<Card.Root>
-		<Card.Content class="pt-4 pb-4 flex items-center gap-4">
-			<p class="text-sm font-medium whitespace-nowrap">สายการเรียน:</p>
-			<div class="flex gap-2 flex-wrap">
-				{#each tracks as track (track.id)}
+		<Card.Content class="pt-4 pb-4 flex flex-wrap items-center gap-3">
+			{#if seatGroups.length > 0}
+				<div class="flex gap-1.5 shrink-0">
 					<Button
-						variant={selectedTrack === track.id ? 'default' : 'outline'}
+						variant={viewMode === 'room' ? 'default' : 'outline'}
 						size="sm"
-						onclick={() => {
-							selectedTrack = track.id;
-						}}
+						onclick={() => (viewMode = 'room')}
 					>
-						{track.name}
-						<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
+						<DoorOpen class="w-3.5 h-3.5 mr-1.5" />
+						ตามห้องสอบ
 					</Button>
-				{/each}
-			</div>
+					<Button
+						variant={viewMode === 'track' ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => (viewMode = 'track')}
+					>
+						ตามสาย
+					</Button>
+				</div>
+				<div class="w-px h-5 bg-border shrink-0"></div>
+			{/if}
+			{#if viewMode === 'track'}
+				<p class="text-sm font-medium whitespace-nowrap">สายการเรียน:</p>
+				<div class="flex gap-2 flex-wrap">
+					{#each tracks as track (track.id)}
+						<Button
+							variant={selectedTrack === track.id ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => {
+								selectedTrack = track.id;
+							}}
+						>
+							{track.name}
+							<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
+						</Button>
+					{/each}
+				</div>
+			{:else}
+				<p class="text-sm text-muted-foreground">
+					{seatGroups.length} ห้องสอบ · {appsInRoomOrder.length} คน
+				</p>
+			{/if}
 		</Card.Content>
 	</Card.Root>
 
@@ -193,7 +247,14 @@
 				<Loader2 class="w-8 h-8 animate-spin text-primary" />
 			</Card.Content>
 		</Card.Root>
-	{:else if applications.length === 0}
+	{:else if viewMode === 'room' && seatGroups.length === 0}
+		<Card.Root>
+			<Card.Content class="py-12 text-center text-muted-foreground">
+				<p>ยังไม่มีการจัดห้องสอบ</p>
+				<p class="text-xs mt-1">กรุณาจัดห้องสอบก่อนใช้มุมมองนี้</p>
+			</Card.Content>
+		</Card.Root>
+	{:else if viewMode === 'track' && applications.length === 0}
 		<Card.Root>
 			<Card.Content class="py-12 text-center text-muted-foreground">
 				<p>ไม่มีผู้สมัครที่ผ่านการตรวจสอบในสายนี้</p>
@@ -206,7 +267,7 @@
 				<Table.Header>
 					<Table.Row>
 						<Table.Head class="w-10">ที่</Table.Head>
-						<Table.Head>เลขที่ใบสมัคร</Table.Head>
+						<Table.Head>{viewMode === 'room' ? 'เลขที่สอบ' : 'เลขที่ใบสมัคร'}</Table.Head>
 						<Table.Head>ชื่อ-สกุล</Table.Head>
 						{#each subjects as sub (sub.id)}
 							{@const isActive = activeSubjectIds.includes(sub.id)}
@@ -235,40 +296,111 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each applications as app, i (app.id)}
-						<Table.Row>
-							<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
-							<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-							<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
-							{#each subjects as sub, subIdx (sub.id)}
-								{@const isActive = activeSubjectIds.includes(sub.id)}
+					{#if viewMode === 'room'}
+						{#each seatGroups as group (group.examRoomId)}
+							<!-- Room header row -->
+							<Table.Row class="bg-muted/50 hover:bg-muted/50">
 								<Table.Cell
-									class="px-2 py-1.5 transition-all duration-300 {isActive ? '' : 'bg-muted/40'}"
+									colspan={3 + subjects.length}
+									class="font-semibold py-2 px-4 text-sm"
 								>
-									<Input
-										id="score-{app.id}-{sub.id}"
-										type="number"
-										min="0"
-										max={sub.maxScore}
-										step="0.5"
-										disabled={!isActive}
-										bind:value={scores[app.id][sub.id]}
-										oninput={(e) => {
-											const val = parseFloat(e.currentTarget.value);
-											if (!isNaN(val) && val > sub.maxScore) {
-												scores[app.id][sub.id] = sub.maxScore.toString();
-											}
-										}}
-										onkeydown={(e) => handleKeydown(e, i, subIdx)}
-										class="h-7 text-center text-sm w-20 mx-auto {isActive
-											? ''
-											: 'opacity-50 cursor-not-allowed'}"
-										placeholder="-"
-									/>
+									<span class="flex items-center gap-2">
+										<DoorOpen class="w-4 h-4" />
+										{group.roomName}
+										{#if group.buildingName}
+											<span class="text-muted-foreground font-normal">· {group.buildingName}</span>
+										{/if}
+										<span class="text-muted-foreground font-normal ml-auto"
+											>{group.seats.length} คน</span
+										>
+									</span>
 								</Table.Cell>
+							</Table.Row>
+							{#each group.seats as seat, seatIdx (seat.applicationId)}
+								{@const globalIdx =
+									seatGroups.slice(0, seatGroups.indexOf(group)).reduce((acc, g) => acc + g.seats.length, 0) + seatIdx}
+								<Table.Row>
+									<Table.Cell class="text-center text-muted-foreground"
+										>{seat.seatNumber}</Table.Cell
+									>
+									<Table.Cell class="font-mono text-xs"
+										>{seat.examId ?? seat.applicationNumber ?? '-'}</Table.Cell
+									>
+									<Table.Cell class="font-medium">{seat.fullName}</Table.Cell>
+									{#each subjects as sub, subIdx (sub.id)}
+										{@const isActive = activeSubjectIds.includes(sub.id)}
+										<Table.Cell
+											class="px-2 py-1.5 transition-all duration-300 {isActive
+												? ''
+												: 'bg-muted/40'}"
+										>
+											{#if !scores[seat.applicationId]}
+												<!-- init on first render -->
+												{(scores[seat.applicationId] = {})}
+											{/if}
+											<Input
+												id="score-{seat.applicationId}-{sub.id}"
+												type="number"
+												min="0"
+												max={sub.maxScore}
+												step="0.5"
+												disabled={!isActive}
+												bind:value={scores[seat.applicationId][sub.id]}
+												oninput={(e) => {
+													const val = parseFloat(e.currentTarget.value);
+													if (!isNaN(val) && val > sub.maxScore) {
+														scores[seat.applicationId][sub.id] = sub.maxScore.toString();
+													}
+												}}
+												onkeydown={(e) => handleKeydown(e, globalIdx, subIdx)}
+												class="h-7 text-center text-sm w-20 mx-auto {isActive
+													? ''
+													: 'opacity-50 cursor-not-allowed'}"
+												placeholder="-"
+											/>
+										</Table.Cell>
+									{/each}
+								</Table.Row>
 							{/each}
-						</Table.Row>
-					{/each}
+						{/each}
+					{:else}
+						{#each applications as app, i (app.id)}
+							<Table.Row>
+								<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
+								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
+								<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
+								{#each subjects as sub, subIdx (sub.id)}
+									{@const isActive = activeSubjectIds.includes(sub.id)}
+									<Table.Cell
+										class="px-2 py-1.5 transition-all duration-300 {isActive
+											? ''
+											: 'bg-muted/40'}"
+									>
+										<Input
+											id="score-{app.id}-{sub.id}"
+											type="number"
+											min="0"
+											max={sub.maxScore}
+											step="0.5"
+											disabled={!isActive}
+											bind:value={scores[app.id][sub.id]}
+											oninput={(e) => {
+												const val = parseFloat(e.currentTarget.value);
+												if (!isNaN(val) && val > sub.maxScore) {
+													scores[app.id][sub.id] = sub.maxScore.toString();
+												}
+											}}
+											onkeydown={(e) => handleKeydown(e, i, subIdx)}
+											class="h-7 text-center text-sm w-20 mx-auto {isActive
+												? ''
+												: 'opacity-50 cursor-not-allowed'}"
+											placeholder="-"
+										/>
+									</Table.Cell>
+								{/each}
+							</Table.Row>
+						{/each}
+					{/if}
 				</Table.Body>
 			</Table.Root>
 		</Card.Root>
