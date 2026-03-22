@@ -237,9 +237,9 @@
 
 	// ===== PDF/XLSX Download helpers =====
 
-	let pdfCtx: { pdfMake: any; fonts: any; vfs: any } | null = null;
+	let pdfMakeReady: any = null;
 	async function getPdfMake() {
-		if (pdfCtx) return pdfCtx;
+		if (pdfMakeReady) return pdfMakeReady;
 		const { default: pdfMake } = await import('pdfmake/build/pdfmake');
 		const toBase64 = (buf: ArrayBuffer) => {
 			const bytes = new Uint8Array(buf);
@@ -251,19 +251,19 @@
 			fetch('/fonts/Sarabun-Regular.ttf').then((r) => r.arrayBuffer()),
 			fetch('/fonts/Sarabun-Bold.ttf').then((r) => r.arrayBuffer())
 		]);
-		const vfs = {
+		// set on instance — works across all 0.2.x and 0.3.x versions
+		pdfMake.vfs = {
 			'Sarabun-Regular.ttf': toBase64(regularBuf),
 			'Sarabun-Bold.ttf': toBase64(boldBuf)
 		};
-		const fonts = { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } };
-		pdfCtx = { pdfMake, fonts, vfs };
-		return pdfCtx;
+		pdfMake.fonts = { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } };
+		pdfMakeReady = pdfMake;
+		return pdfMake;
 	}
 
 	async function downloadRoomPdf(group: ExamRoomGroup) {
 		const pm = await getPdfMake();
 		const docDef: any = {
-			fonts: { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } },
 			defaultStyle: { font: 'Sarabun', fontSize: 11 },
 			content: [
 				{ text: round?.name ?? '', style: 'header' },
@@ -297,7 +297,7 @@
 			],
 			styles: { header: { fontSize: 14, bold: true, margin: [0, 0, 0, 4] } }
 		};
-		pm.pdfMake.createPdf(docDef, undefined, undefined, pm.vfs).download(`ห้องสอบ-${group.roomName}.pdf`);
+		pm.createPdf(docDef).download(`ห้องสอบ-${group.roomName}.pdf`);
 	}
 
 	async function downloadRoomXlsx(group: ExamRoomGroup) {
@@ -354,12 +354,11 @@
 			if ((i + 2) % 6 === 0 && i + 2 < allSeats.length) cardContent.push({ text: '', pageBreak: 'after' });
 		}
 		const docDef: any = {
-			fonts: { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } },
 			defaultStyle: { font: 'Sarabun', fontSize: 10 },
 			pageMargins: [20, 20, 20, 20],
 			content: cardContent
 		};
-		pm.pdfMake.createPdf(docDef, undefined, undefined, pm.vfs).download('บัตรสอบ.pdf');
+		pm.createPdf(docDef).download('บัตรสอบ.pdf');
 	}
 
 	async function downloadAllXlsx() {
