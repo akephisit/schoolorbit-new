@@ -337,35 +337,95 @@
 					day: 'numeric'
 				})
 			: '-';
-		// 2 cards per row
 		const allSeats = seatGroups.flatMap((g) => g.seats.map((s) => ({ ...s, roomName: g.roomName })));
+
+		const boxLayout = {
+			hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1.5 : 0),
+			vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1.5 : 0),
+			hLineColor: () => '#333',
+			vLineColor: () => '#333',
+			paddingLeft: () => 0,
+			paddingRight: () => 0,
+			paddingTop: () => 0,
+			paddingBottom: () => 0
+		};
+
+		const makeCard = (s: (typeof allSeats)[0]): any => ({
+			table: {
+				widths: ['*'],
+				body: [
+					[
+						{
+							stack: [
+								{ text: round?.name ?? 'บัตรประจำตัวผู้เข้าสอบ', bold: true, fontSize: 11 },
+								{ canvas: [{ type: 'line', x1: 0, y1: 4, x2: 500, y2: 4, lineWidth: 0.5, lineColor: '#ccc' }], margin: [0, 4, 0, 6] },
+								{
+									columns: [
+										{ text: 'ชื่อ-นามสกุล', color: '#666', width: 80, fontSize: 9 },
+										{ text: s.fullName, bold: true, fontSize: 9, width: '*' }
+									],
+									margin: [0, 0, 0, 4]
+								},
+								{
+									columns: [
+										{ text: 'เลขประจำตัวสอบ', color: '#666', width: 80, fontSize: 9 },
+										{ text: s.examId ?? s.applicationNumber ?? '-', bold: true, fontSize: 15, color: '#1d4ed8', width: '*' }
+									],
+									margin: [0, 0, 0, 4]
+								},
+								{
+									columns: [
+										{ text: 'สายการเรียน', color: '#666', width: 80, fontSize: 9 },
+										{ text: s.trackName ?? '-', bold: true, fontSize: 9, width: '*' }
+									],
+									margin: [0, 0, 0, 4]
+								},
+								{
+									columns: [
+										{ text: 'ห้องสอบ', color: '#666', width: 80, fontSize: 9 },
+										{ text: s.roomName, bold: true, fontSize: 9, width: '*' }
+									],
+									margin: [0, 0, 0, 4]
+								},
+								{
+									columns: [
+										{ text: 'เลขที่นั่ง', color: '#666', width: 80, fontSize: 9 },
+										{ text: String(s.seatNumber), bold: true, fontSize: 9, width: '*' }
+									],
+									margin: [0, 0, 0, 4]
+								},
+								{
+									columns: [
+										{ text: 'วันสอบ', color: '#666', width: 80, fontSize: 9 },
+										{ text: examDate, fontSize: 9, width: '*' }
+									]
+								}
+							],
+							margin: [10, 10, 10, 10]
+						}
+					]
+				]
+			},
+			layout: boxLayout,
+			margin: [4, 4, 4, 4]
+		});
+
+		// 4 cards per page (2 rows × 2 columns)
 		const cardContent: any[] = [];
 		for (let i = 0; i < allSeats.length; i += 2) {
-			const makeCard = (s: (typeof allSeats)[0]) => ({
-				table: {
-					widths: ['40%', '60%'],
-					body: [
-						[{ text: round?.name ?? '', bold: true, fontSize: 12, colSpan: 2, margin: [0, 0, 0, 6] }, {}],
-						[{ text: 'ชื่อ-นามสกุล', color: '#555' }, { text: s.fullName, bold: true }],
-						[
-							{ text: 'เลขประจำตัวสอบ', color: '#555' },
-							{ text: s.examId ?? s.applicationNumber ?? '', bold: true, fontSize: 14, color: '#1d4ed8' }
-						],
-						[{ text: 'ห้องสอบ', color: '#555' }, { text: s.roomName, bold: true }],
-						[{ text: 'เลขที่นั่ง', color: '#555' }, { text: String(s.seatNumber), bold: true }],
-						[{ text: 'วันสอบ', color: '#555' }, { text: examDate }]
-					]
-				},
-				layout: 'lightHorizontalLines',
-				margin: [4, 4, 4, 4]
+			const left = makeCard(allSeats[i]);
+			const right = allSeats[i + 1] ? makeCard(allSeats[i + 1]) : { text: '', margin: [4, 4, 4, 4] };
+			const isLastInPage = (i + 2) % 4 === 0 && i + 2 < allSeats.length;
+			cardContent.push({
+				columns: [left, right],
+				columnGap: 8,
+				...(isLastInPage ? { pageBreak: 'after' } : {})
 			});
-			const right = allSeats[i + 1] ? makeCard(allSeats[i + 1]) : { text: '' };
-			cardContent.push({ columns: [makeCard(allSeats[i]), right], columnGap: 8 });
-			if ((i + 2) % 6 === 0 && i + 2 < allSeats.length) cardContent.push({ text: '', pageBreak: 'after' });
 		}
+
 		const docDef: any = {
 			defaultStyle: { font: 'Sarabun', fontSize: 10 },
-			pageMargins: [20, 20, 20, 20],
+			pageMargins: [24, 24, 24, 24],
 			content: cardContent
 		};
 		pm.createPdf(docDef).download('บัตรสอบ.pdf');
