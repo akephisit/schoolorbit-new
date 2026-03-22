@@ -427,7 +427,7 @@ pub async fn assign_exam_seats(
            FROM admission_applications aa
            LEFT JOIN admission_tracks at ON at.id = aa.admission_track_id
            WHERE aa.admission_round_id = $1
-             AND aa.status NOT IN ('rejected', 'withdrawn')
+             AND aa.status = 'verified'
            {}"#,
         order_clause
     );
