@@ -484,6 +484,7 @@ pub async fn assign_exam_seats(
     }
 
     // Algorithm: เติมทีละห้อง
+    let pad_width = format!("{}", applicants.len()).len().max(4);
     let mut assignments: Vec<(Uuid, Uuid, i32, String)> = Vec::new(); // (app_id, room_id, seat_num, exam_id)
     let mut room_iter = rooms.iter();
     let mut current_room = room_iter.next().unwrap();
@@ -501,8 +502,8 @@ pub async fn assign_exam_seats(
         global_seq += 1;
 
         let exam_id = match exam_id_type.as_str() {
-            "sequential" => format!("{}", global_seq),
-            "custom_prefix" => format!("{}{:04}", exam_id_prefix, global_seq),
+            "sequential" => format!("{:0>width$}", global_seq, width = pad_width),
+            "custom_prefix" => format!("{}{:0>width$}", exam_id_prefix, global_seq, width = pad_width),
             _ => app.application_number.clone().unwrap_or_else(|| format!("{}", global_seq)),
         };
 
