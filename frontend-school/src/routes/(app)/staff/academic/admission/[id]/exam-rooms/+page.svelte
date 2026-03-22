@@ -328,8 +328,9 @@
 		XLSX.writeFile(wb, `ห้องสอบ-${group.roomName}.xlsx`);
 	}
 
-	async function downloadAllAdmitCardsPdf() {
-		const pm = await getPdfMake();
+	function printAllAdmitCards() {
+		const w = window.open('', '_blank');
+		if (!w) return;
 		const examDate = round?.examDate
 			? new Date(round.examDate).toLocaleDateString('th-TH', {
 					year: 'numeric',
@@ -337,93 +338,31 @@
 					day: 'numeric'
 				})
 			: '-';
-		const allSeats = seatGroups.flatMap((g) => g.seats.map((s) => ({ ...s, roomName: g.roomName })));
-
-		const boxLayout = {
-			hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1.5 : 0),
-			vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1.5 : 0),
-			hLineColor: () => '#333',
-			vLineColor: () => '#333',
-			paddingLeft: () => 0,
-			paddingRight: () => 0,
-			paddingTop: () => 0,
-			paddingBottom: () => 0
-		};
-
-		const makeCard = (s: (typeof allSeats)[0]): any => ({
-			table: {
-				widths: ['*'],
-				body: [
-					[
-						{
-							stack: [
-								{ text: round?.name ?? 'บัตรประจำตัวผู้เข้าสอบ', bold: true, fontSize: 11 },
-								{ canvas: [{ type: 'line', x1: 0, y1: 4, x2: 500, y2: 4, lineWidth: 0.5, lineColor: '#ccc' }], margin: [0, 4, 0, 6] },
-								{
-									columns: [
-										{ text: 'ชื่อ-นามสกุล', color: '#666', width: 80, fontSize: 9 },
-										{ text: s.fullName, bold: true, fontSize: 9, width: '*' }
-									],
-									margin: [0, 0, 0, 4]
-								},
-								{
-									columns: [
-										{ text: 'เลขประจำตัวสอบ', color: '#666', width: 80, fontSize: 9 },
-										{ text: s.examId ?? s.applicationNumber ?? '-', bold: true, fontSize: 15, color: '#1d4ed8', width: '*' }
-									],
-									margin: [0, 0, 0, 4]
-								},
-								{
-									columns: [
-										{ text: 'สายการเรียน', color: '#666', width: 80, fontSize: 9 },
-										{ text: s.trackName ?? '-', bold: true, fontSize: 9, width: '*' }
-									],
-									margin: [0, 0, 0, 4]
-								},
-								{
-									columns: [
-										{ text: 'ห้องสอบ', color: '#666', width: 80, fontSize: 9 },
-										{ text: s.roomName, bold: true, fontSize: 9, width: '*' }
-									],
-									margin: [0, 0, 0, 4]
-								},
-								{
-									columns: [
-										{ text: 'เลขที่นั่ง', color: '#666', width: 80, fontSize: 9 },
-										{ text: String(s.seatNumber), bold: true, fontSize: 9, width: '*' }
-									],
-									margin: [0, 0, 0, 4]
-								},
-								{
-									columns: [
-										{ text: 'วันสอบ', color: '#666', width: 80, fontSize: 9 },
-										{ text: examDate, fontSize: 9, width: '*' }
-									]
-								}
-							],
-							margin: [10, 10, 10, 10]
-						}
-					]
-				]
-			},
-			layout: boxLayout,
-			margin: [4, 4, 4, 4]
-		});
-
-		// 2 cards per row, let pdfmake break pages naturally
-		const cardContent: any[] = [];
-		for (let i = 0; i < allSeats.length; i += 2) {
-			const left = makeCard(allSeats[i]);
-			const right = allSeats[i + 1] ? makeCard(allSeats[i + 1]) : { text: '', margin: [4, 4, 4, 4] };
-			cardContent.push({ columns: [left, right], columnGap: 8, unbreakable: true });
-		}
-
-		const docDef: any = {
-			defaultStyle: { font: 'Sarabun', fontSize: 10 },
-			pageMargins: [24, 24, 24, 24],
-			content: cardContent
-		};
-		pm.createPdf(docDef).download('บัตรสอบ.pdf');
+		const cards = seatGroups
+			.flatMap((g) =>
+				g.seats.map(
+					(s) => `
+			<div style="border:2px solid #333;padding:16px;margin:8px;width:280px;display:inline-block;vertical-align:top;font-size:13px;font-family:'Sarabun',sans-serif">
+				<div style="font-weight:bold;font-size:15px;margin-bottom:10px">${round?.name ?? ''}</div>
+				<table style="width:100%;font-size:13px">
+					<tr><td style="color:#555;padding:2px 0">ชื่อ-นามสกุล</td><td style="font-weight:600">${s.fullName}</td></tr>
+					<tr><td style="color:#555;padding:2px 0">เลขประจำตัวสอบ</td><td style="font-weight:700;color:#1d4ed8;font-size:15px">${s.examId ?? s.applicationNumber ?? ''}</td></tr>
+					<tr><td style="color:#555;padding:2px 0">สายการเรียน</td><td style="font-weight:600">${s.trackName ?? '-'}</td></tr>
+					<tr><td style="color:#555;padding:2px 0">ห้องสอบ</td><td style="font-weight:600">${g.roomName}</td></tr>
+					<tr><td style="color:#555;padding:2px 0">เลขที่นั่ง</td><td style="font-weight:600">${s.seatNumber}</td></tr>
+					<tr><td style="color:#555;padding:2px 0">วันสอบ</td><td>${examDate}</td></tr>
+				</table>
+			</div>`
+				)
+			)
+			.join('');
+		w.document.write(`<!DOCTYPE html><html><head>
+			<meta charset="utf-8"><title>บัตรสอบ</title>
+			<style>body{padding:16px}@media print{@page{margin:8mm}}</style>
+		</head><body>${cards}
+			<script>window.onload=function(){window.print()}<\/script>
+		</body></html>`);
+		w.document.close();
 	}
 
 	async function downloadAllXlsx() {
@@ -711,8 +650,8 @@
 							รวม {seatGroups.reduce((s, g) => s + g.seats.length, 0)} คน ใน {seatGroups.length} ห้อง
 						</p>
 						<div class="flex gap-1.5">
-							<Button size="sm" variant="outline" onclick={downloadAllAdmitCardsPdf}>
-								<FileDown class="mr-1.5 h-4 w-4" /> PDF บัตรสอบ
+							<Button size="sm" variant="outline" onclick={printAllAdmitCards}>
+								<FileDown class="mr-1.5 h-4 w-4" /> พิมพ์บัตรสอบ
 							</Button>
 							<Button size="sm" variant="outline" onclick={downloadAllXlsx}>
 								<FileSpreadsheet class="mr-1.5 h-4 w-4" /> XLSX ทุกห้อง
