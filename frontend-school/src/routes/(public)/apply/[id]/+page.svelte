@@ -302,6 +302,20 @@
 		}
 	}
 
+	function formatNationalId(raw: string): string {
+		const d = raw.replace(/\D/g, '').slice(0, 13);
+		if (d.length <= 1) return d;
+		if (d.length <= 5) return `${d[0]}-${d.slice(1)}`;
+		if (d.length <= 10) return `${d[0]}-${d.slice(1, 5)}-${d.slice(5)}`;
+		if (d.length <= 12) return `${d[0]}-${d.slice(1, 5)}-${d.slice(5, 10)}-${d.slice(10)}`;
+		return `${d[0]}-${d.slice(1, 5)}-${d.slice(5, 10)}-${d.slice(10, 12)}-${d[12]}`;
+	}
+
+	function handleNationalIdInput(e: Event) {
+		const raw = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 13);
+		nationalId = raw;
+	}
+
 	function formatBytes(bytes: number) {
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -717,8 +731,10 @@
 								<Label for="nationalId">เลขประจำตัวประชาชน <span class="text-red-500">*</span></Label>
 								<Input
 									id="nationalId"
-									bind:value={nationalId}
-									maxlength={13}
+									value={formatNationalId(nationalId)}
+									oninput={handleNationalIdInput}
+									maxlength={17}
+									inputmode="numeric"
 									required
 									placeholder="X-XXXX-XXXXX-XX-X"
 									class="font-mono text-lg max-w-sm"
