@@ -34,12 +34,14 @@
 		Trash2,
 		Loader2,
 		ClipboardList,
-		Printer,
+		FileDown,
+		FileSpreadsheet,
 		Copy,
 		Settings,
 		RefreshCw,
 		Pencil,
-		Check
+		Check,
+		DoorOpen
 	} from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
@@ -233,65 +235,150 @@
 		}
 	}
 
-	function printRoom(group: ExamRoomGroup) {
-		const w = window.open('', '_blank');
-		if (!w) return;
-		const rows = group.seats
-			.map((s) => `<tr>
-				<td>${s.examId ?? s.applicationNumber ?? ''}</td>
-				<td style="text-align:center">${s.seatNumber}</td>
-				<td>${s.fullName}</td>
-				<td>${s.nationalId}</td>
-				<td>${s.trackName ?? ''}</td>
-			</tr>`).join('');
-		w.document.write(`<!DOCTYPE html><html><head>
-			<meta charset="utf-8">
-			<title>รายชื่อ ${group.roomName}</title>
-			<style>
-				body{font-family:'Sarabun',sans-serif;font-size:14px;padding:20px}
-				h2{margin-bottom:4px}h3{margin-bottom:16px;font-weight:normal}
-				table{border-collapse:collapse;width:100%}
-				th,td{border:1px solid #ccc;padding:6px 10px}
-				th{background:#f5f5f5;font-weight:600}
-				@media print{body{padding:0}}
-			</style>
-		</head><body>
-			<h2>${round?.name ?? ''}</h2>
-			<h3>ห้องสอบ: <strong>${group.roomName}</strong>${group.buildingName ? ' (' + group.buildingName + ')' : ''} — ความจุ ${group.capacity} ที่นั่ง</h3>
-			<table>
-				<thead><tr><th>เลขประจำตัวสอบ</th><th>ที่นั่ง</th><th>ชื่อ-นามสกุล</th><th>เลขบัตรประชาชน</th><th>สาย</th></tr></thead>
-				<tbody>${rows}</tbody>
-			</table>
-			<p style="margin-top:12px;color:#666">รวม ${group.seats.length} คน</p>
-			<script>window.onload=function(){window.print()}<\/script>
-		</body></html>`);
-		w.document.close();
+	// ===== PDF/XLSX Download helpers =====
+
+	let pdfMakeInstance: any = null;
+	async function getPdfMake() {
+		if (pdfMakeInstance) return pdfMakeInstance;
+		const { default: pdfMake } = await import('pdfmake/build/pdfmake');
+		const toBase64 = (buf: ArrayBuffer) => {
+			const bytes = new Uint8Array(buf);
+			let binary = '';
+			for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+			return btoa(binary);
+		};
+		const [regularBuf, boldBuf] = await Promise.all([
+			fetch('/fonts/Sarabun-Regular.ttf').then((r) => r.arrayBuffer()),
+			fetch('/fonts/Sarabun-Bold.ttf').then((r) => r.arrayBuffer())
+		]);
+		pdfMake.vfs = {
+			'Sarabun-Regular.ttf': toBase64(regularBuf),
+			'Sarabun-Bold.ttf': toBase64(boldBuf)
+		};
+		pdfMake.fonts = { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } };
+		pdfMakeInstance = pdfMake;
+		return pdfMake;
 	}
 
-	function printAllAdmitCards() {
-		const w = window.open('', '_blank');
-		if (!w) return;
+	async function downloadRoomPdf(group: ExamRoomGroup) {
+		const pm = await getPdfMake();
+		const docDef: any = {
+			defaultStyle: { font: 'Sarabun', fontSize: 11 },
+			content: [
+				{ text: round?.name ?? '', style: 'header' },
+				{
+					text: `ห้องสอบ: ${group.roomName}${group.buildingName ? ' (' + group.buildingName + ')' : ''} — ความจุ ${group.capacity} ที่นั่ง`,
+					margin: [0, 0, 0, 10]
+				},
+				{
+					table: {
+						headerRows: 1,
+						widths: ['auto', 'auto', '*', 'auto', 'auto'],
+						body: [
+							[
+								{ text: 'เลขประจำตัวสอบ', bold: true },
+								{ text: 'ที่นั่ง', bold: true },
+								{ text: 'ชื่อ-นามสกุล', bold: true },
+								{ text: 'เลขบัตรประชาชน', bold: true },
+								{ text: 'สาย', bold: true }
+							],
+							...group.seats.map((s) => [
+								s.examId ?? s.applicationNumber ?? '',
+								{ text: String(s.seatNumber), alignment: 'center' },
+								s.fullName,
+								s.nationalId ?? '',
+								s.trackName ?? ''
+							])
+						]
+					}
+				},
+				{ text: `รวม ${group.seats.length} คน`, margin: [0, 8, 0, 0], color: '#666' }
+			],
+			styles: { header: { fontSize: 14, bold: true, margin: [0, 0, 0, 4] } }
+		};
+		pm.createPdf(docDef).download(`ห้องสอบ-${group.roomName}.pdf`);
+	}
+
+	async function downloadRoomXlsx(group: ExamRoomGroup) {
+		const XLSX = await import('xlsx');
+		const data = [
+			['เลขประจำตัวสอบ', 'ที่นั่ง', 'ชื่อ-นามสกุล', 'เลขบัตรประชาชน', 'สาย'],
+			...group.seats.map((s) => [
+				s.examId ?? s.applicationNumber ?? '',
+				s.seatNumber,
+				s.fullName,
+				s.nationalId ?? '',
+				s.trackName ?? ''
+			])
+		];
+		const ws = XLSX.utils.aoa_to_sheet(data);
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(wb, ws, group.roomName.slice(0, 31));
+		XLSX.writeFile(wb, `ห้องสอบ-${group.roomName}.xlsx`);
+	}
+
+	async function downloadAllAdmitCardsPdf() {
+		const pm = await getPdfMake();
 		const examDate = round?.examDate
-			? new Date(round.examDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+			? new Date(round.examDate).toLocaleDateString('th-TH', {
+					year: 'numeric',
+					month: 'long',
+					day: 'numeric'
+				})
 			: '-';
-		const cards = seatGroups.flatMap((g) => g.seats.map((s) => `
-			<div style="border:2px solid #333;padding:16px;margin:8px;width:280px;display:inline-block;vertical-align:top;font-size:13px;font-family:'Sarabun',sans-serif">
-				<div style="font-weight:bold;font-size:15px;margin-bottom:10px">${round?.name ?? ''}</div>
-				<table style="width:100%;font-size:13px">
-					<tr><td style="color:#555;padding:2px 0">ชื่อ-นามสกุล</td><td style="font-weight:600">${s.fullName}</td></tr>
-					<tr><td style="color:#555;padding:2px 0">เลขประจำตัวสอบ</td><td style="font-weight:700;color:#1d4ed8;font-size:15px">${s.examId ?? s.applicationNumber ?? ''}</td></tr>
-					<tr><td style="color:#555;padding:2px 0">ห้องสอบ</td><td style="font-weight:600">${g.roomName}</td></tr>
-					<tr><td style="color:#555;padding:2px 0">เลขที่นั่ง</td><td style="font-weight:600">${s.seatNumber}</td></tr>
-					<tr><td style="color:#555;padding:2px 0">วันสอบ</td><td>${examDate}</td></tr>
-				</table>
-			</div>`)).join('');
-		w.document.write(`<!DOCTYPE html><html><head>
-			<meta charset="utf-8"><title>บัตรสอบ</title>
-			<style>body{padding:16px}@media print{@page{margin:8mm}}</style>
-		</head><body>${cards}
-			<script>window.onload=function(){window.print()}<\/script>
-		</body></html>`);
-		w.document.close();
+		// 2 cards per row
+		const allSeats = seatGroups.flatMap((g) => g.seats.map((s) => ({ ...s, roomName: g.roomName })));
+		const cardContent: any[] = [];
+		for (let i = 0; i < allSeats.length; i += 2) {
+			const makeCard = (s: (typeof allSeats)[0]) => ({
+				table: {
+					widths: ['40%', '60%'],
+					body: [
+						[{ text: round?.name ?? '', bold: true, fontSize: 12, colSpan: 2, margin: [0, 0, 0, 6] }, {}],
+						[{ text: 'ชื่อ-นามสกุล', color: '#555' }, { text: s.fullName, bold: true }],
+						[
+							{ text: 'เลขประจำตัวสอบ', color: '#555' },
+							{ text: s.examId ?? s.applicationNumber ?? '', bold: true, fontSize: 14, color: '#1d4ed8' }
+						],
+						[{ text: 'ห้องสอบ', color: '#555' }, { text: s.roomName, bold: true }],
+						[{ text: 'เลขที่นั่ง', color: '#555' }, { text: String(s.seatNumber), bold: true }],
+						[{ text: 'วันสอบ', color: '#555' }, { text: examDate }]
+					]
+				},
+				layout: 'lightHorizontalLines',
+				margin: [4, 4, 4, 4]
+			});
+			const right = allSeats[i + 1] ? makeCard(allSeats[i + 1]) : { text: '' };
+			cardContent.push({ columns: [makeCard(allSeats[i]), right], columnGap: 8 });
+			if ((i + 2) % 6 === 0 && i + 2 < allSeats.length) cardContent.push({ text: '', pageBreak: 'after' });
+		}
+		const docDef: any = {
+			defaultStyle: { font: 'Sarabun', fontSize: 10 },
+			pageMargins: [20, 20, 20, 20],
+			content: cardContent
+		};
+		pm.createPdf(docDef).download('บัตรสอบ.pdf');
+	}
+
+	async function downloadAllXlsx() {
+		const XLSX = await import('xlsx');
+		const data = [
+			['ห้องสอบ', 'เลขที่นั่ง', 'เลขประจำตัวสอบ', 'ชื่อ-นามสกุล', 'เลขบัตรประชาชน', 'สาย'],
+			...seatGroups.flatMap((g) =>
+				g.seats.map((s) => [
+					g.roomName,
+					s.seatNumber,
+					s.examId ?? s.applicationNumber ?? '',
+					s.fullName,
+					s.nationalId ?? '',
+					s.trackName ?? ''
+				])
+			)
+		];
+		const ws = XLSX.utils.aoa_to_sheet(data);
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(wb, ws, 'ที่นั่งสอบทั้งหมด');
+		XLSX.writeFile(wb, `ที่นั่งสอบ-${round?.name ?? ''}.xlsx`);
 	}
 
 	const examIdTypeLabel: Record<string, string> = {
@@ -553,9 +640,14 @@
 						<p class="text-muted-foreground text-sm">
 							รวม {seatGroups.reduce((s, g) => s + g.seats.length, 0)} คน ใน {seatGroups.length} ห้อง
 						</p>
-						<Button size="sm" variant="outline" onclick={printAllAdmitCards}>
-							<Printer class="mr-1.5 h-4 w-4" /> พิมพ์บัตรสอบทั้งหมด
-						</Button>
+						<div class="flex gap-1.5">
+							<Button size="sm" variant="outline" onclick={downloadAllAdmitCardsPdf}>
+								<FileDown class="mr-1.5 h-4 w-4" /> PDF บัตรสอบ
+							</Button>
+							<Button size="sm" variant="outline" onclick={downloadAllXlsx}>
+								<FileSpreadsheet class="mr-1.5 h-4 w-4" /> XLSX ทุกห้อง
+							</Button>
+						</div>
 					</div>
 
 					{#each seatGroups as group (group.examRoomId)}
@@ -570,9 +662,14 @@
 									</div>
 									<div class="flex items-center gap-3">
 										<Badge variant="outline">{group.seats.length}/{group.capacity}</Badge>
-										<Button size="sm" variant="outline" onclick={() => printRoom(group)}>
-											<Printer class="mr-1.5 h-3.5 w-3.5" /> พิมพ์รายชื่อ
-										</Button>
+										<div class="flex gap-1.5">
+											<Button size="sm" variant="outline" onclick={() => downloadRoomPdf(group)}>
+												<FileDown class="mr-1 h-3.5 w-3.5" /> PDF
+											</Button>
+											<Button size="sm" variant="outline" onclick={() => downloadRoomXlsx(group)}>
+												<FileSpreadsheet class="mr-1 h-3.5 w-3.5" /> XLSX
+											</Button>
+										</div>
 									</div>
 								</div>
 							</Card.Header>
