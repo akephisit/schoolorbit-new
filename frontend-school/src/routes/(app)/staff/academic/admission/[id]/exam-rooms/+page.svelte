@@ -263,6 +263,7 @@
 	async function downloadRoomPdf(group: ExamRoomGroup) {
 		const pm = await getPdfMake();
 		const docDef: any = {
+			fonts: { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } },
 			defaultStyle: { font: 'Sarabun', fontSize: 11 },
 			content: [
 				{ text: round?.name ?? '', style: 'header' },
@@ -296,7 +297,7 @@
 			],
 			styles: { header: { fontSize: 14, bold: true, margin: [0, 0, 0, 4] } }
 		};
-		pm.pdfMake.createPdf(docDef, undefined, pm.fonts, pm.vfs).download(`ห้องสอบ-${group.roomName}.pdf`);
+		pm.pdfMake.createPdf(docDef, undefined, undefined, pm.vfs).download(`ห้องสอบ-${group.roomName}.pdf`);
 	}
 
 	async function downloadRoomXlsx(group: ExamRoomGroup) {
@@ -353,11 +354,12 @@
 			if ((i + 2) % 6 === 0 && i + 2 < allSeats.length) cardContent.push({ text: '', pageBreak: 'after' });
 		}
 		const docDef: any = {
+			fonts: { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } },
 			defaultStyle: { font: 'Sarabun', fontSize: 10 },
 			pageMargins: [20, 20, 20, 20],
 			content: cardContent
 		};
-		pm.pdfMake.createPdf(docDef, undefined, pm.fonts, pm.vfs).download('บัตรสอบ.pdf');
+		pm.pdfMake.createPdf(docDef, undefined, undefined, pm.vfs).download('บัตรสอบ.pdf');
 	}
 
 	async function downloadAllXlsx() {
