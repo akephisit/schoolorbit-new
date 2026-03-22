@@ -527,14 +527,6 @@ pub async fn update_application(
             .ok()
             .flatten();
 
-            // Mark new file as permanent
-            let _ = sqlx::query(
-                "UPDATE files SET is_temporary = false, expires_at = NULL WHERE id = $1"
-            )
-            .bind(doc.temp_file_id)
-            .execute(&pool)
-            .await;
-
             if let Some((old_doc_id, old_file_id, old_storage_path)) = old_doc {
                 // Hard delete old document record
                 let _ = sqlx::query(
@@ -657,7 +649,7 @@ pub async fn portal_upload_document(
     // Upload to R2
     let file_id = Uuid::new_v4();
     let storage_path = format!(
-        "school-{}/admission/temp/{}.{}",
+        "school-{}/admission/documents/{}.{}",
         subdomain, file_id, ext
     );
 
@@ -667,7 +659,7 @@ pub async fn portal_upload_document(
     r2_client.upload_file(&storage_path, file_data.clone(), &mime_type).await
         .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;
 
-    // Save file metadata (is_temporary=true, expires in 7 days)
+    // Save file metadata (permanent — upload ตรงกับ submit เสมอ)
     let file_size = file_data.len() as i64;
     sqlx::query(
         r#"
@@ -675,7 +667,7 @@ pub async fn portal_upload_document(
             file_size, mime_type, storage_path, file_type,
             is_temporary, is_public, expires_at, uploaded_by)
         VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document',
-            true, false, NOW() + INTERVAL '7 days', NULL)
+            false, false, NULL, NULL)
         "#
     )
     .bind(file_id)

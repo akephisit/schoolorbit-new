@@ -239,7 +239,7 @@ pub async fn submit_application(
         AppError::InternalServerError("ไม่สามารถยื่นใบสมัครได้".to_string())
     })?;
 
-    // Link uploaded documents (temp files → permanent)
+    // Link uploaded documents
     if let Some(docs) = &payload.documents {
         for doc in docs {
             let valid_types = [
@@ -251,15 +251,7 @@ pub async fn submit_application(
             if !valid_types.contains(&doc.doc_type.as_str()) {
                 continue;
             }
-            // Mark file as permanent
-            let _ = sqlx::query(
-                "UPDATE files SET is_temporary = false, expires_at = NULL WHERE id = $1"
-            )
-            .bind(doc.temp_file_id)
-            .execute(&mut *tx)
-            .await;
 
-            // Link to application (ignore conflict — partial unique on active only)
             let _ = sqlx::query(
                 r#"
                 INSERT INTO admission_application_documents (application_id, file_id, doc_type)
