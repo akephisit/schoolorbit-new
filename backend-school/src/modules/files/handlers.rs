@@ -1,9 +1,8 @@
 use axum::{
     extract::{Multipart, Path, State},
-    http::{HeaderMap, StatusCode, header},
-    response::{IntoResponse, Json, Response},
+    http::StatusCode,
+    response::{IntoResponse, Json},
     Extension,
-    body::Body,
 };
 use serde_json::json;
 
@@ -444,48 +443,4 @@ pub async fn list_user_files(
             total,
         }),
     ))
-}
-
-/// Serve a file from R2 by file UUID (no auth required — UUID is effectively a secret)
-///
-/// GET /api/files/:id/serve
-pub async fn serve_file(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(file_id): Path<Uuid>,
-) -> Result<Response, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
-        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
-        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
-
-    // Look up storage_path and mime_type from DB
-    let row: Option<(String, String)> = sqlx::query_as(
-        "SELECT storage_path, mime_type FROM files WHERE id = $1"
-    )
-    .bind(file_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    let (storage_path, mime_type) = row
-        .ok_or_else(|| AppError::NotFound("File not found".to_string()))?;
-
-    // Download from R2
-    let r2_client = R2Client::new().await
-        .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
-
-    let data = r2_client.download_file(&storage_path).await
-        .map_err(|_| AppError::NotFound("File not found in storage".to_string()))?;
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, mime_type)
-        .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
-        .body(Body::from(data))
-        .map_err(|_| AppError::InternalServerError("Failed to build response".to_string()))?;
-
-    Ok(response)
 }

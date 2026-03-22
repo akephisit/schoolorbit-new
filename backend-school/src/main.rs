@@ -259,7 +259,6 @@ async fn main() {
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/files/{id}", axum::routing::delete(modules::files::handlers::delete_file)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/files/{id}/serve", get(modules::files::handlers::serve_file))
 
         // Academic Management routes (Protected)
         .nest("/api/academic", modules::academic::academic_routes()

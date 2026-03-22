@@ -10,7 +10,6 @@
 		staffUploadDocument,
 		staffDeleteDocument,
 		DOC_TYPE_LABELS,
-		fileServeUrl,
 		type AdmissionApplication,
 		type ApplicationDocument,
 		applicationStatusLabel
@@ -115,10 +114,7 @@
 		try {
 			const res = await getApplication(appId);
 			application = res.application;
-			documents = res.documents.map((d: ApplicationDocument) => ({
-				...d,
-				fileUrl: d.fileId ? fileServeUrl(d.fileId) : d.fileUrl
-			}));
+			documents = res.documents;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ไม่สามารถโหลดข้อมูลผู้สมัครได้');
 		} finally {
@@ -191,7 +187,6 @@
 			// 2. Upload pending blobs
 			for (const [docType, slot] of Object.entries(docSlots)) {
 				if (!slot.blob || slot.pendingDelete) continue;
-				const localPreview = slot.preview; // keep blob URL for display
 				docSlots[docType] = { ...slot, uploading: true };
 				const result = await staffUploadDocument(application.id, docType, slot.blob);
 				documents = [
@@ -200,7 +195,7 @@
 					  docType: result.docType, fileUrl: result.fileUrl,
 					  fileSize: result.fileSize, createdAt: new Date().toISOString() }
 				];
-				docSlots[docType] = { preview: localPreview, uploading: false };
+				docSlots[docType] = { preview: result.fileUrl, uploading: false };
 			}
 
 			// 3. Delete pending deletes
