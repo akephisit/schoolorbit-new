@@ -548,7 +548,7 @@ pub async fn update_application(
             guardian_occupation = $49, guardian_income = $50, guardian_is = $51,
             parent_status = $52, parent_status_other = $53,
             updated_at = NOW()
-        WHERE id = $54 AND status = 'submitted'
+        WHERE id = $54 AND status NOT IN ('enrolled', 'withdrawn')
         "#
     )
     .bind(&payload.title)
@@ -614,7 +614,7 @@ pub async fn update_application(
 
     if result.rows_affected() == 0 {
         return Err(AppError::BadRequest(
-            "ไม่พบใบสมัคร หรือไม่สามารถแก้ไขได้ (สถานะไม่ใช่รอตรวจสอบ)".to_string()
+            "ไม่พบใบสมัคร หรือไม่สามารถแก้ไขได้ (สถานะเป็น enrolled หรือ withdrawn)".to_string()
         ));
     }
 
