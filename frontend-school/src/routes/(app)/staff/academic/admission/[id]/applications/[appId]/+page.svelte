@@ -7,11 +7,14 @@
 		rejectApplication,
 		updateApplicationByStaff,
 		unverifyApplication,
+		staffUploadDocument,
+		staffDeleteDocument,
 		DOC_TYPE_LABELS,
 		type AdmissionApplication,
 		type ApplicationDocument,
 		applicationStatusLabel
 	} from '$lib/api/admission';
+	import DocumentCropperModal from '$lib/components/DocumentCropperModal.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
@@ -40,7 +43,8 @@
 		ZoomOut,
 		Pencil,
 		RotateCcw,
-		Save
+		Save,
+		Copy
 	} from 'lucide-svelte';
 
 	import type { PageProps } from './$types';
@@ -66,6 +70,20 @@
 	let editMode = $state(false);
 	let saving = $state(false);
 	let editData = $state<Partial<AdmissionApplication>>({});
+
+	// Document upload
+	type CropPoint = { x: number; y: number };
+	type DocSlot = {
+		preview?: string;
+		blob?: Blob;
+		originalBlob?: Blob;
+		savedCorners?: [CropPoint, CropPoint, CropPoint, CropPoint];
+		uploading: boolean;
+	};
+	let docSlots = $state<Record<string, DocSlot>>({});
+	let cropTarget = $state<{ docType: string; imageUrl: string; initialCorners?: [CropPoint, CropPoint, CropPoint, CropPoint] } | null>(null);
+	let cropperOpen = $state(false);
+	let fileInputRefs = $state<Record<string, HTMLInputElement>>({});
 
 	// Navigation
 	let navIds: string[] = $state([]);
@@ -170,6 +188,87 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	function copyHomeAddressToCurrent() {
+		if (!editData) return;
+		editData.currentHouseNo = editData.homeHouseNo;
+		editData.currentMoo = editData.homeMoo;
+		editData.currentSoi = editData.homeSoi;
+		editData.currentRoad = editData.homeRoad;
+		editData.currentSubDistrict = editData.subDistrict;
+		editData.currentDistrict = editData.district;
+		editData.currentProvince = editData.province;
+		editData.currentPostalCode = editData.postalCode;
+	}
+
+	function handleDocFileSelected(docType: string, e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		input.value = '';
+		docSlots[docType] = { ...(docSlots[docType] ?? { uploading: false }), originalBlob: file };
+		const imageUrl = URL.createObjectURL(file);
+		cropTarget = { docType, imageUrl };
+		cropperOpen = true;
+	}
+
+	async function handleCropComplete(blob: Blob, corners: [CropPoint, CropPoint, CropPoint, CropPoint]) {
+		if (!cropTarget || !application) return;
+		const { docType, imageUrl } = cropTarget;
+		cropperOpen = false;
+		const prev = docSlots[docType]?.preview;
+		if (prev) URL.revokeObjectURL(prev);
+		const preview = URL.createObjectURL(blob);
+		URL.revokeObjectURL(imageUrl);
+		cropTarget = null;
+		docSlots[docType] = { ...docSlots[docType], blob, preview, savedCorners: corners, uploading: true };
+		try {
+			const result = await staffUploadDocument(application.id, docType, blob);
+			documents = [...documents.filter(d => d.docType !== docType), {
+				id: result.id,
+				applicationId: application.id,
+				fileId: result.fileId,
+				docType: result.docType,
+				fileUrl: result.fileUrl,
+				fileSize: result.fileSize,
+				createdAt: new Date().toISOString()
+			}];
+			docSlots[docType] = { preview: result.fileUrl, uploading: false };
+			toast.success('อัปโหลดเอกสารแล้ว');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ');
+			docSlots[docType] = { ...(docSlots[docType] ?? { uploading: false }), uploading: false };
+		}
+	}
+
+	function handleCropCancel() {
+		if (cropTarget) {
+			URL.revokeObjectURL(cropTarget.imageUrl);
+			cropTarget = null;
+		}
+		cropperOpen = false;
+	}
+
+	async function handleDeleteDoc(docType: string) {
+		if (!application) return;
+		const existingDoc = documents.find(d => d.docType === docType);
+		try {
+			if (existingDoc) await staffDeleteDocument(application.id, docType);
+			documents = documents.filter(d => d.docType !== docType);
+			if (docSlots[docType]?.preview) URL.revokeObjectURL(docSlots[docType].preview!);
+			const { [docType]: _, ...rest } = docSlots;
+			docSlots = rest;
+			toast.success('ลบเอกสารแล้ว');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ');
+		}
+	}
+
+	function openLightboxUrl(url: string, docType: string) {
+		lightboxDoc = { id: '', applicationId: '', fileId: '', docType, fileUrl: url, createdAt: '' };
+		lbZoom = 1;
+		lbPan = { x: 0, y: 0 };
 	}
 
 	function formatDate(iso: string) {
@@ -295,6 +394,7 @@
 		loadApp();
 		editMode = false;
 		editData = {};
+		docSlots = {};
 	});
 </script>
 
@@ -337,7 +437,7 @@
 		<h1 class="text-xl sm:text-2xl font-bold flex items-center gap-2">
 			<FileText class="w-6 h-6" /> รายละเอียดใบสมัคร
 		</h1>
-		{#if application?.status === 'submitted'}
+		{#if application && !['enrolled', 'withdrawn'].includes(application.status)}
 			{#if editMode}
 				<div class="ml-auto flex gap-2">
 					<Button variant="outline" size="sm" onclick={cancelEdit} disabled={saving}>
@@ -514,7 +614,14 @@
 						</div>
 						<Separator />
 						<div>
-							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">ที่อยู่ปัจจุบัน</p>
+							<div class="flex items-center justify-between mb-2">
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">ที่อยู่ปัจจุบัน</p>
+								{#if editMode}
+									<Button size="sm" variant="ghost" class="h-7 text-xs" onclick={copyHomeAddressToCurrent}>
+										<Copy class="w-3 h-3 mr-1" /> คัดลอกจากทะเบียนบ้าน
+									</Button>
+								{/if}
+							</div>
 							{#if editMode}
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 									<div><Label class="text-xs">บ้านเลขที่</Label><Input bind:value={editData.currentHouseNo} class="h-8 text-sm mt-0.5" /></div>
@@ -822,38 +929,85 @@
 					</Card.Header>
 					<Separator />
 					<Card.Content class="pt-6">
-						{#if documents.length === 0}
-							<p class="text-sm text-muted-foreground text-center py-6">ไม่มีเอกสารแนบ</p>
-						{:else}
-							<div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-								{#each documents as doc}
-									{@const label = DOC_TYPE_LABELS[doc.docType]?.label ?? doc.docType}
+						<div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+							{#each Object.entries(DOC_TYPE_LABELS) as [docType, info]}
+								{@const existingDoc = documents.find(d => d.docType === docType)}
+								{@const slot = docSlots[docType]}
+								{@const previewUrl = slot?.preview ?? existingDoc?.fileUrl}
+								<div class="flex flex-col gap-2">
+									<!-- Thumbnail -->
 									<button
 										type="button"
-										class="group flex flex-col gap-2 text-left focus:outline-none"
-										onclick={() => openLightbox(doc)}
+										class="group focus:outline-none"
+										onclick={() => previewUrl && openLightboxUrl(previewUrl, docType)}
+										disabled={!previewUrl}
 									>
-										<div class="aspect-[3/4] rounded-lg overflow-hidden border bg-muted relative group-hover:ring-2 group-hover:ring-primary transition-all">
-											{#if doc.fileUrl}
-												<img
-													src={doc.fileUrl}
-													alt={label}
-													class="w-full h-full object-cover"
-												/>
+										<div class="aspect-[3/4] rounded-lg overflow-hidden border bg-muted relative {previewUrl ? 'group-hover:ring-2 group-hover:ring-primary transition-all' : ''}">
+											{#if slot?.uploading}
+												<div class="w-full h-full flex items-center justify-center">
+													<LoaderCircle class="w-6 h-6 animate-spin text-primary" />
+												</div>
+											{:else if previewUrl}
+												<img src={previewUrl} alt={info.label} class="w-full h-full object-cover" />
 												<div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-													<ZoomIn class="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+													<ZoomIn class="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
 												</div>
 											{:else}
 												<div class="w-full h-full flex items-center justify-center">
-													<FileText class="w-8 h-8 text-muted-foreground" />
+													<FileText class="w-7 h-7 text-muted-foreground/40" />
 												</div>
 											{/if}
 										</div>
-										<p class="text-xs font-medium leading-tight line-clamp-2">{label}</p>
 									</button>
-								{/each}
-							</div>
-						{/if}
+
+									<!-- Label -->
+									<p class="text-xs font-medium leading-tight line-clamp-2">
+										{info.label}
+										{#if info.required}<span class="text-destructive">*</span>{/if}
+									</p>
+
+									<!-- Action buttons -->
+									<div class="flex gap-1">
+										{#if previewUrl}
+											<Button
+												size="sm"
+												variant="outline"
+												class="h-7 text-xs flex-1"
+												disabled={slot?.uploading}
+												onclick={() => fileInputRefs[docType]?.click()}
+											>
+												เปลี่ยน
+											</Button>
+											<Button
+												size="icon"
+												variant="ghost"
+												class="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+												disabled={slot?.uploading}
+												onclick={() => handleDeleteDoc(docType)}
+											>
+												<X class="w-3.5 h-3.5" />
+											</Button>
+										{:else}
+											<Button
+												size="sm"
+												variant="outline"
+												class="h-7 text-xs w-full"
+												onclick={() => fileInputRefs[docType]?.click()}
+											>
+												เลือกไฟล์
+											</Button>
+										{/if}
+										<input
+											type="file"
+											accept="image/*"
+											class="hidden"
+											bind:this={fileInputRefs[docType]}
+											onchange={(e) => handleDocFileSelected(docType, e)}
+										/>
+									</div>
+								</div>
+							{/each}
+						</div>
 					</Card.Content>
 				</Card.Root>
 			</div>
@@ -986,6 +1140,16 @@
 		</Card.Root>
 	{/if}
 </div>
+
+<!-- Document Crop Modal -->
+<DocumentCropperModal
+	bind:open={cropperOpen}
+	imageSrc={cropTarget?.imageUrl ?? null}
+	docLabel={cropTarget ? (DOC_TYPE_LABELS[cropTarget.docType]?.label ?? 'เอกสาร') : ''}
+	initialCorners={cropTarget?.initialCorners}
+	onComplete={handleCropComplete}
+	onCancel={handleCropCancel}
+/>
 
 <!-- Lightbox -->
 {#if lightboxDoc}

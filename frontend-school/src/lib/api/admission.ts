@@ -692,6 +692,39 @@ export async function portalUploadTempFile(
     return json.data as TempUploadResponse;
 }
 
+// ==========================================
+// Staff Document Management API
+// ==========================================
+
+export interface StaffDocumentUploadResponse {
+    id: string;
+    fileId: string;
+    docType: string;
+    fileUrl: string;
+    fileSize: number;
+}
+
+export async function staffUploadDocument(
+    appId: string,
+    docType: string,
+    blob: Blob,
+): Promise<StaffDocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append('doc_type', docType);
+    formData.append('file', blob, `${docType}.jpg`);
+    const res = await apiClient.postMultipart<StaffDocumentUploadResponse>(
+        `/api/admission/applications/${appId}/documents`,
+        formData
+    );
+    if (!res.success) throw new Error(res.error || 'ไม่สามารถอัปโหลดเอกสารได้');
+    return res.data!;
+}
+
+export async function staffDeleteDocument(appId: string, docType: string): Promise<void> {
+    const res = await apiClient.delete(`/api/admission/applications/${appId}/documents/${docType}`);
+    if (!res.success) throw new Error((res as any).error || 'ไม่สามารถลบเอกสารได้');
+}
+
 export async function portalDeleteDocument(
     nationalId: string,
     dateOfBirth: string,

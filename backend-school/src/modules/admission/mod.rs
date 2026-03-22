@@ -67,4 +67,10 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/portal/application", put(handlers::portal::update_application))
         .route("/portal/upload", post(handlers::portal::portal_upload_document))
         .route("/portal/documents/{doc_type}", delete(handlers::portal::portal_delete_document))
+
+        // === Staff Document Management ===
+        .route("/applications/{id}/documents",
+            post(handlers::applications::staff_upload_document))
+        .route("/applications/{id}/documents/{doc_type}",
+            delete(handlers::applications::staff_delete_document))
 }

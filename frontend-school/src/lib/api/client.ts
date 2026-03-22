@@ -73,6 +73,21 @@ class APIClient {
 	async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
 		return this.request<T>(endpoint, { method: 'DELETE' });
 	}
+
+	async postMultipart<T>(endpoint: string, body: FormData): Promise<ApiResponse<T>> {
+		const url = `${this.baseURL}${endpoint}`;
+		// Do NOT set Content-Type — browser sets it with the multipart boundary automatically
+		const response = await fetch(url, {
+			method: 'POST',
+			credentials: 'include',
+			body
+		});
+		const data = await response.json();
+		if (!response.ok) {
+			return { success: false, error: data.error || 'เกิดข้อผิดพลาด' };
+		}
+		return data;
+	}
 }
 
 export const apiClient = new APIClient(BACKEND_URL);

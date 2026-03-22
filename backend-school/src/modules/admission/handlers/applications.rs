@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
@@ -16,6 +16,7 @@ use crate::utils::file_url::FileUrlBuilder;
 use crate::middleware::permission::check_permission;
 use crate::permissions::registry::codes;
 use crate::modules::admission::models::applications::*;
+use crate::services::r2_client::R2Client;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
@@ -986,6 +987,219 @@ pub async fn change_application_track(
     .execute(&pool)
     .await
     .ok();
+
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
+// ==========================================
+// Staff Document Upload / Delete
+// ==========================================
+
+const VALID_DOC_TYPES: &[&str] = &[
+    "photo_1_5inch", "transcript_por", "certificate_por7",
+    "id_card_student", "id_card_father", "id_card_mother", "id_card_guardian",
+    "house_reg_student", "house_reg_father", "house_reg_mother", "house_reg_guardian",
+    "name_change_doc", "birth_cert",
+];
+
+const ALLOWED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "pdf", "webp"];
+
+/// POST /api/admission/applications/{id}/documents
+/// Staff upload/replace a document for an application (requires JWT auth)
+pub async fn staff_upload_document(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(application_id): Path<Uuid>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    // Require authentication
+    if let Err(r) = check_permission(&headers, &pool, "admission.update").await {
+        return Ok(r);
+    }
+
+    // Parse multipart
+    let mut doc_type: Option<String> = None;
+    let mut file_data: Option<Vec<u8>> = None;
+    let mut original_filename: Option<String> = None;
+    let mut mime_type = "application/octet-stream".to_string();
+
+    while let Some(field) = multipart.next_field().await
+        .map_err(|_| AppError::BadRequest("Invalid multipart data".to_string()))? {
+        match field.name().unwrap_or("") {
+            "doc_type" => {
+                doc_type = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string());
+            }
+            "file" => {
+                original_filename = field.file_name().map(|s| s.to_string()).or(Some("document".to_string()));
+                if let Some(ct) = field.content_type() {
+                    mime_type = ct.to_string();
+                }
+                file_data = Some(field.bytes().await
+                    .map_err(|_| AppError::BadRequest("Failed to read file".to_string()))?.to_vec());
+            }
+            _ => { let _ = field.bytes().await; }
+        }
+    }
+
+    let doc_type = doc_type.ok_or_else(|| AppError::BadRequest("Missing doc_type".to_string()))?;
+    let file_data = file_data.ok_or_else(|| AppError::BadRequest("Missing file".to_string()))?;
+    let original_filename = original_filename.unwrap_or_else(|| "document".to_string());
+
+    if !VALID_DOC_TYPES.contains(&doc_type.as_str()) {
+        return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
+    }
+
+    // Validate extension
+    let ext = std::path::Path::new(&original_filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin")
+        .to_lowercase();
+    if !ALLOWED_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(AppError::BadRequest(format!("File extension .{} not allowed. Use: jpg, png, pdf", ext)));
+    }
+
+    if file_data.len() > 20 * 1024 * 1024 {
+        return Err(AppError::BadRequest("File size exceeds 20MB".to_string()));
+    }
+
+    // Verify application exists
+    let app_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE id = $1)"
+    )
+    .bind(application_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !app_exists {
+        return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
+    }
+
+    // Upload to R2
+    let file_id = Uuid::new_v4();
+    let storage_path = format!(
+        "school-{}/admission/{}/{}.{}",
+        subdomain, application_id, file_id, ext
+    );
+
+    let r2_client = R2Client::new().await
+        .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
+
+    r2_client.upload_file(&storage_path, file_data.clone(), &mime_type).await
+        .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;
+
+    // Save file metadata (permanent)
+    let file_size = file_data.len() as i64;
+    sqlx::query(
+        r#"
+        INSERT INTO files (id, user_id, school_id, filename, original_filename,
+            file_size, mime_type, storage_path, file_type,
+            is_temporary, is_public, uploaded_by)
+        VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document',
+            false, false, NULL)
+        "#
+    )
+    .bind(file_id)
+    .bind(&subdomain)
+    .bind(format!("{}.{}", file_id, ext))
+    .bind(&original_filename)
+    .bind(file_size)
+    .bind(&mime_type)
+    .bind(&storage_path)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to save file metadata: {}", e);
+        AppError::InternalServerError("Failed to save file metadata".to_string())
+    })?;
+
+    // Soft-delete existing document of same type
+    sqlx::query(
+        "UPDATE admission_application_documents SET deleted_at = NOW() WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL"
+    )
+    .bind(application_id)
+    .bind(&doc_type)
+    .execute(&pool)
+    .await
+    .ok();
+
+    // Link new document to application
+    let doc_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO admission_application_documents (id, application_id, file_id, doc_type)
+        VALUES ($1, $2, $3, $4)
+        "#
+    )
+    .bind(doc_id)
+    .bind(application_id)
+    .bind(file_id)
+    .bind(&doc_type)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to link document: {}", e);
+        AppError::InternalServerError("Failed to link document".to_string())
+    })?;
+
+    let url_builder = FileUrlBuilder::new()
+        .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
+    let file_url = format!("{}/{}", url_builder.base_url(), storage_path);
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "id": doc_id,
+            "fileId": file_id,
+            "docType": doc_type,
+            "fileUrl": file_url,
+            "fileSize": file_size,
+        }
+    })).into_response())
+}
+
+/// DELETE /api/admission/applications/{id}/documents/{doc_type}
+/// Staff soft-delete a document for an application (requires JWT auth)
+pub async fn staff_delete_document(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((application_id, doc_type)): Path<(Uuid, String)>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    if let Err(r) = check_permission(&headers, &pool, "admission.update").await {
+        return Ok(r);
+    }
+
+    if !VALID_DOC_TYPES.contains(&doc_type.as_str()) {
+        return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
+    }
+
+    let affected = sqlx::query(
+        "UPDATE admission_application_documents SET deleted_at = NOW() WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL"
+    )
+    .bind(application_id)
+    .bind(&doc_type)
+    .execute(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+    if affected.rows_affected() == 0 {
+        return Err(AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()));
+    }
 
     Ok(Json(json!({ "success": true })).into_response())
 }
