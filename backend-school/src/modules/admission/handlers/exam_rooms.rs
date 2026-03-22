@@ -616,7 +616,7 @@ pub async fn get_exam_seats(
             sa.exam_id,
             aa.id AS application_id,
             aa.application_number,
-            aa.full_name,
+            CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
             aa.national_id,
             at.name AS track_name
            FROM admission_exam_seat_assignments sa
