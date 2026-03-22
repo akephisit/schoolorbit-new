@@ -642,6 +642,52 @@ pub async fn delete_application(
         return Ok(r);
     }
 
+    // ดึง application_number ก่อน (เพื่อตรวจสอบว่ามีอยู่จริง)
+    let app_number: Option<String> = sqlx::query_scalar(
+        "SELECT application_number FROM admission_applications WHERE id = $1"
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to fetch application {}: {}", id, e);
+        AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
+    })?;
+
+    let Some(_app_number) = app_number else {
+        return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
+    };
+
+    // ดึง file records ทั้งหมดที่เชื่อมกับใบสมัครนี้
+    let file_rows: Vec<(Uuid, String)> = sqlx::query_as(
+        r#"SELECT f.id, f.storage_path
+           FROM admission_application_documents aad
+           JOIN files f ON f.id = aad.file_id
+           WHERE aad.application_id = $1 AND aad.deleted_at IS NULL"#,
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // ลบไฟล์ใน R2
+    if !file_rows.is_empty() {
+        if let Ok(r2) = R2Client::new().await {
+            for (_, storage_path) in &file_rows {
+                r2.delete_file(storage_path).await.ok();
+            }
+        }
+
+        // ลบ files records (ต้องลบก่อน admission_applications เพราะ FK)
+        let file_ids: Vec<Uuid> = file_rows.into_iter().map(|(fid, _)| fid).collect();
+        sqlx::query("DELETE FROM files WHERE id = ANY($1)")
+            .bind(&file_ids)
+            .execute(&pool)
+            .await
+            .ok();
+    }
+
+    // ลบ application (CASCADE ลบ admission_application_documents)
     let result = sqlx::query("DELETE FROM admission_applications WHERE id = $1")
         .bind(id)
         .execute(&pool)
