@@ -652,9 +652,13 @@ pub async fn portal_delete_document(
 
     let application_id = verify_credentials(&pool, &query.national_id, &query.date_of_birth).await?;
 
-    // หา active document
-    let doc_row = sqlx::query_as::<_, (Uuid, Uuid)>(
-        "SELECT id, file_id FROM admission_application_documents WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL"
+    // หา active document พร้อม storage_path
+    let doc_row = sqlx::query_as::<_, (Uuid, Uuid, String)>(
+        r#"SELECT aad.id, aad.file_id, f.storage_path
+           FROM admission_application_documents aad
+           JOIN files f ON f.id = aad.file_id
+           WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
+           LIMIT 1"#
     )
     .bind(application_id)
     .bind(&doc_type)
@@ -662,23 +666,28 @@ pub async fn portal_delete_document(
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
-    let Some((doc_id, file_id)) = doc_row else {
+    let Some((doc_id, file_id, storage_path)) = doc_row else {
         return Err(AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()));
     };
 
-    // Soft-delete document record
-    sqlx::query("UPDATE admission_application_documents SET deleted_at = NOW() WHERE id = $1")
+    // Hard delete document record
+    sqlx::query("DELETE FROM admission_application_documents WHERE id = $1")
         .bind(doc_id)
         .execute(&pool)
         .await
         .map_err(|_| AppError::InternalServerError("Failed to delete document".to_string()))?;
 
-    // Soft-delete file record
-    sqlx::query("UPDATE files SET deleted_at = NOW() WHERE id = $1")
+    // Hard delete file record
+    sqlx::query("DELETE FROM files WHERE id = $1")
         .bind(file_id)
         .execute(&pool)
         .await
-        .map_err(|_| AppError::InternalServerError("Failed to delete file record".to_string()))?;
+        .ok();
+
+    // Delete file from R2
+    let r2_client = R2Client::new().await
+        .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
+    r2_client.delete_file(&storage_path).await.ok();
 
     Ok(Json(json!({
         "success": true,
