@@ -1,4 +1,10 @@
 import { apiClient } from './client';
+import { PUBLIC_BACKEND_URL } from '$env/static/public';
+
+/** แปลง file UUID เป็น proxy URL ที่ผ่าน backend (ไม่ต้องพึ่ง R2 CDN โดยตรง) */
+export function fileServeUrl(fileId: string): string {
+    return `${PUBLIC_BACKEND_URL}/api/files/${fileId}/serve`;
+}
 
 // ==========================================
 // Types

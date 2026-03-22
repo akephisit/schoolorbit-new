@@ -8,7 +8,8 @@
 		portalGetStatus,
 		portalUploadTempFile,
 		portalDeleteDocument,
-		DOC_TYPE_LABELS
+		DOC_TYPE_LABELS,
+		fileServeUrl
 	} from '$lib/api/admission';
 	import type {
 		AdmissionRound,
@@ -451,9 +452,12 @@
 					guardianOccupation = app.guardianOccupation || '';
 					guardianIncome = app.guardianIncome ? app.guardianIncome.toString() : '';
 				}
-				// Load existing documents
+				// Load existing documents — ใช้ proxy URL แทน storage URL โดยตรง
 				if (statusData?.documents) {
-					existingDocs = statusData.documents;
+					existingDocs = statusData.documents.map((d: ApplicationDocument) => ({
+						...d,
+						fileUrl: d.fileId ? fileServeUrl(d.fileId) : d.fileUrl
+					}));
 				}
 			}
 		} catch (e) {
