@@ -80,6 +80,7 @@
 
 	// Assign seats dialog
 	let showAssignDialog = $state(false);
+	let assignMode = $state<'full' | 'append'>('full');
 
 	async function loadAll() {
 		if (!id) return;
@@ -217,7 +218,8 @@
 			const result = await assignExamSeats(id, {
 				examIdType: examConfig.examIdType,
 				examIdPrefix: examConfig.examIdPrefix,
-				sortOrder: examConfig.sortOrder
+				sortOrder: examConfig.sortOrder,
+				mode: assignMode
 			});
 			toast.success(result.message);
 			showAssignDialog = false;
@@ -515,15 +517,24 @@
 						</Card.Content>
 					</Card.Root>
 
-					<!-- Assign button -->
-					<Button class="w-full" size="lg"
-						disabled={examRooms.length === 0}
-						onclick={() => (showAssignDialog = true)}>
-						<RefreshCw class="mr-2 h-4 w-4" />
-						จัดที่นั่งสอบ
-					</Button>
+					<!-- Assign buttons -->
+					<div class="flex gap-2">
+						<Button class="flex-1" size="lg"
+							disabled={examRooms.length === 0}
+							onclick={() => { assignMode = 'full'; showAssignDialog = true; }}>
+							<RefreshCw class="mr-2 h-4 w-4" />
+							จัดใหม่ทั้งหมด
+						</Button>
+						{#if totalAssigned > 0}
+							<Button class="flex-1" size="lg" variant="outline"
+								onclick={() => { assignMode = 'append'; showAssignDialog = true; }}>
+								<Plus class="mr-2 h-4 w-4" />
+								เพิ่มคนใหม่
+							</Button>
+						{/if}
+					</div>
 					{#if totalAssigned > 0}
-						<p class="text-center text-xs text-blue-600">จัดแล้ว {totalAssigned} คน · กดอีกครั้งเพื่อจัดใหม่</p>
+						<p class="text-center text-xs text-muted-foreground">จัดแล้ว {totalAssigned} คน</p>
 					{/if}
 				</div>
 			</div>
@@ -669,11 +680,15 @@
 <Dialog.Root bind:open={showAssignDialog}>
 	<Dialog.Content class="sm:max-w-sm">
 		<Dialog.Header>
-			<Dialog.Title>จัดที่นั่งสอบ</Dialog.Title>
+			<Dialog.Title>{assignMode === 'append' ? 'เพิ่มคนใหม่' : 'จัดที่นั่งสอบ'}</Dialog.Title>
 			<Dialog.Description>
-				จะจัดที่นั่งสอบให้ผู้สมัครทั้งหมดในรอบนี้
-				{#if totalAssigned > 0}
-					<br /><span class="text-orange-600">⚠ จะล้างผลเดิม {totalAssigned} คน แล้วจัดใหม่</span>
+				{#if assignMode === 'append'}
+					เพิ่มที่นั่งเฉพาะคนที่ยังไม่มีที่นั่ง — ผลเดิม {totalAssigned} คนไม่เปลี่ยน
+				{:else}
+					จะจัดที่นั่งสอบให้ผู้สมัครทุกคนใหม่ตั้งแต่ต้น
+					{#if totalAssigned > 0}
+						<br /><span class="text-orange-600">⚠ จะล้างผลเดิม {totalAssigned} คน แล้วจัดใหม่</span>
+					{/if}
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>

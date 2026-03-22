@@ -66,6 +66,8 @@ pub struct AssignExamSeatsRequest {
     exam_id_type: Option<String>,
     exam_id_prefix: Option<String>,
     sort_order: Option<String>,
+    /// "full" = ลบเดิมแล้วจัดใหม่ทั้งหมด (default), "append" = เพิ่มเฉพาะคนที่ยังไม่มีที่นั่ง
+    mode: Option<String>,
 }
 
 // ==========================================
@@ -473,6 +475,138 @@ pub async fn assign_exam_seats(
         return Err(AppError::BadRequest("ยังไม่มีห้องสอบ กรุณาเพิ่มห้องสอบก่อน".to_string()));
     }
 
+    let mode = payload.mode.as_deref().unwrap_or("full");
+
+    // ===== Append mode: เพิ่มเฉพาะคนที่ยังไม่มีที่นั่ง =====
+    if mode == "append" {
+        #[derive(sqlx::FromRow)]
+        struct ExistingRow {
+            application_id: Uuid,
+            exam_room_id: Uuid,
+        }
+
+        let existing: Vec<ExistingRow> = sqlx::query_as(
+            r#"SELECT application_id, exam_room_id
+               FROM admission_exam_seat_assignments
+               WHERE exam_room_id IN (
+                   SELECT id FROM admission_exam_rooms WHERE admission_round_id = $1
+               )"#
+        )
+        .bind(round_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถดึงข้อมูลที่นั่งเดิมได้".to_string()))?;
+
+        let existing_app_ids: std::collections::HashSet<Uuid> =
+            existing.iter().map(|r| r.application_id).collect();
+        let existing_total = existing.len() as i32;
+
+        // นับจำนวนที่นั่งที่ใช้แล้วต่อห้อง
+        let mut existing_counts: std::collections::HashMap<Uuid, i32> = std::collections::HashMap::new();
+        for r in &existing {
+            *existing_counts.entry(r.exam_room_id).or_insert(0) += 1;
+        }
+
+        let new_applicants: Vec<_> = applicants.into_iter()
+            .filter(|a| !existing_app_ids.contains(&a.id))
+            .collect();
+
+        if new_applicants.is_empty() {
+            return Ok(Json(json!({
+                "success": true,
+                "message": "ไม่มีผู้สมัครใหม่ที่ต้องจัดที่นั่ง",
+                "data": { "assignedCount": 0, "rooms": [] }
+            })).into_response());
+        }
+
+        // ตรวจ remaining capacity
+        let remaining_capacity: i32 = rooms.iter()
+            .map(|r| r.capacity - existing_counts.get(&r.id).copied().unwrap_or(0))
+            .sum();
+        if remaining_capacity < new_applicants.len() as i32 {
+            return Err(AppError::BadRequest(format!(
+                "ที่นั่งว่างเหลือ ({}) น้อยกว่าจำนวนผู้สมัครใหม่ ({}) — กรุณาเพิ่มห้องสอบหรือจัดใหม่ทั้งหมด",
+                remaining_capacity,
+                new_applicants.len()
+            )));
+        }
+
+        let pad_width = format!("{}", existing_total + new_applicants.len() as i32).len().max(4);
+        let mut new_assignments: Vec<(Uuid, Uuid, i32, String)> = Vec::new();
+        let mut room_iter = rooms.iter();
+        let mut current_room = room_iter.next().unwrap();
+        // ข้ามห้องที่เต็มแล้ว
+        while existing_counts.get(&current_room.id).copied().unwrap_or(0) >= current_room.capacity {
+            current_room = room_iter.next().unwrap();
+        }
+        let mut seat_in_room = existing_counts.get(&current_room.id).copied().unwrap_or(0);
+        let mut global_seq = existing_total;
+
+        for app in &new_applicants {
+            while seat_in_room >= current_room.capacity {
+                current_room = room_iter.next().unwrap();
+                seat_in_room = existing_counts.get(&current_room.id).copied().unwrap_or(0);
+            }
+            seat_in_room += 1;
+            global_seq += 1;
+
+            let exam_id = match exam_id_type.as_str() {
+                "sequential" => format!("{:0>width$}", global_seq, width = pad_width),
+                "custom_prefix" => format!("{}{:0>width$}", exam_id_prefix, global_seq, width = pad_width),
+                _ => app.application_number.clone().unwrap_or_else(|| format!("{}", global_seq)),
+            };
+            new_assignments.push((app.id, current_room.id, seat_in_room, exam_id));
+        }
+
+        let mut tx = pool.begin().await
+            .map_err(|_| AppError::InternalServerError("Transaction error".to_string()))?;
+
+        for (app_id, room_id, seat_num, exam_id) in &new_assignments {
+            sqlx::query(
+                r#"INSERT INTO admission_exam_seat_assignments
+                   (application_id, exam_room_id, seat_number, exam_id, assigned_by)
+                   VALUES ($1, $2, $3, $4, $5)"#,
+            )
+            .bind(app_id)
+            .bind(room_id)
+            .bind(seat_num)
+            .bind(exam_id)
+            .bind(user.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to insert seat assignment (append): {}", e);
+                AppError::InternalServerError("ไม่สามารถบันทึกที่นั่งสอบได้".to_string())
+            })?;
+        }
+
+        tx.commit().await
+            .map_err(|_| AppError::InternalServerError("Transaction commit failed".to_string()))?;
+
+        let mut room_summary: std::collections::HashMap<Uuid, (String, i32)> = std::collections::HashMap::new();
+        for r in &rooms {
+            room_summary.insert(r.id, (r.room_name.clone(), 0));
+        }
+        for (_, room_id, _, _) in &new_assignments {
+            if let Some(entry) = room_summary.get_mut(room_id) {
+                entry.1 += 1;
+            }
+        }
+        let summary: Vec<serde_json::Value> = rooms.iter()
+            .filter_map(|r| room_summary.get(&r.id).map(|(name, count)| json!({
+                "roomName": name,
+                "count": count
+            })))
+            .collect();
+
+        return Ok(Json(json!({
+            "success": true,
+            "message": format!("เพิ่มที่นั่งสอบสำเร็จ {} คน", new_assignments.len()),
+            "data": { "assignedCount": new_assignments.len(), "rooms": summary }
+        })).into_response());
+    }
+
+    // ===== Full mode (default): จัดใหม่ทั้งหมด =====
     let total_capacity: i32 = rooms.iter().map(|r| r.capacity).sum();
     if total_capacity < applicants.len() as i32 {
         return Err(AppError::BadRequest(format!(
@@ -510,7 +644,6 @@ pub async fn assign_exam_seats(
         assignments.push((app.id, current_room.id, seat_in_room, exam_id));
     }
 
-    // Upsert ทั้งหมด
     let mut tx = pool.begin().await
         .map_err(|_| AppError::InternalServerError("Transaction error".to_string()))?;
 

@@ -881,6 +881,7 @@ export async function assignExamSeats(roundId: string, options?: {
     examIdType?: string;
     examIdPrefix?: string;
     sortOrder?: string;
+    mode?: 'full' | 'append';
 }) {
     const res = await apiClient.post(`/api/admission/rounds/${roundId}/assign-exam-seats`, options ?? {});
     return res.data as { message: string; assignedCount: number; rooms: { roomName: string; count: number }[] };
