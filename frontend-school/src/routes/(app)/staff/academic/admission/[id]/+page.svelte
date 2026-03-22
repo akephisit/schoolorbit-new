@@ -494,20 +494,20 @@
 						<Users class="w-3.5 h-3.5" /> ใบสมัคร ({round.applicationCount ?? 0})
 					</Button>
 					<Button
-						href="/staff/academic/admission/{id}/scores"
-						variant="outline"
-						size="sm"
-						class="gap-1.5"
-					>
-						<ClipboardList class="w-3.5 h-3.5" /> กรอกคะแนน
-					</Button>
-					<Button
 						href="/staff/academic/admission/{id}/exam-rooms"
 						variant="outline"
 						size="sm"
 						class="gap-1.5"
 					>
 						<DoorOpen class="w-3.5 h-3.5" /> ห้องสอบ
+					</Button>
+					<Button
+						href="/staff/academic/admission/{id}/scores"
+						variant="outline"
+						size="sm"
+						class="gap-1.5"
+					>
+						<ClipboardList class="w-3.5 h-3.5" /> กรอกคะแนน
 					</Button>
 					<Button
 						href="/staff/academic/admission/{id}/selections"
