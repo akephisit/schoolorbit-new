@@ -381,7 +381,7 @@ pub async fn update_application(
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
-    if status != "submitted" && status != "rejected" {
+    if status == "enrolled" || status == "withdrawn" {
         return Err(AppError::BadRequest(
             format!("ไม่สามารถแก้ไขใบสมัครได้เนื่องจากอยู่ในสถานะ '{}'", status)
         ));
@@ -501,6 +501,78 @@ pub async fn update_application(
         eprintln!("Failed to update application: {}", e);
         AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
     })?;
+
+    // Process document updates (safe replace: mark permanent → update DB → delete old R2)
+    if let Some(docs) = &payload.data.documents {
+        let r2_client = R2Client::new().await
+            .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
+
+        for doc in docs {
+            if !VALID_DOC_TYPES.contains(&doc.doc_type.as_str()) {
+                continue;
+            }
+
+            // Fetch existing active document (if any) to get old file_id + storage_path
+            let old_doc = sqlx::query_as::<_, (Uuid, Uuid, String)>(
+                r#"SELECT aad.id, aad.file_id, f.storage_path
+                   FROM admission_application_documents aad
+                   JOIN files f ON f.id = aad.file_id
+                   WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
+                   LIMIT 1"#
+            )
+            .bind(application_id)
+            .bind(&doc.doc_type)
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten();
+
+            // Mark new file as permanent
+            let _ = sqlx::query(
+                "UPDATE files SET is_temporary = false, expires_at = NULL WHERE id = $1"
+            )
+            .bind(doc.temp_file_id)
+            .execute(&pool)
+            .await;
+
+            if let Some((old_doc_id, old_file_id, old_storage_path)) = old_doc {
+                // Hard delete old document record
+                let _ = sqlx::query(
+                    "DELETE FROM admission_application_documents WHERE id = $1"
+                )
+                .bind(old_doc_id)
+                .execute(&pool)
+                .await;
+
+                // Insert new document record
+                let _ = sqlx::query(
+                    "INSERT INTO admission_application_documents (application_id, file_id, doc_type) VALUES ($1, $2, $3)"
+                )
+                .bind(application_id)
+                .bind(doc.temp_file_id)
+                .bind(&doc.doc_type)
+                .execute(&pool)
+                .await;
+
+                // Hard delete old file record + R2 (after DB success)
+                let _ = sqlx::query("DELETE FROM files WHERE id = $1")
+                    .bind(old_file_id)
+                    .execute(&pool)
+                    .await;
+                r2_client.delete_file(&old_storage_path).await.ok();
+            } else {
+                // No existing document — just insert
+                let _ = sqlx::query(
+                    "INSERT INTO admission_application_documents (application_id, file_id, doc_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+                )
+                .bind(application_id)
+                .bind(doc.temp_file_id)
+                .bind(&doc.doc_type)
+                .execute(&pool)
+                .await;
+            }
+        }
+    }
 
     Ok(Json(json!({
         "success": true,
