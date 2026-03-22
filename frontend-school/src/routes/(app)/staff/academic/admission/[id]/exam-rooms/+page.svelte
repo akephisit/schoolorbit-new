@@ -240,7 +240,8 @@
 	let pdfMakeReady: any = null;
 	async function getPdfMake() {
 		if (pdfMakeReady) return pdfMakeReady;
-		const { default: pdfMake } = await import('pdfmake/build/pdfmake');
+		const pdfMakeModule = await import('pdfmake/build/pdfmake');
+		const pdfMake = (pdfMakeModule as any).default || pdfMakeModule;
 		const toBase64 = (buf: ArrayBuffer) => {
 			const bytes = new Uint8Array(buf);
 			let binary = '';
@@ -251,12 +252,21 @@
 			fetch('/fonts/Sarabun-Regular.ttf').then((r) => r.arrayBuffer()),
 			fetch('/fonts/Sarabun-Bold.ttf').then((r) => r.arrayBuffer())
 		]);
-		// set on instance — works across all 0.2.x and 0.3.x versions
-		pdfMake.vfs = {
-			'Sarabun-Regular.ttf': toBase64(regularBuf),
-			'Sarabun-Bold.ttf': toBase64(boldBuf)
-		};
-		pdfMake.fonts = { Sarabun: { normal: 'Sarabun-Regular.ttf', bold: 'Sarabun-Bold.ttf' } };
+		const regularB64 = toBase64(regularBuf);
+		const boldB64 = toBase64(boldBuf);
+		// pdfmake 0.3.x API
+		pdfMake.addVirtualFileSystem({
+			'Sarabun-Regular.ttf': regularB64,
+			'Sarabun-Bold.ttf': boldB64
+		});
+		pdfMake.addFonts({
+			Sarabun: {
+				normal: 'Sarabun-Regular.ttf',
+				bold: 'Sarabun-Bold.ttf',
+				italics: 'Sarabun-Regular.ttf',
+				bolditalics: 'Sarabun-Bold.ttf'
+			}
+		});
 		pdfMakeReady = pdfMake;
 		return pdfMake;
 	}
