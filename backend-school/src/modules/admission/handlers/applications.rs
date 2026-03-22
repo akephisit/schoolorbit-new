@@ -1083,6 +1083,20 @@ pub async fn staff_upload_document(
         return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
     }
 
+    // Fetch existing doc's storage_path before upload (for cleanup after success)
+    let old_doc: Option<(String, Uuid)> = sqlx::query_as(
+        r#"SELECT f.storage_path, f.id
+           FROM admission_application_documents aad
+           JOIN files f ON f.id = aad.file_id
+           WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
+           LIMIT 1"#
+    )
+    .bind(application_id)
+    .bind(&doc_type)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
     // Upload to R2
     let file_id = Uuid::new_v4();
     let storage_path = format!(
@@ -1093,6 +1107,7 @@ pub async fn staff_upload_document(
     let r2_client = R2Client::new().await
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
 
+    // Upload new file first — if this fails, old file is still intact
     r2_client.upload_file(&storage_path, file_data.clone(), &mime_type).await
         .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;
 
@@ -1121,7 +1136,7 @@ pub async fn staff_upload_document(
         AppError::InternalServerError("Failed to save file metadata".to_string())
     })?;
 
-    // Soft-delete existing document of same type
+    // Soft-delete existing document record of same type
     sqlx::query(
         "UPDATE admission_application_documents SET deleted_at = NOW() WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL"
     )
@@ -1149,6 +1164,11 @@ pub async fn staff_upload_document(
         eprintln!("Failed to link document: {}", e);
         AppError::InternalServerError("Failed to link document".to_string())
     })?;
+
+    // DB update succeeded — now safe to delete old file from R2
+    if let Some((old_path, _)) = old_doc {
+        r2_client.delete_file(&old_path).await.ok();
+    }
 
     let url_builder = FileUrlBuilder::new()
         .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
@@ -1188,8 +1208,27 @@ pub async fn staff_delete_document(
         return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
     }
 
-    let affected = sqlx::query(
-        "UPDATE admission_application_documents SET deleted_at = NOW() WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL"
+    // Fetch storage_path + file_id before deleting
+    let doc_info: Option<(String, Uuid)> = sqlx::query_as(
+        r#"SELECT f.storage_path, f.id
+           FROM admission_application_documents aad
+           JOIN files f ON f.id = aad.file_id
+           WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
+           LIMIT 1"#
+    )
+    .bind(application_id)
+    .bind(&doc_type)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+    let Some((storage_path, file_id)) = doc_info else {
+        return Err(AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()));
+    };
+
+    // Hard delete admission_application_documents record
+    sqlx::query(
+        "DELETE FROM admission_application_documents WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL"
     )
     .bind(application_id)
     .bind(&doc_type)
@@ -1197,9 +1236,17 @@ pub async fn staff_delete_document(
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
-    if affected.rows_affected() == 0 {
-        return Err(AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()));
-    }
+    // Hard delete files record
+    sqlx::query("DELETE FROM files WHERE id = $1")
+        .bind(file_id)
+        .execute(&pool)
+        .await
+        .ok();
+
+    // Delete file from R2
+    let r2_client = R2Client::new().await
+        .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
+    r2_client.delete_file(&storage_path).await.ok();
 
     Ok(Json(json!({ "success": true })).into_response())
 }

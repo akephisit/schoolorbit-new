@@ -79,6 +79,7 @@
 		originalBlob?: Blob;
 		savedCorners?: [CropPoint, CropPoint, CropPoint, CropPoint];
 		uploading: boolean;
+		pendingDelete?: boolean;
 	};
 	let docSlots = $state<Record<string, DocSlot>>({});
 	let cropTarget = $state<{ docType: string; imageUrl: string; initialCorners?: [CropPoint, CropPoint, CropPoint, CropPoint] } | null>(null);
@@ -172,15 +173,41 @@
 	function cancelEdit() {
 		editMode = false;
 		editData = {};
+		docSlots = {};
 	}
 
 	async function handleSave() {
 		if (!application) return;
 		saving = true;
 		try {
+			// 1. Save form data
 			await updateApplicationByStaff(application.id, editData);
-			toast.success('บันทึกข้อมูลแล้ว');
 			application = { ...application, ...editData };
+
+			// 2. Upload pending blobs
+			for (const [docType, slot] of Object.entries(docSlots)) {
+				if (!slot.blob || slot.pendingDelete) continue;
+				docSlots[docType] = { ...slot, uploading: true };
+				const result = await staffUploadDocument(application.id, docType, slot.blob);
+				documents = [
+					...documents.filter(d => d.docType !== docType),
+					{ id: result.id, applicationId: application.id, fileId: result.fileId,
+					  docType: result.docType, fileUrl: result.fileUrl,
+					  fileSize: result.fileSize, createdAt: new Date().toISOString() }
+				];
+				docSlots[docType] = { preview: result.fileUrl, uploading: false };
+			}
+
+			// 3. Delete pending deletes
+			for (const [docType, slot] of Object.entries(docSlots)) {
+				if (!slot.pendingDelete) continue;
+				await staffDeleteDocument(application.id, docType);
+				documents = documents.filter(d => d.docType !== docType);
+				const { [docType]: _, ...rest } = docSlots;
+				docSlots = rest;
+			}
+
+			toast.success('บันทึกข้อมูลแล้ว');
 			editMode = false;
 			editData = {};
 		} catch (e) {
@@ -213,33 +240,23 @@
 		cropperOpen = true;
 	}
 
-	async function handleCropComplete(blob: Blob, corners: [CropPoint, CropPoint, CropPoint, CropPoint]) {
-		if (!cropTarget || !application) return;
+	function handleCropComplete(blob: Blob, corners: [CropPoint, CropPoint, CropPoint, CropPoint]) {
+		if (!cropTarget) return;
 		const { docType, imageUrl } = cropTarget;
 		cropperOpen = false;
 		const prev = docSlots[docType]?.preview;
-		if (prev) URL.revokeObjectURL(prev);
-		const preview = URL.createObjectURL(blob);
+		if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
 		URL.revokeObjectURL(imageUrl);
 		cropTarget = null;
-		docSlots[docType] = { ...docSlots[docType], blob, preview, savedCorners: corners, uploading: true };
-		try {
-			const result = await staffUploadDocument(application.id, docType, blob);
-			documents = [...documents.filter(d => d.docType !== docType), {
-				id: result.id,
-				applicationId: application.id,
-				fileId: result.fileId,
-				docType: result.docType,
-				fileUrl: result.fileUrl,
-				fileSize: result.fileSize,
-				createdAt: new Date().toISOString()
-			}];
-			docSlots[docType] = { preview: result.fileUrl, uploading: false };
-			toast.success('อัปโหลดเอกสารแล้ว');
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ');
-			docSlots[docType] = { ...(docSlots[docType] ?? { uploading: false }), uploading: false };
-		}
+		// Store locally — upload happens on handleSave
+		docSlots[docType] = {
+			...docSlots[docType],
+			blob,
+			preview: URL.createObjectURL(blob),
+			savedCorners: corners,
+			uploading: false,
+			pendingDelete: false,
+		};
 	}
 
 	function handleCropCancel() {
@@ -250,19 +267,21 @@
 		cropperOpen = false;
 	}
 
-	async function handleDeleteDoc(docType: string) {
-		if (!application) return;
+	function handleDeleteDoc(docType: string) {
 		const existingDoc = documents.find(d => d.docType === docType);
-		try {
-			if (existingDoc) await staffDeleteDocument(application.id, docType);
-			documents = documents.filter(d => d.docType !== docType);
-			if (docSlots[docType]?.preview) URL.revokeObjectURL(docSlots[docType].preview!);
+		const slot = docSlots[docType];
+
+		// If only a pending blob (not yet on server) → just clear the slot
+		if (!existingDoc) {
+			if (slot?.preview?.startsWith('blob:')) URL.revokeObjectURL(slot.preview);
 			const { [docType]: _, ...rest } = docSlots;
 			docSlots = rest;
-			toast.success('ลบเอกสารแล้ว');
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ');
+			return;
 		}
+
+		// Has a server document → mark pendingDelete, clear preview
+		if (slot?.preview?.startsWith('blob:')) URL.revokeObjectURL(slot.preview);
+		docSlots[docType] = { ...(slot ?? { uploading: false }), pendingDelete: true, preview: undefined, blob: undefined };
 	}
 
 	function openLightboxUrl(url: string, docType: string) {
@@ -933,7 +952,7 @@
 							{#each Object.entries(DOC_TYPE_LABELS) as [docType, info]}
 								{@const existingDoc = documents.find(d => d.docType === docType)}
 								{@const slot = docSlots[docType]}
-								{@const previewUrl = slot?.preview ?? existingDoc?.fileUrl}
+								{@const previewUrl = slot?.pendingDelete ? undefined : (slot?.preview ?? existingDoc?.fileUrl)}
 								<div class="flex flex-col gap-2">
 									<!-- Thumbnail -->
 									<button
@@ -966,45 +985,47 @@
 										{#if info.required}<span class="text-destructive">*</span>{/if}
 									</p>
 
-									<!-- Action buttons -->
-									<div class="flex gap-1">
-										{#if previewUrl}
-											<Button
-												size="sm"
-												variant="outline"
-												class="h-7 text-xs flex-1"
-												disabled={slot?.uploading}
-												onclick={() => fileInputRefs[docType]?.click()}
-											>
-												เปลี่ยน
-											</Button>
-											<Button
-												size="icon"
-												variant="ghost"
-												class="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-												disabled={slot?.uploading}
-												onclick={() => handleDeleteDoc(docType)}
-											>
-												<X class="w-3.5 h-3.5" />
-											</Button>
-										{:else}
-											<Button
-												size="sm"
-												variant="outline"
-												class="h-7 text-xs w-full"
-												onclick={() => fileInputRefs[docType]?.click()}
-											>
-												เลือกไฟล์
-											</Button>
-										{/if}
-										<input
-											type="file"
-											accept="image/*"
-											class="hidden"
-											bind:this={fileInputRefs[docType]}
-											onchange={(e) => handleDocFileSelected(docType, e)}
-										/>
-									</div>
+									<!-- Action buttons (edit mode only) -->
+									{#if editMode}
+										<div class="flex gap-1">
+											{#if previewUrl}
+												<Button
+													size="sm"
+													variant="outline"
+													class="h-7 text-xs flex-1"
+													disabled={slot?.uploading}
+													onclick={() => fileInputRefs[docType]?.click()}
+												>
+													เปลี่ยน
+												</Button>
+												<Button
+													size="icon"
+													variant="ghost"
+													class="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+													disabled={slot?.uploading}
+													onclick={() => handleDeleteDoc(docType)}
+												>
+													<X class="w-3.5 h-3.5" />
+												</Button>
+											{:else if !slot?.pendingDelete}
+												<Button
+													size="sm"
+													variant="outline"
+													class="h-7 text-xs w-full"
+													onclick={() => fileInputRefs[docType]?.click()}
+												>
+													เลือกไฟล์
+												</Button>
+											{/if}
+											<input
+												type="file"
+												accept="image/*"
+												class="hidden"
+												bind:this={fileInputRefs[docType]}
+												onchange={(e) => handleDocFileSelected(docType, e)}
+											/>
+										</div>
+									{/if}
 								</div>
 							{/each}
 						</div>
