@@ -271,43 +271,42 @@
 		return pdfMake;
 	}
 
-	async function downloadRoomPdf(group: ExamRoomGroup) {
-		const pm = await getPdfMake();
-		const docDef: any = {
-			defaultStyle: { font: 'Sarabun', fontSize: 11 },
-			content: [
-				{ text: round?.name ?? '', style: 'header' },
-				{
-					text: `ห้องสอบ: ${group.roomName}${group.buildingName ? ' (' + group.buildingName + ')' : ''} — ความจุ ${group.capacity} ที่นั่ง`,
-					margin: [0, 0, 0, 10]
-				},
-				{
-					table: {
-						headerRows: 1,
-						widths: ['auto', 'auto', '*', 'auto', 'auto'],
-						body: [
-							[
-								{ text: 'เลขประจำตัวสอบ', bold: true },
-								{ text: 'ที่นั่ง', bold: true },
-								{ text: 'ชื่อ-นามสกุล', bold: true },
-								{ text: 'เลขบัตรประชาชน', bold: true },
-								{ text: 'สาย', bold: true }
-							],
-							...group.seats.map((s) => [
-								s.examId ?? s.applicationNumber ?? '',
-								{ text: String(s.seatNumber), alignment: 'center' },
-								s.fullName,
-								s.nationalId ?? '',
-								s.trackName ?? ''
-							])
-						]
-					}
-				},
-				{ text: `รวม ${group.seats.length} คน`, margin: [0, 8, 0, 0], color: '#666' }
-			],
-			styles: { header: { fontSize: 14, bold: true, margin: [0, 0, 0, 4] } }
-		};
-		pm.createPdf(docDef).download(`ห้องสอบ-${group.roomName}.pdf`);
+	function printRoom(group: ExamRoomGroup) {
+		const w = window.open('', '_blank');
+		if (!w) return;
+		const rows = group.seats
+			.map(
+				(s) => `<tr>
+				<td>${s.examId ?? s.applicationNumber ?? ''}</td>
+				<td style="text-align:center">${s.seatNumber}</td>
+				<td>${s.fullName}</td>
+				<td>${s.nationalId ?? ''}</td>
+				<td>${s.trackName ?? ''}</td>
+			</tr>`
+			)
+			.join('');
+		w.document.write(`<!DOCTYPE html><html><head>
+			<meta charset="utf-8">
+			<title>รายชื่อ ${group.roomName}</title>
+			<style>
+				body{font-family:'Sarabun',sans-serif;font-size:14px;padding:20px}
+				h2{margin-bottom:4px}h3{margin-bottom:16px;font-weight:normal}
+				table{border-collapse:collapse;width:100%}
+				th,td{border:1px solid #ccc;padding:6px 10px}
+				th{background:#f5f5f5;font-weight:600}
+				@media print{body{padding:0}}
+			</style>
+		</head><body>
+			<h2>${round?.name ?? ''}</h2>
+			<h3>ห้องสอบ: <strong>${group.roomName}</strong>${group.buildingName ? ' (' + group.buildingName + ')' : ''} — ความจุ ${group.capacity} ที่นั่ง</h3>
+			<table>
+				<thead><tr><th>เลขประจำตัวสอบ</th><th>ที่นั่ง</th><th>ชื่อ-นามสกุล</th><th>เลขบัตรประชาชน</th><th>สาย</th></tr></thead>
+				<tbody>${rows}</tbody>
+			</table>
+			<p style="margin-top:12px;color:#666">รวม ${group.seats.length} คน</p>
+			<script>window.onload=function(){window.print()}<\/script>
+		</body></html>`);
+		w.document.close();
 	}
 
 	async function downloadRoomXlsx(group: ExamRoomGroup) {
@@ -672,8 +671,8 @@
 									<div class="flex items-center gap-3">
 										<Badge variant="outline">{group.seats.length}/{group.capacity}</Badge>
 										<div class="flex gap-1.5">
-											<Button size="sm" variant="outline" onclick={() => downloadRoomPdf(group)}>
-												<FileDown class="mr-1 h-3.5 w-3.5" /> PDF
+											<Button size="sm" variant="outline" onclick={() => printRoom(group)}>
+												<FileDown class="mr-1 h-3.5 w-3.5" /> พิมพ์รายชื่อ
 											</Button>
 											<Button size="sm" variant="outline" onclick={() => downloadRoomXlsx(group)}>
 												<FileSpreadsheet class="mr-1 h-3.5 w-3.5" /> XLSX
