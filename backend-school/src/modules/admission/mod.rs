@@ -73,4 +73,27 @@ pub fn admission_routes() -> Router<AppState> {
             post(handlers::applications::staff_upload_document))
         .route("/applications/{id}/documents/{doc_type}",
             delete(handlers::applications::staff_delete_document))
+
+        // === Exam Rooms (จัดห้องสอบก่อนสอบ) ===
+        .route("/rounds/{id}/exam-rooms",
+            get(handlers::exam_rooms::list_exam_rooms)
+            .post(handlers::exam_rooms::add_exam_room))
+        .route("/rounds/{id}/exam-rooms/copy-from/{from_id}",
+            post(handlers::exam_rooms::copy_exam_rooms_from_round))
+        .route("/rounds/{id}/exam-rooms/{room_id}",
+            put(handlers::exam_rooms::update_exam_room)
+            .delete(handlers::exam_rooms::remove_exam_room))
+        .route("/rounds/{id}/exam-config",
+            get(handlers::exam_rooms::get_exam_config)
+            .put(handlers::exam_rooms::update_exam_config))
+        .route("/rounds/{id}/assign-exam-seats",
+            post(handlers::exam_rooms::assign_exam_seats))
+        .route("/rounds/{id}/exam-seats",
+            get(handlers::exam_rooms::get_exam_seats))
+        .route("/applications/{id}/exam-seat",
+            get(handlers::exam_rooms::get_application_exam_seat))
+
+        // Portal: ดูห้องสอบ
+        .route("/portal/exam-seat",
+            post(handlers::portal::portal_get_exam_seat))
 }

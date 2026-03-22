@@ -792,3 +792,58 @@ pub async fn portal_delete_document(
         "message": "ลบเอกสารเรียบร้อยแล้ว",
     })).into_response())
 }
+
+// ==========================================
+// Portal: GET /portal/exam-seat
+// ผู้สมัครดูห้องสอบ + เลขที่นั่ง ด้วย national_id + dob
+// ==========================================
+
+#[derive(serde::Deserialize)]
+pub struct PortalExamSeatRequest {
+    pub national_id: String,
+    pub date_of_birth: String, // DDMMYYYY พ.ศ.
+}
+
+pub async fn portal_get_exam_seat(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<PortalExamSeatRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
+
+    #[derive(sqlx::FromRow, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ExamSeatInfo {
+        seat_number: i32,
+        exam_id: Option<String>,
+        room_name: String,
+        building_name: Option<String>,
+        exam_date: Option<chrono::DateTime<chrono::Utc>>,
+    }
+
+    let seat = sqlx::query_as::<_, ExamSeatInfo>(
+        r#"SELECT
+            sa.seat_number,
+            sa.exam_id,
+            COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
+            b.name_th AS building_name,
+            ar.exam_date
+           FROM admission_exam_seat_assignments sa
+           JOIN admission_exam_rooms er ON er.id = sa.exam_room_id
+           JOIN admission_rounds ar ON ar.id = er.admission_round_id
+           LEFT JOIN rooms r ON r.id = er.room_id
+           LEFT JOIN buildings b ON b.id = r.building_id
+           WHERE sa.application_id = $1"#,
+    )
+    .bind(application_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": seat
+    })).into_response())
+}

@@ -51,7 +51,8 @@
 		Copy,
 		Link as LinkIcon,
 		BarChart2,
-		X
+		X,
+		DoorOpen
 	} from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
@@ -499,6 +500,14 @@
 						class="gap-1.5"
 					>
 						<ClipboardList class="w-3.5 h-3.5" /> กรอกคะแนน
+					</Button>
+					<Button
+						href="/staff/academic/admission/{id}/exam-rooms"
+						variant="outline"
+						size="sm"
+						class="gap-1.5"
+					>
+						<DoorOpen class="w-3.5 h-3.5" /> ห้องสอบ
 					</Button>
 					<Button
 						href="/staff/academic/admission/{id}/selections"

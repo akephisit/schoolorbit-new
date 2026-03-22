@@ -782,3 +782,116 @@ export const applicationStatusColor: Record<string, string> = {
     enrolled: 'bg-purple-100 text-purple-700',
     withdrawn: 'bg-gray-100 text-gray-700'
 };
+
+// ==========================================
+// Exam Room Types
+// ==========================================
+
+export interface ExamRoom {
+    id: string;
+    roomId?: string;
+    roomName: string;
+    buildingName?: string;
+    capacity: number;
+    displayOrder: number;
+    assignedCount: number;
+}
+
+export interface ExamSeatAssignment {
+    seatNumber: number;
+    examId?: string;
+    applicationId: string;
+    applicationNumber?: string;
+    fullName: string;
+    nationalId: string;
+    trackName?: string;
+}
+
+export interface ExamRoomGroup {
+    examRoomId: string;
+    roomName: string;
+    buildingName?: string;
+    capacity: number;
+    seats: ExamSeatAssignment[];
+}
+
+export interface ExamConfig {
+    examIdType?: 'application_number' | 'sequential' | 'custom_prefix';
+    examIdPrefix?: string;
+    sortOrder?: 'by_application' | 'by_track' | 'random';
+}
+
+export interface ExamSeatDetail {
+    seatNumber: number;
+    examId?: string;
+    roomName: string;
+    buildingName?: string;
+    examDate?: string;
+}
+
+// ==========================================
+// Exam Room API Functions
+// ==========================================
+
+export async function listExamRooms(roundId: string) {
+    const res = await apiClient.get(`/admission/rounds/${roundId}/exam-rooms`);
+    return res.data as { rooms: ExamRoom[]; totalCapacity: number; totalAssigned: number };
+}
+
+export async function addExamRoom(roundId: string, data: {
+    roomId?: string;
+    customName?: string;
+    capacityOverride?: number;
+    displayOrder?: number;
+}) {
+    const res = await apiClient.post(`/admission/rounds/${roundId}/exam-rooms`, data);
+    return res.data;
+}
+
+export async function updateExamRoom(roundId: string, roomId: string, data: {
+    capacityOverride?: number;
+    displayOrder?: number;
+    customName?: string;
+}) {
+    const res = await apiClient.put(`/admission/rounds/${roundId}/exam-rooms/${roomId}`, data);
+    return res.data;
+}
+
+export async function removeExamRoom(roundId: string, roomId: string) {
+    const res = await apiClient.delete(`/admission/rounds/${roundId}/exam-rooms/${roomId}`);
+    return res.data;
+}
+
+export async function copyExamRoomsFromRound(roundId: string, fromRoundId: string) {
+    const res = await apiClient.post(`/admission/rounds/${roundId}/exam-rooms/copy-from/${fromRoundId}`);
+    return res.data as { message: string };
+}
+
+export async function getExamConfig(roundId: string) {
+    const res = await apiClient.get(`/admission/rounds/${roundId}/exam-config`);
+    return res.data as ExamConfig;
+}
+
+export async function updateExamConfig(roundId: string, config: ExamConfig) {
+    const res = await apiClient.put(`/admission/rounds/${roundId}/exam-config`, config);
+    return res.data;
+}
+
+export async function assignExamSeats(roundId: string, options?: {
+    examIdType?: string;
+    examIdPrefix?: string;
+    sortOrder?: string;
+}) {
+    const res = await apiClient.post(`/admission/rounds/${roundId}/assign-exam-seats`, options ?? {});
+    return res.data as { message: string; assignedCount: number; rooms: { roomName: string; count: number }[] };
+}
+
+export async function getExamSeats(roundId: string) {
+    const res = await apiClient.get(`/admission/rounds/${roundId}/exam-seats`);
+    return res.data as ExamRoomGroup[];
+}
+
+export async function getApplicationExamSeat(applicationId: string) {
+    const res = await apiClient.get(`/admission/applications/${applicationId}/exam-seat`);
+    return res.data as ExamSeatDetail | null;
+}
