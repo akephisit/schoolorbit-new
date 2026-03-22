@@ -410,17 +410,12 @@
 			margin: [4, 4, 4, 4]
 		});
 
-		// 4 cards per page (2 rows × 2 columns)
+		// 2 cards per row, let pdfmake break pages naturally
 		const cardContent: any[] = [];
 		for (let i = 0; i < allSeats.length; i += 2) {
 			const left = makeCard(allSeats[i]);
 			const right = allSeats[i + 1] ? makeCard(allSeats[i + 1]) : { text: '', margin: [4, 4, 4, 4] };
-			const isLastInPage = (i + 2) % 4 === 0 && i + 2 < allSeats.length;
-			cardContent.push({
-				columns: [left, right],
-				columnGap: 8,
-				...(isLastInPage ? { pageBreak: 'after' } : {})
-			});
+			cardContent.push({ columns: [left, right], columnGap: 8 });
 		}
 
 		const docDef: any = {
