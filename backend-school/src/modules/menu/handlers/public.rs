@@ -23,7 +23,7 @@ pub async fn get_user_menu(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);

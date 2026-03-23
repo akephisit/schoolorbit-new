@@ -200,7 +200,7 @@ pub async fn list_staff(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -305,7 +305,7 @@ pub async fn get_staff_profile(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -484,7 +484,7 @@ pub async fn create_staff(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -707,7 +707,7 @@ pub async fn update_staff(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -924,7 +924,7 @@ pub async fn delete_staff(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -975,7 +975,7 @@ pub async fn get_public_staff_profile(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);

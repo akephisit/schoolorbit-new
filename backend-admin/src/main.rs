@@ -60,6 +60,8 @@ async fn main() {
         .route("/api/v1/auth/me", get(handlers::auth::me_handler))
         // Internal routes (protected by INTERNAL_API_SECRET header)
         .route("/internal/schools", get(handlers::internal::list_schools_internal))
+        .route("/internal/schools/{subdomain}", get(handlers::internal::get_school_by_subdomain_internal))
+        .route("/internal/schools/{subdomain}/migration-status", axum::routing::put(handlers::internal::update_migration_status_internal))
         // Protected routes (require authentication)
         .nest("/api/v1/schools", Router::new()
             .route("/", post(handlers::school::create_school))

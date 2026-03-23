@@ -59,7 +59,7 @@ pub async fn list_notifications(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get school database: {}", e);
@@ -134,7 +134,7 @@ pub async fn mark_as_read(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get school database: {}", e);
@@ -181,7 +181,7 @@ pub async fn mark_all_as_read(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get school database: {}", e);
@@ -231,7 +231,7 @@ pub async fn stream_notifications(
     // unless to verify the user exists/is active.
     // However, to extract_user_id cleanly we need the pool.
     
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
              // If DB lookup fails, we can't authenticate, so unauthorized or not found
@@ -280,7 +280,7 @@ pub async fn create_notification(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
@@ -347,7 +347,7 @@ pub async fn subscribe_push(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 

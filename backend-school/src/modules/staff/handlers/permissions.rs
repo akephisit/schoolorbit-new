@@ -26,7 +26,7 @@ pub async fn list_permissions(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -105,7 +105,7 @@ pub async fn list_permissions_by_module(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);

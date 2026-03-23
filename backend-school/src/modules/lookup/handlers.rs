@@ -96,7 +96,7 @@ pub async fn lookup_staff(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -182,7 +182,7 @@ pub async fn lookup_roles(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
@@ -251,7 +251,7 @@ pub async fn lookup_departments(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
@@ -319,7 +319,7 @@ pub async fn lookup_grade_levels(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
@@ -456,7 +456,7 @@ pub async fn lookup_classrooms(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
@@ -542,7 +542,7 @@ pub async fn lookup_academic_years(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
@@ -605,7 +605,7 @@ pub async fn lookup_students(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
@@ -694,7 +694,7 @@ pub async fn lookup_rooms(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
@@ -753,7 +753,7 @@ pub async fn lookup_subjects(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 

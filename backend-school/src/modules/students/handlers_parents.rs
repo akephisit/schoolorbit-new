@@ -31,15 +31,10 @@ pub async fn add_parent_to_student(
     Path(student_id): Path<Uuid>,
     Json(payload): Json<CreateParentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Check permission
-    if let Err(e) = check_permission(&headers, &state.admin_pool, "student.update").await {
-        return Ok(e.into_response());
-    }
-
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -53,6 +48,11 @@ pub async fn add_parent_to_student(
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
+
+    // Check permission against tenant pool
+    if let Err(e) = check_permission(&headers, &pool, "student.update").await {
+        return Ok(e.into_response());
+    }
 
     let mut tx = pool.begin().await.map_err(|e| {
         eprintln!("❌ Failed to begin transaction: {}", e);
@@ -189,16 +189,10 @@ pub async fn remove_parent_from_student(
     headers: HeaderMap,
     Path((student_id, parent_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Check permission
-    // Check permission
-    if let Err(e) = check_permission(&headers, &state.admin_pool, "student.update").await {
-        return Ok(e.into_response());
-    }
-
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -212,6 +206,11 @@ pub async fn remove_parent_from_student(
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
+
+    // Check permission against tenant pool
+    if let Err(e) = check_permission(&headers, &pool, "student.update").await {
+        return Ok(e.into_response());
+    }
 
     // Delete from student_parents table
     let result =

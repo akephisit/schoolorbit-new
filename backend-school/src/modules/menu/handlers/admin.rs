@@ -756,7 +756,7 @@ async fn get_pool_and_authenticate_with_perms(
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     // Get database URL
-    let db_url = crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = crate::db::school_mapping::get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|e| AppError::NotFound(format!("School not found: {}", e)))?;
 
     // Get pool

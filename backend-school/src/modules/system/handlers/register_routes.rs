@@ -46,7 +46,7 @@ pub async fn register_routes(
             AppError::BadRequest("No subdomain specified".to_string())
         })?;
     
-    let db_url = crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = crate::db::school_mapping::get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
              AppError::InternalServerError("Database connection failed".to_string())

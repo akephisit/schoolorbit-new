@@ -8,8 +8,8 @@ services:
     ports:
       - "8081:8081"
     environment:
-      # Admin database for school mapping (required!)
-      - ADMIN_DATABASE_URL=${ADMIN_DATABASE_URL}
+      # Backend-admin URL for school mapping via HTTP (required!)
+      - BACKEND_ADMIN_URL=${BACKEND_ADMIN_URL:-http://schoolorbit-backend-admin:8080}
       # Secrets
       - JWT_SECRET=${JWT_SECRET}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}

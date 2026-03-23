@@ -26,7 +26,7 @@ pub async fn list_roles(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -117,7 +117,7 @@ pub async fn get_role(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -217,7 +217,7 @@ pub async fn create_role(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -404,7 +404,7 @@ pub async fn update_role(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -624,7 +624,7 @@ pub async fn list_departments(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -704,7 +704,7 @@ pub async fn get_department(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -795,7 +795,7 @@ pub async fn create_department(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -905,7 +905,7 @@ pub async fn update_department(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);

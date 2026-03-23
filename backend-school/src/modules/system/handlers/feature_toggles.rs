@@ -344,7 +344,7 @@ async fn get_pool_and_authenticate(
 
 
     // Get database URL
-    let db_url = crate::db::school_mapping::get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = crate::db::school_mapping::get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|e| AppError::NotFound(format!("School not found: {}", e)))?;
 
     // Get pool

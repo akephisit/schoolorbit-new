@@ -28,7 +28,7 @@ pub async fn get_consent_types(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -88,7 +88,7 @@ pub async fn get_my_consent_status(
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -217,7 +217,7 @@ pub async fn create_consent(
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -352,7 +352,7 @@ pub async fn withdraw_consent(
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -428,7 +428,7 @@ pub async fn get_consent_summary(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);

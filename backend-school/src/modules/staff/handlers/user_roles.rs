@@ -27,7 +27,7 @@ pub async fn get_user_roles(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -114,7 +114,7 @@ pub async fn assign_user_role(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -305,7 +305,7 @@ pub async fn remove_user_role(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -397,7 +397,7 @@ pub async fn get_user_permissions(
         Err(response) => return response,
     };
 
-    let db_url = match get_school_database_url(&state.admin_pool, &subdomain).await {
+    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
         Ok(url) => url,
         Err(e) => {
             eprintln!("❌ Failed to get school database: {}", e);

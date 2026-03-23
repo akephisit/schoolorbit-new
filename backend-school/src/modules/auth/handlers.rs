@@ -29,7 +29,7 @@ pub async fn login(
     println!("🔐 Login attempt for school: {}, username: {}", subdomain, payload.username);
 
     // Get school database URL from mapping
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -196,7 +196,7 @@ pub async fn me(
         .clone();
 
     // Get school database URL
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -327,7 +327,7 @@ pub async fn get_profile(
         .clone();
 
     // Get school database URL
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -415,7 +415,7 @@ pub async fn update_profile(
         .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
 
     // Get school database URL
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
@@ -546,7 +546,7 @@ pub async fn change_password(
         .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
 
     // Get school database URL
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);

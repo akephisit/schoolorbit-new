@@ -33,7 +33,7 @@ pub async fn list_academic_structure(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -89,7 +89,7 @@ pub async fn create_academic_year(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -128,7 +128,7 @@ pub async fn toggle_active_year(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -164,7 +164,7 @@ pub async fn create_semester(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -208,7 +208,7 @@ pub async fn update_semester(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -257,7 +257,7 @@ pub async fn delete_semester(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -291,7 +291,7 @@ pub async fn list_classrooms(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -348,7 +348,7 @@ pub async fn create_classroom(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -445,7 +445,7 @@ pub async fn update_classroom(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -579,7 +579,7 @@ pub async fn create_grade_level(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -624,7 +624,7 @@ pub async fn delete_grade_level(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -667,7 +667,7 @@ pub async fn enroll_students(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -871,7 +871,7 @@ pub async fn get_class_enrollments(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -906,7 +906,7 @@ pub async fn remove_enrollment(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -959,7 +959,7 @@ pub async fn update_enrollment_number(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -997,7 +997,7 @@ pub async fn auto_assign_class_numbers(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -1104,7 +1104,7 @@ pub async fn get_year_levels(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
@@ -1132,7 +1132,7 @@ pub async fn update_year_levels(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;

@@ -223,7 +223,7 @@ pub async fn upload_file(
     }
 
     // Get school database URL
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             error!("Failed to get school database: {}", e);
@@ -314,7 +314,7 @@ pub async fn delete_file(
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
     // Get school database URL
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             error!("Failed to get school database: {}", e);
@@ -396,7 +396,7 @@ pub async fn list_user_files(
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
     // Get school database URL
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain)
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
             error!("Failed to get school database: {}", e);

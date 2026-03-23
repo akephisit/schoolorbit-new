@@ -16,10 +16,10 @@ use axum::{
     Router,
     Json,
 };
+use db::admin_client::AdminClient;
 use db::pool_manager::PoolManager;
 use dotenv::dotenv;
 use serde_json::json;
-use sqlx::postgres::PgPoolOptions;
 use tokio::sync::broadcast;
 use crate::modules::notification::handlers::Notification;
 use std::env;
@@ -31,7 +31,7 @@ use tower_cookies::CookieManagerLayer;
 /// Shared application state
 #[derive(Clone)]
 pub struct AppState {
-    pub admin_pool: sqlx::PgPool,  // Backend-admin database (for school mapping).
+    pub admin_client: Arc<AdminClient>, // HTTP client to backend-admin (for school mapping)
     pub pool_manager: Arc<PoolManager>,
     pub websocket_manager: Arc<modules::academic::websockets::WebSocketManager>,
     pub notification_channel: broadcast::Sender<(Uuid, Notification)>, // (User ID, Notification)
@@ -51,22 +51,16 @@ async fn main() {
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
 
     
-    // Connect to backend-admin database for school mapping
-    let admin_database_url = env::var("ADMIN_DATABASE_URL")
-        .expect("ADMIN_DATABASE_URL must be set (backend-admin database for school mapping)");
+    // Connect to backend-admin via HTTP for school mapping
+    let backend_admin_url = env::var("BACKEND_ADMIN_URL")
+        .expect("BACKEND_ADMIN_URL must be set (e.g. http://backend-admin:8080)");
 
-    // Verify internal secret is set
-    env::var("INTERNAL_API_SECRET")
+    let internal_secret = env::var("INTERNAL_API_SECRET")
         .expect("INTERNAL_API_SECRET must be set for internal API authentication");
 
-    tracing::info!("📦 Connecting to admin database for school mapping...");
-    let admin_pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&admin_database_url)
-        .await
-        .expect("Failed to connect to admin database");
+    let admin_client = Arc::new(AdminClient::new(backend_admin_url, internal_secret));
 
-    tracing::info!("✅ Admin database connected");
+    tracing::info!("✅ Admin client initialized (HTTP-based school mapping)");
 
     // Create pool manager for tenant databases
     let pool_manager = Arc::new(PoolManager::new());
@@ -91,7 +85,7 @@ async fn main() {
 
     // Create shared state
     let state = AppState {
-        admin_pool,
+        admin_client,
         pool_manager,
         websocket_manager,
         notification_channel: notification_tx,
@@ -376,30 +370,18 @@ async fn main() {
     let sched = JobScheduler::new().await.unwrap();
     
     // Clone shared resources for the job
-    let admin_pool_for_job = state.admin_pool.clone();
+    let admin_client_for_job = Arc::clone(&state.admin_client);
     let pool_manager_for_job = Arc::clone(&state.pool_manager);
 
     let cleaner_job = Job::new_async("0 0 3 * * *", move |_uuid, _l| {
-        let admin_pool = admin_pool_for_job.clone();
+        let admin_client = Arc::clone(&admin_client_for_job);
         let pool_manager = pool_manager_for_job.clone();
-        
+
         Box::pin(async move {
             tracing::info!("⏰ Starting scheduled file cleanup job (Garbage Collection)...");
-            
-            // 1. Get List of all schools to clean
-            // We need database_url to establish connection via pool_manager
-            #[derive(sqlx::FromRow)]
-            struct SchoolInfo {
-                subdomain: String,
-                db_connection_string: String,
-            }
 
-            let schools = match sqlx::query_as::<_, SchoolInfo>(
-                "SELECT subdomain, db_connection_string FROM schools WHERE status = 'active' AND db_connection_string IS NOT NULL"
-            )
-            .fetch_all(&admin_pool)
-            .await 
-            {
+            // 1. Get list of all active schools from backend-admin
+            let schools = match admin_client.list_active_schools().await {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::error!("Failed to fetch schools list for cleanup: {}", e);
@@ -410,10 +392,18 @@ async fn main() {
             tracing::info!("Found {} active schools to clean.", schools.len());
 
             for school in schools {
+                let db_url = match school.db_connection_string {
+                    Some(ref url) if !url.is_empty() => url.clone(),
+                    _ => {
+                        tracing::warn!("Skipping school '{}': no database URL", school.subdomain);
+                        continue;
+                    }
+                };
+
                 tracing::info!("🧹 Cleaning school tenant: {}", school.subdomain);
-                
+
                 // 2. Get Connection Pool (Reuse existing logic)
-                match pool_manager.get_pool(&school.db_connection_string, &school.subdomain).await {
+                match pool_manager.get_pool(&db_url, &school.subdomain).await {
                     Ok(pool) => {
                         // 3. Run Cleaner Service
                         match services::cleaner::FileCleaner::new(pool).await {

@@ -18,7 +18,7 @@ use crate::permissions::registry::codes;
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_pool, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
