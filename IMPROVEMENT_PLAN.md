@@ -10,7 +10,7 @@
 - **frontend-admin** (SvelteKit) — admin dashboard, ใช้ `/api/v1/` ✓
 - **frontend-school** (SvelteKit) — school app, ใช้ `/api/` (ไม่มี versioning, ตั้งใจ)
 
-ทั้งสองใช้ `INTERNAL_API_SECRET` สื่อสารกัน และ backend-school อ่าน `schools` table ของ admin DB เพื่อ route tenant database
+ทั้งสองใช้ `INTERNAL_API_SECRET` สื่อสารกัน backend-school เรียก `GET /internal/schools/{subdomain}` ของ backend-admin เพื่อ route request ไปยัง tenant database (ไม่ต่อ admin DB ตรงๆ อีกต่อไป — ✅ M-3 done)
 
 ---
 
@@ -120,13 +120,12 @@
 | **แก้ไข** | สร้าง squash migration หลังจาก tenant ทุกตัว migrate ครบ 051 และ document migration policy |
 | **ความยาก** | Medium |
 
-### M-3. `AppState` ถือ `admin_pool` ตรงๆ (tight coupling)
+### ✅ M-3. แยก backend-school ออกจาก admin DB (HTTP separation) — เสร็จแล้ว
 | | |
 |---|---|
-| **ไฟล์** | `backend-school/src/main.rs`, `backend-school/src/db/school_mapping.rs` |
-| **ปัญหา** | ทุก module ที่รับ `AppState` สามารถ query admin DB (รวม `db_connection_string` ของทุก tenant) ได้โดยตรง |
-| **แก้ไข** | สร้าง `SchoolRegistry` trait และ inject `Arc<dyn SchoolRegistry>` แทน raw pool |
-| **ความยาก** | Medium |
+| **ไฟล์** | `backend-school/src/db/admin_client.rs` (ใหม่), `backend-school/src/main.rs`, `backend-school/src/db/school_mapping.rs` |
+| **ที่ทำ** | ลบ `admin_pool: PgPool` ออกจาก `AppState` และแทนด้วย `admin_client: Arc<AdminClient>` — HTTP client ที่เรียก `GET /internal/schools/{subdomain}` บน backend-admin แทนการ query DB ตรง เพิ่ม endpoint `PUT /internal/schools/{subdomain}/migration-status` สำหรับ write-back |
+| **ผลลัพธ์** | backend-school ไม่มี admin DB credentials อีกต่อไป — isolation สมบูรณ์ |
 
 ### M-5. `println!` แทน structured logging ใน backend-admin
 | | |
@@ -160,7 +159,9 @@
 **H-5** (permission perf), **M-1** (subdomain header + frontend-school client.ts)
 
 ### Sprint 3
-**H-2** (monolith split), **M-2** (migration squash), **M-3** (SchoolRegistry trait), **L-1, L-3**
+**H-2** (monolith split), **M-2** (migration squash), **L-1, L-3**
+
+*(M-3 เสร็จแล้วใน session 2026-03-24)*
 
 ---
 
@@ -181,7 +182,8 @@
 | `backend-school/src/modules/staff/handlers/` | C-3 |
 | `backend-school/src/modules/students/` | C-3 |
 | `backend-school/src/utils/subdomain.rs` | M-1 |
-| `backend-school/src/main.rs` | M-3, L-2 |
+| `backend-school/src/main.rs` | L-2 |
+| `backend-school/src/db/admin_client.rs` | ✅ M-3 (done) |
 | `frontend-school/src/lib/api/client.ts` | M-1 (เพิ่ม header) |
 
 ---

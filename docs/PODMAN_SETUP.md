@@ -543,57 +543,6 @@ services:
   # --------------------
   # 2. BACKEND SERVICES
   # --------------------
-  backend-school:
-    image: ghcr.io/akephisit/schoolorbit-backend-school:latest
-    container_name: schoolorbit-backend-school
-    restart: unless-stopped
-    ports:
-      - "8081:8081"
-    environment:
-      # Admin database for school mapping (required!)
-      - ADMIN_DATABASE_URL=${ADMIN_DATABASE_URL}
-      # Secrets
-      - JWT_SECRET=${JWT_SECRET}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
-      - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - DB_USER=${DB_USER}
-      # Server config
-      - RUST_LOG=${RUST_LOG:-info}
-      - HOST=${HOST:-0.0.0.0}
-      - PORT=${SCHOOL_PORT:-8081}
-      # Cloudflare R2 Configuration (required for file uploads)
-      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
-      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-schoolorbit-files}
-      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
-      - R2_REGION=${R2_REGION:-auto}
-      - AWS_REGION=auto
-      # Optional: CDN URL for file serving
-      - CDN_URL=${CDN_URL}
-      # File Upload Limits
-      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-10}
-      - MAX_PROFILE_IMAGE_SIZE_MB=${MAX_PROFILE_IMAGE_SIZE_MB:-5}
-      - MAX_DOCUMENT_SIZE_MB=${MAX_DOCUMENT_SIZE_MB:-20}
-      # Allowed File Types
-      - ALLOWED_IMAGE_TYPES=${ALLOWED_IMAGE_TYPES:-jpg,jpeg,png,webp,gif}
-      - ALLOWED_DOCUMENT_TYPES=${ALLOWED_DOCUMENT_TYPES:-pdf,doc,docx,xls,xlsx}
-      # Web Push Configuration
-      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
-      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
-      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:kruakemaths@gmail.com}
-      # Note: DATABASE_URL is no longer needed (multi-tenant architecture)
-      # Note: ALLOWED_ORIGINS is only for backend-admin
-    networks:
-      - web
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8081/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
   backend-admin:
     image: ghcr.io/akephisit/schoolorbit-backend-admin:latest
     container_name: schoolorbit-backend-admin
@@ -635,6 +584,59 @@ services:
       - web
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  backend-school:
+    image: ghcr.io/akephisit/schoolorbit-backend-school:latest
+    container_name: schoolorbit-backend-school
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      # Backend-Admin URL for school mapping via HTTP (required!)
+      - BACKEND_ADMIN_URL=${BACKEND_ADMIN_URL:-http://schoolorbit-backend-admin:8080}
+      # Secrets
+      - JWT_SECRET=${JWT_SECRET}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      # Server config
+      - RUST_LOG=${RUST_LOG:-info}
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${SCHOOL_PORT:-8081}
+      # Cloudflare R2 Configuration (required for file uploads)
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-schoolorbit-files}
+      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
+      - R2_REGION=${R2_REGION:-auto}
+      - AWS_REGION=auto
+      # Optional: CDN URL for file serving
+      - CDN_URL=${CDN_URL}
+      # File Upload Limits
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-10}
+      - MAX_PROFILE_IMAGE_SIZE_MB=${MAX_PROFILE_IMAGE_SIZE_MB:-5}
+      - MAX_DOCUMENT_SIZE_MB=${MAX_DOCUMENT_SIZE_MB:-20}
+      # Allowed File Types
+      - ALLOWED_IMAGE_TYPES=${ALLOWED_IMAGE_TYPES:-jpg,jpeg,png,webp,gif}
+      - ALLOWED_DOCUMENT_TYPES=${ALLOWED_DOCUMENT_TYPES:-pdf,doc,docx,xls,xlsx}
+      # Web Push Configuration
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:kruakemaths@gmail.com}
+      # Note: DATABASE_URL is no longer needed (multi-tenant architecture)
+      # Note: ALLOWED_ORIGINS is only for backend-admin
+    depends_on:
+      backend-admin:
+        condition: service_healthy
+    networks:
+      - web
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
