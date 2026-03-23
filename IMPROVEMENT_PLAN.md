@@ -92,13 +92,12 @@
 | **แก้ไข** | สร้าง `003_placeholder.sql` ด้วย `SELECT 1;` พร้อม comment |
 | **ความยาก** | Small |
 
-### H-5. Permission check ทำ 2 DB round trips ต่อ request
+### ✅ H-5. Permission check ทำ 2 DB round trips ต่อ request — เสร็จแล้ว
 | | |
 |---|---|
-| **ไฟล์** | `backend-school/src/middleware/auth.rs`, `backend-school/src/middleware/permission.rs` |
-| **ปัญหา** | `check_permission` fetch user (trip 1) แล้ว fetch permissions (trip 2) ทุก endpoint บน Neon serverless อาจรวม 400-1000ms ก่อนจะถึง business logic |
-| **แก้ไข** | ให้ auth middleware inject `UserPermissions` เข้า request extensions ครั้งเดียว แล้ว `check_permission` อ่านจาก extensions แทน |
-| **ความยาก** | Large |
+| **ไฟล์** | `backend-school/src/middleware/permission.rs` |
+| **ที่ทำ** | รวม SELECT user (trip 1) + get_permissions (trip 2) เป็น query เดียวที่ใช้ `EXISTS` subquery ตรวจสิทธิ์พร้อมกับดึงข้อมูล user ลด Neon round trips 2 → 1 ต่อทุก request ที่ต้องตรวจสิทธิ์ |
+| **ผลลัพธ์** | latency ลดลง ~50% ในส่วน permission check |
 
 ---
 
@@ -156,7 +155,9 @@
 ทั้งหมด small/medium complexity แก้ security + correctness + รากฐาน testing
 
 ### Sprint 2
-**H-5** (permission perf), **M-1** (subdomain header + frontend-school client.ts)
+**M-1** (subdomain header + frontend-school client.ts)
+
+*(H-5 เสร็จแล้วใน session 2026-03-24)*
 
 ### Sprint 3
 **H-2** (monolith split), **M-2** (migration squash), **L-1, L-3**
@@ -177,8 +178,7 @@
 | `backend-admin/migrations/` | H-4 |
 | `backend-school/src/db/migration.rs` | C-1 |
 | `backend-school/src/middleware/internal_auth.rs` | C-4 |
-| `backend-school/src/middleware/permission.rs` | H-5 |
-| `backend-school/src/middleware/auth.rs` | H-5 |
+| `backend-school/src/middleware/permission.rs` | ✅ H-5 (done) |
 | `backend-school/src/modules/staff/handlers/` | C-3 |
 | `backend-school/src/modules/students/` | C-3 |
 | `backend-school/src/utils/subdomain.rs` | M-1 |
