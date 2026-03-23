@@ -1,3 +1,4 @@
+use crate::db::permission_cache::PermissionCache;
 use crate::modules::auth::models::User;
 use axum::{
     http::{header, HeaderMap, StatusCode},
@@ -6,25 +7,17 @@ use axum::{
 };
 use serde_json::json;
 
-/// Combined row type: user fields + permission check result in one query
-#[derive(sqlx::FromRow)]
-struct PermCheckRow {
-    #[sqlx(flatten)]
-    user: User,
-    has_permission: bool,
-}
-
 /// Shared permission check function
 ///
-/// Single DB round trip: fetches user + checks permission in one query instead of two.
-/// Previously: SELECT user (trip 1) → get_permissions (trip 2) — 2x Neon latency
-/// Now: single JOIN query returns user + EXISTS(permission) in one trip
+/// Cache path (0 DB trips): JWT verify → cache hit → return immediately
+/// Cold path (1 DB trip): JWT verify → cache miss → combined SQL query → cache result
 pub async fn check_permission(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
     required_permission: &str,
+    cache: &PermissionCache,
 ) -> Result<User, Response> {
-    // Try to extract token from Authorization header first
+    // Extract token
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
@@ -37,7 +30,6 @@ pub async fn check_permission(
         }
     });
 
-    // Fallback to cookie
     let token_from_cookie = headers
         .get(header::COOKIE)
         .and_then(|h| h.to_str().ok())
@@ -57,7 +49,6 @@ pub async fn check_permission(
         }
     };
 
-    // Verify token
     let claims = match crate::utils::jwt::JwtService::verify_token(&token) {
         Ok(c) => c,
         Err(_) => {
@@ -86,8 +77,34 @@ pub async fn check_permission(
         }
     };
 
-    // Single query: fetch user + check permission in one round trip
-    let row = match sqlx::query_as::<_, PermCheckRow>(
+    // ── Cache hit: 0 DB trips ────────────────────────────────────────
+    if let Some((user, permissions)) = cache.get(&user_id) {
+        let has_perm = permissions.contains(&"*".to_string())
+            || permissions.contains(&required_permission.to_string());
+
+        return if has_perm {
+            Ok(user)
+        } else {
+            Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "success": false,
+                    "error": format!("ไม่มีสิทธิ์ {}", required_permission)
+                })),
+            )
+                .into_response())
+        };
+    }
+
+    // ── Cache miss: 1 DB trip (user + all permissions) ───────────────
+    #[derive(sqlx::FromRow)]
+    struct PermRow {
+        #[sqlx(flatten)]
+        user: User,
+        permissions_json: serde_json::Value,
+    }
+
+    let row = match sqlx::query_as::<_, PermRow>(
         r#"
         SELECT
             u.id, u.username, u.national_id, u.email, u.password_hash,
@@ -95,8 +112,8 @@ pub async fn check_permission(
             u.address, u.status, u.metadata, u.created_at, u.updated_at,
             u.title, u.nickname, u.emergency_contact, u.line_id, u.gender,
             u.profile_image_url, u.hired_date, u.resigned_date,
-            EXISTS(
-                SELECT 1 FROM (
+            COALESCE(
+                (SELECT jsonb_agg(DISTINCT code) FROM (
                     SELECT p.code
                     FROM user_roles ur
                     JOIN role_permissions rp ON ur.role_id = rp.role_id
@@ -111,15 +128,14 @@ pub async fn check_permission(
                     JOIN permissions p ON dp.permission_id = p.id
                     WHERE dm.user_id = u.id
                       AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-                ) AS perms
-                WHERE perms.code IN ($2, '*')
-            ) AS has_permission
+                ) AS perms),
+                '[]'::jsonb
+            ) AS permissions_json
         FROM users u
         WHERE u.id = $1
         "#,
     )
     .bind(user_id)
-    .bind(required_permission)
     .fetch_optional(pool)
     .await
     {
@@ -162,7 +178,25 @@ pub async fn check_permission(
         }
     }
 
-    if row.has_permission {
+    // Parse permissions from JSON array
+    let permissions: Vec<String> = row
+        .permissions_json
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Store in cache for future requests
+    cache.set(user_id, user.clone(), permissions.clone());
+
+    // Check required permission
+    let has_perm = permissions.contains(&"*".to_string())
+        || permissions.contains(&required_permission.to_string());
+
+    if has_perm {
         Ok(user)
     } else {
         Err((

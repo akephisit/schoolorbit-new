@@ -57,7 +57,7 @@ pub async fn list_roles(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -148,7 +148,7 @@ pub async fn get_role(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -248,7 +248,7 @@ pub async fn create_role(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_CREATE_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_CREATE_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -435,7 +435,7 @@ pub async fn update_role(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_UPDATE_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_UPDATE_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -601,6 +601,9 @@ pub async fn update_role(
         .into_response();
     }
 
+    // Role permissions changed — every user with this role has stale cache
+    state.permission_cache.clear_all();
+
     (
         StatusCode::OK,
         Json(json!({
@@ -655,7 +658,7 @@ pub async fn list_departments(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -735,7 +738,7 @@ pub async fn get_department(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -826,7 +829,7 @@ pub async fn create_department(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_CREATE_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_CREATE_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -936,7 +939,7 @@ pub async fn update_department(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_UPDATE_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_UPDATE_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };

@@ -18,6 +18,7 @@ use axum::{
 };
 use db::admin_client::AdminClient;
 use db::pool_manager::PoolManager;
+use db::permission_cache::PermissionCache;
 use dotenv::dotenv;
 use serde_json::json;
 use tokio::sync::broadcast;
@@ -35,6 +36,7 @@ pub struct AppState {
     pub pool_manager: Arc<PoolManager>,
     pub websocket_manager: Arc<modules::academic::websockets::WebSocketManager>,
     pub notification_channel: broadcast::Sender<(Uuid, Notification)>, // (User ID, Notification)
+    pub permission_cache: Arc<PermissionCache>,
 }
 
 #[tokio::main]
@@ -89,6 +91,7 @@ async fn main() {
         pool_manager,
         websocket_manager,
         notification_channel: notification_tx,
+        permission_cache: Arc::new(PermissionCache::new()),
     };
 
     // Build application

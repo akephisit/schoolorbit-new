@@ -891,7 +891,10 @@ pub async fn update_staff(
                 eprintln!("❌ Failed to commit transaction: {}", e);
                 AppError::InternalServerError("เกิดข้อผิดพลาดในการบันทึกข้อมูล".to_string())
             })?;
-            
+
+            // Roles/departments may have changed — invalidate this user's permission cache
+            state.permission_cache.invalidate(&staff_id);
+
             Ok((
                 StatusCode::OK,
                 Json(json!({

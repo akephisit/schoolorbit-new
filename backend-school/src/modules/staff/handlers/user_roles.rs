@@ -58,7 +58,7 @@ pub async fn get_user_roles(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -145,7 +145,7 @@ pub async fn assign_user_role(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_ASSIGN_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_ASSIGN_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -278,6 +278,8 @@ pub async fn assign_user_role(
         }
     };
 
+    state.permission_cache.invalidate(&user_id);
+
     (
         StatusCode::CREATED,
         Json(json!({
@@ -336,7 +338,7 @@ pub async fn remove_user_role(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_REMOVE_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_REMOVE_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -353,14 +355,17 @@ pub async fn remove_user_role(
     .await;
 
     match result {
-        Ok(result) if result.rows_affected() > 0 => (
-            StatusCode::OK,
-            Json(json!({
-                "success": true,
-                "message": "ลบบทบาทสำเร็จ"
-            })),
-        )
-            .into_response(),
+        Ok(result) if result.rows_affected() > 0 => {
+            state.permission_cache.invalidate(&user_id);
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "message": "ลบบทบาทสำเร็จ"
+                })),
+            )
+                .into_response()
+        }
         Ok(_) => (
             StatusCode::NOT_FOUND,
             Json(json!({
@@ -428,7 +433,7 @@ pub async fn get_user_permissions(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL).await {
+    let _user = match check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };

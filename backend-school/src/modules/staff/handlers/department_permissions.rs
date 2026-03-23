@@ -94,6 +94,9 @@ pub async fn update_department_permissions(
 
     tx.commit().await?;
 
+    // Department permissions changed — all members of this department have stale cache
+    state.permission_cache.clear_all();
+
     Ok(Json(json!({
         "success": true,
         "message": "Update department permissions successfully"
