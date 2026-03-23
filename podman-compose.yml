@@ -1,0 +1,107 @@
+version: '3.8'
+
+# Production compose สำหรับ Podman
+# ใช้ pre-built images จาก ghcr.io — ไม่มี local postgres (ใช้ Neon)
+# รัน: podman-compose up -d
+# env vars อ่านจาก .env ไฟล์ในโฟลเดอร์นี้
+
+services:
+  backend-admin:
+    image: ghcr.io/akephisit/schoolorbit-backend-admin:latest
+    container_name: schoolorbit-backend-admin
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Admin database (Neon)
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+
+      # Backend-School communication
+      BACKEND_SCHOOL_URL: ${BACKEND_SCHOOL_URL:-http://schoolorbit-backend-school:8081}
+
+      # Neon (tenant database provisioning)
+      NEON_API_KEY: ${NEON_API_KEY}
+      NEON_PROJECT_ID: ${NEON_PROJECT_ID}
+      NEON_BRANCH_ID: ${NEON_BRANCH_ID:-main}
+      NEON_HOST: ${NEON_HOST}
+      NEON_DB_PASSWORD: ${NEON_DB_PASSWORD}
+
+      # Cloudflare (Workers deployment & DNS)
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID}
+      BASE_DOMAIN: ${BASE_DOMAIN:-schoolorbit.app}
+
+      # GitHub Actions deployment
+      API_URL: ${API_URL}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_REPO: ${GITHUB_REPO:-akephisit/schoolorbit-new}
+
+      RUST_LOG: ${RUST_LOG:-info}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - schoolorbit-net
+
+  backend-school:
+    image: ghcr.io/akephisit/schoolorbit-backend-school:latest
+    container_name: schoolorbit-backend-school
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8081"
+
+      # ไม่มี ADMIN_DATABASE_URL — เรียก backend-admin ผ่าน HTTP แทน
+      BACKEND_ADMIN_URL: ${BACKEND_ADMIN_URL:-http://schoolorbit-backend-admin:8080}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      DEPLOY_KEY: ${DEPLOY_KEY:-local-dev-key-change-me}
+
+      # Cloudflare R2
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-schoolorbit-files}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      R2_REGION: ${R2_REGION:-auto}
+      AWS_REGION: auto
+      CDN_URL: ${CDN_URL:-}
+
+      # File Upload Limits
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-10}
+      MAX_PROFILE_IMAGE_SIZE_MB: ${MAX_PROFILE_IMAGE_SIZE_MB:-5}
+      MAX_DOCUMENT_SIZE_MB: ${MAX_DOCUMENT_SIZE_MB:-20}
+      ALLOWED_IMAGE_TYPES: ${ALLOWED_IMAGE_TYPES:-jpg,jpeg,png,webp,gif}
+      ALLOWED_DOCUMENT_TYPES: ${ALLOWED_DOCUMENT_TYPES:-pdf,doc,docx,xls,xlsx}
+
+      # Web Push
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@schoolorbit.app}
+
+      RUST_LOG: ${RUST_LOG:-info}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      backend-admin:
+        condition: service_healthy
+    networks:
+      - schoolorbit-net
+
+networks:
+  schoolorbit-net:
+    driver: bridge
