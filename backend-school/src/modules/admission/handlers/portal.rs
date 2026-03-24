@@ -889,7 +889,7 @@ pub async fn portal_get_exam_seat(
         exam_id: Option<String>,
         room_name: String,
         building_name: Option<String>,
-        exam_date: Option<chrono::DateTime<chrono::Utc>>,
+        exam_date: Option<chrono::NaiveDate>,
     }
 
     let seat = sqlx::query_as::<_, ExamSeatInfo>(
