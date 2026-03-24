@@ -381,7 +381,7 @@
 							</p>
 							<div class="grid grid-cols-3 gap-3 text-center">
 								<div>
-									<p class="text-2xl font-bold text-blue-700">{examSeat.seatNumber}</p>
+									<p class="text-xl font-bold text-blue-700">{examSeat.seatNumber}</p>
 									<p class="text-xs text-blue-600">เลขที่นั่ง</p>
 								</div>
 								<div>
@@ -389,7 +389,7 @@
 									<p class="text-xs text-blue-600">ห้องสอบ</p>
 								</div>
 								<div>
-									<p class="text-sm font-semibold text-blue-700">{examSeat.buildingName ?? '-'}</p>
+									<p class="text-xl font-bold text-blue-700">{examSeat.buildingName ?? '-'}</p>
 									<p class="text-xs text-blue-600">อาคาร</p>
 								</div>
 							</div>
@@ -399,7 +399,7 @@
 								</p>
 							{/if}
 							{#if examSeat.examId}
-								<p class="text-xs text-blue-500 text-center font-mono">รหัสสอบ: {examSeat.examId}</p>
+								<p class="text-xs text-blue-500 text-center font-mono">เลขประจำตัวสอบ: {examSeat.examId}</p>
 							{/if}
 						</div>
 					{/if}
