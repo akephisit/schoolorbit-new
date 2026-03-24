@@ -337,32 +337,24 @@ pub async fn update_round_status(
         return Err(AppError::BadRequest(format!("สถานะ '{}' ไม่ถูกต้อง", payload.status)));
     }
 
-    // ดึง current status และ enforce transition
-    let current_status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM admission_rounds WHERE id = $1"
+    // ตรวจว่ารอบมีอยู่จริง
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM admission_rounds WHERE id = $1)"
     )
     .bind(id)
-    .fetch_optional(&pool)
+    .fetch_one(&pool)
     .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    .unwrap_or(false);
 
-    let current = current_status.ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))?;
+    if !exists {
+        return Err(AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()));
+    }
 
-    let allowed_next: &[&str] = match current.as_str() {
-        "draft"          => &["open", "closed"],
-        "open"           => &["exam_announced", "closed"],
-        "exam_announced" => &["announced", "closed"],
-        "announced"      => &["enrolling", "closed"],
-        "enrolling"      => &["closed"],
-        "closed"         => &[],
-        _                => &[],
-    };
-
-    if !allowed_next.contains(&payload.status.as_str()) {
-        return Err(AppError::BadRequest(format!(
-            "ไม่สามารถเปลี่ยนสถานะจาก '{}' เป็น '{}' ได้",
-            current, payload.status
-        )));
+    // ย้อนกลับได้ทุก status ยกเว้นไป draft
+    if payload.status == "draft" {
+        return Err(AppError::BadRequest(
+            "ไม่สามารถเปลี่ยนกลับไปสถานะ 'ร่าง' ได้".to_string()
+        ));
     }
 
     sqlx::query("UPDATE admission_rounds SET status = $1, updated_at = NOW() WHERE id = $2")
