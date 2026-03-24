@@ -51,7 +51,7 @@ pub async fn list_public_rounds(
         FROM admission_rounds ar
         JOIN academic_years ay ON ar.academic_year_id = ay.id
         JOIN grade_levels gl ON ar.grade_level_id = gl.id
-        WHERE ar.status = 'open'
+        WHERE ar.is_visible = true
         ORDER BY ar.apply_start_date ASC
         "#
     )
@@ -91,7 +91,7 @@ pub async fn get_public_round_info(
         FROM admission_rounds ar
         JOIN academic_years ay ON ar.academic_year_id = ay.id
         JOIN grade_levels gl ON ar.grade_level_id = gl.id
-        WHERE ar.id = $1 AND ar.status = 'open'
+        WHERE ar.id = $1 AND ar.is_visible = true
         "#
     )
     .bind(id)
@@ -332,7 +332,7 @@ pub async fn update_round_status(
         return Ok(r);
     }
 
-    let valid_statuses = ["draft", "open", "exam", "scoring", "announced", "enrolling", "closed"];
+    let valid_statuses = ["draft", "open", "exam_announced", "announced", "enrolling", "closed"];
     if !valid_statuses.contains(&payload.status.as_str()) {
         return Err(AppError::BadRequest(format!("สถานะ '{}' ไม่ถูกต้อง", payload.status)));
     }
@@ -349,14 +349,13 @@ pub async fn update_round_status(
     let current = current_status.ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))?;
 
     let allowed_next: &[&str] = match current.as_str() {
-        "draft"     => &["open", "closed"],
-        "open"      => &["exam", "scoring", "closed"],
-        "exam"      => &["scoring", "closed"],
-        "scoring"   => &["announced", "closed"],
-        "announced" => &["enrolling", "closed"],
-        "enrolling" => &["closed"],
-        "closed"    => &[],
-        _           => &[],
+        "draft"          => &["open", "closed"],
+        "open"           => &["exam_announced", "closed"],
+        "exam_announced" => &["announced", "closed"],
+        "announced"      => &["enrolling", "closed"],
+        "enrolling"      => &["closed"],
+        "closed"         => &[],
+        _                => &[],
     };
 
     if !allowed_next.contains(&payload.status.as_str()) {
@@ -441,6 +440,38 @@ pub async fn delete_round(
         })?;
 
     Ok(Json(json!({ "success": true, "message": "ลบรอบรับสมัครและใบสมัครที่เกี่ยวข้องเรียบร้อยแล้ว" })).into_response())
+}
+
+/// PATCH /api/admission/rounds/:id/visibility
+/// เปิด/ปิดการแสดงรอบบน portal ผู้สมัคร (แยกจาก status)
+pub async fn toggle_round_visibility(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateRoundVisibilityRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let updated = sqlx::query_scalar::<_, bool>(
+        "UPDATE admission_rounds SET is_visible = $1, updated_at = NOW() WHERE id = $2 RETURNING is_visible"
+    )
+    .bind(payload.is_visible)
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to update round visibility: {}", e);
+        AppError::InternalServerError("Failed to update visibility".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "isVisible": updated }
+    })).into_response())
 }
 
 // ==========================================

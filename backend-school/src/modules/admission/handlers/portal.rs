@@ -61,6 +61,23 @@ async fn verify_credentials(
     application_id.ok_or_else(|| AppError::AuthError("ไม่พบข้อมูลผู้สมัคร กรุณาตรวจสอบเลขบัตรประชาชนและวันเกิด".to_string()))
 }
 
+/// Helper: ดึง round status สำหรับ application นั้น
+async fn get_round_status_for_application(
+    pool: &sqlx::PgPool,
+    application_id: uuid::Uuid,
+) -> Result<String, AppError> {
+    sqlx::query_scalar(
+        r#"SELECT ar.status
+           FROM admission_applications aa
+           JOIN admission_rounds ar ON ar.id = aa.admission_round_id
+           WHERE aa.id = $1"#,
+    )
+    .bind(application_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+}
+
 // ==========================================
 // Portal Endpoints (Stateless - Credentials ทุก request)
 // ==========================================
@@ -75,6 +92,11 @@ pub async fn check_application(
     let pool = get_pool(&state, &headers).await?;
 
     let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
+
+    let round_status = get_round_status_for_application(&pool, application_id).await?;
+    if round_status == "draft" {
+        return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
+    }
 
     #[derive(sqlx::FromRow, serde::Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -128,6 +150,15 @@ pub async fn get_status(
     let pool = get_pool(&state, &headers).await?;
 
     let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
+
+    let round_status = get_round_status_for_application(&pool, application_id).await?;
+    if round_status == "draft" {
+        return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
+    }
+
+    let show_scores     = ["announced", "enrolling", "closed"].contains(&round_status.as_str());
+    let show_assignment = ["announced", "enrolling", "closed"].contains(&round_status.as_str());
+    let show_form       = ["enrolling", "closed"].contains(&round_status.as_str());
 
     // ดึงข้อมูล application
     let application = sqlx::query_as::<_, AdmissionApplication>(
@@ -242,9 +273,10 @@ pub async fn get_status(
         "success": true,
         "data": {
             "application": application,
-            "assignment": assignment,
-            "scores": scores,
-            "enrollmentForm": form,
+            "roundStatus": round_status,
+            "assignment": if show_assignment { json!(assignment) } else { json!(null) },
+            "scores": if show_scores { json!(scores) } else { json!(null) },
+            "enrollmentForm": if show_form { json!(form) } else { json!(null) },
             "documents": documents,
         }
     })).into_response())
@@ -260,6 +292,11 @@ pub async fn confirm_enrollment(
     let pool = get_pool(&state, &headers).await?;
 
     let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
+
+    let round_status = get_round_status_for_application(&pool, application_id).await?;
+    if round_status != "enrolling" {
+        return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว".to_string()));
+    }
 
     // ตรวจสอบสถานะ
     let status: String = sqlx::query_scalar(
@@ -300,6 +337,11 @@ pub async fn get_enrollment_form(
 
     let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
 
+    let round_status = get_round_status_for_application(&pool, application_id).await?;
+    if !["enrolling", "closed"].contains(&round_status.as_str()) {
+        return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว".to_string()));
+    }
+
     let form = sqlx::query_as::<_, EnrollmentForm>(
         "SELECT * FROM admission_enrollment_forms WHERE application_id = $1"
     )
@@ -320,6 +362,11 @@ pub async fn submit_enrollment_form(
     let pool = get_pool(&state, &headers).await?;
 
     let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
+
+    let round_status = get_round_status_for_application(&pool, application_id).await?;
+    if round_status != "enrolling" {
+        return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว หรือหมดเขตแล้ว".to_string()));
+    }
 
     // ตรวจสอบว่ายืนยันแล้วหรือยัง (student_confirmed = true)
     let confirmed: bool = sqlx::query_scalar(
@@ -371,6 +418,11 @@ pub async fn update_application(
     let pool = get_pool(&state, &headers).await?;
 
     let application_id = verify_credentials(&pool, &payload.auth_national_id, &payload.auth_date_of_birth).await?;
+
+    let round_status = get_round_status_for_application(&pool, application_id).await?;
+    if round_status != "open" {
+        return Err(AppError::BadRequest("ไม่สามารถแก้ไขใบสมัครได้ในช่วงเวลานี้".to_string()));
+    }
 
     // ตรวจสอบสถานะก่อนแก้
     let status: String = sqlx::query_scalar(
@@ -597,9 +649,14 @@ pub async fn portal_upload_document(
     let r2_client = R2Client::new().await
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
 
-    // ถ้ามี credentials → verify + ใช้ {app_number} เป็น folder + auto-link
+    // ถ้ามี credentials → verify + gate ตาม round status + ใช้ {app_number} เป็น folder + auto-link
     if let (Some(nid), Some(dob)) = (&national_id, &date_of_birth) {
         let application_id = verify_credentials(&pool, nid, dob).await?;
+
+        let round_status = get_round_status_for_application(&pool, application_id).await?;
+        if !["open", "enrolling"].contains(&round_status.as_str()) {
+            return Err(AppError::BadRequest("ไม่สามารถอัปโหลดเอกสารได้ในช่วงเวลานี้".to_string()));
+        }
 
         let (app_number, round_id): (String, Uuid) = sqlx::query_as(
             "SELECT application_number, admission_round_id FROM admission_applications WHERE id = $1"
@@ -750,6 +807,11 @@ pub async fn portal_delete_document(
 
     let application_id = verify_credentials(&pool, &query.national_id, &query.date_of_birth).await?;
 
+    let round_status = get_round_status_for_application(&pool, application_id).await?;
+    if !["open", "enrolling"].contains(&round_status.as_str()) {
+        return Err(AppError::BadRequest("ไม่สามารถลบเอกสารได้ในช่วงเวลานี้".to_string()));
+    }
+
     // หา active document พร้อม storage_path
     let doc_row = sqlx::query_as::<_, (Uuid, Uuid, String)>(
         r#"SELECT aad.id, aad.file_id, f.storage_path
@@ -812,6 +874,12 @@ pub async fn portal_get_exam_seat(
     let pool = get_pool(&state, &headers).await?;
 
     let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
+
+    let round_status = get_round_status_for_application(&pool, application_id).await?;
+    let allowed = ["exam_announced", "announced", "enrolling", "closed"];
+    if !allowed.contains(&round_status.as_str()) {
+        return Err(AppError::BadRequest("ยังไม่ถึงเวลาดูข้อมูลห้องสอบ".to_string()));
+    }
 
     #[derive(sqlx::FromRow, serde::Serialize)]
     #[serde(rename_all = "camelCase")]

@@ -16,6 +16,7 @@ pub fn admission_routes() -> Router<AppState> {
                                .put(handlers::rounds::update_round)
                                .delete(handlers::rounds::delete_round))
         .route("/rounds/{id}/status", put(handlers::rounds::update_round_status))
+        .route("/rounds/{id}/visibility", patch(handlers::rounds::toggle_round_visibility))
 
         // === Exam Subjects ===
         .route("/rounds/{id}/subjects", get(handlers::rounds::list_subjects)
