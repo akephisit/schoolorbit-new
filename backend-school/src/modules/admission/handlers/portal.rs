@@ -861,6 +861,7 @@ pub async fn portal_delete_document(
 // ==========================================
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PortalExamSeatRequest {
     pub national_id: String,
     pub date_of_birth: String, // DDMMYYYY พ.ศ.
