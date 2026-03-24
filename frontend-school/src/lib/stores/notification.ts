@@ -34,6 +34,8 @@ export interface NotificationState {
 }
 
 let eventSource: EventSource | null = null;
+let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+let reconnectDelay = 3000; // ms, doubles on each failure up to 60s
 
 function createNotificationStore() {
     const { subscribe, set, update } = writable<NotificationState>({
@@ -71,12 +73,19 @@ function createNotificationStore() {
             // 0 = CONNECTING, 1 = OPEN
             if (eventSource && (eventSource.readyState === 1 || eventSource.readyState === 0)) return;
 
+            // Clear any pending reconnect before creating a new connection
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
             eventSource = new EventSource(`${BACKEND_URL}/api/notifications/stream`, {
                 withCredentials: true
             });
 
             eventSource.onopen = () => {
                 console.log('✅ SSE Connected');
+                reconnectDelay = 3000; // reset backoff on successful connect
             };
 
             eventSource.onmessage = (event) => {
@@ -111,21 +120,37 @@ function createNotificationStore() {
                 }
             };
 
-            eventSource.onerror = (err) => {
-                if (eventSource && eventSource.readyState === 0) {
-                    // 0 = CONNECTING. Browser is trying to reconnect, no need for error log.
+            eventSource.onerror = () => {
+                if (!eventSource) return;
+
+                if (eventSource.readyState === 0) {
+                    // Browser is actively trying to reconnect (network blip)
                     console.log('🔄 SSE Reconnecting...');
                 } else {
-                    console.error('SSE Error', err);
+                    // readyState === 2 (CLOSED) — server closed or HTTP error (e.g. 401)
+                    // Browser will NOT auto-retry; we must do it manually
+                    console.log(`🔄 SSE closed, retrying in ${reconnectDelay / 1000}s...`);
+                    eventSource.close();
+                    eventSource = null;
+
+                    reconnectTimeout = setTimeout(() => {
+                        reconnectDelay = Math.min(reconnectDelay * 2, 60000);
+                        this.initSSE();
+                    }, reconnectDelay);
                 }
             };
         },
 
         closeSSE() {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
             if (eventSource) {
                 eventSource.close();
                 eventSource = null;
             }
+            reconnectDelay = 3000;
         },
 
         async markAsRead(id: string) {
