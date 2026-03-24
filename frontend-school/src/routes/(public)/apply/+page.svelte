@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getPublicRounds, type AdmissionRound } from '$lib/api/admission';
+	import { getPublicRounds, type AdmissionRound, roundStatusLabel, roundStatusColor } from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { GraduationCap, CalendarDays, ArrowRight, Search } from 'lucide-svelte';
 
@@ -65,10 +65,10 @@
 				</div>
 			</div>
 		{:else if publicRounds.length > 0}
-			<!-- Open Rounds List -->
+			<!-- Rounds List -->
 			<div class="space-y-4 pt-4">
 				<h2 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
-					<GraduationCap class="w-5 h-5 text-blue-600" /> รอบที่กำลังเปิดรับสมัคร
+					<GraduationCap class="w-5 h-5 text-blue-600" /> รอบรับสมัครทั้งหมด
 				</h2>
 				<div class="grid gap-4">
 					{#each publicRounds as r}
@@ -76,9 +76,14 @@
 							class="bg-white rounded-2xl shadow-sm border border-blue-100 p-5 hover:shadow-md transition-shadow"
 						>
 							<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-								<div>
-									<h3 class="font-bold text-gray-900 text-lg">{r.name}</h3>
-									<p class="text-sm text-gray-600 mt-1 flex items-center gap-1.5">
+								<div class="space-y-1">
+									<div class="flex items-center gap-2 flex-wrap">
+										<h3 class="font-bold text-gray-900 text-lg">{r.name}</h3>
+										<span class="text-xs px-2 py-0.5 rounded-full font-medium {roundStatusColor[r.status] ?? 'bg-gray-100 text-gray-700'}">
+											{roundStatusLabel[r.status] ?? r.status}
+										</span>
+									</div>
+									<p class="text-sm text-gray-600 flex items-center gap-1.5">
 										<CalendarDays class="w-4 h-4 text-blue-500" />
 										รับสมัคร {new Date(r.applyStartDate).toLocaleDateString('th-TH', {
 											month: 'short',
@@ -90,14 +95,25 @@
 										})}
 									</p>
 								</div>
-								<Button
-									href="/apply/{r.id}"
-									class="bg-blue-600 hover:bg-blue-700 text-white shrink-0 group"
-								>
-									สมัครเรียน <ArrowRight
-										class="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform"
-									/>
-								</Button>
+
+								{#if r.status === 'open'}
+									<Button
+										href="/apply/{r.id}"
+										class="bg-blue-600 hover:bg-blue-700 text-white shrink-0 group"
+									>
+										สมัครเรียน <ArrowRight
+											class="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform"
+										/>
+									</Button>
+								{:else}
+									<Button
+										href="/apply/status"
+										variant="outline"
+										class="border-indigo-200 text-indigo-700 hover:bg-indigo-50 shrink-0"
+									>
+										ตรวจสอบผล <ArrowRight class="w-4 h-4 ml-1" />
+									</Button>
+								{/if}
 							</div>
 						</div>
 					{/each}
@@ -108,7 +124,7 @@
 			<div
 				class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center text-gray-500 mt-4"
 			>
-				<p>ขณะนี้ยังไม่มีรอบเปิดรับสมัคร</p>
+				<p>ขณะนี้ยังไม่มีรอบที่เปิดแสดง</p>
 			</div>
 		{/if}
 	</div>

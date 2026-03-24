@@ -43,6 +43,7 @@
 	}
 
 	let portalData: {
+		roundStatus?: string;
 		application?: {
 			id: string;
 			admissionRoundId: string;
@@ -60,9 +61,9 @@
 			totalScore?: number;
 			roomName?: string;
 			studentConfirmed: boolean;
-		};
-		scores?: { subjectName?: string; score?: number; maxScore?: number }[];
-		enrollmentForm?: { formData: Record<string, unknown>; preSubmittedAt?: string };
+		} | null;
+		scores?: { subjectName?: string; score?: number; maxScore?: number }[] | null;
+		enrollmentForm?: { formData: Record<string, unknown>; preSubmittedAt?: string } | null;
 	} | null = $state(null);
 
 	const statusLabel: Record<string, string> = {
@@ -230,6 +231,7 @@
 			{@const assignment = portalData.assignment}
 			{@const scores = portalData.scores}
 			{@const form = portalData.enrollmentForm}
+			{@const roundStatus = portalData.roundStatus}
 
 			<!-- Back -->
 			<button
@@ -325,7 +327,7 @@
 						</div>
 
 						<!-- Confirm Button -->
-						{#if app.status === 'accepted' && !assignment.studentConfirmed}
+						{#if app.status === 'accepted' && !assignment.studentConfirmed && roundStatus === 'enrolling'}
 							<div class="border border-orange-200 bg-orange-50 rounded-xl p-4">
 								<p class="text-sm font-medium text-orange-800 mb-3">
 									<AlertCircle class="w-4 h-4 inline mr-1" />
@@ -378,8 +380,8 @@
 				</div>
 			{/if}
 
-			<!-- Enrollment Form (if confirmed) -->
-			{#if assignment?.studentConfirmed && app?.status !== 'enrolled'}
+			<!-- Enrollment Form (if confirmed and in enrolling phase) -->
+			{#if assignment?.studentConfirmed && app?.status !== 'enrolled' && roundStatus === 'enrolling'}
 				<div class="bg-white rounded-2xl shadow-lg p-6">
 					<h2 class="font-semibold text-gray-900 flex items-center gap-2 mb-4">
 						<FileText class="w-5 h-5 text-blue-600" />

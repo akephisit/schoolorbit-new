@@ -15,6 +15,7 @@
 		updateSubject,
 		deleteSubject,
 		updateRoundStatus,
+		updateRoundVisibility,
 		updateRound,
 		deleteRound,
 		type AdmissionRound,
@@ -108,8 +109,7 @@
 	const statusFlow: AdmissionRound['status'][] = [
 		'draft',
 		'open',
-		'exam',
-		'scoring',
+		'exam_announced',
 		'announced',
 		'enrolling',
 		'closed'
@@ -124,12 +124,27 @@
 	const statusVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
 		draft: 'secondary',
 		open: 'default',
-		exam: 'default',
-		scoring: 'default',
+		exam_announced: 'default',
 		announced: 'default',
 		enrolling: 'default',
 		closed: 'destructive'
 	};
+
+	let togglingVisibility = $state(false);
+
+	async function handleVisibilityToggle() {
+		if (!round) return;
+		togglingVisibility = true;
+		try {
+			await updateRoundVisibility(round.id, !round.isVisible);
+			toast.success(round.isVisible ? 'ซ่อนรอบจาก portal แล้ว' : 'แสดงรอบบน portal แล้ว');
+			await load();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'อัปเดตไม่สำเร็จ');
+		} finally {
+			togglingVisibility = false;
+		}
+	}
 
 	async function load() {
 		if (!id) return;
@@ -430,6 +445,34 @@
 							{/each}
 						</div>
 					</div>
+				</div>
+
+				<Separator class="my-4" />
+
+				<!-- Visibility Toggle -->
+				<div class="flex items-center justify-between py-1">
+					<div>
+						<p class="text-sm font-medium">แสดงรอบบน portal นักเรียน</p>
+						<p class="text-xs text-muted-foreground">
+							{round.isVisible
+								? 'รอบนี้ปรากฏบน portal — นักเรียนเห็นและสามารถตรวจสอบสถานะได้'
+								: 'ซ่อนอยู่ — นักเรียนไม่เห็นรอบนี้บน portal'}
+						</p>
+					</div>
+					<Button
+						variant={round.isVisible ? 'default' : 'outline'}
+						size="sm"
+						disabled={togglingVisibility}
+						onclick={handleVisibilityToggle}
+						class="shrink-0 gap-1.5"
+					>
+						{#if togglingVisibility}
+							<Loader2 class="w-3 h-3 animate-spin" />
+						{:else if round.isVisible}
+							<Check class="w-3 h-3" />
+						{/if}
+						{round.isVisible ? 'แสดงอยู่' : 'ซ่อนอยู่'}
+					</Button>
 				</div>
 
 				<Separator class="my-4" />

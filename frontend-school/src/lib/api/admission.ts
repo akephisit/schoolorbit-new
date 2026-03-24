@@ -26,7 +26,8 @@ export interface AdmissionRound {
     resultAnnounceDate?: string;
     enrollmentStartDate?: string;
     enrollmentEndDate?: string;
-    status: 'draft' | 'open' | 'exam' | 'scoring' | 'announced' | 'enrolling' | 'closed';
+    status: 'draft' | 'open' | 'exam_announced' | 'announced' | 'enrolling' | 'closed';
+    isVisible: boolean;
     createdAt: string;
     updatedAt: string;
     // Joined
@@ -291,6 +292,12 @@ export async function updateRoundStatus(
 ) {
     const res = await apiClient.put(`/api/admission/rounds/${id}/status`, { status });
     if (!res.success) throw new Error(res.error || 'ไม่สามารถอัปเดตสถานะได้');
+    return res;
+}
+
+export async function updateRoundVisibility(id: string, isVisible: boolean) {
+    const res = await apiClient.patch(`/api/admission/rounds/${id}/visibility`, { isVisible });
+    if (!res.success) throw new Error(res.error || 'ไม่สามารถอัปเดตการแสดงผลได้');
     return res;
 }
 
@@ -746,18 +753,16 @@ export async function portalDeleteDocument(
 export const roundStatusLabel: Record<string, string> = {
     draft: 'ฉบับร่าง',
     open: 'เปิดรับสมัคร',
-    exam: 'ช่วงสอบ',
-    scoring: 'กรอกคะแนน',
-    announced: 'ประกาศผลแล้ว',
-    enrolling: 'ช่วงมอบตัว',
-    closed: 'ปิดแล้ว'
+    exam_announced: 'ประกาศที่นั่งสอบ',
+    announced: 'ประกาศผลคัดเลือก',
+    enrolling: 'รายงานตัว/มอบตัว',
+    closed: 'ปิดรอบ'
 };
 
 export const roundStatusColor: Record<string, string> = {
     draft: 'bg-gray-100 text-gray-700',
     open: 'bg-green-100 text-green-700',
-    exam: 'bg-blue-100 text-blue-700',
-    scoring: 'bg-orange-100 text-orange-700',
+    exam_announced: 'bg-blue-100 text-blue-700',
     announced: 'bg-purple-100 text-purple-700',
     enrolling: 'bg-yellow-100 text-yellow-700',
     closed: 'bg-red-100 text-red-700'
