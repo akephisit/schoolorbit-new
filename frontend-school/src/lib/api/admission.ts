@@ -537,6 +537,21 @@ export async function portalGetStatus(nationalId: string, dateOfBirth: string): 
     return res.data;
 }
 
+export async function portalGetExamSeat(nationalId: string, dateOfBirth: string): Promise<{
+    seatNumber: number;
+    examId?: string;
+    roomName: string;
+    buildingName?: string;
+    examDate?: string;
+} | null> {
+    const res = await apiClient.post('/api/admission/portal/exam-seat', {
+        nationalId,
+        dateOfBirth
+    });
+    if (!res.success) throw new Error(res.error || 'ไม่สามารถโหลดข้อมูลที่นั่งสอบได้');
+    return (res.data as { seatNumber: number; examId?: string; roomName: string; buildingName?: string; examDate?: string } | null) ?? null;
+}
+
 export async function portalConfirm(nationalId: string, dateOfBirth: string) {
     const res = await apiClient.post('/api/admission/portal/confirm', {
         nationalId,

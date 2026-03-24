@@ -2,6 +2,7 @@
 	import {
 		portalCheck,
 		portalGetStatus,
+		portalGetExamSeat,
 		portalConfirm,
 		portalSubmitForm
 	} from '$lib/api/admission';
@@ -41,6 +42,14 @@
 			goto(`/apply/${portalData.application.admissionRoundId}?edit=true`);
 		}
 	}
+
+	let examSeat: {
+		seatNumber: number;
+		examId?: string;
+		roomName: string;
+		buildingName?: string;
+		examDate?: string;
+	} | null = $state(null);
 
 	let portalData: {
 		roundStatus?: string;
@@ -124,6 +133,18 @@
 				formFields.congenitalDisease = fd.congenitalDisease ?? '';
 				formFields.emergencyContact = fd.emergencyContact ?? '';
 				formFields.emergencyPhone = fd.emergencyPhone ?? '';
+			}
+
+			// โหลดที่นั่งสอบถ้า round status อนุญาต
+			const rs = portalData?.roundStatus;
+			if (rs && ['exam_announced', 'announced', 'enrolling', 'closed'].includes(rs)) {
+				try {
+					examSeat = await portalGetExamSeat(nationalId, dateOfBirth.trim());
+				} catch {
+					examSeat = null;
+				}
+			} else {
+				examSeat = null;
 			}
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
@@ -350,6 +371,37 @@
 								ยืนยันเข้าเรียนแล้ว
 							</div>
 						{/if}
+					{/if}
+
+					<!-- Exam Seat -->
+					{#if examSeat}
+						<div class="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-2">
+							<p class="font-semibold text-blue-800 flex items-center gap-2">
+								<FileText class="w-4 h-4" /> ที่นั่งสอบ
+							</p>
+							<div class="grid grid-cols-3 gap-3 text-center">
+								<div>
+									<p class="text-2xl font-bold text-blue-700">{examSeat.seatNumber}</p>
+									<p class="text-xs text-blue-600">เลขที่นั่ง</p>
+								</div>
+								<div>
+									<p class="text-xl font-bold text-blue-700">{examSeat.roomName}</p>
+									<p class="text-xs text-blue-600">ห้องสอบ</p>
+								</div>
+								<div>
+									<p class="text-sm font-semibold text-blue-700">{examSeat.buildingName ?? '-'}</p>
+									<p class="text-xs text-blue-600">อาคาร</p>
+								</div>
+							</div>
+							{#if examSeat.examDate}
+								<p class="text-xs text-blue-600 text-center pt-1">
+									วันสอบ: {new Date(examSeat.examDate).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+								</p>
+							{/if}
+							{#if examSeat.examId}
+								<p class="text-xs text-blue-500 text-center font-mono">รหัสสอบ: {examSeat.examId}</p>
+							{/if}
+						</div>
 					{/if}
 
 					<!-- Scores -->
