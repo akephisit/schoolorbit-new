@@ -6,7 +6,7 @@ use axum::{
     http::HeaderMap,
 };
 use serde_json::json;
-use crate::middleware::permission::check_permission;
+use crate::middleware::permission::{check_permission, get_user_with_permissions};
 use crate::modules::academic::models::curriculum::{
     Subject, SubjectGroup, CreateSubjectRequest, UpdateSubjectRequest, SubjectFilter
 };
@@ -29,16 +29,48 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
+/// Get the subject_group_id for a teacher based on their primary กลุ่มสาระ department membership.
+/// Returns None if the teacher is not a member of any กลุ่มสาระ department.
+async fn get_user_subject_group_id(user_id: Uuid, pool: &sqlx::PgPool) -> Option<Uuid> {
+    sqlx::query_scalar(
+        r#"
+        SELECT d.subject_group_id
+        FROM department_members dm
+        JOIN departments d ON d.id = dm.department_id
+        WHERE dm.user_id = $1
+          AND d.subject_group_id IS NOT NULL
+          AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+        ORDER BY dm.is_primary_department DESC NULLS LAST
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
 /// List all subject groups (Learning Areas)
 pub async fn list_subject_groups(
     State(state): State<AppState>,
-    headers: HeaderMap, 
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Check READ permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_READ_ALL, &state.permission_cache).await {
-         return Ok(response);
+    // Accept: read.all (curriculum admin) OR manage.department (กลุ่มสาระ teacher)
+    let (_, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
+        Ok(r) => r,
+        Err(resp) => return Ok(resp),
+    };
+    let has_access = permissions.contains(&"*".to_string())
+        || permissions.contains(&codes::ACADEMIC_CURRICULUM_READ_ALL.to_string())
+        || permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    if !has_access {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_READ_ALL) })),
+        ).into_response());
     }
 
     let groups = sqlx::query_as::<_, SubjectGroup>(
@@ -62,10 +94,35 @@ pub async fn list_subjects(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Check READ permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_READ_ALL, &state.permission_cache).await {
-        return Ok(response);
+    // Accept: read.all OR manage.department
+    let (user_id, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
+        Ok(r) => r,
+        Err(resp) => return Ok(resp),
+    };
+    let has_all = permissions.contains(&"*".to_string())
+        || permissions.contains(&codes::ACADEMIC_CURRICULUM_READ_ALL.to_string());
+    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    if !has_all && !has_dept {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_READ_ALL) })),
+        ).into_response());
     }
+
+    // dept-scope: auto-filter to teacher's กลุ่มสาระ, ignore any group_id from query
+    let dept_group_id: Option<Uuid> = if !has_all && has_dept {
+        match get_user_subject_group_id(user_id, &pool).await {
+            Some(gid) => Some(gid),
+            None => {
+                return Ok((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "success": false, "error": "ไม่พบกลุ่มสาระที่สังกัด" })),
+                ).into_response());
+            }
+        }
+    } else {
+        None
+    };
 
     let mut query = String::from(
         r#"
@@ -88,7 +145,10 @@ pub async fn list_subjects(
         }
     }
 
-    if let Some(gid) = filter.group_id {
+    // dept-scope overrides any user-supplied group_id filter
+    if let Some(gid) = dept_group_id {
+        query.push_str(&format!(" AND s.group_id = '{}'", gid));
+    } else if let Some(gid) = filter.group_id {
         query.push_str(&format!(" AND s.group_id = '{}'", gid));
     }
 
@@ -138,9 +198,28 @@ pub async fn create_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // 1. Check Permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_CREATE_ALL, &state.permission_cache).await {
-        return Ok(response);
+    // 1. Check Permission (create.all OR manage.department)
+    let (user_id, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
+        Ok(r) => r,
+        Err(resp) => return Ok(resp),
+    };
+    let has_all = permissions.contains(&"*".to_string())
+        || permissions.contains(&codes::ACADEMIC_CURRICULUM_CREATE_ALL.to_string());
+    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    if !has_all && !has_dept {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_CREATE_ALL) })),
+        ).into_response());
+    }
+
+    // dept-scope: validate that the subject's group matches the teacher's กลุ่มสาระ
+    if !has_all && has_dept {
+        let teacher_group = get_user_subject_group_id(user_id, &pool).await
+            .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
+        if payload.group_id != Some(teacher_group) {
+            return Err(AppError::BadRequest("ไม่สามารถเพิ่มวิชาในกลุ่มสาระอื่นได้".to_string()));
+        }
     }
 
     // 2. Validate Code + Year Uniqueness (same code can exist in different years)
@@ -235,9 +314,36 @@ pub async fn update_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // 1. Check Permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_UPDATE_ALL, &state.permission_cache).await {
-        return Ok(response);
+    // 1. Check Permission (update.all OR manage.department)
+    let (user_id, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
+        Ok(r) => r,
+        Err(resp) => return Ok(resp),
+    };
+    let has_all = permissions.contains(&"*".to_string())
+        || permissions.contains(&codes::ACADEMIC_CURRICULUM_UPDATE_ALL.to_string());
+    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    if !has_all && !has_dept {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_UPDATE_ALL) })),
+        ).into_response());
+    }
+
+    // dept-scope: verify subject belongs to teacher's กลุ่มสาระ before updating
+    if !has_all && has_dept {
+        let teacher_group = get_user_subject_group_id(user_id, &pool).await
+            .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
+        let subject_group: Option<Uuid> = sqlx::query_scalar(
+            "SELECT group_id FROM subjects WHERE id = $1"
+        )
+        .bind(id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to fetch subject".to_string()))?
+        .flatten();
+        if subject_group != Some(teacher_group) {
+            return Err(AppError::BadRequest("ไม่สามารถแก้ไขวิชาในกลุ่มสาระอื่นได้".to_string()));
+        }
     }
 
     let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
@@ -322,9 +428,36 @@ pub async fn delete_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // 1. Check Permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_DELETE_ALL, &state.permission_cache).await {
-        return Ok(response);
+    // 1. Check Permission (delete.all OR manage.department)
+    let (user_id, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
+        Ok(r) => r,
+        Err(resp) => return Ok(resp),
+    };
+    let has_all = permissions.contains(&"*".to_string())
+        || permissions.contains(&codes::ACADEMIC_CURRICULUM_DELETE_ALL.to_string());
+    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    if !has_all && !has_dept {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_DELETE_ALL) })),
+        ).into_response());
+    }
+
+    // dept-scope: verify subject belongs to teacher's กลุ่มสาระ before deleting
+    if !has_all && has_dept {
+        let teacher_group = get_user_subject_group_id(user_id, &pool).await
+            .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
+        let subject_group: Option<Uuid> = sqlx::query_scalar(
+            "SELECT group_id FROM subjects WHERE id = $1"
+        )
+        .bind(id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to fetch subject".to_string()))?
+        .flatten();
+        if subject_group != Some(teacher_group) {
+            return Err(AppError::BadRequest("ไม่สามารถลบวิชาในกลุ่มสาระอื่นได้".to_string()));
+        }
     }
 
     sqlx::query("DELETE FROM subjects WHERE id = $1")

@@ -90,6 +90,8 @@ pub mod codes {
     pub const ACADEMIC_CURRICULUM_CREATE_ALL: &str = "academic_curriculum.create.all";
     pub const ACADEMIC_CURRICULUM_UPDATE_ALL: &str = "academic_curriculum.update.all";
     pub const ACADEMIC_CURRICULUM_DELETE_ALL: &str = "academic_curriculum.delete.all";
+    // Department-scoped: manage subjects only within own กลุ่มสาระ
+    pub const ACADEMIC_CURRICULUM_MANAGE_DEPT: &str = "academic_curriculum.manage.department";
 
     // Course Planning (Assigning subjects to classrooms)
     pub const ACADEMIC_COURSE_PLAN_READ_ALL: &str = "academic_course_plan.read.all";
@@ -498,6 +500,14 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "read",
         scope: "all",
         description: "ดูข้อมูลรายวิชาและหลักสูตรทั้งหมด",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
+        name: "จัดการรายวิชากลุ่มสาระตัวเอง",
+        module: "academic_curriculum",
+        action: "manage",
+        scope: "department",
+        description: "เพิ่ม/แก้ไข/ลบ รายวิชาเฉพาะกลุ่มสาระที่ตัวเองสังกัด",
     },
     PermissionDef {
         code: codes::ACADEMIC_CURRICULUM_CREATE_ALL,
