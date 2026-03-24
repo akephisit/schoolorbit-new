@@ -399,7 +399,7 @@
 								</p>
 							{/if}
 							{#if examSeat.examId}
-								<p class="text-sm text-blue-500 text-center">เลขประจำตัวสอบ: {examSeat.examId}</p>
+								<p class="text-xs text-blue-500 text-center">เลขประจำตัวสอบ: {examSeat.examId}</p>
 							{/if}
 						</div>
 					{/if}
