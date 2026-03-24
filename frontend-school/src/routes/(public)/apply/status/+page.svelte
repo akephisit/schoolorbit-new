@@ -32,8 +32,23 @@
 	let confirming = $state(false);
 	let savingForm = $state(false);
 
-	let nationalId = $state('');
+	let nationalId = $state(''); // raw digits only (13 หลัก)
 	let dateOfBirth = $state(''); // format: DDMMYYYY พ.ศ.
+
+	// X-XXXX-XXXXX-XX-X
+	const nationalIdDisplay = $derived(() => {
+		const d = nationalId;
+		if (d.length <= 1) return d;
+		if (d.length <= 5) return d[0] + '-' + d.slice(1);
+		if (d.length <= 10) return d[0] + '-' + d.slice(1, 5) + '-' + d.slice(5);
+		if (d.length <= 12) return d[0] + '-' + d.slice(1, 5) + '-' + d.slice(5, 10) + '-' + d.slice(10);
+		return d[0] + '-' + d.slice(1, 5) + '-' + d.slice(5, 10) + '-' + d.slice(10, 12) + '-' + d[12];
+	});
+
+	function handleNationalIdInput(e: Event) {
+		const raw = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 13);
+		nationalId = raw;
+	}
 
 	function goToEdit() {
 		if (portalData?.application?.admissionRoundId) {
@@ -217,10 +232,12 @@
 						>
 						<Input
 							id="national-id"
-							bind:value={nationalId}
-							maxlength={13}
+							value={nationalIdDisplay()}
+							oninput={handleNationalIdInput}
+							maxlength={17}
+							inputmode="numeric"
 							placeholder="X-XXXX-XXXXX-XX-X"
-							class="h-11"
+							class="h-11 tracking-widest"
 						/>
 					</div>
 					<div class="space-y-1.5">
