@@ -9,15 +9,13 @@ use serde_json::json;
 
 /// Shared permission check function
 ///
-/// Cache hit (within 30-min TTL):
-///   - Check permission from cache (0 trips for permissions)
-///   - Fetch user with simple SELECT — no JOIN (1 trip)
-///   - Total: 1 DB trip, no sensitive data stored in cache
+/// Cache hit (within 30-min TTL): 0 DB trips
+///   - permissions checked from cache
+///   - User returned from cache (password_hash cleared, national_id = None)
 ///
-/// Cache miss / expired:
-///   - Combined SQL: user + all permissions in one query (1 trip)
-///   - Cache only Vec<String> permissions (no password_hash / national_id)
-///   - Total: 1 DB trip
+/// Cache miss / expired: 1 DB trip
+///   - combined SQL: user + all permissions in one query
+///   - stores sanitized User + permissions in cache
 pub async fn check_permission(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
@@ -75,59 +73,26 @@ pub async fn check_permission(
         }
     };
 
-    // ── Cache hit: permissions from cache, fetch user with simple SELECT ──
-    if let Some(permissions) = cache.get(&user_id) {
+    // ── Cache hit: 0 DB trips ────────────────────────────────────────
+    if let Some((user, permissions)) = cache.get(&user_id) {
         let has_perm = permissions.contains(&"*".to_string())
             || permissions.contains(&required_permission.to_string());
 
-        if !has_perm {
-            return Err((
+        return if has_perm {
+            Ok(user)
+        } else {
+            Err((
                 StatusCode::FORBIDDEN,
                 Json(json!({
                     "success": false,
                     "error": format!("ไม่มีสิทธิ์ {}", required_permission)
                 })),
             )
-                .into_response());
-        }
-
-        // Fetch user (simple SELECT, no JOIN)
-        let mut user: User = match sqlx::query_as(
-            "SELECT id, username, national_id, email, password_hash,
-                    first_name, last_name, user_type, phone, date_of_birth,
-                    address, status, metadata, created_at, updated_at,
-                    title, nickname, emergency_contact, line_id, gender,
-                    profile_image_url, hired_date, resigned_date
-             FROM users WHERE id = $1",
-        )
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        {
-            Some(u) => u,
-            None => {
-                cache.invalidate(&user_id);
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    Json(json!({ "success": false, "error": "ไม่พบข้อมูลผู้ใช้" })),
-                )
-                    .into_response());
-            }
+                .into_response())
         };
-
-        if let Some(ref nid) = user.national_id {
-            match crate::utils::field_encryption::decrypt(nid) {
-                Ok(dec) => user.national_id = Some(dec),
-                Err(_) => user.national_id = None,
-            }
-        }
-
-        return Ok(user);
     }
 
-    // ── Cache miss: combined query (user + all permissions) ──────────
+    // ── Cache miss: 1 DB trip (user + all permissions) ───────────────
     #[derive(sqlx::FromRow)]
     struct PermRow {
         #[sqlx(flatten)]
@@ -188,7 +153,7 @@ pub async fn check_permission(
         }
     };
 
-    // Decrypt national_id
+    // Decrypt national_id for this response only (not stored in cache)
     let mut user = row.user;
     if let Some(ref nid) = user.national_id {
         match crate::utils::field_encryption::decrypt(nid) {
@@ -197,7 +162,6 @@ pub async fn check_permission(
         }
     }
 
-    // Parse permissions — cache only Vec<String>, no sensitive fields
     let permissions: Vec<String> = row
         .permissions_json
         .as_array()
@@ -208,7 +172,8 @@ pub async fn check_permission(
         })
         .unwrap_or_default();
 
-    cache.set(user_id, permissions.clone());
+    // Cache sanitized user (password_hash cleared, national_id = None) + permissions
+    cache.set(user_id, user.clone(), permissions.clone());
 
     let has_perm = permissions.contains(&"*".to_string())
         || permissions.contains(&required_permission.to_string());
