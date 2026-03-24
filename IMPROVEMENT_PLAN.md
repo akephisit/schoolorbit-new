@@ -95,9 +95,11 @@
 ### ✅ H-5. Permission check ทำ 2 DB round trips ต่อ request — เสร็จแล้ว
 | | |
 |---|---|
-| **ไฟล์** | `backend-school/src/middleware/permission.rs` |
-| **ที่ทำ** | รวม SELECT user (trip 1) + get_permissions (trip 2) เป็น query เดียวที่ใช้ `EXISTS` subquery ตรวจสิทธิ์พร้อมกับดึงข้อมูล user ลด Neon round trips 2 → 1 ต่อทุก request ที่ต้องตรวจสิทธิ์ |
-| **ผลลัพธ์** | latency ลดลง ~50% ในส่วน permission check |
+| **ไฟล์** | `backend-school/src/middleware/permission.rs`, `backend-school/src/db/permission_cache.rs` |
+| **ที่ทำ** | เพิ่ม in-memory permission cache (`DashMap<Uuid, Vec<String>>`) ใน `AppState` พร้อม TTL 30 นาที และ explicit invalidation จาก mutation handlers |
+| **หลักการ** | cache hit: JWT verify + cache lookup = **0 DB trips** / cache miss: permissions-only query (ไม่มี JOIN user) = **1 DB trip** / `check_permission` เปลี่ยน return type เป็น `Uuid` แทน `User` เพื่อไม่ต้อง fetch user เลย |
+| **Invalidation** | `assign_user_role`, `remove_user_role`, `update_staff` → `invalidate(user_id)` / `update_role`, `update_department_permissions` → `clear_all()` / TTL 30 นาทีเป็น safety net |
+| **ผลลัพธ์** | จาก 2 DB trips → 0 trips (cache hit) หรือ 1 trip (miss) ต่อทุก request ที่ตรวจสิทธิ์ |
 
 ---
 
@@ -179,6 +181,7 @@
 | `backend-school/src/db/migration.rs` | C-1 |
 | `backend-school/src/middleware/internal_auth.rs` | C-4 |
 | `backend-school/src/middleware/permission.rs` | ✅ H-5 (done) |
+| `backend-school/src/db/permission_cache.rs` | ✅ H-5 (done) |
 | `backend-school/src/modules/staff/handlers/` | C-3 |
 | `backend-school/src/modules/students/` | C-3 |
 | `backend-school/src/utils/subdomain.rs` | M-1 |
