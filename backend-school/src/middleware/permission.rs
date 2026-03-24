@@ -1,27 +1,25 @@
 use crate::db::permission_cache::PermissionCache;
-use crate::modules::auth::models::User;
 use axum::{
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 use serde_json::json;
+use uuid::Uuid;
 
-/// Shared permission check function
+/// Shared permission check — returns user_id (Uuid) on success.
 ///
 /// Cache hit (within 30-min TTL): 0 DB trips
-///   - permissions checked from cache
-///   - User returned from cache (password_hash cleared, national_id = None)
+///   JWT verify → cache lookup → return user_id immediately
 ///
 /// Cache miss / expired: 1 DB trip
-///   - combined SQL: user + all permissions in one query
-///   - stores sanitized User + permissions in cache
+///   permissions-only query (no user JOIN) → cache → check
 pub async fn check_permission(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
     required_permission: &str,
     cache: &PermissionCache,
-) -> Result<User, Response> {
+) -> Result<Uuid, Response> {
     // Extract token
     let auth_header = headers
         .get(header::AUTHORIZATION)
@@ -62,7 +60,7 @@ pub async fn check_permission(
         }
     };
 
-    let user_id = match uuid::Uuid::parse_str(&claims.sub) {
+    let user_id = match Uuid::parse_str(&claims.sub) {
         Ok(id) => id,
         Err(_) => {
             return Err((
@@ -74,75 +72,37 @@ pub async fn check_permission(
     };
 
     // ── Cache hit: 0 DB trips ────────────────────────────────────────
-    if let Some((user, permissions)) = cache.get(&user_id) {
-        let has_perm = permissions.contains(&"*".to_string())
-            || permissions.contains(&required_permission.to_string());
-
-        return if has_perm {
-            Ok(user)
-        } else {
-            Err((
-                StatusCode::FORBIDDEN,
-                Json(json!({
-                    "success": false,
-                    "error": format!("ไม่มีสิทธิ์ {}", required_permission)
-                })),
-            )
-                .into_response())
-        };
+    if let Some(permissions) = cache.get(&user_id) {
+        return check_permission_result(user_id, &permissions, required_permission);
     }
 
-    // ── Cache miss: 1 DB trip (user + all permissions) ───────────────
-    #[derive(sqlx::FromRow)]
-    struct PermRow {
-        #[sqlx(flatten)]
-        user: User,
-        permissions_json: serde_json::Value,
-    }
-
-    let row = match sqlx::query_as::<_, PermRow>(
+    // ── Cache miss: permissions-only query (no user JOIN) ────────────
+    let permissions: Vec<String> = match sqlx::query_scalar(
         r#"
-        SELECT
-            u.id, u.username, u.national_id, u.email, u.password_hash,
-            u.first_name, u.last_name, u.user_type, u.phone, u.date_of_birth,
-            u.address, u.status, u.metadata, u.created_at, u.updated_at,
-            u.title, u.nickname, u.emergency_contact, u.line_id, u.gender,
-            u.profile_image_url, u.hired_date, u.resigned_date,
-            COALESCE(
-                (SELECT jsonb_agg(DISTINCT code) FROM (
-                    SELECT p.code
-                    FROM user_roles ur
-                    JOIN role_permissions rp ON ur.role_id = rp.role_id
-                    JOIN permissions p ON rp.permission_id = p.id
-                    WHERE ur.user_id = u.id AND ur.ended_at IS NULL
+        SELECT DISTINCT code FROM (
+            SELECT p.code
+            FROM user_roles ur
+            JOIN role_permissions rp ON ur.role_id = rp.role_id
+            JOIN permissions p ON rp.permission_id = p.id
+            WHERE ur.user_id = $1 AND ur.ended_at IS NULL
 
-                    UNION
+            UNION
 
-                    SELECT p.code
-                    FROM department_members dm
-                    JOIN department_permissions dp ON dm.department_id = dp.department_id
-                    JOIN permissions p ON dp.permission_id = p.id
-                    WHERE dm.user_id = u.id
-                      AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-                ) AS perms),
-                '[]'::jsonb
-            ) AS permissions_json
-        FROM users u
-        WHERE u.id = $1
+            SELECT p.code
+            FROM department_members dm
+            JOIN department_permissions dp ON dm.department_id = dp.department_id
+            JOIN permissions p ON dp.permission_id = p.id
+            WHERE dm.user_id = $1
+              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+        ) AS perms
+        ORDER BY code
         "#,
     )
     .bind(user_id)
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await
     {
-        Ok(Some(r)) => r,
-        Ok(None) => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "success": false, "error": "ไม่พบข้อมูลผู้ใช้" })),
-            )
-                .into_response());
-        }
+        Ok(p) => p,
         Err(e) => {
             eprintln!("❌ Failed to check permission: {}", e);
             return Err((
@@ -153,33 +113,21 @@ pub async fn check_permission(
         }
     };
 
-    // Decrypt national_id for this response only (not stored in cache)
-    let mut user = row.user;
-    if let Some(ref nid) = user.national_id {
-        match crate::utils::field_encryption::decrypt(nid) {
-            Ok(dec) => user.national_id = Some(dec),
-            Err(_) => user.national_id = None,
-        }
-    }
+    cache.set(user_id, permissions.clone());
 
-    let permissions: Vec<String> = row
-        .permissions_json
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
+    check_permission_result(user_id, &permissions, required_permission)
+}
 
-    // Cache sanitized user (password_hash cleared, national_id = None) + permissions
-    cache.set(user_id, user.clone(), permissions.clone());
-
+fn check_permission_result(
+    user_id: Uuid,
+    permissions: &[String],
+    required_permission: &str,
+) -> Result<Uuid, Response> {
     let has_perm = permissions.contains(&"*".to_string())
         || permissions.contains(&required_permission.to_string());
 
     if has_perm {
-        Ok(user)
+        Ok(user_id)
     } else {
         Err((
             StatusCode::FORBIDDEN,

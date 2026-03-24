@@ -77,7 +77,7 @@ pub async fn get_ranking(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -156,7 +156,7 @@ pub async fn get_track_ranking(
     Query(params): Query<RankingQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -341,7 +341,7 @@ pub async fn assign_rooms(
     Json(payload): Json<AssignRoomsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let user = match check_permission(&headers, &pool, codes::ADMISSION_SCORES).await {
+    let user_id = match check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
         Ok(u) => u,
         Err(r) => return Ok(r),
     };
@@ -493,7 +493,7 @@ pub async fn assign_rooms(
         .bind(rank_in_room as i32)
         .bind(row.total_score)
         .bind(row.total_score)
-        .bind(user.id)
+        .bind(user_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| {

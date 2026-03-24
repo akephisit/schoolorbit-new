@@ -1,4 +1,3 @@
-use crate::modules::auth::models::User;
 use dashmap::DashMap;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -6,19 +5,14 @@ use uuid::Uuid;
 const TTL: Duration = Duration::from_secs(30 * 60); // 30 minutes
 
 struct CacheEntry {
-    user: User,              // password_hash cleared, national_id = None
     permissions: Vec<String>,
     cached_at: Instant,
 }
 
-/// In-memory permission cache
+/// In-memory permission cache — stores only Vec<String> per user_id.
 ///
-/// Stores (sanitized User, Vec<String>) per user_id:
-///   - password_hash is cleared before storing
-///   - national_id is not stored (PII)
-///
-/// Cache hit (within TTL): 0 DB trips
-/// Cache miss / expired:    1 DB trip (combined query), then cached
+/// Cache hit (within TTL): 0 DB trips — JWT verify + cache lookup only
+/// Cache miss / expired:   1 DB trip — permissions-only query, then cached
 ///
 /// Invalidation is explicit from mutation handlers, with TTL as safety net.
 pub struct PermissionCache {
@@ -32,25 +26,22 @@ impl PermissionCache {
         }
     }
 
-    /// Returns (user, permissions) if present and within TTL
-    pub fn get(&self, user_id: &Uuid) -> Option<(User, Vec<String>)> {
+    /// Returns cached permissions if present and within TTL
+    pub fn get(&self, user_id: &Uuid) -> Option<Vec<String>> {
         let entry = self.inner.get(user_id)?;
         if entry.cached_at.elapsed() > TTL {
             drop(entry);
             self.inner.remove(user_id);
             return None;
         }
-        Some((entry.user.clone(), entry.permissions.clone()))
+        Some(entry.permissions.clone())
     }
 
-    /// Store sanitized user + permissions (strips password_hash and national_id)
-    pub fn set(&self, user_id: Uuid, mut user: User, permissions: Vec<String>) {
-        user.password_hash = String::new();
-        user.national_id = None;
+    /// Store permissions in cache
+    pub fn set(&self, user_id: Uuid, permissions: Vec<String>) {
         self.inner.insert(
             user_id,
             CacheEntry {
-                user,
                 permissions,
                 cached_at: Instant::now(),
             },

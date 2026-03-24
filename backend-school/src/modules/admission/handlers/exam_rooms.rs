@@ -80,7 +80,7 @@ pub async fn list_exam_rooms(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -134,7 +134,7 @@ pub async fn add_exam_room(
     Json(payload): Json<AddExamRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -193,7 +193,7 @@ pub async fn update_exam_room(
     Json(payload): Json<UpdateExamRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -233,7 +233,7 @@ pub async fn remove_exam_room(
     Path((round_id, room_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -266,7 +266,7 @@ pub async fn copy_exam_rooms_from_round(
     Path((round_id, from_round_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -311,7 +311,7 @@ pub async fn update_exam_config(
     Json(payload): Json<UpdateExamConfigRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -352,7 +352,7 @@ pub async fn get_exam_config(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -382,7 +382,7 @@ pub async fn assign_exam_seats(
     Json(payload): Json<AssignExamSeatsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let user = match check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    let user_id = match check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         Ok(u) => u,
         Err(r) => return Ok(r),
     };
@@ -571,7 +571,7 @@ pub async fn assign_exam_seats(
             .bind(room_id)
             .bind(seat_num)
             .bind(exam_id)
-            .bind(user.id)
+            .bind(user_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| {
@@ -670,7 +670,7 @@ pub async fn assign_exam_seats(
         .bind(room_id)
         .bind(seat_num)
         .bind(exam_id)
-        .bind(user.id)
+        .bind(user_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -720,7 +720,7 @@ pub async fn get_exam_seats(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -814,7 +814,7 @@ pub async fn get_application_exam_seat(
     Path(application_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 

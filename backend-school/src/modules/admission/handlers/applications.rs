@@ -264,7 +264,7 @@ pub async fn list_applications(
     Query(filter): Query<ApplicationFilter>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -344,7 +344,7 @@ pub async fn get_application(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -410,7 +410,7 @@ pub async fn verify_application(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let verifier = match check_permission(&headers, &pool, codes::ADMISSION_VERIFY).await {
+    let verifier_id = match check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
         Ok(u) => u,
         Err(r) => return Ok(r),
     };
@@ -426,7 +426,7 @@ pub async fn verify_application(
         WHERE id = $2 AND status = 'submitted'
         "#
     )
-    .bind(verifier.id)
+    .bind(verifier_id)
     .bind(id)
     .execute(&pool)
     .await
@@ -452,7 +452,7 @@ pub async fn reject_application(
     Json(payload): Json<RejectApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -490,7 +490,7 @@ pub async fn update_application(
     Json(payload): Json<UpdateApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -596,7 +596,7 @@ pub async fn unverify_application(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -638,7 +638,7 @@ pub async fn delete_application(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -715,7 +715,7 @@ pub async fn list_enrollment_pending(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_ENROLL).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_ENROLL, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -771,7 +771,7 @@ pub async fn complete_enrollment(
     Json(payload): Json<CompleteEnrollmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let enroller = match check_permission(&headers, &pool, codes::ADMISSION_ENROLL).await {
+    let enroller_id = match check_permission(&headers, &pool, codes::ADMISSION_ENROLL, &state.permission_cache).await {
         Ok(u) => u,
         Err(r) => return Ok(r),
     };
@@ -927,7 +927,7 @@ pub async fn complete_enrollment(
         WHERE application_id = $2
         "#
     )
-    .bind(enroller.id)
+    .bind(enroller_id)
     .bind(id)
     .execute(&mut *tx)
     .await
@@ -945,7 +945,7 @@ pub async fn complete_enrollment(
         WHERE id = $3
         "#
     )
-    .bind(enroller.id)
+    .bind(enroller_id)
     .bind(new_user_id)
     .bind(id)
     .execute(&mut *tx)
@@ -977,7 +977,7 @@ pub async fn change_application_track(
     Json(payload): Json<ChangeTrackRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES).await {
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -1030,7 +1030,7 @@ pub async fn staff_upload_document(
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Require authentication
-    if let Err(r) = check_permission(&headers, &pool, "admission.update").await {
+    if let Err(r) = check_permission(&headers, &pool, "admission.update", &state.permission_cache).await {
         return Ok(r);
     }
 
@@ -1208,7 +1208,7 @@ pub async fn staff_delete_document(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    if let Err(r) = check_permission(&headers, &pool, "admission.update").await {
+    if let Err(r) = check_permission(&headers, &pool, "admission.update", &state.permission_cache).await {
         return Ok(r);
     }
 
