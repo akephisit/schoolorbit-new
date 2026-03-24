@@ -48,7 +48,7 @@ pub async fn list_buildings(
     
     // For now using ACADEMIC_READ as fallback if FACILITY not defined, but user requested new codes.
     // I will use placeholders and define codes later.
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_READ_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_READ_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -68,7 +68,7 @@ pub async fn create_building(
     Json(payload): Json<CreateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_CREATE_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_CREATE_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -100,7 +100,7 @@ pub async fn update_building(
     Json(payload): Json<UpdateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    match check_permission(&headers, &pool, codes::FACILITY_UPDATE_ALL).await {
+    match check_permission(&headers, &pool, codes::FACILITY_UPDATE_ALL, &state.permission_cache).await {
        Ok(_) => {},
        Err(r) => return Ok(r)
     }
@@ -135,7 +135,7 @@ pub async fn delete_building(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    match check_permission(&headers, &pool, codes::FACILITY_DELETE_ALL).await {
+    match check_permission(&headers, &pool, codes::FACILITY_DELETE_ALL, &state.permission_cache).await {
        Ok(_) => {},
        Err(r) => return Ok(r)
     }
@@ -160,7 +160,7 @@ pub async fn list_rooms(
     Query(filter): Query<RoomFilter>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_READ_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_READ_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -203,7 +203,7 @@ pub async fn create_room(
     Json(payload): Json<CreateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_CREATE_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_CREATE_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -243,7 +243,7 @@ pub async fn update_room(
     Json(payload): Json<UpdateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_UPDATE_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_UPDATE_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -287,7 +287,7 @@ pub async fn delete_room(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_DELETE_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_DELETE_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 

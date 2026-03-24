@@ -37,7 +37,7 @@ pub async fn list_subject_groups(
     let pool = get_pool(&state, &headers).await?;
 
     // Check READ permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_READ_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_READ_ALL, &state.permission_cache).await {
          return Ok(response);
     }
 
@@ -63,7 +63,7 @@ pub async fn list_subjects(
     let pool = get_pool(&state, &headers).await?;
 
     // Check READ permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_READ_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_READ_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -139,7 +139,7 @@ pub async fn create_subject(
     let pool = get_pool(&state, &headers).await?;
 
     // 1. Check Permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_CREATE_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_CREATE_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -236,7 +236,7 @@ pub async fn update_subject(
     let pool = get_pool(&state, &headers).await?;
 
     // 1. Check Permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_UPDATE_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_UPDATE_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -323,7 +323,7 @@ pub async fn delete_subject(
     let pool = get_pool(&state, &headers).await?;
 
     // 1. Check Permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_DELETE_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_DELETE_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -349,7 +349,7 @@ pub async fn bulk_copy_subjects(
     let pool = get_pool(&state, &headers).await?;
 
     // 1. Check Permission
-    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_CREATE_ALL).await {
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_CURRICULUM_CREATE_ALL, &state.permission_cache).await {
         return Ok(response);
     }
 

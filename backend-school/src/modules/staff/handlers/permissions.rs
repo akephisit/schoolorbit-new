@@ -57,7 +57,7 @@ pub async fn list_permissions(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::SETTINGS_READ).await {
+    let _user = match check_permission(&headers, &pool, codes::SETTINGS_READ, &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
@@ -136,7 +136,7 @@ pub async fn list_permissions_by_module(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, "settings.read").await {
+    let _user = match check_permission(&headers, &pool, "settings.read", &state.permission_cache).await {
         Ok(u) => u,
         Err(response) => return response,
     };
