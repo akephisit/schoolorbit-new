@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { listDepartments, type Department } from '$lib/api/staff';
+	import { listDepartmentsLookup, type Department } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { GraduationCap, ChevronRight, Search, Settings } from 'lucide-svelte';
 	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte';
@@ -32,7 +32,7 @@
 
 	async function loadData() {
 		loading = true;
-		const res = await listDepartments();
+		const res = await listDepartmentsLookup();
 		if (res.success && res.data) departments = res.data;
 		loading = false;
 	}

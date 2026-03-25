@@ -380,6 +380,23 @@ export async function listDepartments(): Promise<ApiResponse<Department[]>> {
 	return response.json();
 }
 
+// Auth-only version (no roles.read.all required) — for non-admin pages
+export async function listDepartmentsLookup(): Promise<ApiResponse<Department[]>> {
+	const response = await fetch(`${API_BASE_URL}/api/lookup/departments`, {
+		method: 'GET',
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json'
+		}
+	});
+
+	if (!response.ok) {
+		throw new Error('Failed to fetch departments');
+	}
+
+	return response.json();
+}
+
 export async function getDepartment(deptId: string): Promise<ApiResponse<Department>> {
 	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}`, {
 		method: 'GET',

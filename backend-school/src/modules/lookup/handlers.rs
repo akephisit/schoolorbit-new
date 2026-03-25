@@ -239,6 +239,12 @@ struct DepartmentRow {
     id: Uuid,
     code: String,
     name: String,
+    name_en: Option<String>,
+    description: Option<String>,
+    category: Option<String>,
+    display_order: i32,
+    is_active: bool,
+    parent_department_id: Option<Uuid>,
 }
 
 /// GET /api/lookup/departments
@@ -264,7 +270,7 @@ pub async fn lookup_departments(
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
 
-    let mut sql = String::from("SELECT id, code, name FROM departments WHERE 1=1");
+    let mut sql = String::from("SELECT id, code, name, name_en, description, category, display_order, is_active, parent_department_id FROM departments WHERE 1=1");
 
     if active_only {
         sql.push_str(" AND is_active = true");
@@ -293,6 +299,12 @@ pub async fn lookup_departments(
         id: r.id,
         code: r.code,
         name: r.name,
+        name_en: r.name_en,
+        description: r.description,
+        category: r.category,
+        display_order: r.display_order,
+        is_active: r.is_active,
+        parent_department_id: r.parent_department_id,
     }).collect();
 
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
