@@ -11,7 +11,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::{DateTime, Utc};
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
@@ -25,7 +25,7 @@ pub struct DeptMemberItem {
     pub position: String,
     pub is_primary: bool,
     pub responsibilities: Option<String>,
-    pub started_at: DateTime<Utc>,
+    pub started_at: NaiveDate,
 }
 
 #[derive(Deserialize)]
