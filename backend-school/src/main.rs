@@ -311,6 +311,8 @@ async fn main() {
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/lookup/departments", get(modules::lookup::handlers::lookup_departments)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/lookup/departments/:id", get(modules::lookup::handlers::lookup_department_by_id)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/lookup/grade-levels", get(modules::lookup::handlers::lookup_grade_levels)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/lookup/classrooms", get(modules::lookup::handlers::lookup_classrooms)

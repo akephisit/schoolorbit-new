@@ -381,19 +381,29 @@ export async function listDepartments(): Promise<ApiResponse<Department[]>> {
 }
 
 // Auth-only version (no roles.read.all required) — for non-admin pages
-export async function listDepartmentsLookup(): Promise<ApiResponse<Department[]>> {
-	const response = await fetch(`${API_BASE_URL}/api/lookup/departments`, {
+export async function listDepartmentsLookup(options?: {
+	member_only?: boolean;
+}): Promise<ApiResponse<Department[]>> {
+	const params = new URLSearchParams();
+	if (options?.member_only) params.set('member_only', 'true');
+	const qs = params.toString() ? `?${params}` : '';
+	const response = await fetch(`${API_BASE_URL}/api/lookup/departments${qs}`, {
 		method: 'GET',
 		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
+		headers: { 'Content-Type': 'application/json' }
 	});
+	if (!response.ok) throw new Error('Failed to fetch departments');
+	return response.json();
+}
 
-	if (!response.ok) {
-		throw new Error('Failed to fetch departments');
-	}
-
+// Get single department (auth only, no roles.read.all required)
+export async function getDepartmentLookup(id: string): Promise<ApiResponse<Department>> {
+	const response = await fetch(`${API_BASE_URL}/api/lookup/departments/${id}`, {
+		method: 'GET',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' }
+	});
+	if (!response.ok) throw new Error('Failed to fetch department');
 	return response.json();
 }
 

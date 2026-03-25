@@ -32,7 +32,9 @@
 
 	async function loadData() {
 		loading = true;
-		const res = await listDepartmentsLookup();
+		// admin เห็นทุกกลุ่ม, user ทั่วไปเห็นเฉพาะกลุ่มที่ตัวเองสังกัด
+		const isAdmin = $can.hasAny('roles.assign.all', '*');
+		const res = await listDepartmentsLookup(isAdmin ? undefined : { member_only: true });
 		if (res.success && res.data) departments = res.data;
 		loading = false;
 	}

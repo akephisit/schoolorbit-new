@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
-	import { getDepartment, type Department } from '$lib/api/staff';
+	import { getDepartmentLookup, type Department } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import DeptMembersSection from '$lib/components/staff/DeptMembersSection.svelte';
@@ -21,7 +21,7 @@
 		if (!deptId) return;
 		try {
 			loading = true;
-			const res = await getDepartment(deptId);
+			const res = await getDepartmentLookup(deptId);
 			if (res.success && res.data) {
 				department = res.data;
 			} else {

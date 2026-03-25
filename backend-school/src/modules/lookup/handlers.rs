@@ -248,7 +248,7 @@ struct DepartmentRow {
 }
 
 /// GET /api/lookup/departments
-/// Returns minimal department data for dropdowns
+/// Returns department data. Supports ?member_only=true to filter to user's own depts.
 pub async fn lookup_departments(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -265,25 +265,38 @@ pub async fn lookup_departments(
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
-    verify_authenticated(&headers, &pool).await?;
+    let user_id = verify_authenticated(&headers, &pool).await?;
 
     let limit = query.limit.unwrap_or(100).min(500);
     let active_only = query.active_only.unwrap_or(true);
+    let member_only = query.member_only.unwrap_or(false);
 
-    let mut sql = String::from("SELECT id, code, name, name_en, description, category, display_order, is_active, parent_department_id FROM departments WHERE 1=1");
+    let mut sql = String::from(
+        "SELECT id, code, name, name_en, description, category, display_order, is_active, parent_department_id FROM departments WHERE 1=1"
+    );
 
     if active_only {
         sql.push_str(" AND is_active = true");
     }
 
-    let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
-    if search_pattern.is_some() {
-        sql.push_str(" AND (name ILIKE $1 OR code ILIKE $1)");
+    if member_only {
+        sql.push_str(
+            " AND EXISTS (SELECT 1 FROM department_members dm WHERE dm.department_id = departments.id AND dm.user_id = $1 AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE))"
+        );
     }
 
-    sql.push_str(&format!(" ORDER BY name LIMIT {}", limit));
+    let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
+    if search_pattern.is_some() {
+        let param_idx = if member_only { 2 } else { 1 };
+        sql.push_str(&format!(" AND (name ILIKE ${0} OR code ILIKE ${0})", param_idx));
+    }
+
+    sql.push_str(&format!(" ORDER BY display_order, name LIMIT {}", limit));
 
     let mut q = sqlx::query_as::<_, DepartmentRow>(&sql);
+    if member_only {
+        q = q.bind(user_id);
+    }
     if let Some(ref pattern) = search_pattern {
         q = q.bind(pattern);
     }
@@ -308,6 +321,56 @@ pub async fn lookup_departments(
     }).collect();
 
     Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+}
+
+/// GET /api/lookup/departments/:id
+/// Returns single department by ID (auth only, no permission required)
+pub async fn lookup_department_by_id(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
+        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
+
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+
+    verify_authenticated(&headers, &pool).await?;
+
+    let row = sqlx::query_as::<_, DepartmentRow>(
+        "SELECT id, code, name, name_en, description, category, display_order, is_active, parent_department_id FROM departments WHERE id = $1"
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
+
+    match row {
+        Some(r) => {
+            let dept = DepartmentLookupItem {
+                id: r.id,
+                code: r.code,
+                name: r.name,
+                name_en: r.name_en,
+                description: r.description,
+                category: r.category,
+                display_order: r.display_order,
+                is_active: r.is_active,
+                parent_department_id: r.parent_department_id,
+            };
+            Ok(Json(serde_json::json!({ "success": true, "data": dept })).into_response())
+        }
+        None => Err(AppError::NotFound("ไม่พบฝ่าย/กลุ่มนี้".to_string())),
+    }
 }
 
 // ===================================================================

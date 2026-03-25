@@ -117,4 +117,6 @@ pub struct LookupQuery {
     /// Filter by level type (kindergarten, primary, secondary)
     pub level_type: Option<String>,
     pub subject_type: Option<String>,
+    /// Filter to departments where the current user is a member
+    pub member_only: Option<bool>,
 }
