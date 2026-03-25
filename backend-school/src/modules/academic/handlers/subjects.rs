@@ -170,7 +170,18 @@ pub async fn list_subjects(
     }
 
     if let Some(year_id) = filter.start_academic_year_id {
-        query.push_str(&format!(" AND s.start_academic_year_id = '{}'", year_id));
+        // แสดงวิชาทั้งหมดที่ใช้งานได้ในปีนั้น:
+        // สำหรับแต่ละ code ดึง version ล่าสุดที่ start_academic_year_id <= ปีเป้าหมาย
+        query.push_str(&format!(
+            r#" AND s.id IN (
+                SELECT DISTINCT ON (sub.code) sub.id
+                FROM subjects sub
+                JOIN academic_years ay  ON ay.id  = sub.start_academic_year_id
+                JOIN academic_years ayt ON ayt.id = '{year_id}'
+                WHERE ay.year <= ayt.year
+                ORDER BY sub.code, ay.year DESC
+            )"#
+        ));
     }
 
     if let Some(term) = &filter.term {
