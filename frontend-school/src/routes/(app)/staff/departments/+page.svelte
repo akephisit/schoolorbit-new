@@ -10,14 +10,10 @@
 		Plus,
 		Pencil,
 		Search,
-		Phone,
-		Mail,
-		MapPin,
 		Briefcase,
 		GraduationCap,
 		Settings
 	} from 'lucide-svelte';
-	import * as Select from '$lib/components/ui/select';
 	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
 	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte'; // New import
 	import { toast } from 'svelte-sonner';
@@ -66,7 +62,7 @@
 
 	function getChildren(parentId: string): Department[] {
 		return departments
-			.filter((d) => d.parent_department_id === parentId)
+			.filter((d) => d.parent_department_id === parentId && !d.code.startsWith('SUBJ-'))
 			.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 	}
 
@@ -113,7 +109,7 @@
 		e.dataTransfer.setData('text/plain', deptId);
 	}
 
-	function handleDragEnd(e: DragEvent) {
+	function handleDragEnd(_e: DragEvent) {
 		draggedDeptId = null;
 		dragOverDeptId = null;
 	}
@@ -129,7 +125,7 @@
 		dragOverDeptId = deptId;
 	}
 
-	function handleDragLeave(e: DragEvent) {
+	function handleDragLeave(_e: DragEvent) {
 		// e.stopPropagation();
 	}
 
@@ -145,8 +141,6 @@
 		if (sourceDeptId === targetParentId) return;
 
 		const sourceDept = departments.find((d) => d.id === sourceDeptId);
-		const targetDept = targetParentId ? departments.find((d) => d.id === targetParentId) : null;
-
 		if (!sourceDept) return;
 
 		// Validation: Prevent nesting deeper than 2 levels
