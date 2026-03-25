@@ -89,30 +89,51 @@ pub async fn login(
     .await
     .unwrap_or(None);
 
-    // Fetch all user permissions from normalized schema
-    // Fetch all user permissions (Role-based + Department-based)
+    // Fetch all user permissions (position-aware + delegations + parent-head inheritance)
     let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT code FROM (
-             -- 1. Role-based Permissions
-             SELECT p.code
-             FROM user_roles ur
-             JOIN role_permissions rp ON ur.role_id = rp.role_id
-             JOIN permissions p ON rp.permission_id = p.id
-             WHERE ur.user_id = $1 
-               AND ur.ended_at IS NULL
-             
-             UNION
-             
-             -- 2. Department-based Permissions
-             SELECT p.code
-             FROM staff_info si
-             JOIN department_permissions dp ON si.department_id = dp.department_id
-             JOIN permissions p ON dp.permission_id = p.id
-             WHERE si.user_id = $1 
-               AND si.is_active = true 
-               AND (si.resigned_date IS NULL OR si.resigned_date > CURRENT_DATE)
-         ) AS all_perms
-         ORDER BY code"
+        r#"SELECT DISTINCT code FROM (
+            -- 1. Role-based permissions
+            SELECT p.code
+            FROM user_roles ur
+            JOIN role_permissions rp ON ur.role_id = rp.role_id
+            JOIN permissions p ON rp.permission_id = p.id
+            WHERE ur.user_id = $1 AND ur.ended_at IS NULL
+
+            UNION
+
+            -- 2. Department permissions (position-aware)
+            SELECT p.code
+            FROM department_members dm
+            JOIN department_permissions dp ON dm.department_id = dp.department_id
+            JOIN permissions p ON dp.permission_id = p.id
+            WHERE dm.user_id = $1
+              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+              AND (dp.position IS NULL OR dp.position = dm.position)
+
+            UNION
+
+            -- 3. Delegated permissions
+            SELECT p.code
+            FROM permission_delegations pd
+            JOIN permissions p ON pd.permission_id = p.id
+            WHERE pd.to_user_id = $1
+              AND pd.revoked_at IS NULL
+              AND (pd.expires_at IS NULL OR pd.expires_at > NOW())
+
+            UNION
+
+            -- 4. Parent-head inheritance
+            SELECT p.code
+            FROM department_members dm
+            JOIN departments child ON child.parent_department_id = dm.department_id
+            JOIN department_permissions dp ON dp.department_id = child.id
+            JOIN permissions p ON dp.permission_id = p.id
+            WHERE dm.user_id = $1
+              AND dm.position = 'head'
+              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+              AND (dp.position IS NULL OR dp.position = 'head')
+        ) AS perms
+        ORDER BY code"#,
     )
     .bind(&user.id)
     .fetch_all(&pool)
@@ -269,30 +290,51 @@ pub async fn me(
     .await
     .unwrap_or(None);
 
-    // Fetch all user permissions from normalized schema
-    // Fetch all user permissions (Role-based + Department-based)
+    // Fetch all user permissions (position-aware + delegations + parent-head inheritance)
     let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT code FROM (
-             -- 1. Role-based Permissions
-             SELECT p.code
-             FROM user_roles ur
-             JOIN role_permissions rp ON ur.role_id = rp.role_id
-             JOIN permissions p ON rp.permission_id = p.id
-             WHERE ur.user_id = $1 
-               AND ur.ended_at IS NULL
-             
-             UNION
-             
-             -- 2. Department-based Permissions
-             SELECT p.code
-             FROM staff_info si
-             JOIN department_permissions dp ON si.department_id = dp.department_id
-             JOIN permissions p ON dp.permission_id = p.id
-             WHERE si.user_id = $1 
-               AND si.is_active = true 
-               AND (si.resigned_date IS NULL OR si.resigned_date > CURRENT_DATE)
-         ) AS all_perms
-         ORDER BY code"
+        r#"SELECT DISTINCT code FROM (
+            -- 1. Role-based permissions
+            SELECT p.code
+            FROM user_roles ur
+            JOIN role_permissions rp ON ur.role_id = rp.role_id
+            JOIN permissions p ON rp.permission_id = p.id
+            WHERE ur.user_id = $1 AND ur.ended_at IS NULL
+
+            UNION
+
+            -- 2. Department permissions (position-aware)
+            SELECT p.code
+            FROM department_members dm
+            JOIN department_permissions dp ON dm.department_id = dp.department_id
+            JOIN permissions p ON dp.permission_id = p.id
+            WHERE dm.user_id = $1
+              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+              AND (dp.position IS NULL OR dp.position = dm.position)
+
+            UNION
+
+            -- 3. Delegated permissions
+            SELECT p.code
+            FROM permission_delegations pd
+            JOIN permissions p ON pd.permission_id = p.id
+            WHERE pd.to_user_id = $1
+              AND pd.revoked_at IS NULL
+              AND (pd.expires_at IS NULL OR pd.expires_at > NOW())
+
+            UNION
+
+            -- 4. Parent-head inheritance
+            SELECT p.code
+            FROM department_members dm
+            JOIN departments child ON child.parent_department_id = dm.department_id
+            JOIN department_permissions dp ON dp.department_id = child.id
+            JOIN permissions p ON dp.permission_id = p.id
+            WHERE dm.user_id = $1
+              AND dm.position = 'head'
+              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+              AND (dp.position IS NULL OR dp.position = 'head')
+        ) AS perms
+        ORDER BY code"#,
     )
     .bind(&user.id)
     .fetch_all(&pool)
@@ -302,7 +344,6 @@ pub async fn me(
     // Create response with primary role name and permissions
     let mut user_response = UserResponse::from(user);
     user_response.primary_role_name = primary_role_name;
-    // Always send permissions array (even if empty) so frontend can check
     user_response.permissions = Some(permissions);
 
     Ok((StatusCode::OK, Json(user_response)))
