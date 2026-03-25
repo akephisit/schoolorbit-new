@@ -514,31 +514,41 @@ pub async fn generate_courses_from_plan(
     
     let grade_level_id = classroom.1;
     
-    // 2. Get semester term
-    let semester_term: (String,) = sqlx::query_as(
-        "SELECT term FROM academic_semesters WHERE id = $1"
+    // 2. Get semester term and academic year
+    let (semester_term, target_academic_year_id): (String, Uuid) = sqlx::query_as(
+        "SELECT term, academic_year_id FROM academic_semesters WHERE id = $1"
     )
     .bind(req.academic_semester_id)
     .fetch_one(&mut *tx)
     .await?;
-    
-    // 3. Get subjects from plan for this grade + term
-    let plan_subjects: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT subject_id FROM study_plan_subjects 
-         WHERE study_plan_version_id = $1 
-         AND grade_level_id = $2 
-         AND term = $3"
+
+    // 3. Resolve subjects from plan for this grade + term, using effective-from versioning:
+    //    for each subject_code in the plan, find the latest version where start_academic_year_id <= target year
+    let plan_subjects: Vec<(Uuid, Option<Uuid>)> = sqlx::query_as(
+        r#"
+        SELECT DISTINCT ON (sps.subject_code) s.id, s.default_instructor_id
+        FROM study_plan_subjects sps
+        JOIN subjects s ON s.code = sps.subject_code
+        JOIN academic_years ay ON ay.id = s.start_academic_year_id
+        JOIN academic_years ay_target ON ay_target.id = $4
+        WHERE sps.study_plan_version_id = $1
+          AND sps.grade_level_id = $2
+          AND sps.term = $3
+          AND ay.year <= ay_target.year
+        ORDER BY sps.subject_code, ay.year DESC
+        "#
     )
     .bind(plan_version_id)
     .bind(grade_level_id)
-    .bind(&semester_term.0)
+    .bind(&semester_term)
+    .bind(target_academic_year_id)
     .fetch_all(&mut *tx)
     .await?;
-    
+
     let mut added = 0;
     let mut skipped = 0;
-    
-    for (subject_id,) in plan_subjects {
+
+    for (subject_id, default_instructor_id) in plan_subjects {
         // Check if already exists
         if req.skip_existing.unwrap_or(true) {
             let exists: (bool,) = sqlx::query_as(
@@ -562,17 +572,16 @@ pub async fn generate_courses_from_plan(
         }
         
         // Insert
-        // Insert
         sqlx::query(
-            "INSERT INTO classroom_courses 
+            "INSERT INTO classroom_courses
              (classroom_id, subject_id, academic_semester_id, settings, primary_instructor_id)
-             SELECT $1, $2, $3, '{}'::jsonb, s.default_instructor_id
-             FROM subjects s WHERE s.id = $2
+             VALUES ($1, $2, $3, '{}'::jsonb, $4)
              ON CONFLICT (classroom_id, subject_id, academic_semester_id) DO NOTHING"
         )
         .bind(req.classroom_id)
         .bind(subject_id)
         .bind(req.academic_semester_id)
+        .bind(default_instructor_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| {

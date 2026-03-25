@@ -93,7 +93,7 @@
 
 		return {
 			code: '',
-			academic_year_id: currentYear?.id || '', // Default to current year UUID
+			start_academic_year_id: currentYear?.id || '', // effective-from year for this version
 			name_th: '',
 			name_en: '',
 			credit: 1.0,
@@ -154,7 +154,7 @@
 				group_id: selectedGroupId || undefined,
 				subject_type: selectedSubjectType || undefined,
 				level_scope: selectedLevelScope || undefined,
-				academic_year_id: selectedYearFilter || undefined
+				start_academic_year_id: selectedYearFilter || undefined
 			});
 			subjects = subjectsRes.data;
 		} catch (e) {
@@ -539,10 +539,10 @@
 					<Input id="subject-code" bind:value={currentSubject.code} placeholder="e.g. ท21101" />
 				</div>
 				<div class="space-y-2">
-					<Label>สำหรับปีการศึกษา <span class="text-destructive">*</span></Label>
-					<Select.Root type="single" bind:value={currentSubject.academic_year_id}>
+					<Label>ปีการศึกษาที่เริ่มใช้ <span class="text-destructive">*</span></Label>
+					<Select.Root type="single" bind:value={currentSubject.start_academic_year_id}>
 						<Select.Trigger>
-							{academicYears.find((y) => y.id === currentSubject.academic_year_id)?.name ||
+							{academicYears.find((y) => y.id === currentSubject.start_academic_year_id)?.name ||
 								'เลือกปีการศึกษา'}
 						</Select.Trigger>
 						<Select.Content>
@@ -560,20 +560,6 @@
 
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<Label class="text-muted-foreground">เริ่มใช้ตั้งแต่ (ปีหลักสูตร)</Label>
-					<Select.Root type="single" bind:value={currentSubject.start_academic_year_id}>
-						<Select.Trigger>
-							{academicYears.find((y) => y.id === currentSubject.start_academic_year_id)?.name ||
-								'(ไม่ระบุ)'}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="">(ไม่ระบุ)</Select.Item>
-							{#each academicYears as year}
-								<Select.Item value={year.id}>{year.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
 
 				<div class="space-y-2">
 					<Label>ระดับชั้นที่เปิดสอน <span class="text-destructive">*</span></Label>

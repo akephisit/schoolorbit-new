@@ -266,7 +266,7 @@ export interface SubjectGroup {
 export interface Subject {
     id: string;
     code: string;
-    academic_year_id: string; // UUID FK to academic_years
+    start_academic_year_id: string; // effective-from year for this subject version
     name_th: string;
     name_en?: string;
     credit: number;
@@ -277,7 +277,6 @@ export interface Subject {
     description?: string;
     is_active: boolean;
     group_name_th?: string;
-    start_academic_year_id?: string;
     grade_level_ids?: string[];
     term?: string;
     default_instructor_id?: string;
@@ -294,7 +293,7 @@ export const listSubjects = async (filters: {
     subject_type?: string;
     search?: string;
     active_only?: boolean;
-    academic_year_id?: string;
+    start_academic_year_id?: string;
     term?: string;
 } = {}): Promise<{ data: Subject[] }> => {
     const params = new URLSearchParams();
@@ -303,7 +302,7 @@ export const listSubjects = async (filters: {
     if (filters.subject_type) params.append('subject_type', filters.subject_type);
     if (filters.search) params.append('search', filters.search);
     if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
-    if (filters.academic_year_id) params.append('academic_year_id', filters.academic_year_id);
+    if (filters.start_academic_year_id) params.append('start_academic_year_id', filters.start_academic_year_id);
     if (filters.term) params.append('term', filters.term);
 
     const queryString = params.toString() ? `?${params.toString()}` : '';

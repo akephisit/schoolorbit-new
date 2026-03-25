@@ -169,8 +169,8 @@ pub async fn list_subjects(
         }
     }
 
-    if let Some(year_id) = filter.academic_year_id {
-        query.push_str(&format!(" AND s.academic_year_id = '{}'", year_id));
+    if let Some(year_id) = filter.start_academic_year_id {
+        query.push_str(&format!(" AND s.start_academic_year_id = '{}'", year_id));
     }
 
     if let Some(term) = &filter.term {
@@ -222,26 +222,25 @@ pub async fn create_subject(
         }
     }
 
-    // 2. Validate Code + Year Uniqueness (same code can exist in different years)
+    // 2. Validate Code + Year Uniqueness (same code can exist in different start years)
     let exists: Option<bool> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1 AND academic_year_id = $2)"
+        "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1 AND start_academic_year_id = $2)"
     )
     .bind(&payload.code)
-    .bind(payload.academic_year_id)
+    .bind(payload.start_academic_year_id)
     .fetch_one(&pool)
     .await
     .unwrap_or(Some(false));
 
     if exists.unwrap_or(false) {
-        // Get year info for better error message
         let year_name: Option<String> = sqlx::query_scalar(
             "SELECT name FROM academic_years WHERE id = $1"
         )
-        .bind(payload.academic_year_id)
+        .bind(payload.start_academic_year_id)
         .fetch_optional(&pool)
         .await
         .unwrap_or(None);
-        
+
         return Err(AppError::BadRequest(format!(
             "รหัสวิชา {} {} มีอยู่ในระบบแล้ว",
             payload.code,
@@ -255,19 +254,18 @@ pub async fn create_subject(
     let mut subject = sqlx::query_as::<_, Subject>(
         r#"
         INSERT INTO subjects (
-            code, academic_year_id, name_th, name_en, 
-            credit, hours_per_semester, type, group_id, level_scope, description, start_academic_year_id,
-            term, default_instructor_id
+            code, name_th, name_en,
+            credit, hours_per_semester, type, group_id, level_scope, description,
+            start_academic_year_id, term, default_instructor_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *
         "#
     )
     .bind(&payload.code)
-    .bind(payload.academic_year_id)
     .bind(&payload.name_th)
     .bind(&payload.name_en)
-    .bind(payload.credit.unwrap_or(0.0)) 
+    .bind(payload.credit.unwrap_or(0.0))
     .bind(payload.hours_per_semester)
     .bind(&payload.subject_type)
     .bind(payload.group_id)
@@ -351,28 +349,26 @@ pub async fn update_subject(
     // 2. Update
     let mut subject = sqlx::query_as::<_, Subject>(
         r#"
-        UPDATE subjects SET 
+        UPDATE subjects SET
             code = COALESCE($1, code),
-            academic_year_id = COALESCE($2, academic_year_id),
-            name_th = COALESCE($3, name_th),
-            name_en = COALESCE($4, name_en),
-            credit = COALESCE($5, credit),
-            hours_per_semester = COALESCE($6, hours_per_semester),
-            type = COALESCE($7, type),
-            group_id = COALESCE($8, group_id),
-            level_scope = COALESCE($9, level_scope),
-            description = COALESCE($10, description),
-            is_active = COALESCE($11, is_active),
-            start_academic_year_id = COALESCE($12, start_academic_year_id),
-            term = COALESCE($14, term),
-            default_instructor_id = COALESCE($15, default_instructor_id),
+            name_th = COALESCE($2, name_th),
+            name_en = COALESCE($3, name_en),
+            credit = COALESCE($4, credit),
+            hours_per_semester = COALESCE($5, hours_per_semester),
+            type = COALESCE($6, type),
+            group_id = COALESCE($7, group_id),
+            level_scope = COALESCE($8, level_scope),
+            description = COALESCE($9, description),
+            is_active = COALESCE($10, is_active),
+            start_academic_year_id = COALESCE($11, start_academic_year_id),
+            term = COALESCE($13, term),
+            default_instructor_id = COALESCE($14, default_instructor_id),
             updated_at = NOW()
-        WHERE id = $13
+        WHERE id = $12
         RETURNING *
         "#
     )
     .bind(&payload.code)
-    .bind(payload.academic_year_id)
     .bind(&payload.name_th)
     .bind(&payload.name_en)
     .bind(payload.credit)
@@ -508,7 +504,7 @@ pub async fn bulk_copy_subjects(
 
     // 2. Fetch all subjects from source year
     let source_subjects = sqlx::query_as::<_, Subject>(
-        "SELECT * FROM subjects WHERE academic_year_id = $1 AND is_active = true"
+        "SELECT * FROM subjects WHERE start_academic_year_id = $1 AND is_active = true"
     )
     .bind(payload.source_academic_year_id)
     .fetch_all(&pool)
@@ -537,9 +533,9 @@ pub async fn bulk_copy_subjects(
     let mut skipped_count = 0;
 
     for subject in source_subjects {
-        // Check if code already exists in target year
+        // Check if code already exists for target start year
         let exists: Option<bool> = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1 AND academic_year_id = $2)"
+            "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1 AND start_academic_year_id = $2)"
         )
         .bind(&subject.code)
         .bind(payload.target_academic_year_id)
@@ -552,19 +548,18 @@ pub async fn bulk_copy_subjects(
             continue;
         }
 
-        // Insert new subject with target year
+        // Insert new subject version effective from target year
         let _result = sqlx::query(
             r#"
             INSERT INTO subjects (
-                code, academic_year_id, name_th, name_en,
+                code, name_th, name_en,
                 credit, hours_per_semester, type, group_id, level_scope, description,
                 start_academic_year_id, term, default_instructor_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#
         )
         .bind(&subject.code)
-        .bind(payload.target_academic_year_id)
         .bind(&subject.name_th)
         .bind(&subject.name_en)
         .bind(subject.credit)
@@ -573,7 +568,7 @@ pub async fn bulk_copy_subjects(
         .bind(subject.group_id)
         .bind(&subject.level_scope)
         .bind(&subject.description)
-        .bind(subject.start_academic_year_id)
+        .bind(payload.target_academic_year_id)
         .bind(&subject.term)
         .bind(subject.default_instructor_id)
         .execute(&pool)

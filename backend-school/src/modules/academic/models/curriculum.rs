@@ -27,7 +27,7 @@ pub struct SubjectGroup {
 pub struct Subject {
     pub id: Uuid,
     pub code: String,
-    pub academic_year_id: Uuid, // FK to academic_years for referential integrity
+    pub start_academic_year_id: Uuid, // version key: this subject definition is effective from this year
     pub name_th: String,
     pub name_en: Option<String>,
     pub credit: f64, // Changed from Decimal to f64 to avoid extra dependency
@@ -43,7 +43,6 @@ pub struct Subject {
     pub updated_at: DateTime<Utc>,
     pub term: Option<String>,
     pub default_instructor_id: Option<Uuid>,
-    pub start_academic_year_id: Option<Uuid>,
     
     // Joined Fields (Optional)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,7 +60,7 @@ pub struct Subject {
 #[derive(Debug, Deserialize)]
 pub struct CreateSubjectRequest {
     pub code: String,
-    pub academic_year_id: Uuid, // Required FK
+    pub start_academic_year_id: Uuid, // effective-from year for this version
     pub name_th: String,
     pub name_en: Option<String>,
     pub credit: Option<f64>,
@@ -71,7 +70,6 @@ pub struct CreateSubjectRequest {
     pub group_id: Option<Uuid>,
     pub level_scope: Option<String>,
     pub description: Option<String>,
-    pub start_academic_year_id: Option<Uuid>,
     pub grade_level_ids: Option<Vec<Uuid>>,
     pub term: Option<String>,
     pub default_instructor_id: Option<Uuid>,
@@ -80,7 +78,6 @@ pub struct CreateSubjectRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateSubjectRequest {
     pub code: Option<String>,
-    pub academic_year_id: Option<Uuid>,
     pub name_th: Option<String>,
     pub name_en: Option<String>,
     pub credit: Option<f64>,
@@ -105,7 +102,7 @@ pub struct SubjectFilter {
     pub subject_type: Option<String>,
     pub search: Option<String>,
     pub active_only: Option<bool>,
-    pub academic_year_id: Option<Uuid>,
+    pub start_academic_year_id: Option<Uuid>,
     pub term: Option<String>,
 }
 

@@ -197,7 +197,7 @@
 	async function loadModalSubjects() {
 		try {
 			const res = await listSubjects({
-				academic_year_id: selectedYearId,
+				start_academic_year_id: selectedYearId,
 				term: selectedTermFilter || undefined
 			});
 			allSubjects = res.data;
