@@ -606,6 +606,8 @@ export async function revokeDelegation(delegationId: string): Promise<ApiRespons
 
 export interface DeptMemberItem {
 	user_id: string;
+	department_id: string;
+	department_name: string;
 	name: string;
 	title: string;
 	position: string;
@@ -625,10 +627,15 @@ export interface UpdateMemberBody {
 	position: string;
 	is_primary?: boolean;
 	responsibilities?: string;
+	new_department_id?: string;
 }
 
-export async function listDeptMembers(deptId: string): Promise<ApiResponse<DeptMemberItem[]>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members`, {
+export async function listDeptMembers(
+	deptId: string,
+	options?: { include_children?: boolean }
+): Promise<ApiResponse<DeptMemberItem[]>> {
+	const params = options?.include_children ? '?include_children=true' : '';
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members${params}`, {
 		method: 'GET',
 		credentials: 'include',
 		headers: { 'Content-Type': 'application/json' }

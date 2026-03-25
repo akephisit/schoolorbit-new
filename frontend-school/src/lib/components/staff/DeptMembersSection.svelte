@@ -6,7 +6,8 @@
 		removeDeptMember,
 		listStaff,
 		type DeptMemberItem,
-		type StaffListItem
+		type StaffListItem,
+		type Department
 	} from '$lib/api/staff';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
@@ -14,9 +15,12 @@
 
 	interface Props {
 		departmentId: string;
+		subDepartments?: Department[]; // ถ้าส่งมา จะโหลด include_children และแสดง dropdown ฝ่าย
 	}
 
-	const { departmentId }: Props = $props();
+	const { departmentId, subDepartments = [] }: Props = $props();
+
+	const includeChildren = $derived(subDepartments.length > 0);
 
 	let members: DeptMemberItem[] = $state([]);
 	let loadingMembers = $state(false);
@@ -26,14 +30,14 @@
 	let staffSearch = $state('');
 	let staffResults: StaffListItem[] = $state([]);
 	let searchLoading = $state(false);
-	let addForm = $state({ user_id: '', position: 'member', is_primary: false });
+	let addForm = $state({ user_id: '', position: 'member', is_primary: false, target_dept_id: '' });
 	let addError = $state('');
 	let addSubmitting = $state(false);
 
-	// Edit position dialog
+	// Edit dialog
 	let showEditDialog = $state(false);
 	let editingMember: DeptMemberItem | null = $state(null);
-	let editForm = $state({ position: 'member', is_primary: false });
+	let editForm = $state({ position: 'member', is_primary: false, new_department_id: '' });
 	let editSubmitting = $state(false);
 
 	const positionLabels: Record<string, string> = {
@@ -44,7 +48,7 @@
 	async function loadMembers() {
 		if (!departmentId) return;
 		loadingMembers = true;
-		const res = await listDeptMembers(departmentId);
+		const res = await listDeptMembers(departmentId, { include_children: includeChildren });
 		if (res.success && res.data) members = res.data;
 		loadingMembers = false;
 	}
@@ -61,14 +65,16 @@
 		if (!addForm.user_id || !addForm.position) return;
 		addSubmitting = true;
 		addError = '';
-		const res = await addDeptMember(departmentId, {
+		// ถ้าเลือกฝ่ายย่อย ให้ add เข้าฝ่ายนั้นแทน
+		const targetDept = (includeChildren && addForm.target_dept_id) ? addForm.target_dept_id : departmentId;
+		const res = await addDeptMember(targetDept, {
 			user_id: addForm.user_id,
 			position: addForm.position,
 			is_primary: addForm.is_primary
 		});
 		if (res.success) {
 			showAddDialog = false;
-			addForm = { user_id: '', position: 'member', is_primary: false };
+			addForm = { user_id: '', position: 'member', is_primary: false, target_dept_id: '' };
 			staffSearch = '';
 			staffResults = [];
 			await loadMembers();
@@ -80,14 +86,26 @@
 
 	function openEdit(member: DeptMemberItem) {
 		editingMember = member;
-		editForm = { position: member.position, is_primary: member.is_primary };
+		editForm = {
+			position: member.position,
+			is_primary: member.is_primary,
+			new_department_id: member.department_id
+		};
 		showEditDialog = true;
 	}
 
 	async function handleEdit() {
 		if (!editingMember) return;
 		editSubmitting = true;
-		const res = await updateDeptMember(departmentId, editingMember.user_id, editForm);
+		const body: { position: string; is_primary: boolean; new_department_id?: string } = {
+			position: editForm.position,
+			is_primary: editForm.is_primary
+		};
+		// ส่ง new_department_id เฉพาะเมื่อเปลี่ยนฝ่าย
+		if (includeChildren && editForm.new_department_id !== editingMember.department_id) {
+			body.new_department_id = editForm.new_department_id;
+		}
+		const res = await updateDeptMember(editingMember.department_id, editingMember.user_id, body);
 		if (res.success) {
 			showEditDialog = false;
 			editingMember = null;
@@ -97,7 +115,7 @@
 	}
 
 	async function handleRemove(member: DeptMemberItem) {
-		const res = await removeDeptMember(departmentId, member.user_id);
+		const res = await removeDeptMember(member.department_id, member.user_id);
 		if (res.success) await loadMembers();
 	}
 
@@ -110,6 +128,12 @@
 		clearTimeout(debounceTimer);
 		debounceTimer = setTimeout(searchStaff, 300);
 	}
+
+	// allDepts สำหรับ dropdown: กลุ่มหลัก + ฝ่ายย่อย
+	const deptOptions = $derived([
+		{ id: departmentId, name: 'กลุ่มหลัก (ไม่สังกัดฝ่าย)' },
+		...subDepartments.map(d => ({ id: d.id, name: d.name }))
+	]);
 </script>
 
 <div class="bg-card border border-border rounded-lg p-6 space-y-4">
@@ -140,7 +164,12 @@
 						</div>
 						<div class="min-w-0">
 							<p class="font-medium text-sm truncate">{member.name}</p>
-							<p class="text-xs text-muted-foreground">{positionLabels[member.position] ?? member.position}</p>
+							<p class="text-xs text-muted-foreground">
+								{positionLabels[member.position] ?? member.position}
+								{#if includeChildren}
+									· <span class="text-primary/70">{member.department_name}</span>
+								{/if}
+							</p>
 						</div>
 					</div>
 					{#if $can.hasAny('roles.assign.all', '*')}
@@ -202,6 +231,21 @@
 					{/if}
 				</div>
 
+				{#if includeChildren}
+					<div class="space-y-1">
+						<label for="add-target-dept" class="text-sm font-medium">ฝ่ายที่สังกัด</label>
+						<select
+							id="add-target-dept"
+							bind:value={addForm.target_dept_id}
+							class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+						>
+							{#each deptOptions as opt}
+								<option value={opt.id}>{opt.name}</option>
+							{/each}
+						</select>
+					</div>
+				{/if}
+
 				<div class="space-y-1">
 					<label for="add-position" class="text-sm font-medium">ตำแหน่งในกลุ่ม *</label>
 					<select
@@ -230,13 +274,28 @@
 	</div>
 {/if}
 
-<!-- Edit Position Dialog -->
+<!-- Edit Dialog -->
 {#if showEditDialog && editingMember}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
 		<div class="bg-background border border-border rounded-xl shadow-lg w-full max-w-sm p-6 space-y-4">
-			<h3 class="text-lg font-semibold">แก้ไขตำแหน่ง — {editingMember.name}</h3>
+			<h3 class="text-lg font-semibold">แก้ไขสมาชิก — {editingMember.name}</h3>
 
 			<div class="space-y-3">
+				{#if includeChildren}
+					<div class="space-y-1">
+						<label for="edit-dept" class="text-sm font-medium">ฝ่ายที่สังกัด</label>
+						<select
+							id="edit-dept"
+							bind:value={editForm.new_department_id}
+							class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+						>
+							{#each deptOptions as opt}
+								<option value={opt.id}>{opt.name}</option>
+							{/each}
+						</select>
+					</div>
+				{/if}
+
 				<div class="space-y-1">
 					<label for="edit-position" class="text-sm font-medium">ตำแหน่งในกลุ่ม</label>
 					<select
@@ -248,6 +307,7 @@
 						<option value="member">สมาชิก</option>
 					</select>
 				</div>
+
 				<label class="flex items-center gap-2 text-sm cursor-pointer">
 					<input type="checkbox" bind:checked={editForm.is_primary} class="rounded" />
 					เป็นฝ่าย/กลุ่มหลัก

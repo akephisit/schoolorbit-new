@@ -6,7 +6,7 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     response::IntoResponse,
     Json,
@@ -20,12 +20,19 @@ use uuid::Uuid;
 #[derive(Serialize)]
 pub struct DeptMemberItem {
     pub user_id: Uuid,
+    pub department_id: Uuid,
+    pub department_name: String,
     pub name: String,
     pub title: String,
     pub position: String,
     pub is_primary: bool,
     pub responsibilities: Option<String>,
     pub started_at: NaiveDate,
+}
+
+#[derive(Deserialize)]
+pub struct ListMembersQuery {
+    pub include_children: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -41,6 +48,7 @@ pub struct UpdateMemberRequest {
     pub position: String,
     pub is_primary: Option<bool>,
     pub responsibilities: Option<String>,
+    pub new_department_id: Option<Uuid>, // ย้ายไปฝ่ายอื่น
 }
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
@@ -56,10 +64,11 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
         .map_err(|_| AppError::InternalServerError("Database connection error".to_string()))
 }
 
-// GET /api/departments/{id}/members
+// GET /api/departments/{id}/members?include_children=true
 pub async fn list_members(
     State(state): State<AppState>,
     Path(department_id): Path<Uuid>,
+    Query(query): Query<ListMembersQuery>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
@@ -68,36 +77,69 @@ pub async fn list_members(
         return Ok(resp);
     }
 
-    let rows = sqlx::query(
-        r#"
-        SELECT
-            dm.user_id,
-            CONCAT(u.title, u.first_name, ' ', u.last_name) AS name,
-            COALESCE(u.title, '') AS title,
-            dm.position,
-            dm.is_primary_department AS is_primary,
-            dm.responsibilities,
-            dm.started_at
-        FROM department_members dm
-        JOIN users u ON u.id = dm.user_id
-        WHERE dm.department_id = $1
-          AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-        ORDER BY
-            CASE dm.position
-                WHEN 'head' THEN 1
-                ELSE 2
-            END,
-            u.first_name
-        "#,
-    )
-    .bind(department_id)
-    .fetch_all(&pool)
-    .await?;
+    let include_children = query.include_children.unwrap_or(false);
+
+    let rows = if include_children {
+        sqlx::query(
+            r#"
+            SELECT
+                dm.user_id,
+                dm.department_id,
+                d.name AS department_name,
+                CONCAT(u.title, u.first_name, ' ', u.last_name) AS name,
+                COALESCE(u.title, '') AS title,
+                dm.position,
+                dm.is_primary_department AS is_primary,
+                dm.responsibilities,
+                dm.started_at
+            FROM department_members dm
+            JOIN users u ON u.id = dm.user_id
+            JOIN departments d ON d.id = dm.department_id
+            WHERE (dm.department_id = $1 OR d.parent_department_id = $1)
+              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+            ORDER BY
+                CASE dm.position WHEN 'head' THEN 1 ELSE 2 END,
+                d.display_order,
+                u.first_name
+            "#,
+        )
+        .bind(department_id)
+        .fetch_all(&pool)
+        .await?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT
+                dm.user_id,
+                dm.department_id,
+                d.name AS department_name,
+                CONCAT(u.title, u.first_name, ' ', u.last_name) AS name,
+                COALESCE(u.title, '') AS title,
+                dm.position,
+                dm.is_primary_department AS is_primary,
+                dm.responsibilities,
+                dm.started_at
+            FROM department_members dm
+            JOIN users u ON u.id = dm.user_id
+            JOIN departments d ON d.id = dm.department_id
+            WHERE dm.department_id = $1
+              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+            ORDER BY
+                CASE dm.position WHEN 'head' THEN 1 ELSE 2 END,
+                u.first_name
+            "#,
+        )
+        .bind(department_id)
+        .fetch_all(&pool)
+        .await?
+    };
 
     let members: Vec<DeptMemberItem> = rows
         .into_iter()
         .map(|r| DeptMemberItem {
             user_id: r.get("user_id"),
+            department_id: r.get("department_id"),
+            department_name: r.get("department_name"),
             name: r.get::<Option<String>, _>("name").unwrap_or_default(),
             title: r.get("title"),
             position: r.get("position"),
@@ -123,7 +165,6 @@ pub async fn add_member(
         return Ok(resp);
     }
 
-    // Check if already an active member
     let already_member: bool = sqlx::query_scalar(
         r#"
         SELECT EXISTS(
@@ -175,19 +216,23 @@ pub async fn update_member(
         return Ok(resp);
     }
 
+    let target_dept = body.new_department_id.unwrap_or(department_id);
+
     let updated = sqlx::query(
         r#"
         UPDATE department_members
         SET position = $1,
             is_primary_department = $2,
-            responsibilities = $3
-        WHERE user_id = $4 AND department_id = $5
+            responsibilities = $3,
+            department_id = $4
+        WHERE user_id = $5 AND department_id = $6
           AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
         "#,
     )
     .bind(&body.position)
     .bind(body.is_primary.unwrap_or(false))
     .bind(body.responsibilities)
+    .bind(target_dept)
     .bind(user_id)
     .bind(department_id)
     .execute(&pool)

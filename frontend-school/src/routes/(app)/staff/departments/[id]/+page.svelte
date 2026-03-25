@@ -318,7 +318,7 @@
 
 			<!-- Right Column: Members -->
 			<div class="space-y-6">
-				<DeptMembersSection departmentId={deptId} />
+				<DeptMembersSection departmentId={deptId} subDepartments={childDepts} />
 			</div>
 		</div>
 	{/if}
