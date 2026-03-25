@@ -9,7 +9,7 @@ export const _meta = {
         group: 'academic',
         order: 2,
         user_type: 'staff',
-        permission: 'academic_curriculum.read.all'
+        permission: 'academic_curriculum'
     }
 };
 

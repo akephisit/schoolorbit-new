@@ -43,8 +43,15 @@
 		Check,
 		ChevronsUpDown
 	} from 'lucide-svelte';
+	import { can } from '$lib/stores/permissions';
 
 	let { data } = $props();
+
+	// true = ครูกลุ่มสาระ (manage.department เท่านั้น) — ซ่อน bulk copy, lock group filter
+	let isDeptScope = $derived(
+		$can.has('academic_curriculum.manage.department') &&
+		!$can.has('academic_curriculum.read.all')
+	);
 
 	// Data States
 	let subjects: Subject[] = $state([]);
@@ -126,6 +133,11 @@
 
 			// Then load subjects
 			await loadSubjects();
+
+			// dept-scope: lock group filter to teacher's group (inferred from returned subjects)
+			if (isDeptScope && subjects.length > 0 && subjects[0].group_id) {
+				selectedGroupId = subjects[0].group_id;
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการโหลดข้อมูล';
 			console.error(e);
@@ -158,6 +170,10 @@
 
 	function handleOpenCreate() {
 		currentSubject = getInitialSubjectState();
+		// dept-scope: pre-fill and lock group to teacher's own กลุ่มสาระ
+		if (isDeptScope && selectedGroupId) {
+			currentSubject.group_id = selectedGroupId;
+		}
 		isEditing = false;
 		showDialog = true;
 	}
@@ -304,10 +320,12 @@
 			{/if}
 		</div>
 		<div class="flex items-center gap-2">
-			<Button variant="outline" onclick={handleOpenCopy} class="flex items-center gap-2">
-				<Copy class="w-4 h-4" />
-				คัดลอกจากปีก่อน
-			</Button>
+			{#if !isDeptScope}
+				<Button variant="outline" onclick={handleOpenCopy} class="flex items-center gap-2">
+					<Copy class="w-4 h-4" />
+					คัดลอกจากปีก่อน
+				</Button>
+			{/if}
 			<Button onclick={handleOpenCreate} class="flex items-center gap-2">
 				<Plus class="w-4 h-4" />
 				เพิ่มรายวิชา
@@ -351,7 +369,7 @@
 
 		<!-- Group Filter -->
 		<div class="w-full md:w-[220px]">
-			<Select.Root type="single" bind:value={selectedGroupId} onValueChange={() => loadData()}>
+			<Select.Root type="single" bind:value={selectedGroupId} onValueChange={() => loadData()} disabled={isDeptScope}>
 				<Select.Trigger class="truncate">
 					{groups.find((g) => g.id === selectedGroupId)?.name_th || 'ทุกกลุ่มสาระฯ'}
 				</Select.Trigger>
@@ -621,7 +639,7 @@
 				</div>
 				<div class="space-y-2">
 					<Label>กลุ่มสาระฯ <span class="text-destructive">*</span></Label>
-					<Select.Root type="single" bind:value={currentSubject.group_id}>
+					<Select.Root type="single" bind:value={currentSubject.group_id} disabled={isDeptScope}>
 						<Select.Trigger class="truncate">
 							{groups.find((g) => g.id === currentSubject.group_id)?.name_th || 'เลือกกลุ่มสาระ'}
 						</Select.Trigger>
@@ -631,6 +649,9 @@
 							{/each}
 						</Select.Content>
 					</Select.Root>
+					{#if isDeptScope}
+						<p class="text-[11px] text-muted-foreground">กลุ่มสาระที่ท่านสังกัด (ไม่สามารถเปลี่ยนได้)</p>
+					{/if}
 				</div>
 			</div>
 
