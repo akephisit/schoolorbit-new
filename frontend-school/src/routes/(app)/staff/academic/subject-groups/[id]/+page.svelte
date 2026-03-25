@@ -5,13 +5,17 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import DeptMembersSection from '$lib/components/staff/DeptMembersSection.svelte';
-	import { GraduationCap, ArrowLeft, Building2 } from 'lucide-svelte';
+	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte';
+	import { can } from '$lib/stores/permissions';
+	import { GraduationCap, ArrowLeft, Building2, Settings } from 'lucide-svelte';
 
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
 	let department: Department | null = $state(null);
 	let loading = $state(true);
 	let error = $state('');
+
+	let showPermissionDialog = $state(false);
 
 	async function loadData() {
 		if (!deptId) return;
@@ -43,7 +47,7 @@
 		<Button href="/staff/academic/subject-groups" variant="ghost" size="sm">
 			<ArrowLeft class="w-4 h-4" />
 		</Button>
-		<div>
+		<div class="flex-1">
 			<h1 class="text-2xl font-bold flex items-center gap-2">
 				{#if loading}
 					กำลังโหลด...
@@ -58,6 +62,12 @@
 				<p class="text-muted-foreground text-sm">{department.code}</p>
 			{/if}
 		</div>
+		{#if department && $can.hasAny('roles.assign.all', '*')}
+			<Button variant="outline" size="sm" onclick={() => (showPermissionDialog = true)}>
+				<Settings class="w-4 h-4 mr-1" />
+				ตั้งค่าสิทธิ์
+			</Button>
+		{/if}
 	</div>
 
 	{#if loading}
@@ -99,3 +109,5 @@
 		</div>
 	{/if}
 </div>
+
+<DepartmentPermissionDialog bind:open={showPermissionDialog} department={department} />

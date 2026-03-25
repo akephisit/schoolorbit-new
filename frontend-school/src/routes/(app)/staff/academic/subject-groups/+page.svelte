@@ -2,7 +2,9 @@
 	import { onMount } from 'svelte';
 	import { listDepartments, type Department } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
-	import { GraduationCap, Users, ChevronRight, Search } from 'lucide-svelte';
+	import { GraduationCap, ChevronRight, Search, Settings } from 'lucide-svelte';
+	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte';
+	import { can } from '$lib/stores/permissions';
 
 	let departments: Department[] = $state([]);
 	let loading = $state(true);
@@ -18,6 +20,15 @@
 			})
 			.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
 	);
+
+	let showPermissionDialog = $state(false);
+	let permissionDepartment = $state<Department | null>(null);
+
+	function handlePermission(dept: Department, e: MouseEvent) {
+		e.preventDefault();
+		permissionDepartment = dept;
+		showPermissionDialog = true;
+	}
 
 	async function loadData() {
 		loading = true;
@@ -76,7 +87,20 @@
 								<p class="text-xs text-muted-foreground">{group.code}</p>
 							</div>
 						</div>
-						<ChevronRight class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors mt-1" />
+						<div class="flex items-center gap-1">
+					{#if $can.hasAny('roles.assign.all', '*')}
+						<Button
+							variant="ghost"
+							size="icon"
+							class="h-7 w-7 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+							onclick={(e) => handlePermission(group, e)}
+							title="จัดการสิทธิ์"
+						>
+							<Settings class="w-3.5 h-3.5" />
+						</Button>
+					{/if}
+					<ChevronRight class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors mt-1" />
+				</div>
 					</div>
 					{#if group.description}
 						<p class="text-xs text-muted-foreground mt-3 line-clamp-2">{group.description}</p>
@@ -86,3 +110,5 @@
 		</div>
 	{/if}
 </div>
+
+<DepartmentPermissionDialog bind:open={showPermissionDialog} department={permissionDepartment} />
