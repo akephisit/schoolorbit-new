@@ -523,3 +523,79 @@ export async function updateDepartmentPermissions(
 
 	return response.json();
 }
+
+// ===================================================================
+// Delegation APIs
+// ===================================================================
+
+export interface DelegationItem {
+	id: string;
+	from_user_id: string;
+	from_user_name: string;
+	to_user_id: string;
+	to_user_name: string;
+	permission_id: string;
+	permission_code: string;
+	permission_name: string;
+	reason: string | null;
+	started_at: string;
+	expires_at: string | null;
+}
+
+export interface CreateDelegationBody {
+	to_user_id: string;
+	permission_id: string;
+	reason?: string;
+	expires_at?: string;
+}
+
+export interface DelegatablePermission {
+	id: string;
+	code: string;
+	name: string;
+}
+
+export async function listDelegatablePermissions(
+	departmentId: string
+): Promise<ApiResponse<DelegatablePermission[]>> {
+	const response = await fetch(
+		`${API_BASE_URL}/api/departments/${departmentId}/delegatable-permissions`,
+		{
+			method: 'GET',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' }
+		}
+	);
+	return response.json();
+}
+
+export async function listDelegations(departmentId: string): Promise<ApiResponse<DelegationItem[]>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${departmentId}/delegations`, {
+		method: 'GET',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' }
+	});
+	return response.json();
+}
+
+export async function createDelegation(
+	departmentId: string,
+	body: CreateDelegationBody
+): Promise<ApiResponse<{ delegation_id: string }>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${departmentId}/delegations`, {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	return response.json();
+}
+
+export async function revokeDelegation(delegationId: string): Promise<ApiResponse<void>> {
+	const response = await fetch(`${API_BASE_URL}/api/delegations/${delegationId}`, {
+		method: 'DELETE',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' }
+	});
+	return response.json();
+}

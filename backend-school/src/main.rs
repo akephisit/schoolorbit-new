@@ -186,7 +186,14 @@ async fn main() {
         .route("/api/departments/{id}/permissions", get(modules::staff::handlers::department_permissions::get_department_permissions)
             .put(modules::staff::handlers::department_permissions::update_department_permissions)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route("/api/departments/{id}/delegatable-permissions", get(modules::staff::handlers::delegations::list_delegatable_permissions)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/departments/{id}/delegations", get(modules::staff::handlers::delegations::list_delegations)
+            .post(modules::staff::handlers::delegations::create_delegation)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/delegations/{id}", axum::routing::delete(modules::staff::handlers::delegations::revoke_delegation)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+
         // User Role Assignment routes (protected)
         .route("/api/users/{id}/roles", get(modules::staff::handlers::user_roles::get_user_roles)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))

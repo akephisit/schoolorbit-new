@@ -3,3 +3,4 @@ pub mod roles;
 pub mod user_roles;
 pub mod permissions;
 pub mod department_permissions;
+pub mod delegations;
