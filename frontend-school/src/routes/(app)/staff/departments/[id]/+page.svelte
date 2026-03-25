@@ -323,8 +323,9 @@
 
 			<div class="space-y-3">
 				<div class="space-y-1">
-					<label class="text-sm font-medium">สมาชิกที่จะมอบหมายให้ *</label>
+					<label for="delegate-to" class="text-sm font-medium">สมาชิกที่จะมอบหมายให้ *</label>
 					<select
+						id="delegate-to"
 						bind:value={delegateForm.to_user_id}
 						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 					>
@@ -336,21 +337,23 @@
 				</div>
 
 				<div class="space-y-1">
-					<label class="text-sm font-medium">สิทธิ์ที่มอบหมาย *</label>
+					<label for="delegate-permission" class="text-sm font-medium">สิทธิ์ที่มอบหมาย *</label>
 					<select
+						id="delegate-permission"
 						bind:value={delegateForm.permission_id}
 						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 					>
 						<option value="">-- เลือกสิทธิ์ --</option>
 						{#each delegatablePerms as p}
-							<option value={p.id}>{p.name} <span class="text-muted-foreground">({p.code})</span></option>
+							<option value={p.id}>{p.name} ({p.code})</option>
 						{/each}
 					</select>
 				</div>
 
 				<div class="space-y-1">
-					<label class="text-sm font-medium">เหตุผล <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label>
+					<label for="delegate-reason" class="text-sm font-medium">เหตุผล <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label>
 					<input
+						id="delegate-reason"
 						type="text"
 						bind:value={delegateForm.reason}
 						placeholder="เช่น ลาพักร้อน, รักษาการ"
@@ -359,8 +362,9 @@
 				</div>
 
 				<div class="space-y-1">
-					<label class="text-sm font-medium">วันหมดอายุ <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label>
+					<label for="delegate-expires" class="text-sm font-medium">วันหมดอายุ <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label>
 					<input
+						id="delegate-expires"
 						type="date"
 						bind:value={delegateForm.expires_at}
 						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
