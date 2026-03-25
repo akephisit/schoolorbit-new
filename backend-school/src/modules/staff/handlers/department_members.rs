@@ -3,7 +3,6 @@ use crate::error::AppError;
 use crate::middleware::permission::check_permission;
 use crate::permissions::registry::codes;
 use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::utils::jwt::JwtService;
 use crate::AppState;
 
 use axum::{
@@ -73,20 +72,7 @@ pub async fn list_members(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    // list members requires only authentication (not roles.read.all)
-    let token = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer ").map(|s| s.to_string()))
-        .or_else(|| {
-            headers.get(axum::http::header::COOKIE)
-                .and_then(|h| h.to_str().ok())
-                .and_then(|c| JwtService::extract_token_from_cookie(Some(c)))
-        })
-        .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
-    JwtService::verify_token(&token)
-        .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
+    // auth_middleware บน route นี้รับรองว่า authenticated แล้ว ไม่ต้องเช็คซ้ำ
 
     let include_children = query.include_children.unwrap_or(false);
 
