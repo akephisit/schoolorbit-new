@@ -338,15 +338,6 @@ export const lookupAcademicYears = async (active_only: boolean = true): Promise<
     return await fetchApi(`/api/lookup/academic-years?active_only=${active_only}`);
 };
 
-export const bulkCopySubjects = async (sourceYearId: string, targetYearId: string) => {
-    return await fetchApi('/api/academic/subjects/bulk-copy', {
-        method: 'POST',
-        body: JSON.stringify({
-            source_academic_year_id: sourceYearId,
-            target_academic_year_id: targetYearId
-        })
-    });
-};
 
 // Year-Level Configuration
 export const getYearLevelConfig = async (yearId: string): Promise<{ data: string[] }> => {

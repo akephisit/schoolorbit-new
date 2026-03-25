@@ -8,7 +8,6 @@
 		deleteSubject,
 		lookupGradeLevels,
 		lookupAcademicYears,
-		bulkCopySubjects,
 		type Subject,
 		type SubjectGroup,
 		type LookupItem
@@ -38,7 +37,7 @@
 		Search,
 		Pencil,
 		Trash2,
-		Copy,
+	
 		CircleCheck,
 		Check,
 		ChevronsUpDown
@@ -47,7 +46,7 @@
 
 	let { data } = $props();
 
-	// true = ครูกลุ่มสาระ (manage.department เท่านั้น) — ซ่อน bulk copy, lock group filter
+	// true = ครูกลุ่มสาระ (manage.department เท่านั้น) — lock group filter
 	let isDeptScope = $derived(
 		$can.has('academic_curriculum.manage.department') &&
 		!$can.has('academic_curriculum.read.all')
@@ -76,12 +75,9 @@
 	// Modal States
 	let showDialog = $state(false);
 	let showDeleteDialog = $state(false);
-	let showCopyDialog = $state(false);
 	let showSuccessDialog = $state(false);
 	let successTitle = $state('');
 	let successMessage = $state('');
-	let selectedSourceYear = $state('');
-	let copying = $state(false);
 	let isEditing = $state(false);
 	let submitting = $state(false);
 	let deleting = $state(false);
@@ -253,48 +249,6 @@
 		loadData();
 	}
 
-	function handleOpenCopy() {
-		// Target is the selected year (or current active year if no filter selected, though filter usually selected)
-		const targetId = selectedYearFilter || currentAcademicYear?.id;
-		const targetObj = academicYears.find((y) => y.id === targetId);
-
-		if (!targetObj) return;
-
-		// Find potential source years (exclude target AND newer years)
-		// Assume 'year' field exists and is number. If missing, assume 0.
-		const otherYears = academicYears.filter(
-			(y) => y.id !== targetId && (y.year || 0) < (targetObj.year || 0)
-		);
-
-		if (otherYears.length > 0) {
-			selectedSourceYear = otherYears[0].id;
-		} else {
-			selectedSourceYear = '';
-		}
-		showCopyDialog = true;
-	}
-
-	async function handleBulkCopy() {
-		const targetId = selectedYearFilter || currentAcademicYear?.id;
-		if (!selectedSourceYear || !targetId) return;
-
-		copying = true;
-		try {
-			const result = await bulkCopySubjects(selectedSourceYear, targetId);
-			showCopyDialog = false;
-
-			successTitle = 'คัดลอกรายวิชาสำเร็จ';
-			successMessage = result.data.message;
-			showSuccessDialog = true;
-
-			await loadData(); // Reload subjects
-		} catch (e) {
-			alert(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด');
-		} finally {
-			copying = false;
-		}
-	}
-
 	onMount(() => {
 		initData();
 	});
@@ -320,13 +274,7 @@
 			{/if}
 		</div>
 		<div class="flex items-center gap-2">
-			{#if !isDeptScope}
-				<Button variant="outline" onclick={handleOpenCopy} class="flex items-center gap-2">
-					<Copy class="w-4 h-4" />
-					คัดลอกจากปีก่อน
-				</Button>
-			{/if}
-			<Button onclick={handleOpenCreate} class="flex items-center gap-2">
+				<Button onclick={handleOpenCreate} class="flex items-center gap-2">
 				<Plus class="w-4 h-4" />
 				เพิ่มรายวิชา
 			</Button>
@@ -723,72 +671,6 @@
 			<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
 			<Button variant="destructive" onclick={handleConfirmDelete} disabled={deleting}>
 				{deleting ? 'กำลังลบ...' : 'ลบรายวิชา'}
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
-
-<!-- Copy Dialog -->
-<Dialog bind:open={showCopyDialog}>
-	<DialogContent class="sm:max-w-[500px]">
-		<DialogHeader>
-			<DialogTitle>คัดลอกรายวิชาจากปีก่อน</DialogTitle>
-			<DialogDescription>
-				{#if selectedYearObj}
-					เลือกปีการศึกษาต้นทางที่ต้องการคัดลอกรายวิชามายังปี <strong>{selectedYearObj.name}</strong
-					>
-				{:else}
-					กรุณาเลือกปีการศึกษาปลายทางก่อน
-				{/if}
-			</DialogDescription>
-		</DialogHeader>
-
-		<div class="space-y-4 py-4">
-			<div class="space-y-2">
-				<Label>ปีการศึกษาต้นทาง</Label>
-				{#if !selectedYearObj}
-					<div class="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
-						โปรดเลือกปีการศึกษาที่ต้องการจัดการจากตัวกรองด้านบนก่อน
-					</div>
-				{:else}
-					{@const filteredYears = academicYears.filter(
-						(y) => y.id !== selectedYearObj.id && (y.year || 0) < (selectedYearObj.year || 0)
-					)}
-					{#if filteredYears.length === 0}
-						<div
-							class="flex h-10 w-full items-center justify-center rounded-md border border-dashed text-muted-foreground text-sm"
-						>
-							ไม่พบปีการศึกษาที่เก่ากว่าให้คัดลอก
-						</div>
-					{:else}
-						<Select.Root type="single" bind:value={selectedSourceYear}>
-							<Select.Trigger>
-								{academicYears.find((y) => y.id === selectedSourceYear)?.name || 'เลือกปีการศึกษา'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each filteredYears as year}
-									<Select.Item value={year.id}>{year.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					{/if}
-				{/if}
-			</div>
-
-			<div class="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
-				<strong>หมายเหตุ:</strong> ระบบจะคัดลอกรายวิชาทั้งหมดจากปีที่เลือก รายวิชาที่มีรหัสซ้ำกันจะถูกข้ามไป
-			</div>
-		</div>
-
-		<DialogFooter>
-			<Button variant="outline" onclick={() => (showCopyDialog = false)} disabled={copying}>
-				ยกเลิก
-			</Button>
-			<Button
-				onclick={handleBulkCopy}
-				disabled={copying || !selectedSourceYear || !selectedYearObj}
-			>
-				{copying ? 'กำลังคัดลอก...' : 'คัดลอก'}
 			</Button>
 		</DialogFooter>
 	</DialogContent>
