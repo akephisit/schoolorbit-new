@@ -11,8 +11,7 @@
 	let subjectGroups = $derived(
 		departments
 			.filter((d) => {
-				const isAcademic = d.category === 'academic';
-				if (!isAcademic) return false;
+				if (!d.code.startsWith('SUBJ-')) return false;
 				if (!searchQuery) return true;
 				const q = searchQuery.toLowerCase();
 				return d.name.toLowerCase().includes(q) || d.code.toLowerCase().includes(q);

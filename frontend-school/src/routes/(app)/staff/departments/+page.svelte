@@ -48,10 +48,9 @@
 				dept.code.toLowerCase().includes(query) ||
 				(dept.name_en && dept.name_en.toLowerCase().includes(query));
 
-			const isAllowedCategory =
-				dept.category === 'administrative' || dept.category === 'miscellaneous';
+			const isNotSubjectGroup = !dept.code.startsWith('SUBJ-');
 
-			return matchesSearch && isAllowedCategory;
+			return matchesSearch && isNotSubjectGroup;
 		})
 	);
 
@@ -61,11 +60,7 @@
 		isSearching
 			? []
 			: departments
-					.filter(
-						(d) =>
-							!d.parent_department_id &&
-							(d.category === 'administrative' || d.category === 'miscellaneous')
-					)
+					.filter((d) => !d.parent_department_id && !d.code.startsWith('SUBJ-'))
 					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
 	);
 

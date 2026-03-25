@@ -13,13 +13,15 @@
 		departmentToEdit = null,
 		departments = [],
 		onSuccess,
-		forcedCategory = undefined
+		forcedCategory = undefined,
+		forcedParentId = undefined
 	} = $props<{
 		open: boolean;
 		departmentToEdit?: Department | null;
-		departments: Department[]; // For parent selection
+		departments: Department[];
 		onSuccess: () => void;
-		forcedCategory?: string; // Optional: If set, locks the category
+		forcedCategory?: string;
+		forcedParentId?: string; // If set, locks the parent department
 	}>();
 
 	let loading = $state(false);
@@ -61,7 +63,7 @@
 				name: '',
 				name_en: '',
 				description: '',
-				parent_department_id: 'none',
+				parent_department_id: forcedParentId || 'none',
 				category: forcedCategory || 'administrative',
 				org_type: 'unit',
 				phone: '',
@@ -181,7 +183,7 @@
 
 			<div class="space-y-2">
 				<Label>สังกัดภายใต้ (Parent Department)</Label>
-				<Select.Root type="single" bind:value={formData.parent_department_id}>
+				<Select.Root type="single" bind:value={formData.parent_department_id} disabled={!!forcedParentId}>
 					<Select.Trigger>
 						{departments.find((d: Department) => d.id === formData.parent_department_id)?.name ||
 							'ไม่มี (ระดับสูงสุด)'}

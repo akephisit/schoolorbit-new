@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import {
         getDepartment,
+        listDepartments,
         listDelegations,
         listDelegatablePermissions,
         createDelegation,
@@ -13,6 +14,7 @@
         type DelegatablePermission,
         type DeptMemberItem
     } from '$lib/api/staff';
+	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -25,8 +27,13 @@
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
 	let department: Department | null = $state(null);
+	let allDepartments: Department[] = $state([]);
+	let childDepts: Department[] = $state([]);
 	let deptMembers: DeptMemberItem[] = $state([]);
 	let delegations: DelegationItem[] = $state([]);
+
+	// Child dept dialog
+	let showAddChildDialog = $state(false);
 	let delegatablePerms: DelegatablePermission[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
@@ -41,9 +48,10 @@
         if (!deptId) return;
 		try {
 			loading = true;
-			const [deptRes, membersRes] = await Promise.all([
+			const [deptRes, membersRes, allDeptsRes] = await Promise.all([
 				getDepartment(deptId),
-				listDeptMembers(deptId)
+				listDeptMembers(deptId),
+				listDepartments()
 			]);
 			if (deptRes.success && deptRes.data) {
 				department = deptRes.data;
@@ -52,6 +60,12 @@
             }
 			if (membersRes.success && membersRes.data) {
 				deptMembers = membersRes.data;
+			}
+			if (allDeptsRes.success && allDeptsRes.data) {
+				allDepartments = allDeptsRes.data;
+				childDepts = allDeptsRes.data
+					.filter(d => d.parent_department_id === deptId)
+					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 			}
 		} catch (e: any) {
 			error = e.message || 'Error loading data';
@@ -220,7 +234,41 @@
 					</div>
 				</div>
 
-				<!-- Delegation Section (heads only) -->
+				<!-- Child Departments (ฝ่ายย่อย) -->
+			{#if $can.hasAny('roles.assign.all', '*')}
+				<div class="bg-card border border-border rounded-lg p-6 space-y-4">
+					<div class="flex items-center justify-between">
+						<h2 class="text-lg font-semibold flex items-center gap-2">
+							<Building2 class="w-5 h-5" />
+							ฝ่ายย่อย
+						</h2>
+						<Button size="sm" onclick={() => (showAddChildDialog = true)}>
+							<Plus class="w-4 h-4 mr-1" />
+							เพิ่มฝ่าย
+						</Button>
+					</div>
+					{#if childDepts.length === 0}
+						<p class="text-sm text-muted-foreground text-center py-4">ยังไม่มีฝ่ายย่อย</p>
+					{:else}
+						<div class="divide-y divide-border">
+							{#each childDepts as child}
+								<a
+									href="/staff/departments/{child.id}"
+									class="flex items-center justify-between py-3 hover:text-primary transition-colors"
+								>
+									<div>
+										<p class="text-sm font-medium">{child.name}</p>
+										<p class="text-xs text-muted-foreground font-mono">{child.code}</p>
+									</div>
+									<Briefcase class="w-4 h-4 text-muted-foreground" />
+								</a>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			<!-- Delegation Section (heads only) -->
 				{#if $can.has('dept_work.approve.department')}
 					<div class="bg-card border border-border rounded-lg p-6 space-y-4">
 						<div class="flex items-center justify-between">
@@ -275,6 +323,14 @@
 		</div>
 	{/if}
 </div>
+
+<DepartmentDialog
+	bind:open={showAddChildDialog}
+	departments={allDepartments}
+	forcedParentId={deptId}
+	forcedCategory={department?.category}
+	onSuccess={loadData}
+/>
 
 <!-- Delegate Permission Dialog -->
 {#if showDelegateDialog}
