@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::middleware::permission::check_permission;
 use crate::permissions::registry::codes;
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::jwt::JwtService;
 use crate::AppState;
 
 use axum::{
@@ -73,9 +74,19 @@ pub async fn list_members(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(resp) = check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await {
-        return Ok(resp);
-    }
+    // list members requires only authentication (not roles.read.all)
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer ").map(|s| s.to_string()))
+        .or_else(|| {
+            headers.get(axum::http::header::COOKIE)
+                .and_then(|h| h.to_str().ok())
+                .and_then(|c| JwtService::extract_token_from_cookie(Some(c)))
+        })
+        .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
+    JwtService::verify_token(&token)
+        .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
 
     let include_children = query.include_children.unwrap_or(false);
 
