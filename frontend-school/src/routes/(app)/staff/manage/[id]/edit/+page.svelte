@@ -372,8 +372,6 @@
 	function getPositionLabel(value: string): string {
 		const labels: Record<string, string> = {
 			member: 'สมาชิก',
-			coordinator: 'ผู้ประสานงาน',
-			deputy_head: 'รองหัวหน้าฝ่าย',
 			head: 'หัวหน้าฝ่าย'
 		};
 		return labels[value] || 'เลือกตำแหน่ง';
@@ -914,8 +912,6 @@
 													<Select.Trigger>{getPositionLabel(dept.position)}</Select.Trigger>
 													<Select.Content>
 														<Select.Item value="member">สมาชิก</Select.Item>
-														<Select.Item value="coordinator">ผู้ประสานงาน</Select.Item>
-														<Select.Item value="deputy_head">รองหัวหน้าฝ่าย</Select.Item>
 														<Select.Item value="head">หัวหน้าฝ่าย</Select.Item>
 													</Select.Content>
 												</Select.Root>

@@ -599,3 +599,78 @@ export async function revokeDelegation(delegationId: string): Promise<ApiRespons
 	});
 	return response.json();
 }
+
+// ===================================================================
+// Department Member Management APIs
+// ===================================================================
+
+export interface DeptMemberItem {
+	user_id: string;
+	name: string;
+	title: string;
+	position: string;
+	is_primary: boolean;
+	responsibilities: string | null;
+	started_at: string;
+}
+
+export interface AddMemberBody {
+	user_id: string;
+	position: string;
+	is_primary?: boolean;
+	responsibilities?: string;
+}
+
+export interface UpdateMemberBody {
+	position: string;
+	is_primary?: boolean;
+	responsibilities?: string;
+}
+
+export async function listDeptMembers(deptId: string): Promise<ApiResponse<DeptMemberItem[]>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members`, {
+		method: 'GET',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' }
+	});
+	return response.json();
+}
+
+export async function addDeptMember(
+	deptId: string,
+	body: AddMemberBody
+): Promise<ApiResponse<void>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members`, {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	return response.json();
+}
+
+export async function updateDeptMember(
+	deptId: string,
+	userId: string,
+	body: UpdateMemberBody
+): Promise<ApiResponse<void>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members/${userId}`, {
+		method: 'PUT',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	return response.json();
+}
+
+export async function removeDeptMember(
+	deptId: string,
+	userId: string
+): Promise<ApiResponse<void>> {
+	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members/${userId}`, {
+		method: 'DELETE',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' }
+	});
+	return response.json();
+}

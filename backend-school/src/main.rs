@@ -193,6 +193,12 @@ async fn main() {
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
         .route("/api/delegations/{id}", axum::routing::delete(modules::staff::handlers::delegations::revoke_delegation)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/departments/{id}/members", get(modules::staff::handlers::department_members::list_members)
+            .post(modules::staff::handlers::department_members::add_member)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/departments/{id}/members/{user_id}", axum::routing::put(modules::staff::handlers::department_members::update_member)
+            .delete(modules::staff::handlers::department_members::remove_member)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
         // User Role Assignment routes (protected)
         .route("/api/users/{id}/roles", get(modules::staff::handlers::user_roles::get_user_roles)

@@ -148,6 +148,20 @@ async fn fetch_user_permissions(
             WHERE pd.to_user_id = $1
               AND pd.revoked_at IS NULL
               AND (pd.expires_at IS NULL OR pd.expires_at > NOW())
+
+            UNION
+
+            -- 4. Parent-head inheritance: head of a parent dept
+            --    automatically inherits permissions of all child depts
+            SELECT p.code
+            FROM department_members dm
+            JOIN departments child ON child.parent_department_id = dm.department_id
+            JOIN department_permissions dp ON dp.department_id = child.id
+            JOIN permissions p ON dp.permission_id = p.id
+            WHERE dm.user_id = $1
+              AND dm.position = 'head'
+              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
+              AND (dp.position IS NULL OR dp.position = 'head')
         ) AS perms
         ORDER BY code
         "#,

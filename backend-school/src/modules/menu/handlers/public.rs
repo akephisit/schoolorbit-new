@@ -1,4 +1,5 @@
 use crate::db::school_mapping::get_school_database_url;
+use crate::middleware::permission::get_user_with_permissions;
 use crate::modules::menu::models::*;
 use crate::modules::auth::models::User;
 use crate::utils::subdomain::extract_subdomain_from_request;
@@ -109,13 +110,13 @@ pub async fn get_user_menu(
         }
     }
 
-    // Get user permissions
-    let user_permissions = get_user_permissions(&user.id, &pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get user permissions: {}", e);
-            AppError::InternalServerError("ไม่สามารถดึงข้อมูล permissions ได้".to_string())
-        })?;
+    // Get user permissions — reuse middleware's position-aware + delegation query
+    let user_permissions = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
+        Ok((_, perms)) => perms,
+        Err(_) => {
+            return Err(AppError::AuthError("ไม่สามารถดึงข้อมูล permissions ได้".to_string()));
+        }
+    };
 
     // Query menu items with groups - filter by user_type
     let user_type = user.user_type.as_str();
@@ -254,45 +255,3 @@ fn group_and_filter_menu(
         .collect()
 }
 
-/// Get user's permissions from roles AND departments (Consolidated)
-async fn get_user_permissions(
-    user_id: &Uuid,
-    pool: &sqlx::PgPool,
-) -> Result<Vec<String>, sqlx::Error> {
-    // 1. Role Permissions
-    let mut permissions: Vec<String> = sqlx::query_scalar(
-        r#"
-        SELECT DISTINCT p.code
-        FROM user_roles ur
-        JOIN role_permissions rp ON ur.role_id = rp.role_id
-        JOIN permissions p ON rp.permission_id = p.id
-        WHERE ur.user_id = $1
-          AND ur.ended_at IS NULL
-        "#
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-
-    // 2. Department Permissions (New Logic)
-    let dept_permissions: Vec<String> = sqlx::query_scalar(
-        r#"
-        SELECT DISTINCT p.code
-        FROM department_members dm
-        JOIN department_permissions dp ON dm.department_id = dp.department_id
-        JOIN permissions p ON dp.permission_id = p.id
-        WHERE dm.user_id = $1
-          AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-        "#
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-
-    // 3. Merge
-    permissions.extend(dept_permissions);
-    permissions.sort(); // Required for dedup
-    permissions.dedup();
-
-    Ok(permissions)
-}

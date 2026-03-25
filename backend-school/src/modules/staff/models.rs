@@ -60,12 +60,8 @@ pub enum TeacherType {
 pub enum DepartmentPosition {
     #[serde(rename = "head")]
     Head,
-    #[serde(rename = "deputy_head")]
-    DeputyHead,
     #[serde(rename = "member")]
     Member,
-    #[serde(rename = "coordinator")]
-    Coordinator,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]

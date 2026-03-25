@@ -201,14 +201,14 @@ pub async fn create_delegation(
             .into_response());
     }
 
-    // Validate: requester must be head or deputy_head of this department
+    // Validate: requester must be head of this department
     let is_head: bool = sqlx::query_scalar(
         r#"
         SELECT EXISTS(
             SELECT 1 FROM department_members
             WHERE user_id = $1
               AND department_id = $2
-              AND position IN ('head', 'deputy_head')
+              AND position = 'head'
               AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
         )
         "#,

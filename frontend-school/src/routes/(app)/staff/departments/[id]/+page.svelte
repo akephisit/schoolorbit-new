@@ -3,28 +3,29 @@
 	import { onMount } from 'svelte';
 	import {
         getDepartment,
-        listStaff,
         listDelegations,
         listDelegatablePermissions,
         createDelegation,
         revokeDelegation,
+        listDeptMembers,
         type Department,
-        type StaffListItem,
         type DelegationItem,
-        type DelegatablePermission
+        type DelegatablePermission,
+        type DeptMemberItem
     } from '$lib/api/staff';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import DeptMembersSection from '$lib/components/staff/DeptMembersSection.svelte';
 	import {
         Building2, ArrowLeft, Phone, Mail, MapPin,
-        Briefcase, GraduationCap, Users, User, Shield, Plus, Trash2
+        Briefcase, GraduationCap, Shield, Plus, Trash2
     } from 'lucide-svelte';
 
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
 	let department: Department | null = $state(null);
-	let members: StaffListItem[] = $state([]);
+	let deptMembers: DeptMemberItem[] = $state([]);
 	let delegations: DelegationItem[] = $state([]);
 	let delegatablePerms: DelegatablePermission[] = $state([]);
 	let loading = $state(true);
@@ -40,23 +41,18 @@
         if (!deptId) return;
 		try {
 			loading = true;
-
-            // Parallel fetch department and staff
-            const [deptRes, staffRes] = await Promise.all([
-                getDepartment(deptId),
-                listStaff({ department_id: deptId, page_size: 100 }) // Fetch up to 100 members first
-            ]);
-
+			const [deptRes, membersRes] = await Promise.all([
+				getDepartment(deptId),
+				listDeptMembers(deptId)
+			]);
 			if (deptRes.success && deptRes.data) {
 				department = deptRes.data;
 			} else {
                 throw new Error(deptRes.error || 'Department not found');
             }
-
-            if (staffRes.success && staffRes.data) {
-                members = staffRes.data;
-            }
-
+			if (membersRes.success && membersRes.data) {
+				deptMembers = membersRes.data;
+			}
 		} catch (e: any) {
 			error = e.message || 'Error loading data';
 		} finally {
@@ -272,40 +268,9 @@
 				{/if}
 			</div>
 
-			<!-- Right Column: Stats / Actions -->
+			<!-- Right Column: Members -->
 			<div class="space-y-6">
-				<div class="bg-card border border-border rounded-lg p-6">
-					<h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-						<Users class="w-5 h-5" />
-						บุคลากร ({members.length})
-					</h2>
-
-					{#if members.length === 0}
-						<p class="text-muted-foreground text-center py-8">ไม่มีบุคลากรในฝ่ายนี้</p>
-					{:else}
-						<div class="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-							{#each members as member}
-								<a
-									href="/staff/manage/{member.id}"
-									class="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
-								>
-									<div
-										class="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden border border-border"
-									>
-										<User class="w-5 h-5 text-muted-foreground" />
-									</div>
-									<div>
-										<p class="font-medium text-sm">
-											{member.title}{member.first_name}
-											{member.last_name}
-										</p>
-										<p class="text-xs text-muted-foreground">{member.roles.join(', ')}</p>
-									</div>
-								</a>
-							{/each}
-						</div>
-					{/if}
-				</div>
+				<DeptMembersSection departmentId={deptId} />
 			</div>
 		</div>
 	{/if}
@@ -330,8 +295,8 @@
 						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 					>
 						<option value="">-- เลือกสมาชิก --</option>
-						{#each members as m}
-							<option value={m.id}>{m.title}{m.first_name} {m.last_name}</option>
+						{#each deptMembers as m}
+							<option value={m.user_id}>{m.name}</option>
 						{/each}
 					</select>
 				</div>

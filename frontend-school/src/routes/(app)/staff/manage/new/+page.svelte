@@ -828,18 +828,12 @@
 											<Select.Trigger>
 												{dept.position === 'member'
 													? 'สมาชิก'
-													: dept.position === 'coordinator'
-														? 'ผู้ประสานงาน'
-														: dept.position === 'deputy_head'
-															? 'รองหัวหน้าฝ่าย'
-															: dept.position === 'head'
-																? 'หัวหน้าฝ่าย'
-																: 'เลือกตำแหน่ง'}
+														: dept.position === 'head'
+															? 'หัวหน้าฝ่าย'
+															: 'เลือกตำแหน่ง'}
 											</Select.Trigger>
 											<Select.Content>
 												<Select.Item value="member">สมาชิก</Select.Item>
-												<Select.Item value="coordinator">ผู้ประสานงาน</Select.Item>
-												<Select.Item value="deputy_head">รองหัวหน้าฝ่าย</Select.Item>
 												<Select.Item value="head">หัวหน้าฝ่าย</Select.Item>
 											</Select.Content>
 										</Select.Root>
