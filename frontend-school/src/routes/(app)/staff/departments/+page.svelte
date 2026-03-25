@@ -281,6 +281,15 @@
 								</p>{/if}
 						</div>
 						<div class="flex items-center gap-1">
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-8 w-8 text-muted-foreground hover:text-foreground"
+								onclick={() => handlePermission(root)}
+								title="จัดการสิทธิ์เมนู"
+							>
+								<Settings class="w-4 h-4" />
+							</Button>
 							<Button variant="ghost" size="icon" class="h-8 w-8" onclick={() => handleEdit(root)}>
 								<Pencil class="w-3 h-3" />
 							</Button>
@@ -322,17 +331,15 @@
 									<div
 										class="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity"
 									>
-										{#if getChildren(dept.id).length === 0}
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-7 w-7 text-muted-foreground hover:text-foreground"
-												onclick={() => handlePermission(dept)}
-												title="จัดการสิทธิ์เมนู"
-											>
-												<Settings class="w-3.5 h-3.5" />
-											</Button>
-										{/if}
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-7 w-7 text-muted-foreground hover:text-foreground"
+											onclick={() => handlePermission(dept)}
+											title="จัดการสิทธิ์เมนู"
+										>
+											<Settings class="w-3.5 h-3.5" />
+										</Button>
 										<Button
 											variant="ghost"
 											size="icon"
