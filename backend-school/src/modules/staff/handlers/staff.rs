@@ -524,14 +524,27 @@ pub async fn create_staff(
     let national_id_hash = payload.national_id.as_deref().map(|s| field_encryption::hash_for_search(s));
 
     // Generate username if not provided — Pattern: T + Running(4) e.g., T0001
-    // Uses MAX of existing T-prefixed usernames to avoid duplicates when staff are deleted
+    // Finds the next number not already taken (handles deletions, old-format usernames, etc.)
     let username = match payload.username.as_deref() {
         Some(u) if !u.is_empty() => u.to_string(),
         _ => {
-            let next_num: i64 = sqlx::query_scalar(
+            let mut next_num: i64 = sqlx::query_scalar(
                 r#"SELECT COALESCE(MAX(CAST(SUBSTRING(username FROM 2) AS INTEGER)), 0) + 1
                    FROM users WHERE user_type = 'staff' AND username ~ '^T\d+$'"#
             ).fetch_one(&pool).await.unwrap_or(1);
+            // Verify the candidate doesn't already exist (e.g. old-format overlap or race)
+            loop {
+                let candidate = format!("T{:04}", next_num);
+                let exists: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM users WHERE username = $1)"
+                )
+                .bind(&candidate)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or(false);
+                if !exists { break; }
+                next_num += 1;
+            }
             format!("T{:04}", next_num)
         }
     };
