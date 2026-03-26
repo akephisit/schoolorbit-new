@@ -6,12 +6,13 @@
 		createActivityGroup,
 		updateActivityGroup,
 		deleteActivityGroup,
+		lookupGradeLevels,
 		ACTIVITY_TYPE_LABELS,
 		type ActivityGroup,
-		type AcademicStructureData
+		type AcademicStructureData,
+		type LookupItem
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
-	import { lookupGradeLevels, type LookupItem } from '$lib/api/academic';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -46,23 +47,20 @@
 	// Dialog
 	let showDialog = $state(false);
 	let isEdit = $state(false);
+	let editTarget = $state<ActivityGroup | null>(null);
 	let deleteTarget = $state<ActivityGroup | null>(null);
+	let showDeleteDialog = $state(false);
 
-	function emptyGroup(): Omit<ActivityGroup, 'id' | 'is_active' | 'created_at' | 'instructor_name' | 'member_count' | 'semester_name'> {
-		return {
-			name: '',
-			description: '',
-			activity_type: 'club',
-			semester_id: filterSemesterId || '',
-			instructor_id: undefined,
-			registration_type: 'assigned',
-			max_capacity: undefined,
-			registration_open: false,
-			allowed_grade_level_ids: []
-		};
-	}
-
-	let form = $state(emptyGroup());
+	// Form fields (separate state to avoid type issues)
+	let formName = $state('');
+	let formDescription = $state('');
+	let formActivityType = $state('club');
+	let formSemesterId = $state('');
+	let formInstructorId = $state('');
+	let formRegistrationType = $state('assigned');
+	let formMaxCapacity = $state('');
+	let formRegistrationOpen = $state(false);
+	let formAllowedGradeLevelIds = $state<string[]>([]);
 
 	// ── Computed ───────────────────────────────────────
 	let filteredGroups = $derived(
@@ -73,8 +71,8 @@
 		})
 	);
 
-	let currentSemester = $derived(
-		structure.semesters.find((s) => s.id === filterSemesterId)
+	let currentSemesterName = $derived(
+		structure.semesters.find((s) => s.id === filterSemesterId)?.name ?? 'เลือกภาคเรียน'
 	);
 
 	// ── Load ───────────────────────────────────────────
@@ -88,7 +86,6 @@
 		gradeLevels = levelsRes.data;
 		staffList = staffRes;
 
-		// default to current semester
 		const current = structure.semesters.find((s) => s.is_active);
 		if (current) filterSemesterId = current.id;
 
@@ -108,44 +105,65 @@
 
 	// ── Dialog helpers ─────────────────────────────────
 	function openCreate() {
-		form = emptyGroup();
+		formName = '';
+		formDescription = '';
+		formActivityType = 'club';
+		formSemesterId = filterSemesterId;
+		formInstructorId = '';
+		formRegistrationType = 'assigned';
+		formMaxCapacity = '';
+		formRegistrationOpen = false;
+		formAllowedGradeLevelIds = [];
 		isEdit = false;
+		editTarget = null;
 		showDialog = true;
 	}
 
 	function openEdit(g: ActivityGroup) {
-		form = {
-			name: g.name,
-			description: g.description ?? '',
-			activity_type: g.activity_type,
-			semester_id: g.semester_id,
-			instructor_id: g.instructor_id,
-			registration_type: g.registration_type,
-			max_capacity: g.max_capacity,
-			registration_open: g.registration_open,
-			allowed_grade_level_ids: g.allowed_grade_level_ids ?? []
-		};
+		formName = g.name;
+		formDescription = g.description ?? '';
+		formActivityType = g.activity_type;
+		formSemesterId = g.semester_id;
+		formInstructorId = g.instructor_id ?? '';
+		formRegistrationType = g.registration_type;
+		formMaxCapacity = g.max_capacity ? String(g.max_capacity) : '';
+		formRegistrationOpen = g.registration_open;
+		formAllowedGradeLevelIds = g.allowed_grade_level_ids ?? [];
 		isEdit = true;
+		editTarget = g;
 		showDialog = true;
 	}
 
 	function toggleGradeLevel(id: string) {
-		const ids = form.allowed_grade_level_ids ?? [];
-		form.allowed_grade_level_ids = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+		formAllowedGradeLevelIds = formAllowedGradeLevelIds.includes(id)
+			? formAllowedGradeLevelIds.filter((x) => x !== id)
+			: [...formAllowedGradeLevelIds, id];
 	}
 
 	// ── Save ───────────────────────────────────────────
 	async function handleSave() {
-		if (!form.name.trim()) { toast.error('กรุณาระบุชื่อกลุ่มกิจกรรม'); return; }
-		if (!form.semester_id) { toast.error('กรุณาเลือกภาคเรียน'); return; }
+		if (!formName.trim()) { toast.error('กรุณาระบุชื่อกลุ่มกิจกรรม'); return; }
+		if (!formSemesterId) { toast.error('กรุณาเลือกภาคเรียน'); return; }
+
+		const payload = {
+			name: formName.trim(),
+			description: formDescription || undefined,
+			activity_type: formActivityType as ActivityGroup['activity_type'],
+			semester_id: formSemesterId,
+			instructor_id: formInstructorId || undefined,
+			registration_type: formRegistrationType as ActivityGroup['registration_type'],
+			max_capacity: formMaxCapacity ? parseInt(formMaxCapacity) : undefined,
+			registration_open: formRegistrationOpen,
+			allowed_grade_level_ids: formAllowedGradeLevelIds.length > 0 ? formAllowedGradeLevelIds : undefined
+		};
 
 		saving = true;
 		try {
-			if (isEdit) {
-				await updateActivityGroup((deleteTarget as any)?.id ?? '', form);
+			if (isEdit && editTarget) {
+				await updateActivityGroup(editTarget.id, payload);
 				toast.success('แก้ไขกลุ่มกิจกรรมแล้ว');
 			} else {
-				await createActivityGroup(form);
+				await createActivityGroup(payload as any);
 				toast.success('สร้างกลุ่มกิจกรรมแล้ว');
 			}
 			showDialog = false;
@@ -158,9 +176,6 @@
 	}
 
 	// ── Delete ─────────────────────────────────────────
-	let showDeleteDialog = $state(false);
-	let editTarget = $state<ActivityGroup | null>(null);
-
 	function confirmDelete(g: ActivityGroup) {
 		deleteTarget = g;
 		showDeleteDialog = true;
@@ -179,17 +194,9 @@
 		}
 	}
 
-	function openEditDialog(g: ActivityGroup) {
-		editTarget = g;
-		openEdit(g);
-	}
-
 	// ── Helpers ────────────────────────────────────────
-	function activityTypeBadgeVariant(type: string) {
-		return type === 'scout' ? 'default'
-			: type === 'club' ? 'secondary'
-			: type === 'guidance' ? 'outline'
-			: 'outline';
+	function activityTypeBadgeVariant(type: string): 'default' | 'secondary' | 'outline' {
+		return type === 'scout' ? 'default' : type === 'club' ? 'secondary' : 'outline';
 	}
 
 	function gradeLevelDisplay(ids: string[] | undefined) {
@@ -199,6 +206,16 @@
 			return l?.short_name ?? l?.code ?? id;
 		}).join(', ');
 	}
+
+	function staffName(id: string) {
+		return staffList.find((s) => s.id === id)?.name ?? 'ไม่ระบุ';
+	}
+
+	let formSemesterName = $derived(
+		structure.semesters.find((s) => s.id === formSemesterId)?.name ?? 'เลือก...'
+	);
+	let formActivityTypeLabel = $derived(ACTIVITY_TYPE_LABELS[formActivityType] ?? formActivityType);
+	let formRegTypeLabel = $derived(formRegistrationType === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร');
 </script>
 
 <div class="space-y-4 p-4">
@@ -208,7 +225,7 @@
 			<Users class="h-5 w-5" />
 			<h1 class="text-xl font-semibold">กิจกรรมพัฒนาผู้เรียน</h1>
 		</div>
-		{#if $can('activity.manage.all') || $can('activity.manage.own')}
+		{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
 			<Button onclick={openCreate}>
 				<Plus class="mr-1 h-4 w-4" />
 				สร้างกลุ่มกิจกรรม
@@ -218,14 +235,8 @@
 
 	<!-- Filters -->
 	<div class="flex flex-wrap gap-3">
-		<!-- Semester -->
-		<Select.Root
-			value={filterSemesterId}
-			onValueChange={(v) => { filterSemesterId = v; }}
-		>
-			<Select.Trigger class="w-52">
-				{currentSemester?.name ?? 'เลือกภาคเรียน'}
-			</Select.Trigger>
+		<Select.Root type="single" bind:value={filterSemesterId}>
+			<Select.Trigger class="w-52">{currentSemesterName}</Select.Trigger>
 			<Select.Content>
 				{#each structure.semesters as s}
 					<Select.Item value={s.id}>{s.name}</Select.Item>
@@ -233,27 +244,21 @@
 			</Select.Content>
 		</Select.Root>
 
-		<!-- Type -->
-		<Select.Root value={filterType} onValueChange={(v) => { filterType = v === 'all' ? '' : v; }}>
+		<Select.Root type="single" bind:value={filterType}>
 			<Select.Trigger class="w-48">
 				{filterType ? ACTIVITY_TYPE_LABELS[filterType] : 'ทุกประเภท'}
 			</Select.Trigger>
 			<Select.Content>
-				<Select.Item value="all">ทุกประเภท</Select.Item>
+				<Select.Item value="">ทุกประเภท</Select.Item>
 				{#each Object.entries(ACTIVITY_TYPE_LABELS) as [val, label]}
 					<Select.Item value={val}>{label}</Select.Item>
 				{/each}
 			</Select.Content>
 		</Select.Root>
 
-		<!-- Search -->
 		<div class="relative">
 			<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-			<Input
-				class="pl-8 w-56"
-				placeholder="ค้นหาชื่อกลุ่ม..."
-				bind:value={filterSearch}
-			/>
+			<Input class="pl-8 w-56" placeholder="ค้นหาชื่อกลุ่ม..." bind:value={filterSearch} />
 		</div>
 	</div>
 
@@ -284,12 +289,8 @@
 								{ACTIVITY_TYPE_LABELS[g.activity_type] ?? g.activity_type}
 							</Badge>
 						</Table.Cell>
-						<Table.Cell class="text-sm text-muted-foreground">
-							{g.instructor_name ?? '—'}
-						</Table.Cell>
-						<Table.Cell class="text-sm">
-							{gradeLevelDisplay(g.allowed_grade_level_ids)}
-						</Table.Cell>
+						<Table.Cell class="text-sm text-muted-foreground">{g.instructor_name ?? '—'}</Table.Cell>
+						<Table.Cell class="text-sm">{gradeLevelDisplay(g.allowed_grade_level_ids)}</Table.Cell>
 						<Table.Cell class="text-center text-sm">
 							{g.member_count ?? 0}{g.max_capacity ? `/${g.max_capacity}` : ''}
 						</Table.Cell>
@@ -304,16 +305,12 @@
 						</Table.Cell>
 						<Table.Cell>
 							<div class="flex gap-1 justify-end">
-								<Button
-									variant="ghost"
-									size="icon"
-									title="จัดการสมาชิก"
-									onclick={() => goto(`/staff/academic/activities/${g.id}`)}
-								>
+								<Button variant="ghost" size="icon" title="จัดการสมาชิก"
+									onclick={() => goto(`/staff/academic/activities/${g.id}`)}>
 									<UserCog class="h-4 w-4" />
 								</Button>
-								{#if $can('activity.manage.all') || $can('activity.manage.own')}
-									<Button variant="ghost" size="icon" onclick={() => openEditDialog(g)}>
+								{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
+									<Button variant="ghost" size="icon" onclick={() => openEdit(g)}>
 										<Pencil class="h-4 w-4" />
 									</Button>
 									<Button variant="ghost" size="icon" onclick={() => confirmDelete(g)}>
@@ -337,20 +334,16 @@
 		</Dialog.Header>
 
 		<div class="space-y-4 py-2">
-			<!-- Name -->
 			<div class="space-y-1">
 				<Label>ชื่อกลุ่มกิจกรรม <span class="text-destructive">*</span></Label>
-				<Input bind:value={form.name} placeholder="เช่น ลูกเสือกลุ่ม 1, ชุมนุมคอมพิวเตอร์" />
+				<Input bind:value={formName} placeholder="เช่น ลูกเสือกลุ่ม 1, ชุมนุมคอมพิวเตอร์" />
 			</div>
 
-			<!-- Type + Registration type -->
 			<div class="grid grid-cols-2 gap-3">
 				<div class="space-y-1">
 					<Label>ประเภท</Label>
-					<Select.Root value={form.activity_type} onValueChange={(v) => { form.activity_type = v as any; }}>
-						<Select.Trigger class="w-full">
-							{ACTIVITY_TYPE_LABELS[form.activity_type]}
-						</Select.Trigger>
+					<Select.Root type="single" bind:value={formActivityType}>
+						<Select.Trigger class="w-full">{formActivityTypeLabel}</Select.Trigger>
 						<Select.Content>
 							{#each Object.entries(ACTIVITY_TYPE_LABELS) as [val, label]}
 								<Select.Item value={val}>{label}</Select.Item>
@@ -361,10 +354,8 @@
 
 				<div class="space-y-1">
 					<Label>การรับสมาชิก</Label>
-					<Select.Root value={form.registration_type} onValueChange={(v) => { form.registration_type = v as any; }}>
-						<Select.Trigger class="w-full">
-							{form.registration_type === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}
-						</Select.Trigger>
+					<Select.Root type="single" bind:value={formRegistrationType}>
+						<Select.Trigger class="w-full">{formRegTypeLabel}</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="assigned">ครู/admin จัดสรร</Select.Item>
 							<Select.Item value="self">นักเรียนเลือกเอง</Select.Item>
@@ -373,14 +364,11 @@
 				</div>
 			</div>
 
-			<!-- Semester + Instructor -->
 			<div class="grid grid-cols-2 gap-3">
 				<div class="space-y-1">
 					<Label>ภาคเรียน <span class="text-destructive">*</span></Label>
-					<Select.Root value={form.semester_id} onValueChange={(v) => { form.semester_id = v; }}>
-						<Select.Trigger class="w-full">
-							{structure.semesters.find((s) => s.id === form.semester_id)?.name ?? 'เลือก...'}
-						</Select.Trigger>
+					<Select.Root type="single" bind:value={formSemesterId}>
+						<Select.Trigger class="w-full">{formSemesterName}</Select.Trigger>
 						<Select.Content>
 							{#each structure.semesters as s}
 								<Select.Item value={s.id}>{s.name}</Select.Item>
@@ -391,46 +379,31 @@
 
 				<div class="space-y-1">
 					<Label>ครูที่ดูแล</Label>
-					<Select.Root
-						value={form.instructor_id ?? ''}
-						onValueChange={(v) => { form.instructor_id = v || undefined; }}
-					>
+					<Select.Root type="single" bind:value={formInstructorId}>
 						<Select.Trigger class="w-full">
-							{staffList.find((s) => s.id === form.instructor_id)
-								? `${staffList.find((s) => s.id === form.instructor_id)!.first_name} ${staffList.find((s) => s.id === form.instructor_id)!.last_name}`
-								: 'ไม่ระบุ'}
+							{formInstructorId ? staffName(formInstructorId) : 'ไม่ระบุ'}
 						</Select.Trigger>
 						<Select.Content class="max-h-56 overflow-y-auto">
 							<Select.Item value="">ไม่ระบุ</Select.Item>
 							{#each staffList as s}
-								<Select.Item value={s.id}>{s.first_name} {s.last_name}</Select.Item>
+								<Select.Item value={s.id}>{s.name}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
 				</div>
 			</div>
 
-			<!-- Max capacity + Registration open -->
 			<div class="grid grid-cols-2 gap-3">
 				<div class="space-y-1">
 					<Label>จำนวนรับสูงสุด</Label>
-					<Input
-						type="number"
-						min="1"
-						placeholder="ไม่จำกัด"
-						value={form.max_capacity ?? ''}
-						oninput={(e) => {
-							const v = (e.target as HTMLInputElement).valueAsNumber;
-							form.max_capacity = isNaN(v) ? undefined : v;
-						}}
-					/>
+					<Input type="number" min="1" placeholder="ไม่จำกัด" bind:value={formMaxCapacity} />
 				</div>
-				{#if form.registration_type === 'self'}
-					<div class="space-y-1 flex flex-col justify-end pb-1">
+				{#if formRegistrationType === 'self'}
+					<div class="flex flex-col justify-end pb-1">
 						<label class="flex items-center gap-2 cursor-pointer">
 							<Checkbox
-								checked={form.registration_open}
-								onCheckedChange={(v) => { form.registration_open = !!v; }}
+								checked={formRegistrationOpen}
+								onCheckedChange={(v) => { formRegistrationOpen = !!v; }}
 							/>
 							<span class="text-sm">เปิดรับสมัครแล้ว</span>
 						</label>
@@ -438,19 +411,16 @@
 				{/if}
 			</div>
 
-			<!-- Grade levels -->
 			<div class="space-y-1">
 				<Label>ระดับชั้นที่รับ (ว่าง = รับทุกระดับ)</Label>
 				<Popover.Root>
 					<Popover.Trigger class="w-full">
 						<Button variant="outline" class="w-full justify-between font-normal">
-							{#if form.allowed_grade_level_ids && form.allowed_grade_level_ids.length > 0}
-								{form.allowed_grade_level_ids
-									.map((id) => {
-										const l = gradeLevels.find((l) => l.id === id);
-										return l?.short_name ?? l?.code ?? id;
-									})
-									.join(', ')}
+							{#if formAllowedGradeLevelIds.length > 0}
+								{formAllowedGradeLevelIds.map((id) => {
+									const l = gradeLevels.find((l) => l.id === id);
+									return l?.short_name ?? l?.code ?? id;
+								}).join(', ')}
 							{:else}
 								<span class="text-muted-foreground">ทุกระดับชั้น</span>
 							{/if}
@@ -459,7 +429,7 @@
 					</Popover.Trigger>
 					<Popover.Content class="w-[--radix-popover-trigger-width] p-1 max-h-56 overflow-y-auto">
 						{#each gradeLevels as level}
-							{@const checked = form.allowed_grade_level_ids?.includes(level.id) ?? false}
+							{@const checked = formAllowedGradeLevelIds.includes(level.id)}
 							<button
 								type="button"
 								class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
@@ -473,10 +443,9 @@
 				</Popover.Root>
 			</div>
 
-			<!-- Description -->
 			<div class="space-y-1">
 				<Label>คำอธิบาย</Label>
-				<Textarea bind:value={form.description} placeholder="รายละเอียดเพิ่มเติม..." rows={2} />
+				<Textarea bind:value={formDescription} placeholder="รายละเอียดเพิ่มเติม..." rows={2} />
 			</div>
 		</div>
 

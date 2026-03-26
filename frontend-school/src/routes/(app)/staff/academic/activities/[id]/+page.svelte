@@ -162,7 +162,7 @@
 			<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
 			<Input class="pl-8 w-56" placeholder="ค้นหาสมาชิก..." bind:value={memberSearch} />
 		</div>
-		{#if $can('activity.members.manage')}
+		{#if $can.has('activity.members.manage')}
 			<Button onclick={openAddDialog}>
 				<UserPlus class="mr-1 h-4 w-4" />
 				เพิ่มสมาชิก
@@ -184,7 +184,7 @@
 					<Table.Head>ห้องเรียน</Table.Head>
 					<Table.Head>ระดับชั้น</Table.Head>
 					<Table.Head class="text-center">ผล (ผ/มผ)</Table.Head>
-					{#if $can('activity.members.manage')}
+					{#if $can.has('activity.members.manage')}
 						<Table.Head></Table.Head>
 					{/if}
 				</Table.Row>
@@ -197,25 +197,21 @@
 						<Table.Cell class="text-sm">{m.classroom_name ?? '—'}</Table.Cell>
 						<Table.Cell class="text-sm">{m.grade_level_name ?? '—'}</Table.Cell>
 						<Table.Cell class="text-center">
-							{#if $can('activity.members.manage')}
-								<Select.Root
-									value={m.result ?? ''}
-									onValueChange={(v) => handleResultChange(m, v as any)}
-								>
-									<Select.Trigger class="w-24 h-7 text-xs">
-										{m.result === 'pass' ? 'ผ' : m.result === 'fail' ? 'มผ' : '—'}
-									</Select.Trigger>
-									<Select.Content>
-										<Select.Item value="">ยังไม่บันทึก</Select.Item>
-										<Select.Item value="pass">ผ (ผ่าน)</Select.Item>
-										<Select.Item value="fail">มผ (ไม่ผ่าน)</Select.Item>
-									</Select.Content>
-								</Select.Root>
+							{#if $can.has('activity.members.manage')}
+							<select
+								class="h-7 rounded border px-1 text-xs bg-background"
+								value={m.result ?? ''}
+								onchange={(e) => handleResultChange(m, (e.target as HTMLSelectElement).value as any)}
+							>
+								<option value="">—</option>
+								<option value="pass">ผ (ผ่าน)</option>
+								<option value="fail">มผ (ไม่ผ่าน)</option>
+							</select>
 							{:else}
 								{m.result === 'pass' ? 'ผ' : m.result === 'fail' ? 'มผ' : '—'}
 							{/if}
 						</Table.Cell>
-						{#if $can('activity.members.manage')}
+						{#if $can.has('activity.members.manage')}
 							<Table.Cell>
 								<Button
 									variant="ghost"
