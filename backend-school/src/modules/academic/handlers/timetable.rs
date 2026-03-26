@@ -271,7 +271,15 @@ pub async fn list_timetable_entries(
     }
 
     if let Some(instructor_id) = query.instructor_id {
-        conditions.push(format!("cc.primary_instructor_id = '{}'", instructor_id));
+        conditions.push(format!(
+            r#"(
+                cc.primary_instructor_id = '{instructor_id}'
+                OR te.activity_group_id IN (
+                    SELECT activity_group_id FROM activity_group_instructors
+                    WHERE instructor_id = (SELECT id FROM staff_info WHERE user_id = '{instructor_id}')
+                )
+            )"#
+        ));
     }
 
     if let Some(room_id) = query.room_id {

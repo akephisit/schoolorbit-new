@@ -19,7 +19,8 @@
 		type Classroom,
 		getAcademicStructure,
 		type AcademicYear,
-		type Semester
+		type Semester,
+		ACTIVITY_TYPE_LABELS
 	} from '$lib/api/academic';
 	import {
 		lookupRooms,
@@ -1490,13 +1491,16 @@
 											{/if}
 
 											<div class="font-bold text-blue-900 truncate mb-0.5">
-												{entry.subject_code || (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : '')}
+												{entry.subject_code
+													|| (entry.activity_type ? ACTIVITY_TYPE_LABELS[entry.activity_type] : null)
+													|| entry.title
+													|| (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : '')}
 											</div>
 											<div
 												class="line-clamp-1 text-blue-800 text-[10px] mb-auto"
-												title={entry.subject_name_th || entry.title}
+												title={entry.subject_name_th || entry.title || undefined}
 											>
-												{entry.subject_name_th || entry.title || 'ไม่มีชื่อ'}
+												{entry.subject_name_th || entry.title || ''}
 											</div>
 											<div
 												class="mt-1 pt-1 border-t border-blue-200/50 gap-0.5 flex flex-col text-[9px] text-blue-700"
