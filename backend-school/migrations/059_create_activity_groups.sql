@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS activity_groups (
     semester_id UUID NOT NULL REFERENCES academic_semesters(id) ON DELETE CASCADE,
 
     -- ครูที่ดูแล
-    instructor_id UUID REFERENCES staff(id) ON DELETE SET NULL,
+    instructor_id UUID REFERENCES staff_info(id) ON DELETE SET NULL,
 
     -- การรับสมาชิก
     registration_type VARCHAR(10) NOT NULL DEFAULT 'assigned' CHECK (registration_type IN ('self', 'assigned')),
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS activity_group_members (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     activity_group_id UUID NOT NULL REFERENCES activity_groups(id) ON DELETE CASCADE,
-    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    student_id UUID NOT NULL REFERENCES student_info(id) ON DELETE CASCADE,
 
     -- ผลการเรียน (ผ/มผ) — ใส่ภายหลังปลายภาค
     result VARCHAR(10) CHECK (result IN ('pass', 'fail')),

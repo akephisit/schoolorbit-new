@@ -43,11 +43,12 @@ pub async fn list_activity_groups(
     let mut sql = String::from(
         r#"SELECT
             ag.*,
-            s.first_name || ' ' || s.last_name AS instructor_name,
+            u.first_name || ' ' || u.last_name AS instructor_name,
             COUNT(agm.id) AS member_count,
             sem.name AS semester_name
         FROM activity_groups ag
-        LEFT JOIN staff s ON s.id = ag.instructor_id
+        LEFT JOIN staff_info si ON si.id = ag.instructor_id
+        LEFT JOIN users u ON u.id = si.user_id
         LEFT JOIN activity_group_members agm ON agm.activity_group_id = ag.id
         LEFT JOIN academic_semesters sem ON sem.id = ag.semester_id
         WHERE ag.is_active = true"#,
@@ -70,7 +71,7 @@ pub async fn list_activity_groups(
         sql.push_str(&format!(" AND ag.name ILIKE '%{escaped}%'"));
     }
 
-    sql.push_str(" GROUP BY ag.id, s.first_name, s.last_name, sem.name ORDER BY ag.activity_type, ag.name");
+    sql.push_str(" GROUP BY ag.id, u.first_name, u.last_name, sem.name ORDER BY ag.activity_type, ag.name");
 
     let groups: Vec<ActivityGroup> = sqlx::query_as(&sql)
         .fetch_all(&pool)
@@ -241,8 +242,8 @@ pub async fn list_members(
     let members: Vec<ActivityGroupMember> = sqlx::query_as(
         r#"SELECT
             agm.*,
-            p.first_name || ' ' || p.last_name AS student_name,
-            st.student_code,
+            u.first_name || ' ' || u.last_name AS student_name,
+            st.student_id AS student_code,
             cr.name AS classroom_name,
             CASE gl.level_type
                 WHEN 'kindergarten' THEN 'อ.' || gl.year
@@ -251,13 +252,13 @@ pub async fn list_members(
                 ELSE gl.level_type || gl.year::TEXT
             END AS grade_level_name
         FROM activity_group_members agm
-        JOIN students st ON st.id = agm.student_id
-        JOIN persons p ON p.id = st.person_id
-        LEFT JOIN student_enrollments se ON se.student_id = st.id AND se.status = 'active'
+        JOIN student_info st ON st.id = agm.student_id
+        JOIN users u ON u.id = st.user_id
+        LEFT JOIN student_class_enrollments se ON se.student_id = st.user_id AND se.status = 'active'
         LEFT JOIN class_rooms cr ON cr.id = se.class_room_id
         LEFT JOIN grade_levels gl ON gl.id = cr.grade_level_id
         WHERE agm.activity_group_id = $1
-        ORDER BY cr.name, p.first_name"#,
+        ORDER BY cr.name, u.first_name"#,
     )
     .bind(group_id)
     .fetch_all(&pool)
