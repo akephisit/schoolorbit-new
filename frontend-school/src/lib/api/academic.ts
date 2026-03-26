@@ -600,3 +600,101 @@ export const generateCoursesFromPlan = async (data: {
     });
 };
 
+// ==========================================
+// Activity Groups (กิจกรรมพัฒนาผู้เรียน)
+// ==========================================
+
+export interface ActivityGroup {
+    id: string;
+    name: string;
+    description?: string;
+    activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
+    semester_id: string;
+    instructor_id?: string;
+    registration_type: 'self' | 'assigned';
+    max_capacity?: number;
+    registration_open: boolean;
+    allowed_grade_level_ids?: string[];
+    is_active: boolean;
+    created_at: string;
+    // joined
+    instructor_name?: string;
+    member_count?: number;
+    semester_name?: string;
+}
+
+export interface ActivityGroupMember {
+    id: string;
+    activity_group_id: string;
+    student_id: string;
+    result?: 'pass' | 'fail';
+    enrolled_at: string;
+    // joined
+    student_name?: string;
+    student_code?: string;
+    classroom_name?: string;
+    grade_level_name?: string;
+}
+
+export const ACTIVITY_TYPE_LABELS: Record<string, string> = {
+    scout: 'ลูกเสือ / เนตรนารี / ยุวกาชาด',
+    club: 'ชุมนุม',
+    guidance: 'แนะแนว',
+    social: 'กิจกรรมเพื่อสังคม',
+    other: 'อื่น ๆ'
+};
+
+export const listActivityGroups = async (filter: {
+    semester_id?: string;
+    activity_type?: string;
+    registration_open?: boolean;
+    search?: string;
+} = {}): Promise<{ data: ActivityGroup[] }> => {
+    const params = new URLSearchParams();
+    if (filter.semester_id) params.set('semester_id', filter.semester_id);
+    if (filter.activity_type) params.set('activity_type', filter.activity_type);
+    if (filter.registration_open !== undefined) params.set('registration_open', String(filter.registration_open));
+    if (filter.search) params.set('search', filter.search);
+    return await fetchApi(`/api/academic/activities?${params}`);
+};
+
+export const createActivityGroup = async (data: Omit<ActivityGroup, 'id' | 'is_active' | 'created_at' | 'instructor_name' | 'member_count' | 'semester_name'>) => {
+    return await fetchApi('/api/academic/activities', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const updateActivityGroup = async (id: string, data: Partial<ActivityGroup>) => {
+    return await fetchApi(`/api/academic/activities/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};
+
+export const deleteActivityGroup = async (id: string) => {
+    return await fetchApi(`/api/academic/activities/${id}`, { method: 'DELETE' });
+};
+
+export const listActivityMembers = async (groupId: string): Promise<{ data: ActivityGroupMember[] }> => {
+    return await fetchApi(`/api/academic/activities/${groupId}/members`);
+};
+
+export const addActivityMembers = async (groupId: string, studentIds: string[]) => {
+    return await fetchApi(`/api/academic/activities/${groupId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ student_ids: studentIds })
+    });
+};
+
+export const removeActivityMember = async (groupId: string, studentId: string) => {
+    return await fetchApi(`/api/academic/activities/${groupId}/members/${studentId}`, { method: 'DELETE' });
+};
+
+export const updateMemberResult = async (memberId: string, result: 'pass' | 'fail') => {
+    return await fetchApi(`/api/academic/activities/members/${memberId}/result`, {
+        method: 'PUT',
+        body: JSON.stringify({ result })
+    });
+};
+
