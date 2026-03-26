@@ -92,7 +92,7 @@ pub async fn provision_tenant(
 
     // Generate username — Pattern: T + Running(4) e.g., T0001
     let next_num: i64 = sqlx::query_scalar(
-        r#"SELECT MIN(n) FROM generate_series(1, 9999) AS n
+        r#"SELECT MIN(n)::bigint FROM generate_series(1, 9999) AS n
            WHERE NOT EXISTS (
                SELECT 1 FROM users WHERE username = 'T' || LPAD(n::text, 4, '0')
            )"#

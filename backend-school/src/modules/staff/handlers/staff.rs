@@ -529,12 +529,14 @@ pub async fn create_staff(
         Some(u) if !u.is_empty() => u.to_string(),
         _ => {
             let next_num: i64 = sqlx::query_scalar(
-                r#"SELECT MIN(n) FROM generate_series(1, 9999) AS n
+                r#"SELECT MIN(n)::bigint FROM generate_series(1, 9999) AS n
                    WHERE NOT EXISTS (
                        SELECT 1 FROM users WHERE username = 'T' || LPAD(n::text, 4, '0')
                    )"#
             ).fetch_one(&pool).await.unwrap_or(Some(1)).unwrap_or(1);
-            format!("T{:04}", next_num)
+            let generated = format!("T{:04}", next_num);
+            println!("🔑 Generated staff username: {}", generated);
+            generated
         }
     };
 
