@@ -508,31 +508,58 @@
 
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<Label>ระดับชั้นที่เปิดสอน <span class="text-destructive">*</span></Label>
-					<Select.Root
-						type="single"
-						value={currentSubject.grade_level_ids?.[0] || ''}
-						onValueChange={(val) => (currentSubject.grade_level_ids = val ? [val] : [])}
-					>
-						<Select.Trigger>
-							{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
-								{@const selectedId = currentSubject.grade_level_ids[0]}
-								{gradeLevels.find((l) => l.id === selectedId)?.name || 'เลือกระดับชั้น'}
-							{:else}
-								<span class="text-muted-foreground">เลือก 1 ระดับชั้น...</span>
-							{/if}
-						</Select.Trigger>
-						<Select.Content class="max-h-[300px]">
-							<Select.Item value="">(ไม่ระบุ)</Select.Item>
+					<Label>ระดับชั้นที่เปิดสอน</Label>
+					<Popover.Root>
+						<Popover.Trigger class="w-full">
+							<Button variant="outline" role="combobox" class="w-full justify-between font-normal">
+								{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
+									{currentSubject.grade_level_ids
+										.map((id) => gradeLevels.find((l) => l.id === id)?.code ?? id)
+										.join(', ')}
+								{:else}
+									<span class="text-muted-foreground">เลือกระดับชั้น...</span>
+								{/if}
+								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						</Popover.Trigger>
+						<Popover.Content class="w-[--radix-popover-trigger-width] p-1 max-h-[260px] overflow-y-auto">
 							{#each gradeLevels as level}
-								<Select.Item value={level.id}>{level.name} ({level.code})</Select.Item>
+								{@const checked = currentSubject.grade_level_ids?.includes(level.id) ?? false}
+								<button
+									type="button"
+									class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
+									onclick={() => {
+										const ids = currentSubject.grade_level_ids ?? [];
+										currentSubject.grade_level_ids = checked
+											? ids.filter((id) => id !== level.id)
+											: [...ids, level.id];
+									}}
+								>
+									<Check class="h-4 w-4 {checked ? 'opacity-100' : 'opacity-0'}" />
+									{level.name}
+								</button>
 							{/each}
+						</Popover.Content>
+					</Popover.Root>
+					<p class="text-[10px] text-muted-foreground">ใช้สำหรับกรองรายวิชาเท่านั้น</p>
+				</div>
+				<div class="space-y-2">
+					<Label>ภาคเรียนที่เปิดสอน</Label>
+					<Select.Root type="single" bind:value={currentSubject.term}>
+						<Select.Trigger>
+							{#if currentSubject.term === '1'}ภาคเรียนที่ 1
+							{:else if currentSubject.term === '2'}ภาคเรียนที่ 2
+							{:else if currentSubject.term === 'SUMMER'}ซัมเมอร์
+							{:else}ทุกภาคเรียน{/if}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">ทุกภาคเรียน</Select.Item>
+							<Select.Item value="1">ภาคเรียนที่ 1</Select.Item>
+							<Select.Item value="2">ภาคเรียนที่ 2</Select.Item>
+							<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
 						</Select.Content>
 					</Select.Root>
-					<p class="text-[10px] text-muted-foreground">
-						* เลือกได้เพียง 1 ระดับชั้นต่อ 1 รหัสวิชา (หากวิชานี้เรียนหลายชั้น
-						ให้สร้างรหัส/วิชาใหม่แยกกัน)
-					</p>
+					<p class="text-[10px] text-muted-foreground">ใช้สำหรับกรองรายวิชาเท่านั้น</p>
 				</div>
 			</div>
 
@@ -587,41 +614,22 @@
 				</div>
 			</div>
 
-			<div class="grid grid-cols-2 gap-4">
-				<div class="space-y-2">
-					<Label>ภาคเรียนที่เปิดสอน</Label>
-					<Select.Root type="single" bind:value={currentSubject.term}>
-						<Select.Trigger>
-							{#if currentSubject.term === '1'}ภาคเรียนที่ 1
-							{:else if currentSubject.term === '2'}ภาคเรียนที่ 2
-							{:else if currentSubject.term === 'SUMMER'}ซัมเมอร์
-							{:else}ทุกภาคเรียน{/if}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="">ทุกภาคเรียน</Select.Item>
-							<Select.Item value="1">ภาคเรียนที่ 1</Select.Item>
-							<Select.Item value="2">ภาคเรียนที่ 2</Select.Item>
-							<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="space-y-2">
-					<Label>ครูผู้สอนหลัก (Default)</Label>
-					<Select.Root type="single" bind:value={currentSubject.default_instructor_id}>
-						<Select.Trigger class="truncate">
-							{(() => {
-								const st = staffList.find((s) => s.id === currentSubject.default_instructor_id);
-								return st ? st.name : 'เลือกครูผู้สอน';
-							})()}
-						</Select.Trigger>
-						<Select.Content class="max-h-[300px]">
-							<Select.Item value="">(ไม่ระบุ)</Select.Item>
-							{#each staffList as staff}
-								<Select.Item value={staff.id}>{staff.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
+			<div class="space-y-2">
+				<Label>ครูผู้สอนหลัก (Default)</Label>
+				<Select.Root type="single" bind:value={currentSubject.default_instructor_id}>
+					<Select.Trigger class="truncate">
+						{(() => {
+							const st = staffList.find((s) => s.id === currentSubject.default_instructor_id);
+							return st ? st.name : 'เลือกครูผู้สอน';
+						})()}
+					</Select.Trigger>
+					<Select.Content class="max-h-[300px]">
+						<Select.Item value="">(ไม่ระบุ)</Select.Item>
+						{#each staffList as staff}
+							<Select.Item value={staff.id}>{staff.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 
 			<div class="grid grid-cols-2 gap-4">
