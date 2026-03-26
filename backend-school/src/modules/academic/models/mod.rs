@@ -11,6 +11,7 @@ pub mod course_planning;
 pub mod timetable;
 pub mod study_plans;
 pub mod scheduling;
+pub mod activity;
 
 // ==========================================
 // Academic Year Models

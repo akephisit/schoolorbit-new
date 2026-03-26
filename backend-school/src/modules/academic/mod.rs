@@ -87,4 +87,12 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/scheduling/instructors/{id}", put(handlers::scheduling_config::update_instructor_constraints))
         .route("/scheduling/subjects", get(handlers::scheduling_config::list_subject_constraints))
         .route("/scheduling/subjects/{id}", put(handlers::scheduling_config::update_subject_constraints))
+
+        // Activity Groups (กิจกรรมพัฒนาผู้เรียน)
+        .route("/activities", get(handlers::activity::list_activity_groups).post(handlers::activity::create_activity_group))
+        .route("/activities/{id}", put(handlers::activity::update_activity_group).delete(handlers::activity::delete_activity_group))
+        .route("/activities/{id}/members", get(handlers::activity::list_members).post(handlers::activity::add_members))
+        .route("/activities/{id}/enroll", post(handlers::activity::self_enroll))
+        .route("/activities/{id}/members/{student_id}", axum::routing::delete(handlers::activity::remove_member))
+        .route("/activities/members/{member_id}/result", put(handlers::activity::update_member_result))
 }

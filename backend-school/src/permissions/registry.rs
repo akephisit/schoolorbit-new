@@ -110,6 +110,12 @@ pub mod codes {
     pub const DEPT_WORK_UPDATE_OWN: &str = "dept_work.update.own";
     pub const DEPT_WORK_APPROVE: &str = "dept_work.approve.department";
 
+    // Activity Group Permissions (กิจกรรมพัฒนาผู้เรียน)
+    pub const ACTIVITY_READ_ALL: &str = "activity.read.all";
+    pub const ACTIVITY_MANAGE_ALL: &str = "activity.manage.all";     // admin
+    pub const ACTIVITY_MANAGE_OWN: &str = "activity.manage.own";     // ครูจัดการชุมนุมตัวเอง
+    pub const ACTIVITY_MEMBERS_MANAGE: &str = "activity.members.manage"; // จัดการสมาชิก
+
     // Admission permissions
     pub const ADMISSION_READ_ALL: &str = "admission.read.all";
     pub const ADMISSION_MANAGE_ALL: &str = "admission.manage.all";
