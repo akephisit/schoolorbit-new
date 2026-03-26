@@ -90,19 +90,12 @@ pub async fn provision_tenant(
             AppError::InternalServerError("Password hashing failed".to_string())
         })?;
 
-    // Generate running number for staff code (Admin is the first staff)
-    // Pattern: T + Year(2) + Running(4) e.g., T670001
-    // Since this is provisioning, it SHOULD be the first user, but we'll count to be safe/consistent
-    let thai_year = (chrono::Utc::now().year() + 543) % 100;
-    
-    // We can't query count yet inside the transaction easily if we want to be atomic with insert in the same way,
-    // but here we are in a special "provisioning" state where we expect to be the first.
-    // However, to reuse the logic exactly, let's query count.
-    
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE user_type = 'staff'")
-        .fetch_one(&pool).await.unwrap_or(0);
-        
-    let username = format!("T{}{:04}", thai_year, count + 1);
+    // Generate username — Pattern: T + Running(4) e.g., T0001
+    let next_num: i64 = sqlx::query_scalar(
+        r#"SELECT COALESCE(MAX(CAST(SUBSTRING(username FROM 2) AS INTEGER)), 0) + 1
+           FROM users WHERE user_type = 'staff' AND username ~ '^T\d+$'"#
+    ).fetch_one(&pool).await.unwrap_or(1);
+    let username = format!("T{:04}", next_num);
     println!("   Generated Admin Username: {}", username);
 
     // Insert admin user into the database

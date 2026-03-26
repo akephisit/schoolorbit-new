@@ -523,21 +523,17 @@ pub async fn create_staff(
     // Hash national_id for search
     let national_id_hash = payload.national_id.as_deref().map(|s| field_encryption::hash_for_search(s));
 
-    // Generate running number for staff code if not provided
-    // Pattern: T + Year(2) + Running(4) e.g., T670001
-    let username = if let Some(u) = &payload.username {
-         if !u.is_empty() { u.clone() } else { 
-             // Generate default
-             let thai_year = (chrono::Utc::now().year() + 543) % 100;
-             let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE user_type = 'staff'")
-                 .fetch_one(&pool).await.unwrap_or(0);
-             format!("T{}{:04}", thai_year, count + 1)
-         }
-    } else {
-         let thai_year = (chrono::Utc::now().year() + 543) % 100;
-         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE user_type = 'staff'")
-             .fetch_one(&pool).await.unwrap_or(0);
-         format!("T{}{:04}", thai_year, count + 1)
+    // Generate username if not provided — Pattern: T + Running(4) e.g., T0001
+    // Uses MAX of existing T-prefixed usernames to avoid duplicates when staff are deleted
+    let username = match payload.username.as_deref() {
+        Some(u) if !u.is_empty() => u.to_string(),
+        _ => {
+            let next_num: i64 = sqlx::query_scalar(
+                r#"SELECT COALESCE(MAX(CAST(SUBSTRING(username FROM 2) AS INTEGER)), 0) + 1
+                   FROM users WHERE user_type = 'staff' AND username ~ '^T\d+$'"#
+            ).fetch_one(&pool).await.unwrap_or(1);
+            format!("T{:04}", next_num)
+        }
     };
 
     // Create new user
