@@ -514,7 +514,10 @@
 							<Button variant="outline" role="combobox" class="w-full justify-between font-normal">
 								{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
 									{currentSubject.grade_level_ids
-										.map((id) => gradeLevels.find((l) => l.id === id)?.code ?? id)
+										.map((id) => {
+											const l = gradeLevels.find((l) => l.id === id);
+											return l?.short_name ?? l?.code ?? id;
+										})
 										.join(', ')}
 								{:else}
 									<span class="text-muted-foreground">เลือกระดับชั้น...</span>

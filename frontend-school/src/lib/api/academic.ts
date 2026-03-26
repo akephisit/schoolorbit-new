@@ -67,6 +67,7 @@ export interface LookupItem {
     level_type?: string;
     year?: number;
     is_current?: boolean; // For academic years
+    short_name?: string; // e.g. "อ.1", "ป.3", "ม.6" for grade levels
 }
 
 // API Functions
