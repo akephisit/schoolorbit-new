@@ -427,3 +427,107 @@ pub async fn update_member_result(
 
     Ok(Json(json!({ "message": "บันทึกผลแล้ว" })).into_response())
 }
+
+// ============================================
+// Instructors API
+// ============================================
+
+#[derive(serde::Deserialize)]
+pub struct InstructorRoleRequest {
+    pub instructor_id: uuid::Uuid,
+    pub role: Option<String>, // "primary" | "assistant"
+}
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct InstructorInfo {
+    pub id: uuid::Uuid,
+    pub instructor_id: uuid::Uuid,
+    pub role: String,
+    pub instructor_name: Option<String>,
+}
+
+/// GET /api/academic/activities/:id/instructors
+pub async fn list_instructors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(group_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let rows: Vec<InstructorInfo> = sqlx::query_as(
+        r#"SELECT agi.id, agi.instructor_id, agi.role,
+                  u.first_name || ' ' || u.last_name AS instructor_name
+           FROM activity_group_instructors agi
+           JOIN staff_info si ON si.id = agi.instructor_id
+           JOIN users u ON u.id = si.user_id
+           WHERE agi.activity_group_id = $1
+           ORDER BY CASE agi.role WHEN 'primary' THEN 1 ELSE 2 END"#,
+    )
+    .bind(group_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "data": rows })).into_response())
+}
+
+/// POST /api/academic/activities/:id/instructors
+pub async fn add_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(group_id): Path<Uuid>,
+    Json(body): Json<InstructorRoleRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        if check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_OWN, &state.permission_cache).await.is_err() {
+            return Ok(r);
+        }
+    }
+
+    let role = body.role.unwrap_or_else(|| "assistant".to_string());
+
+    sqlx::query(
+        "INSERT INTO activity_group_instructors (activity_group_id, instructor_id, role)
+         VALUES ($1, $2, $3) ON CONFLICT (activity_group_id, instructor_id) DO UPDATE SET role = $3"
+    )
+    .bind(group_id)
+    .bind(body.instructor_id)
+    .bind(&role)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "message": "เพิ่มครูแล้ว" })).into_response())
+}
+
+/// DELETE /api/academic/activities/:id/instructors/:instructor_id
+pub async fn remove_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((group_id, instructor_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        if check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_OWN, &state.permission_cache).await.is_err() {
+            return Ok(r);
+        }
+    }
+
+    sqlx::query(
+        "DELETE FROM activity_group_instructors WHERE activity_group_id = $1 AND instructor_id = $2"
+    )
+    .bind(group_id)
+    .bind(instructor_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "message": "ลบครูแล้ว" })).into_response())
+}

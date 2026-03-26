@@ -219,23 +219,26 @@ pub async fn list_timetable_entries(
 
     let mut sql = String::from(
         r#"
-        SELECT 
+        SELECT
             te.*,
-            s.code as subject_code,
-            s.name_th as subject_name_th,
-            concat(u.first_name, ' ', u.last_name) as instructor_name,
-            cr.name as classroom_name,
-            r.code as room_code,
-            ap.name as period_name,
+            s.code   AS subject_code,
+            s.name_th AS subject_name_th,
+            concat(u.first_name, ' ', u.last_name) AS instructor_name,
+            cr.name  AS classroom_name,
+            r.code   AS room_code,
+            ap.name  AS period_name,
             ap.start_time,
-            ap.end_time
+            ap.end_time,
+            ag.name  AS activity_group_name,
+            ag.activity_type
         FROM academic_timetable_entries te
         LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
         LEFT JOIN subjects s ON cc.subject_id = s.id
-        JOIN class_rooms cr ON te.classroom_id = cr.id
+        LEFT JOIN class_rooms cr ON te.classroom_id = cr.id
         JOIN academic_periods ap ON te.period_id = ap.id
         LEFT JOIN users u ON cc.primary_instructor_id = u.id
         LEFT JOIN rooms r ON te.room_id = r.id
+        LEFT JOIN activity_groups ag ON te.activity_group_id = ag.id
         WHERE te.is_active = true
         "#
     );
@@ -244,6 +247,27 @@ pub async fn list_timetable_entries(
 
     if let Some(classroom_id) = query.classroom_id {
         conditions.push(format!("te.classroom_id = '{}'", classroom_id));
+    }
+
+    if let Some(group_id) = query.activity_group_id {
+        conditions.push(format!("te.activity_group_id = '{}'", group_id));
+    }
+
+    // student_id: ดึง classroom ที่นักเรียนสังกัด + activity groups ที่นักเรียนเป็นสมาชิก
+    if let Some(student_id) = query.student_id {
+        conditions.push(format!(
+            r#"(
+                te.classroom_id IN (
+                    SELECT class_room_id FROM student_class_enrollments
+                    WHERE student_id = (SELECT user_id FROM student_info WHERE id = '{student_id}')
+                      AND status = 'active'
+                )
+                OR te.activity_group_id IN (
+                    SELECT activity_group_id FROM activity_group_members
+                    WHERE student_id = '{student_id}'
+                )
+            )"#
+        ));
     }
 
     if let Some(instructor_id) = query.instructor_id {
@@ -311,49 +335,69 @@ pub async fn create_timetable_entry(
         ).into_response());
     }
 
-    // Lookup classroom_id and semester_id from course
-    let (classroom_id, academic_semester_id) = if let Some(course_id) = payload.classroom_course_id {
-         let info: Option<(Uuid, Uuid)> = sqlx::query_as(
-            "SELECT classroom_id, academic_semester_id FROM classroom_courses WHERE id = $1"
-         )
-         .bind(course_id)
-         .fetch_optional(&pool)
-         .await
-         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-         
-         match info {
-             Some(i) => i,
-             None => return Err(AppError::NotFound("Classroom course not found".to_string()))
-         }
-    } else {
-         return Err(AppError::BadRequest("Course ID is required for regular timetable entry".to_string()));
-    };
+    // Lookup IDs depending on entry type
+    let (classroom_id_opt, academic_semester_id, entry_type) =
+        if let Some(course_id) = payload.classroom_course_id {
+            let info: Option<(Uuid, Uuid)> = sqlx::query_as(
+                "SELECT classroom_id, academic_semester_id FROM classroom_courses WHERE id = $1"
+            )
+            .bind(course_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+            match info {
+                Some((cls, sem)) => (Some(cls), sem, "COURSE"),
+                None => return Err(AppError::NotFound("Classroom course not found".to_string()))
+            }
+        } else if let Some(group_id) = payload.activity_group_id {
+            let info: Option<(Uuid,)> = sqlx::query_as(
+                "SELECT semester_id FROM activity_groups WHERE id = $1"
+            )
+            .bind(group_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+            match info {
+                Some((sem,)) => (None, sem, "ACTIVITY"),
+                None => return Err(AppError::NotFound("Activity group not found".to_string()))
+            }
+        } else {
+            return Err(AppError::BadRequest("classroom_course_id or activity_group_id required".to_string()));
+        };
 
     let entry = sqlx::query_as::<_, TimetableEntry>(
         r#"
         INSERT INTO academic_timetable_entries (
-            id, classroom_course_id, day_of_week, period_id, room_id, note, 
-            classroom_id, academic_semester_id, entry_type, is_active,
+            id, classroom_course_id, activity_group_id, day_of_week, period_id,
+            room_id, note, classroom_id, academic_semester_id, entry_type, is_active,
             created_by, updated_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'COURSE', true, $9, $9)
-        RETURNING *
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $11)
+        RETURNING *, NULL::TEXT AS subject_code, NULL::TEXT AS subject_name_th,
+                  NULL::TEXT AS instructor_name, NULL::TEXT AS classroom_name,
+                  NULL::TEXT AS room_code, NULL::TEXT AS period_name,
+                  NULL::TIME AS start_time, NULL::TIME AS end_time,
+                  NULL::TEXT AS activity_group_name, NULL::TEXT AS activity_type
         "#
     )
     .bind(Uuid::new_v4())
     .bind(payload.classroom_course_id)
+    .bind(payload.activity_group_id)
     .bind(payload.day_of_week)
     .bind(payload.period_id)
     .bind(payload.room_id)
     .bind(payload.note)
-    .bind(classroom_id)
+    .bind(classroom_id_opt)
     .bind(academic_semester_id)
+    .bind(entry_type)
     .bind(user_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
         eprintln!("Failed to create timetable entry: {}", e);
-        if e.to_string().contains("unique_entry_per_slot") {
+        if e.to_string().contains("unique_entry_per_slot") || e.to_string().contains("unique_activity_group_slot") {
             AppError::BadRequest("This slot is already occupied".to_string())
         } else {
             AppError::InternalServerError("Failed to create timetable entry".to_string())
@@ -571,6 +615,7 @@ pub async fn update_timetable_entry(
     // 2. Prepare mock CreateRequest for validation (using new values or fallback to existing)
     let validation_payload = CreateTimetableEntryRequest {
         classroom_course_id: existing_entry.classroom_course_id,
+        activity_group_id: existing_entry.activity_group_id,
         day_of_week: payload.day_of_week.clone().unwrap_or(existing_entry.day_of_week),
         period_id: payload.period_id.unwrap_or(existing_entry.period_id),
         room_id: payload.room_id.or(existing_entry.room_id),

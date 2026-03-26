@@ -60,16 +60,16 @@ pub struct PeriodQuery {
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct TimetableEntry {
     pub id: Uuid,
-    pub classroom_course_id: Option<Uuid>, // Nullable for activities
+    pub classroom_course_id: Option<Uuid>,
+    pub activity_group_id: Option<Uuid>,   // for activity entries
     pub day_of_week: String,
     pub period_id: Uuid,
     pub room_id: Option<Uuid>,
     pub note: Option<String>,
-    
-    // New fields
-    pub entry_type: String, // COURSE, BREAK, ACTIVITY
+
+    pub entry_type: String, // COURSE, BREAK, ACTIVITY, HOMEROOM
     pub title: Option<String>,
-    pub classroom_id: Uuid,
+    pub classroom_id: Option<Uuid>,        // nullable for activity entries
     pub academic_semester_id: Uuid,
 
     pub is_active: bool,
@@ -105,11 +105,20 @@ pub struct TimetableEntry {
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<NaiveTime>,
+
+    // Activity group joined fields
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity_group_name: Option<String>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTimetableEntryRequest {
     pub classroom_course_id: Option<Uuid>,
+    pub activity_group_id: Option<Uuid>,   // สำหรับ activity entries
     pub day_of_week: String,
     pub period_id: Uuid,
     pub room_id: Option<Uuid>,
@@ -141,6 +150,8 @@ pub struct CreateBatchTimetableEntriesRequest {
 #[derive(Debug, Deserialize)]
 pub struct TimetableQuery {
     pub classroom_id: Option<Uuid>,
+    pub activity_group_id: Option<Uuid>,
+    pub student_id: Option<Uuid>,          // ดึงตารางของนักเรียน (classroom + activity)
     pub instructor_id: Option<Uuid>,
     pub room_id: Option<Uuid>,
     pub academic_semester_id: Option<Uuid>,

@@ -698,3 +698,25 @@ export const updateMemberResult = async (memberId: string, result: 'pass' | 'fai
     });
 };
 
+export interface ActivityInstructor {
+    id: string;
+    instructor_id: string;
+    role: 'primary' | 'assistant';
+    instructor_name?: string;
+}
+
+export const listActivityInstructors = async (groupId: string): Promise<{ data: ActivityInstructor[] }> => {
+    return await fetchApi(`/api/academic/activities/${groupId}/instructors`);
+};
+
+export const addActivityInstructor = async (groupId: string, instructorId: string, role: 'primary' | 'assistant') => {
+    return await fetchApi(`/api/academic/activities/${groupId}/instructors`, {
+        method: 'POST',
+        body: JSON.stringify({ instructor_id: instructorId, role })
+    });
+};
+
+export const removeActivityInstructor = async (groupId: string, instructorId: string) => {
+    return await fetchApi(`/api/academic/activities/${groupId}/instructors/${instructorId}`, { method: 'DELETE' });
+};
+

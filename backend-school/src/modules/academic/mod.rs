@@ -95,4 +95,6 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/activities/{id}/enroll", post(handlers::activity::self_enroll))
         .route("/activities/{id}/members/{student_id}", axum::routing::delete(handlers::activity::remove_member))
         .route("/activities/members/{member_id}/result", put(handlers::activity::update_member_result))
+        .route("/activities/{id}/instructors", get(handlers::activity::list_instructors).post(handlers::activity::add_instructor))
+        .route("/activities/{id}/instructors/{instructor_id}", axum::routing::delete(handlers::activity::remove_instructor))
 }
