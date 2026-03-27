@@ -8,7 +8,7 @@ use axum::{
     Router,
 };
 use serde_json::json;
-use crate::middleware::permission::check_permission;
+use crate::middleware::permission::{check_permission, get_user_with_permissions};
 use crate::modules::facility::models::{
     Building, CreateBuildingRequest, UpdateBuildingRequest,
     Room, CreateRoomRequest, UpdateRoomRequest, RoomFilter
@@ -160,7 +160,8 @@ pub async fn list_rooms(
     Query(filter): Query<RoomFilter>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_READ_ALL, &state.permission_cache).await {
+    // Any authenticated staff can list rooms (used for timetable, exam rooms, etc.)
+    if let Err(response) = get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
         return Ok(response);
     }
 
