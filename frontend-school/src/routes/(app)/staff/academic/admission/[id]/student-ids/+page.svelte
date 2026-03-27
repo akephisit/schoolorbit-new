@@ -9,7 +9,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Hash, Save, Wand2, X, AlertTriangle, Search, School } from 'lucide-svelte';
+	import { ArrowLeft, Hash, Save, Wand2, X, AlertTriangle, Search, School, FileSpreadsheet } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -143,6 +143,24 @@
 	function clearSchoolFilter() {
 		schoolFilter = '';
 	}
+
+	async function downloadXlsx() {
+		const XLSX = await import('xlsx');
+		const header = ['ลำดับ', 'เลขประจำตัว', 'ชื่อ-สกุล', 'ห้องเรียน', 'อันดับ', 'โรงเรียนเดิม', 'เลขที่สมัคร'];
+		const rows = entries.map((e, i) => [
+			i + 1,
+			edits[e.applicationId]?.trim() || '',
+			e.fullName,
+			e.roomName ?? '',
+			e.rankInRoom ?? '',
+			e.previousSchool ?? '',
+			e.applicationNumber ?? ''
+		]);
+		const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(wb, ws, 'เลขประจำตัว');
+		XLSX.writeFile(wb, `เลขประจำตัว-${roundName || id}.xlsx`);
+	}
 </script>
 
 <div class="space-y-6">
@@ -229,20 +247,31 @@
 				</Button>
 			</div>
 
-			<!-- Save -->
-			<Button
-				size="sm"
-				class="gap-1.5 h-8"
-				onclick={saveAll}
-				disabled={saving || loading}
-			>
-				{#if saving}
-					<span class="animate-spin">⏳</span>
-				{:else}
-					<Save class="w-3.5 h-3.5" />
-				{/if}
-				บันทึกทั้งหมด
-			</Button>
+			<!-- Save + Download -->
+			<div class="flex gap-2">
+				<Button
+					size="sm"
+					class="gap-1.5 h-8"
+					onclick={saveAll}
+					disabled={saving || loading}
+				>
+					{#if saving}
+						<span class="animate-spin">⏳</span>
+					{:else}
+						<Save class="w-3.5 h-3.5" />
+					{/if}
+					บันทึกทั้งหมด
+				</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					class="gap-1.5 h-8"
+					onclick={downloadXlsx}
+					disabled={loading || entries.length === 0}
+				>
+					<FileSpreadsheet class="w-3.5 h-3.5" /> ดาวน์โหลด XLSX
+				</Button>
+			</div>
 		</Card.Content>
 	</Card.Root>
 
