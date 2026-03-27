@@ -230,6 +230,7 @@ export interface RankingEntry {
     finalRank?: number;
     assignedRoom?: string;
     assignedRoomId?: string;
+    roomSaved?: boolean;
     isOverflow: boolean;
     isTrackOverridden?: boolean;
     originalTrackName?: string;

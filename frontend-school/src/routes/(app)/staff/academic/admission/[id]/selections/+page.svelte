@@ -192,7 +192,7 @@
 					...ranking,
 					applications: ranking.applications.map((a) =>
 						a.applicationId === appId
-							? { ...a, assignedRoom: roomName ?? null, assignedRoomId: targetRoomId }
+							? { ...a, assignedRoom: roomName ?? null, assignedRoomId: targetRoomId, roomSaved: true }
 							: a
 					)
 				};
@@ -444,7 +444,7 @@
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-center">
-								{#if ranking?.rooms && ranking.rooms.length > 0 && app.assignedRoom}
+								{#if ranking?.rooms && ranking.rooms.length > 0 && app.roomSaved}
 									<div class="flex items-center justify-center gap-1.5 flex-wrap">
 										<Badge variant="outline">{app.assignedRoom}</Badge>
 										<Select.Root

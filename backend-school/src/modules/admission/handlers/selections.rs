@@ -336,6 +336,7 @@ pub async fn get_track_ranking(
             let final_rank = (final_i + 1) as i64;
             let selection_rank = (sel_i + 1) as i64;
 
+            let room_saved = row.saved_room_id.is_some();
             let (assigned_room, assigned_room_id) = if let (Some(name), Some(id)) = (&row.saved_room_name, &row.saved_room_id) {
                 // มี record ใน DB → ใช้ห้องที่บันทึกไว้ (รวมที่ย้ายมือ)
                 (json!(name), json!(id))
@@ -358,6 +359,7 @@ pub async fn get_track_ranking(
                 "finalRank": final_rank,
                 "assignedRoom": assigned_room,
                 "assignedRoomId": assigned_room_id,
+                "roomSaved": room_saved,
                 "isOverflow": false,
                 "isTrackOverridden": is_overridden,
                 "originalTrackName": if is_overridden { json!(row.original_track_name) } else { serde_json::Value::Null },
