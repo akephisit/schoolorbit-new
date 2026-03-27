@@ -807,8 +807,11 @@ pub async fn complete_enrollment(
         .ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลห้องเรียน กรุณาตรวจสอบการจัดห้อง".to_string()))?;
 
     // 2. สร้าง User account
-    let student_code = if let Some(code) = payload.student_code {
+    // Priority: payload.student_code > application.assigned_student_id > auto-generate
+    let student_code = if let Some(code) = payload.student_code.filter(|c| !c.is_empty()) {
         code
+    } else if let Some(pre) = application.assigned_student_id.filter(|c| !c.is_empty()) {
+        pre
     } else {
         // Auto-increment: หาเลข MAX ที่เป็น numeric แล้ว +1
         let max_id: i64 = sqlx::query_scalar(
@@ -1257,4 +1260,88 @@ pub async fn staff_delete_document(
     r2_client.delete_file(&storage_path).await.ok();
 
     Ok(Json(json!({ "success": true })).into_response())
+}
+
+// ==========================================
+// Student ID Pre-Assignment
+// ==========================================
+
+pub async fn list_student_ids(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let rows = sqlx::query_as::<_, StudentIdRow>(
+        r#"
+        SELECT
+            a.id AS application_id,
+            a.application_number,
+            a.assigned_student_id,
+            concat(a.first_name, ' ', a.last_name) AS full_name,
+            cr.name AS room_name,
+            ra.rank_in_room
+        FROM admission_applications a
+        JOIN admission_room_assignments ra ON ra.application_id = a.id
+        LEFT JOIN class_rooms cr ON ra.class_room_id = cr.id
+        WHERE a.admission_round_id = $1
+          AND a.status IN ('accepted', 'enrolled')
+        ORDER BY cr.name, ra.rank_in_room
+        "#
+    )
+    .bind(round_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("list_student_ids error: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?;
+
+    Ok(Json(json!({ "success": true, "data": rows })).into_response())
+}
+
+pub async fn batch_update_student_ids(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+    Json(payload): Json<Vec<UpdateStudentIdItem>>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    let mut updated = 0i64;
+    for item in &payload {
+        let rows_affected = sqlx::query(
+            r#"
+            UPDATE admission_applications
+            SET assigned_student_id = $1, updated_at = NOW()
+            WHERE id = $2 AND admission_round_id = $3
+            "#
+        )
+        .bind(&item.student_id)
+        .bind(item.application_id)
+        .bind(round_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("batch_update_student_ids error: {}", e);
+            AppError::InternalServerError("Database error".to_string())
+        })?
+        .rows_affected();
+        updated += rows_affected as i64;
+    }
+
+    tx.commit().await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({ "success": true, "updated": updated })).into_response())
 }

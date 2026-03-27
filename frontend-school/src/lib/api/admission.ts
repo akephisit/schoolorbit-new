@@ -916,3 +916,31 @@ export async function getApplicationExamSeat(applicationId: string) {
     const res = await apiClient.get(`/api/admission/applications/${applicationId}/exam-seat`);
     return res.data as ExamSeatDetail | null;
 }
+
+// ==========================================
+// Student ID Pre-Assignment
+// ==========================================
+
+export interface StudentIdEntry {
+    applicationId: string;
+    applicationNumber?: string;
+    fullName: string;
+    assignedStudentId?: string;
+    roomName?: string;
+    rankInRoom?: number;
+}
+
+export async function listStudentIds(roundId: string): Promise<{ data: StudentIdEntry[] }> {
+    const res = await apiClient.get(`/api/admission/rounds/${roundId}/student-ids`);
+    if (!res.success) throw new Error(res.error);
+    return { data: res.data as StudentIdEntry[] };
+}
+
+export async function batchUpdateStudentIds(
+    roundId: string,
+    updates: { applicationId: string; studentId: string | null }[]
+): Promise<{ updated: number }> {
+    const res = await apiClient.patch(`/api/admission/rounds/${roundId}/student-ids`, updates);
+    if (!res.success) throw new Error(res.error);
+    return res.data as { updated: number };
+}

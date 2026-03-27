@@ -58,6 +58,8 @@ pub fn admission_routes() -> Router<AppState> {
         // === Enrollment (มอบตัว) ===
         .route("/rounds/{id}/enrollment", get(handlers::applications::list_enrollment_pending))
         .route("/applications/{id}/enroll", post(handlers::applications::complete_enrollment))
+        .route("/rounds/{id}/student-ids", get(handlers::applications::list_student_ids)
+                                          .patch(handlers::applications::batch_update_student_ids))
 
         // === Portal (Applicant Stateless — ส่ง credentials ทุก request) ===
         .route("/portal/check", post(handlers::portal::check_application))

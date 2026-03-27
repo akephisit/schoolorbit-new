@@ -146,6 +146,9 @@ pub struct AdmissionApplication {
     pub status: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_student_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub verified_by: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verified_at: Option<DateTime<Utc>>,
@@ -598,4 +601,26 @@ pub struct CompleteEnrollmentRequest {
     pub student_code: Option<String>,
     /// ข้อมูลมอบตัวที่ staff กรอกแทน (เมื่อนักเรียนยังไม่ pre-submit)
     pub form_data: Option<serde_json::Value>,
+}
+
+// ==========================================
+// Student ID Pre-Assignment
+// ==========================================
+
+#[derive(Debug, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct StudentIdRow {
+    pub application_id: Uuid,
+    pub application_number: Option<String>,
+    pub full_name: String,
+    pub assigned_student_id: Option<String>,
+    pub room_name: Option<String>,
+    pub rank_in_room: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateStudentIdItem {
+    pub application_id: Uuid,
+    pub student_id: Option<String>,
 }

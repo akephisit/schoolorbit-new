@@ -53,7 +53,8 @@
 		Link as LinkIcon,
 		BarChart2,
 		X,
-		DoorOpen
+		DoorOpen,
+		Hash
 	} from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
@@ -559,6 +560,14 @@
 						class="gap-1.5"
 					>
 						<GraduationCap class="w-3.5 h-3.5" /> จัดห้อง
+					</Button>
+					<Button
+						href="/staff/academic/admission/{id}/student-ids"
+						variant="outline"
+						size="sm"
+						class="gap-1.5"
+					>
+						<Hash class="w-3.5 h-3.5" /> กำหนดเลขประจำตัว
 					</Button>
 					<Button
 						href="/staff/academic/admission/{id}/enrollment"
