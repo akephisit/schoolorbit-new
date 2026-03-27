@@ -357,8 +357,8 @@ pub async fn get_track_ranking(
                 let entry = room_stats.entry(rid.clone()).or_insert((0, 0, 0));
                 entry.0 += 1;
                 match row.gender.as_deref() {
-                    Some("male") | Some("ชาย") => entry.1 += 1,
-                    Some("female") | Some("หญิง") => entry.2 += 1,
+                    Some(g) if g.eq_ignore_ascii_case("male") || g == "ชาย" => entry.1 += 1,
+                    Some(g) if g.eq_ignore_ascii_case("female") || g == "หญิง" => entry.2 += 1,
                     _ => {}
                 }
             }
