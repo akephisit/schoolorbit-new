@@ -102,6 +102,8 @@
 	const statusVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
 		submitted: 'secondary',
 		verified: 'default',
+		scored: 'default',
+		absent: 'outline',
 		rejected: 'destructive',
 		accepted: 'default',
 		enrolled: 'default',

@@ -55,6 +55,8 @@
 	const statusVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
 		submitted: 'secondary',
 		verified: 'default',
+		scored: 'default',
+		absent: 'outline',
 		rejected: 'destructive',
 		accepted: 'default',
 		enrolled: 'default',
@@ -178,6 +180,8 @@
 							<Select.Item value="">สถานะทั้งหมด</Select.Item>
 							<Select.Item value="submitted">รอตรวจสอบ</Select.Item>
 							<Select.Item value="verified">ผ่านตรวจสอบ</Select.Item>
+							<Select.Item value="scored">กรอกคะแนนแล้ว</Select.Item>
+							<Select.Item value="absent">ขาดสอบ</Select.Item>
 							<Select.Item value="rejected">ไม่ผ่าน</Select.Item>
 							<Select.Item value="accepted">ได้รับคัดเลือก</Select.Item>
 							<Select.Item value="enrolled">มอบตัวแล้ว</Select.Item>
