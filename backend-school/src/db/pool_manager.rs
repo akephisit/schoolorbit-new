@@ -1,4 +1,5 @@
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, PgPool};
+use std::str::FromStr;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -55,12 +56,16 @@ impl PoolManager {
             None => {
                 // Create new connection pool
                 println!("🔄 Creating new connection pool for: {}", subdomain);
+                let connect_opts = PgConnectOptions::from_str(&database_url)
+                    .map_err(|e| format!("Invalid database URL for {}: {}", subdomain, e))?
+                    .statement_cache_capacity(0); // ปิด prepared statement cache ป้องกัน "cached plan must not change result type" หลัง migration
+
                 let pool = PgPoolOptions::new()
                     .min_connections(0) // allow pool to reach 0 connections so Neon can scale-down
                     .max_connections(self.max_connections_per_school)
                     .acquire_timeout(Duration::from_secs(10))
                     .idle_timeout(Duration::from_secs(300)) // close idle connections before Neon scale-down
-                    .connect(&database_url)
+                    .connect_with(connect_opts)
                     .await
                     .map_err(|e| format!("Failed to connect to database for {}: {}", subdomain, e))?;
 
