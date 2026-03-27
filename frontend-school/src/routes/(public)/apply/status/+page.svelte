@@ -98,7 +98,7 @@
 	const effectiveStatus = $derived(() => {
 		const rs = portalData?.roundStatus ?? '';
 		const as = portalData?.application?.status ?? '';
-		if (as === 'accepted' && !RESULT_ANNOUNCED_STATUSES.includes(rs)) {
+		if ((as === 'accepted' || as === 'scored') && !RESULT_ANNOUNCED_STATUSES.includes(rs)) {
 			return 'pending_result';
 		}
 		return as;
@@ -107,6 +107,7 @@
 	const statusLabel: Record<string, string> = {
 		submitted: 'รอตรวจสอบเอกสาร',
 		verified: 'เอกสารผ่านแล้ว รอวันสอบ',
+		scored: 'รอประกาศผลการคัดเลือก',
 		pending_result: 'รอประกาศผลการคัดเลือก',
 		absent: 'ขาดสอบ',
 		rejected: 'ไม่ผ่านการคัดเลือก',
@@ -118,6 +119,7 @@
 	const statusColor: Record<string, string> = {
 		submitted: 'bg-yellow-50 border-yellow-200 text-yellow-800',
 		verified: 'bg-blue-50 border-blue-200 text-blue-800',
+		scored: 'bg-blue-50 border-blue-200 text-blue-800',
 		pending_result: 'bg-blue-50 border-blue-200 text-blue-800',
 		absent: 'bg-gray-50 border-gray-200 text-gray-800',
 		rejected: 'bg-red-50 border-red-200 text-red-800',
@@ -168,9 +170,9 @@
 				formFields.emergencyPhone = fd.emergencyPhone ?? '';
 			}
 
-			// โหลดที่นั่งสอบถ้า round status อนุญาต
+			// โหลดที่นั่งสอบเฉพาะช่วงประกาศห้องสอบ
 			const rs = portalData?.roundStatus;
-			if (rs && ['exam_announced', 'announced', 'enrolling', 'closed'].includes(rs)) {
+			if (rs === 'exam_announced') {
 				try {
 					examSeat = await portalGetExamSeat(nationalId, dateOfBirth.trim());
 				} catch {
@@ -409,7 +411,7 @@
 					{/if}
 
 					<!-- Exam Seat -->
-					{#if examSeat}
+					{#if examSeat && effectiveStatus() !== 'absent'}
 						<div class="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-2">
 							<p class="font-semibold text-blue-800 flex items-center gap-2">
 								<FileText class="w-4 h-4" /> ที่นั่งสอบ
@@ -439,8 +441,8 @@
 						</div>
 					{/if}
 
-					<!-- Scores -->
-					{#if scores && scores.length > 0 && scores.some((s) => s.score !== null)}
+					<!-- Scores — แสดงเฉพาะหลังประกาศผลแล้ว -->
+					{#if scores && scores.length > 0 && scores.some((s) => s.score !== null) && RESULT_ANNOUNCED_STATUSES.includes(roundStatus ?? '')}
 						<div class="space-y-2">
 							<p class="font-medium text-sm text-gray-700 flex items-center gap-2">
 								<FileText class="w-4 h-4" /> คะแนนสอบ
