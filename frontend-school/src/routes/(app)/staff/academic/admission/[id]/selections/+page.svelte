@@ -16,6 +16,9 @@
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Label } from '$lib/components/ui/label';
+	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Select from '$lib/components/ui/select';
@@ -258,25 +261,26 @@
 				<p class="text-sm font-medium">วิชาที่ใช้คัดเลือก (pass 1)</p>
 				<div class="flex flex-wrap gap-3">
 					{#each subjects as s (s.id)}
-						<label class="flex items-center gap-1.5 text-sm cursor-pointer">
-							<input
-								type="checkbox"
-								value={s.id}
+						<div class="flex items-center gap-1.5">
+							<Checkbox
+								id="subj-{s.id}-{selectedTrack}"
 								checked={currentSubjectIds.includes(s.id)}
-								onchange={(e) => {
+								onCheckedChange={(v) => {
 									const current =
 										selectedSubjectIdsByTrack[selectedTrack] ?? subjects.map((x) => x.id);
 									selectedSubjectIdsByTrack = {
 										...selectedSubjectIdsByTrack,
-										[selectedTrack]: e.currentTarget.checked
+										[selectedTrack]: v
 											? [...current, s.id]
 											: current.filter((x) => x !== s.id)
 									};
 								}}
 							/>
-							{s.name}
-							<span class="text-xs text-muted-foreground">({s.maxScore})</span>
-						</label>
+							<Label for="subj-{s.id}-{selectedTrack}" class="font-normal cursor-pointer text-sm">
+								{s.name}
+								<span class="text-xs text-muted-foreground">({s.maxScore})</span>
+							</Label>
+						</div>
 					{/each}
 				</div>
 				<p class="text-xs text-muted-foreground">
@@ -290,30 +294,28 @@
 	<Card.Root>
 		<Card.Content class="pt-4 pb-3 space-y-2">
 			<p class="text-sm font-medium">วิธีจัดห้อง (pass 2)</p>
-			<div class="flex flex-wrap gap-4">
-				<label class="flex items-center gap-2 text-sm cursor-pointer">
-					<input
-						type="radio"
-						name="room-method"
-						value="sequential"
-						checked={currentMethod === 'sequential'}
-						onchange={() => { roomAssignmentMethodByTrack = { ...roomAssignmentMethodByTrack, [selectedTrack]: 'sequential' }; }}
-					/>
-					<span>เรียงตามคะแนน</span>
-					<span class="text-xs text-muted-foreground">(คะแนนสูงอยู่ห้องแรก)</span>
-				</label>
-				<label class="flex items-center gap-2 text-sm cursor-pointer">
-					<input
-						type="radio"
-						name="room-method"
-						value="round_robin"
-						checked={currentMethod === 'round_robin'}
-						onchange={() => { roomAssignmentMethodByTrack = { ...roomAssignmentMethodByTrack, [selectedTrack]: 'round_robin' }; }}
-					/>
-					<span>กระจายเฉลี่ย (round-robin)</span>
-					<span class="text-xs text-muted-foreground">(สลับห้องตามลำดับคะแนน ทุกห้องได้คนคะแนนสูง-ต่ำปนกัน)</span>
-				</label>
-			</div>
+			<RadioGroup.Root
+				value={currentMethod}
+				onValueChange={(v) => {
+					roomAssignmentMethodByTrack = { ...roomAssignmentMethodByTrack, [selectedTrack]: v as 'sequential' | 'round_robin' };
+				}}
+				class="flex flex-wrap gap-4"
+			>
+				<div class="flex items-center gap-2">
+					<RadioGroup.Item value="sequential" id="method-seq-{selectedTrack}" />
+					<Label for="method-seq-{selectedTrack}" class="font-normal cursor-pointer">
+						เรียงตามคะแนน
+						<span class="text-xs text-muted-foreground">(คะแนนสูงอยู่ห้องแรก)</span>
+					</Label>
+				</div>
+				<div class="flex items-center gap-2">
+					<RadioGroup.Item value="round_robin" id="method-rr-{selectedTrack}" />
+					<Label for="method-rr-{selectedTrack}" class="font-normal cursor-pointer">
+						กระจายเฉลี่ย (round-robin)
+						<span class="text-xs text-muted-foreground">(สลับห้องตามลำดับคะแนน ทุกห้องได้คนคะแนนสูง-ต่ำปนกัน)</span>
+					</Label>
+				</div>
+			</RadioGroup.Root>
 		</Card.Content>
 	</Card.Root>
 
