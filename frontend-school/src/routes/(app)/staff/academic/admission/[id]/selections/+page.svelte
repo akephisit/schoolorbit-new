@@ -34,7 +34,8 @@
 	let currentSubjectIds = $derived(
 		selectedSubjectIdsByTrack[selectedTrack] ?? subjects.map((s) => s.id)
 	);
-	let roomAssignmentMethod = $state<'sequential' | 'round_robin'>('sequential');
+	let roomAssignmentMethodByTrack: Record<string, 'sequential' | 'round_robin'> = $state({});
+	let currentMethod = $derived(roomAssignmentMethodByTrack[selectedTrack] ?? 'sequential');
 	let ranking = $state<TrackRankingResult | null>(null);
 	let loading = $state(false);
 	let assigning = $state(false);
@@ -64,7 +65,9 @@
 		if (saved?.subjectsByTrack) {
 			selectedSubjectIdsByTrack = saved.subjectsByTrack;
 		}
-		roomAssignmentMethod = (saved?.method as 'sequential' | 'round_robin') ?? 'sequential';
+		if (saved?.methodByTrack) {
+			roomAssignmentMethodByTrack = saved.methodByTrack as Record<string, 'sequential' | 'round_robin'>;
+		}
 		if (t.length > 0) selectedTrack = t[0].id;
 		settingsLoaded = true;
 	}
@@ -75,7 +78,7 @@
 		ranking = null;
 		assigned = false;
 		try {
-			ranking = await getTrackRanking(selectedTrack, currentSubjectIds, roomAssignmentMethod);
+			ranking = await getTrackRanking(selectedTrack, currentSubjectIds, currentMethod);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดผลเรียงคะแนนไม่สำเร็จ');
 		} finally {
@@ -93,7 +96,7 @@
 		if (!id || !selectedTrack) return;
 		assigning = true;
 		try {
-			await assignRooms(id, selectedTrack, currentSubjectIds, roomAssignmentMethod);
+			await assignRooms(id, selectedTrack, currentSubjectIds, currentMethod);
 			toast.success('จัดห้องสำเร็จ!');
 			assigned = true;
 			await loadRanking();
@@ -112,7 +115,7 @@
 		let failed = 0;
 		for (const track of tracks) {
 			try {
-				await assignRooms(id, track.id, selectedSubjectIdsByTrack[track.id] ?? subjects.map((s) => s.id), roomAssignmentMethod);
+				await assignRooms(id, track.id, selectedSubjectIdsByTrack[track.id] ?? subjects.map((s) => s.id), roomAssignmentMethodByTrack[track.id] ?? 'sequential');
 				assignAllProgress = { ...assignAllProgress, done: assignAllProgress.done + 1 };
 			} catch {
 				failed++;
@@ -171,20 +174,20 @@
 		}
 	}
 
-	// reload เมื่อ selectedTrack, selectedSubjectIdsByTrack หรือ roomAssignmentMethod เปลี่ยน
+	// reload เมื่อ selectedTrack, selectedSubjectIdsByTrack หรือ roomAssignmentMethodByTrack เปลี่ยน
 	// และ debounced save settings ลง DB
 	$effect(() => {
 		void selectedSubjectIdsByTrack;
-		void roomAssignmentMethod;
+		void roomAssignmentMethodByTrack;
 		if (selectedTrack) loadRanking();
 		if (settingsLoaded && id) {
 			if (saveSettingsTimer) clearTimeout(saveSettingsTimer);
-			const capturedMap = { ...selectedSubjectIdsByTrack };
-			const capturedMethod = roomAssignmentMethod;
+			const capturedSubjects = { ...selectedSubjectIdsByTrack };
+			const capturedMethods = { ...roomAssignmentMethodByTrack };
 			saveSettingsTimer = setTimeout(() => {
 				updateSelectionSettings(id, {
-					subjectsByTrack: capturedMap,
-					roomAssignmentMethod: capturedMethod
+					subjectsByTrack: capturedSubjects,
+					methodByTrack: capturedMethods
 				}).catch(() => {});
 			}, 500);
 		}
@@ -293,8 +296,8 @@
 						type="radio"
 						name="room-method"
 						value="sequential"
-						checked={roomAssignmentMethod === 'sequential'}
-						onchange={() => { roomAssignmentMethod = 'sequential'; }}
+						checked={currentMethod === 'sequential'}
+						onchange={() => { roomAssignmentMethodByTrack = { ...roomAssignmentMethodByTrack, [selectedTrack]: 'sequential' }; }}
 					/>
 					<span>เรียงตามคะแนน</span>
 					<span class="text-xs text-muted-foreground">(คะแนนสูงอยู่ห้องแรก)</span>
@@ -304,8 +307,8 @@
 						type="radio"
 						name="room-method"
 						value="round_robin"
-						checked={roomAssignmentMethod === 'round_robin'}
-						onchange={() => { roomAssignmentMethod = 'round_robin'; }}
+						checked={currentMethod === 'round_robin'}
+						onchange={() => { roomAssignmentMethodByTrack = { ...roomAssignmentMethodByTrack, [selectedTrack]: 'round_robin' }; }}
 					/>
 					<span>กระจายเฉลี่ย (round-robin)</span>
 					<span class="text-xs text-muted-foreground">(สลับห้องตามลำดับคะแนน ทุกห้องได้คนคะแนนสูง-ต่ำปนกัน)</span>
@@ -599,8 +602,7 @@
 		<Dialog.Header>
 			<Dialog.Title>ยืนยันการจัดห้องทุกสาย</Dialog.Title>
 			<Dialog.Description>
-				จะจัดห้องให้ทุกสาย ({tracks.length} สาย) พร้อมกัน โดยใช้วิธี
-				<strong>{roomAssignmentMethod === 'round_robin' ? 'กระจายเฉลี่ย' : 'เรียงตามคะแนน'}</strong>
+				จะจัดห้องให้ทุกสาย ({tracks.length} สาย) พร้อมกัน แต่ละสายใช้วิชาและวิธีจัดห้องของตัวเอง
 				ผลจัดห้องเดิมของทุกสายจะถูกแทนที่ ต้องการดำเนินการต่อหรือไม่?
 			</Dialog.Description>
 		</Dialog.Header>

@@ -598,6 +598,7 @@ pub async fn update_selection_settings(
 
     let settings = serde_json::json!({
         "subjectsByTrack": payload.subjects_by_track.unwrap_or(serde_json::json!({})),
+        "methodByTrack": payload.method_by_track.unwrap_or(serde_json::json!({})),
         "method": payload.room_assignment_method.unwrap_or_else(|| "sequential".to_string()),
     });
 
