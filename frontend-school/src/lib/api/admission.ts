@@ -928,6 +928,7 @@ export interface StudentIdEntry {
     assignedStudentId?: string;
     roomName?: string;
     rankInRoom?: number;
+    previousSchool?: string;
 }
 
 export async function listStudentIds(roundId: string): Promise<{ data: StudentIdEntry[] }> {

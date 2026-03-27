@@ -9,7 +9,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Hash, Save, Wand2, X, AlertTriangle } from 'lucide-svelte';
+	import { ArrowLeft, Hash, Save, Wand2, X, AlertTriangle, Search, School } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -23,6 +23,9 @@
 	let edits = $state<Record<string, string>>({});
 
 	let startNumber = $state('1');
+
+	// School filter
+	let schoolFilter = $state('');
 
 	onMount(async () => {
 		try {
@@ -45,7 +48,25 @@
 		}
 	});
 
-	// Set of IDs that appear more than once (duplicates within batch)
+	// Filtered entries based on school search
+	let filteredEntries = $derived(() => {
+		const q = schoolFilter.trim().toLowerCase();
+		if (!q) return entries;
+		return entries.filter((e) =>
+			(e.previousSchool ?? '').toLowerCase().includes(q)
+		);
+	});
+
+	// Unique school names for suggestions (sorted)
+	let schoolSuggestions = $derived(() => {
+		const schools = new Set<string>();
+		for (const e of entries) {
+			if (e.previousSchool?.trim()) schools.add(e.previousSchool.trim());
+		}
+		return [...schools].sort();
+	});
+
+	// Set of IDs that appear more than once (duplicates within batch — across ALL entries, not just filtered)
 	let duplicateIds = $derived(() => {
 		const counts: Record<string, number> = {};
 		for (const val of Object.values(edits)) {
@@ -70,7 +91,7 @@
 			return;
 		}
 
-		// Collect existing values that should not be overwritten
+		// Collect ALL existing values (including non-filtered rows) to avoid collisions
 		const occupied = new Set<string>();
 		for (const e of entries) {
 			const val = edits[e.applicationId]?.trim();
@@ -79,11 +100,11 @@
 
 		let next = start;
 		const newEdits = { ...edits };
-		for (const e of entries) {
+		// Auto-fill only the filtered rows
+		for (const e of filteredEntries()) {
 			const current = newEdits[e.applicationId]?.trim();
-			if (current) continue; // already has a value, skip
+			if (current) continue;
 
-			// Find next number not already occupied
 			while (occupied.has(String(next))) {
 				next++;
 			}
@@ -118,6 +139,10 @@
 	function clearEntry(appId: string) {
 		edits = { ...edits, [appId]: '' };
 	}
+
+	function clearSchoolFilter() {
+		schoolFilter = '';
+	}
 </script>
 
 <div class="space-y-6">
@@ -146,6 +171,9 @@
 						กำหนดแล้ว
 						<span class="font-semibold text-foreground">{assignedCount}</span>
 						/ {entries.length} คน
+						{#if schoolFilter.trim()}
+							<span class="ml-1">(แสดง {filteredEntries().length} คน)</span>
+						{/if}
 					</p>
 					{#if hasDuplicates}
 						<p class="text-sm text-destructive flex items-center gap-1 mt-0.5">
@@ -154,6 +182,34 @@
 						</p>
 					{/if}
 				{/if}
+			</div>
+
+			<!-- School filter -->
+			<div class="space-y-1">
+				<Label class="text-xs">กรองตามโรงเรียนเดิม</Label>
+				<div class="relative">
+					<School class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+					<Input
+						list="school-suggestions"
+						bind:value={schoolFilter}
+						placeholder="พิมพ์ชื่อโรงเรียน..."
+						class="pl-7 pr-7 h-8 text-sm w-52"
+					/>
+					{#if schoolFilter}
+						<button
+							type="button"
+							onclick={clearSchoolFilter}
+							class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+						>
+							<X class="w-3 h-3" />
+						</button>
+					{/if}
+					<datalist id="school-suggestions">
+						{#each schoolSuggestions() as school}
+							<option value={school}></option>
+						{/each}
+					</datalist>
+				</div>
 			</div>
 
 			<!-- Auto-fill -->
@@ -168,7 +224,8 @@
 					/>
 				</div>
 				<Button variant="outline" size="sm" class="gap-1.5 h-8" onclick={autoFill}>
-					<Wand2 class="w-3.5 h-3.5" /> Auto-fill ช่องว่าง
+					<Wand2 class="w-3.5 h-3.5" />
+					{schoolFilter.trim() ? 'Auto-fill ที่กรอง' : 'Auto-fill ช่องว่าง'}
 				</Button>
 			</div>
 
@@ -197,6 +254,7 @@
 					<Table.Head class="w-10">#</Table.Head>
 					<Table.Head>ชื่อ-สกุล</Table.Head>
 					<Table.Head>เลขที่สมัคร</Table.Head>
+					<Table.Head>โรงเรียนเดิม</Table.Head>
 					<Table.Head>ห้องที่ได้</Table.Head>
 					<Table.Head class="w-16 text-center">อันดับ</Table.Head>
 					<Table.Head class="w-44">เลขประจำตัว</Table.Head>
@@ -206,25 +264,28 @@
 			<Table.Body>
 				{#if loading}
 					<Table.Row>
-						<Table.Cell colspan={7} class="text-center text-muted-foreground py-8">
+						<Table.Cell colspan={8} class="text-center text-muted-foreground py-8">
 							กำลังโหลด...
 						</Table.Cell>
 					</Table.Row>
-				{:else if entries.length === 0}
+				{:else if filteredEntries().length === 0}
 					<Table.Row>
-						<Table.Cell colspan={7} class="text-center text-muted-foreground py-8">
-							ไม่มีนักเรียนที่ผ่านการคัดเลือก
+						<Table.Cell colspan={8} class="text-center text-muted-foreground py-8">
+							{entries.length === 0 ? 'ไม่มีนักเรียนที่ผ่านการคัดเลือก' : 'ไม่พบนักเรียนจากโรงเรียนที่ค้นหา'}
 						</Table.Cell>
 					</Table.Row>
 				{:else}
-					{#each entries as entry, i (entry.applicationId)}
+					{#each filteredEntries() as entry, i (entry.applicationId)}
 						{@const val = edits[entry.applicationId] ?? ''}
-						{@const isDup = val.trim() && duplicateIds().has(val.trim())}
+						{@const isDup = val.trim() ? duplicateIds().has(val.trim()) : false}
 						<Table.Row class={isDup ? 'bg-destructive/5' : ''}>
 							<Table.Cell class="text-muted-foreground text-sm">{i + 1}</Table.Cell>
 							<Table.Cell class="font-medium">{entry.fullName}</Table.Cell>
 							<Table.Cell class="text-sm text-muted-foreground">
 								{entry.applicationNumber ?? '-'}
+							</Table.Cell>
+							<Table.Cell class="text-sm text-muted-foreground max-w-[160px] truncate">
+								{entry.previousSchool ?? '-'}
 							</Table.Cell>
 							<Table.Cell class="text-sm">
 								{#if entry.roomName}

@@ -1284,7 +1284,8 @@ pub async fn list_student_ids(
             a.assigned_student_id,
             concat(a.first_name, ' ', a.last_name) AS full_name,
             cr.name AS room_name,
-            ra.rank_in_room
+            ra.rank_in_room,
+            a.previous_school
         FROM admission_applications a
         JOIN admission_room_assignments ra ON ra.application_id = a.id
         LEFT JOIN class_rooms cr ON ra.class_room_id = cr.id
