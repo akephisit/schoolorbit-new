@@ -1,13 +1,17 @@
 import type { HandleClientError } from '@sveltejs/kit';
 
-// เมื่อ deploy ใหม่ chunk hash เปลี่ยน แต่ browser ยังโหลด app shell เก่าอยู่
-// client-side navigation จะ fetch chunk เก่า → 404 → "Failed to fetch dynamically imported module"
-// แก้โดย force reload เพื่อให้ browser โหลด app shell ใหม่
+// SvelteKit prefetch chunk บน hover link — ถ้า chunk ไม่มีบน server (deploy ไม่สมบูรณ์
+// หรือ stale cache หลัง deploy ใหม่) จะได้ "Failed to fetch dynamically imported module"
+// reload ครั้งเดียวเพื่อโหลด manifest ใหม่ — guard ด้วย sessionStorage ป้องกัน reload วน
 export const handleError: HandleClientError = ({ error }) => {
     if (
         error instanceof TypeError &&
         error.message.includes('Failed to fetch dynamically imported module')
     ) {
-        window.location.reload();
+        const key = '_sk_chunk_reload';
+        if (!sessionStorage.getItem(key)) {
+            sessionStorage.setItem(key, '1');
+            window.location.reload();
+        }
     }
 };
