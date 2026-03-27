@@ -39,6 +39,9 @@
 	let moveTargetTrackId: Record<string, string> = $state({});
 	let moving: Record<string, boolean> = $state({});
 	let showAssignDialog = $state(false);
+	let showAssignAllDialog = $state(false);
+	let assigningAll = $state(false);
+	let assignAllProgress = $state({ done: 0, total: 0 });
 
 	let acceptedApps = $derived(ranking?.applications.filter((a) => !a.isOverflow) ?? []);
 	let overflowApps = $derived(ranking?.applications.filter((a) => a.isOverflow) ?? []);
@@ -87,6 +90,30 @@
 		} finally {
 			assigning = false;
 		}
+	}
+
+	async function confirmAssignAll() {
+		showAssignAllDialog = false;
+		if (!id || tracks.length === 0) return;
+		assigningAll = true;
+		assignAllProgress = { done: 0, total: tracks.length };
+		let failed = 0;
+		for (const track of tracks) {
+			try {
+				await assignRooms(id, track.id, selectedSubjectIds, roomAssignmentMethod);
+				assignAllProgress = { ...assignAllProgress, done: assignAllProgress.done + 1 };
+			} catch {
+				failed++;
+			}
+		}
+		assigningAll = false;
+		if (failed === 0) {
+			toast.success(`จัดห้องทุกสายสำเร็จ (${tracks.length} สาย)`);
+		} else {
+			toast.warning(`จัดห้องสำเร็จ ${tracks.length - failed} สาย, ล้มเหลว ${failed} สาย`);
+		}
+		// reload ranking ของ track ที่กำลังดูอยู่
+		await loadRanking();
 	}
 
 	async function moveToTrack(appId: string) {
@@ -142,9 +169,9 @@
 
 	<!-- Track Selector -->
 	<Card.Root>
-		<Card.Content class="pt-4 pb-4 flex items-center gap-4">
-			<p class="text-sm font-medium">สาย:</p>
-			<div class="flex gap-2 flex-wrap">
+		<Card.Content class="pt-4 pb-4 flex items-center gap-4 flex-wrap">
+			<p class="text-sm font-medium shrink-0">สาย:</p>
+			<div class="flex gap-2 flex-wrap flex-1">
 				{#each tracks as track (track.id)}
 					<Button
 						variant={selectedTrack === track.id ? 'default' : 'outline'}
@@ -157,6 +184,23 @@
 					</Button>
 				{/each}
 			</div>
+			{#if tracks.length > 1}
+				<Button
+					variant="secondary"
+					size="sm"
+					class="gap-1.5 shrink-0"
+					disabled={assigningAll}
+					onclick={() => (showAssignAllDialog = true)}
+				>
+					{#if assigningAll}
+						<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+						จัดอยู่... ({assignAllProgress.done}/{assignAllProgress.total})
+					{:else}
+						<GraduationCap class="w-3.5 h-3.5" />
+						จัดห้องทุกสาย
+					{/if}
+				</Button>
+			{/if}
 		</Card.Content>
 	</Card.Root>
 
@@ -451,6 +495,23 @@
 		<Dialog.Footer class="flex-col sm:flex-row gap-2">
 			<Button variant="outline" onclick={() => (showAssignDialog = false)}>ยกเลิก</Button>
 			<Button onclick={confirmAssignRooms}>ยืนยัน</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={showAssignAllDialog}>
+	<Dialog.Content class="sm:max-w-[440px]">
+		<Dialog.Header>
+			<Dialog.Title>ยืนยันการจัดห้องทุกสาย</Dialog.Title>
+			<Dialog.Description>
+				จะจัดห้องให้ทุกสาย ({tracks.length} สาย) พร้อมกัน โดยใช้วิธี
+				<strong>{roomAssignmentMethod === 'round_robin' ? 'กระจายเฉลี่ย' : 'เรียงตามคะแนน'}</strong>
+				ผลจัดห้องเดิมของทุกสายจะถูกแทนที่ ต้องการดำเนินการต่อหรือไม่?
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer class="flex-col sm:flex-row gap-2">
+			<Button variant="outline" onclick={() => (showAssignAllDialog = false)}>ยกเลิก</Button>
+			<Button onclick={confirmAssignAll}>ยืนยัน</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
