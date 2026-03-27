@@ -95,8 +95,16 @@
 		moving = { ...moving, [appId]: true };
 		try {
 			await changeApplicationTrack(appId, targetId);
-			toast.success('ย้ายสายสำเร็จ');
-			await loadRanking();
+			// Optimistic removal — ลบออกจาก list ทันที ไม่ต้อง reload
+			if (ranking) {
+				ranking = {
+					...ranking,
+					applications: ranking.applications.filter((a) => a.applicationId !== appId)
+				};
+				assigned = false; // ห้องต้องจัดใหม่เพราะจำนวนเปลี่ยน
+			}
+			const targetTrack = tracks.find((t) => t.id === targetId);
+			toast.success(`ย้ายไปสาย ${targetTrack?.name ?? ''} สำเร็จ`);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ย้ายสายไม่สำเร็จ');
 		} finally {
