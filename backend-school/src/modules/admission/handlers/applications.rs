@@ -986,8 +986,10 @@ pub async fn change_application_track(
         return Ok(r);
     }
 
+    // อัปเดต room_assignment_track_id (override) — ไม่แตะ admission_track_id ที่นักเรียนสมัคร
+    // None = ย้อนกลับสายที่สมัคร
     sqlx::query(
-        "UPDATE admission_applications SET admission_track_id = $1, updated_at = NOW() WHERE id = $2"
+        "UPDATE admission_applications SET room_assignment_track_id = $1, updated_at = NOW() WHERE id = $2"
     )
     .bind(payload.track_id)
     .bind(application_id)
@@ -995,6 +997,7 @@ pub async fn change_application_track(
     .await
     .map_err(|_| AppError::InternalServerError("ย้ายสายไม่สำเร็จ".to_string()))?;
 
+    // ลบ room assignment เดิม เพราะต้องจัดใหม่
     sqlx::query(
         "DELETE FROM admission_room_assignments WHERE application_id = $1"
     )

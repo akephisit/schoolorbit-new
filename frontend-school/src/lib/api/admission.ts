@@ -35,6 +35,7 @@ export interface AdmissionRound {
     gradeLevelName?: string;
     applicationCount?: number;
     reportConfig?: ReportConfig;
+    selectionSettings?: { subjectIds: string[]; method: string };
 }
 
 export interface AdmissionTrack {
@@ -230,6 +231,8 @@ export interface RankingEntry {
     assignedRoom?: string;
     assignedRoomId?: string;
     isOverflow: boolean;
+    isTrackOverridden?: boolean;
+    originalTrackName?: string;
 }
 
 export interface TrackRankingResult {
@@ -502,8 +505,16 @@ export async function assignRooms(
     return res;
 }
 
-export async function changeApplicationTrack(applicationId: string, trackId: string) {
+export async function changeApplicationTrack(applicationId: string, trackId: string | null) {
     const res = await apiClient.patch(`/api/admission/applications/${applicationId}/track`, { trackId });
+    if (!res.success) throw new Error(res.error);
+}
+
+export async function updateSelectionSettings(
+    roundId: string,
+    settings: { selectionSubjectIds?: string[]; roomAssignmentMethod?: string }
+) {
+    const res = await apiClient.patch(`/api/admission/rounds/${roundId}/selection-settings`, settings);
     if (!res.success) throw new Error(res.error);
 }
 

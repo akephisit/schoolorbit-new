@@ -30,6 +30,8 @@ pub struct AdmissionRound {
     pub is_visible: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub report_config: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection_settings: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 
@@ -69,6 +71,13 @@ pub struct UpdateAdmissionRoundRequest {
     pub enrollment_start_date: Option<NaiveDate>,
     pub enrollment_end_date: Option<NaiveDate>,
     pub report_config: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSelectionSettingsRequest {
+    pub selection_subject_ids: Option<Vec<Uuid>>,
+    pub room_assignment_method: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

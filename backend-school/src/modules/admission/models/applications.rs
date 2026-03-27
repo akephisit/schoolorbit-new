@@ -147,6 +147,8 @@ pub struct AdmissionApplication {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assigned_student_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub room_assignment_track_id: Option<Uuid>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verified_by: Option<Uuid>,
@@ -463,7 +465,8 @@ pub struct AssignRoomsRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeTrackRequest {
-    pub track_id: Uuid,
+    /// None = ย้อนกลับสายที่สมัคร (ลบ override)
+    pub track_id: Option<Uuid>,
 }
 
 // ==========================================

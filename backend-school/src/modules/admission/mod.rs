@@ -54,6 +54,7 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/rounds/{id}/ranking", get(handlers::selections::get_ranking))
         .route("/tracks/{id}/ranking", get(handlers::selections::get_track_ranking))
         .route("/rounds/{id}/assign-rooms", post(handlers::selections::assign_rooms))
+        .route("/rounds/{id}/selection-settings", patch(handlers::selections::update_selection_settings))
 
         // === Enrollment (มอบตัว) ===
         .route("/rounds/{id}/enrollment", get(handlers::applications::list_enrollment_pending))

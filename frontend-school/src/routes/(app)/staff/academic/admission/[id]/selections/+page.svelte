@@ -8,6 +8,7 @@
 		getTrackRanking,
 		assignRooms,
 		changeApplicationTrack,
+		updateSelectionSettings,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
@@ -21,7 +22,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, GraduationCap, Trophy, Check, LoaderCircle } from 'lucide-svelte';
+	import { ArrowLeft, GraduationCap, Trophy, Check, LoaderCircle, RotateCcw } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -42,6 +43,9 @@
 	let showAssignAllDialog = $state(false);
 	let assigningAll = $state(false);
 	let assignAllProgress = $state({ done: 0, total: 0 });
+	let settingsLoaded = $state(false);
+	let saveSettingsTimer: ReturnType<typeof setTimeout> | null = null;
+	let reverting: Record<string, boolean> = $state({});
 
 	let acceptedApps = $derived(ranking?.applications.filter((a) => !a.isOverflow) ?? []);
 	let overflowApps = $derived(ranking?.applications.filter((a) => a.isOverflow) ?? []);
@@ -53,8 +57,16 @@
 		round = r;
 		tracks = t;
 		subjects = s;
-		selectedSubjectIds = s.map((x) => x.id);
+		// โหลดการตั้งค่าที่บันทึกไว้ (แชร์ระหว่าง staff)
+		const saved = r.selectionSettings;
+		if (saved?.subjectIds?.length) {
+			selectedSubjectIds = saved.subjectIds;
+		} else {
+			selectedSubjectIds = s.map((x) => x.id);
+		}
+		roomAssignmentMethod = (saved?.method as 'sequential' | 'round_robin') ?? 'sequential';
 		if (t.length > 0) selectedTrack = t[0].id;
+		settingsLoaded = true;
 	}
 
 	async function loadRanking() {
@@ -139,11 +151,43 @@
 		}
 	}
 
+	async function revertTrack(appId: string) {
+		reverting = { ...reverting, [appId]: true };
+		try {
+			await changeApplicationTrack(appId, null);
+			// Optimistic removal — นักเรียนกลับไปสายเดิม ลบออกจาก list นี้
+			if (ranking) {
+				ranking = {
+					...ranking,
+					applications: ranking.applications.filter((a) => a.applicationId !== appId)
+				};
+				assigned = false;
+			}
+			toast.success('ย้อนกลับสายเดิมสำเร็จ');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ย้อนกลับไม่สำเร็จ');
+		} finally {
+			reverting = { ...reverting, [appId]: false };
+		}
+	}
+
 	// reload เมื่อ selectedTrack, selectedSubjectIds หรือ roomAssignmentMethod เปลี่ยน
+	// และ debounced save settings ลง DB
 	$effect(() => {
 		void selectedSubjectIds.length;
 		void roomAssignmentMethod;
 		if (selectedTrack) loadRanking();
+		if (settingsLoaded && id) {
+			if (saveSettingsTimer) clearTimeout(saveSettingsTimer);
+			const capturedIds = [...selectedSubjectIds];
+			const capturedMethod = roomAssignmentMethod;
+			saveSettingsTimer = setTimeout(() => {
+				updateSelectionSettings(id, {
+					selectionSubjectIds: capturedIds,
+					roomAssignmentMethod: capturedMethod
+				}).catch(() => {});
+			}, 500);
+		}
 	});
 
 	onMount(loadBase);
@@ -327,7 +371,7 @@
 				</Table.Header>
 				<Table.Body>
 					{#each acceptedApps as app (app.applicationId)}
-						<Table.Row>
+						<Table.Row class={app.isTrackOverridden ? 'bg-orange-50/50' : ''}>
 							<Table.Cell class="text-center">
 								<span
 									class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.selectionRank ===
@@ -341,7 +385,14 @@
 								</span>
 							</Table.Cell>
 							<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-							<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
+							<Table.Cell class="font-medium">
+								{app.fullName}
+								{#if app.isTrackOverridden && app.originalTrackName}
+									<span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
+										ย้ายมาจาก {app.originalTrackName}
+									</span>
+								{/if}
+							</Table.Cell>
 							<Table.Cell class="text-center font-semibold text-blue-600">
 								{app.selectionScore.toFixed(1)}
 							</Table.Cell>
@@ -363,7 +414,24 @@
 								{/if}
 							</Table.Cell>
 							<Table.Cell>
-								<div class="flex gap-2 items-center">
+								<div class="flex gap-2 items-center flex-wrap">
+									{#if app.isTrackOverridden}
+										<Button
+											size="sm"
+											variant="ghost"
+											class="h-8 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 gap-1"
+											disabled={reverting[app.applicationId]}
+											onclick={() => revertTrack(app.applicationId)}
+											title="ย้อนกลับสายที่สมัคร"
+										>
+											{#if reverting[app.applicationId]}
+												<LoaderCircle class="w-3 h-3 animate-spin" />
+											{:else}
+												<RotateCcw class="w-3 h-3" />
+												ย้อนกลับ
+											{/if}
+										</Button>
+									{/if}
 									<Select.Root
 										type="single"
 										value={moveTargetTrackId[app.applicationId] ?? ''}
@@ -371,7 +439,7 @@
 											moveTargetTrackId = { ...moveTargetTrackId, [app.applicationId]: v };
 										}}
 									>
-										<Select.Trigger class="h-8 text-xs w-40">
+										<Select.Trigger class="h-8 text-xs w-36">
 											{otherTracks.find(
 												(t) => t.id === moveTargetTrackId[app.applicationId]
 											)?.name ?? 'เลือกสาย'}
@@ -433,7 +501,14 @@
 									{app.selectionRank}
 								</Table.Cell>
 								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-								<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
+								<Table.Cell class="font-medium">
+									{app.fullName}
+									{#if app.isTrackOverridden && app.originalTrackName}
+										<span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-orange-200 px-2 py-0.5 text-xs font-medium text-orange-800">
+											ย้ายมาจาก {app.originalTrackName}
+										</span>
+									{/if}
+								</Table.Cell>
 								<Table.Cell class="text-center text-blue-600 font-semibold">
 									{app.selectionScore.toFixed(1)}
 								</Table.Cell>
@@ -441,7 +516,24 @@
 									{app.totalScore.toFixed(1)}
 								</Table.Cell>
 								<Table.Cell>
-									<div class="flex gap-2 items-center">
+									<div class="flex gap-2 items-center flex-wrap">
+										{#if app.isTrackOverridden}
+											<Button
+												size="sm"
+												variant="ghost"
+												class="h-8 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-100 gap-1"
+												disabled={reverting[app.applicationId]}
+												onclick={() => revertTrack(app.applicationId)}
+												title="ย้อนกลับสายที่สมัคร"
+											>
+												{#if reverting[app.applicationId]}
+													<LoaderCircle class="w-3 h-3 animate-spin" />
+												{:else}
+													<RotateCcw class="w-3 h-3" />
+													ย้อนกลับ
+												{/if}
+											</Button>
+										{/if}
 										<Select.Root
 											type="single"
 											value={moveTargetTrackId[app.applicationId] ?? ''}
@@ -449,7 +541,7 @@
 												moveTargetTrackId = { ...moveTargetTrackId, [app.applicationId]: v };
 											}}
 										>
-											<Select.Trigger class="h-8 text-xs w-40">
+											<Select.Trigger class="h-8 text-xs w-36">
 												{otherTracks.find(
 													(t) => t.id === moveTargetTrackId[app.applicationId]
 												)?.name ?? 'เลือกสาย'}

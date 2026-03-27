@@ -14,6 +14,7 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::middleware::permission::check_permission;
 use crate::permissions::registry::codes;
 use crate::modules::admission::models::applications::*;
+use crate::modules::admission::models::rounds::UpdateSelectionSettingsRequest;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
@@ -114,6 +115,18 @@ struct RankRow {
     full_name: String,
     selection_score: Option<f64>,
     total_score: Option<f64>,
+}
+
+#[derive(sqlx::FromRow)]
+struct RankRowDetailed {
+    application_id: Uuid,
+    application_number: Option<String>,
+    national_id: String,
+    full_name: String,
+    selection_score: Option<f64>,
+    total_score: Option<f64>,
+    original_track_name: Option<String>,
+    is_track_overridden: Option<bool>,
 }
 
 /// GET /api/admission/rounds/:id/ranking — เรียงคะแนนทุกสายในรอบ (Preview)
@@ -267,18 +280,21 @@ pub async fn get_track_ranking(
             aa.national_id,
             CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
             COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1) THEN esc.score ELSE 0 END), 0) AS selection_score,
-            COALESCE(SUM(esc.score), 0) AS total_score
+            COALESCE(SUM(esc.score), 0) AS total_score,
+            at_orig.name AS original_track_name,
+            aa.room_assignment_track_id IS NOT NULL AS is_track_overridden
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
-        WHERE aa.admission_track_id = $2
+        LEFT JOIN admission_tracks at_orig ON at_orig.id = aa.admission_track_id
+        WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
           AND aa.status NOT IN ('rejected', 'withdrawn')
-        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
+        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id
         ORDER BY selection_score DESC, total_score DESC, {}
         "#,
         tiebreak_order
     );
 
-    let rows = sqlx::query_as::<_, RankRow>(&query)
+    let rows = sqlx::query_as::<_, RankRowDetailed>(&query)
         .bind(&selection_ids)
         .bind(track_id)
         .fetch_all(&pool)
@@ -296,7 +312,7 @@ pub async fn get_track_ranking(
         .partition(|(i, _)| *i < capacity_usize);
 
     // Pass 2: เรียง accepted ด้วย total_score DESC → assign ห้อง
-    let mut accepted_sorted: Vec<(usize, RankRow)> = accepted_rows;
+    let mut accepted_sorted: Vec<(usize, RankRowDetailed)> = accepted_rows;
     accepted_sorted.sort_by(|(_, a), (_, b)| {
         b.total_score.unwrap_or(0.0)
             .partial_cmp(&a.total_score.unwrap_or(0.0))
@@ -321,6 +337,7 @@ pub async fn get_track_ranking(
                 (json!(rooms[ri].room_name), json!(rooms[ri].room_id))
             };
 
+            let is_overridden = row.is_track_overridden.unwrap_or(false);
             json!({
                 "applicationId": row.application_id,
                 "applicationNumber": row.application_number,
@@ -333,6 +350,8 @@ pub async fn get_track_ranking(
                 "assignedRoom": assigned_room,
                 "assignedRoomId": assigned_room_id,
                 "isOverflow": false,
+                "isTrackOverridden": is_overridden,
+                "originalTrackName": if is_overridden { json!(row.original_track_name) } else { serde_json::Value::Null },
             })
         })
         .collect();
@@ -340,6 +359,7 @@ pub async fn get_track_ranking(
     let overflow_json: Vec<serde_json::Value> = overflow_rows
         .into_iter()
         .map(|(sel_i, row)| {
+            let is_overridden = row.is_track_overridden.unwrap_or(false);
             json!({
                 "applicationId": row.application_id,
                 "applicationNumber": row.application_number,
@@ -352,6 +372,8 @@ pub async fn get_track_ranking(
                 "assignedRoom": serde_json::Value::Null,
                 "assignedRoomId": serde_json::Value::Null,
                 "isOverflow": true,
+                "isTrackOverridden": is_overridden,
+                "originalTrackName": if is_overridden { json!(row.original_track_name) } else { serde_json::Value::Null },
             })
         })
         .collect();
@@ -456,7 +478,7 @@ pub async fn assign_rooms(
             COALESCE(SUM(esc.score), 0) AS total_score
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
-        WHERE aa.admission_track_id = $2
+        WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
           AND aa.status NOT IN ('rejected', 'withdrawn')
         GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
         ORDER BY selection_score DESC, total_score DESC, {}
@@ -495,9 +517,9 @@ pub async fn assign_rooms(
     let mut tx = pool.begin().await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    // ลบ assignments เดิมของ track นี้
+    // ลบ assignments เดิมของ track นี้ (รวมนักเรียนที่ถูก override มาจากสายอื่น)
     sqlx::query(
-        "DELETE FROM admission_room_assignments WHERE application_id IN (SELECT id FROM admission_applications WHERE admission_track_id = $1)"
+        "DELETE FROM admission_room_assignments WHERE application_id IN (SELECT id FROM admission_applications WHERE COALESCE(room_assignment_track_id, admission_track_id) = $1)"
     )
     .bind(track_id)
     .execute(&mut *tx)
@@ -560,4 +582,33 @@ pub async fn assign_rooms(
         "message": format!("จัดห้องสำเร็จ {} คน", assigned_count),
         "data": { "assigned_count": assigned_count }
     })).into_response())
+}
+
+/// PATCH /api/admission/rounds/:id/selection-settings — บันทึกการตั้งค่า selections ลง DB (แชร์ระหว่าง staff)
+pub async fn update_selection_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+    Json(payload): Json<UpdateSelectionSettingsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let settings = serde_json::json!({
+        "subjectIds": payload.selection_subject_ids.unwrap_or_default(),
+        "method": payload.room_assignment_method.unwrap_or_else(|| "sequential".to_string()),
+    });
+
+    sqlx::query(
+        "UPDATE admission_rounds SET selection_settings = $1, updated_at = NOW() WHERE id = $2"
+    )
+    .bind(&settings)
+    .bind(round_id)
+    .execute(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to update settings".to_string()))?;
+
+    Ok(Json(json!({ "success": true })).into_response())
 }
