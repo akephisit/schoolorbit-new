@@ -12,8 +12,7 @@
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
-		type TrackRankingResult,
-		type RankingEntry
+		type TrackRankingResult
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -31,7 +30,10 @@
 	let tracks: AdmissionTrack[] = $state([]);
 	let subjects: AdmissionExamSubject[] = $state([]);
 	let selectedTrack = $state('');
-	let selectedSubjectIds: string[] = $state([]);
+	let selectedSubjectIdsByTrack: Record<string, string[]> = $state({});
+	let currentSubjectIds = $derived(
+		selectedSubjectIdsByTrack[selectedTrack] ?? subjects.map((s) => s.id)
+	);
 	let roomAssignmentMethod = $state<'sequential' | 'round_robin'>('sequential');
 	let ranking = $state<TrackRankingResult | null>(null);
 	let loading = $state(false);
@@ -59,10 +61,8 @@
 		subjects = s;
 		// โหลดการตั้งค่าที่บันทึกไว้ (แชร์ระหว่าง staff)
 		const saved = r.selectionSettings;
-		if (saved?.subjectIds?.length) {
-			selectedSubjectIds = saved.subjectIds;
-		} else {
-			selectedSubjectIds = s.map((x) => x.id);
+		if (saved?.subjectsByTrack) {
+			selectedSubjectIdsByTrack = saved.subjectsByTrack;
 		}
 		roomAssignmentMethod = (saved?.method as 'sequential' | 'round_robin') ?? 'sequential';
 		if (t.length > 0) selectedTrack = t[0].id;
@@ -75,7 +75,7 @@
 		ranking = null;
 		assigned = false;
 		try {
-			ranking = await getTrackRanking(selectedTrack, selectedSubjectIds, roomAssignmentMethod);
+			ranking = await getTrackRanking(selectedTrack, currentSubjectIds, roomAssignmentMethod);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดผลเรียงคะแนนไม่สำเร็จ');
 		} finally {
@@ -93,7 +93,7 @@
 		if (!id || !selectedTrack) return;
 		assigning = true;
 		try {
-			await assignRooms(id, selectedTrack, selectedSubjectIds, roomAssignmentMethod);
+			await assignRooms(id, selectedTrack, currentSubjectIds, roomAssignmentMethod);
 			toast.success('จัดห้องสำเร็จ!');
 			assigned = true;
 			await loadRanking();
@@ -112,7 +112,7 @@
 		let failed = 0;
 		for (const track of tracks) {
 			try {
-				await assignRooms(id, track.id, selectedSubjectIds, roomAssignmentMethod);
+				await assignRooms(id, track.id, selectedSubjectIdsByTrack[track.id] ?? subjects.map((s) => s.id), roomAssignmentMethod);
 				assignAllProgress = { ...assignAllProgress, done: assignAllProgress.done + 1 };
 			} catch {
 				failed++;
@@ -171,19 +171,19 @@
 		}
 	}
 
-	// reload เมื่อ selectedTrack, selectedSubjectIds หรือ roomAssignmentMethod เปลี่ยน
+	// reload เมื่อ selectedTrack, selectedSubjectIdsByTrack หรือ roomAssignmentMethod เปลี่ยน
 	// และ debounced save settings ลง DB
 	$effect(() => {
-		void selectedSubjectIds.length;
+		void selectedSubjectIdsByTrack;
 		void roomAssignmentMethod;
 		if (selectedTrack) loadRanking();
 		if (settingsLoaded && id) {
 			if (saveSettingsTimer) clearTimeout(saveSettingsTimer);
-			const capturedIds = [...selectedSubjectIds];
+			const capturedMap = { ...selectedSubjectIdsByTrack };
 			const capturedMethod = roomAssignmentMethod;
 			saveSettingsTimer = setTimeout(() => {
 				updateSelectionSettings(id, {
-					selectionSubjectIds: capturedIds,
+					subjectsByTrack: capturedMap,
 					roomAssignmentMethod: capturedMethod
 				}).catch(() => {});
 			}, 500);
@@ -259,13 +259,16 @@
 							<input
 								type="checkbox"
 								value={s.id}
-								checked={selectedSubjectIds.includes(s.id)}
+								checked={currentSubjectIds.includes(s.id)}
 								onchange={(e) => {
-									if (e.currentTarget.checked) {
-										selectedSubjectIds = [...selectedSubjectIds, s.id];
-									} else {
-										selectedSubjectIds = selectedSubjectIds.filter((x) => x !== s.id);
-									}
+									const current =
+										selectedSubjectIdsByTrack[selectedTrack] ?? subjects.map((x) => x.id);
+									selectedSubjectIdsByTrack = {
+										...selectedSubjectIdsByTrack,
+										[selectedTrack]: e.currentTarget.checked
+											? [...current, s.id]
+											: current.filter((x) => x !== s.id)
+									};
 								}}
 							/>
 							{s.name}

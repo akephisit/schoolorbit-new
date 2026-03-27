@@ -35,7 +35,7 @@ export interface AdmissionRound {
     gradeLevelName?: string;
     applicationCount?: number;
     reportConfig?: ReportConfig;
-    selectionSettings?: { subjectIds: string[]; method: string };
+    selectionSettings?: { subjectsByTrack?: Record<string, string[]>; method: string };
 }
 
 export interface AdmissionTrack {
@@ -517,7 +517,7 @@ export async function markAbsent(applicationId: string, absent: boolean) {
 
 export async function updateSelectionSettings(
     roundId: string,
-    settings: { selectionSubjectIds?: string[]; roomAssignmentMethod?: string }
+    settings: { subjectsByTrack?: Record<string, string[]>; roomAssignmentMethod?: string }
 ) {
     const res = await apiClient.patch(`/api/admission/rounds/${roundId}/selection-settings`, settings);
     if (!res.success) throw new Error(res.error);

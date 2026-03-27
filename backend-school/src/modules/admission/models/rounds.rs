@@ -76,7 +76,7 @@ pub struct UpdateAdmissionRoundRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSelectionSettingsRequest {
-    pub selection_subject_ids: Option<Vec<Uuid>>,
+    pub subjects_by_track: Option<serde_json::Value>,
     pub room_assignment_method: Option<String>,
 }
 

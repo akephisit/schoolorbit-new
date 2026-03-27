@@ -597,7 +597,7 @@ pub async fn update_selection_settings(
     }
 
     let settings = serde_json::json!({
-        "subjectIds": payload.selection_subject_ids.unwrap_or_default(),
+        "subjectsByTrack": payload.subjects_by_track.unwrap_or(serde_json::json!({})),
         "method": payload.room_assignment_method.unwrap_or_else(|| "sequential".to_string()),
     });
 
