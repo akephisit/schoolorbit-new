@@ -29,6 +29,52 @@ pub struct RankingQuery {
     /// วิชาที่ใช้คัดเลือก (pass 1) — comma-separated UUIDs
     /// ถ้าไม่ส่ง = ใช้ทุกวิชา
     selection_subject_ids: Option<String>,
+    /// "sequential" (default) หรือ "round_robin"
+    room_assignment_method: Option<String>,
+}
+
+/// คำนวณ (room_idx, rank_in_room) สำหรับ student แต่ละคน ตาม method
+/// capacities: capacity ของแต่ละห้อง ตามลำดับ
+fn compute_room_assignments(count: usize, capacities: &[i32], method: &str) -> Vec<(usize, i32)> {
+    let n = capacities.len();
+    let mut result = Vec::with_capacity(count);
+    if n == 0 { return result; }
+
+    if method == "round_robin" {
+        let mut rr_counts = vec![0i32; n];
+        let mut rr_idx = 0usize;
+        for _ in 0..count {
+            let start = rr_idx;
+            let mut found_idx = 0usize;
+            let mut found_rir = 1i32;
+            for step in 0..n {
+                let idx = (start + step) % n;
+                if rr_counts[idx] < capacities[idx] {
+                    rr_counts[idx] += 1;
+                    found_idx = idx;
+                    found_rir = rr_counts[idx];
+                    rr_idx = (idx + 1) % n;
+                    break;
+                }
+            }
+            result.push((found_idx, found_rir));
+        }
+    } else {
+        // sequential (default)
+        let mut room_idx = 0usize;
+        let mut count_in_room = 0i32;
+        for _ in 0..count {
+            let rir = count_in_room + 1;
+            count_in_room += 1;
+            let idx = room_idx;
+            if count_in_room >= capacities[room_idx] && room_idx + 1 < n {
+                room_idx += 1;
+                count_in_room = 0;
+            }
+            result.push((idx, rir));
+        }
+    }
+    result
 }
 
 /// แปลง comma-separated UUIDs → Vec<Uuid>
@@ -257,8 +303,9 @@ pub async fn get_track_ranking(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let mut room_idx = 0usize;
-    let mut count_in_room = 0i64;
+    let method = params.room_assignment_method.as_deref().unwrap_or("sequential");
+    let room_caps: Vec<i32> = rooms.iter().map(|r| r.capacity).collect();
+    let room_slots = compute_room_assignments(accepted_sorted.len(), &room_caps, method);
 
     let accepted_json: Vec<serde_json::Value> = accepted_sorted
         .into_iter()
@@ -270,14 +317,8 @@ pub async fn get_track_ranking(
             let (assigned_room, assigned_room_id) = if rooms.is_empty() {
                 (serde_json::Value::Null, serde_json::Value::Null)
             } else {
-                let name = json!(rooms[room_idx].room_name);
-                let rid = json!(rooms[room_idx].room_id);
-                count_in_room += 1;
-                if count_in_room >= rooms[room_idx].capacity as i64 && room_idx + 1 < rooms.len() {
-                    room_idx += 1;
-                    count_in_room = 0;
-                }
-                (name, rid)
+                let (ri, _rir) = room_slots[final_i];
+                (json!(rooms[ri].room_name), json!(rooms[ri].room_id))
             };
 
             json!({
@@ -447,6 +488,10 @@ pub async fn assign_rooms(
     });
 
     // จัดห้อง + บันทึก
+    let method = payload.room_assignment_method.as_deref().unwrap_or("sequential");
+    let room_caps: Vec<i32> = rooms.iter().map(|r| r.capacity).collect();
+    let room_slots = compute_room_assignments(accepted.len(), &room_caps, method);
+
     let mut tx = pool.begin().await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
@@ -459,14 +504,11 @@ pub async fn assign_rooms(
     .await
     .ok();
 
-    let mut room_idx = 0usize;
-    let mut count_in_room = 0i64;
     let assigned_count = accepted.len();
 
     for (final_rank, (_, row)) in accepted.iter().enumerate() {
-        let room = &rooms[room_idx];
-        let rank_in_room = count_in_room + 1;
-        count_in_room += 1;
+        let (ri, rank_in_room) = room_slots[final_rank];
+        let room = &rooms[ri];
 
         sqlx::query(
             r#"
@@ -490,7 +532,7 @@ pub async fn assign_rooms(
         .bind(row.application_id)
         .bind(room.room_id)
         .bind((final_rank + 1) as i32)
-        .bind(rank_in_room as i32)
+        .bind(rank_in_room)
         .bind(row.total_score)
         .bind(row.total_score)
         .bind(user_id)
@@ -508,11 +550,6 @@ pub async fn assign_rooms(
         .execute(&mut *tx)
         .await
         .ok();
-
-        if count_in_room >= room.capacity as i64 && room_idx + 1 < rooms.len() {
-            room_idx += 1;
-            count_in_room = 0;
-        }
     }
 
     tx.commit().await

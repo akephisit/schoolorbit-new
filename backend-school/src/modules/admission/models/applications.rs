@@ -455,6 +455,8 @@ pub struct SubjectScore {
 pub struct AssignRoomsRequest {
     pub track_id: Uuid,
     pub selection_subject_ids: Option<Vec<Uuid>>,
+    /// "sequential" (default) หรือ "round_robin"
+    pub room_assignment_method: Option<String>,
 }
 
 /// Request สำหรับย้ายสายการเรียน

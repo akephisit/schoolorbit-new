@@ -31,6 +31,7 @@
 	let subjects: AdmissionExamSubject[] = $state([]);
 	let selectedTrack = $state('');
 	let selectedSubjectIds: string[] = $state([]);
+	let roomAssignmentMethod = $state<'sequential' | 'round_robin'>('sequential');
 	let ranking = $state<TrackRankingResult | null>(null);
 	let loading = $state(false);
 	let assigning = $state(false);
@@ -59,7 +60,7 @@
 		ranking = null;
 		assigned = false;
 		try {
-			ranking = await getTrackRanking(selectedTrack, selectedSubjectIds);
+			ranking = await getTrackRanking(selectedTrack, selectedSubjectIds, roomAssignmentMethod);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดผลเรียงคะแนนไม่สำเร็จ');
 		} finally {
@@ -77,7 +78,7 @@
 		if (!id || !selectedTrack) return;
 		assigning = true;
 		try {
-			await assignRooms(id, selectedTrack, selectedSubjectIds);
+			await assignRooms(id, selectedTrack, selectedSubjectIds, roomAssignmentMethod);
 			toast.success('จัดห้องสำเร็จ!');
 			assigned = true;
 			await loadRanking();
@@ -103,9 +104,10 @@
 		}
 	}
 
-	// reload เมื่อ selectedTrack หรือ selectedSubjectIds เปลี่ยน
+	// reload เมื่อ selectedTrack, selectedSubjectIds หรือ roomAssignmentMethod เปลี่ยน
 	$effect(() => {
 		void selectedSubjectIds.length;
+		void roomAssignmentMethod;
 		if (selectedTrack) loadRanking();
 	});
 
@@ -181,6 +183,37 @@
 			</Card.Content>
 		</Card.Root>
 	{/if}
+
+	<!-- Room Assignment Method -->
+	<Card.Root>
+		<Card.Content class="pt-4 pb-3 space-y-2">
+			<p class="text-sm font-medium">วิธีจัดห้อง (pass 2)</p>
+			<div class="flex flex-wrap gap-4">
+				<label class="flex items-center gap-2 text-sm cursor-pointer">
+					<input
+						type="radio"
+						name="room-method"
+						value="sequential"
+						checked={roomAssignmentMethod === 'sequential'}
+						onchange={() => { roomAssignmentMethod = 'sequential'; }}
+					/>
+					<span>เรียงตามคะแนน</span>
+					<span class="text-xs text-muted-foreground">(คะแนนสูงอยู่ห้องแรก)</span>
+				</label>
+				<label class="flex items-center gap-2 text-sm cursor-pointer">
+					<input
+						type="radio"
+						name="room-method"
+						value="round_robin"
+						checked={roomAssignmentMethod === 'round_robin'}
+						onchange={() => { roomAssignmentMethod = 'round_robin'; }}
+					/>
+					<span>กระจายเฉลี่ย (round-robin)</span>
+					<span class="text-xs text-muted-foreground">(สลับห้องตามลำดับคะแนน ทุกห้องได้คนคะแนนสูง-ต่ำปนกัน)</span>
+				</label>
+			</div>
+		</Card.Content>
+	</Card.Root>
 
 	{#if loading}
 		<Card.Root>

@@ -468,20 +468,35 @@ export async function getRanking(roundId: string) {
     return res.data ?? [];
 }
 
-export async function getTrackRanking(trackId: string, selectionSubjectIds?: string[]) {
-    let url = `/api/admission/tracks/${trackId}/ranking`;
+export async function getTrackRanking(
+    trackId: string,
+    selectionSubjectIds?: string[],
+    roomAssignmentMethod?: string
+) {
+    const params = new URLSearchParams();
     if (selectionSubjectIds && selectionSubjectIds.length > 0) {
-        url += `?selection_subject_ids=${selectionSubjectIds.join(',')}`;
+        params.set('selection_subject_ids', selectionSubjectIds.join(','));
     }
+    if (roomAssignmentMethod) {
+        params.set('room_assignment_method', roomAssignmentMethod);
+    }
+    const qs = params.toString();
+    const url = `/api/admission/tracks/${trackId}/ranking${qs ? `?${qs}` : ''}`;
     const res = await apiClient.get<TrackRankingResult>(url);
     if (!res.success) throw new Error(res.error);
     return res.data!;
 }
 
-export async function assignRooms(roundId: string, trackId: string, selectionSubjectIds?: string[]) {
+export async function assignRooms(
+    roundId: string,
+    trackId: string,
+    selectionSubjectIds?: string[],
+    roomAssignmentMethod?: string
+) {
     const res = await apiClient.post(`/api/admission/rounds/${roundId}/assign-rooms`, {
         trackId,
         selectionSubjectIds: selectionSubjectIds && selectionSubjectIds.length > 0 ? selectionSubjectIds : undefined,
+        roomAssignmentMethod: roomAssignmentMethod ?? 'sequential',
     });
     if (!res.success) throw new Error(res.error);
     return res;
