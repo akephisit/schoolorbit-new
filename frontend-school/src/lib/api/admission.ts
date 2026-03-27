@@ -521,6 +521,11 @@ export async function moveApplicationRoom(applicationId: string, roomId: string)
     if (!res.success) throw new Error(res.error);
 }
 
+export async function resetRoomAssignments(trackId: string) {
+    const res = await apiClient.delete(`/api/admission/tracks/${trackId}/room-assignments`);
+    if (!res.success) throw new Error(res.error);
+}
+
 export async function updateSelectionSettings(
     roundId: string,
     settings: { subjectsByTrack?: Record<string, string[]>; methodByTrack?: Record<string, string>; roomAssignmentMethod?: string }

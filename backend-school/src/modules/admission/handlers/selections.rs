@@ -595,6 +595,38 @@ pub async fn assign_rooms(
     })).into_response())
 }
 
+/// DELETE /api/admission/tracks/:id/room-assignments — ล้างการจัดห้องของ track นี้ทั้งหมด
+pub async fn reset_room_assignments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(track_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let deleted = sqlx::query_scalar::<_, i64>(
+        r#"
+        WITH deleted AS (
+            DELETE FROM admission_room_assignments
+            WHERE application_id IN (
+                SELECT id FROM admission_applications
+                WHERE COALESCE(room_assignment_track_id, admission_track_id) = $1
+            )
+            RETURNING 1
+        )
+        SELECT COUNT(*) FROM deleted
+        "#
+    )
+    .bind(track_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
+}
+
 /// PATCH /api/admission/rounds/:id/selection-settings — บันทึกการตั้งค่า selections ลง DB (แชร์ระหว่าง staff)
 pub async fn update_selection_settings(
     State(state): State<AppState>,

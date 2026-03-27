@@ -10,6 +10,7 @@
 		changeApplicationTrack,
 		updateSelectionSettings,
 		moveApplicationRoom,
+		resetRoomAssignments,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
@@ -25,7 +26,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, GraduationCap, Trophy, Check, LoaderCircle, RotateCcw } from 'lucide-svelte';
+	import { ArrowLeft, GraduationCap, Trophy, Check, LoaderCircle, RotateCcw, Trash2 } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -50,6 +51,7 @@
 	let movingRoom: Record<string, boolean> = $state({});
 	let showAssignDialog = $state(false);
 	let showAssignAllDialog = $state(false);
+	let resetting = $state(false);
 	let assigningAll = $state(false);
 	let assignAllProgress = $state({ done: 0, total: 0 });
 	let settingsLoaded = $state(false);
@@ -177,6 +179,21 @@
 			toast.error(e instanceof Error ? e.message : 'ย้อนกลับไม่สำเร็จ');
 		} finally {
 			reverting = { ...reverting, [appId]: false };
+		}
+	}
+
+	async function handleReset() {
+		if (!selectedTrack) return;
+		resetting = true;
+		try {
+			await resetRoomAssignments(selectedTrack);
+			toast.success('ล้างการจัดห้องสำเร็จ');
+			assigned = false;
+			await loadRanking();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ล้างการจัดห้องไม่สำเร็จ');
+		} finally {
+			resetting = false;
 		}
 	}
 
@@ -377,19 +394,38 @@
 					ผลเรียงคะแนน — {ranking.trackName}
 					<Badge variant="secondary">{acceptedApps.length} คน</Badge>
 				</Card.Title>
-				<Button
-					onclick={handleAssignRooms}
-					disabled={assigning || acceptedApps.length === 0}
-					variant={assigned ? 'outline' : 'default'}
-					class="gap-2"
-				>
-					{#if assigning}
-						<LoaderCircle class="w-4 h-4 animate-spin" />
-					{:else}
-						<Check class="w-4 h-4" />
+				<div class="flex gap-2">
+					{#if acceptedApps.some((a) => a.roomSaved)}
+						<Button
+							variant="ghost"
+							size="sm"
+							class="gap-1.5 text-muted-foreground hover:text-destructive"
+							disabled={resetting}
+							onclick={handleReset}
+							title="ล้างการจัดห้องทั้งหมด"
+						>
+							{#if resetting}
+								<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+							{:else}
+								<Trash2 class="w-3.5 h-3.5" />
+							{/if}
+							ล้างการจัดห้อง
+						</Button>
 					{/if}
-					{assigning ? 'กำลังจัดห้อง...' : assigned ? 'จัดห้องแล้ว (จัดใหม่)' : 'บันทึกจัดห้อง'}
-				</Button>
+					<Button
+						onclick={handleAssignRooms}
+						disabled={assigning || acceptedApps.length === 0}
+						variant={assigned ? 'outline' : 'default'}
+						class="gap-2"
+					>
+						{#if assigning}
+							<LoaderCircle class="w-4 h-4 animate-spin" />
+						{:else}
+							<Check class="w-4 h-4" />
+						{/if}
+						{assigning ? 'กำลังจัดห้อง...' : assigned ? 'จัดห้องแล้ว (จัดใหม่)' : 'บันทึกจัดห้อง'}
+					</Button>
+				</div>
 			</Card.Header>
 
 			<div class="overflow-x-auto">
