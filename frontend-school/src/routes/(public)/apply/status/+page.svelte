@@ -90,9 +90,24 @@
 		enrollmentForm?: { formData: Record<string, unknown>; preSubmittedAt?: string } | null;
 	} | null = $state(null);
 
+	// ช่วง round ที่ถือว่า "ประกาศผลแล้ว" — ก่อนหน้านี้ไม่ควรโชว์ "ผ่านการคัดเลือก"
+	const RESULT_ANNOUNCED_STATUSES = ['announced', 'enrolling', 'closed'];
+
+	// effective status สำหรับแสดงผล
+	// ถ้า app.status = 'accepted' แต่ round ยังไม่ประกาศ → แสดงเป็น 'pending_result' แทน
+	const effectiveStatus = $derived(() => {
+		const rs = portalData?.roundStatus ?? '';
+		const as = portalData?.application?.status ?? '';
+		if (as === 'accepted' && !RESULT_ANNOUNCED_STATUSES.includes(rs)) {
+			return 'pending_result';
+		}
+		return as;
+	});
+
 	const statusLabel: Record<string, string> = {
 		submitted: 'รอตรวจสอบเอกสาร',
 		verified: 'เอกสารผ่านแล้ว รอวันสอบ',
+		pending_result: 'รอประกาศผลการคัดเลือก',
 		rejected: 'ไม่ผ่านการคัดเลือก',
 		accepted: 'ผ่านการคัดเลือก!',
 		enrolled: 'มอบตัวสำเร็จ',
@@ -102,6 +117,7 @@
 	const statusColor: Record<string, string> = {
 		submitted: 'bg-yellow-50 border-yellow-200 text-yellow-800',
 		verified: 'bg-blue-50 border-blue-200 text-blue-800',
+		pending_result: 'bg-blue-50 border-blue-200 text-blue-800',
 		rejected: 'bg-red-50 border-red-200 text-red-800',
 		accepted: 'bg-green-50 border-green-200 text-green-800',
 		enrolled: 'bg-purple-50 border-purple-200 text-purple-800',
@@ -299,18 +315,18 @@
 					</div>
 
 					<div
-						class="border rounded-xl p-4 {statusColor[app.status] ?? 'bg-gray-50 border-gray-200'}"
+						class="border rounded-xl p-4 {statusColor[effectiveStatus()] ?? 'bg-gray-50 border-gray-200'}"
 					>
 						<div class="flex flex-col gap-2">
 							<div class="flex items-center gap-2">
-								{#if app.status === 'accepted' || app.status === 'enrolled'}
+								{#if effectiveStatus() === 'accepted' || effectiveStatus() === 'enrolled'}
 									<Check class="w-5 h-5" />
-								{:else if app.status === 'rejected'}
+								{:else if effectiveStatus() === 'rejected'}
 									<X class="w-5 h-5" />
 								{:else}
 									<Clock class="w-5 h-5" />
 								{/if}
-								<p class="font-semibold">{statusLabel[app.status] ?? app.status}</p>
+								<p class="font-semibold">{statusLabel[effectiveStatus()] ?? app.status}</p>
 							</div>
 
 							<!-- แสดงเหตุผลถ้าถูกปฏิเสธ -->
@@ -340,7 +356,7 @@
 					</div>
 
 					<!-- Result (if accepted) -->
-					{#if assignment && (app.status === 'accepted' || app.status === 'enrolled')}
+					{#if assignment && (effectiveStatus() === 'accepted' || effectiveStatus() === 'enrolled')}
 						<div class="border border-green-200 bg-green-50 rounded-xl p-4 space-y-2">
 							<p class="font-semibold text-green-800 flex items-center gap-2">
 								<GraduationCap class="w-4 h-4" />
