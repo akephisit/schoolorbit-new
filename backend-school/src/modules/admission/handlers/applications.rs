@@ -478,6 +478,39 @@ pub async fn reject_application(
     Ok(Json(json!({ "success": true, "message": "ปฏิเสธใบสมัครแล้ว" })).into_response())
 }
 
+/// PUT /api/admission/applications/:id/absent — ทำเครื่องหมายขาดสอบ / ยกเลิก
+pub async fn mark_absent(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<MarkAbsentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    if payload.absent {
+        sqlx::query(
+            "UPDATE admission_applications SET status = 'absent', updated_at = NOW() WHERE id = $1 AND status IN ('verified', 'scored')"
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถทำเครื่องหมายขาดสอบได้".to_string()))?;
+        Ok(Json(json!({ "success": true, "message": "ทำเครื่องหมายขาดสอบแล้ว" })).into_response())
+    } else {
+        sqlx::query(
+            "UPDATE admission_applications SET status = 'verified', updated_at = NOW() WHERE id = $1 AND status = 'absent'"
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถยกเลิกขาดสอบได้".to_string()))?;
+        Ok(Json(json!({ "success": true, "message": "ยกเลิกขาดสอบแล้ว" })).into_response())
+    }
+}
+
 // ==========================================
 // Staff: Update Application (submitted only)
 // ==========================================

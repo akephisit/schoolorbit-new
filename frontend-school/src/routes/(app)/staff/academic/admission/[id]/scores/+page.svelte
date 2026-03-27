@@ -8,6 +8,7 @@
 		listApplications,
 		bulkUpdateScores,
 		getExamSeats,
+		markAbsent,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
@@ -21,7 +22,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Switch } from '$lib/components/ui/switch';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, ClipboardList, Save, Loader2, DoorOpen } from 'lucide-svelte';
+	import { ArrowLeft, ClipboardList, Save, Loader2, DoorOpen, UserX } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -39,6 +40,8 @@
 	let activeSubjectIds: string[] = $state([]);
 
 	let scores: Record<string, Record<string, string>> = $state({});
+	let absentIds: Set<string> = $state(new Set());
+	let togglingAbsent: Record<string, boolean> = $state({});
 
 	// flat list in room order for Enter navigation
 	let appsInRoomOrder = $derived(
@@ -69,6 +72,13 @@
 			allRawScores = allS as any[];
 			seatGroups = Array.isArray(seatData) ? seatData : [];
 
+			// สร้าง set ของ absent จาก status ใน allRawScores
+			const absSet = new Set<string>();
+			for (const sc of allRawScores) {
+				if (sc.status === 'absent') absSet.add(sc.applicationId);
+			}
+			absentIds = absSet;
+
 			// default to room view if seats are assigned
 			if (seatGroups.length > 0) {
 				viewMode = 'room';
@@ -96,8 +106,8 @@
 	async function loadApps() {
 		if (!id || !selectedTrack) return;
 		const allApps = await listApplications(id, { trackId: selectedTrack });
-		// Only show applications that are verified or scored
-		applications = allApps.filter((a) => ['verified', 'scored', 'accepted'].includes(a.status));
+		// Only show applications that are verified, scored, accepted, or absent
+		applications = allApps.filter((a) => ['verified', 'scored', 'accepted', 'absent'].includes(a.status));
 
 		for (const app of applications) {
 			if (!scores[app.id]) scores[app.id] = {};
@@ -130,6 +140,23 @@
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function toggleAbsent(appId: string) {
+		const isAbsent = absentIds.has(appId);
+		togglingAbsent = { ...togglingAbsent, [appId]: true };
+		try {
+			await markAbsent(appId, !isAbsent);
+			const next = new Set(absentIds);
+			if (isAbsent) next.delete(appId);
+			else next.add(appId);
+			absentIds = next;
+			toast.success(isAbsent ? 'ยกเลิกขาดสอบแล้ว' : 'ทำเครื่องหมายขาดสอบแล้ว');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ดำเนินการไม่สำเร็จ');
+		} finally {
+			togglingAbsent = { ...togglingAbsent, [appId]: false };
 		}
 	}
 
@@ -269,6 +296,7 @@
 						<Table.Head class="w-10">ที่</Table.Head>
 						<Table.Head>{viewMode === 'room' ? 'เลขที่สอบ' : 'เลขที่ใบสมัคร'}</Table.Head>
 						<Table.Head>ชื่อ-สกุล</Table.Head>
+						<Table.Head class="text-center w-20">ขาดสอบ</Table.Head>
 						{#each subjects as sub (sub.id)}
 							{@const isActive = activeSubjectIds.includes(sub.id)}
 							<Table.Head
@@ -301,7 +329,7 @@
 							<!-- Room header row -->
 							<Table.Row class="bg-muted/50 hover:bg-muted/50">
 								<Table.Cell
-									colspan={3 + subjects.length}
+									colspan={4 + subjects.length}
 									class="font-semibold py-2 px-4 text-sm"
 								>
 									<span class="flex items-center gap-2">
@@ -319,14 +347,27 @@
 							{#each group.seats as seat, seatIdx (seat.applicationId)}
 								{@const globalIdx =
 									seatGroups.slice(0, seatGroups.indexOf(group)).reduce((acc, g) => acc + g.seats.length, 0) + seatIdx}
-								<Table.Row>
+								{@const isAbsent = absentIds.has(seat.applicationId)}
+								<Table.Row class={isAbsent ? 'opacity-50' : ''}>
 									<Table.Cell class="text-center text-muted-foreground"
 										>{seat.seatNumber}</Table.Cell
 									>
 									<Table.Cell class="font-mono text-xs"
 										>{seat.examId ?? seat.applicationNumber ?? '-'}</Table.Cell
 									>
-									<Table.Cell class="font-medium">{seat.fullName}</Table.Cell>
+									<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}">{seat.fullName}</Table.Cell>
+									<Table.Cell class="text-center">
+										<Button
+											size="sm"
+											variant={isAbsent ? 'default' : 'ghost'}
+											class="h-7 text-xs gap-1 {isAbsent ? 'bg-red-600 hover:bg-red-700' : 'text-muted-foreground hover:text-red-600'}"
+											disabled={togglingAbsent[seat.applicationId]}
+											onclick={() => toggleAbsent(seat.applicationId)}
+										>
+											<UserX class="w-3 h-3" />
+											{isAbsent ? 'ขาด' : ''}
+										</Button>
+									</Table.Cell>
 									{#each subjects as sub, subIdx (sub.id)}
 										{@const isActive = activeSubjectIds.includes(sub.id)}
 										<Table.Cell
@@ -344,7 +385,7 @@
 												min="0"
 												max={sub.maxScore}
 												step="0.5"
-												disabled={!isActive}
+												disabled={!isActive || isAbsent}
 												bind:value={scores[seat.applicationId][sub.id]}
 												oninput={(e) => {
 													const val = parseFloat(e.currentTarget.value);
@@ -365,10 +406,23 @@
 						{/each}
 					{:else}
 						{#each applications as app, i (app.id)}
-							<Table.Row>
+							{@const isAbsent = absentIds.has(app.id)}
+							<Table.Row class={isAbsent ? 'opacity-50' : ''}>
 								<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
 								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-								<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
+								<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}">{app.fullName}</Table.Cell>
+								<Table.Cell class="text-center">
+									<Button
+										size="sm"
+										variant={isAbsent ? 'default' : 'ghost'}
+										class="h-7 text-xs gap-1 {isAbsent ? 'bg-red-600 hover:bg-red-700' : 'text-muted-foreground hover:text-red-600'}"
+										disabled={togglingAbsent[app.id]}
+										onclick={() => toggleAbsent(app.id)}
+									>
+										<UserX class="w-3 h-3" />
+										{isAbsent ? 'ขาด' : ''}
+									</Button>
+								</Table.Cell>
 								{#each subjects as sub, subIdx (sub.id)}
 									{@const isActive = activeSubjectIds.includes(sub.id)}
 									<Table.Cell
@@ -382,7 +436,7 @@
 											min="0"
 											max={sub.maxScore}
 											step="0.5"
-											disabled={!isActive}
+											disabled={!isActive || isAbsent}
 											bind:value={scores[app.id][sub.id]}
 											oninput={(e) => {
 												const val = parseFloat(e.currentTarget.value);

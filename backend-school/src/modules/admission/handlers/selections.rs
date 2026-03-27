@@ -171,7 +171,7 @@ pub async fn get_ranking(
             FROM admission_applications aa
             LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
             WHERE aa.admission_track_id = $2
-              AND aa.status NOT IN ('rejected', 'withdrawn')
+              AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
             GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
             ORDER BY total_score DESC, {}
             "#,
@@ -287,7 +287,7 @@ pub async fn get_track_ranking(
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         LEFT JOIN admission_tracks at_orig ON at_orig.id = aa.admission_track_id
         WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
-          AND aa.status NOT IN ('rejected', 'withdrawn')
+          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
         GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id
         ORDER BY selection_score DESC, total_score DESC, {}
         "#,
@@ -479,7 +479,7 @@ pub async fn assign_rooms(
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
-          AND aa.status NOT IN ('rejected', 'withdrawn')
+          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
         GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
         ORDER BY selection_score DESC, total_score DESC, {}
         "#,

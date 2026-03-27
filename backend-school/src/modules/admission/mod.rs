@@ -43,6 +43,7 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/applications/{id}/reject", put(handlers::applications::reject_application))
         .route("/applications/{id}/unverify", put(handlers::applications::unverify_application))
         .route("/applications/{id}/track", patch(handlers::applications::change_application_track))
+        .route("/applications/{id}/absent", put(handlers::applications::mark_absent))
 
         // === Scores ===
         .route("/rounds/{id}/scores", get(handlers::scores::get_all_scores))

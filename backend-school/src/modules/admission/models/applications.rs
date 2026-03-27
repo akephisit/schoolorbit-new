@@ -329,6 +329,12 @@ pub struct RejectApplicationRequest {
     pub rejection_reason: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkAbsentRequest {
+    pub absent: bool,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplicationListItem {
