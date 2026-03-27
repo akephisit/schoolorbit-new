@@ -239,7 +239,7 @@ export interface RankingEntry {
 export interface TrackRankingResult {
     trackId: string;
     trackName: string;
-    rooms: { roomId: string; roomName: string; capacity: number }[];
+    rooms: { roomId: string; roomName: string; capacity: number; studentCount: number; maleCount: number; femaleCount: number }[];
     applications: RankingEntry[];
 }
 

@@ -129,6 +129,7 @@ struct RankRowDetailed {
     is_track_overridden: Option<bool>,
     saved_room_id: Option<Uuid>,
     saved_room_name: Option<String>,
+    gender: Option<String>,
 }
 
 /// GET /api/admission/rounds/:id/ranking — เรียงคะแนนทุกสายในรอบ (Preview)
@@ -286,7 +287,8 @@ pub async fn get_track_ranking(
             at_orig.name AS original_track_name,
             aa.room_assignment_track_id IS NOT NULL AS is_track_overridden,
             ara.class_room_id AS saved_room_id,
-            cr_saved.name AS saved_room_name
+            cr_saved.name AS saved_room_name,
+            aa.gender
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         LEFT JOIN admission_tracks at_orig ON at_orig.id = aa.admission_track_id
@@ -294,7 +296,7 @@ pub async fn get_track_ranking(
         LEFT JOIN class_rooms cr_saved ON cr_saved.id = ara.class_room_id
         WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
           AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
-        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id, ara.class_room_id, cr_saved.name
+        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id, ara.class_room_id, cr_saved.name, aa.gender
         ORDER BY selection_score DESC, total_score DESC, {}
         "#,
         tiebreak_order
@@ -329,6 +331,9 @@ pub async fn get_track_ranking(
     let room_caps: Vec<i32> = rooms.iter().map(|r| r.capacity).collect();
     let room_slots = compute_room_assignments(accepted_sorted.len(), &room_caps, method);
 
+    // room_id (as string) → (total, male, female)
+    let mut room_stats: std::collections::HashMap<String, (i64, i64, i64)> = std::collections::HashMap::new();
+
     let accepted_json: Vec<serde_json::Value> = accepted_sorted
         .into_iter()
         .enumerate()
@@ -346,6 +351,17 @@ pub async fn get_track_ranking(
                 let (ri, _rir) = room_slots[final_i];
                 (json!(rooms[ri].room_name), json!(rooms[ri].room_id))
             };
+
+            // สะสม stats ต่อห้อง
+            if let serde_json::Value::String(rid) = &assigned_room_id {
+                let entry = room_stats.entry(rid.clone()).or_insert((0, 0, 0));
+                entry.0 += 1;
+                match row.gender.as_deref() {
+                    Some("male") | Some("ชาย") => entry.1 += 1,
+                    Some("female") | Some("หญิง") => entry.2 += 1,
+                    _ => {}
+                }
+            }
 
             let is_overridden = row.is_track_overridden.unwrap_or(false);
             json!({
@@ -397,11 +413,18 @@ pub async fn get_track_ranking(
         "data": {
             "trackId": track_id,
             "trackName": track_name,
-            "rooms": rooms.iter().map(|r| json!({
-                "roomId": r.room_id,
-                "roomName": r.room_name,
-                "capacity": r.capacity,
-            })).collect::<Vec<_>>(),
+            "rooms": rooms.iter().map(|r| {
+                let key = r.room_id.to_string();
+                let (total, male, female) = room_stats.get(&key).copied().unwrap_or((0, 0, 0));
+                json!({
+                    "roomId": r.room_id,
+                    "roomName": r.room_name,
+                    "capacity": r.capacity,
+                    "studentCount": total,
+                    "maleCount": male,
+                    "femaleCount": female,
+                })
+            }).collect::<Vec<_>>(),
             "applications": all_apps,
         }
     })).into_response())

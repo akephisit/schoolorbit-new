@@ -377,9 +377,19 @@
 			<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 				{#each ranking.rooms as room (room.roomId)}
 					<Card.Root>
-						<Card.Content class="pt-4 pb-4 text-center">
+						<Card.Content class="pt-3 pb-3 text-center space-y-1">
 							<p class="font-semibold">{room.roomName}</p>
-							<p class="text-xs text-muted-foreground">รับ {room.capacity} คน</p>
+							{#if room.studentCount > 0}
+								<p class="text-sm font-medium">{room.studentCount} / {room.capacity} คน</p>
+								<p class="text-xs text-muted-foreground">
+									ชาย {room.maleCount} · หญิง {room.femaleCount}
+									{#if room.studentCount - room.maleCount - room.femaleCount > 0}
+										· ไม่ระบุ {room.studentCount - room.maleCount - room.femaleCount}
+									{/if}
+								</p>
+							{:else}
+								<p class="text-xs text-muted-foreground">รับ {room.capacity} คน</p>
+							{/if}
 						</Card.Content>
 					</Card.Root>
 				{/each}
