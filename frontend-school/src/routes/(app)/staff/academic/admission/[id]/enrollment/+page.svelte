@@ -24,6 +24,7 @@
 		status: string;
 		studentConfirmed?: boolean;
 		preSubmitted: boolean;
+		assignedStudentId?: string;
 	}
 
 	let { data, params }: PageProps = $props();
@@ -219,6 +220,7 @@
 										size="sm"
 										onclick={() => {
 											enrollingApp = app;
+											studentCode = app.assignedStudentId ?? '';
 											showEnrollDialog = true;
 										}}
 										class="gap-1 h-7 text-xs"
@@ -263,6 +265,9 @@
 					bind:value={studentCode}
 					placeholder="ระบบจะสร้างให้อัตโนมัติถ้าว่าง"
 				/>
+				{#if enrollingApp?.assignedStudentId}
+					<p class="text-xs text-blue-600">กำหนดไว้ล่วงหน้า: <span class="font-semibold">{enrollingApp.assignedStudentId}</span></p>
+				{/if}
 			</div>
 			<div class="text-xs text-muted-foreground bg-muted rounded p-2 space-y-0.5">
 				<p>• Username และ Password เริ่มต้น: รหัสนักเรียน (ที่กรอกด้านบน หรือที่ระบบสร้างให้)</p>

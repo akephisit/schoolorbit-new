@@ -731,6 +731,7 @@ pub async fn list_enrollment_pending(
         status: String,
         student_confirmed: Option<bool>,
         pre_submitted: bool,
+        assigned_student_id: Option<String>,
     }
 
     let list = sqlx::query_as::<_, EnrollmentPendingRow>(
@@ -744,7 +745,8 @@ pub async fn list_enrollment_pending(
             cr.name AS room_name,
             aa.status,
             ara.student_confirmed,
-            (aef.id IS NOT NULL AND aef.pre_submitted_at IS NOT NULL) AS pre_submitted
+            (aef.id IS NOT NULL AND aef.pre_submitted_at IS NOT NULL) AS pre_submitted,
+            aa.assigned_student_id
         FROM admission_applications aa
         LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
         LEFT JOIN admission_room_assignments ara ON aa.id = ara.application_id
