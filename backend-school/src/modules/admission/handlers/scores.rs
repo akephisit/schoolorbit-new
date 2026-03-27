@@ -210,67 +210,65 @@ pub async fn bulk_update_scores(
         Err(r) => return Ok(r),
     };
 
-    let mut tx = pool.begin().await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
-
-    let mut updated = 0usize;
+    // สร้าง batch INSERT ด้วย UNNEST แทนการ INSERT ทีละแถว
+    let mut app_ids: Vec<Uuid> = Vec::new();
+    let mut sub_ids: Vec<Uuid> = Vec::new();
+    let mut score_vals: Vec<Option<f64>> = Vec::new();
 
     for entry in &payload.entries {
         for score in &entry.scores {
-            sqlx::query(
-                r#"
-                INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
-                VALUES ($1, $2, $3, $4, NOW(), NOW())
-                ON CONFLICT (application_id, exam_subject_id)
-                DO UPDATE SET score = $3, entered_by = $4, updated_at = NOW()
-                "#
-            )
-            .bind(entry.application_id)
-            .bind(score.exam_subject_id)
-            .bind(score.score)
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                eprintln!("Bulk score error: {}", e);
-                AppError::InternalServerError("Failed to bulk update scores".to_string())
-            })?;
-
-            updated += 1;
+            app_ids.push(entry.application_id);
+            sub_ids.push(score.exam_subject_id);
+            score_vals.push(score.score);
         }
     }
 
-    tx.commit().await
-        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    let updated = app_ids.len();
 
-    // อัปเดต status เป็น 'scored' สำหรับ application ที่กรอกครบ
-    for entry in &payload.entries {
-        let total_subjects: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = $1"
+    if updated > 0 {
+        sqlx::query(
+            r#"
+            INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
+            SELECT a, s, sc, $4, NOW(), NOW()
+            FROM UNNEST($1::uuid[], $2::uuid[], $3::float8[]) AS t(a, s, sc)
+            ON CONFLICT (application_id, exam_subject_id)
+            DO UPDATE SET score = EXCLUDED.score, entered_by = EXCLUDED.entered_by, updated_at = NOW()
+            "#
         )
-        .bind(round_id)
-        .fetch_one(&pool)
+        .bind(&app_ids)
+        .bind(&sub_ids)
+        .bind(&score_vals)
+        .bind(user_id)
+        .execute(&pool)
         .await
-        .unwrap_or(0);
-
-        let scored_subjects: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM admission_exam_scores WHERE application_id = $1 AND score IS NOT NULL"
-        )
-        .bind(entry.application_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(0);
-
-        if total_subjects > 0 && scored_subjects >= total_subjects {
-            sqlx::query(
-                "UPDATE admission_applications SET status = 'scored', updated_at = NOW() WHERE id = $1 AND status = 'verified'"
-            )
-            .bind(entry.application_id)
-            .execute(&pool)
-            .await
-            .ok();
-        }
+        .map_err(|e| {
+            eprintln!("Bulk score error: {}", e);
+            AppError::InternalServerError("Failed to bulk update scores".to_string())
+        })?;
     }
+
+    // อัปเดต status เป็น 'scored' — batch query เดียว
+    let app_id_set: Vec<Uuid> = payload.entries.iter().map(|e| e.application_id).collect();
+    sqlx::query(
+        r#"
+        UPDATE admission_applications aa
+        SET status = 'scored', updated_at = NOW()
+        WHERE aa.id = ANY($1)
+          AND aa.status = 'verified'
+          AND (
+              SELECT COUNT(*) FROM admission_exam_scores esc
+              WHERE esc.application_id = aa.id AND esc.score IS NOT NULL
+          ) >= (
+              SELECT COUNT(*) FROM admission_exam_subjects
+              WHERE admission_round_id = $2
+          )
+        "#
+    )
+    .bind(&app_id_set)
+    .bind(round_id)
+    .execute(&pool)
+    .await
+    .ok();
 
     Ok(Json(json!({
         "success": true,
