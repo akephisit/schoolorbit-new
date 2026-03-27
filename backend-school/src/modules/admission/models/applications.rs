@@ -475,6 +475,13 @@ pub struct ChangeTrackRequest {
     pub track_id: Option<Uuid>,
 }
 
+/// Request สำหรับย้ายห้องเรียนทีละคน
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveRoomRequest {
+    pub room_id: Uuid,
+}
+
 // ==========================================
 // Enrollment Form Models
 // ==========================================

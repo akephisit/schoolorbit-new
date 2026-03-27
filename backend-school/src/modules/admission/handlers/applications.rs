@@ -1343,6 +1343,56 @@ pub async fn list_student_ids(
     Ok(Json(json!({ "success": true, "data": rows })).into_response())
 }
 
+/// PATCH /applications/:id/room — ย้ายห้องเรียนทีละคน (หลัง assign แล้ว)
+pub async fn move_application_room(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<MoveRoomRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    // ตรวจว่ามี record ใน admission_room_assignments ก่อน
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM admission_room_assignments WHERE application_id = $1)"
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !exists {
+        return Err(AppError::BadRequest("ยังไม่มีการจัดห้อง กรุณาบันทึกการจัดห้องก่อน".to_string()));
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE admission_room_assignments
+        SET class_room_id = $1,
+            rank_in_room = (
+                SELECT COALESCE(MAX(rank_in_room), 0) + 1
+                FROM admission_room_assignments
+                WHERE class_room_id = $1 AND application_id != $2
+            ),
+            assigned_at = NOW()
+        WHERE application_id = $2
+        "#
+    )
+    .bind(payload.room_id)
+    .bind(id)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("move_application_room error: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?;
+
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
 pub async fn batch_update_student_ids(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -127,6 +127,8 @@ struct RankRowDetailed {
     total_score: Option<f64>,
     original_track_name: Option<String>,
     is_track_overridden: Option<bool>,
+    saved_room_id: Option<Uuid>,
+    saved_room_name: Option<String>,
 }
 
 /// GET /api/admission/rounds/:id/ranking — เรียงคะแนนทุกสายในรอบ (Preview)
@@ -282,13 +284,17 @@ pub async fn get_track_ranking(
             COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1) THEN esc.score ELSE 0 END), 0) AS selection_score,
             COALESCE(SUM(esc.score), 0) AS total_score,
             at_orig.name AS original_track_name,
-            aa.room_assignment_track_id IS NOT NULL AS is_track_overridden
+            aa.room_assignment_track_id IS NOT NULL AS is_track_overridden,
+            ara.class_room_id AS saved_room_id,
+            cr_saved.name AS saved_room_name
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         LEFT JOIN admission_tracks at_orig ON at_orig.id = aa.admission_track_id
+        LEFT JOIN admission_room_assignments ara ON ara.application_id = aa.id
+        LEFT JOIN class_rooms cr_saved ON cr_saved.id = ara.class_room_id
         WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
           AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
-        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id
+        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id, ara.class_room_id, cr_saved.name
         ORDER BY selection_score DESC, total_score DESC, {}
         "#,
         tiebreak_order
@@ -330,7 +336,10 @@ pub async fn get_track_ranking(
             let final_rank = (final_i + 1) as i64;
             let selection_rank = (sel_i + 1) as i64;
 
-            let (assigned_room, assigned_room_id) = if rooms.is_empty() {
+            let (assigned_room, assigned_room_id) = if let (Some(name), Some(id)) = (&row.saved_room_name, &row.saved_room_id) {
+                // มี record ใน DB → ใช้ห้องที่บันทึกไว้ (รวมที่ย้ายมือ)
+                (json!(name), json!(id))
+            } else if rooms.is_empty() {
                 (serde_json::Value::Null, serde_json::Value::Null)
             } else {
                 let (ri, _rir) = room_slots[final_i];

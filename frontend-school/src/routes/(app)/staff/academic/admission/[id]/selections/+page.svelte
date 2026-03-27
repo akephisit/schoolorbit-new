@@ -9,6 +9,7 @@
 		assignRooms,
 		changeApplicationTrack,
 		updateSelectionSettings,
+		moveApplicationRoom,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
@@ -45,6 +46,8 @@
 	let assigned = $state(false);
 	let moveTargetTrackId: Record<string, string> = $state({});
 	let moving: Record<string, boolean> = $state({});
+	let moveTargetRoomId: Record<string, string> = $state({});
+	let movingRoom: Record<string, boolean> = $state({});
 	let showAssignDialog = $state(false);
 	let showAssignAllDialog = $state(false);
 	let assigningAll = $state(false);
@@ -174,6 +177,32 @@
 			toast.error(e instanceof Error ? e.message : 'ย้อนกลับไม่สำเร็จ');
 		} finally {
 			reverting = { ...reverting, [appId]: false };
+		}
+	}
+
+	async function moveRoom(appId: string) {
+		const targetRoomId = moveTargetRoomId[appId];
+		if (!targetRoomId) return;
+		movingRoom = { ...movingRoom, [appId]: true };
+		try {
+			await moveApplicationRoom(appId, targetRoomId);
+			const roomName = ranking?.rooms.find((r) => r.roomId === targetRoomId)?.roomName;
+			if (ranking) {
+				ranking = {
+					...ranking,
+					applications: ranking.applications.map((a) =>
+						a.applicationId === appId
+							? { ...a, assignedRoom: roomName ?? null, assignedRoomId: targetRoomId }
+							: a
+					)
+				};
+			}
+			moveTargetRoomId = { ...moveTargetRoomId, [appId]: '' };
+			toast.success('ย้ายห้องสำเร็จ');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ย้ายห้องไม่สำเร็จ');
+		} finally {
+			movingRoom = { ...movingRoom, [appId]: false };
 		}
 	}
 
@@ -415,7 +444,41 @@
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-center">
-								{#if app.assignedRoom}
+								{#if ranking?.rooms && ranking.rooms.length > 0 && app.assignedRoom}
+									<div class="flex items-center justify-center gap-1.5 flex-wrap">
+										<Badge variant="outline">{app.assignedRoom}</Badge>
+										<Select.Root
+											type="single"
+											value={moveTargetRoomId[app.applicationId] ?? ''}
+											onValueChange={(v) => {
+												moveTargetRoomId = { ...moveTargetRoomId, [app.applicationId]: v };
+											}}
+										>
+											<Select.Trigger class="h-6 text-xs w-20 px-2">
+												{ranking.rooms.find((r) => r.roomId === moveTargetRoomId[app.applicationId])?.roomName ?? 'ย้าย'}
+											</Select.Trigger>
+											<Select.Content>
+												{#each ranking.rooms.filter((r) => r.roomName !== app.assignedRoom) as room (room.roomId)}
+													<Select.Item value={room.roomId}>{room.roomName}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+										{#if moveTargetRoomId[app.applicationId]}
+											<Button
+												size="sm"
+												class="h-6 text-xs px-2"
+												disabled={movingRoom[app.applicationId]}
+												onclick={() => moveRoom(app.applicationId)}
+											>
+												{#if movingRoom[app.applicationId]}
+													<LoaderCircle class="w-3 h-3 animate-spin" />
+												{:else}
+													ย้าย
+												{/if}
+											</Button>
+										{/if}
+									</div>
+								{:else if app.assignedRoom}
 									<Badge variant="outline">{app.assignedRoom}</Badge>
 								{:else}
 									<span class="text-xs text-muted-foreground">ยังไม่จัดห้อง</span>
@@ -589,7 +652,9 @@
 		<Dialog.Header>
 			<Dialog.Title>ยืนยันการจัดห้อง</Dialog.Title>
 			<Dialog.Description>
-				การดำเนินการนี้จะลบผลจัดห้องเดิมและจัดใหม่ทั้งหมด ต้องการดำเนินการต่อหรือไม่?
+				การดำเนินการนี้จะลบผลจัดห้องเดิมและจัดใหม่ทั้งหมด
+				<strong class="text-orange-600">รวมถึงการย้ายห้องที่ปรับด้วยมือ</strong>
+				ต้องการดำเนินการต่อหรือไม่?
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer class="flex-col sm:flex-row gap-2">
@@ -605,7 +670,9 @@
 			<Dialog.Title>ยืนยันการจัดห้องทุกสาย</Dialog.Title>
 			<Dialog.Description>
 				จะจัดห้องให้ทุกสาย ({tracks.length} สาย) พร้อมกัน แต่ละสายใช้วิชาและวิธีจัดห้องของตัวเอง
-				ผลจัดห้องเดิมของทุกสายจะถูกแทนที่ ต้องการดำเนินการต่อหรือไม่?
+				ผลจัดห้องเดิมของทุกสายจะถูกแทนที่
+				<strong class="text-orange-600">รวมถึงการย้ายห้องที่ปรับด้วยมือ</strong>
+				ต้องการดำเนินการต่อหรือไม่?
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer class="flex-col sm:flex-row gap-2">

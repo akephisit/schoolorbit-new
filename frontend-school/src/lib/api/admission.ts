@@ -515,6 +515,11 @@ export async function markAbsent(applicationId: string, absent: boolean) {
     if (!res.success) throw new Error(res.error);
 }
 
+export async function moveApplicationRoom(applicationId: string, roomId: string) {
+    const res = await apiClient.patch(`/api/admission/applications/${applicationId}/room`, { roomId });
+    if (!res.success) throw new Error(res.error);
+}
+
 export async function updateSelectionSettings(
     roundId: string,
     settings: { subjectsByTrack?: Record<string, string[]>; methodByTrack?: Record<string, string>; roomAssignmentMethod?: string }
