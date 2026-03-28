@@ -310,7 +310,7 @@
 					<div class="flex items-start justify-between">
 						<div>
 							<p class="text-xs text-gray-400 uppercase tracking-wide">ผู้สมัคร</p>
-							<p class="text-xl font-bold text-gray-900">{[app.title, app.firstName, app.lastName].filter(Boolean).join(' ')}</p>
+							<p class="text-xl font-bold text-gray-900">{(app.title ?? '') + app.firstName} {app.lastName}</p>
 							<p class="text-sm text-gray-500">
 								ใบสมัคร: <span class="font-mono font-semibold">{app.applicationNumber}</span>
 							</p>
