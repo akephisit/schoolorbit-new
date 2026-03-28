@@ -18,6 +18,7 @@
 		updateRoundVisibility,
 		updateRound,
 		deleteRound,
+		updateSelectionSettings,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
@@ -132,6 +133,7 @@
 	};
 
 	let togglingVisibility = $state(false);
+	let togglingShowScores = $state(false);
 
 	async function handleVisibilityToggle() {
 		if (!round) return;
@@ -144,6 +146,21 @@
 			toast.error(e instanceof Error ? e.message : 'อัปเดตไม่สำเร็จ');
 		} finally {
 			togglingVisibility = false;
+		}
+	}
+
+	async function handleShowScoresToggle() {
+		if (!round) return;
+		togglingShowScores = true;
+		const current = round.selectionSettings?.showScores ?? false;
+		try {
+			await updateSelectionSettings(round.id, { showScores: !current });
+			toast.success(!current ? 'เปิดแสดงคะแนนบน portal แล้ว' : 'ซ่อนคะแนนบน portal แล้ว');
+			await load();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'อัปเดตไม่สำเร็จ');
+		} finally {
+			togglingShowScores = false;
 		}
 	}
 
@@ -473,6 +490,33 @@
 							<Check class="w-3 h-3" />
 						{/if}
 						{round.isVisible ? 'แสดงอยู่' : 'ซ่อนอยู่'}
+					</Button>
+				</div>
+
+				<!-- Show Scores Toggle -->
+				{@const showScores = round.selectionSettings?.showScores ?? false}
+				<div class="flex items-center justify-between py-1">
+					<div>
+						<p class="text-sm font-medium">แสดงคะแนนบน portal นักเรียน</p>
+						<p class="text-xs text-muted-foreground">
+							{showScores
+								? 'นักเรียนเห็นคะแนนสอบของตัวเองบน portal'
+								: 'ซ่อนคะแนน — นักเรียนไม่เห็นคะแนน'}
+						</p>
+					</div>
+					<Button
+						variant={showScores ? 'default' : 'outline'}
+						size="sm"
+						disabled={togglingShowScores}
+						onclick={handleShowScoresToggle}
+						class="shrink-0 gap-1.5"
+					>
+						{#if togglingShowScores}
+							<Loader2 class="w-3 h-3 animate-spin" />
+						{:else if showScores}
+							<Check class="w-3 h-3" />
+						{/if}
+						{showScores ? 'แสดงอยู่' : 'ซ่อนอยู่'}
 					</Button>
 				</div>
 

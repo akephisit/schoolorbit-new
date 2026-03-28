@@ -35,7 +35,7 @@ export interface AdmissionRound {
     gradeLevelName?: string;
     applicationCount?: number;
     reportConfig?: ReportConfig;
-    selectionSettings?: { subjectsByTrack?: Record<string, string[]>; methodByTrack?: Record<string, string>; method: string; assignmentMode?: 'per_track' | 'global' };
+    selectionSettings?: { subjectsByTrack?: Record<string, string[]>; methodByTrack?: Record<string, string>; method: string; assignmentMode?: 'per_track' | 'global'; showScores?: boolean };
 }
 
 export interface AdmissionTrack {
@@ -598,7 +598,7 @@ export async function autoAssignStudentIds(roundId: string, startNumber: number)
 
 export async function updateSelectionSettings(
     roundId: string,
-    settings: { subjectsByTrack?: Record<string, string[]>; methodByTrack?: Record<string, string>; roomAssignmentMethod?: string; assignmentMode?: string }
+    settings: { subjectsByTrack?: Record<string, string[]>; methodByTrack?: Record<string, string>; roomAssignmentMethod?: string; assignmentMode?: string; showScores?: boolean }
 ) {
     const res = await apiClient.patch(`/api/admission/rounds/${roundId}/selection-settings`, settings);
     if (!res.success) throw new Error(res.error);

@@ -1111,6 +1111,9 @@ pub async fn update_selection_settings(
     if let Some(mode) = payload.assignment_mode {
         settings["assignmentMode"] = serde_json::json!(mode);
     }
+    if let Some(show) = payload.show_scores {
+        settings["showScores"] = serde_json::json!(show);
+    }
 
     sqlx::query(
         "UPDATE admission_rounds SET selection_settings = COALESCE(selection_settings, '{}'::jsonb) || $1, updated_at = NOW() WHERE id = $2"

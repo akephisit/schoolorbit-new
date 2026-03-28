@@ -156,7 +156,20 @@ pub async fn get_status(
         return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
     }
 
-    let show_scores     = ["announced", "enrolling", "closed"].contains(&round_status.as_str());
+    let selection_settings: Option<serde_json::Value> = sqlx::query_scalar(
+        "SELECT selection_settings FROM admission_rounds WHERE id = (SELECT admission_round_id FROM admission_applications WHERE id = $1)"
+    )
+    .bind(application_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None)
+    .flatten();
+
+    let show_scores = selection_settings
+        .as_ref()
+        .and_then(|s| s.get("showScores"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let show_assignment = ["announced", "enrolling", "closed"].contains(&round_status.as_str());
     let show_form       = ["enrolling", "closed"].contains(&round_status.as_str());
 

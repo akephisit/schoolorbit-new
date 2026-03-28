@@ -81,6 +81,8 @@ pub struct UpdateSelectionSettingsRequest {
     pub room_assignment_method: Option<String>,
     /// "per_track" (default) หรือ "global"
     pub assignment_mode: Option<String>,
+    /// แสดงคะแนนบน portal ผู้สมัคร
+    pub show_scores: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
