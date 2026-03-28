@@ -359,6 +359,7 @@
 					<Table.Head class="w-10">#</Table.Head>
 					<Table.Head>ชื่อ-สกุล</Table.Head>
 					<Table.Head>เลขที่สมัคร</Table.Head>
+					<Table.Head>สายการเรียน</Table.Head>
 					<Table.Head>โรงเรียนเดิม</Table.Head>
 					<Table.Head>ห้องที่ได้</Table.Head>
 					<Table.Head class="w-16 text-center">อันดับ</Table.Head>
@@ -369,13 +370,13 @@
 			<Table.Body>
 				{#if loading}
 					<Table.Row>
-						<Table.Cell colspan={8} class="text-center text-muted-foreground py-8">
+						<Table.Cell colspan={9} class="text-center text-muted-foreground py-8">
 							กำลังโหลด...
 						</Table.Cell>
 					</Table.Row>
 				{:else if filteredEntries().length === 0}
 					<Table.Row>
-						<Table.Cell colspan={8} class="text-center text-muted-foreground py-8">
+						<Table.Cell colspan={9} class="text-center text-muted-foreground py-8">
 							{entries.length === 0 ? 'ไม่มีนักเรียนที่ผ่านการคัดเลือก' : 'ไม่พบนักเรียนจากโรงเรียนที่ค้นหา'}
 						</Table.Cell>
 					</Table.Row>
@@ -388,6 +389,15 @@
 							<Table.Cell class="font-medium">{entry.fullName}</Table.Cell>
 							<Table.Cell class="text-sm text-muted-foreground">
 								{entry.applicationNumber ?? '-'}
+							</Table.Cell>
+							<Table.Cell class="text-sm">
+								{#if entry.assignedTrackName}
+									<span class="text-muted-foreground line-through text-xs">{entry.originalTrackName ?? '-'}</span>
+									<br />
+									<span class="font-medium">{entry.assignedTrackName}</span>
+								{:else}
+									{entry.originalTrackName ?? '-'}
+								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-sm text-muted-foreground max-w-[160px] truncate">
 								{entry.previousSchool ?? '-'}

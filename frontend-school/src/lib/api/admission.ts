@@ -1043,6 +1043,8 @@ export interface StudentIdEntry {
     roomName?: string;
     rankInRoom?: number;
     previousSchool?: string;
+    originalTrackName?: string;
+    assignedTrackName?: string;
 }
 
 export async function listStudentIds(roundId: string): Promise<{ data: StudentIdEntry[] }> {

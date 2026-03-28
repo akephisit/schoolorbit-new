@@ -651,6 +651,8 @@ pub struct StudentIdRow {
     pub room_name: Option<String>,
     pub rank_in_room: Option<i32>,
     pub previous_school: Option<String>,
+    pub original_track_name: Option<String>,
+    pub assigned_track_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

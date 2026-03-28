@@ -1489,13 +1489,21 @@ pub async fn list_student_ids(
             a.id AS application_id,
             a.application_number,
             a.assigned_student_id,
-            concat(a.first_name, ' ', a.last_name) AS full_name,
+            CONCAT(COALESCE(a.title, ''), a.first_name, ' ', a.last_name) AS full_name,
             cr.name AS room_name,
             ra.rank_in_room,
-            a.previous_school
+            a.previous_school,
+            at_orig.name AS original_track_name,
+            CASE WHEN a.room_assignment_track_id IS NOT NULL
+                      AND a.room_assignment_track_id != a.admission_track_id
+                 THEN at_assigned.name
+                 ELSE NULL
+            END AS assigned_track_name
         FROM admission_applications a
         JOIN admission_room_assignments ra ON ra.application_id = a.id
         LEFT JOIN class_rooms cr ON ra.class_room_id = cr.id
+        LEFT JOIN admission_tracks at_orig ON at_orig.id = a.admission_track_id
+        LEFT JOIN admission_tracks at_assigned ON at_assigned.id = a.room_assignment_track_id
         WHERE a.admission_round_id = $1
           AND a.status IN ('accepted', 'enrolled')
         ORDER BY cr.name, ra.rank_in_room
