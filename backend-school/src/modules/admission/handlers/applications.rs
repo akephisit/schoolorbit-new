@@ -1490,6 +1490,7 @@ pub async fn list_student_ids(
             CONCAT(COALESCE(a.title, ''), a.first_name, ' ', a.last_name) AS full_name,
             cr.name AS room_name,
             ra.rank_in_room,
+            ra.rank_in_track,
             a.previous_school,
             at_orig.name AS original_track_name,
             CASE WHEN a.room_assignment_track_id IS NOT NULL

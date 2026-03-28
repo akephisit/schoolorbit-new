@@ -15,6 +15,7 @@
 	let id = $derived(params.id);
 
 	let roundName = $state('');
+	let assignmentMode = $state<'per_track' | 'global' | undefined>(undefined);
 	let entries: StudentIdEntry[] = $state([]);
 	let loading = $state(true);
 	let saving = $state(false);
@@ -36,6 +37,7 @@
 				listStudentIds(id)
 			]);
 			roundName = roundRes.name ?? '';
+			assignmentMode = roundRes.selectionSettings?.assignmentMode;
 			entries = listRes.data;
 			// Seed edits with existing assigned values
 			const init: Record<string, string> = {};
@@ -362,7 +364,8 @@
 					<Table.Head>สายการเรียน</Table.Head>
 					<Table.Head>โรงเรียนเดิม</Table.Head>
 					<Table.Head>ห้องที่ได้</Table.Head>
-					<Table.Head class="w-16 text-center">อันดับ</Table.Head>
+					<Table.Head class="w-16 text-center">เลขที่</Table.Head>
+					<Table.Head class="w-20 text-center">{assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย'}</Table.Head>
 					<Table.Head class="w-44">เลขประจำตัว</Table.Head>
 					<Table.Head class="w-8"></Table.Head>
 				</Table.Row>
@@ -370,13 +373,13 @@
 			<Table.Body>
 				{#if loading}
 					<Table.Row>
-						<Table.Cell colspan={9} class="text-center text-muted-foreground py-8">
+						<Table.Cell colspan={10} class="text-center text-muted-foreground py-8">
 							กำลังโหลด...
 						</Table.Cell>
 					</Table.Row>
 				{:else if filteredEntries().length === 0}
 					<Table.Row>
-						<Table.Cell colspan={9} class="text-center text-muted-foreground py-8">
+						<Table.Cell colspan={10} class="text-center text-muted-foreground py-8">
 							{entries.length === 0 ? 'ไม่มีนักเรียนที่ผ่านการคัดเลือก' : 'ไม่พบนักเรียนจากโรงเรียนที่ค้นหา'}
 						</Table.Cell>
 					</Table.Row>
@@ -411,6 +414,9 @@
 							</Table.Cell>
 							<Table.Cell class="text-center text-sm">
 								{entry.rankInRoom ?? '-'}
+							</Table.Cell>
+							<Table.Cell class="text-center text-sm">
+								{entry.rankInTrack ?? '-'}
 							</Table.Cell>
 							<Table.Cell>
 								<Input

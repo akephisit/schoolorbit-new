@@ -1042,6 +1042,7 @@ export interface StudentIdEntry {
     assignedStudentId?: string;
     roomName?: string;
     rankInRoom?: number;
+    rankInTrack?: number;
     previousSchool?: string;
     originalTrackName?: string;
     assignedTrackName?: string;
