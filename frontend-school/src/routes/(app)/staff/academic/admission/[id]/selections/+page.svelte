@@ -262,13 +262,26 @@
 
 	async function moveRoomGlobal(appId: string) {
 		const targetRoomId = moveTargetRoomId[appId];
-		if (!targetRoomId) return;
+		if (!targetRoomId || !globalRanking) return;
 		movingRoom = { ...movingRoom, [appId]: true };
 		try {
 			await moveApplicationRoom(appId, targetRoomId);
 			moveTargetRoomId = { ...moveTargetRoomId, [appId]: '' };
 			toast.success('ย้ายห้องสำเร็จ');
-			await loadGlobalRanking();
+			// optimistic update — ไม่ต้อง fetch ใหม่
+			const targetRoom = roomOrderForGlobal.find((r) => r.roomId === targetRoomId);
+			const apps = globalRanking.applications.map((a) =>
+				a.applicationId === appId
+					? { ...a, assignedRoomId: targetRoomId, assignedRoom: targetRoom?.roomName ?? targetRoomId }
+					: a
+			);
+			const oldRoomId = globalRanking.applications.find((a) => a.applicationId === appId)?.assignedRoomId;
+			const rooms = globalRanking.rooms.map((r) => {
+				if (r.roomId === oldRoomId) return { ...r, studentCount: Math.max(0, r.studentCount - 1) };
+				if (r.roomId === targetRoomId) return { ...r, studentCount: r.studentCount + 1 };
+				return r;
+			});
+			globalRanking = { ...globalRanking, applications: apps, rooms };
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ย้ายห้องไม่สำเร็จ');
 		} finally {
@@ -310,13 +323,26 @@
 
 	async function moveRoom(appId: string) {
 		const targetRoomId = moveTargetRoomId[appId];
-		if (!targetRoomId) return;
+		if (!targetRoomId || !ranking) return;
 		movingRoom = { ...movingRoom, [appId]: true };
 		try {
 			await moveApplicationRoom(appId, targetRoomId);
 			moveTargetRoomId = { ...moveTargetRoomId, [appId]: '' };
 			toast.success('ย้ายห้องสำเร็จ');
-			await loadRanking();
+			// optimistic update — ไม่ต้อง fetch ใหม่
+			const targetRoom = ranking.rooms.find((r) => r.roomId === targetRoomId);
+			const apps = ranking.applications.map((a) =>
+				a.applicationId === appId
+					? { ...a, assignedRoomId: targetRoomId, assignedRoom: targetRoom?.roomName ?? targetRoomId }
+					: a
+			);
+			const oldRoomId = ranking.applications.find((a) => a.applicationId === appId)?.assignedRoomId;
+			const rooms = ranking.rooms.map((r) => {
+				if (r.roomId === oldRoomId) return { ...r, studentCount: Math.max(0, r.studentCount - 1) };
+				if (r.roomId === targetRoomId) return { ...r, studentCount: r.studentCount + 1 };
+				return r;
+			});
+			ranking = { ...ranking, applications: apps, rooms };
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ย้ายห้องไม่สำเร็จ');
 		} finally {
