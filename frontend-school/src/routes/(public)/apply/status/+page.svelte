@@ -72,6 +72,7 @@
 			id: string;
 			admissionRoundId: string;
 			applicationNumber?: string;
+			title?: string;
 			firstName: string;
 			lastName: string;
 			status: string;
@@ -308,7 +309,7 @@
 					<div class="flex items-start justify-between">
 						<div>
 							<p class="text-xs text-gray-400 uppercase tracking-wide">ผู้สมัคร</p>
-							<p class="text-xl font-bold text-gray-900">{app.firstName} {app.lastName}</p>
+							<p class="text-xl font-bold text-gray-900">{[app.title, app.firstName, app.lastName].filter(Boolean).join(' ')}</p>
 							<p class="text-sm text-gray-500">
 								ใบสมัคร: <span class="font-mono font-semibold">{app.applicationNumber}</span>
 							</p>
@@ -366,6 +367,9 @@
 								<GraduationCap class="w-4 h-4" />
 								ผลการคัดเลือก
 							</p>
+							{#if app?.trackName}
+								<p class="text-sm text-green-700">สายการเรียน: <span class="font-semibold">{app.trackName}</span></p>
+							{/if}
 							<div class="grid grid-cols-3 gap-3 text-center">
 								<div>
 									<p class="text-2xl font-bold text-green-700">{assignment.rankInTrack ?? '-'}</p>
