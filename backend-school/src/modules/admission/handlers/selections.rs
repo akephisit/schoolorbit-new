@@ -312,12 +312,17 @@ pub async fn get_track_ranking(
     // Two-pass ranking
     let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
 
-    // แบ่ง accepted / overflow ตาม selection_rank (pass 1)
+    // แบ่ง accepted / overflow
+    // ถ้ามีการจัดห้องบันทึกไว้แล้ว (any_saved) → ใช้ saved_room_id เป็นตัวตัดสิน
+    // ถ้ายังไม่มี → ใช้ algorithmic preview ตาม capacity ของสายนี้
     let capacity_usize = if total_capacity > 0 { total_capacity as usize } else { usize::MAX };
+    let any_saved = rows.iter().any(|r| r.saved_room_id.is_some());
     let (accepted_rows, overflow_rows): (Vec<_>, Vec<_>) = rows
         .into_iter()
         .enumerate()
-        .partition(|(i, _)| *i < capacity_usize);
+        .partition(|(i, r)| {
+            if any_saved { r.saved_room_id.is_some() } else { *i < capacity_usize }
+        });
 
     // Pass 2: เรียง accepted ด้วย total_score DESC → assign ห้อง
     let mut accepted_sorted: Vec<(usize, RankRowDetailed)> = accepted_rows;
