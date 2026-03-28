@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { PageProps } from './$types';
-	import { getRound, listStudentIds, batchUpdateStudentIds, sortRoomStudents, autoAssignStudentIds, type StudentIdEntry } from '$lib/api/admission';
+	import { getRound, listStudentIds, batchUpdateStudentIds, sortRoomStudents, type StudentIdEntry } from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -9,7 +9,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Hash, Save, Wand2, X, AlertTriangle, School, FileSpreadsheet, ArrowUpDown, LoaderCircle } from 'lucide-svelte';
+	import { ArrowLeft, Save, Wand2, X, AlertTriangle, School, FileSpreadsheet, ArrowUpDown, LoaderCircle } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -25,8 +25,6 @@
 
 	let startNumber = $state('1');
 	let sorting = $state(false);
-	let autoAssigning = $state(false);
-
 	// School filter
 	let schoolFilter = $state('');
 
@@ -105,31 +103,6 @@
 			toast.error(e instanceof Error ? e.message : 'จัดเรียงไม่สำเร็จ');
 		} finally {
 			sorting = false;
-		}
-	}
-
-	async function handleAutoAssign() {
-		const start = parseInt(startNumber, 10);
-		if (isNaN(start) || start < 1) {
-			toast.error('กรุณากรอกเลขเริ่มต้นที่ถูกต้อง');
-			return;
-		}
-		autoAssigning = true;
-		try {
-			const res = await autoAssignStudentIds(id, start);
-			toast.success(`กำหนดเลขสำเร็จ ${res.assigned} คน`);
-			// reload
-			const listRes = await listStudentIds(id);
-			entries = listRes.data;
-			const newEdits: Record<string, string> = {};
-			for (const e of listRes.data) {
-				newEdits[e.applicationId] = e.assignedStudentId ?? '';
-			}
-			edits = newEdits;
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'กำหนดเลขไม่สำเร็จ');
-		} finally {
-			autoAssigning = false;
 		}
 	}
 
@@ -318,18 +291,6 @@
 				<Button variant="outline" size="sm" class="gap-1.5 h-8" onclick={autoFill}>
 					<Wand2 class="w-3.5 h-3.5" />
 					{schoolFilter.trim() ? 'Auto-fill ที่กรอง' : 'Auto-fill ช่องว่าง'}
-				</Button>
-				<Button variant="secondary" size="sm" class="gap-1.5 h-8"
-					disabled={autoAssigning || loading || entries.length === 0}
-					onclick={handleAutoAssign}
-					title="กำหนดเลขประจำตัวอัตโนมัติตามลำดับห้อง และบันทึกลง DB ทันที (เฉพาะที่ยังว่าง)"
-				>
-					{#if autoAssigning}
-						<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
-					{:else}
-						<Hash class="w-3.5 h-3.5" />
-					{/if}
-					กำหนดเลขอัตโนมัติ
 				</Button>
 			</div>
 
