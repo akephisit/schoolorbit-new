@@ -243,6 +243,25 @@ export interface TrackRankingResult {
     applications: RankingEntry[];
 }
 
+export interface GlobalRankingEntry {
+    applicationId: string;
+    applicationNumber?: string;
+    nationalId: string;
+    fullName: string;
+    totalScore: number;
+    globalRank: number;
+    assignedRoom?: string;
+    assignedRoomId?: string;
+    roomSaved?: boolean;
+    isOverflow: boolean;
+    originalTrackName?: string;
+}
+
+export interface GlobalRankingResult {
+    rooms: TrackRankingResult['rooms'];
+    applications: GlobalRankingEntry[];
+}
+
 export interface EnrollmentForm {
     id: string;
     applicationId: string;
@@ -524,6 +543,12 @@ export async function moveApplicationRoom(applicationId: string, roomId: string)
 export async function resetRoomAssignments(trackId: string) {
     const res = await apiClient.delete(`/api/admission/tracks/${trackId}/room-assignments`);
     if (!res.success) throw new Error(res.error);
+}
+
+export async function getGlobalRanking(roundId: string): Promise<GlobalRankingResult> {
+    const res = await apiClient.get<GlobalRankingResult>(`/api/admission/rounds/${roundId}/global-ranking`);
+    if (!res.success) throw new Error(res.error);
+    return res.data!;
 }
 
 export async function assignRoomsGlobal(roundId: string, method?: string) {

@@ -802,6 +802,138 @@ pub async fn assign_rooms_global(
     })).into_response())
 }
 
+/// GET /api/admission/rounds/:id/global-ranking — ดูผลจัดห้องรวมทุกสาย
+pub async fn get_global_ranking(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    // ดึงนักเรียนทุกสายในรอบ พร้อม saved room
+    let rows = sqlx::query_as::<_, RankRowDetailed>(
+        r#"
+        SELECT
+            aa.id AS application_id,
+            aa.application_number,
+            aa.national_id,
+            CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
+            COALESCE(SUM(esc.score), 0) AS selection_score,
+            COALESCE(SUM(esc.score), 0) AS total_score,
+            at_orig.name AS original_track_name,
+            aa.room_assignment_track_id IS NOT NULL AS is_track_overridden,
+            ara.class_room_id AS saved_room_id,
+            cr_saved.name AS saved_room_name,
+            aa.gender
+        FROM admission_applications aa
+        LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
+        LEFT JOIN admission_tracks at_orig ON at_orig.id = aa.admission_track_id
+        LEFT JOIN admission_room_assignments ara ON ara.application_id = aa.id
+        LEFT JOIN class_rooms cr_saved ON cr_saved.id = ara.class_room_id
+        WHERE aa.admission_round_id = $1
+          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
+        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.created_at,
+                 at_orig.name, aa.room_assignment_track_id, ara.class_room_id, cr_saved.name, aa.gender
+        ORDER BY total_score DESC, aa.created_at ASC
+        "#
+    )
+    .bind(round_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to fetch global ranking".to_string()))?;
+
+    // ดึง capacity ของห้องที่มีนักเรียน
+    #[derive(sqlx::FromRow)]
+    struct CapRow { room_id: Uuid, capacity: i32 }
+
+    let cap_rows = sqlx::query_as::<_, CapRow>(
+        r#"
+        SELECT DISTINCT cr.id AS room_id, cr.capacity
+        FROM admission_room_assignments ara
+        JOIN class_rooms cr ON cr.id = ara.class_room_id
+        WHERE ara.application_id IN (
+            SELECT id FROM admission_applications WHERE admission_round_id = $1
+        )
+        "#
+    )
+    .bind(round_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let cap_map: std::collections::HashMap<String, i32> = cap_rows
+        .into_iter()
+        .map(|r| (r.room_id.to_string(), r.capacity))
+        .collect();
+
+    // สะสม room stats
+    let mut room_map: std::collections::BTreeMap<String, (String, i64, i64, i64)> =
+        std::collections::BTreeMap::new();
+
+    let apps_json: Vec<serde_json::Value> = rows
+        .into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let is_overflow = row.saved_room_id.is_none();
+            let room_saved = row.saved_room_id.is_some();
+
+            let (assigned_room, assigned_room_id) =
+                if let (Some(name), Some(id)) = (&row.saved_room_name, &row.saved_room_id) {
+                    let entry = room_map.entry(id.to_string()).or_insert((name.clone(), 0, 0, 0));
+                    entry.1 += 1;
+                    match row.gender.as_deref() {
+                        Some(g) if g.eq_ignore_ascii_case("male") || g == "ชาย" => entry.2 += 1,
+                        Some(g) if g.eq_ignore_ascii_case("female") || g == "หญิง" => entry.3 += 1,
+                        _ => {}
+                    }
+                    (json!(name), json!(id))
+                } else {
+                    (serde_json::Value::Null, serde_json::Value::Null)
+                };
+
+            json!({
+                "applicationId": row.application_id,
+                "applicationNumber": row.application_number,
+                "nationalId": row.national_id,
+                "fullName": row.full_name,
+                "totalScore": row.total_score.unwrap_or(0.0),
+                "globalRank": (i + 1) as i64,
+                "assignedRoom": assigned_room,
+                "assignedRoomId": assigned_room_id,
+                "roomSaved": room_saved,
+                "isOverflow": is_overflow,
+                "originalTrackName": row.original_track_name,
+            })
+        })
+        .collect();
+
+    let rooms_json: Vec<serde_json::Value> = room_map
+        .iter()
+        .map(|(rid, (name, total, male, female))| {
+            let cap = cap_map.get(rid).copied().unwrap_or(0);
+            json!({
+                "roomId": rid,
+                "roomName": name,
+                "capacity": cap,
+                "studentCount": total,
+                "maleCount": male,
+                "femaleCount": female,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "rooms": rooms_json,
+            "applications": apps_json,
+        }
+    })).into_response())
+}
+
 /// PATCH /api/admission/rounds/:id/selection-settings — บันทึกการตั้งค่า selections ลง DB (แชร์ระหว่าง staff)
 pub async fn update_selection_settings(
     State(state): State<AppState>,

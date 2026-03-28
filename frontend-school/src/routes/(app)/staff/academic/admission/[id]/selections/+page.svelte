@@ -6,6 +6,7 @@
 		listTracks,
 		listSubjects,
 		getTrackRanking,
+		getGlobalRanking,
 		assignRooms,
 		assignRoomsGlobal,
 		changeApplicationTrack,
@@ -15,7 +16,8 @@
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
-		type TrackRankingResult
+		type TrackRankingResult,
+		type GlobalRankingResult
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -51,6 +53,9 @@
 	let moveTargetRoomId: Record<string, string> = $state({});
 	let movingRoom: Record<string, boolean> = $state({});
 	let assignmentMode = $state<'per_track' | 'global'>('per_track');
+	let globalRanking = $state<GlobalRankingResult | null>(null);
+	let loadingGlobal = $state(false);
+	let showingGlobal = $state(false);
 	let showAssignDialog = $state(false);
 	let showAssignAllDialog = $state(false);
 	let showAssignGlobalDialog = $state(false);
@@ -146,6 +151,18 @@
 		await loadRanking();
 	}
 
+	async function loadGlobalRanking() {
+		if (!id) return;
+		loadingGlobal = true;
+		try {
+			globalRanking = await getGlobalRanking(id);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'โหลดผลรวมไม่สำเร็จ');
+		} finally {
+			loadingGlobal = false;
+		}
+	}
+
 	async function confirmAssignGlobal() {
 		showAssignGlobalDialog = false;
 		if (!id) return;
@@ -155,7 +172,8 @@
 			await assignRoomsGlobal(id, 'sequential');
 			toast.success('จัดห้องรวมทุกสายสำเร็จ!');
 			assigned = false;
-			await loadRanking();
+			showingGlobal = true;
+			await loadGlobalRanking();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'จัดห้องรวมทุกสายไม่สำเร็จ');
 		} finally {
@@ -307,6 +325,29 @@
 					</Button>
 				{/each}
 			</div>
+			{#if assignmentMode === 'global'}
+				<Button
+					variant={showingGlobal ? 'default' : 'outline'}
+					size="sm"
+					class="gap-1.5 shrink-0"
+					disabled={loadingGlobal}
+					onclick={async () => {
+						if (!showingGlobal) {
+							showingGlobal = true;
+							if (!globalRanking) await loadGlobalRanking();
+						} else {
+							showingGlobal = false;
+						}
+					}}
+				>
+					{#if loadingGlobal}
+						<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+					{:else}
+						<GraduationCap class="w-3.5 h-3.5" />
+					{/if}
+					ดูรวมทุกคน
+				</Button>
+			{/if}
 			{#if tracks.length > 1}
 				<Button
 					variant="secondary"
@@ -407,13 +448,128 @@
 		</Card.Content>
 	</Card.Root>
 
-	{#if loading}
+	<!-- Global View -->
+	{#if showingGlobal}
+		{#if loadingGlobal}
+			<Card.Root>
+				<Card.Content class="flex justify-center py-16">
+					<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
+				</Card.Content>
+			</Card.Root>
+		{:else if globalRanking}
+			<!-- Room Summary (Global) -->
+			{#if globalRanking.rooms.length > 0}
+				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+					{#each globalRanking.rooms as room (room.roomId)}
+						<Card.Root>
+							<Card.Content class="pt-3 pb-3 text-center space-y-1">
+								<p class="font-semibold">{room.roomName}</p>
+								{#if room.studentCount > 0}
+									<p class="text-sm font-medium">{room.studentCount} / {room.capacity} คน</p>
+									<p class="text-xs text-muted-foreground">
+										ชาย {room.maleCount} · หญิง {room.femaleCount}
+									</p>
+								{:else}
+									<p class="text-xs text-muted-foreground">รับ {room.capacity} คน</p>
+								{/if}
+							</Card.Content>
+						</Card.Root>
+					{/each}
+				</div>
+			{/if}
+
+			<!-- Global Accepted Table -->
+			{@const globalAccepted = globalRanking.applications.filter((a) => !a.isOverflow)}
+			{@const globalOverflow = globalRanking.applications.filter((a) => a.isOverflow)}
+			<Card.Root>
+				<Card.Header class="pb-3">
+					<Card.Title class="flex items-center gap-2">
+						<Trophy class="w-5 h-5 text-yellow-500" />
+						ผลรวมทุกสาย
+						<Badge variant="secondary">{globalAccepted.length} คน</Badge>
+					</Card.Title>
+				</Card.Header>
+				<div class="overflow-x-auto">
+				<Table.Root>
+					<Table.Header>
+						<Table.Row>
+							<Table.Head class="w-16 text-center">อันดับรวม</Table.Head>
+							<Table.Head>เลขที่ใบสมัคร</Table.Head>
+							<Table.Head>ชื่อ-สกุล</Table.Head>
+							<Table.Head>สายที่สมัคร</Table.Head>
+							<Table.Head class="text-center">คะแนนรวม</Table.Head>
+							<Table.Head class="text-center">ห้องที่ได้</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each globalAccepted as app (app.applicationId)}
+							<Table.Row>
+								<Table.Cell class="text-center">
+									<span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.globalRank === 1 ? 'bg-yellow-100 text-yellow-700' : app.globalRank <= 3 ? 'bg-gray-100 text-gray-700' : 'text-muted-foreground'}">
+										{app.globalRank}
+									</span>
+								</Table.Cell>
+								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
+								<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
+								<Table.Cell class="text-sm text-muted-foreground">{app.originalTrackName ?? '-'}</Table.Cell>
+								<Table.Cell class="text-center font-semibold text-primary">{app.totalScore.toFixed(1)}</Table.Cell>
+								<Table.Cell class="text-center">
+									{#if app.assignedRoom}
+										<Badge variant="outline">{app.assignedRoom}</Badge>
+									{:else}
+										<span class="text-xs text-muted-foreground">-</span>
+									{/if}
+								</Table.Cell>
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
+				</div>
+			</Card.Root>
+
+			<!-- Global Overflow -->
+			{#if globalOverflow.length > 0}
+				<Card.Root class="border-orange-200">
+					<Card.Header class="pb-3">
+						<Card.Title class="text-orange-600">เกินโควต้า ({globalOverflow.length} คน)</Card.Title>
+						<p class="text-xs text-muted-foreground">นักเรียนกลุ่มนี้ไม่ได้รับการจัดห้อง</p>
+					</Card.Header>
+					<div class="overflow-x-auto">
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head class="w-16 text-center">อันดับรวม</Table.Head>
+								<Table.Head>เลขที่ใบสมัคร</Table.Head>
+								<Table.Head>ชื่อ-สกุล</Table.Head>
+								<Table.Head>สายที่สมัคร</Table.Head>
+								<Table.Head class="text-center">คะแนนรวม</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each globalOverflow as app (app.applicationId)}
+								<Table.Row class="bg-orange-50">
+									<Table.Cell class="text-center text-muted-foreground text-sm">{app.globalRank}</Table.Cell>
+									<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
+									<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
+									<Table.Cell class="text-sm text-muted-foreground">{app.originalTrackName ?? '-'}</Table.Cell>
+									<Table.Cell class="text-center font-semibold">{app.totalScore.toFixed(1)}</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+					</div>
+				</Card.Root>
+			{/if}
+		{/if}
+	{/if}
+
+	{#if !showingGlobal && loading}
 		<Card.Root>
 			<Card.Content class="flex justify-center py-16">
 				<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
 			</Card.Content>
 		</Card.Root>
-	{:else if ranking}
+	{:else if !showingGlobal && ranking}
 		<!-- Room Summary -->
 		{#if ranking.rooms?.length > 0}
 			<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
