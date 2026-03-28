@@ -77,6 +77,7 @@
 			lastName: string;
 			status: string;
 			trackName?: string;
+			assignedTrackName?: string;
 			roundName?: string;
 			rejectionReason?: string;
 		};
@@ -367,7 +368,9 @@
 								<GraduationCap class="w-4 h-4" />
 								ผลการคัดเลือก
 							</p>
-							{#if app?.trackName}
+							{#if app?.assignedTrackName}
+								<p class="text-sm text-green-700">สายการเรียน: <span class="font-semibold">{app.assignedTrackName}</span></p>
+							{:else if app?.trackName}
 								<p class="text-sm text-green-700">สายการเรียน: <span class="font-semibold">{app.trackName}</span></p>
 							{/if}
 							<div class="grid grid-cols-3 gap-3 text-center">

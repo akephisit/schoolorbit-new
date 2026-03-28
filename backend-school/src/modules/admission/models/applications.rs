@@ -172,6 +172,8 @@ pub struct AdmissionApplication {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub track_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_track_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub round_name: Option<String>,
 }
 

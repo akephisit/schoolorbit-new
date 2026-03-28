@@ -177,10 +177,12 @@ pub async fn get_status(
     let application = sqlx::query_as::<_, AdmissionApplication>(
         r#"
         SELECT aa.*,
-               at2.name AS track_name,
-               ar.name  AS round_name
+               at2.name    AS track_name,
+               at_asgn.name AS assigned_track_name,
+               ar.name     AS round_name
         FROM admission_applications aa
-        LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
+        LEFT JOIN admission_tracks at2     ON at2.id    = aa.admission_track_id
+        LEFT JOIN admission_tracks at_asgn ON at_asgn.id = aa.room_assignment_track_id
         LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
         WHERE aa.id = $1
         "#
