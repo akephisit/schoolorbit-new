@@ -1060,5 +1060,5 @@ export async function batchUpdateStudentIds(
 ): Promise<{ updated: number }> {
     const res = await apiClient.patch(`/api/admission/rounds/${roundId}/student-ids`, updates);
     if (!res.success) throw new Error(res.error);
-    return res.data as { updated: number };
+    return res as unknown as { updated: number };
 }
