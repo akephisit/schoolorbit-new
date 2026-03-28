@@ -82,6 +82,13 @@
 
 	let globalAccepted = $derived(globalRanking?.applications.filter((a) => !a.isOverflow) ?? []);
 	let globalOverflow = $derived(globalRanking?.applications.filter((a) => a.isOverflow) ?? []);
+	// เรียงห้องตาม DnD order (roomOrderForGlobal) ถ้ามี ไม่งั้นตามที่ backend ส่งมา
+	let globalRoomsSorted = $derived(() => {
+		const rooms = globalRanking?.rooms ?? [];
+		if (roomOrderForGlobal.length === 0) return rooms;
+		const orderMap = new Map(roomOrderForGlobal.map((r, i) => [r.roomId, i]));
+		return [...rooms].sort((a, b) => (orderMap.get(a.roomId) ?? 999) - (orderMap.get(b.roomId) ?? 999));
+	});
 	let globalTabApps = $derived(() => {
 		if (globalViewTab === 'all') return globalAccepted;
 		if (globalViewTab === 'overflow') return globalOverflow;
@@ -857,7 +864,7 @@
 			<!-- Room summary cards -->
 			{#if globalRanking.rooms.length > 0}
 				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-					{#each globalRanking.rooms as room (room.roomId)}
+					{#each globalRoomsSorted() as room (room.roomId)}
 						<Card.Root>
 							<Card.Content class="pt-3 pb-3 text-center space-y-1">
 								<p class="font-semibold">{room.roomName}</p>
@@ -882,7 +889,7 @@
 				>
 					ทั้งหมด ({globalAccepted.length})
 				</Button>
-				{#each globalRanking.rooms as room (room.roomId)}
+				{#each globalRoomsSorted() as room (room.roomId)}
 					<Button
 						variant={globalViewTab === room.roomId ? 'default' : 'outline'}
 						size="sm"
@@ -913,7 +920,7 @@
 							<Trophy class="w-5 h-5 text-yellow-500" />
 							ผลรวมทุกสาย
 						{:else}
-							{globalRanking.rooms.find((r) => r.roomId === globalViewTab)?.roomName ?? ''}
+							{globalRoomsSorted().find((r) => r.roomId === globalViewTab)?.roomName ?? ''}
 						{/if}
 					</Card.Title>
 				</Card.Header>
