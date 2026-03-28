@@ -172,6 +172,7 @@ pub async fn submit_application(
         )
         RETURNING *,
             (SELECT name FROM admission_tracks WHERE id = $2) AS track_name,
+            NULL::text AS assigned_track_name,
             (SELECT name FROM admission_rounds WHERE id = $1) AS round_name
         "#
     )
@@ -351,8 +352,9 @@ pub async fn get_application(
     let application = sqlx::query_as::<_, AdmissionApplication>(
         r#"
         SELECT aa.*,
-               at2.name AS track_name,
-               ar.name  AS round_name
+               at2.name     AS track_name,
+               NULL::text   AS assigned_track_name,
+               ar.name      AS round_name
         FROM admission_applications aa
         LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
         LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
@@ -816,7 +818,7 @@ pub async fn complete_enrollment(
 
     // 1. ดึงข้อมูล application + room
     let application = sqlx::query_as::<_, AdmissionApplication>(
-        "SELECT aa.*, at2.name AS track_name, ar.name AS round_name FROM admission_applications aa LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id WHERE aa.id = $1"
+        "SELECT aa.*, at2.name AS track_name, NULL::text AS assigned_track_name, ar.name AS round_name FROM admission_applications aa LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id WHERE aa.id = $1"
     )
     .bind(id)
     .fetch_optional(&mut *tx)
