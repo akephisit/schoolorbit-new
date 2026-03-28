@@ -1,3 +1,5 @@
-export const _meta = {
-	title: 'กำหนดเลขประจำตัว'
+export const load = async () => {
+    return {
+        title: 'กำหนดเลขประจำตัว'
+    };
 };

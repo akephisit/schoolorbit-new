@@ -318,6 +318,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>{data.title} - SchoolOrbit</title>
+</svelte:head>
+
 <div class="space-y-6">
 	<!-- Header -->
 	<div class="flex items-center gap-3">
