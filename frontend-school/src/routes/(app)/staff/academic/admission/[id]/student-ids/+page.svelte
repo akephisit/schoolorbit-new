@@ -8,8 +8,9 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Save, Wand2, X, AlertTriangle, School, FileSpreadsheet, ArrowUpDown, LoaderCircle } from 'lucide-svelte';
+	import { ArrowLeft, Save, Wand2, X, AlertTriangle, School, FileSpreadsheet, ArrowUpDown, LoaderCircle, Upload, FileDown } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -27,6 +28,14 @@
 	let sorting = $state(false);
 	// School filter
 	let schoolFilter = $state('');
+
+	// Excel import
+	let fileInput: HTMLInputElement;
+	let importing = $state(false);
+	let importDialogOpen = $state(false);
+	type PendingMatch = { applicationId: string; studentId: string; school: string };
+	let pendingMatches = $state<PendingMatch[]>([]);
+	let importStats = $state<{ filled: number; ambiguous: number; notFound: number } | null>(null);
 
 	onMount(async () => {
 		try {
@@ -85,6 +94,16 @@
 
 	let assignedCount = $derived(Object.values(edits).filter((v) => v.trim()).length);
 	let hasDuplicates = $derived(duplicateIds().size > 0);
+
+	// School breakdown from pendingMatches
+	let schoolBreakdown = $derived(() => {
+		const counts: Record<string, number> = {};
+		for (const m of pendingMatches) {
+			const school = m.school || 'ไม่ระบุโรงเรียน';
+			counts[school] = (counts[school] ?? 0) + 1;
+		}
+		return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+	});
 
 	async function handleSortRooms() {
 		sorting = true;
@@ -197,6 +216,107 @@
 		XLSX.utils.book_append_sheet(wb, ws, 'เลขประจำตัว');
 		XLSX.writeFile(wb, `เลขประจำตัว-${roundName || id}.xlsx`);
 	}
+
+	async function downloadTemplate() {
+		const XLSX = await import('xlsx');
+		const ws = XLSX.utils.aoa_to_sheet([['เลขประจำตัว', 'คำนำหน้า', 'ชื่อ', 'นามสกุล']]);
+		// set column widths
+		ws['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 20 }, { wch: 20 }];
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(wb, ws, 'รายชื่อ');
+		XLSX.writeFile(wb, 'template-เลขประจำตัว.xlsx');
+	}
+
+	function normalize(s: string) {
+		return s.trim().replace(/\s+/g, ' ');
+	}
+
+	async function importFromExcel(file: File) {
+		importing = true;
+		try {
+			const XLSX = await import('xlsx');
+			const buf = await file.arrayBuffer();
+			const wb = XLSX.read(buf, { type: 'array' });
+			const ws = wb.Sheets[wb.SheetNames[0]];
+			const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+
+			if (rows.length === 0) {
+				toast.error('ไม่พบข้อมูลในไฟล์');
+				return;
+			}
+
+			// Detect columns
+			const headers = Object.keys(rows[0]);
+			const idCol = headers.find((h) => /เลข|id|รหัส/i.test(h) && !/นามสกุล|สกุล/i.test(h));
+			const firstCol = headers.find((h) => /^ชื่อ$|^ชื่อตัว$|^firstname$/i.test(h.trim()) || (h.includes('ชื่อ') && !h.includes('สกุล') && !h.includes('นาม')));
+			const lastCol = headers.find((h) => /สกุล/i.test(h));
+
+			if (!idCol || !firstCol || !lastCol) {
+				toast.error(`ไม่พบคอลัมน์ที่ต้องการ (เลขประจำตัว / ชื่อ / นามสกุล)\nพบ: ${headers.join(', ')}`);
+				return;
+			}
+
+			// Build lookup map: "ชื่อ นามสกุล" → applicationId[]
+			const lookup = new Map<string, string[]>();
+			for (const e of entries) {
+				const key = normalize(`${e.firstName} ${e.lastName}`);
+				if (!lookup.has(key)) lookup.set(key, []);
+				lookup.get(key)!.push(e.applicationId);
+			}
+
+			// Build school lookup: applicationId → previousSchool
+			const schoolMap = new Map<string, string>();
+			for (const e of entries) {
+				schoolMap.set(e.applicationId, e.previousSchool ?? '');
+			}
+
+			const matches: PendingMatch[] = [];
+			let ambiguous = 0;
+			let notFound = 0;
+
+			for (const row of rows) {
+				const studentId = String(row[idCol]).trim();
+				const firstName = normalize(String(row[firstCol]));
+				const lastName = normalize(String(row[lastCol]));
+				if (!studentId || !firstName || !lastName) continue;
+
+				const key = normalize(`${firstName} ${lastName}`);
+				const appIds = lookup.get(key);
+
+				if (!appIds || appIds.length === 0) {
+					notFound++;
+				} else if (appIds.length > 1) {
+					ambiguous++;
+				} else {
+					matches.push({
+						applicationId: appIds[0],
+						studentId,
+						school: schoolMap.get(appIds[0]) ?? ''
+					});
+				}
+			}
+
+			pendingMatches = matches;
+			importStats = { filled: matches.length, ambiguous, notFound };
+			importDialogOpen = true;
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'อ่านไฟล์ไม่สำเร็จ');
+		} finally {
+			importing = false;
+			// reset file input
+			fileInput.value = '';
+		}
+	}
+
+	function confirmImport() {
+		const newEdits = { ...edits };
+		for (const m of pendingMatches) {
+			newEdits[m.applicationId] = m.studentId;
+		}
+		edits = newEdits;
+		importDialogOpen = false;
+		toast.success(`กรอกเลขประจำตัวสำเร็จ ${pendingMatches.length} คน`);
+	}
 </script>
 
 <div class="space-y-6">
@@ -283,7 +403,45 @@
 				จัดเรียงในห้อง (ชาย→หญิง ก-ฮ)
 			</Button>
 
-			<!-- Auto-fill + Auto-assign -->
+			<!-- Excel import -->
+			<div class="flex items-end gap-1.5">
+				<Button
+					variant="outline"
+					size="sm"
+					class="gap-1.5 h-8"
+					onclick={downloadTemplate}
+					title="โหลดไฟล์ template สำหรับกรอกข้อมูล"
+				>
+					<FileDown class="w-3.5 h-3.5" /> Template
+				</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					class="gap-1.5 h-8"
+					disabled={importing || loading || entries.length === 0}
+					onclick={() => fileInput.click()}
+					title="นำเข้าเลขประจำตัวจากไฟล์ Excel"
+				>
+					{#if importing}
+						<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+					{:else}
+						<Upload class="w-3.5 h-3.5" />
+					{/if}
+					นำเข้าจาก Excel
+				</Button>
+				<input
+					bind:this={fileInput}
+					type="file"
+					accept=".xlsx,.xls,.csv"
+					class="hidden"
+					onchange={(e) => {
+						const file = (e.target as HTMLInputElement).files?.[0];
+						if (file) importFromExcel(file);
+					}}
+				/>
+			</div>
+
+			<!-- Auto-fill -->
 			<div class="flex items-end gap-2">
 				<div class="space-y-1">
 					<Label class="text-xs">เลขเริ่มต้น</Label>
@@ -431,3 +589,62 @@
 		</Table.Root>
 	</Card.Root>
 </div>
+
+<!-- Import Confirmation Dialog -->
+<Dialog.Root bind:open={importDialogOpen}>
+	<Dialog.Content class="max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>สรุปผลการนำเข้า</Dialog.Title>
+			<Dialog.Description>ตรวจสอบข้อมูลก่อนยืนยันการกรอกเลขประจำตัว</Dialog.Description>
+		</Dialog.Header>
+
+		{#if importStats}
+			<div class="space-y-4 py-2">
+				<!-- Summary stats -->
+				<div class="space-y-1.5">
+					<div class="flex items-center gap-2 text-sm">
+						<span class="w-5 h-5 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">✓</span>
+						<span>จะกรอกได้</span>
+						<span class="ml-auto font-semibold">{importStats.filled} คน</span>
+					</div>
+					{#if importStats.ambiguous > 0}
+						<div class="flex items-center gap-2 text-sm text-amber-600">
+							<span class="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold">!</span>
+							<span>ชื่อซ้ำในระบบ (ข้าม)</span>
+							<span class="ml-auto font-semibold">{importStats.ambiguous} คน</span>
+						</div>
+					{/if}
+					{#if importStats.notFound > 0}
+						<div class="flex items-center gap-2 text-sm text-muted-foreground">
+							<span class="w-5 h-5 rounded-full bg-muted flex items-center justify-center text-xs font-bold">–</span>
+							<span>ไม่พบในรายชื่อผู้สมัคร</span>
+							<span class="ml-auto font-semibold">{importStats.notFound} คน</span>
+						</div>
+					{/if}
+				</div>
+
+				<!-- School breakdown -->
+				{#if schoolBreakdown().length > 0 && importStats.filled > 0}
+					<div>
+						<p class="text-xs text-muted-foreground mb-1.5">รายละเอียดตามโรงเรียน:</p>
+						<div class="max-h-48 overflow-y-auto space-y-1 rounded border p-2">
+							{#each schoolBreakdown() as [school, count]}
+								<div class="flex items-center justify-between text-sm">
+									<span class="truncate text-muted-foreground">{school}</span>
+									<span class="ml-2 font-medium shrink-0">{count} คน</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (importDialogOpen = false)}>ยกเลิก</Button>
+			<Button onclick={confirmImport} disabled={!importStats || importStats.filled === 0}>
+				ยืนยันการกรอก {importStats?.filled ?? 0} คน
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

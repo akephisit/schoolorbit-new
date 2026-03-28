@@ -1039,6 +1039,8 @@ export interface StudentIdEntry {
     applicationId: string;
     applicationNumber?: string;
     fullName: string;
+    firstName: string;
+    lastName: string;
     assignedStudentId?: string;
     roomName?: string;
     rankInRoom?: number;
