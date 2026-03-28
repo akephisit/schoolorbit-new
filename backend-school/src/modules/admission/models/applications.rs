@@ -484,6 +484,13 @@ pub struct ChangeTrackRequest {
     pub track_id: Option<Uuid>,
 }
 
+/// Request สำหรับแก้ไขสายการเรียนที่สมัคร (admission_track_id จริง)
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAdmissionTrackRequest {
+    pub track_id: Uuid,
+}
+
 /// Request สำหรับย้ายห้องเรียนทีละคน
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1042,6 +1042,42 @@ pub async fn change_application_track(
     Ok(Json(json!({ "success": true })).into_response())
 }
 
+/// PATCH /api/admission/applications/:id/admission-track — แก้ไขสายที่สมัครจริง
+pub async fn update_admission_track(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(application_id): Path<Uuid>,
+    Json(payload): Json<UpdateAdmissionTrackRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    // เปลี่ยน admission_track_id (สายที่สมัครจริง) และล้าง override
+    let result = sqlx::query(
+        "UPDATE admission_applications SET admission_track_id = $1, room_assignment_track_id = NULL, updated_at = NOW() WHERE id = $2"
+    )
+    .bind(payload.track_id)
+    .bind(application_id)
+    .execute(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("แก้ไขสายการเรียนไม่สำเร็จ".to_string()))?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
+    }
+
+    // ลบ room assignment เดิม เพราะสายเปลี่ยน
+    sqlx::query("DELETE FROM admission_room_assignments WHERE application_id = $1")
+        .bind(application_id)
+        .execute(&pool)
+        .await
+        .ok();
+
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
 // ==========================================
 // Staff Document Upload / Delete
 // ==========================================

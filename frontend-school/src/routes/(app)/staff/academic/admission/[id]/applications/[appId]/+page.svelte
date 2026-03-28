@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import {
 		getApplication,
+		listTracks,
+		updateAdmissionTrack,
 		verifyApplication,
 		rejectApplication,
 		updateApplicationByStaff,
@@ -11,6 +13,7 @@
 		staffDeleteDocument,
 		DOC_TYPE_LABELS,
 		type AdmissionApplication,
+		type AdmissionTrack,
 		type ApplicationDocument,
 		applicationStatusLabel
 	} from '$lib/api/admission';
@@ -92,6 +95,12 @@
 	let prevId = $derived(navIdx > 0 ? navIds[navIdx - 1] : null);
 	let nextId = $derived(navIdx < navIds.length - 1 ? navIds[navIdx + 1] : null);
 
+	// Track change
+	let tracks: AdmissionTrack[] = $state([]);
+	let editingTrack = $state(false);
+	let selectedNewTrackId = $state('');
+	let savingTrack = $state(false);
+
 	// Lightbox
 	let lightboxDoc = $state<ApplicationDocument | null>(null);
 	let lbZoom = $state(1);
@@ -114,13 +123,33 @@
 		if (!appId) return;
 		loading = true;
 		try {
-			const res = await getApplication(appId);
+			const [res, trackList] = await Promise.all([
+				getApplication(appId),
+				tracks.length === 0 ? listTracks(roundId) : Promise.resolve(tracks)
+			]);
 			application = res.application;
 			documents = res.documents;
+			tracks = trackList;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ไม่สามารถโหลดข้อมูลผู้สมัครได้');
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function handleSaveTrack() {
+		if (!selectedNewTrackId || !appId) return;
+		savingTrack = true;
+		try {
+			await updateAdmissionTrack(appId, selectedNewTrackId);
+			toast.success('แก้ไขสายการเรียนสำเร็จ');
+			editingTrack = false;
+			selectedNewTrackId = '';
+			await loadApp();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'แก้ไขสายการเรียนไม่สำเร็จ');
+		} finally {
+			savingTrack = false;
 		}
 	}
 
@@ -1047,8 +1076,42 @@
 							<p class="font-medium">{application.roundName || '-'}</p>
 						</div>
 						<div>
-							<p class="text-sm text-muted-foreground">สายการเรียน</p>
-							<p class="font-medium">{application.trackName || '-'}</p>
+							<p class="text-sm text-muted-foreground mb-1">สายการเรียน</p>
+							{#if !editingTrack}
+								<div class="flex items-center gap-2">
+									<span class="font-medium">{application.trackName || '-'}</span>
+									{#if tracks.length > 1}
+										<button
+											class="text-muted-foreground hover:text-foreground"
+											onclick={() => { editingTrack = true; selectedNewTrackId = application?.admissionTrackId ?? ''; }}
+										>
+											<Pencil class="w-3.5 h-3.5" />
+										</button>
+									{/if}
+								</div>
+							{:else}
+								<div class="space-y-2">
+									<Select.Root type="single" bind:value={selectedNewTrackId}>
+										<Select.Trigger class="h-8 text-sm">
+											{tracks.find((t) => t.id === selectedNewTrackId)?.name ?? 'เลือกสาย'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each tracks as track (track.id)}
+												<Select.Item value={track.id}>{track.name}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+									<div class="flex gap-1.5">
+										<Button size="sm" class="h-7 text-xs" disabled={savingTrack || selectedNewTrackId === application.admissionTrackId} onclick={handleSaveTrack}>
+											{#if savingTrack}<LoaderCircle class="w-3 h-3 animate-spin mr-1" />{/if}
+											บันทึก
+										</Button>
+										<Button size="sm" variant="ghost" class="h-7 text-xs" onclick={() => { editingTrack = false; selectedNewTrackId = ''; }}>
+											ยกเลิก
+										</Button>
+									</div>
+								</div>
+							{/if}
 						</div>
 					</Card.Content>
 				</Card.Root>

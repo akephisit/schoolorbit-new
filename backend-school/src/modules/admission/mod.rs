@@ -43,6 +43,7 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/applications/{id}/reject", put(handlers::applications::reject_application))
         .route("/applications/{id}/unverify", put(handlers::applications::unverify_application))
         .route("/applications/{id}/track", patch(handlers::applications::change_application_track))
+        .route("/applications/{id}/admission-track", patch(handlers::applications::update_admission_track))
         .route("/applications/{id}/absent", put(handlers::applications::mark_absent))
         .route("/applications/{id}/room", patch(handlers::applications::move_application_room))
 
