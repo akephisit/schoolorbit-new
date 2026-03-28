@@ -1013,10 +1013,12 @@
 						<span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.globalRank === 1 ? 'bg-yellow-100 text-yellow-700' : app.globalRank <= 3 ? 'bg-gray-100 text-gray-700' : 'text-muted-foreground'}">
 							{app.globalRank}
 						</span>
-						{#if app.rankInRoom != null && globalViewTab !== 'all' && globalViewTab !== 'overflow'}
-							<div class="text-[10px] text-muted-foreground">#{app.rankInRoom}</div>
-						{/if}
 					</Table.Cell>
+					{#if globalViewTab !== 'all' && globalViewTab !== 'overflow'}
+						<Table.Cell class="text-center text-sm text-muted-foreground">
+							{app.rankInRoom != null ? '#' + app.rankInRoom : '-'}
+						</Table.Cell>
+					{/if}
 					<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
 					<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
 					<Table.Cell class="text-sm text-muted-foreground">{app.originalTrackName ?? '-'}</Table.Cell>
@@ -1094,6 +1096,9 @@
 					<Table.Header>
 						<Table.Row>
 							<Table.Head class="w-16 text-center">อันดับรวม</Table.Head>
+							{#if globalViewTab !== 'all' && globalViewTab !== 'overflow'}
+								<Table.Head class="w-14 text-center">อันดับในห้อง</Table.Head>
+							{/if}
 							<Table.Head>เลขที่ใบสมัคร</Table.Head>
 							<Table.Head>ชื่อ-สกุล</Table.Head>
 							<Table.Head>สายที่สมัคร</Table.Head>
@@ -1110,7 +1115,7 @@
 						{/each}
 						{#if isRoomTab && roomOver.length > 0}
 							<Table.Row>
-								<Table.Cell colspan={7} class="bg-orange-100 py-1.5 px-4">
+								<Table.Cell colspan={globalViewTab !== 'all' && globalViewTab !== 'overflow' ? 8 : 7} class="bg-orange-100 py-1.5 px-4">
 									<span class="text-xs font-semibold text-orange-700">เกินโควต้าห้องนี้ ({roomOver.length} คน) — ย้ายไปห้องอื่น</span>
 								</Table.Cell>
 							</Table.Row>
