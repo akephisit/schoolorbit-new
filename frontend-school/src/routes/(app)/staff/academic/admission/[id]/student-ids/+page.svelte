@@ -4,7 +4,6 @@
 	import { getRound, listStudentIds, batchUpdateStudentIds, sortRoomStudents, type StudentIdEntry } from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -335,62 +334,53 @@
 
 	<!-- Controls -->
 	<Card.Root>
-		<Card.Content class="pt-4 flex flex-wrap gap-4 items-end">
+		<Card.Content class="py-3 flex items-center gap-2 overflow-x-auto flex-nowrap">
 			<!-- Stats -->
-			<div class="flex-1 min-w-[180px]">
+			<p class="text-sm text-muted-foreground whitespace-nowrap shrink-0">
 				{#if loading}
-					<p class="text-sm text-muted-foreground">กำลังโหลด...</p>
+					กำลังโหลด...
 				{:else}
-					<p class="text-sm text-muted-foreground">
-						กำหนดแล้ว
-						<span class="font-semibold text-foreground">{assignedCount}</span>
-						/ {entries.length} คน
-						{#if schoolFilter.trim()}
-							<span class="ml-1">(แสดง {filteredEntries().length} คน)</span>
-						{/if}
-					</p>
+					<span class="font-semibold text-foreground">{assignedCount}</span>/{entries.length} คน
 					{#if hasDuplicates}
-						<p class="text-sm text-destructive flex items-center gap-1 mt-0.5">
-							<AlertTriangle class="w-3.5 h-3.5" />
-							มีเลขซ้ำกัน {duplicateIds().size} เลข
-						</p>
+						<span class="text-destructive ml-1">· ซ้ำ {duplicateIds().size}</span>
 					{/if}
 				{/if}
-			</div>
+			</p>
+
+			<div class="w-px h-5 bg-border shrink-0"></div>
 
 			<!-- School filter -->
-			<div class="space-y-1">
-				<Label class="text-xs">กรองตามโรงเรียนเดิม</Label>
-				<div class="relative">
-					<School class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-					<Input
-						list="school-suggestions"
-						bind:value={schoolFilter}
-						placeholder="พิมพ์ชื่อโรงเรียน..."
-						class="pl-7 pr-7 h-8 text-sm w-52"
-					/>
-					{#if schoolFilter}
-						<button
-							type="button"
-							onclick={clearSchoolFilter}
-							class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-						>
-							<X class="w-3 h-3" />
-						</button>
-					{/if}
-					<datalist id="school-suggestions">
-						{#each schoolSuggestions() as school}
-							<option value={school}></option>
-						{/each}
-					</datalist>
-				</div>
+			<div class="relative shrink-0">
+				<School class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+				<Input
+					list="school-suggestions"
+					bind:value={schoolFilter}
+					placeholder="กรองโรงเรียน..."
+					class="pl-7 pr-7 h-8 text-sm w-40"
+				/>
+				{#if schoolFilter}
+					<button
+						type="button"
+						onclick={clearSchoolFilter}
+						class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+					>
+						<X class="w-3 h-3" />
+					</button>
+				{/if}
+				<datalist id="school-suggestions">
+					{#each schoolSuggestions() as school}
+						<option value={school}></option>
+					{/each}
+				</datalist>
 			</div>
+
+			<div class="w-px h-5 bg-border shrink-0"></div>
 
 			<!-- Sort rooms -->
 			<Button
 				variant="outline"
 				size="sm"
-				class="gap-1.5 h-8"
+				class="gap-1.5 h-8 shrink-0"
 				disabled={sorting || loading || entries.length === 0}
 				onclick={handleSortRooms}
 				title="เรียงนักเรียนในแต่ละห้องใหม่: ชายก่อน ตามด้วยหญิง แต่ละกลุ่มเรียงตามชื่อ ก-ฮ"
@@ -400,98 +390,98 @@
 				{:else}
 					<ArrowUpDown class="w-3.5 h-3.5" />
 				{/if}
-				จัดเรียงในห้อง (ชาย→หญิง ก-ฮ)
+				จัดเรียงในห้อง
 			</Button>
 
 			<!-- Excel import -->
-			<div class="flex items-end gap-1.5">
-				<Button
-					variant="outline"
-					size="sm"
-					class="gap-1.5 h-8"
-					onclick={downloadTemplate}
-					title="โหลดไฟล์ template สำหรับกรอกข้อมูล"
-				>
-					<FileDown class="w-3.5 h-3.5" /> Template
-				</Button>
-				<Button
-					variant="outline"
-					size="sm"
-					class="gap-1.5 h-8"
-					disabled={importing || loading || entries.length === 0}
-					onclick={() => fileInput.click()}
-					title="นำเข้าเลขประจำตัวจากไฟล์ Excel"
-				>
-					{#if importing}
-						<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
-					{:else}
-						<Upload class="w-3.5 h-3.5" />
-					{/if}
-					นำเข้าจาก Excel
-				</Button>
-				<input
-					bind:this={fileInput}
-					type="file"
-					accept=".xlsx,.xls,.csv"
-					class="hidden"
-					onchange={(e) => {
-						const file = (e.target as HTMLInputElement).files?.[0];
-						if (file) importFromExcel(file);
-					}}
-				/>
-			</div>
+			<Button
+				variant="outline"
+				size="sm"
+				class="gap-1.5 h-8 shrink-0"
+				onclick={downloadTemplate}
+				title="โหลดไฟล์ template สำหรับกรอกข้อมูล"
+			>
+				<FileDown class="w-3.5 h-3.5" /> Template
+			</Button>
+			<Button
+				variant="outline"
+				size="sm"
+				class="gap-1.5 h-8 shrink-0"
+				disabled={importing || loading || entries.length === 0}
+				onclick={() => fileInput.click()}
+				title="นำเข้าเลขประจำตัวจากไฟล์ Excel"
+			>
+				{#if importing}
+					<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+				{:else}
+					<Upload class="w-3.5 h-3.5" />
+				{/if}
+				นำเข้า Excel
+			</Button>
+			<input
+				bind:this={fileInput}
+				type="file"
+				accept=".xlsx,.xls,.csv"
+				class="hidden"
+				onchange={(e) => {
+					const file = (e.target as HTMLInputElement).files?.[0];
+					if (file) importFromExcel(file);
+				}}
+			/>
+
+			<div class="w-px h-5 bg-border shrink-0"></div>
 
 			<!-- Auto-fill -->
-			<div class="flex items-end gap-2">
-				<div class="space-y-1">
-					<Label class="text-xs">เลขเริ่มต้น</Label>
-					<Input
-						type="number"
-						min="1"
-						bind:value={startNumber}
-						class="w-24 h-8 text-sm"
-					/>
-				</div>
-				<Button variant="outline" size="sm" class="gap-1.5 h-8" onclick={autoFill}>
-					<Wand2 class="w-3.5 h-3.5" />
-					{schoolFilter.trim() ? 'Auto-fill ที่กรอง' : 'Auto-fill ช่องว่าง'}
-				</Button>
-			</div>
+			<Input
+				type="number"
+				min="1"
+				bind:value={startNumber}
+				title="เลขเริ่มต้น"
+				class="w-20 h-8 text-sm shrink-0"
+			/>
+			<Button variant="outline" size="sm" class="gap-1.5 h-8 shrink-0" onclick={autoFill}
+				title={schoolFilter.trim() ? 'Auto-fill เฉพาะที่กรอง' : 'Auto-fill ช่องว่าง'}
+			>
+				<Wand2 class="w-3.5 h-3.5" />
+				Auto-fill
+			</Button>
 
-			<!-- Save + Download -->
-			<div class="flex gap-2">
-				<Button
-					size="sm"
-					class="gap-1.5 h-8"
-					onclick={saveAll}
-					disabled={saving || loading}
-				>
-					{#if saving}
-						<span class="animate-spin">⏳</span>
-					{:else}
-						<Save class="w-3.5 h-3.5" />
-					{/if}
-					บันทึกทั้งหมด
-				</Button>
-				<Button
-					variant="outline"
-					size="sm"
-					class="gap-1.5 h-8"
-					onclick={downloadXlsx}
-					disabled={loading || entries.length === 0}
-				>
-					<FileSpreadsheet class="w-3.5 h-3.5" /> ดาวน์โหลด XLSX
-				</Button>
-				<Button
-					variant="ghost"
-					size="sm"
-					class="gap-1.5 h-8 text-destructive hover:text-destructive"
-					onclick={clearAllEdits}
-					disabled={loading || assignedCount === 0}
-				>
-					<X class="w-3.5 h-3.5" /> ล้างทั้งหมด
-				</Button>
-			</div>
+			<div class="w-px h-5 bg-border shrink-0"></div>
+
+			<!-- Save + Download + Clear -->
+			<Button
+				size="sm"
+				class="gap-1.5 h-8 shrink-0"
+				onclick={saveAll}
+				disabled={saving || loading}
+			>
+				{#if saving}
+					<span class="animate-spin">⏳</span>
+				{:else}
+					<Save class="w-3.5 h-3.5" />
+				{/if}
+				บันทึก
+			</Button>
+			<Button
+				variant="outline"
+				size="sm"
+				class="gap-1.5 h-8 shrink-0"
+				onclick={downloadXlsx}
+				disabled={loading || entries.length === 0}
+				title="ดาวน์โหลด XLSX"
+			>
+				<FileSpreadsheet class="w-3.5 h-3.5" />
+			</Button>
+			<Button
+				variant="ghost"
+				size="sm"
+				class="gap-1.5 h-8 shrink-0 text-destructive hover:text-destructive"
+				onclick={clearAllEdits}
+				disabled={loading || assignedCount === 0}
+				title="ล้างเลขประจำตัวทั้งหมด"
+			>
+				<X class="w-3.5 h-3.5" /> ล้าง
+			</Button>
 		</Card.Content>
 	</Card.Root>
 
