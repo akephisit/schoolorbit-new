@@ -1358,9 +1358,7 @@ pub async fn sort_room_students(
                    ROW_NUMBER() OVER (
                        PARTITION BY ara.class_room_id
                        ORDER BY
-                           CASE WHEN aa.gender ILIKE 'male' OR aa.gender = 'ชาย' THEN 0
-                                WHEN aa.gender ILIKE 'female' OR aa.gender = 'หญิง' THEN 1
-                                ELSE 2 END,
+                           aa.title,
                            aa.first_name,
                            aa.last_name
                    )::int AS new_rank
