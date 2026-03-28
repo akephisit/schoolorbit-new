@@ -265,6 +265,32 @@
 		}
 	}
 
+	async function moveRoomGlobal(appId: string) {
+		const targetRoomId = moveTargetRoomId[appId];
+		if (!targetRoomId) return;
+		movingRoom = { ...movingRoom, [appId]: true };
+		try {
+			await moveApplicationRoom(appId, targetRoomId);
+			const roomName = globalRanking?.rooms.find((r) => r.roomId === targetRoomId)?.roomName;
+			if (globalRanking) {
+				globalRanking = {
+					...globalRanking,
+					applications: globalRanking.applications.map((a) =>
+						a.applicationId === appId
+							? { ...a, assignedRoom: roomName, assignedRoomId: targetRoomId, roomSaved: true }
+							: a
+					)
+				};
+			}
+			moveTargetRoomId = { ...moveTargetRoomId, [appId]: '' };
+			toast.success('ย้ายห้องสำเร็จ');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ย้ายห้องไม่สำเร็จ');
+		} finally {
+			movingRoom = { ...movingRoom, [appId]: false };
+		}
+	}
+
 	async function handleResetAll() {
 		if (!id) return;
 		resettingAll = true;
@@ -971,6 +997,7 @@
 							<Table.Head class="text-center">คะแนนรวม</Table.Head>
 							{#if globalViewTab !== 'overflow'}
 								<Table.Head class="text-center">ห้องที่ได้</Table.Head>
+								<Table.Head>ย้ายห้อง</Table.Head>
 							{/if}
 						</Table.Row>
 					</Table.Header>
@@ -993,6 +1020,42 @@
 											<Badge variant="outline">{app.assignedRoom}</Badge>
 										{:else}
 											<span class="text-xs text-muted-foreground">-</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell>
+										{#if globalRanking && globalRanking.rooms.length > 1}
+											<div class="flex items-center gap-1.5">
+												<Select.Root
+													type="single"
+													value={moveTargetRoomId[app.applicationId] ?? ''}
+													onValueChange={(v) => {
+														moveTargetRoomId = { ...moveTargetRoomId, [app.applicationId]: v };
+													}}
+												>
+													<Select.Trigger class="h-6 text-xs w-24 px-2">
+														{globalRanking.rooms.find((r) => r.roomId === moveTargetRoomId[app.applicationId])?.roomName ?? 'ย้าย'}
+													</Select.Trigger>
+													<Select.Content>
+														{#each globalRanking.rooms.filter((r) => r.roomName !== app.assignedRoom) as room (room.roomId)}
+															<Select.Item value={room.roomId}>{room.roomName}</Select.Item>
+														{/each}
+													</Select.Content>
+												</Select.Root>
+												{#if moveTargetRoomId[app.applicationId]}
+													<Button
+														size="sm"
+														class="h-6 text-xs px-2"
+														disabled={movingRoom[app.applicationId]}
+														onclick={() => moveRoomGlobal(app.applicationId)}
+													>
+														{#if movingRoom[app.applicationId]}
+															<LoaderCircle class="w-3 h-3 animate-spin" />
+														{:else}
+															ย้าย
+														{/if}
+													</Button>
+												{/if}
+											</div>
 										{/if}
 									</Table.Cell>
 								{/if}
