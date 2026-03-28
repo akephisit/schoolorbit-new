@@ -658,7 +658,7 @@ pub async fn reset_room_assignments(
                 SELECT id FROM admission_applications
                 WHERE COALESCE(room_assignment_track_id, admission_track_id) = $1
             )
-            RETURNING 1
+            RETURNING application_id
         )
         SELECT COUNT(*) FROM deleted
         "#
@@ -667,6 +667,14 @@ pub async fn reset_room_assignments(
     .fetch_one(&pool)
     .await
     .unwrap_or(0);
+
+    // revert status กลับเป็น verified สำหรับคนที่ถูกล้างห้อง
+    sqlx::query(
+        "UPDATE admission_applications SET status = 'verified', updated_at = NOW() WHERE COALESCE(room_assignment_track_id, admission_track_id) = $1 AND status = 'accepted'"
+    )
+    .bind(track_id)
+    .execute(&pool)
+    .await.ok();
 
     Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
 }
@@ -698,6 +706,14 @@ pub async fn reset_all_room_assignments(
     .fetch_one(&pool)
     .await
     .unwrap_or(0);
+
+    // revert status กลับเป็น verified สำหรับทุกคนในรอบที่ถูกล้างห้อง
+    sqlx::query(
+        "UPDATE admission_applications SET status = 'verified', updated_at = NOW() WHERE admission_round_id = $1 AND status = 'accepted'"
+    )
+    .bind(round_id)
+    .execute(&pool)
+    .await.ok();
 
     Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
 }
