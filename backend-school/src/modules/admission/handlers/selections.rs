@@ -993,15 +993,19 @@ pub async fn update_selection_settings(
         return Ok(r);
     }
 
-    let settings = serde_json::json!({
+    // build partial settings object — ใช้ JSONB merge (||) เพื่อไม่ overwrite fields ที่ไม่ได้ส่งมา
+    let mut settings = serde_json::json!({
         "subjectsByTrack": payload.subjects_by_track.unwrap_or(serde_json::json!({})),
         "methodByTrack": payload.method_by_track.unwrap_or(serde_json::json!({})),
         "method": payload.room_assignment_method.unwrap_or_else(|| "sequential".to_string()),
-        "assignmentMode": payload.assignment_mode.unwrap_or_else(|| "per_track".to_string()),
     });
+    // assignmentMode: เขียนทับเฉพาะถ้าส่งมาจริง (ป้องกันการ overwrite ตอน browse)
+    if let Some(mode) = payload.assignment_mode {
+        settings["assignmentMode"] = serde_json::json!(mode);
+    }
 
     sqlx::query(
-        "UPDATE admission_rounds SET selection_settings = $1, updated_at = NOW() WHERE id = $2"
+        "UPDATE admission_rounds SET selection_settings = COALESCE(selection_settings, '{}'::jsonb) || $1, updated_at = NOW() WHERE id = $2"
     )
     .bind(&settings)
     .bind(round_id)
