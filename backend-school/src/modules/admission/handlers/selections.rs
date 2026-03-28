@@ -980,6 +980,7 @@ pub async fn get_global_ranking(
                 "roomSaved": room_saved,
                 "isOverflow": is_overflow,
                 "originalTrackName": row.original_track_name,
+                "gender": row.gender,
             })
         })
         .collect();

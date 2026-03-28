@@ -255,6 +255,7 @@ export interface GlobalRankingEntry {
     roomSaved?: boolean;
     isOverflow: boolean;
     originalTrackName?: string;
+    gender?: string;
 }
 
 export interface GlobalRankingResult {

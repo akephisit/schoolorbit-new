@@ -269,16 +269,29 @@
 			moveTargetRoomId = { ...moveTargetRoomId, [appId]: '' };
 			toast.success('ย้ายห้องสำเร็จ');
 			// optimistic update — ไม่ต้อง fetch ใหม่
+			const movedApp = globalRanking.applications.find((a) => a.applicationId === appId);
+			const oldRoomId = movedApp?.assignedRoomId;
+			const isMale = movedApp?.gender?.toLowerCase() === 'male' || movedApp?.gender === 'ชาย';
+			const isFemale = movedApp?.gender?.toLowerCase() === 'female' || movedApp?.gender === 'หญิง';
 			const targetRoom = roomOrderForGlobal.find((r) => r.roomId === targetRoomId);
 			const apps = globalRanking.applications.map((a) =>
 				a.applicationId === appId
 					? { ...a, assignedRoomId: targetRoomId, assignedRoom: targetRoom?.roomName ?? targetRoomId }
 					: a
 			);
-			const oldRoomId = globalRanking.applications.find((a) => a.applicationId === appId)?.assignedRoomId;
 			const rooms = globalRanking.rooms.map((r) => {
-				if (r.roomId === oldRoomId) return { ...r, studentCount: Math.max(0, r.studentCount - 1) };
-				if (r.roomId === targetRoomId) return { ...r, studentCount: r.studentCount + 1 };
+				if (r.roomId === oldRoomId) return {
+					...r,
+					studentCount: Math.max(0, r.studentCount - 1),
+					maleCount: isMale ? Math.max(0, r.maleCount - 1) : r.maleCount,
+					femaleCount: isFemale ? Math.max(0, r.femaleCount - 1) : r.femaleCount,
+				};
+				if (r.roomId === targetRoomId) return {
+					...r,
+					studentCount: r.studentCount + 1,
+					maleCount: isMale ? r.maleCount + 1 : r.maleCount,
+					femaleCount: isFemale ? r.femaleCount + 1 : r.femaleCount,
+				};
 				return r;
 			});
 			globalRanking = { ...globalRanking, applications: apps, rooms };
