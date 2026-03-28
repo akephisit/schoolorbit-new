@@ -526,6 +526,14 @@ export async function resetRoomAssignments(trackId: string) {
     if (!res.success) throw new Error(res.error);
 }
 
+export async function assignRoomsGlobal(roundId: string, method?: string) {
+    const res = await apiClient.post(`/api/admission/rounds/${roundId}/assign-rooms-global`, {
+        roomAssignmentMethod: method ?? 'sequential',
+    });
+    if (!res.success) throw new Error(res.error);
+    return res;
+}
+
 export async function sortRoomStudents(roundId: string) {
     const res = await apiClient.post(`/api/admission/rounds/${roundId}/sort-room-students`);
     if (!res.success) throw new Error(res.error);

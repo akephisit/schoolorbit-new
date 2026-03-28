@@ -467,6 +467,13 @@ pub struct AssignRoomsRequest {
     pub room_assignment_method: Option<String>,
 }
 
+/// Request สำหรับ assign rooms แบบ global (รวมทุกสาย ไม่แยกสาย)
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignRoomsGlobalRequest {
+    pub room_assignment_method: Option<String>,
+}
+
 /// Request สำหรับย้ายสายการเรียน
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

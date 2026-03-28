@@ -13,7 +13,7 @@ use crate::db::school_mapping::get_school_database_url;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::middleware::permission::check_permission;
 use crate::permissions::registry::codes;
-use crate::modules::admission::models::applications::*;
+use crate::modules::admission::models::applications::{AssignRoomsRequest, AssignRoomsGlobalRequest};
 use crate::modules::admission::models::rounds::UpdateSelectionSettingsRequest;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
@@ -648,6 +648,153 @@ pub async fn reset_room_assignments(
     .unwrap_or(0);
 
     Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
+}
+
+/// POST /api/admission/rounds/:id/assign-rooms-global — จัดห้องรวมทุกสาย (ไม่แยกตามสาย)
+pub async fn assign_rooms_global(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+    Json(payload): Json<AssignRoomsGlobalRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    let user_id = match check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+        Ok(u) => u,
+        Err(r) => return Ok(r),
+    };
+
+    // ดึงห้องทั้งหมดจากทุก track ในรอบ (DISTINCT เพื่อไม่ซ้ำ)
+    #[derive(sqlx::FromRow)]
+    struct RoomRow { room_id: Uuid, capacity: i32 }
+
+    let rooms = sqlx::query_as::<_, RoomRow>(
+        r#"
+        SELECT DISTINCT cr.id AS room_id, cr.capacity
+        FROM admission_tracks t
+        JOIN study_plans sp ON t.study_plan_id = sp.id
+        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
+        JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
+        WHERE t.admission_round_id = $1
+          AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = $1)
+          AND cr.grade_level_id   = (SELECT grade_level_id   FROM admission_rounds WHERE id = $1)
+        ORDER BY cr.id ASC
+        "#
+    )
+    .bind(round_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to fetch rooms".to_string()))?;
+
+    if rooms.is_empty() {
+        return Err(AppError::BadRequest(
+            "ไม่พบห้องเรียนในรอบนี้ กรุณาสร้างห้องเรียนก่อน".to_string()
+        ));
+    }
+
+    // ดึงนักเรียนทั้งหมดในรอบ (ทุกสาย) เรียงตาม total_score DESC
+    let rows = sqlx::query_as::<_, RankRow>(
+        r#"
+        SELECT
+            aa.id AS application_id,
+            aa.application_number,
+            aa.national_id,
+            CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
+            COALESCE(SUM(esc.score), 0) AS selection_score,
+            COALESCE(SUM(esc.score), 0) AS total_score
+        FROM admission_applications aa
+        LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
+        WHERE aa.admission_round_id = $1
+          AND aa.status NOT IN ('rejected', 'withdrawn', 'absent')
+        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.created_at
+        ORDER BY total_score DESC, aa.created_at ASC
+        "#
+    )
+    .bind(round_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to fetch students".to_string()))?;
+
+    let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
+    let capacity_usize = total_capacity as usize;
+
+    // แบ่ง accepted / overflow ตาม total capacity รวม
+    let (accepted, _overflow): (Vec<_>, Vec<_>) = rows
+        .into_iter()
+        .enumerate()
+        .partition(|(i, _)| *i < capacity_usize);
+
+    let method = payload.room_assignment_method.as_deref().unwrap_or("sequential");
+    let room_caps: Vec<i32> = rooms.iter().map(|r| r.capacity).collect();
+    let room_slots = compute_room_assignments(accepted.len(), &room_caps, method);
+
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    // ลบ assignments เดิมของทุกคนในรอบ
+    sqlx::query(
+        "DELETE FROM admission_room_assignments WHERE application_id IN (SELECT id FROM admission_applications WHERE admission_round_id = $1)"
+    )
+    .bind(round_id)
+    .execute(&mut *tx)
+    .await
+    .ok();
+
+    let assigned_count = accepted.len();
+
+    for (final_rank, (_, row)) in accepted.iter().enumerate() {
+        let (ri, rank_in_room) = room_slots[final_rank];
+        let room = &rooms[ri];
+
+        sqlx::query(
+            r#"
+            INSERT INTO admission_room_assignments (
+                application_id, class_room_id,
+                rank_in_track, rank_in_room,
+                total_score, full_score,
+                assigned_by, assigned_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            ON CONFLICT (application_id) DO UPDATE SET
+                class_room_id = $2,
+                rank_in_track = $3,
+                rank_in_room  = $4,
+                total_score   = $5,
+                full_score    = $6,
+                assigned_by   = $7,
+                assigned_at   = NOW()
+            "#
+        )
+        .bind(row.application_id)
+        .bind(room.room_id)
+        .bind((final_rank + 1) as i32)
+        .bind(rank_in_room)
+        .bind(row.total_score)
+        .bind(row.total_score)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to assign room (global): {}", e);
+            AppError::InternalServerError("Failed to assign rooms".to_string())
+        })?;
+
+        sqlx::query(
+            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = $1 AND status NOT IN ('rejected', 'withdrawn')"
+        )
+        .bind(row.application_id)
+        .execute(&mut *tx)
+        .await
+        .ok();
+    }
+
+    tx.commit().await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": format!("จัดห้องรวมสำเร็จ {} คน", assigned_count),
+        "data": { "assigned_count": assigned_count }
+    })).into_response())
 }
 
 /// PATCH /api/admission/rounds/:id/selection-settings — บันทึกการตั้งค่า selections ลง DB (แชร์ระหว่าง staff)

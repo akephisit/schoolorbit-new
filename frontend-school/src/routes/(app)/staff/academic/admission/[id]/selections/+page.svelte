@@ -7,6 +7,7 @@
 		listSubjects,
 		getTrackRanking,
 		assignRooms,
+		assignRoomsGlobal,
 		changeApplicationTrack,
 		updateSelectionSettings,
 		moveApplicationRoom,
@@ -51,8 +52,10 @@
 	let movingRoom: Record<string, boolean> = $state({});
 	let showAssignDialog = $state(false);
 	let showAssignAllDialog = $state(false);
+	let showAssignGlobalDialog = $state(false);
 	let resetting = $state(false);
 	let assigningAll = $state(false);
+	let assigningGlobal = $state(false);
 	let assignAllProgress = $state({ done: 0, total: 0 });
 	let settingsLoaded = $state(false);
 	let saveSettingsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -139,6 +142,22 @@
 		await loadRanking();
 	}
 
+	async function confirmAssignGlobal() {
+		showAssignGlobalDialog = false;
+		if (!id) return;
+		assigningGlobal = true;
+		try {
+			await assignRoomsGlobal(id, 'sequential');
+			toast.success('จัดห้องรวมทุกสายสำเร็จ!');
+			assigned = false;
+			await loadRanking();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'จัดห้องรวมทุกสายไม่สำเร็จ');
+		} finally {
+			assigningGlobal = false;
+		}
+	}
+
 	async function moveToTrack(appId: string) {
 		const targetId = moveTargetTrackId[appId];
 		if (!targetId) return;
@@ -209,7 +228,7 @@
 					...ranking,
 					applications: ranking.applications.map((a) =>
 						a.applicationId === appId
-							? { ...a, assignedRoom: roomName ?? null, assignedRoomId: targetRoomId, roomSaved: true }
+							? { ...a, assignedRoom: roomName, assignedRoomId: targetRoomId, roomSaved: true }
 							: a
 					)
 				};
@@ -285,7 +304,7 @@
 					variant="secondary"
 					size="sm"
 					class="gap-1.5 shrink-0"
-					disabled={assigningAll}
+					disabled={assigningAll || assigningGlobal}
 					onclick={() => (showAssignAllDialog = true)}
 				>
 					{#if assigningAll}
@@ -293,7 +312,22 @@
 						จัดอยู่... ({assignAllProgress.done}/{assignAllProgress.total})
 					{:else}
 						<GraduationCap class="w-3.5 h-3.5" />
-						จัดห้องทุกสาย
+						จัดห้อง (แยกตามสาย)
+					{/if}
+				</Button>
+				<Button
+					variant="secondary"
+					size="sm"
+					class="gap-1.5 shrink-0"
+					disabled={assigningAll || assigningGlobal}
+					onclick={() => (showAssignGlobalDialog = true)}
+				>
+					{#if assigningGlobal}
+						<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+						จัดอยู่...
+					{:else}
+						<GraduationCap class="w-3.5 h-3.5" />
+						จัดห้อง (รวมทุกคน)
 					{/if}
 				</Button>
 			{/if}
@@ -713,7 +747,7 @@
 <Dialog.Root bind:open={showAssignAllDialog}>
 	<Dialog.Content class="sm:max-w-[440px]">
 		<Dialog.Header>
-			<Dialog.Title>ยืนยันการจัดห้องทุกสาย</Dialog.Title>
+			<Dialog.Title>ยืนยันการจัดห้อง (แยกตามสาย)</Dialog.Title>
 			<Dialog.Description>
 				จะจัดห้องให้ทุกสาย ({tracks.length} สาย) พร้อมกัน แต่ละสายใช้วิชาและวิธีจัดห้องของตัวเอง
 				ผลจัดห้องเดิมของทุกสายจะถูกแทนที่
@@ -724,6 +758,25 @@
 		<Dialog.Footer class="flex-col sm:flex-row gap-2">
 			<Button variant="outline" onclick={() => (showAssignAllDialog = false)}>ยกเลิก</Button>
 			<Button onclick={confirmAssignAll}>ยืนยัน</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={showAssignGlobalDialog}>
+	<Dialog.Content class="sm:max-w-[440px]">
+		<Dialog.Header>
+			<Dialog.Title>ยืนยันการจัดห้อง (รวมทุกคน)</Dialog.Title>
+			<Dialog.Description>
+				นักเรียนทุกสายจะถูกนำมาเรียงคะแนนรวมด้วยกัน แล้วจัดลงทุกห้องจากทุกสายโดยไม่สนว่าสมัครสายใด
+				<br /><br />
+				ผลจัดห้องเดิม<strong>ทุกสาย</strong>จะถูกแทนที่
+				<strong class="text-orange-600">รวมถึงการย้ายห้องที่ปรับด้วยมือ</strong>
+				ต้องการดำเนินการต่อหรือไม่?
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer class="flex-col sm:flex-row gap-2">
+			<Button variant="outline" onclick={() => (showAssignGlobalDialog = false)}>ยกเลิก</Button>
+			<Button onclick={confirmAssignGlobal}>ยืนยัน</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
