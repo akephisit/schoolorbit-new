@@ -927,11 +927,15 @@
 			{#if globalRanking.rooms.length > 0}
 				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 					{#each globalRoomsSorted() as room (room.roomId)}
-						<Card.Root>
+						{@const isOver = room.studentCount > room.capacity}
+						<Card.Root class={isOver ? 'border-red-300' : ''}>
 							<Card.Content class="pt-3 pb-3 text-center space-y-1">
 								<p class="font-semibold">{room.roomName}</p>
 								{#if room.studentCount > 0}
-									<p class="text-sm font-medium">{room.studentCount} / {room.capacity} คน</p>
+									<p class="text-sm font-medium {isOver ? 'text-red-600' : ''}">
+										{room.studentCount} / {room.capacity} คน
+										{#if isOver}<span class="text-xs">(เกิน {room.studentCount - room.capacity})</span>{/if}
+									</p>
 									<p class="text-xs text-muted-foreground">ชาย {room.maleCount} · หญิง {room.femaleCount}</p>
 								{:else}
 									<p class="text-xs text-muted-foreground">รับ {room.capacity} คน</p>
@@ -952,12 +956,14 @@
 					ทั้งหมด ({globalAccepted.length})
 				</Button>
 				{#each globalRoomsSorted() as room (room.roomId)}
+					{@const isOver = room.studentCount > room.capacity}
 					<Button
 						variant={globalViewTab === room.roomId ? 'default' : 'outline'}
 						size="sm"
 						onclick={() => (globalViewTab = room.roomId)}
+						class={isOver && globalViewTab !== room.roomId ? 'border-red-300 text-red-600 hover:bg-red-50' : ''}
 					>
-						{room.roomName} ({room.studentCount})
+						{room.roomName} ({room.studentCount}/{room.capacity}){isOver ? ' ⚠' : ''}
 					</Button>
 				{/each}
 				{#if globalOverflow.length > 0}
@@ -1037,7 +1043,9 @@
 													</Select.Trigger>
 													<Select.Content>
 														{#each globalRanking.rooms.filter((r) => r.roomName !== app.assignedRoom) as room (room.roomId)}
-															<Select.Item value={room.roomId}>{room.roomName}</Select.Item>
+															<Select.Item value={room.roomId}>
+																{room.roomName} ({room.studentCount}/{room.capacity}){room.studentCount >= room.capacity ? ' ⚠' : ''}
+															</Select.Item>
 														{/each}
 													</Select.Content>
 												</Select.Root>
