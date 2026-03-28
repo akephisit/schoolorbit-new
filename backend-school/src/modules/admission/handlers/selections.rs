@@ -567,10 +567,22 @@ pub async fn assign_rooms(
 
     let assigned_count = accepted.len();
 
+    // bulk INSERT ด้วย UNNEST แทน loop — 2 queries แทน N*2 queries
+    let mut app_ids: Vec<Uuid> = Vec::with_capacity(assigned_count);
+    let mut room_ids: Vec<Uuid> = Vec::with_capacity(assigned_count);
+    let mut ranks_in_track: Vec<i32> = Vec::with_capacity(assigned_count);
+    let mut ranks_in_room: Vec<i32> = Vec::with_capacity(assigned_count);
+    let mut scores: Vec<f64> = Vec::with_capacity(assigned_count);
     for (final_rank, (_, row)) in accepted.iter().enumerate() {
         let (ri, rank_in_room) = room_slots[final_rank];
-        let room = &rooms[ri];
+        app_ids.push(row.application_id);
+        room_ids.push(rooms[ri].room_id);
+        ranks_in_track.push((final_rank + 1) as i32);
+        ranks_in_room.push(rank_in_room);
+        scores.push(row.total_score.unwrap_or(0.0));
+    }
 
+    if !app_ids.is_empty() {
         sqlx::query(
             r#"
             INSERT INTO admission_room_assignments (
@@ -579,35 +591,38 @@ pub async fn assign_rooms(
                 total_score, full_score,
                 assigned_by, assigned_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            SELECT * FROM UNNEST(
+                $1::uuid[], $2::uuid[], $3::int[], $4::int[],
+                $5::double precision[], $5::double precision[],
+                $6::uuid[], array_fill(NOW()::timestamptz, ARRAY[array_length($1::uuid[], 1)])
+            )
             ON CONFLICT (application_id) DO UPDATE SET
-                class_room_id = $2,
-                rank_in_track = $3,
-                rank_in_room  = $4,
-                total_score   = $5,
-                full_score    = $6,
-                assigned_by   = $7,
-                assigned_at   = NOW()
+                class_room_id = EXCLUDED.class_room_id,
+                rank_in_track = EXCLUDED.rank_in_track,
+                rank_in_room  = EXCLUDED.rank_in_room,
+                total_score   = EXCLUDED.total_score,
+                full_score    = EXCLUDED.full_score,
+                assigned_by   = EXCLUDED.assigned_by,
+                assigned_at   = EXCLUDED.assigned_at
             "#
         )
-        .bind(row.application_id)
-        .bind(room.room_id)
-        .bind((final_rank + 1) as i32)
-        .bind(rank_in_room)
-        .bind(row.total_score)
-        .bind(row.total_score)
+        .bind(&app_ids)
+        .bind(&room_ids)
+        .bind(&ranks_in_track)
+        .bind(&ranks_in_room)
+        .bind(&scores)
         .bind(user_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed to assign room: {}", e);
+            eprintln!("Failed to bulk assign rooms: {}", e);
             AppError::InternalServerError("Failed to assign rooms".to_string())
         })?;
 
         sqlx::query(
-            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = $1 AND status NOT IN ('rejected', 'withdrawn')"
+            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn')"
         )
-        .bind(row.application_id)
+        .bind(&app_ids)
         .execute(&mut *tx)
         .await
         .ok();
@@ -788,10 +803,22 @@ pub async fn assign_rooms_global(
 
     let assigned_count = accepted.len();
 
+    // bulk INSERT ด้วย UNNEST แทน loop
+    let mut app_ids: Vec<Uuid> = Vec::with_capacity(assigned_count);
+    let mut room_ids: Vec<Uuid> = Vec::with_capacity(assigned_count);
+    let mut ranks_in_track: Vec<i32> = Vec::with_capacity(assigned_count);
+    let mut ranks_in_room: Vec<i32> = Vec::with_capacity(assigned_count);
+    let mut scores: Vec<f64> = Vec::with_capacity(assigned_count);
     for (final_rank, (_, row)) in accepted.iter().enumerate() {
         let (ri, rank_in_room) = room_slots[final_rank];
-        let room = &rooms[ri];
+        app_ids.push(row.application_id);
+        room_ids.push(rooms[ri].room_id);
+        ranks_in_track.push((final_rank + 1) as i32);
+        ranks_in_room.push(rank_in_room);
+        scores.push(row.total_score.unwrap_or(0.0));
+    }
 
+    if !app_ids.is_empty() {
         sqlx::query(
             r#"
             INSERT INTO admission_room_assignments (
@@ -800,35 +827,38 @@ pub async fn assign_rooms_global(
                 total_score, full_score,
                 assigned_by, assigned_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            SELECT * FROM UNNEST(
+                $1::uuid[], $2::uuid[], $3::int[], $4::int[],
+                $5::double precision[], $5::double precision[],
+                $6::uuid[], array_fill(NOW()::timestamptz, ARRAY[array_length($1::uuid[], 1)])
+            )
             ON CONFLICT (application_id) DO UPDATE SET
-                class_room_id = $2,
-                rank_in_track = $3,
-                rank_in_room  = $4,
-                total_score   = $5,
-                full_score    = $6,
-                assigned_by   = $7,
-                assigned_at   = NOW()
+                class_room_id = EXCLUDED.class_room_id,
+                rank_in_track = EXCLUDED.rank_in_track,
+                rank_in_room  = EXCLUDED.rank_in_room,
+                total_score   = EXCLUDED.total_score,
+                full_score    = EXCLUDED.full_score,
+                assigned_by   = EXCLUDED.assigned_by,
+                assigned_at   = EXCLUDED.assigned_at
             "#
         )
-        .bind(row.application_id)
-        .bind(room.room_id)
-        .bind((final_rank + 1) as i32)
-        .bind(rank_in_room)
-        .bind(row.total_score)
-        .bind(row.total_score)
+        .bind(&app_ids)
+        .bind(&room_ids)
+        .bind(&ranks_in_track)
+        .bind(&ranks_in_room)
+        .bind(&scores)
         .bind(user_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed to assign room (global): {}", e);
+            eprintln!("Failed to bulk assign rooms (global): {}", e);
             AppError::InternalServerError("Failed to assign rooms".to_string())
         })?;
 
         sqlx::query(
-            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = $1 AND status NOT IN ('rejected', 'withdrawn')"
+            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn')"
         )
-        .bind(row.application_id)
+        .bind(&app_ids)
         .execute(&mut *tx)
         .await
         .ok();
