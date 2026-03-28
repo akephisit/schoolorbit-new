@@ -545,6 +545,11 @@ export async function resetRoomAssignments(trackId: string) {
     if (!res.success) throw new Error(res.error);
 }
 
+export async function resetAllRoomAssignments(roundId: string) {
+    const res = await apiClient.delete(`/api/admission/rounds/${roundId}/room-assignments`);
+    if (!res.success) throw new Error(res.error);
+}
+
 export async function getGlobalRanking(roundId: string): Promise<GlobalRankingResult> {
     const res = await apiClient.get<GlobalRankingResult>(`/api/admission/rounds/${roundId}/global-ranking`);
     if (!res.success) throw new Error(res.error);

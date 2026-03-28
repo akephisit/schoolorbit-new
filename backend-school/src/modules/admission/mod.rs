@@ -58,6 +58,7 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/rounds/{id}/global-ranking", get(handlers::selections::get_global_ranking))
         .route("/tracks/{id}/ranking", get(handlers::selections::get_track_ranking))
         .route("/tracks/{id}/room-assignments", delete(handlers::selections::reset_room_assignments))
+        .route("/rounds/{id}/room-assignments", delete(handlers::selections::reset_all_room_assignments))
         .route("/rounds/{id}/assign-rooms", post(handlers::selections::assign_rooms))
         .route("/rounds/{id}/assign-rooms-global", post(handlers::selections::assign_rooms_global))
         .route("/rounds/{id}/selection-settings", patch(handlers::selections::update_selection_settings))

@@ -655,6 +655,37 @@ pub async fn reset_room_assignments(
     Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
 }
 
+/// DELETE /api/admission/rounds/:id/room-assignments — ล้างการจัดห้องของทุกคนในรอบนี้
+pub async fn reset_all_room_assignments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let deleted = sqlx::query_scalar::<_, i64>(
+        r#"
+        WITH deleted AS (
+            DELETE FROM admission_room_assignments
+            WHERE application_id IN (
+                SELECT id FROM admission_applications WHERE admission_round_id = $1
+            )
+            RETURNING 1
+        )
+        SELECT COUNT(*) FROM deleted
+        "#
+    )
+    .bind(round_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
+}
+
 /// POST /api/admission/rounds/:id/assign-rooms-global — จัดห้องรวมทุกสาย (ไม่แยกตามสาย)
 pub async fn assign_rooms_global(
     State(state): State<AppState>,

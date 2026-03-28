@@ -14,6 +14,7 @@
 		updateSelectionSettings,
 		moveApplicationRoom,
 		resetRoomAssignments,
+		resetAllRoomAssignments,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
@@ -69,6 +70,8 @@
 	let showAssignAllDialog = $state(false);
 	let showAssignGlobalDialog = $state(false);
 	let resetting = $state(false);
+	let resettingAll = $state(false);
+	let showResetAllDialog = $state(false);
 	let assigningAll = $state(false);
 	let assigningGlobal = $state(false);
 	let assignAllProgress = $state({ done: 0, total: 0 });
@@ -262,6 +265,23 @@
 		}
 	}
 
+	async function handleResetAll() {
+		if (!id) return;
+		resettingAll = true;
+		try {
+			await resetAllRoomAssignments(id);
+			toast.success('ล้างการจัดห้องทั้งหมดสำเร็จ');
+			ranking = null;
+			globalRanking = null;
+			assigned = false;
+			await loadRanking();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ล้างการจัดห้องไม่สำเร็จ');
+		} finally {
+			resettingAll = false;
+		}
+	}
+
 	async function handleReset() {
 		if (!selectedTrack) return;
 		resetting = true;
@@ -344,7 +364,23 @@
 	<!-- Step 1: เลือกโหมดจัดห้อง -->
 	<Card.Root>
 		<Card.Content class="pt-4 pb-4 space-y-3">
-			<p class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">โหมดจัดห้อง</p>
+			<div class="flex items-center justify-between">
+				<p class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">โหมดจัดห้อง</p>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="gap-1.5 text-muted-foreground hover:text-destructive text-xs"
+					disabled={resettingAll}
+					onclick={() => (showResetAllDialog = true)}
+				>
+					{#if resettingAll}
+						<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+					{:else}
+						<Trash2 class="w-3.5 h-3.5" />
+					{/if}
+					ล้างการจัดห้องทั้งหมด
+				</Button>
+			</div>
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 				<button
 					onclick={() => switchMode('per_track')}
@@ -1021,6 +1057,22 @@
 		<Dialog.Footer class="flex-col sm:flex-row gap-2">
 			<Button variant="outline" onclick={() => (showAssignGlobalDialog = false)}>ยกเลิก</Button>
 			<Button onclick={confirmAssignGlobal}>ยืนยัน</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={showResetAllDialog}>
+	<Dialog.Content class="sm:max-w-[420px]">
+		<Dialog.Header>
+			<Dialog.Title>ล้างการจัดห้องทั้งหมด</Dialog.Title>
+			<Dialog.Description>
+				การดำเนินการนี้จะ<strong>ลบการจัดห้องทุกคนในรอบนี้</strong>ออกทั้งหมด
+				ทั้งที่จัดแบบแยกตามสายและรวมทุกคน ต้องการดำเนินการต่อหรือไม่?
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer class="flex-col sm:flex-row gap-2">
+			<Button variant="outline" onclick={() => (showResetAllDialog = false)}>ยกเลิก</Button>
+			<Button variant="destructive" onclick={() => { showResetAllDialog = false; handleResetAll(); }}>ล้างทั้งหมด</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
