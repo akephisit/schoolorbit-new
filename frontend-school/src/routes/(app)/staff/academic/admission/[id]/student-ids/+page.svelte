@@ -195,16 +195,24 @@
 
 	async function downloadXlsx() {
 		const XLSX = await import('xlsx');
-		const header = ['ลำดับ', 'เลขประจำตัว', 'ชื่อ-สกุล', 'ห้องเรียน', 'อันดับ', 'โรงเรียนเดิม', 'เลขที่สมัคร'];
-		const rows = entries.map((e, i) => [
-			i + 1,
-			edits[e.applicationId]?.trim() || '',
-			e.fullName,
-			e.roomName ?? '',
-			e.rankInRoom ?? '',
-			e.previousSchool ?? '',
-			e.applicationNumber ?? ''
-		]);
+		const rankColLabel = assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย';
+		const header = ['ลำดับ', 'เลขประจำตัว', 'ชื่อ-สกุล', 'เลขที่สมัคร', 'สายการเรียน', 'โรงเรียนเดิม', 'ห้องที่ได้', 'เลขที่', rankColLabel];
+		const rows = entries.map((e, i) => {
+			const trackName = e.assignedTrackName
+				? `${e.originalTrackName ?? ''} → ${e.assignedTrackName}`
+				: (e.originalTrackName ?? '');
+			return [
+				i + 1,
+				edits[e.applicationId]?.trim() || '',
+				e.fullName,
+				e.applicationNumber ?? '',
+				trackName,
+				e.previousSchool ?? '',
+				e.roomName ?? '',
+				e.rankInRoom ?? '',
+				e.rankInTrack ?? ''
+			];
+		});
 		const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
 		const wb = XLSX.utils.book_new();
 		XLSX.utils.book_append_sheet(wb, ws, 'เลขประจำตัว');
