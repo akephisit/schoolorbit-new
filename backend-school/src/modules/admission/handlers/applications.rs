@@ -1358,7 +1358,14 @@ pub async fn sort_room_students(
                    ROW_NUMBER() OVER (
                        PARTITION BY ara.class_room_id
                        ORDER BY
-                           aa.title,
+                           CASE aa.title
+                               WHEN 'เด็กชาย' THEN 0
+                               WHEN 'นาย'     THEN 1
+                               WHEN 'เด็กหญิง' THEN 2
+                               WHEN 'นาง'     THEN 3
+                               WHEN 'นางสาว'  THEN 4
+                               ELSE 5
+                           END,
                            aa.first_name,
                            aa.last_name
                    )::int AS new_rank
