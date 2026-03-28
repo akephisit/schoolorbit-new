@@ -1628,33 +1628,32 @@ pub async fn batch_update_student_ids(
         return Ok(r);
     }
 
-    let mut tx = pool.begin().await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let app_ids: Vec<Uuid> = payload.iter().map(|i| i.application_id).collect();
+    let student_ids: Vec<Option<String>> = payload.iter().map(|i| i.student_id.clone()).collect();
 
-    let mut updated = 0i64;
-    for item in &payload {
-        let rows_affected = sqlx::query(
-            r#"
-            UPDATE admission_applications
-            SET assigned_student_id = $1, updated_at = NOW()
-            WHERE id = $2 AND admission_round_id = $3
-            "#
+    let updated = sqlx::query_scalar::<_, i64>(
+        r#"
+        WITH updates AS (
+            UPDATE admission_applications aa
+            SET assigned_student_id = u.student_id,
+                updated_at = NOW()
+            FROM UNNEST($1::uuid[], $2::text[]) AS u(application_id, student_id)
+            WHERE aa.id = u.application_id
+              AND aa.admission_round_id = $3
+            RETURNING 1
         )
-        .bind(&item.student_id)
-        .bind(item.application_id)
-        .bind(round_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            eprintln!("batch_update_student_ids error: {}", e);
-            AppError::InternalServerError("Database error".to_string())
-        })?
-        .rows_affected();
-        updated += rows_affected as i64;
-    }
-
-    tx.commit().await
-        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+        SELECT COUNT(*) FROM updates
+        "#
+    )
+    .bind(&app_ids)
+    .bind(&student_ids)
+    .bind(round_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("batch_update_student_ids error: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?;
 
     Ok(Json(json!({ "success": true, "updated": updated })).into_response())
 }
