@@ -782,7 +782,7 @@ pub async fn list_enrollment_pending(
             aa.assigned_student_id
         FROM admission_applications aa
         LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
-        LEFT JOIN admission_room_assignments ara ON aa.id = ara.application_id
+        JOIN admission_room_assignments ara ON aa.id = ara.application_id
         LEFT JOIN class_rooms cr ON ara.class_room_id = cr.id
         LEFT JOIN admission_enrollment_forms aef ON aa.id = aef.application_id
         WHERE aa.admission_round_id = $1
