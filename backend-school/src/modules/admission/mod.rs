@@ -64,6 +64,8 @@ pub fn admission_routes() -> Router<AppState> {
         .route("/applications/{id}/enroll", post(handlers::applications::complete_enrollment))
         .route("/rounds/{id}/student-ids", get(handlers::applications::list_student_ids)
                                           .patch(handlers::applications::batch_update_student_ids))
+        .route("/rounds/{id}/sort-room-students", post(handlers::applications::sort_room_students))
+        .route("/rounds/{id}/auto-assign-student-ids", post(handlers::applications::auto_assign_student_ids))
 
         // === Portal (Applicant Stateless — ส่ง credentials ทุก request) ===
         .route("/portal/check", post(handlers::portal::check_application))

@@ -526,6 +526,18 @@ export async function resetRoomAssignments(trackId: string) {
     if (!res.success) throw new Error(res.error);
 }
 
+export async function sortRoomStudents(roundId: string) {
+    const res = await apiClient.post(`/api/admission/rounds/${roundId}/sort-room-students`);
+    if (!res.success) throw new Error(res.error);
+    return res.data as { updated: number };
+}
+
+export async function autoAssignStudentIds(roundId: string, startNumber: number) {
+    const res = await apiClient.post(`/api/admission/rounds/${roundId}/auto-assign-student-ids`, { startNumber });
+    if (!res.success) throw new Error(res.error);
+    return res.data as { assigned: number };
+}
+
 export async function updateSelectionSettings(
     roundId: string,
     settings: { subjectsByTrack?: Record<string, string[]>; methodByTrack?: Record<string, string>; roomAssignmentMethod?: string }

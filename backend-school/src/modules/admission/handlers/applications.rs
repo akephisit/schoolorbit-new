@@ -1304,6 +1304,139 @@ pub async fn staff_delete_document(
 // Student ID Pre-Assignment
 // ==========================================
 
+/// POST /rounds/:id/sort-room-students — เรียง rank_in_room ใหม่ทุกห้องในรอบ (ชาย→หญิง, ก-ฮ)
+pub async fn sort_room_students(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let updated = sqlx::query_scalar::<_, i64>(
+        r#"
+        WITH ranked AS (
+            SELECT ara.application_id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY ara.class_room_id
+                       ORDER BY
+                           CASE WHEN aa.gender ILIKE 'male' OR aa.gender = 'ชาย' THEN 0
+                                WHEN aa.gender ILIKE 'female' OR aa.gender = 'หญิง' THEN 1
+                                ELSE 2 END,
+                           aa.first_name,
+                           aa.last_name
+                   )::int AS new_rank
+            FROM admission_room_assignments ara
+            JOIN admission_applications aa ON aa.id = ara.application_id
+            WHERE aa.admission_round_id = $1
+        ),
+        updated_rows AS (
+            UPDATE admission_room_assignments ara
+            SET rank_in_room = ranked.new_rank
+            FROM ranked
+            WHERE ara.application_id = ranked.application_id
+            RETURNING 1
+        )
+        SELECT COUNT(*) FROM updated_rows
+        "#
+    )
+    .bind(round_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    Ok(Json(json!({ "success": true, "updated": updated })).into_response())
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoAssignStudentIdsRequest {
+    pub start_number: i64,
+}
+
+/// POST /rounds/:id/auto-assign-student-ids — กำหนดเลขประจำตัวอัตโนมัติ (เฉพาะที่ยังว่าง)
+pub async fn auto_assign_student_ids(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+    Json(payload): Json<AutoAssignStudentIdsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    // 1. เก็บเลขที่ใช้ไปแล้วทั้งรอบ (สำหรับตรวจ collision)
+    let existing: Vec<String> = sqlx::query_scalar(
+        "SELECT assigned_student_id FROM admission_applications WHERE admission_round_id = $1 AND assigned_student_id IS NOT NULL AND assigned_student_id != ''"
+    )
+    .bind(round_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let mut occupied: std::collections::HashSet<i64> = existing
+        .iter()
+        .filter_map(|s| s.trim().parse::<i64>().ok())
+        .collect();
+
+    // 2. ดึง students ที่ยังไม่มีเลข เรียงตาม ห้อง → rank_in_room
+    #[derive(sqlx::FromRow)]
+    struct AppIdRow { application_id: Uuid }
+
+    let students = sqlx::query_as::<_, AppIdRow>(
+        r#"
+        SELECT ara.application_id
+        FROM admission_room_assignments ara
+        JOIN admission_applications aa ON aa.id = ara.application_id
+        LEFT JOIN class_rooms cr ON cr.id = ara.class_room_id
+        WHERE aa.admission_round_id = $1
+          AND (aa.assigned_student_id IS NULL OR aa.assigned_student_id = '')
+          AND aa.status IN ('accepted', 'enrolled', 'scored')
+        ORDER BY cr.name, ara.rank_in_room
+        "#
+    )
+    .bind(round_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("auto_assign_student_ids fetch error: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?;
+
+    // 3. Assign เลขต่อเนื่อง หลีก collision
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    let mut next = payload.start_number;
+    let mut assigned: i64 = 0;
+
+    for student in &students {
+        while occupied.contains(&next) {
+            next += 1;
+        }
+        sqlx::query(
+            "UPDATE admission_applications SET assigned_student_id = $1, updated_at = NOW() WHERE id = $2"
+        )
+        .bind(next.to_string())
+        .bind(student.application_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+        occupied.insert(next);
+        assigned += 1;
+        next += 1;
+    }
+
+    tx.commit().await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({ "success": true, "assigned": assigned })).into_response())
+}
+
 pub async fn list_student_ids(
     State(state): State<AppState>,
     headers: HeaderMap,
