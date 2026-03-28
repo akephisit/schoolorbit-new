@@ -668,13 +668,13 @@ pub async fn assign_rooms_global(
         Err(r) => return Ok(r),
     };
 
-    // ดึงห้องทั้งหมดจากทุก track ในรอบ (DISTINCT เพื่อไม่ซ้ำ)
+    // ดึงห้องทั้งหมดจากทุก track ในรอบ (DISTINCT เพื่อไม่ซ้ำ) เรียงตามชื่อห้อง
     #[derive(sqlx::FromRow)]
-    struct RoomRow { room_id: Uuid, capacity: i32 }
+    struct RoomRow { room_id: Uuid, room_name: String, capacity: i32 }
 
     let rooms = sqlx::query_as::<_, RoomRow>(
         r#"
-        SELECT DISTINCT cr.id AS room_id, cr.capacity
+        SELECT DISTINCT cr.id AS room_id, cr.name AS room_name, cr.capacity
         FROM admission_tracks t
         JOIN study_plans sp ON t.study_plan_id = sp.id
         JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
@@ -682,7 +682,7 @@ pub async fn assign_rooms_global(
         WHERE t.admission_round_id = $1
           AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = $1)
           AND cr.grade_level_id   = (SELECT grade_level_id   FROM admission_rounds WHERE id = $1)
-        ORDER BY cr.id ASC
+        ORDER BY cr.name ASC
         "#
     )
     .bind(round_id)
