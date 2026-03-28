@@ -32,7 +32,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, GraduationCap, Trophy, Check, LoaderCircle, RotateCcw, Trash2, GripVertical, Layers, SplitSquareVertical } from 'lucide-svelte';
+	import { ArrowLeft, GraduationCap, Trophy, Check, LoaderCircle, RotateCcw, Trash2, GripVertical, Layers, Columns2 } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -91,11 +91,6 @@
 		if (roomOrderForGlobal.length === 0) return rooms;
 		const orderMap = new Map(roomOrderForGlobal.map((r, i) => [r.roomId, i]));
 		return [...rooms].sort((a, b) => (orderMap.get(a.roomId) ?? 999) - (orderMap.get(b.roomId) ?? 999));
-	});
-	let globalTabApps = $derived(() => {
-		if (globalViewTab === 'all') return globalAccepted;
-		if (globalViewTab === 'overflow') return globalOverflow;
-		return globalAccepted.filter((a) => a.assignedRoomId === globalViewTab);
 	});
 
 	async function loadBase() {
@@ -392,7 +387,7 @@
 					onclick={() => switchMode('per_track')}
 					class="flex items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors {assignmentMode === 'per_track' ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/40'}"
 				>
-					<SplitSquareVertical class="w-5 h-5 mt-0.5 shrink-0 {assignmentMode === 'per_track' ? 'text-primary' : 'text-muted-foreground'}" />
+					<Columns2 class="w-5 h-5 mt-0.5 shrink-0 {assignmentMode === 'per_track' ? 'text-primary' : 'text-muted-foreground'}" />
 					<div>
 						<p class="font-semibold text-sm">แยกตามสาย</p>
 						<p class="text-xs text-muted-foreground mt-0.5">แต่ละสายคัดเลือกและจัดห้องเองแยกกัน ใช้วิชาและเกณฑ์ของแต่ละสาย</p>
