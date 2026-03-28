@@ -950,7 +950,12 @@
 										{room.studentCount} / {room.capacity} คน
 										{#if isOver}<span class="text-xs">(เกิน {room.studentCount - room.capacity})</span>{/if}
 									</p>
-									<p class="text-xs text-muted-foreground">ชาย {room.maleCount} · หญิง {room.femaleCount}</p>
+									<p class="text-xs text-muted-foreground">
+									ชาย {room.maleCount} · หญิง {room.femaleCount}
+									{#if room.studentCount - room.maleCount - room.femaleCount > 0}
+										· ไม่ระบุ {room.studentCount - room.maleCount - room.femaleCount}
+									{/if}
+								</p>
 								{:else}
 									<p class="text-xs text-muted-foreground">รับ {room.capacity} คน</p>
 								{/if}
