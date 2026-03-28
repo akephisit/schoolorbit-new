@@ -472,6 +472,8 @@ pub struct AssignRoomsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct AssignRoomsGlobalRequest {
     pub room_assignment_method: Option<String>,
+    /// ลำดับห้องที่ต้องการจัดก่อน-หลัง (list ของ room UUID) — ถ้าไม่ส่งจะเรียงตามชื่อห้อง
+    pub room_order: Option<Vec<Uuid>>,
 }
 
 /// Request สำหรับย้ายสายการเรียน

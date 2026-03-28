@@ -672,7 +672,7 @@ pub async fn assign_rooms_global(
     #[derive(sqlx::FromRow)]
     struct RoomRow { room_id: Uuid, room_name: String, capacity: i32 }
 
-    let rooms = sqlx::query_as::<_, RoomRow>(
+    let mut rooms = sqlx::query_as::<_, RoomRow>(
         r#"
         SELECT DISTINCT cr.id AS room_id, cr.name AS room_name, cr.capacity
         FROM admission_tracks t
@@ -694,6 +694,17 @@ pub async fn assign_rooms_global(
         return Err(AppError::BadRequest(
             "ไม่พบห้องเรียนในรอบนี้ กรุณาสร้างห้องเรียนก่อน".to_string()
         ));
+    }
+
+    // ถ้ามี room_order ให้เรียงห้องตามลำดับที่ผู้ใช้กำหนด
+    if let Some(ref order) = payload.room_order {
+        if !order.is_empty() {
+            let order_map: std::collections::HashMap<Uuid, usize> = order.iter()
+                .enumerate()
+                .map(|(i, id)| (*id, i))
+                .collect();
+            rooms.sort_by_key(|r| order_map.get(&r.room_id).copied().unwrap_or(usize::MAX));
+        }
     }
 
     // ดึงนักเรียนทั้งหมดในรอบ (ทุกสาย) เรียงตาม total_score DESC
@@ -932,6 +943,42 @@ pub async fn get_global_ranking(
             "applications": apps_json,
         }
     })).into_response())
+}
+
+/// GET /api/admission/rounds/:id/rooms — ดึงรายการห้องทั้งหมดในรอบ (สำหรับ DnD จัดลำดับก่อนจัดห้อง)
+pub async fn get_round_rooms(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    #[derive(serde::Serialize, sqlx::FromRow)]
+    #[serde(rename_all = "camelCase")]
+    struct RoomBasic { room_id: Uuid, room_name: String, capacity: i32 }
+
+    let rooms = sqlx::query_as::<_, RoomBasic>(
+        r#"
+        SELECT DISTINCT cr.id AS room_id, cr.name AS room_name, cr.capacity
+        FROM admission_tracks t
+        JOIN study_plans sp ON t.study_plan_id = sp.id
+        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
+        JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
+        WHERE t.admission_round_id = $1
+          AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = $1)
+          AND cr.grade_level_id   = (SELECT grade_level_id   FROM admission_rounds WHERE id = $1)
+        ORDER BY cr.name ASC
+        "#
+    )
+    .bind(round_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to fetch rooms".to_string()))?;
+
+    Ok(Json(json!({ "success": true, "data": rooms })).into_response())
 }
 
 /// PATCH /api/admission/rounds/:id/selection-settings — บันทึกการตั้งค่า selections ลง DB (แชร์ระหว่าง staff)

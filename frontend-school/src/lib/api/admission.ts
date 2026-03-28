@@ -551,9 +551,22 @@ export async function getGlobalRanking(roundId: string): Promise<GlobalRankingRe
     return res.data!;
 }
 
-export async function assignRoomsGlobal(roundId: string, method?: string) {
+export interface RoomBasic {
+    roomId: string;
+    roomName: string;
+    capacity: number;
+}
+
+export async function getRoomsForRound(roundId: string): Promise<RoomBasic[]> {
+    const res = await apiClient.get<RoomBasic[]>(`/api/admission/rounds/${roundId}/rooms`);
+    if (!res.success) throw new Error(res.error);
+    return res.data!;
+}
+
+export async function assignRoomsGlobal(roundId: string, method?: string, roomOrder?: string[]) {
     const res = await apiClient.post(`/api/admission/rounds/${roundId}/assign-rooms-global`, {
         roomAssignmentMethod: method ?? 'sequential',
+        ...(roomOrder && roomOrder.length > 0 ? { roomOrder } : {}),
     });
     if (!res.success) throw new Error(res.error);
     return res;

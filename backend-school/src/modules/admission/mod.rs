@@ -54,6 +54,7 @@ pub fn admission_routes() -> Router<AppState> {
 
         // === Selections (เรียงคะแนน + จัดห้อง) ===
         .route("/rounds/{id}/ranking", get(handlers::selections::get_ranking))
+        .route("/rounds/{id}/rooms", get(handlers::selections::get_round_rooms))
         .route("/rounds/{id}/global-ranking", get(handlers::selections::get_global_ranking))
         .route("/tracks/{id}/ranking", get(handlers::selections::get_track_ranking))
         .route("/tracks/{id}/room-assignments", delete(handlers::selections::reset_room_assignments))
