@@ -170,6 +170,7 @@
 			await assignRooms(id, selectedTrack, currentSubjectIds, currentMethod);
 			toast.success('จัดห้องสำเร็จ!');
 			assigned = true;
+			updateSelectionSettings(id, { assignmentMode: 'per_track' }).catch(() => {});
 			await loadRanking();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'จัดห้องไม่สำเร็จ');
@@ -195,6 +196,7 @@
 		assigningAll = false;
 		if (failed === 0) {
 			toast.success(`จัดห้องทุกสายสำเร็จ (${tracks.length} สาย)`);
+			updateSelectionSettings(id, { assignmentMode: 'per_track' }).catch(() => {});
 		} else {
 			toast.warning(`จัดห้องสำเร็จ ${tracks.length - failed} สาย, ล้มเหลว ${failed} สาย`);
 		}
@@ -210,6 +212,7 @@
 			toast.success('จัดห้องรวมทุกสายสำเร็จ!');
 			assigned = false;
 			globalViewTab = 'all';
+			updateSelectionSettings(id, { assignmentMode: 'global' }).catch(() => {});
 			await loadGlobalRanking();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'จัดห้องรวมทุกสายไม่สำเร็จ');
@@ -303,18 +306,15 @@
 	$effect(() => {
 		void selectedSubjectIdsByTrack;
 		void roomAssignmentMethodByTrack;
-		void assignmentMode;
 		if (selectedTrack && assignmentMode === 'per_track') loadRanking();
 		if (settingsLoaded && id) {
 			if (saveSettingsTimer) clearTimeout(saveSettingsTimer);
 			const capturedSubjects = { ...selectedSubjectIdsByTrack };
 			const capturedMethods = { ...roomAssignmentMethodByTrack };
-			const capturedMode = assignmentMode;
 			saveSettingsTimer = setTimeout(() => {
 				updateSelectionSettings(id, {
 					subjectsByTrack: capturedSubjects,
 					methodByTrack: capturedMethods,
-					assignmentMode: capturedMode
 				}).catch(() => {});
 			}, 500);
 		}
