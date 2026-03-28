@@ -979,16 +979,82 @@
 			</div>
 
 			<!-- Table -->
+			{#snippet appRow(app: (typeof globalAccepted)[0], isOrange: boolean)}
+				<Table.Row class={isOrange ? 'bg-orange-50' : ''}>
+					<Table.Cell class="text-center">
+						<span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.globalRank === 1 ? 'bg-yellow-100 text-yellow-700' : app.globalRank <= 3 ? 'bg-gray-100 text-gray-700' : 'text-muted-foreground'}">
+							{app.globalRank}
+						</span>
+					</Table.Cell>
+					<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
+					<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
+					<Table.Cell class="text-sm text-muted-foreground">{app.originalTrackName ?? '-'}</Table.Cell>
+					<Table.Cell class="text-center font-semibold text-primary">{app.totalScore.toFixed(1)}</Table.Cell>
+					{#if globalViewTab !== 'overflow'}
+						<Table.Cell class="text-center">
+							{#if app.assignedRoom}
+								<Badge variant="outline">{app.assignedRoom}</Badge>
+							{:else}
+								<span class="text-xs text-muted-foreground">-</span>
+							{/if}
+						</Table.Cell>
+						<Table.Cell>
+							{#if globalRanking && globalRanking.rooms.length > 1}
+								<div class="flex items-center gap-1.5">
+									<Select.Root
+										type="single"
+										value={moveTargetRoomId[app.applicationId] ?? ''}
+										onValueChange={(v) => {
+											moveTargetRoomId = { ...moveTargetRoomId, [app.applicationId]: v };
+										}}
+									>
+										<Select.Trigger class="h-6 text-xs w-24 px-2">
+											{globalRanking.rooms.find((r) => r.roomId === moveTargetRoomId[app.applicationId])?.roomName ?? 'ย้าย'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each globalRanking.rooms.filter((r) => r.roomName !== app.assignedRoom) as room (room.roomId)}
+												<Select.Item value={room.roomId}>
+													{room.roomName} ({room.studentCount}/{room.capacity}){room.studentCount >= room.capacity ? ' ⚠' : ''}
+												</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+									{#if moveTargetRoomId[app.applicationId]}
+										<Button
+											size="sm"
+											class="h-6 text-xs px-2"
+											disabled={movingRoom[app.applicationId]}
+											onclick={() => moveRoomGlobal(app.applicationId)}
+										>
+											{#if movingRoom[app.applicationId]}
+												<LoaderCircle class="w-3 h-3 animate-spin" />
+											{:else}
+												ย้าย
+											{/if}
+										</Button>
+									{/if}
+								</div>
+							{/if}
+						</Table.Cell>
+					{/if}
+				</Table.Row>
+			{/snippet}
+			{@const isRoomTab = globalViewTab !== 'all' && globalViewTab !== 'overflow'}
+			{@const currentRoom = isRoomTab ? globalRanking.rooms.find((r) => r.roomId === globalViewTab) : null}
+			{@const roomStudents = isRoomTab ? globalAccepted.filter((a) => a.assignedRoomId === globalViewTab).sort((a, b) => a.globalRank - b.globalRank) : []}
+			{@const roomNormal = isRoomTab ? roomStudents.slice(0, currentRoom?.capacity ?? roomStudents.length) : []}
+			{@const roomOver = isRoomTab ? roomStudents.slice(currentRoom?.capacity ?? roomStudents.length) : []}
+			{@const tabApps = globalViewTab === 'overflow' ? globalOverflow : globalViewTab === 'all' ? globalAccepted : roomNormal}
 			<Card.Root class={globalViewTab === 'overflow' ? 'border-orange-200' : ''}>
 				<Card.Header class="pb-3">
 					<Card.Title class="flex items-center gap-2">
 						{#if globalViewTab === 'overflow'}
-							<span class="text-orange-600">เกินโควต้า</span>
+							<span class="text-orange-600">เกินโควต้า (ไม่ได้รับห้อง)</span>
 						{:else if globalViewTab === 'all'}
 							<Trophy class="w-5 h-5 text-yellow-500" />
 							ผลรวมทุกสาย
 						{:else}
-							{globalRoomsSorted().find((r) => r.roomId === globalViewTab)?.roomName ?? ''}
+							{currentRoom?.roomName ?? ''} — {roomNormal.length} / {currentRoom?.capacity ?? 0} คน
 						{/if}
 					</Card.Title>
 				</Card.Header>
@@ -1008,67 +1074,19 @@
 						</Table.Row>
 					</Table.Header>
 					<Table.Body>
-						{@const tabApps = globalViewTab === 'overflow' ? globalOverflow : globalViewTab === 'all' ? globalAccepted : globalAccepted.filter((a) => a.assignedRoomId === globalViewTab)}
 						{#each tabApps as app (app.applicationId)}
-							<Table.Row class={globalViewTab === 'overflow' ? 'bg-orange-50' : ''}>
-								<Table.Cell class="text-center">
-									<span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.globalRank === 1 ? 'bg-yellow-100 text-yellow-700' : app.globalRank <= 3 ? 'bg-gray-100 text-gray-700' : 'text-muted-foreground'}">
-										{app.globalRank}
-									</span>
-								</Table.Cell>
-								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-								<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
-								<Table.Cell class="text-sm text-muted-foreground">{app.originalTrackName ?? '-'}</Table.Cell>
-								<Table.Cell class="text-center font-semibold text-primary">{app.totalScore.toFixed(1)}</Table.Cell>
-								{#if globalViewTab !== 'overflow'}
-									<Table.Cell class="text-center">
-										{#if app.assignedRoom}
-											<Badge variant="outline">{app.assignedRoom}</Badge>
-										{:else}
-											<span class="text-xs text-muted-foreground">-</span>
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										{#if globalRanking && globalRanking.rooms.length > 1}
-											<div class="flex items-center gap-1.5">
-												<Select.Root
-													type="single"
-													value={moveTargetRoomId[app.applicationId] ?? ''}
-													onValueChange={(v) => {
-														moveTargetRoomId = { ...moveTargetRoomId, [app.applicationId]: v };
-													}}
-												>
-													<Select.Trigger class="h-6 text-xs w-24 px-2">
-														{globalRanking.rooms.find((r) => r.roomId === moveTargetRoomId[app.applicationId])?.roomName ?? 'ย้าย'}
-													</Select.Trigger>
-													<Select.Content>
-														{#each globalRanking.rooms.filter((r) => r.roomName !== app.assignedRoom) as room (room.roomId)}
-															<Select.Item value={room.roomId}>
-																{room.roomName} ({room.studentCount}/{room.capacity}){room.studentCount >= room.capacity ? ' ⚠' : ''}
-															</Select.Item>
-														{/each}
-													</Select.Content>
-												</Select.Root>
-												{#if moveTargetRoomId[app.applicationId]}
-													<Button
-														size="sm"
-														class="h-6 text-xs px-2"
-														disabled={movingRoom[app.applicationId]}
-														onclick={() => moveRoomGlobal(app.applicationId)}
-													>
-														{#if movingRoom[app.applicationId]}
-															<LoaderCircle class="w-3 h-3 animate-spin" />
-														{:else}
-															ย้าย
-														{/if}
-													</Button>
-												{/if}
-											</div>
-										{/if}
-									</Table.Cell>
-								{/if}
-							</Table.Row>
+							{@render appRow(app, globalViewTab === 'overflow')}
 						{/each}
+						{#if isRoomTab && roomOver.length > 0}
+							<Table.Row>
+								<Table.Cell colspan={7} class="bg-orange-100 py-1.5 px-4">
+									<span class="text-xs font-semibold text-orange-700">เกินโควต้าห้องนี้ ({roomOver.length} คน) — ย้ายไปห้องอื่น</span>
+								</Table.Cell>
+							</Table.Row>
+							{#each roomOver as app (app.applicationId)}
+								{@render appRow(app, true)}
+							{/each}
+						{/if}
 					</Table.Body>
 				</Table.Root>
 				</div>
