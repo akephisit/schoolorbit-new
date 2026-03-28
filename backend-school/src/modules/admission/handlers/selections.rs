@@ -581,6 +581,7 @@ pub async fn assign_rooms(
         ranks_in_room.push(rank_in_room);
         scores.push(row.total_score.unwrap_or(0.0));
     }
+    let assigned_bys: Vec<Uuid> = vec![user_id; assigned_count];
 
     if !app_ids.is_empty() {
         sqlx::query(
@@ -611,7 +612,7 @@ pub async fn assign_rooms(
         .bind(&ranks_in_track)
         .bind(&ranks_in_room)
         .bind(&scores)
-        .bind(user_id)
+        .bind(&assigned_bys)
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -817,6 +818,7 @@ pub async fn assign_rooms_global(
         ranks_in_room.push(rank_in_room);
         scores.push(row.total_score.unwrap_or(0.0));
     }
+    let assigned_bys: Vec<Uuid> = vec![user_id; assigned_count];
 
     if !app_ids.is_empty() {
         sqlx::query(
@@ -847,7 +849,7 @@ pub async fn assign_rooms_global(
         .bind(&ranks_in_track)
         .bind(&ranks_in_room)
         .bind(&scores)
-        .bind(user_id)
+        .bind(&assigned_bys)
         .execute(&mut *tx)
         .await
         .map_err(|e| {
