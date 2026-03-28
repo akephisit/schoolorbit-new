@@ -50,6 +50,7 @@
 	let moving: Record<string, boolean> = $state({});
 	let moveTargetRoomId: Record<string, string> = $state({});
 	let movingRoom: Record<string, boolean> = $state({});
+	let assignmentMode = $state<'per_track' | 'global'>('per_track');
 	let showAssignDialog = $state(false);
 	let showAssignAllDialog = $state(false);
 	let showAssignGlobalDialog = $state(false);
@@ -78,6 +79,9 @@
 		}
 		if (saved?.methodByTrack) {
 			roomAssignmentMethodByTrack = saved.methodByTrack as Record<string, 'sequential' | 'round_robin'>;
+		}
+		if (saved?.assignmentMode === 'global') {
+			assignmentMode = 'global';
 		}
 		if (t.length > 0) selectedTrack = t[0].id;
 		settingsLoaded = true;
@@ -146,6 +150,7 @@
 		showAssignGlobalDialog = false;
 		if (!id) return;
 		assigningGlobal = true;
+		assignmentMode = 'global';
 		try {
 			await assignRoomsGlobal(id, 'sequential');
 			toast.success('จัดห้องรวมทุกสายสำเร็จ!');
@@ -247,15 +252,18 @@
 	$effect(() => {
 		void selectedSubjectIdsByTrack;
 		void roomAssignmentMethodByTrack;
+		void assignmentMode;
 		if (selectedTrack) loadRanking();
 		if (settingsLoaded && id) {
 			if (saveSettingsTimer) clearTimeout(saveSettingsTimer);
 			const capturedSubjects = { ...selectedSubjectIdsByTrack };
 			const capturedMethods = { ...roomAssignmentMethodByTrack };
+			const capturedMode = assignmentMode;
 			saveSettingsTimer = setTimeout(() => {
 				updateSelectionSettings(id, {
 					subjectsByTrack: capturedSubjects,
-					methodByTrack: capturedMethods
+					methodByTrack: capturedMethods,
+					assignmentMode: capturedMode
 				}).catch(() => {});
 			}, 500);
 		}

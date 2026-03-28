@@ -79,6 +79,8 @@ pub struct UpdateSelectionSettingsRequest {
     pub subjects_by_track: Option<serde_json::Value>,
     pub method_by_track: Option<serde_json::Value>,
     pub room_assignment_method: Option<String>,
+    /// "per_track" (default) หรือ "global"
+    pub assignment_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
