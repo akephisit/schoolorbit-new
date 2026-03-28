@@ -271,19 +271,9 @@
 		movingRoom = { ...movingRoom, [appId]: true };
 		try {
 			await moveApplicationRoom(appId, targetRoomId);
-			const roomName = globalRanking?.rooms.find((r) => r.roomId === targetRoomId)?.roomName;
-			if (globalRanking) {
-				globalRanking = {
-					...globalRanking,
-					applications: globalRanking.applications.map((a) =>
-						a.applicationId === appId
-							? { ...a, assignedRoom: roomName, assignedRoomId: targetRoomId, roomSaved: true }
-							: a
-					)
-				};
-			}
 			moveTargetRoomId = { ...moveTargetRoomId, [appId]: '' };
 			toast.success('ย้ายห้องสำเร็จ');
+			await loadGlobalRanking();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ย้ายห้องไม่สำเร็จ');
 		} finally {
@@ -329,19 +319,9 @@
 		movingRoom = { ...movingRoom, [appId]: true };
 		try {
 			await moveApplicationRoom(appId, targetRoomId);
-			const roomName = ranking?.rooms.find((r) => r.roomId === targetRoomId)?.roomName;
-			if (ranking) {
-				ranking = {
-					...ranking,
-					applications: ranking.applications.map((a) =>
-						a.applicationId === appId
-							? { ...a, assignedRoom: roomName, assignedRoomId: targetRoomId, roomSaved: true }
-							: a
-					)
-				};
-			}
 			moveTargetRoomId = { ...moveTargetRoomId, [appId]: '' };
 			toast.success('ย้ายห้องสำเร็จ');
+			await loadRanking();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ย้ายห้องไม่สำเร็จ');
 		} finally {
