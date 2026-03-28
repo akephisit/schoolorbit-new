@@ -219,31 +219,35 @@ pub async fn get_status(
     .await
     .unwrap_or(None);
 
-    // ดึงคะแนน (ถ้ากรอกแล้ว)
-    let scores = sqlx::query_as::<_, ExamScore>(
-        r#"
-        SELECT
-            esc.id,
-            esc.application_id,
-            esc.exam_subject_id,
-            esc.score,
-            esc.entered_by,
-            esc.entered_at,
-            esc.updated_at,
-            aes.name AS subject_name,
-            aes.code AS subject_code,
-            aes.max_score::FLOAT8 AS max_score
-        FROM admission_exam_subjects aes
-        LEFT JOIN admission_exam_scores esc ON esc.exam_subject_id = aes.id AND esc.application_id = $1
-        WHERE aes.admission_round_id = $2
-        ORDER BY aes.display_order ASC
-        "#
-    )
-    .bind(application_id)
-    .bind(application.admission_round_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    // ดึงคะแนน (เฉพาะเมื่อ showScores เปิดอยู่)
+    let scores: Vec<ExamScore> = if show_scores {
+        sqlx::query_as::<_, ExamScore>(
+            r#"
+            SELECT
+                esc.id,
+                esc.application_id,
+                esc.exam_subject_id,
+                esc.score,
+                esc.entered_by,
+                esc.entered_at,
+                esc.updated_at,
+                aes.name AS subject_name,
+                aes.code AS subject_code,
+                aes.max_score::FLOAT8 AS max_score
+            FROM admission_exam_subjects aes
+            LEFT JOIN admission_exam_scores esc ON esc.exam_subject_id = aes.id AND esc.application_id = $1
+            WHERE aes.admission_round_id = $2
+            ORDER BY aes.display_order ASC
+            "#
+        )
+        .bind(application_id)
+        .bind(application.admission_round_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default()
+    } else {
+        vec![]
+    };
 
     // form ที่กรอกไว้
     let form = sqlx::query_as::<_, EnrollmentForm>(
