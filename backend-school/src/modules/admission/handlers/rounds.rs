@@ -793,7 +793,7 @@ pub async fn get_track_capacity(
         SELECT cr.id AS room_id, cr.name AS room_name, cr.code AS room_code
         FROM admission_tracks t
         JOIN study_plans sp ON t.study_plan_id = sp.id
-        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
+        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
         JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
             AND cr.academic_year_id = (
                 SELECT academic_year_id FROM admission_rounds WHERE id = t.admission_round_id

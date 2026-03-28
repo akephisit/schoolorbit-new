@@ -257,7 +257,7 @@ pub async fn get_track_ranking(
         SELECT cr.id AS room_id, cr.name AS room_name, cr.capacity
         FROM admission_tracks t
         JOIN study_plans sp ON t.study_plan_id = sp.id
-        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
+        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
         JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
         WHERE t.id = $1
           AND cr.academic_year_id = (
@@ -482,7 +482,7 @@ pub async fn assign_rooms(
         SELECT cr.id AS room_id, cr.capacity
         FROM admission_tracks t
         JOIN study_plans sp ON t.study_plan_id = sp.id
-        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
+        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
         JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
         WHERE t.id = $1
           AND cr.academic_year_id = (
@@ -677,7 +677,7 @@ pub async fn assign_rooms_global(
         SELECT DISTINCT cr.id AS room_id, cr.capacity
         FROM admission_tracks t
         JOIN study_plans sp ON t.study_plan_id = sp.id
-        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id
+        JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
         JOIN class_rooms cr ON cr.study_plan_version_id = spv.id
         WHERE t.admission_round_id = $1
           AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = $1)
