@@ -250,6 +250,7 @@ export interface GlobalRankingEntry {
     fullName: string;
     totalScore: number;
     globalRank: number;
+    rankInRoom?: number;
     assignedRoom?: string;
     assignedRoomId?: string;
     roomSaved?: boolean;

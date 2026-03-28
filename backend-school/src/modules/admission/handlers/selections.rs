@@ -943,8 +943,9 @@ pub async fn get_global_ranking(
         .map(|r| (r.room_id.to_string(), r.capacity))
         .collect();
 
-    // สะสม room stats
-    let mut room_map: std::collections::BTreeMap<String, (String, i64, i64, i64)> =
+    // สะสม room stats + rank_in_room counter
+    // tuple: (name, studentCount, maleCount, femaleCount, rankCounter)
+    let mut room_map: std::collections::BTreeMap<String, (String, i64, i64, i64, i64)> =
         std::collections::BTreeMap::new();
 
     let apps_json: Vec<serde_json::Value> = rows
@@ -954,18 +955,20 @@ pub async fn get_global_ranking(
             let is_overflow = row.saved_room_id.is_none();
             let room_saved = row.saved_room_id.is_some();
 
-            let (assigned_room, assigned_room_id) =
+            let (assigned_room, assigned_room_id, rank_in_room) =
                 if let (Some(name), Some(id)) = (&row.saved_room_name, &row.saved_room_id) {
-                    let entry = room_map.entry(id.to_string()).or_insert((name.clone(), 0, 0, 0));
+                    let entry = room_map.entry(id.to_string()).or_insert((name.clone(), 0, 0, 0, 0));
                     entry.1 += 1;
+                    entry.4 += 1;
+                    let rank = entry.4;
                     match row.gender.as_deref() {
                         Some(g) if g.eq_ignore_ascii_case("male") || g == "ชาย" => entry.2 += 1,
                         Some(g) if g.eq_ignore_ascii_case("female") || g == "หญิง" => entry.3 += 1,
                         _ => {}
                     }
-                    (json!(name), json!(id))
+                    (json!(name), json!(id), json!(rank))
                 } else {
-                    (serde_json::Value::Null, serde_json::Value::Null)
+                    (serde_json::Value::Null, serde_json::Value::Null, serde_json::Value::Null)
                 };
 
             json!({
@@ -975,6 +978,7 @@ pub async fn get_global_ranking(
                 "fullName": row.full_name,
                 "totalScore": row.total_score.unwrap_or(0.0),
                 "globalRank": (i + 1) as i64,
+                "rankInRoom": rank_in_room,
                 "assignedRoom": assigned_room,
                 "assignedRoomId": assigned_room_id,
                 "roomSaved": room_saved,
@@ -987,7 +991,7 @@ pub async fn get_global_ranking(
 
     let rooms_json: Vec<serde_json::Value> = room_map
         .iter()
-        .map(|(rid, (name, total, male, female))| {
+        .map(|(rid, (name, total, male, female, _))| {
             let cap = cap_map.get(rid).copied().unwrap_or(0);
             json!({
                 "roomId": rid,

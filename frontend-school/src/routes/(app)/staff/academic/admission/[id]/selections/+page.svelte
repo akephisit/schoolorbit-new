@@ -274,11 +274,20 @@
 			const isMale = movedApp?.gender?.toLowerCase() === 'male' || movedApp?.gender === 'ชาย';
 			const isFemale = movedApp?.gender?.toLowerCase() === 'female' || movedApp?.gender === 'หญิง';
 			const targetRoom = roomOrderForGlobal.find((r) => r.roomId === targetRoomId);
-			const apps = globalRanking.applications.map((a) =>
+			// อัปเดต assignedRoomId ของคนที่ย้าย
+			const appsAfterMove = globalRanking.applications.map((a) =>
 				a.applicationId === appId
 					? { ...a, assignedRoomId: targetRoomId, assignedRoom: targetRoom?.roomName ?? targetRoomId }
 					: a
 			);
+			// recalculate rankInRoom สำหรับห้องเก่าและห้องใหม่
+			const affectedRooms = new Set([oldRoomId, targetRoomId]);
+			const roomRankCounters: Record<string, number> = {};
+			const apps = appsAfterMove.map((a) => {
+				if (!a.assignedRoomId || !affectedRooms.has(a.assignedRoomId)) return a;
+				roomRankCounters[a.assignedRoomId] = (roomRankCounters[a.assignedRoomId] ?? 0) + 1;
+				return { ...a, rankInRoom: roomRankCounters[a.assignedRoomId] };
+			});
 			const rooms = globalRanking.rooms.map((r) => {
 				if (r.roomId === oldRoomId) return {
 					...r,
@@ -1004,6 +1013,9 @@
 						<span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.globalRank === 1 ? 'bg-yellow-100 text-yellow-700' : app.globalRank <= 3 ? 'bg-gray-100 text-gray-700' : 'text-muted-foreground'}">
 							{app.globalRank}
 						</span>
+						{#if app.rankInRoom != null && globalViewTab !== 'all' && globalViewTab !== 'overflow'}
+							<div class="text-[10px] text-muted-foreground">#{app.rankInRoom}</div>
+						{/if}
 					</Table.Cell>
 					<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
 					<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
