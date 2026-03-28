@@ -668,9 +668,21 @@ pub async fn reset_room_assignments(
     .await
     .unwrap_or(0);
 
-    // revert status กลับเป็น verified สำหรับคนที่ถูกล้างห้อง
+    // revert status: scored ถ้ากรอกคะแนนครบแล้ว, ไม่งั้น verified
     sqlx::query(
-        "UPDATE admission_applications SET status = 'verified', updated_at = NOW() WHERE COALESCE(room_assignment_track_id, admission_track_id) = $1 AND status = 'accepted'"
+        r#"
+        UPDATE admission_applications aa
+        SET status = CASE
+            WHEN (SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = aa.admission_round_id) > 0
+             AND (SELECT COUNT(*) FROM admission_exam_scores WHERE application_id = aa.id AND score IS NOT NULL)
+                 >= (SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = aa.admission_round_id)
+            THEN 'scored'
+            ELSE 'verified'
+        END,
+        updated_at = NOW()
+        WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $1
+          AND aa.status = 'accepted'
+        "#
     )
     .bind(track_id)
     .execute(&pool)
@@ -707,9 +719,21 @@ pub async fn reset_all_room_assignments(
     .await
     .unwrap_or(0);
 
-    // revert status กลับเป็น verified สำหรับทุกคนในรอบที่ถูกล้างห้อง
+    // revert status: scored ถ้ากรอกคะแนนครบแล้ว, ไม่งั้น verified
     sqlx::query(
-        "UPDATE admission_applications SET status = 'verified', updated_at = NOW() WHERE admission_round_id = $1 AND status = 'accepted'"
+        r#"
+        UPDATE admission_applications aa
+        SET status = CASE
+            WHEN (SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = aa.admission_round_id) > 0
+             AND (SELECT COUNT(*) FROM admission_exam_scores WHERE application_id = aa.id AND score IS NOT NULL)
+                 >= (SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = aa.admission_round_id)
+            THEN 'scored'
+            ELSE 'verified'
+        END,
+        updated_at = NOW()
+        WHERE aa.admission_round_id = $1
+          AND aa.status = 'accepted'
+        "#
     )
     .bind(round_id)
     .execute(&pool)
