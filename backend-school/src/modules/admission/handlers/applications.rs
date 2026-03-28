@@ -1524,40 +1524,79 @@ pub async fn move_application_room(
         return Ok(r);
     }
 
-    // ตรวจว่ามี record ใน admission_room_assignments ก่อน
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM admission_room_assignments WHERE application_id = $1)"
+    // ดึง old_room_id ก่อนย้าย
+    let old_room_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT class_room_id FROM admission_room_assignments WHERE application_id = $1"
     )
     .bind(id)
-    .fetch_one(&pool)
+    .fetch_optional(&pool)
     .await
-    .unwrap_or(false);
+    .unwrap_or(None);
 
-    if !exists {
+    if old_room_id.is_none() {
         return Err(AppError::BadRequest("ยังไม่มีการจัดห้อง กรุณาบันทึกการจัดห้องก่อน".to_string()));
     }
 
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    // ย้ายห้อง
     sqlx::query(
-        r#"
-        UPDATE admission_room_assignments
-        SET class_room_id = $1,
-            rank_in_room = (
-                SELECT COALESCE(MAX(rank_in_room), 0) + 1
-                FROM admission_room_assignments
-                WHERE class_room_id = $1 AND application_id != $2
-            ),
-            assigned_at = NOW()
-        WHERE application_id = $2
-        "#
+        "UPDATE admission_room_assignments SET class_room_id = $1, assigned_at = NOW() WHERE application_id = $2"
     )
     .bind(payload.room_id)
     .bind(id)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| {
         eprintln!("move_application_room error: {}", e);
         AppError::InternalServerError("Database error".to_string())
     })?;
+
+    // recalculate rank_in_room ของห้องใหม่ (เรียงตาม total_score DESC)
+    sqlx::query(
+        r#"
+        UPDATE admission_room_assignments ara
+        SET rank_in_room = ranked.new_rank
+        FROM (
+            SELECT application_id,
+                   ROW_NUMBER() OVER (ORDER BY total_score DESC, rank_in_track ASC) AS new_rank
+            FROM admission_room_assignments
+            WHERE class_room_id = $1
+        ) ranked
+        WHERE ara.application_id = ranked.application_id
+          AND ara.class_room_id = $1
+        "#
+    )
+    .bind(payload.room_id)
+    .execute(&mut *tx)
+    .await.ok();
+
+    // recalculate rank_in_room ของห้องเก่า (ถ้าต่างกัน)
+    if let Some(old_id) = old_room_id {
+        if old_id != payload.room_id {
+            sqlx::query(
+                r#"
+                UPDATE admission_room_assignments ara
+                SET rank_in_room = ranked.new_rank
+                FROM (
+                    SELECT application_id,
+                           ROW_NUMBER() OVER (ORDER BY total_score DESC, rank_in_track ASC) AS new_rank
+                    FROM admission_room_assignments
+                    WHERE class_room_id = $1
+                ) ranked
+                WHERE ara.application_id = ranked.application_id
+                  AND ara.class_room_id = $1
+                "#
+            )
+            .bind(old_id)
+            .execute(&mut *tx)
+            .await.ok();
+        }
+    }
+
+    tx.commit().await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok(Json(json!({ "success": true })).into_response())
 }
