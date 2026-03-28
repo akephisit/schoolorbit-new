@@ -162,6 +162,12 @@
 		edits = { ...edits, [appId]: '' };
 	}
 
+	function clearAllEdits() {
+		const cleared: Record<string, string> = {};
+		for (const id of Object.keys(edits)) cleared[id] = '';
+		edits = cleared;
+	}
+
 	function clearSchoolFilter() {
 		schoolFilter = '';
 	}
@@ -317,6 +323,15 @@
 					disabled={loading || entries.length === 0}
 				>
 					<FileSpreadsheet class="w-3.5 h-3.5" /> ดาวน์โหลด XLSX
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="gap-1.5 h-8 text-destructive hover:text-destructive"
+					onclick={clearAllEdits}
+					disabled={loading || assignedCount === 0}
+				>
+					<X class="w-3.5 h-3.5" /> ล้างทั้งหมด
 				</Button>
 			</div>
 		</Card.Content>
