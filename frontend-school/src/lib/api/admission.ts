@@ -587,7 +587,7 @@ export async function assignRoomsGlobal(roundId: string, method?: string, roomOr
 export async function sortRoomStudents(roundId: string) {
     const res = await apiClient.post(`/api/admission/rounds/${roundId}/sort-room-students`);
     if (!res.success) throw new Error(res.error);
-    return res.data as { updated: number };
+    return res as unknown as { updated: number };
 }
 
 export async function autoAssignStudentIds(roundId: string, startNumber: number) {
