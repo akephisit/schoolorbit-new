@@ -242,7 +242,7 @@
 					size="sm"
 					class="text-blue-600 hover:text-blue-700 hover:bg-blue-50 -ml-2"
 				>
-					<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
+					<ArrowLeft class="w-4 h-4" />
 				</Button>
 			</div>
 			{#if schoolInfo.logoUrl}
