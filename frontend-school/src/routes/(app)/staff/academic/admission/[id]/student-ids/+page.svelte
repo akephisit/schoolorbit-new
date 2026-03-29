@@ -193,17 +193,16 @@
 	async function downloadXlsx() {
 		const XLSX = await import('xlsx');
 		const rankColLabel = assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย';
-		const header = ['ลำดับ', 'เลขประจำตัว', 'ชื่อ-สกุล', 'เลขที่สมัคร', 'สายการเรียน', 'โรงเรียนเดิม', 'ห้องที่ได้', 'เลขที่', rankColLabel];
+		const header = ['ลำดับ', 'เลขประจำตัว', 'เลขที่นั่งสอบ', 'ชื่อ-สกุล', 'เลขที่สมัคร', 'สายที่สมัคร', 'สายที่จัด', 'โรงเรียนเดิม', 'ห้องที่ได้', 'เลขที่', rankColLabel];
 		const rows = entries.map((e, i) => {
-			const trackName = e.assignedTrackName
-				? `${e.originalTrackName ?? ''} → ${e.assignedTrackName}`
-				: (e.originalTrackName ?? '');
 			return [
 				i + 1,
 				edits[e.applicationId]?.trim() || '',
+				e.examId ?? '',
 				e.fullName,
 				e.applicationNumber ?? '',
-				trackName,
+				e.originalTrackName ?? '',
+				e.assignedTrackName ?? '',
 				e.previousSchool ?? '',
 				e.roomName ?? '',
 				e.rankInRoom ?? '',

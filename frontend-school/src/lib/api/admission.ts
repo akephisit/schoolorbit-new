@@ -1044,6 +1044,7 @@ export interface StudentIdEntry {
     previousSchool?: string;
     originalTrackName?: string;
     assignedTrackName?: string;
+    examId?: string;
 }
 
 export async function listStudentIds(roundId: string): Promise<{ data: StudentIdEntry[] }> {

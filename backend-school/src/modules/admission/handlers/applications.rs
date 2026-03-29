@@ -1508,12 +1508,14 @@ pub async fn list_student_ids(
                       AND a.room_assignment_track_id != a.admission_track_id
                  THEN at_assigned.name
                  ELSE NULL
-            END AS assigned_track_name
+            END AS assigned_track_name,
+            esa.exam_id
         FROM admission_applications a
         JOIN admission_room_assignments ra ON ra.application_id = a.id
         LEFT JOIN class_rooms cr ON ra.class_room_id = cr.id
         LEFT JOIN admission_tracks at_orig ON at_orig.id = a.admission_track_id
         LEFT JOIN admission_tracks at_assigned ON at_assigned.id = a.room_assignment_track_id
+        LEFT JOIN admission_exam_seat_assignments esa ON esa.application_id = a.id
         WHERE a.admission_round_id = $1
           AND a.status IN ('accepted', 'enrolled')
         ORDER BY cr.name, ra.rank_in_room
