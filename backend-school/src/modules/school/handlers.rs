@@ -148,6 +148,14 @@ pub async fn delete_logo(
         }
     }
 
+    // Hard-delete record ใน files table
+    if let Some(file_id) = row.logo_file_id {
+        let _ = sqlx::query("DELETE FROM files WHERE id = $1")
+            .bind(file_id)
+            .execute(&pool)
+            .await;
+    }
+
     // ล้างใน school_settings
     sqlx::query("UPDATE school_settings SET logo_path = NULL, logo_file_id = NULL, updated_at = NOW()")
         .execute(&pool)
