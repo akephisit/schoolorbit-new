@@ -9,7 +9,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { ArrowLeft, Save, Upload, ImageOff } from 'lucide-svelte';
+	import { ArrowLeft, Save, Upload, ImageOff, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -17,9 +17,10 @@
 	import { apiClient } from '$lib/api/client';
 
 	let logoUrl = $state<string | undefined>(undefined);
-	let savingLogo = $state(false);
-	let uploadingLogo = $state(false);
+	let saving = $state(false);
 	let loading = $state(true);
+	let pendingFile = $state<File | undefined>(undefined);
+	let previewUrl = $state<string | undefined>(undefined);
 
 	onMount(async () => {
 		try {
@@ -32,36 +33,38 @@
 		}
 	});
 
-	async function handleLogoUpload(e: Event) {
+	function handleLogoSelect(e: Event) {
 		const file = (e.target as HTMLInputElement).files?.[0];
 		if (!file) return;
-		uploadingLogo = true;
-		try {
-			const form = new FormData();
-			form.append('file', file);
-			form.append('file_type', 'school_logo');
-			form.append('is_public', 'true');
-			const res = await apiClient.postMultipart<never>('/api/files/upload', form);
-			const fileUrl = (res as unknown as { file?: { url: string } }).file?.url;
-			if (!res.success || !fileUrl) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
-			logoUrl = fileUrl;
-			toast.success('อัปโหลด logo สำเร็จ กด "บันทึก" เพื่อยืนยัน');
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ');
-		} finally {
-			uploadingLogo = false;
-		}
+		if (previewUrl) URL.revokeObjectURL(previewUrl);
+		pendingFile = file;
+		previewUrl = URL.createObjectURL(file);
 	}
 
 	async function handleSave() {
-		savingLogo = true;
+		saving = true;
 		try {
-			await updateSchoolSettings({ logoUrl });
+			let urlToSave = logoUrl;
+			if (pendingFile) {
+				const form = new FormData();
+				form.append('file', pendingFile);
+				form.append('file_type', 'school_logo');
+				form.append('is_public', 'true');
+				const res = await apiClient.postMultipart<never>('/api/files/upload', form);
+				const fileUrl = (res as unknown as { file?: { url: string } }).file?.url;
+				if (!res.success || !fileUrl) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
+				urlToSave = fileUrl;
+				if (previewUrl) URL.revokeObjectURL(previewUrl);
+				previewUrl = undefined;
+				pendingFile = undefined;
+			}
+			await updateSchoolSettings({ logoUrl: urlToSave });
+			logoUrl = urlToSave;
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
 		} finally {
-			savingLogo = false;
+			saving = false;
 		}
 	}
 </script>
@@ -99,13 +102,19 @@
 					<div
 						class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden"
 					>
-						{#if logoUrl}
-							<img src={logoUrl} alt="school logo" class="w-full h-full object-contain p-1" />
+						{#if previewUrl ?? logoUrl}
+							<img src={previewUrl ?? logoUrl} alt="school logo" class="w-full h-full object-contain p-1" />
 						{:else}
 							<ImageOff class="w-8 h-8 text-muted-foreground" />
 						{/if}
 					</div>
-					<p class="text-xs text-muted-foreground">ตัวอย่าง logo</p>
+					<p class="text-xs text-muted-foreground">
+						{#if pendingFile}
+							<span class="text-amber-600">ยังไม่ได้บันทึก — กด "บันทึก" เพื่อยืนยัน</span>
+						{:else}
+							ตัวอย่าง logo
+						{/if}
+					</p>
 				</div>
 
 				<!-- Upload -->
@@ -117,28 +126,41 @@
 							type="file"
 							accept="image/jpeg,image/png,image/webp"
 							class="hidden"
-							onchange={handleLogoUpload}
-							disabled={uploadingLogo}
+							onchange={handleLogoSelect}
+							disabled={saving}
 						/>
-						<Button variant="outline" class="gap-2 pointer-events-none" disabled={uploadingLogo}>
+						<Button variant="outline" class="gap-2 pointer-events-none" disabled={saving}>
 							<Upload class="w-4 h-4" />
-							{uploadingLogo ? 'กำลังอัปโหลด...' : 'เลือกไฟล์'}
+							เลือกไฟล์
 						</Button>
 					</label>
 				</div>
 
 				<!-- Actions -->
 				<div class="flex items-center gap-3 pt-2">
-					<Button onclick={handleSave} disabled={savingLogo} class="gap-2">
+					<Button onclick={handleSave} disabled={saving} class="gap-2">
 						<Save class="w-4 h-4" />
-						{savingLogo ? 'กำลังบันทึก...' : 'บันทึก'}
+						{saving ? 'กำลังบันทึก...' : 'บันทึก'}
 					</Button>
-					{#if logoUrl}
+					{#if pendingFile}
+						<Button
+							variant="ghost"
+							class="gap-1.5 text-muted-foreground"
+							onclick={() => {
+								if (previewUrl) URL.revokeObjectURL(previewUrl);
+								pendingFile = undefined;
+								previewUrl = undefined;
+							}}
+							disabled={saving}
+						>
+							<X class="w-4 h-4" /> ยกเลิก
+						</Button>
+					{:else if logoUrl}
 						<Button
 							variant="ghost"
 							class="text-destructive hover:text-destructive"
 							onclick={() => (logoUrl = undefined)}
-							disabled={savingLogo}
+							disabled={saving}
 						>
 							ลบ logo
 						</Button>
