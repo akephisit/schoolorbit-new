@@ -13,7 +13,6 @@
 		changeApplicationTrack,
 		updateSelectionSettings,
 		moveApplicationRoom,
-		resetRoomAssignments,
 		resetAllRoomAssignments,
 		type AdmissionRound,
 		type AdmissionTrack,
@@ -69,7 +68,6 @@
 	let showAssignDialog = $state(false);
 	let showAssignAllDialog = $state(false);
 	let showAssignGlobalDialog = $state(false);
-	let resetting = $state(false);
 	let resettingAll = $state(false);
 	let showResetAllDialog = $state(false);
 	let assigningAll = $state(false);
@@ -328,21 +326,6 @@
 		}
 	}
 
-	async function handleReset() {
-		if (!selectedTrack) return;
-		resetting = true;
-		try {
-			await resetRoomAssignments(selectedTrack);
-			toast.success('ล้างการจัดห้องสำเร็จ');
-			assigned = false;
-			await loadRanking();
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'ล้างการจัดห้องไม่สำเร็จ');
-		} finally {
-			resetting = false;
-		}
-	}
-
 	async function moveRoom(appId: string) {
 		const targetRoomId = moveTargetRoomId[appId];
 		if (!targetRoomId || !ranking) return;
@@ -598,23 +581,7 @@
 						<Badge variant="secondary">{acceptedApps.length} คน</Badge>
 					</Card.Title>
 					<div class="flex gap-2">
-						{#if acceptedApps.some((a) => a.roomSaved)}
-							<Button
-								variant="ghost"
-								size="sm"
-								class="gap-1.5 text-muted-foreground hover:text-destructive"
-								disabled={resetting}
-								onclick={handleReset}
-								title="ล้างการจัดห้องทั้งหมด"
-							>
-								{#if resetting}
-									<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
-								{:else}
-									<Trash2 class="w-3.5 h-3.5" />
-								{/if}
-								ล้างการจัดห้อง
-							</Button>
-						{/if}
+
 						<Button
 							onclick={() => (showAssignDialog = true)}
 							disabled={assigning || acceptedApps.length === 0}

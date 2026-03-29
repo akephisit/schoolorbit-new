@@ -640,57 +640,6 @@ pub async fn assign_rooms(
 }
 
 /// DELETE /api/admission/tracks/:id/room-assignments — ล้างการจัดห้องของ track นี้ทั้งหมด
-pub async fn reset_room_assignments(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(track_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
-        return Ok(r);
-    }
-
-    let deleted = sqlx::query_scalar::<_, i64>(
-        r#"
-        WITH deleted AS (
-            DELETE FROM admission_room_assignments
-            WHERE application_id IN (
-                SELECT id FROM admission_applications
-                WHERE COALESCE(room_assignment_track_id, admission_track_id) = $1
-            )
-            RETURNING application_id
-        )
-        SELECT COUNT(*) FROM deleted
-        "#
-    )
-    .bind(track_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
-
-    // revert status: scored ถ้ากรอกคะแนนครบแล้ว, ไม่งั้น verified
-    sqlx::query(
-        r#"
-        UPDATE admission_applications aa
-        SET status = CASE
-            WHEN (SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = aa.admission_round_id) > 0
-             AND (SELECT COUNT(*) FROM admission_exam_scores WHERE application_id = aa.id AND score IS NOT NULL)
-                 >= (SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = aa.admission_round_id)
-            THEN 'scored'
-            ELSE 'verified'
-        END,
-        updated_at = NOW()
-        WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $1
-          AND aa.status = 'accepted'
-        "#
-    )
-    .bind(track_id)
-    .execute(&pool)
-    .await.ok();
-
-    Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
-}
-
 /// DELETE /api/admission/rounds/:id/room-assignments — ล้างการจัดห้องของทุกคนในรอบนี้
 pub async fn reset_all_room_assignments(
     State(state): State<AppState>,
