@@ -233,18 +233,19 @@
 	class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-start justify-center py-12 px-4"
 >
 	<div class="w-full max-w-lg space-y-6">
+		<div>
+			<Button
+				href="/apply"
+				variant="ghost"
+				size="sm"
+				class="text-blue-600 hover:text-blue-700 hover:bg-blue-50 -ml-2"
+			>
+				<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
+			</Button>
+		</div>
+
 		<!-- Header -->
-		<div class="text-center relative pt-8">
-			<div class="absolute left-0 top-0">
-				<Button
-					href="/apply"
-					variant="ghost"
-					size="sm"
-					class="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-				>
-					<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
-				</Button>
-			</div>
+		<div class="text-center">
 			{#if schoolInfo.logoUrl}
 				<img src={schoolInfo.logoUrl} alt="school logo" class="w-24 h-24 object-contain block mx-auto mb-4" />
 			{:else}
