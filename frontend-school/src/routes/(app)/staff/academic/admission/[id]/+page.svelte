@@ -158,7 +158,7 @@
 		try {
 			await updateSelectionSettings(round.id, { showScores: !current });
 			toast.success(!current ? 'เปิดแสดงคะแนนบน portal แล้ว' : 'ซ่อนคะแนนบน portal แล้ว');
-			round = { ...round, selectionSettings: { ...(round.selectionSettings ?? {}), showScores: !current } };
+			round = { ...round, selectionSettings: { method: '', ...(round.selectionSettings ?? {}), showScores: !current } };
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'อัปเดตไม่สำเร็จ');
 		} finally {

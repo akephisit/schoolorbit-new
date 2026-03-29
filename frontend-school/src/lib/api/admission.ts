@@ -234,6 +234,7 @@ export interface RankingEntry {
     isOverflow: boolean;
     isTrackOverridden?: boolean;
     originalTrackName?: string;
+    gender?: string;
 }
 
 export interface TrackRankingResult {
