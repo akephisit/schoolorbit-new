@@ -593,19 +593,24 @@
 					</Card.Title>
 					<div class="flex gap-2">
 
-						<Button
-							onclick={() => (showAssignDialog = true)}
-							disabled={assigning || acceptedApps.length === 0}
-							variant={assigned ? 'outline' : 'default'}
-							class="gap-2"
-						>
-							{#if assigning}
-								<LoaderCircle class="w-4 h-4 animate-spin" />
-							{:else}
-								<Check class="w-4 h-4" />
-							{/if}
-							{assigning ? 'กำลังจัดห้อง...' : assigned ? 'จัดห้องแล้ว (จัดใหม่)' : 'บันทึกจัดห้อง'}
-						</Button>
+						{#if assigned}
+							<span class="flex items-center gap-1.5 text-sm text-green-600 font-medium px-2">
+								<CheckCircle2 class="w-4 h-4" /> จัดห้องแล้ว
+							</span>
+						{:else}
+							<Button
+								onclick={() => (showAssignDialog = true)}
+								disabled={assigning || acceptedApps.length === 0}
+								class="gap-2"
+							>
+								{#if assigning}
+									<LoaderCircle class="w-4 h-4 animate-spin" />
+								{:else}
+									<Check class="w-4 h-4" />
+								{/if}
+								{assigning ? 'กำลังจัดห้อง...' : 'บันทึกจัดห้อง'}
+							</Button>
+						{/if}
 					</div>
 				</Card.Header>
 
