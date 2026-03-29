@@ -384,6 +384,7 @@ pub async fn get_track_ranking(
                 "isOverflow": false,
                 "isTrackOverridden": is_overridden,
                 "originalTrackName": if is_overridden { json!(row.original_track_name) } else { serde_json::Value::Null },
+                "gender": row.gender,
             })
         })
         .collect();
