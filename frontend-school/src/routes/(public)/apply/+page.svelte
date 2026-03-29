@@ -33,13 +33,13 @@
 	<div class="w-full max-w-2xl space-y-6">
 		<!-- Header -->
 		<div class="text-center">
-			<div class="inline-flex p-3 bg-white rounded-2xl shadow-md mb-4">
-				{#if schoolInfo.logoUrl}
-					<img src={schoolInfo.logoUrl} alt="school logo" class="w-10 h-10 object-contain" />
-				{:else}
+			{#if schoolInfo.logoUrl}
+				<img src={schoolInfo.logoUrl} alt="school logo" class="w-16 h-16 object-contain mb-4" />
+			{:else}
+				<div class="inline-flex p-3 bg-white rounded-2xl shadow-md mb-4">
 					<GraduationCap class="w-10 h-10 text-blue-600" />
-				{/if}
-			</div>
+				</div>
+			{/if}
 			<h1 class="text-2xl font-bold text-gray-900">{schoolInfo.schoolName ?? 'ระบบรับสมัครนักเรียน'}</h1>
 			<p class="text-gray-500 mt-1 text-sm">
 				กรุณาเลือกรอบรับสมัครที่ท่านสนใจ หรือตรวจสอบผลการสมัครเดิม
