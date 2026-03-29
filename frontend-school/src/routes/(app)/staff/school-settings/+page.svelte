@@ -41,9 +41,10 @@
 			form.append('file', file);
 			form.append('file_type', 'school_logo');
 			form.append('is_public', 'true');
-			const res = await apiClient.postMultipart<{ file: { url: string } }>('/api/files/upload', form);
-			if (!res.success || !res.data?.file?.url) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
-			logoUrl = res.data.file.url;
+			const res = await apiClient.postMultipart<never>('/api/files/upload', form);
+			const fileUrl = (res as unknown as { file?: { url: string } }).file?.url;
+			if (!res.success || !fileUrl) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
+			logoUrl = fileUrl;
 			toast.success('อัปโหลด logo สำเร็จ กด "บันทึก" เพื่อยืนยัน');
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ');
