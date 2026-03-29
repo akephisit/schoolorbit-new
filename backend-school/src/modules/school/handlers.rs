@@ -14,7 +14,6 @@ use crate::permissions::registry::codes;
 use crate::utils::file_url::get_file_url_from_string;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use super::models::{SchoolSettingsRow, SchoolSettingsResponse, UpdateSchoolSettingsRequest};
-use crate::modules::files::models::File;
 use crate::services::r2_client::R2Client;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
@@ -147,14 +146,6 @@ pub async fn delete_logo(
             }
             Err(e) => eprintln!("R2Client init error: {}", e),
         }
-    }
-
-    // Soft-delete record ใน files table
-    if let Some(file_id) = row.logo_file_id {
-        let _ = sqlx::query("UPDATE files SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
-            .bind(file_id)
-            .execute(&pool)
-            .await;
     }
 
     // ล้างใน school_settings
