@@ -138,10 +138,11 @@
 	async function handleVisibilityToggle() {
 		if (!round) return;
 		togglingVisibility = true;
+		const newVal = !round.isVisible;
 		try {
-			await updateRoundVisibility(round.id, !round.isVisible);
-			toast.success(round.isVisible ? 'ซ่อนรอบจาก portal แล้ว' : 'แสดงรอบบน portal แล้ว');
-			await load();
+			await updateRoundVisibility(round.id, newVal);
+			toast.success(newVal ? 'แสดงรอบบน portal แล้ว' : 'ซ่อนรอบจาก portal แล้ว');
+			round = { ...round, isVisible: newVal };
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'อัปเดตไม่สำเร็จ');
 		} finally {
@@ -156,7 +157,7 @@
 		try {
 			await updateSelectionSettings(round.id, { showScores: !current });
 			toast.success(!current ? 'เปิดแสดงคะแนนบน portal แล้ว' : 'ซ่อนคะแนนบน portal แล้ว');
-			await load();
+			round = { ...round, selectionSettings: { ...(round.selectionSettings ?? {}), showScores: !current } };
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'อัปเดตไม่สำเร็จ');
 		} finally {
@@ -192,7 +193,7 @@
 		try {
 			await updateRoundStatus(round.id, status);
 			toast.success(`สถานะ → ${roundStatusLabel[status]}`);
-			await load();
+			round = { ...round, status };
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'เปลี่ยนสถานะไม่สำเร็จ');
 		}
