@@ -202,7 +202,7 @@
 				e.fullName,
 				e.applicationNumber ?? '',
 				e.originalTrackName ?? '',
-				e.assignedTrackName ?? '',
+				e.assignedTrackName ?? e.originalTrackName ?? '',
 				e.previousSchool ?? '',
 				e.roomName ?? '',
 				e.rankInRoom ?? '',
