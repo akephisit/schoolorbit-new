@@ -31,7 +31,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, GraduationCap, Trophy, Check, LoaderCircle, RotateCcw, Trash2, GripVertical, Layers, Columns2 } from 'lucide-svelte';
+	import { ArrowLeft, GraduationCap, Trophy, Check, CheckCircle2, LoaderCircle, RotateCcw, Trash2, GripVertical, Layers, Columns2 } from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -50,6 +50,7 @@
 	let loading = $state(false);
 	let assigning = $state(false);
 	let assigned = $state(false);
+	let assignedTracks = $state(new Set<string>());
 	let moveTargetTrackId: Record<string, string> = $state({});
 	let moving: Record<string, boolean> = $state({});
 	let moveTargetRoomId: Record<string, string> = $state({});
@@ -119,6 +120,10 @@
 		assigned = false;
 		try {
 			ranking = await getTrackRanking(selectedTrack, currentSubjectIds, currentMethod);
+			if (ranking?.applications.some((a) => a.roomSaved)) {
+				assigned = true;
+				assignedTracks = new Set([...assignedTracks, selectedTrack]);
+			}
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดผลเรียงคะแนนไม่สำเร็จ');
 		} finally {
@@ -166,6 +171,7 @@
 			await assignRooms(id, selectedTrack, currentSubjectIds, currentMethod);
 			toast.success('จัดห้องสำเร็จ!');
 			assigned = true;
+			assignedTracks = new Set([...assignedTracks, selectedTrack]);
 			updateSelectionSettings(id, { assignmentMode: 'per_track' }).catch(() => {});
 			await loadRanking();
 		} catch (e) {
@@ -318,6 +324,7 @@
 			ranking = null;
 			globalRanking = null;
 			assigned = false;
+			assignedTracks = new Set();
 			await loadRanking();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ล้างการจัดห้องไม่สำเร็จ');
@@ -450,8 +457,12 @@
 							variant={selectedTrack === track.id ? 'default' : 'outline'}
 							size="sm"
 							onclick={() => { selectedTrack = track.id; }}
+							class="gap-1.5"
 						>
 							{track.name}
+							{#if assignedTracks.has(track.id)}
+								<CheckCircle2 class="w-3.5 h-3.5 {selectedTrack === track.id ? 'text-white/80' : 'text-green-500'}" />
+							{/if}
 						</Button>
 					{/each}
 				</div>
