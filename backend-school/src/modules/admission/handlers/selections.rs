@@ -719,6 +719,14 @@ pub async fn reset_all_room_assignments(
     .await
     .unwrap_or(0);
 
+    // clear room_assignment_track_id ที่ถูก set โดย global assignment
+    sqlx::query(
+        "UPDATE admission_applications SET room_assignment_track_id = NULL, updated_at = NOW() WHERE admission_round_id = $1"
+    )
+    .bind(round_id)
+    .execute(&pool)
+    .await.ok();
+
     // revert status: scored ถ้ากรอกคะแนนครบแล้ว, ไม่งั้น verified
     sqlx::query(
         r#"
@@ -896,6 +904,28 @@ pub async fn assign_rooms_global(
             eprintln!("Failed to bulk assign rooms (global): {}", e);
             AppError::InternalServerError("Failed to assign rooms".to_string())
         })?;
+
+        // อัปเดต room_assignment_track_id ตามสายของห้องที่ได้ (เฉพาะกรณีต่างสายจากที่สมัคร)
+        sqlx::query(
+            r#"
+            UPDATE admission_applications aa
+            SET room_assignment_track_id = at2.id,
+                updated_at = NOW()
+            FROM admission_room_assignments ara
+            JOIN class_rooms cr ON cr.id = ara.class_room_id
+            JOIN study_plan_versions spv ON spv.id = cr.study_plan_version_id
+            JOIN admission_tracks at2
+                ON at2.study_plan_id = spv.study_plan_id
+               AND at2.admission_round_id = aa.admission_round_id
+            WHERE ara.application_id = aa.id
+              AND aa.admission_round_id = $1
+              AND at2.id IS DISTINCT FROM aa.admission_track_id
+            "#
+        )
+        .bind(round_id)
+        .execute(&mut *tx)
+        .await
+        .ok();
 
         sqlx::query(
             "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn')"
