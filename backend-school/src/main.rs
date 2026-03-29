@@ -283,6 +283,12 @@ async fn main() {
         // Public endpoints: /apply/:round_id, /portal/*
         .nest("/api/admission", modules::admission::admission_routes())
 
+        // School Settings routes
+        .route("/api/school/public", get(modules::school::handlers::get_public_info))
+        .route("/api/school/settings", get(modules::school::handlers::get_settings)
+            .patch(modules::school::handlers::update_settings)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+
         // Notification routes (Protected)
         .route("/api/notifications/stream", get(modules::notification::handlers::stream_notifications)) // Auth handled inside to get user ID, or use middleware?
                                                                                                         // Standard middleware might buffer or cause issues with SSE if not careful?

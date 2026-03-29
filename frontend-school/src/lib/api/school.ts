@@ -1,0 +1,27 @@
+import { apiClient } from './client';
+
+export interface SchoolSettings {
+    logoUrl?: string;
+}
+
+export interface PublicSchoolInfo {
+    logoUrl?: string;
+    schoolName?: string;
+}
+
+export async function getSchoolSettings(): Promise<SchoolSettings> {
+    const res = await apiClient.get('/api/school/settings');
+    if (!res.success) throw new Error(res.error);
+    return (res.data as SchoolSettings) ?? {};
+}
+
+export async function updateSchoolSettings(data: SchoolSettings): Promise<void> {
+    const res = await apiClient.patch('/api/school/settings', data);
+    if (!res.success) throw new Error(res.error);
+}
+
+export async function getPublicSchoolInfo(): Promise<PublicSchoolInfo> {
+    const res = await apiClient.get('/api/school/public');
+    if (!res.success) return {};
+    return (res.data as PublicSchoolInfo) ?? {};
+}

@@ -13,6 +13,7 @@ pub struct AdminClient {
 #[derive(Debug, Deserialize)]
 struct SchoolDbInfo {
     db_connection_string: Option<String>,
+    name: Option<String>,
 }
 
 /// School info returned by the list endpoint, includes migration metadata
@@ -77,6 +78,29 @@ impl AdminClient {
 
         info.db_connection_string
             .ok_or_else(|| format!("School '{}' has no database configured", subdomain))
+    }
+
+    /// Fetch the school name from backend-admin for a given subdomain.
+    pub async fn get_school_name(&self, subdomain: &str) -> Result<String, String> {
+        let url = format!("{}/internal/schools/{}", self.base_url, subdomain);
+        let resp = self
+            .client
+            .get(&url)
+            .header("X-Internal-Secret", &self.secret)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to reach admin service: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("Admin service returned error: {}", resp.status()));
+        }
+
+        let info: SchoolDbInfo = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse admin response: {}", e))?;
+
+        info.name.ok_or_else(|| "School name not available".to_string())
     }
 
     /// Fetch all active schools with their db_connection_string and migration metadata.

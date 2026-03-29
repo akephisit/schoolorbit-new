@@ -1,15 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getPublicRounds, type AdmissionRound, roundStatusLabel, roundStatusColor } from '$lib/api/admission';
+	import { getPublicSchoolInfo, type PublicSchoolInfo } from '$lib/api/school';
 	import { Button } from '$lib/components/ui/button';
 	import { GraduationCap, CalendarDays, ArrowRight, Search } from 'lucide-svelte';
 
 	let loadingRounds = $state(true);
 	let publicRounds: AdmissionRound[] = $state([]);
+	let schoolInfo = $state<PublicSchoolInfo>({});
 
 	onMount(async () => {
 		try {
-			publicRounds = await getPublicRounds();
+			[publicRounds, schoolInfo] = await Promise.all([
+				getPublicRounds(),
+				getPublicSchoolInfo()
+			]);
 		} catch (e) {
 			console.error('Failed to load public rounds', e);
 		} finally {
@@ -29,9 +34,13 @@
 		<!-- Header -->
 		<div class="text-center">
 			<div class="inline-flex p-3 bg-white rounded-2xl shadow-md mb-4">
-				<GraduationCap class="w-10 h-10 text-blue-600" />
+				{#if schoolInfo.logoUrl}
+					<img src={schoolInfo.logoUrl} alt="school logo" class="w-10 h-10 object-contain" />
+				{:else}
+					<GraduationCap class="w-10 h-10 text-blue-600" />
+				{/if}
 			</div>
-			<h1 class="text-2xl font-bold text-gray-900">ระบบรับสมัครนักเรียน</h1>
+			<h1 class="text-2xl font-bold text-gray-900">{schoolInfo.schoolName ?? 'ระบบรับสมัครนักเรียน'}</h1>
 			<p class="text-gray-500 mt-1 text-sm">
 				กรุณาเลือกรอบรับสมัครที่ท่านสนใจ หรือตรวจสอบผลการสมัครเดิม
 			</p>

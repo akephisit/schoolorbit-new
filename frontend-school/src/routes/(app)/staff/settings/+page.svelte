@@ -20,8 +20,13 @@
 		EyeOff,
 		Download,
 		Smartphone,
-		CheckCircle2
+		CheckCircle2,
+		School,
+		Upload,
+		ImageOff
 	} from 'lucide-svelte';
+	import { getSchoolSettings, updateSchoolSettings } from '$lib/api/school';
+	import { apiClient } from '$lib/api/client';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -36,7 +41,12 @@
 	let saving = $state(false);
 
 	// Active tab
-	let activeTab = $state<'security' | 'app'>('security');
+	let activeTab = $state<'security' | 'app' | 'school'>('security');
+
+	// School settings
+	let logoUrl = $state<string | undefined>(undefined);
+	let savingLogo = $state(false);
+	let uploadingLogo = $state(false);
 
 	// PWA state from store - use $derived to avoid infinite loop
 	let pwaState = $derived($pwaStore);
@@ -46,7 +56,7 @@
 	let isIOS = $state(false);
 	let isStandalone = $state(false);
 
-	onMount(() => {
+	onMount(async () => {
 		// Check if iOS
 		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
 
@@ -54,7 +64,47 @@
 		isStandalone =
 			window.matchMedia('(display-mode: standalone)').matches ||
 			(navigator as any).standalone === true;
+
+		// Load school settings (best-effort — may fail if no permission)
+		try {
+			const s = await getSchoolSettings();
+			logoUrl = s.logoUrl;
+		} catch {
+			// ไม่มี permission หรือ error — ไม่แสดง tab
+		}
 	});
+
+	async function handleLogoUpload(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		uploadingLogo = true;
+		try {
+			const form = new FormData();
+			form.append('file', file);
+			form.append('file_type', 'school_logo');
+			form.append('is_public', 'true');
+			const res = await apiClient.postMultipart<{ url: string }>('/api/files/upload', form);
+			if (!res.success || !res.data?.url) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
+			logoUrl = res.data.url;
+			toast.success('อัปโหลด logo สำเร็จ กด "บันทึก" เพื่อยืนยัน');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ');
+		} finally {
+			uploadingLogo = false;
+		}
+	}
+
+	async function handleSaveLogo() {
+		savingLogo = true;
+		try {
+			await updateSchoolSettings({ logoUrl });
+			toast.success('บันทึก logo สำเร็จ');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
+		} finally {
+			savingLogo = false;
+		}
+	}
 
 	async function handleInstallPWA() {
 		if (!pwaState.deferredPrompt) return;
@@ -161,12 +211,13 @@
 					<Smartphone class="w-4 h-4 mr-2" />
 					แอพพลิเคชัน
 				</Button>
-				<!-- Future categories -->
-				<Button variant="ghost" class="w-full justify-start" disabled>
-					<span class="text-muted-foreground">การแจ้งเตือน (เร็วๆ นี้)</span>
-				</Button>
-				<Button variant="ghost" class="w-full justify-start" disabled>
-					<span class="text-muted-foreground">ความเป็นส่วนตัว (เร็วๆ นี้)</span>
+				<Button
+					variant={activeTab === 'school' ? 'secondary' : 'ghost'}
+					class="w-full justify-start"
+					onclick={() => (activeTab = 'school')}
+				>
+					<School class="w-4 h-4 mr-2" />
+					โรงเรียน
 				</Button>
 			</CardContent>
 		</Card>
@@ -418,6 +469,63 @@
 						{/if}
 					</CardContent>
 				</Card>
+		{:else if activeTab === 'school'}
+			<Card>
+				<CardHeader>
+					<CardTitle>Logo โรงเรียน</CardTitle>
+					<CardDescription>แสดงบนหน้ารับสมัครนักเรียนและหน้าอื่นๆ ของระบบ</CardDescription>
+				</CardHeader>
+				<CardContent class="space-y-6">
+					<!-- Preview -->
+					<div class="flex flex-col items-center gap-3">
+						<div class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden">
+							{#if logoUrl}
+								<img src={logoUrl} alt="school logo" class="w-full h-full object-contain p-1" />
+							{:else}
+								<ImageOff class="w-8 h-8 text-muted-foreground" />
+							{/if}
+						</div>
+						<p class="text-xs text-muted-foreground">ตัวอย่าง logo</p>
+					</div>
+
+					<!-- Upload -->
+					<div class="space-y-2">
+						<Label>เลือกไฟล์ logo</Label>
+						<p class="text-xs text-muted-foreground">รองรับ JPG, PNG, WEBP ขนาดไม่เกิน 2 MB</p>
+						<label class="cursor-pointer">
+							<input
+								type="file"
+								accept="image/jpeg,image/png,image/webp"
+								class="hidden"
+								onchange={handleLogoUpload}
+								disabled={uploadingLogo}
+							/>
+							<Button variant="outline" class="gap-2 pointer-events-none" disabled={uploadingLogo}>
+								<Upload class="w-4 h-4" />
+								{uploadingLogo ? 'กำลังอัปโหลด...' : 'เลือกไฟล์'}
+							</Button>
+						</label>
+					</div>
+
+					<!-- Save -->
+					<div class="flex items-center gap-3">
+						<Button onclick={handleSaveLogo} disabled={savingLogo} class="gap-2">
+							<Save class="w-4 h-4" />
+							{savingLogo ? 'กำลังบันทึก...' : 'บันทึก'}
+						</Button>
+						{#if logoUrl}
+							<Button
+								variant="ghost"
+								class="text-destructive hover:text-destructive"
+								onclick={() => (logoUrl = undefined)}
+								disabled={savingLogo}
+							>
+								ลบ logo
+							</Button>
+						{/if}
+					</div>
+				</CardContent>
+			</Card>
 			{/if}
 		</div>
 	</div>
