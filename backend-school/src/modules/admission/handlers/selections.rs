@@ -855,7 +855,20 @@ pub async fn assign_rooms_global(
             AppError::InternalServerError("Failed to assign rooms".to_string())
         })?;
 
-        // อัปเดต room_assignment_track_id ตามสายของห้องที่ได้ (เฉพาะกรณีต่างสายจากที่สมัคร)
+        sqlx::query(
+            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn')"
+        )
+        .bind(&app_ids)
+        .execute(&mut *tx)
+        .await
+        .ok();
+    }
+
+    tx.commit().await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    // อัปเดต room_assignment_track_id หลัง commit (ทำนอก transaction เพื่อไม่ให้ error กระทบ core assignment)
+    if !app_ids.is_empty() {
         sqlx::query(
             r#"
             UPDATE admission_applications aa
@@ -873,21 +886,10 @@ pub async fn assign_rooms_global(
             "#
         )
         .bind(round_id)
-        .execute(&mut *tx)
-        .await
-        .ok();
-
-        sqlx::query(
-            "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn')"
-        )
-        .bind(&app_ids)
-        .execute(&mut *tx)
+        .execute(&pool)
         .await
         .ok();
     }
-
-    tx.commit().await
-        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok(Json(json!({
         "success": true,
