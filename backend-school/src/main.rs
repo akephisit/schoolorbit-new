@@ -12,7 +12,7 @@ mod test_helpers;
 
 use axum::{
     middleware as axum_middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
     Json,
 };
@@ -287,6 +287,8 @@ async fn main() {
         .route("/api/school/public", get(modules::school::handlers::get_public_info))
         .route("/api/school/settings", get(modules::school::handlers::get_settings)
             .patch(modules::school::handlers::update_settings)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route("/api/school/settings/logo", delete(modules::school::handlers::delete_logo)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
         // Notification routes (Protected)

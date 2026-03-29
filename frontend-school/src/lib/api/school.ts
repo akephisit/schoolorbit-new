@@ -2,10 +2,12 @@ import { apiClient } from './client';
 
 export interface SchoolSettings {
     logoUrl?: string;
+    logoFileId?: string;
 }
 
 export interface UpdateSchoolSettingsRequest {
     logoPath?: string;
+    logoFileId?: string;
 }
 
 export interface PublicSchoolInfo {
@@ -21,6 +23,11 @@ export async function getSchoolSettings(): Promise<SchoolSettings> {
 
 export async function updateSchoolSettings(data: UpdateSchoolSettingsRequest): Promise<void> {
     const res = await apiClient.patch('/api/school/settings', data);
+    if (!res.success) throw new Error(res.error);
+}
+
+export async function deleteSchoolLogo(): Promise<void> {
+    const res = await apiClient.delete('/api/school/settings/logo');
     if (!res.success) throw new Error(res.error);
 }
 

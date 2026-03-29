@@ -13,11 +13,12 @@
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { getSchoolSettings, updateSchoolSettings } from '$lib/api/school';
+	import { getSchoolSettings, updateSchoolSettings, deleteSchoolLogo } from '$lib/api/school';
 	import { apiClient } from '$lib/api/client';
 
-	let logoUrl = $state<string | undefined>(undefined);   // URL สำหรับ preview (จาก backend)
-	let logoPath = $state<string | undefined>(undefined);  // storage_path ที่เก็บใน DB
+	let logoUrl = $state<string | undefined>(undefined);    // URL สำหรับ preview (จาก backend)
+	let logoPath = $state<string | undefined>(undefined);   // storage_path ที่เก็บใน DB
+	let logoFileId = $state<string | undefined>(undefined); // file ID สำหรับลบ
 	let saving = $state(false);
 	let loading = $state(true);
 	let pendingFile = $state<File | undefined>(undefined);
@@ -27,6 +28,7 @@
 		try {
 			const s = await getSchoolSettings();
 			logoUrl = s.logoUrl;
+			logoFileId = s.logoFileId;
 		} catch (err) {
 			toast.error('ไม่สามารถโหลดข้อมูลได้');
 		} finally {
@@ -52,15 +54,16 @@
 				form.append('file_type', 'school_logo');
 				form.append('is_public', 'true');
 				const res = await apiClient.postMultipart<never>('/api/files/upload', form);
-				const uploaded = (res as unknown as { file?: { url: string; storage_path: string } }).file;
+				const uploaded = (res as unknown as { file?: { id: string; url: string; storage_path: string } }).file;
 				if (!res.success || !uploaded) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
 				pathToSave = uploaded.storage_path;
 				logoUrl = uploaded.url;
+				logoFileId = uploaded.id;
 				if (previewUrl) URL.revokeObjectURL(previewUrl);
 				previewUrl = undefined;
 				pendingFile = undefined;
 			}
-			await updateSchoolSettings({ logoPath: pathToSave });
+			await updateSchoolSettings({ logoPath: pathToSave, logoFileId });
 			logoPath = pathToSave;
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 		} catch (err) {
@@ -161,7 +164,20 @@
 						<Button
 							variant="ghost"
 							class="text-destructive hover:text-destructive"
-							onclick={() => { logoUrl = undefined; logoPath = undefined; }}}
+							onclick={async () => {
+								saving = true;
+								try {
+									await deleteSchoolLogo();
+									logoUrl = undefined;
+									logoPath = undefined;
+									logoFileId = undefined;
+									toast.success('ลบ logo สำเร็จ');
+								} catch (err) {
+									toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ');
+								} finally {
+									saving = false;
+								}
+							}}
 							disabled={saving}
 						>
 							ลบ logo
