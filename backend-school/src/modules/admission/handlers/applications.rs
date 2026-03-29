@@ -1616,6 +1616,30 @@ pub async fn move_application_room(
     tx.commit().await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
+    // อัปเดต room_assignment_track_id ตามห้องที่ย้ายไป (ทำนอก transaction)
+    sqlx::query(
+        r#"
+        UPDATE admission_applications aa
+        SET room_assignment_track_id = (
+            SELECT CASE WHEN t.id = aa.admission_track_id THEN NULL ELSE t.id END
+            FROM class_rooms cr
+            JOIN study_plan_versions spv ON spv.id = cr.study_plan_version_id
+            JOIN study_plans sp ON sp.id = spv.study_plan_id
+            JOIN admission_tracks t ON t.study_plan_id = sp.id
+                AND t.admission_round_id = aa.admission_round_id
+            WHERE cr.id = $2
+            LIMIT 1
+        ),
+        updated_at = NOW()
+        WHERE aa.id = $1
+        "#
+    )
+    .bind(id)
+    .bind(payload.room_id)
+    .execute(&pool)
+    .await
+    .ok();
+
     Ok(Json(json!({ "success": true })).into_response())
 }
 
