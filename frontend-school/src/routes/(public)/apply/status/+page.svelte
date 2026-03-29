@@ -285,7 +285,7 @@
 							type="text"
 							inputmode="numeric"
 							maxlength={8}
-							placeholder="เช่น 20082543 (ดดมมปปปป 8 หลัก)"
+							placeholder="เช่น 20082543 (ววดดปปปป 8 หลัก)"
 							bind:value={dateOfBirth}
 							class="h-11 text-center"
 						/>
