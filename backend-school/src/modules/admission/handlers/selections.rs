@@ -713,13 +713,13 @@ pub async fn assign_rooms_global(
         Err(r) => return Ok(r),
     };
 
-    // ดึงห้องทั้งหมดจากทุก track ในรอบ (DISTINCT เพื่อไม่ซ้ำ) เรียงตามชื่อห้อง
+    // ดึงห้องทั้งหมดจากทุก track ในรอบ พร้อม track_id ของแต่ละห้อง
     #[derive(sqlx::FromRow)]
-    struct RoomRow { room_id: Uuid, room_name: String, capacity: i32 }
+    struct RoomRow { room_id: Uuid, room_name: String, capacity: i32, track_id: Uuid }
 
-    let mut rooms = sqlx::query_as::<_, RoomRow>(
+    let rooms_raw = sqlx::query_as::<_, RoomRow>(
         r#"
-        SELECT DISTINCT cr.id AS room_id, cr.name AS room_name, cr.capacity
+        SELECT cr.id AS room_id, cr.name AS room_name, cr.capacity, t.id AS track_id
         FROM admission_tracks t
         JOIN study_plans sp ON t.study_plan_id = sp.id
         JOIN study_plan_versions spv ON spv.study_plan_id = sp.id AND spv.is_active = true
@@ -734,6 +734,16 @@ pub async fn assign_rooms_global(
     .fetch_all(&pool)
     .await
     .map_err(|_| AppError::InternalServerError("Failed to fetch rooms".to_string()))?;
+
+    // deduplicate: ถ้าห้องเดียวกัน belong to หลาย track ให้เก็บแค่ track แรก
+    let mut seen: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+    let mut rooms: Vec<RoomRow> = Vec::new();
+    for r in rooms_raw {
+        if seen.insert(r.room_id) {
+            rooms.push(r);
+        }
+    }
+    rooms.sort_by(|a, b| a.room_name.cmp(&b.room_name));
 
     if rooms.is_empty() {
         return Err(AppError::BadRequest(
@@ -805,6 +815,7 @@ pub async fn assign_rooms_global(
     // bulk INSERT ด้วย UNNEST แทน loop
     let mut app_ids: Vec<Uuid> = Vec::with_capacity(assigned_count);
     let mut room_ids: Vec<Uuid> = Vec::with_capacity(assigned_count);
+    let mut track_ids: Vec<Uuid> = Vec::with_capacity(assigned_count);
     let mut ranks_in_track: Vec<i32> = Vec::with_capacity(assigned_count);
     let mut ranks_in_room: Vec<i32> = Vec::with_capacity(assigned_count);
     let mut scores: Vec<f64> = Vec::with_capacity(assigned_count);
@@ -812,6 +823,7 @@ pub async fn assign_rooms_global(
         let (ri, rank_in_room) = room_slots[final_rank];
         app_ids.push(row.application_id);
         room_ids.push(rooms[ri].room_id);
+        track_ids.push(rooms[ri].track_id);
         ranks_in_track.push((final_rank + 1) as i32);
         ranks_in_room.push(rank_in_room);
         scores.push(row.total_score.unwrap_or(0.0));
@@ -867,25 +879,20 @@ pub async fn assign_rooms_global(
     tx.commit().await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    // อัปเดต room_assignment_track_id หลัง commit (ทำนอก transaction เพื่อไม่ให้ error กระทบ core assignment)
+    // อัปเดต room_assignment_track_id หลัง commit โดยใช้ track_id ที่รู้อยู่แล้วตอนจัดห้อง
     if !app_ids.is_empty() {
         sqlx::query(
             r#"
             UPDATE admission_applications aa
-            SET room_assignment_track_id = at2.id,
+            SET room_assignment_track_id = data.track_id,
                 updated_at = NOW()
-            FROM admission_room_assignments ara
-            JOIN class_rooms cr ON cr.id = ara.class_room_id
-            JOIN study_plan_versions spv ON spv.id = cr.study_plan_version_id
-            JOIN admission_tracks at2
-                ON at2.study_plan_id = spv.study_plan_id
-               AND at2.admission_round_id = aa.admission_round_id
-            WHERE ara.application_id = aa.id
-              AND aa.admission_round_id = $1
-              AND at2.id IS DISTINCT FROM aa.admission_track_id
+            FROM (SELECT * FROM UNNEST($1::uuid[], $2::uuid[]) AS t(app_id, track_id)) data
+            WHERE aa.id = data.app_id
+              AND data.track_id IS DISTINCT FROM aa.admission_track_id
             "#
         )
-        .bind(round_id)
+        .bind(&app_ids)
+        .bind(&track_ids)
         .execute(&pool)
         .await
         .ok();
