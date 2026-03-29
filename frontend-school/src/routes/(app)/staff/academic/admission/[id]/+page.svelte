@@ -134,6 +134,7 @@
 
 	let togglingVisibility = $state(false);
 	let togglingShowScores = $state(false);
+	let pendingStatus = $state<AdmissionRound['status'] | null>(null);
 
 	async function handleVisibilityToggle() {
 		if (!round) return;
@@ -188,8 +189,10 @@
 		studyPlans = (sp.data ?? []).map((p) => ({ id: p.id, nameTh: p.name_th }));
 	}
 
-	async function handleStatusChange(status: AdmissionRound['status']) {
-		if (!round) return;
+	async function confirmStatusChange() {
+		if (!round || !pendingStatus) return;
+		const status = pendingStatus;
+		pendingStatus = null;
 		try {
 			await updateRoundStatus(round.id, status);
 			toast.success(`สถานะ → ${roundStatusLabel[status]}`);
@@ -454,7 +457,7 @@
 						<div class="flex flex-wrap gap-1">
 							{#each statusFlow as s}
 								<button
-									onclick={() => handleStatusChange(s)}
+									onclick={() => { if (round?.status !== s) pendingStatus = s; }}
 									class="text-xs px-2 py-1 rounded border transition-colors {round.status === s
 										? 'border-primary bg-primary text-primary-foreground'
 										: 'border-border hover:bg-accent'}"
@@ -1041,6 +1044,22 @@
 					{#if deletingRound}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
 					{deletingRound ? 'กำลังลบ...' : 'ลบรอบ'}
 				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Confirm Status Change Dialog -->
+	<Dialog.Root open={pendingStatus !== null} onOpenChange={(o) => { if (!o) pendingStatus = null; }}>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการเปลี่ยนสถานะ</Dialog.Title>
+				<Dialog.Description>
+					เปลี่ยนสถานะรอบเป็น <strong>{pendingStatus ? roundStatusLabel[pendingStatus] : ''}</strong>?
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (pendingStatus = null)}>ยกเลิก</Button>
+				<Button onclick={confirmStatusChange}>ยืนยัน</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
