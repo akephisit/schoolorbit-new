@@ -16,7 +16,8 @@
 	import { getSchoolSettings, updateSchoolSettings } from '$lib/api/school';
 	import { apiClient } from '$lib/api/client';
 
-	let logoUrl = $state<string | undefined>(undefined);
+	let logoUrl = $state<string | undefined>(undefined);   // URL สำหรับ preview (จาก backend)
+	let logoPath = $state<string | undefined>(undefined);  // storage_path ที่เก็บใน DB
 	let saving = $state(false);
 	let loading = $state(true);
 	let pendingFile = $state<File | undefined>(undefined);
@@ -44,22 +45,23 @@
 	async function handleSave() {
 		saving = true;
 		try {
-			let urlToSave = logoUrl;
+			let pathToSave = logoPath;
 			if (pendingFile) {
 				const form = new FormData();
 				form.append('file', pendingFile);
 				form.append('file_type', 'school_logo');
 				form.append('is_public', 'true');
 				const res = await apiClient.postMultipart<never>('/api/files/upload', form);
-				const fileUrl = (res as unknown as { file?: { url: string } }).file?.url;
-				if (!res.success || !fileUrl) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
-				urlToSave = fileUrl;
+				const uploaded = (res as unknown as { file?: { url: string; storage_path: string } }).file;
+				if (!res.success || !uploaded) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
+				pathToSave = uploaded.storage_path;
+				logoUrl = uploaded.url;
 				if (previewUrl) URL.revokeObjectURL(previewUrl);
 				previewUrl = undefined;
 				pendingFile = undefined;
 			}
-			await updateSchoolSettings({ logoUrl: urlToSave });
-			logoUrl = urlToSave;
+			await updateSchoolSettings({ logoPath: pathToSave });
+			logoPath = pathToSave;
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
@@ -159,7 +161,7 @@
 						<Button
 							variant="ghost"
 							class="text-destructive hover:text-destructive"
-							onclick={() => (logoUrl = undefined)}
+							onclick={() => { logoUrl = undefined; logoPath = undefined; }}}
 							disabled={saving}
 						>
 							ลบ logo

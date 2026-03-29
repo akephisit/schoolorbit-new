@@ -4,6 +4,10 @@ export interface SchoolSettings {
     logoUrl?: string;
 }
 
+export interface UpdateSchoolSettingsRequest {
+    logoPath?: string;
+}
+
 export interface PublicSchoolInfo {
     logoUrl?: string;
     schoolName?: string;
@@ -15,7 +19,7 @@ export async function getSchoolSettings(): Promise<SchoolSettings> {
     return (res.data as SchoolSettings) ?? {};
 }
 
-export async function updateSchoolSettings(data: SchoolSettings): Promise<void> {
+export async function updateSchoolSettings(data: UpdateSchoolSettingsRequest): Promise<void> {
     const res = await apiClient.patch('/api/school/settings', data);
     if (!res.success) throw new Error(res.error);
 }

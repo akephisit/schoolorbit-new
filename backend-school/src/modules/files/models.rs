@@ -140,15 +140,18 @@ pub struct FileResponse {
     pub file_size: i64,
     pub mime_type: String,
     pub file_type: String,
-    
-    // URL (not path!)
+
+    // Storage path (for referencing without coupling to URL)
+    pub storage_path: String,
+
+    // URL (built from path + base_url)
     pub url: String,
     pub thumbnail_url: Option<String>,
-    
+
     // Metadata
     pub width: Option<i32>,
     pub height: Option<i32>,
-    
+
     pub created_at: DateTime<Utc>,
 }
 
@@ -158,6 +161,7 @@ impl FileResponse {
         let url = format!("{}/{}", base_url.trim_end_matches('/'), file.storage_path);
         let thumbnail_url = file.thumbnail_path
             .map(|path| format!("{}/{}", base_url.trim_end_matches('/'), path));
+        let storage_path = file.storage_path.clone();
         
         Self {
             id: file.id,
@@ -166,6 +170,7 @@ impl FileResponse {
             file_size: file.file_size,
             mime_type: file.mime_type,
             file_type: file.file_type,
+            storage_path,
             url,
             thumbnail_url,
             width: file.width,
