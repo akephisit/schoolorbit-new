@@ -68,6 +68,7 @@
 
 	let portalData: {
 		roundStatus?: string;
+		assignmentMode?: string;
 		application?: {
 			id: string;
 			admissionRoundId: string;
@@ -376,7 +377,7 @@
 							<div class="grid grid-cols-3 gap-3 text-center">
 								<div>
 									<p class="text-2xl font-bold text-green-700">{assignment.rankInTrack ?? '-'}</p>
-									<p class="text-xs text-green-600">อันดับในสาย</p>
+									<p class="text-xs text-green-600">{portalData?.assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย'}</p>
 								</div>
 								<div>
 									<p class="text-2xl font-bold text-green-700">
