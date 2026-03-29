@@ -34,7 +34,7 @@
 		<!-- Header -->
 		<div class="text-center">
 			{#if schoolInfo.logoUrl}
-				<img src={schoolInfo.logoUrl} alt="school logo" class="w-16 h-16 object-contain mb-4" />
+				<img src={schoolInfo.logoUrl} alt="school logo" class="w-24 h-24 object-contain mx-auto mb-4" />
 			{:else}
 				<div class="inline-flex p-3 bg-white rounded-2xl shadow-md mb-4">
 					<GraduationCap class="w-10 h-10 text-blue-600" />
