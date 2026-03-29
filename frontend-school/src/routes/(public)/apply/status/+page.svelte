@@ -11,8 +11,10 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
+	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
+	import { getPublicSchoolInfo, type PublicSchoolInfo } from '$lib/api/school';
 	import {
 		GraduationCap,
 		Search,
@@ -26,6 +28,12 @@
 	} from 'lucide-svelte';
 
 	type PortalStep = 'login' | 'status';
+
+	let schoolInfo = $state<PublicSchoolInfo>({});
+
+	onMount(async () => {
+		schoolInfo = await getPublicSchoolInfo();
+	});
 
 	let step: PortalStep = $state('login');
 	let checking = $state(false);
@@ -238,9 +246,13 @@
 
 		<!-- Header -->
 		<div class="text-center">
-			<div class="inline-flex p-3 bg-white rounded-2xl shadow-md mb-4">
-				<GraduationCap class="w-10 h-10 text-blue-600" />
-			</div>
+			{#if schoolInfo.logoUrl}
+				<img src={schoolInfo.logoUrl} alt="school logo" class="w-16 h-16 object-contain mx-auto mb-4" />
+			{:else}
+				<div class="inline-flex p-3 bg-white rounded-2xl shadow-md mb-4">
+					<GraduationCap class="w-10 h-10 text-blue-600" />
+				</div>
+			{/if}
 			<h1 class="text-2xl font-bold text-gray-900">ตรวจสอบผลการสมัครเรียน</h1>
 			<p class="text-gray-500 mt-1 text-sm">กรอกเลขบัตรประชาชนและวันเดือนปีเกิดเพื่อตรวจสอบผล</p>
 		</div>
