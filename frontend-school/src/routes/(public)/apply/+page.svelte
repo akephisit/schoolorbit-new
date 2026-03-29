@@ -40,7 +40,7 @@
 					<GraduationCap class="w-10 h-10 text-blue-600" />
 				</div>
 			{/if}
-			<h1 class="text-2xl font-bold text-gray-900">{schoolInfo.schoolName ?? 'ระบบรับสมัครนักเรียน'}</h1>
+			<h1 class="text-2xl font-bold text-gray-900">ระบบรับสมัครนักเรียน</h1>
 			<p class="text-gray-500 mt-1 text-sm">
 				กรุณาเลือกรอบรับสมัครที่ท่านสนใจ หรือตรวจสอบผลการสมัครเดิม
 			</p>
