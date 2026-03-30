@@ -40,12 +40,15 @@
 	let confirming = $state(false);
 	let savingForm = $state(false);
 
-	let nationalId = $state(''); // raw digits only (13 หลัก)
+	let nationalId = $state(''); // raw: digits or alphanumeric (e.g. G-code)
 	let dateOfBirth = $state(''); // format: DDMMYYYY พ.ศ.
 
-	// X-XXXX-XXXXX-XX-X
+	// ถ้าเป็นตัวเลขล้วน 13 หลัก → format X-XXXX-XXXXX-XX-X
+	// ถ้ามีตัวอักษร → แสดงตามที่กรอก (ไม่ format)
 	const nationalIdDisplay = $derived(() => {
 		const d = nationalId;
+		const isAllDigits = /^\d+$/.test(d);
+		if (!isAllDigits) return d;
 		if (d.length <= 1) return d;
 		if (d.length <= 5) return d[0] + '-' + d.slice(1);
 		if (d.length <= 10) return d[0] + '-' + d.slice(1, 5) + '-' + d.slice(5);
@@ -54,7 +57,7 @@
 	});
 
 	function handleNationalIdInput(e: Event) {
-		const raw = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 13);
+		const raw = (e.target as HTMLInputElement).value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 13);
 		nationalId = raw;
 	}
 
@@ -152,8 +155,12 @@
 	async function handleCheck(e: Event) {
 		e.preventDefault();
 		const dob = dateOfBirth.trim();
-		if (!nationalId.trim() || dob.length !== 8) {
-			toast.error('กรุณากรอกข้อมูลให้ครบ (วันเกิด 8 หลัก)');
+		if (!nationalId.trim()) {
+			toast.error('กรุณากรอกเลขบัตรประชาชนหรือรหัสผู้สมัคร');
+			return;
+		}
+		if (dob.length !== 8) {
+			toast.error('กรุณากรอกวันเกิดให้ครบ 8 หลัก (ววดดปปปป)');
 			return;
 		}
 		checking = true;
@@ -263,15 +270,14 @@
 				<form onsubmit={handleCheck} class="space-y-4">
 					<div class="space-y-1.5">
 						<label for="national-id" class="text-sm font-medium text-gray-700"
-							>เลขบัตรประชาชน 13 หลัก</label
+							>เลขบัตรประชาชน หรือ รหัสผู้สมัคร</label
 						>
 						<Input
 							id="national-id"
 							value={nationalIdDisplay()}
 							oninput={handleNationalIdInput}
 							maxlength={17}
-							inputmode="numeric"
-							placeholder="X-XXXX-XXXXX-XX-X"
+							placeholder="เลขบัตร 13 หลัก หรือ รหัส G"
 							class="h-11 tracking-widest"
 						/>
 					</div>
