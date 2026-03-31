@@ -105,7 +105,7 @@
 	);
 
 	// ชั้นที่เปิดสอนในปีนี้ (จาก classrooms)
-	let yearGradeLevels = $derived(() => {
+	let yearGradeLevels = $derived.by(() => {
 		const gradeIds = [...new Set(classrooms.map((c) => c.grade_level_id))];
 		return structure.levels
 			.filter((l) => gradeIds.includes(l.id))
@@ -330,7 +330,7 @@
 	// ── Helpers ────────────────────────────────────────
 	function gradeLevelDisplay(ids: string[] | undefined) {
 		if (!ids || ids.length === 0) return 'ทุกระดับชั้น';
-		return ids.map((id) => yearGradeLevels().find((g) => g.id === id)?.short_name ?? id).join(', ');
+		return ids.map((id) => yearGradeLevels.find((g) => g.id === id)?.short_name ?? id).join(', ');
 	}
 	function dayLabel(d?: string) {
 		if (!d) return '—';
@@ -580,7 +580,7 @@
 					<Popover.Trigger class="w-full">
 						<Button variant="outline" class="w-full justify-between font-normal">
 							{#if slotAllowedGradeLevelIds.length > 0}
-								{slotAllowedGradeLevelIds.map((id) => yearGradeLevels().find((l) => l.id === id)?.short_name ?? id).join(', ')}
+								{slotAllowedGradeLevelIds.map((id) => yearGradeLevels.find((l) => l.id === id)?.short_name ?? id).join(', ')}
 							{:else}
 								<span class="text-muted-foreground">ทุกระดับชั้น</span>
 							{/if}
@@ -588,7 +588,7 @@
 						</Button>
 					</Popover.Trigger>
 					<Popover.Content class="w-[--radix-popover-trigger-width] p-1 max-h-56 overflow-y-auto">
-						{#each yearGradeLevels() as level}
+						{#each yearGradeLevels as level}
 							{@const checked = slotAllowedGradeLevelIds.includes(level.id)}
 							<button type="button" class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
 								onclick={() => toggleSlotGrade(level.id)}>
@@ -642,7 +642,7 @@
 			<div class="space-y-1">
 				<Label>ชั้นที่รับ (ว่าง = ตามช่องกิจกรรม)</Label>
 				<div class="flex flex-wrap gap-1.5">
-					{#each yearGradeLevels() as level}
+					{#each yearGradeLevels as level}
 						{@const selected = groupAllowedGradeLevelIds.includes(level.id)}
 						<button type="button"
 							class="rounded border px-2 py-1 text-xs transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
