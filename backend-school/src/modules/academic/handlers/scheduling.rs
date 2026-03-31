@@ -275,7 +275,7 @@ async fn run_scheduling_job(
     let loader = SchedulerDataLoader::new(pool);
     
     let courses = loader.load_courses(&classroom_ids, semester_id).await?;
-    let available_slots = loader.load_available_slots().await?;
+    let available_slots = loader.load_available_slots(semester_id).await?;
     let periods = loader.load_periods().await?;
     let locked_slots = loader.load_locked_slots(semester_id, &classroom_ids).await?;
     

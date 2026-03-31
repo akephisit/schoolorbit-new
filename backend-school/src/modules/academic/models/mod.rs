@@ -25,6 +25,7 @@ pub struct AcademicYear {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub is_active: bool,
+    pub school_days: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -38,6 +39,7 @@ pub struct CreateAcademicYearRequest {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub is_active: Option<bool>,
+    pub school_days: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +49,7 @@ pub struct UpdateAcademicYearRequest {
     pub start_date: Option<NaiveDate>,
     pub end_date: Option<NaiveDate>,
     pub is_active: Option<bool>,
+    pub school_days: Option<String>,
 }
 
 // ==========================================

@@ -10,12 +10,12 @@
 		createActivityGroup,
 		deleteActivityGroup,
 		listClassrooms,
+		getSchoolDays,
 		ACTIVITY_TYPE_LABELS,
 		type ActivitySlot,
 		type ActivityGroup,
 		type AcademicStructureData,
-		type Classroom,
-		type GradeLevel
+		type Classroom
 	} from '$lib/api/academic';
 	import { listPeriods, type AcademicPeriod } from '$lib/api/timetable';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
@@ -59,7 +59,7 @@
 	let slotDescription = $state('');
 	let slotActivityType = $state('club');
 	let slotSemesterId = $state('');
-	let slotDayOfWeek = $state('');
+	let slotDaysOfWeek = $state<string[]>([]);
 	let slotPeriodIds = $state<string[]>([]);
 	let slotRegistrationType = $state('assigned');
 	let slotAllowedGradeLevelIds = $state<string[]>([]);
@@ -76,11 +76,9 @@
 	let deleteSlotTarget = $state<ActivitySlot | null>(null);
 	let showDeleteSlotDialog = $state(false);
 
-	const DAYS = [
-		{ value: 'MON', label: 'จันทร์' }, { value: 'TUE', label: 'อังคาร' },
-		{ value: 'WED', label: 'พุธ' },    { value: 'THU', label: 'พฤหัสบดี' },
-		{ value: 'FRI', label: 'ศุกร์' }
-	];
+	let DAYS = $derived(
+		getSchoolDays(structure.years.find((y) => y.id === filterYearId)?.school_days)
+	);
 
 	// ── Computed ───────────────────────────────────────
 	let filteredSlots = $derived(
@@ -113,7 +111,12 @@
 	let slotSemesterName = $derived(
 		structure.semesters.find((s) => s.id === slotSemesterId)?.name ?? 'เลือก...'
 	);
-	let slotDayLabel = $derived(DAYS.find((d) => d.value === slotDayOfWeek)?.label ?? 'เลือกวัน...');
+	let slotDaysJoined = $derived(slotDaysOfWeek.join(','));
+
+	function toggleSlotDay(day: string) {
+		slotDaysOfWeek = slotDaysOfWeek.includes(day)
+			? slotDaysOfWeek.filter((d) => d !== day) : [...slotDaysOfWeek, day];
+	}
 
 	// ── Load ───────────────────────────────────────────
 	onMount(async () => {
@@ -187,7 +190,7 @@
 	// ── Slot Dialog ───────────────────────────────────
 	function openCreateSlot() {
 		slotName = ''; slotDescription = ''; slotActivityType = 'club';
-		slotSemesterId = filterSemesterId; slotDayOfWeek = '';
+		slotSemesterId = filterSemesterId; slotDaysOfWeek = [];
 		slotPeriodIds = []; slotRegistrationType = 'assigned';
 		slotAllowedGradeLevelIds = [];
 		isSlotEdit = false; editSlotTarget = null;
@@ -197,7 +200,7 @@
 	function openEditSlot(s: ActivitySlot) {
 		slotName = s.name; slotDescription = s.description ?? '';
 		slotActivityType = s.activity_type; slotSemesterId = s.semester_id;
-		slotDayOfWeek = s.day_of_week ?? ''; slotPeriodIds = s.period_ids ?? [];
+		slotDaysOfWeek = s.days_of_week ? s.days_of_week.split(',').map((d: string) => d.trim()) : []; slotPeriodIds = s.period_ids ?? [];
 		slotRegistrationType = s.registration_type;
 		slotAllowedGradeLevelIds = s.allowed_grade_level_ids ?? [];
 		isSlotEdit = true; editSlotTarget = s;
@@ -224,7 +227,7 @@
 					description: slotDescription || undefined,
 					activity_type: slotActivityType as any,
 					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					day_of_week: slotDayOfWeek || undefined,
+					days_of_week: slotDaysJoined || undefined,
 					period_ids: slotPeriodIds.length > 0 ? slotPeriodIds : undefined,
 					registration_type: slotRegistrationType as any,
 				} as any);
@@ -236,7 +239,7 @@
 					activity_type: slotActivityType,
 					semester_id: slotSemesterId,
 					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					day_of_week: slotDayOfWeek || undefined,
+					days_of_week: slotDaysJoined || undefined,
 					period_ids: slotPeriodIds.length > 0 ? slotPeriodIds : undefined,
 					registration_type: slotRegistrationType || undefined,
 				});
@@ -301,7 +304,10 @@
 		if (!ids || ids.length === 0) return 'ทุกระดับชั้น';
 		return ids.map((id) => yearGradeLevels().find((g) => g.id === id)?.short_name ?? id).join(', ');
 	}
-	function dayLabel(d?: string) { return DAYS.find((x) => x.value === d)?.label ?? '—'; }
+	function dayLabel(d?: string) {
+		if (!d) return '—';
+		return d.split(',').map((v) => DAYS.find((x) => x.value === v.trim())?.label ?? v.trim()).join(', ');
+	}
 	function periodNames(ids?: string[]) {
 		if (!ids || ids.length === 0) return '—';
 		return ids.map((id) => (periods as any[]).find((p) => p.id === id)?.name ?? '?').join(', ');
@@ -376,7 +382,7 @@
 								<span class="text-sm text-muted-foreground">{gradeLevelDisplay(slot.allowed_grade_level_ids)}</span>
 							</div>
 							<div class="text-sm text-muted-foreground mt-0.5">
-								{dayLabel(slot.day_of_week)} คาบ {periodNames(slot.period_ids)}
+								{dayLabel(slot.days_of_week)} คาบ {periodNames(slot.period_ids)}
 								· {slotGroups.length} กิจกรรม
 								· {slot.registration_type === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}
 							</div>
@@ -504,15 +510,17 @@
 					</Select.Root>
 				</div>
 			{/if}
-			<div class="grid grid-cols-2 gap-3">
+			<div class="space-y-3">
 				<div class="space-y-1">
 					<Label>วันที่สอน</Label>
-					<Select.Root type="single" bind:value={slotDayOfWeek}>
-						<Select.Trigger class="w-full">{slotDayLabel}</Select.Trigger>
-						<Select.Content>
-							{#each DAYS as d}<Select.Item value={d.value}>{d.label}</Select.Item>{/each}
-						</Select.Content>
-					</Select.Root>
+					<div class="flex flex-wrap gap-1.5">
+						{#each DAYS as d}
+							{@const selected = slotDaysOfWeek.includes(d.value)}
+							<button type="button"
+								class="rounded border px-2 py-1 text-xs transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
+								onclick={() => toggleSlotDay(d.value)}>{d.label}</button>
+						{/each}
+					</div>
 				</div>
 				<div class="space-y-1">
 					<Label>คาบเรียน</Label>

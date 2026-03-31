@@ -10,6 +10,7 @@ export interface AcademicYear {
     start_date: string;
     end_date: string;
     is_active: boolean;
+    school_days: string;
     created_at: string;
 }
 
@@ -611,7 +612,7 @@ export interface ActivitySlot {
     activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
     semester_id: string;
     allowed_grade_level_ids?: string[];
-    day_of_week?: string;
+    days_of_week?: string;
     period_ids?: string[];
     registration_type: 'self' | 'assigned';
     teacher_reg_open: boolean;
@@ -624,6 +625,22 @@ export interface ActivitySlot {
     semester_name?: string;
     group_count?: number;
     total_members?: number;
+}
+
+export const ALL_DAYS = [
+    { value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
+    { value: 'TUE', label: 'อังคาร', shortLabel: 'อ' },
+    { value: 'WED', label: 'พุธ', shortLabel: 'พ' },
+    { value: 'THU', label: 'พฤหัสบดี', shortLabel: 'พฤ' },
+    { value: 'FRI', label: 'ศุกร์', shortLabel: 'ศ' },
+    { value: 'SAT', label: 'เสาร์', shortLabel: 'ส' },
+    { value: 'SUN', label: 'อาทิตย์', shortLabel: 'อา' },
+];
+
+/** Parse school_days string → filtered day list */
+export function getSchoolDays(schoolDaysStr?: string) {
+    const values = (schoolDaysStr || 'MON,TUE,WED,THU,FRI').split(',').map(d => d.trim());
+    return ALL_DAYS.filter(d => values.includes(d.value));
 }
 
 export const ACTIVITY_TYPE_LABELS: Record<string, string> = {
@@ -654,7 +671,7 @@ export const createActivitySlot = async (data: {
     activity_type: string;
     semester_id: string;
     allowed_grade_level_ids?: string[];
-    day_of_week?: string;
+    days_of_week?: string;
     period_ids?: string[];
     registration_type?: string;
 }) => {

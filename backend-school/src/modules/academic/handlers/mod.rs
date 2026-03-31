@@ -100,9 +100,11 @@ pub async fn create_academic_year(
         let _ = sqlx::query("UPDATE academic_years SET is_active = false").execute(&pool).await;
     }
 
+    let school_days = payload.school_days.unwrap_or_else(|| "MON,TUE,WED,THU,FRI".to_string());
+
     let result = sqlx::query_as::<_, AcademicYear>(
-        "INSERT INTO academic_years (year, name, start_date, end_date, is_active) 
-         VALUES ($1, $2, $3, $4, $5) 
+        "INSERT INTO academic_years (year, name, start_date, end_date, is_active, school_days)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *"
     )
     .bind(payload.year)
@@ -110,6 +112,7 @@ pub async fn create_academic_year(
     .bind(payload.start_date)
     .bind(payload.end_date)
     .bind(payload.is_active.unwrap_or(false))
+    .bind(&school_days)
     .fetch_one(&pool)
     .await;
 

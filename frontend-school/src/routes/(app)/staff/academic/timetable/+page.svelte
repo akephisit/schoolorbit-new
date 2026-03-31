@@ -16,6 +16,7 @@
 		lookupAcademicYears,
 		listClassrooms,
 		listClassroomCourses,
+		getSchoolDays,
 		type Classroom,
 		getAcademicStructure,
 		type AcademicYear,
@@ -104,14 +105,6 @@
 	let exportTargetIds = $state<string[]>([]);
 	let isExporting = $state(false);
 
-	const DAYS = [
-		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
-		{ value: 'TUE', label: 'อังคาร', shortLabel: 'อ' },
-		{ value: 'WED', label: 'พุธ', shortLabel: 'พ' },
-		{ value: 'THU', label: 'พฤหัสบดี', shortLabel: 'พฤ' },
-		{ value: 'FRI', label: 'ศุกร์', shortLabel: 'ศ' }
-	];
-
 	// State
 	let loading = $state(true);
 	let timetableEntries = $state<TimetableEntry[]>([]);
@@ -131,7 +124,10 @@
 	let selectedClassroomId = $state('');
 	let selectedInstructorId = $state('');
 
-	// Derived Semesters based on selected year
+	// Derived
+	let DAYS = $derived(
+		getSchoolDays(academicYears.find((y) => y.id === selectedYearId)?.school_days)
+	);
 	let semesters = $derived(allSemesters.filter((s) => s.academic_year_id === selectedYearId));
 
 	// Drag & Drop state

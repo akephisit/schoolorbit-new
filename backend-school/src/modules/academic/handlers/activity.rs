@@ -101,7 +101,7 @@ pub async fn create_activity_slot(
     let row: ActivitySlot = sqlx::query_as(
         r#"INSERT INTO activity_slots
             (name, description, activity_type, semester_id, allowed_grade_level_ids,
-             day_of_week, period_ids, registration_type)
+             days_of_week, period_ids, registration_type)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING *, NULL::TEXT AS semester_name, NULL::BIGINT AS group_count, NULL::BIGINT AS total_members"#,
     )
@@ -110,7 +110,7 @@ pub async fn create_activity_slot(
     .bind(&body.activity_type)
     .bind(body.semester_id)
     .bind(&allowed)
-    .bind(&body.day_of_week)
+    .bind(&body.days_of_week)
     .bind(&period_ids)
     .bind(&registration_type)
     .fetch_one(&pool)
@@ -142,7 +142,7 @@ pub async fn update_activity_slot(
             description = COALESCE($3, description),
             activity_type = COALESCE($4, activity_type),
             allowed_grade_level_ids = COALESCE($5, allowed_grade_level_ids),
-            day_of_week = COALESCE($6, day_of_week),
+            days_of_week = COALESCE($6, days_of_week),
             period_ids = COALESCE($7, period_ids),
             registration_type = COALESCE($8, registration_type),
             teacher_reg_open = COALESCE($9, teacher_reg_open),
@@ -158,7 +158,7 @@ pub async fn update_activity_slot(
     .bind(&body.description)
     .bind(&body.activity_type)
     .bind(body.allowed_grade_level_ids.as_ref().map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null)))
-    .bind(&body.day_of_week)
+    .bind(&body.days_of_week)
     .bind(body.period_ids.as_ref().map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null)))
     .bind(&body.registration_type)
     .bind(body.teacher_reg_open)

@@ -120,22 +120,36 @@ impl<'a> SchedulerDataLoader<'a> {
     }
     
     /// Load available time slots from periods
-    pub async fn load_available_slots(&self) -> Result<Vec<TimeSlot>, sqlx::Error> {
+    /// ดึง school_days จาก academic_year ของ semester ที่กำลัง schedule
+    pub async fn load_available_slots(&self, semester_id: Uuid) -> Result<Vec<TimeSlot>, sqlx::Error> {
+        // ดึง school_days จาก academic_year ที่ผูกกับ semester
+        let school_days: String = sqlx::query_scalar(
+            r#"SELECT ay.school_days
+               FROM academic_semesters s
+               JOIN academic_years ay ON ay.id = s.academic_year_id
+               WHERE s.id = $1"#
+        )
+        .bind(semester_id)
+        .fetch_optional(self.pool)
+        .await?
+        .unwrap_or_else(|| "MON,TUE,WED,THU,FRI".to_string());
+
+        let days: Vec<&str> = school_days.split(',').map(|d| d.trim()).collect();
+
         let query = r#"
             SELECT id, order_index as period_order, name, start_time::text, end_time::text
             FROM academic_periods
             WHERE is_active = true
             ORDER BY order_index
         "#;
-        
+
         let periods = sqlx::query_as::<_, PeriodRow>(query)
             .fetch_all(self.pool)
             .await?;
-        
+
         let mut slots = Vec::new();
-        let days = ["MON", "TUE", "WED", "THU", "FRI"];
-        
-        for day in days {
+
+        for day in &days {
             for period in &periods {
                 slots.push(TimeSlot {
                     day: day.to_string(),
@@ -144,7 +158,7 @@ impl<'a> SchedulerDataLoader<'a> {
                 });
             }
         }
-        
+
         Ok(slots)
     }
     
