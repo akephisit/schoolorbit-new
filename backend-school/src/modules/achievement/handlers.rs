@@ -115,28 +115,39 @@ pub async fn list_achievements(
         WHERE 1=1
     ");
     
+    let mut idx = 0u32;
+
     // Apply Ownership Filter
     if !can_read_all {
-        // If cannot read all, force filter by own ID
-        query.push_str(&format!(" AND a.user_id = '{}'", user.id));
-    } else {
-        // If can read all, check if user provided a specific filter
-        if let Some(target_user_id) = filter.user_id {
-            query.push_str(&format!(" AND a.user_id = '{}'", target_user_id));
-        }
+        idx += 1;
+        query.push_str(&format!(" AND a.user_id = ${idx}"));
+    } else if let Some(_) = filter.user_id {
+        idx += 1;
+        query.push_str(&format!(" AND a.user_id = ${idx}"));
     }
 
     // Date Filters
-    if let Some(start) = filter.start_date {
-        query.push_str(&format!(" AND a.achievement_date >= '{}'", start));
+    if let Some(_) = filter.start_date {
+        idx += 1;
+        query.push_str(&format!(" AND a.achievement_date >= ${idx}"));
     }
-    if let Some(end) = filter.end_date {
-        query.push_str(&format!(" AND a.achievement_date <= '{}'", end));
+    if let Some(_) = filter.end_date {
+        idx += 1;
+        query.push_str(&format!(" AND a.achievement_date <= ${idx}"));
     }
 
     query.push_str(" ORDER BY a.achievement_date DESC, a.created_at DESC");
 
-    let items = sqlx::query_as::<_, Achievement>(&query)
+    let mut q = sqlx::query_as::<_, Achievement>(&query);
+    if !can_read_all {
+        q = q.bind(user.id);
+    } else if let Some(target_user_id) = filter.user_id {
+        q = q.bind(target_user_id);
+    }
+    if let Some(start) = filter.start_date { q = q.bind(start); }
+    if let Some(end) = filter.end_date { q = q.bind(end); }
+
+    let items = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {

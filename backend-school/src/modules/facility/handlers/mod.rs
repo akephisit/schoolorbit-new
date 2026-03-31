@@ -174,20 +174,33 @@ pub async fn list_rooms(
         "#
     );
 
-    if let Some(bid) = filter.building_id {
-        sql.push_str(&format!(" AND r.building_id = '{}'", bid));
+    let mut idx = 0u32;
+
+    if let Some(_) = filter.building_id {
+        idx += 1;
+        sql.push_str(&format!(" AND r.building_id = ${idx}"));
     }
-    if let Some(rtype) = &filter.room_type {
-        sql.push_str(&format!(" AND r.room_type = '{}'", rtype));
+    if let Some(_) = &filter.room_type {
+        idx += 1;
+        sql.push_str(&format!(" AND r.room_type = ${idx}"));
     }
-    if let Some(search) = &filter.search {
-        let s = format!("%{}%", search);
-        sql.push_str(&format!(" AND (r.name_th ILIKE '{}' OR r.code ILIKE '{}')", s, s));
+    if let Some(ref search) = filter.search {
+        if !search.is_empty() {
+            idx += 1;
+            sql.push_str(&format!(" AND (r.name_th ILIKE ${idx} OR r.code ILIKE ${idx})"));
+        }
     }
 
     sql.push_str(" ORDER BY b.code NULLS LAST, r.floor NULLS FIRST, r.code ASC");
 
-    let rooms = sqlx::query_as::<_, Room>(&sql)
+    let mut q = sqlx::query_as::<_, Room>(&sql);
+    if let Some(bid) = filter.building_id { q = q.bind(bid); }
+    if let Some(rtype) = &filter.room_type { q = q.bind(rtype); }
+    if let Some(ref search) = filter.search {
+        if !search.is_empty() { q = q.bind(format!("%{search}%")); }
+    }
+
+    let rooms = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {

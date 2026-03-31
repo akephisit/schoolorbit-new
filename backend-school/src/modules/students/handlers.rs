@@ -348,30 +348,35 @@ pub async fn list_students(
         "#
     );
     
-    let mut conditions = Vec::new();
-    
+    let mut idx = 0u32;
 
-
-    if let Some(ref status) = filter.status {
-        conditions.push(format!("u.status = '{}'", status));
+    if let Some(ref _status) = filter.status {
+        idx += 1;
+        query.push_str(&format!(" AND u.status = ${idx}"));
     }
-    
     if let Some(ref search) = filter.search {
-        conditions.push(format!(
-            "(u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%' OR s.student_id ILIKE '%{}%' OR u.username ILIKE '%{}%')",
-            search, search, search, search
-        ));
+        if !search.is_empty() {
+            idx += 1;
+            query.push_str(&format!(" AND (u.first_name ILIKE ${idx} OR u.last_name ILIKE ${idx} OR s.student_id ILIKE ${idx} OR u.username ILIKE ${idx})"));
+        }
     }
-    
-    if !conditions.is_empty() {
-        query.push_str(" AND ");
-        query.push_str(&conditions.join(" AND "));
-    }
-    
+
+    idx += 1;
+    let limit_idx = idx;
+    idx += 1;
+    let offset_idx = idx;
     query.push_str(" ORDER BY CASE gl.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2 WHEN 'secondary' THEN 3 ELSE 4 END, gl.year NULLS LAST, c.name NULLS LAST, s.student_number");
-    query.push_str(&format!(" LIMIT {} OFFSET {}", page_size, offset));
-    
-    let students = sqlx::query_as::<_, StudentListItem>(&query)
+    query.push_str(&format!(" LIMIT ${limit_idx} OFFSET ${offset_idx}"));
+
+    let mut q = sqlx::query_as::<_, StudentListItem>(&query);
+    if let Some(ref status) = filter.status { q = q.bind(status); }
+    if let Some(ref search) = filter.search {
+        if !search.is_empty() { q = q.bind(format!("%{search}%")); }
+    }
+    q = q.bind(page_size as i64);
+    q = q.bind(offset as i64);
+
+    let students = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {

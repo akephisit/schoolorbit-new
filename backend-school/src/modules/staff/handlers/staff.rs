@@ -233,28 +233,38 @@ pub async fn list_staff(
          WHERE u.user_type = 'staff'",
     );
 
+    let mut idx = 0u32;
+
     // Default to active staff only (unless status filter is explicitly provided)
-    if let Some(status) = &filter.status {
-        query.push_str(&format!(" AND u.status = '{}'", status));
+    if let Some(ref _status) = filter.status {
+        idx += 1;
+        query.push_str(&format!(" AND u.status = ${idx}"));
     } else {
-        // Default: show only active staff
         query.push_str(" AND u.status = 'active'");
     }
 
-
-    if let Some(search) = &filter.search {
-        query.push_str(&format!(
-            " AND (u.first_name ILIKE '%{}%' OR u.last_name ILIKE '%{}%' OR u.username ILIKE '%{}%')",
-            search, search, search
-        ));
+    if let Some(ref search) = filter.search {
+        if !search.is_empty() {
+            idx += 1;
+            query.push_str(&format!(" AND (u.first_name ILIKE ${idx} OR u.last_name ILIKE ${idx} OR u.username ILIKE ${idx})"));
+        }
     }
 
-    query.push_str(&format!(
-        " ORDER BY u.first_name LIMIT {} OFFSET {}",
-        page_size, offset
-    ));
+    idx += 1;
+    let limit_idx = idx;
+    idx += 1;
+    let offset_idx = idx;
+    query.push_str(&format!(" ORDER BY u.first_name LIMIT ${limit_idx} OFFSET ${offset_idx}"));
 
-    let staff_rows = sqlx::query_as::<_, (Uuid, String, Option<String>, String, String, String)>(&query)
+    let mut q = sqlx::query_as::<_, (Uuid, String, Option<String>, String, String, String)>(&query);
+    if let Some(ref status) = filter.status { q = q.bind(status); }
+    if let Some(ref search) = filter.search {
+        if !search.is_empty() { q = q.bind(format!("%{search}%")); }
+    }
+    q = q.bind(page_size as i64);
+    q = q.bind(offset as i64);
+
+    let staff_rows = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
