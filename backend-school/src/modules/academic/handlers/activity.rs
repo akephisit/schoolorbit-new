@@ -4,6 +4,7 @@ use axum::{
     Json,
     response::IntoResponse,
 };
+use chrono::Utc;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -25,7 +26,182 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
 }
 
 // ============================================
-// Activity Groups CRUD
+// Activity Slots CRUD (ช่องกิจกรรม — Admin)
+// ============================================
+
+/// GET /api/academic/activity-slots
+pub async fn list_activity_slots(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(filter): Query<ActivitySlotFilter>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let mut sql = String::from(
+        r#"SELECT
+            s.*,
+            sem.name AS semester_name,
+            COUNT(DISTINCT ag.id) AS group_count,
+            COUNT(DISTINCT agm.id) AS total_members
+        FROM activity_slots s
+        LEFT JOIN academic_semesters sem ON sem.id = s.semester_id
+        LEFT JOIN activity_groups ag ON ag.slot_id = s.id AND ag.is_active = true
+        LEFT JOIN activity_group_members agm ON agm.activity_group_id = ag.id
+        WHERE s.is_active = true"#,
+    );
+
+    if let Some(semester_id) = filter.semester_id {
+        sql.push_str(&format!(" AND s.semester_id = '{semester_id}'"));
+    }
+    if let Some(ref activity_type) = filter.activity_type {
+        sql.push_str(&format!(" AND s.activity_type = '{activity_type}'"));
+    }
+    if let Some(open) = filter.teacher_reg_open {
+        sql.push_str(&format!(" AND s.teacher_reg_open = {open}"));
+    }
+    if let Some(open) = filter.student_reg_open {
+        sql.push_str(&format!(" AND s.student_reg_open = {open}"));
+    }
+
+    sql.push_str(" GROUP BY s.id, sem.name ORDER BY s.activity_type, s.name");
+
+    let slots: Vec<ActivitySlot> = sqlx::query_as(&sql)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("list_activity_slots error: {e}");
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
+
+    Ok(Json(json!({ "data": slots })).into_response())
+}
+
+/// POST /api/academic/activity-slots
+pub async fn create_activity_slot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreateActivitySlotRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let registration_type = body.registration_type.unwrap_or_else(|| "assigned".to_string());
+    let allowed = body.allowed_grade_level_ids
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    let period_ids = body.period_ids
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+
+    let row: ActivitySlot = sqlx::query_as(
+        r#"INSERT INTO activity_slots
+            (name, description, activity_type, semester_id, allowed_grade_level_ids,
+             day_of_week, period_ids, registration_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING *, NULL::TEXT AS semester_name, NULL::BIGINT AS group_count, NULL::BIGINT AS total_members"#,
+    )
+    .bind(&body.name)
+    .bind(&body.description)
+    .bind(&body.activity_type)
+    .bind(body.semester_id)
+    .bind(&allowed)
+    .bind(&body.day_of_week)
+    .bind(&period_ids)
+    .bind(&registration_type)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("create_activity_slot error: {e}");
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
+
+    Ok(Json(json!({ "data": row })).into_response())
+}
+
+/// PUT /api/academic/activity-slots/:id
+pub async fn update_activity_slot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateActivitySlotRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let row: ActivitySlot = sqlx::query_as(
+        r#"UPDATE activity_slots SET
+            name = COALESCE($2, name),
+            description = COALESCE($3, description),
+            activity_type = COALESCE($4, activity_type),
+            allowed_grade_level_ids = COALESCE($5, allowed_grade_level_ids),
+            day_of_week = COALESCE($6, day_of_week),
+            period_ids = COALESCE($7, period_ids),
+            registration_type = COALESCE($8, registration_type),
+            teacher_reg_open = COALESCE($9, teacher_reg_open),
+            student_reg_open = COALESCE($10, student_reg_open),
+            student_reg_start = COALESCE($11, student_reg_start),
+            student_reg_end = COALESCE($12, student_reg_end),
+            is_active = COALESCE($13, is_active)
+        WHERE id = $1
+        RETURNING *, NULL::TEXT AS semester_name, NULL::BIGINT AS group_count, NULL::BIGINT AS total_members"#,
+    )
+    .bind(id)
+    .bind(&body.name)
+    .bind(&body.description)
+    .bind(&body.activity_type)
+    .bind(body.allowed_grade_level_ids.as_ref().map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null)))
+    .bind(&body.day_of_week)
+    .bind(body.period_ids.as_ref().map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null)))
+    .bind(&body.registration_type)
+    .bind(body.teacher_reg_open)
+    .bind(body.student_reg_open)
+    .bind(body.student_reg_start.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&Utc)))
+    .bind(body.student_reg_end.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&Utc)))
+    .bind(body.is_active)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("update_activity_slot error: {e}");
+        AppError::NotFound("ไม่พบช่องกิจกรรม".to_string())
+    })?;
+
+    Ok(Json(json!({ "data": row })).into_response())
+}
+
+/// DELETE /api/academic/activity-slots/:id
+pub async fn delete_activity_slot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    sqlx::query("DELETE FROM activity_slots WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("delete_activity_slot error: {e}");
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
+
+    Ok(Json(json!({ "message": "ลบช่องกิจกรรมแล้ว" })).into_response())
+}
+
+// ============================================
+// Activity Groups CRUD (ชุมนุม/กิจกรรมจริง)
 // ============================================
 
 /// GET /api/academic/activities
@@ -45,20 +221,26 @@ pub async fn list_activity_groups(
             ag.*,
             u.first_name || ' ' || u.last_name AS instructor_name,
             COUNT(agm.id) AS member_count,
+            s.name AS slot_name,
+            s.activity_type,
             sem.name AS semester_name
         FROM activity_groups ag
         LEFT JOIN staff_info si ON si.id = ag.instructor_id
         LEFT JOIN users u ON u.id = si.user_id
         LEFT JOIN activity_group_members agm ON agm.activity_group_id = ag.id
-        LEFT JOIN academic_semesters sem ON sem.id = ag.semester_id
+        LEFT JOIN activity_slots s ON s.id = ag.slot_id
+        LEFT JOIN academic_semesters sem ON sem.id = s.semester_id
         WHERE ag.is_active = true"#,
     );
 
+    if let Some(slot_id) = filter.slot_id {
+        sql.push_str(&format!(" AND ag.slot_id = '{slot_id}'"));
+    }
     if let Some(semester_id) = filter.semester_id {
-        sql.push_str(&format!(" AND ag.semester_id = '{semester_id}'"));
+        sql.push_str(&format!(" AND s.semester_id = '{semester_id}'"));
     }
     if let Some(ref activity_type) = filter.activity_type {
-        sql.push_str(&format!(" AND ag.activity_type = '{activity_type}'"));
+        sql.push_str(&format!(" AND s.activity_type = '{activity_type}'"));
     }
     if let Some(instructor_id) = filter.instructor_id {
         sql.push_str(&format!(" AND ag.instructor_id = '{instructor_id}'"));
@@ -71,13 +253,13 @@ pub async fn list_activity_groups(
         sql.push_str(&format!(" AND ag.name ILIKE '%{escaped}%'"));
     }
 
-    sql.push_str(" GROUP BY ag.id, u.first_name, u.last_name, sem.name ORDER BY ag.activity_type, ag.name");
+    sql.push_str(" GROUP BY ag.id, u.first_name, u.last_name, s.name, s.activity_type, sem.name ORDER BY s.activity_type, ag.name");
 
     let groups: Vec<ActivityGroup> = sqlx::query_as(&sql)
         .fetch_all(&pool)
         .await
         .map_err(|e| {
-            eprintln!("❌ list_activity_groups error: {e}");
+            eprintln!("list_activity_groups error: {e}");
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -92,47 +274,45 @@ pub async fn create_activity_group(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // ต้องมี MANAGE_ALL หรือ MANAGE_OWN (ครูสร้างชุมนุมตัวเอง)
     let has_manage_all = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await.is_ok();
     let has_manage_own = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_OWN, &state.permission_cache).await.is_ok();
     if !has_manage_all && !has_manage_own {
-        return Ok(axum::http::Response::builder()
-            .status(403)
-            .body(axum::body::Body::from(json!({"error": "ไม่มีสิทธิ์"}).to_string()))
-            .unwrap());
+        return Err(AppError::Forbidden("ไม่มีสิทธิ์".to_string()));
     }
 
-    let registration_type = body.registration_type.unwrap_or_else(|| "assigned".to_string());
-    let registration_open = body.registration_open.unwrap_or(false);
-    let allowed = body.allowed_grade_level_ids
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    // ตรวจว่า slot เปิดให้ครูลงทะเบียนอยู่
+    let slot_open: Option<(bool,)> = sqlx::query_as(
+        "SELECT teacher_reg_open FROM activity_slots WHERE id = $1 AND is_active = true"
+    )
+    .bind(body.slot_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let period_ids_json = body.period_ids
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    match slot_open {
+        None => return Err(AppError::NotFound("ไม่พบช่องกิจกรรม".to_string())),
+        Some((false,)) if !has_manage_all => {
+            return Ok(Json(json!({ "error": "ช่องกิจกรรมนี้ยังไม่เปิดให้ลงทะเบียน" })).into_response());
+        }
+        _ => {}
+    }
 
     let row: ActivityGroup = sqlx::query_as(
         r#"INSERT INTO activity_groups
-            (name, description, activity_type, semester_id, instructor_id,
-             registration_type, max_capacity, registration_open, allowed_grade_level_ids,
-             day_of_week, period_ids)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-           RETURNING *, NULL::TEXT AS instructor_name, NULL::BIGINT AS member_count, NULL::TEXT AS semester_name"#,
+            (slot_id, name, description, instructor_id, max_capacity)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *, NULL::TEXT AS instructor_name, NULL::BIGINT AS member_count,
+                     NULL::TEXT AS slot_name, NULL::TEXT AS activity_type, NULL::TEXT AS semester_name"#,
     )
+    .bind(body.slot_id)
     .bind(&body.name)
     .bind(&body.description)
-    .bind(&body.activity_type)
-    .bind(body.semester_id)
     .bind(body.instructor_id)
-    .bind(&registration_type)
     .bind(body.max_capacity)
-    .bind(registration_open)
-    .bind(&allowed)
-    .bind(&body.day_of_week)
-    .bind(&period_ids_json)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
-        eprintln!("❌ create_activity_group error: {e}");
+        eprintln!("create_activity_group error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -149,64 +329,37 @@ pub async fn update_activity_group(
     let pool = get_pool(&state, &headers).await?;
 
     if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
-        // Allow manage_own if this instructor owns the group
         if check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_OWN, &state.permission_cache).await.is_err() {
             return Ok(r);
         }
     }
 
-    // Build SET clause dynamically
-    let mut parts: Vec<String> = vec!["updated_at = NOW()".to_string()];
-    let mut idx = 1i32;
-
-    if body.name.is_some()              { parts.push(format!("name = ${idx}")); idx += 1; }
-    if body.description.is_some()       { parts.push(format!("description = ${idx}")); idx += 1; }
-    if body.activity_type.is_some()     { parts.push(format!("activity_type = ${idx}")); idx += 1; }
-    if body.instructor_id.is_some()     { parts.push(format!("instructor_id = ${idx}")); idx += 1; }
-    if body.registration_type.is_some() { parts.push(format!("registration_type = ${idx}")); idx += 1; }
-    if body.max_capacity.is_some()      { parts.push(format!("max_capacity = ${idx}")); idx += 1; }
-    if body.registration_open.is_some() { parts.push(format!("registration_open = ${idx}")); idx += 1; }
-    if body.allowed_grade_level_ids.is_some() { parts.push(format!("allowed_grade_level_ids = ${idx}")); idx += 1; }
-    if body.is_active.is_some()         { parts.push(format!("is_active = ${idx}")); idx += 1; }
-    if body.day_of_week.is_some()       { parts.push(format!("day_of_week = ${idx}")); idx += 1; }
-    if body.period_ids.is_some()        { parts.push(format!("period_ids = ${idx}")); idx += 1; }
-
-    if parts.len() == 1 {
-        return Ok(Json(json!({ "message": "ไม่มีข้อมูลที่ต้องอัปเดต" })).into_response());
-    }
-
-    let id_idx = idx;
-    let sql = format!(
-        "UPDATE activity_groups SET {} WHERE id = ${} RETURNING *, NULL::TEXT AS instructor_name, NULL::BIGINT AS member_count, NULL::TEXT AS semester_name",
-        parts.join(", "),
-        id_idx
-    );
-
-    let mut q = sqlx::query_as::<_, ActivityGroup>(&sql);
-    if let Some(ref v) = body.name               { q = q.bind(v); }
-    if let Some(ref v) = body.description        { q = q.bind(v); }
-    if let Some(ref v) = body.activity_type      { q = q.bind(v); }
-    if let Some(v)     = body.instructor_id       { q = q.bind(v); }
-    if let Some(ref v) = body.registration_type  { q = q.bind(v); }
-    if let Some(v)     = body.max_capacity        { q = q.bind(v); }
-    if let Some(v)     = body.registration_open   { q = q.bind(v); }
-    if let Some(ref v) = body.allowed_grade_level_ids {
-        q = q.bind(serde_json::to_value(v).unwrap_or(serde_json::Value::Null));
-    }
-    if let Some(v) = body.is_active               { q = q.bind(v); }
-    if let Some(ref v) = body.day_of_week        { q = q.bind(v); }
-    if let Some(ref v) = body.period_ids {
-        q = q.bind(serde_json::to_value(v).unwrap_or(serde_json::Value::Null));
-    }
-    q = q.bind(id);
-
-    let row: ActivityGroup = q
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ update_activity_group error: {e}");
-            AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string())
-        })?;
+    let row: ActivityGroup = sqlx::query_as(
+        r#"UPDATE activity_groups SET
+            name = COALESCE($2, name),
+            description = COALESCE($3, description),
+            instructor_id = COALESCE($4, instructor_id),
+            max_capacity = COALESCE($5, max_capacity),
+            registration_open = COALESCE($6, registration_open),
+            is_active = COALESCE($7, is_active),
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *, NULL::TEXT AS instructor_name, NULL::BIGINT AS member_count,
+                  NULL::TEXT AS slot_name, NULL::TEXT AS activity_type, NULL::TEXT AS semester_name"#,
+    )
+    .bind(id)
+    .bind(&body.name)
+    .bind(&body.description)
+    .bind(body.instructor_id)
+    .bind(body.max_capacity)
+    .bind(body.registration_open)
+    .bind(body.is_active)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("update_activity_group error: {e}");
+        AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string())
+    })?;
 
     Ok(Json(json!({ "data": row })).into_response())
 }
@@ -228,7 +381,7 @@ pub async fn delete_activity_group(
         .execute(&pool)
         .await
         .map_err(|e| {
-            eprintln!("❌ delete_activity_group error: {e}");
+            eprintln!("delete_activity_group error: {e}");
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -276,14 +429,14 @@ pub async fn list_members(
     .fetch_all(&pool)
     .await
     .map_err(|e| {
-        eprintln!("❌ list_members error: {e}");
+        eprintln!("list_members error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
     Ok(Json(json!({ "data": members })).into_response())
 }
 
-/// POST /api/academic/activities/:id/members  — ครู/admin เพิ่มสมาชิก (assigned)
+/// POST /api/academic/activities/:id/members
 pub async fn add_members(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -296,7 +449,6 @@ pub async fn add_members(
         return Ok(r);
     }
 
-    // Check capacity
     let (current_count,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM activity_group_members WHERE activity_group_id = $1",
     )
@@ -341,7 +493,7 @@ pub async fn add_members(
     Ok(Json(json!({ "inserted": inserted })).into_response())
 }
 
-/// POST /api/academic/activities/:id/enroll  — นักเรียน self-enroll (self)
+/// POST /api/academic/activities/:id/enroll  — นักเรียน self-enroll
 pub async fn self_enroll(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -349,13 +501,12 @@ pub async fn self_enroll(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // ดึง student_id จาก session/token
-    // สำหรับตอนนี้ใช้ permission check ว่า login แล้ว
-    // TODO: ดึง student_id จาก JWT claims เมื่อ student portal พร้อม
-
-    // Check group is open for self registration
+    // Check slot is open for student registration
     let row: Option<(bool, Option<i32>, String)> = sqlx::query_as(
-        "SELECT registration_open, max_capacity, registration_type FROM activity_groups WHERE id = $1 AND is_active = true",
+        r#"SELECT s.student_reg_open, ag.max_capacity, s.registration_type
+           FROM activity_groups ag
+           JOIN activity_slots s ON s.id = ag.slot_id
+           WHERE ag.id = $1 AND ag.is_active = true"#,
     )
     .bind(group_id)
     .fetch_optional(&pool)
@@ -371,7 +522,6 @@ pub async fn self_enroll(
         return Ok(Json(json!({ "error": "ยังไม่เปิดรับสมัคร" })).into_response());
     }
 
-    // Check capacity
     if let Some(max) = cap {
         let (count,): (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM activity_group_members WHERE activity_group_id = $1",
@@ -413,7 +563,7 @@ pub async fn remove_member(
     Ok(Json(json!({ "message": "ลบสมาชิกแล้ว" })).into_response())
 }
 
-/// PUT /api/academic/activities/members/:member_id/result  — บันทึกผล ผ/มผ
+/// PUT /api/academic/activities/members/:member_id/result
 pub async fn update_member_result(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -447,7 +597,7 @@ pub async fn update_member_result(
 #[derive(serde::Deserialize)]
 pub struct InstructorRoleRequest {
     pub instructor_id: uuid::Uuid,
-    pub role: Option<String>, // "primary" | "assistant"
+    pub role: Option<String>,
 }
 
 #[derive(serde::Serialize, sqlx::FromRow)]

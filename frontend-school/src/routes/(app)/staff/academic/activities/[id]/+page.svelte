@@ -3,7 +3,6 @@
 	import { page } from '$app/stores';
 	import {
 		listActivityGroups,
-		updateActivityGroup,
 		listActivityMembers,
 		addActivityMembers,
 		removeActivityMember,
@@ -26,18 +25,15 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, UserPlus, Trash2, Search, UserCog, Calendar } from 'lucide-svelte';
+	import { ArrowLeft, UserPlus, Trash2, Search, UserCog } from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { goto } from '$app/navigation';
-	import { listPeriods, type AcademicPeriod } from '$lib/api/timetable';
-
 	let groupId = $derived($page.params.id as string);
 
 	let loading = $state(true);
 	let group = $state<ActivityGroup | null>(null);
 	let members = $state<ActivityGroupMember[]>([]);
 	let instructors = $state<ActivityInstructor[]>([]);
-	let periods = $state<AcademicPeriod[]>([]);
 	let activeTab = $state('members');
 
 	let allStudents = $state<StudentLookupItem[]>([]);
@@ -51,16 +47,6 @@
 	let addInstructorId = $state('');
 	let addInstructorRole = $state('assistant');
 
-	let editDay = $state('');
-	let editPeriodIds = $state<string[]>([]);
-	let savingSchedule = $state(false);
-
-	const DAYS = [
-		{ value: 'MON', label: 'จันทร์' }, { value: 'TUE', label: 'อังคาร' },
-		{ value: 'WED', label: 'พุธ' },    { value: 'THU', label: 'พฤหัสบดี' },
-		{ value: 'FRI', label: 'ศุกร์' },  { value: 'SAT', label: 'เสาร์' },
-		{ value: 'SUN', label: 'อาทิตย์' }
-	];
 
 	let memberSearch = $state('');
 	let filteredMembers = $derived(members.filter((m) => {
@@ -77,8 +63,6 @@
 	}).slice(0, 80));
 
 	let addInstructorName = $derived(allStaff.find((s) => s.id === addInstructorId)?.name ?? 'เลือกครู...');
-	let editDayLabel = $derived(DAYS.find((d) => d.value === editDay)?.label ?? 'เลือกวัน...');
-	let scheduledPeriods = $derived(editPeriodIds.map((pid) => periods.find((p) => p.id === pid)).filter(Boolean));
 
 	onMount(async () => {
 		await loadAll();
@@ -94,11 +78,6 @@
 		group = groupsRes.data.find((g) => g.id === groupId) ?? null;
 		members = membersRes.data ?? [];
 		instructors = instructorsRes.data ?? [];
-		periods = (await listPeriods()).data ?? [];
-		if (group) {
-			editDay = group.day_of_week ?? '';
-			editPeriodIds = group.period_ids ?? [];
-		}
 	}
 
 	async function openAddStudentDialog() {
@@ -145,27 +124,6 @@
 		catch { toast.error('เกิดข้อผิดพลาด'); }
 	}
 
-	function togglePeriod(periodId: string) {
-		if (editPeriodIds.includes(periodId)) {
-			editPeriodIds = editPeriodIds.filter((id) => id !== periodId);
-		} else {
-			editPeriodIds = [...editPeriodIds, periodId];
-		}
-	}
-	async function handleSaveSchedule() {
-		savingSchedule = true;
-		try {
-			await updateActivityGroup(groupId, {
-				day_of_week: editDay || undefined,
-				period_ids: editPeriodIds.length > 0 ? editPeriodIds : undefined
-			} as any);
-			toast.success('บันทึกตารางเรียนแล้ว');
-			if (group) {
-				group.day_of_week = editDay || undefined;
-				group.period_ids = editPeriodIds.length > 0 ? editPeriodIds : undefined;
-			}
-		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { savingSchedule = false; }
-	}
 </script>
 
 <div class="space-y-4 p-4">
@@ -177,7 +135,7 @@
 			{#if group}
 				<h1 class="text-xl font-semibold">{group.name}</h1>
 				<p class="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
-					<Badge variant="outline">{ACTIVITY_TYPE_LABELS[group.activity_type] ?? group.activity_type}</Badge>
+					{#if group.activity_type}<Badge variant="outline">{ACTIVITY_TYPE_LABELS[group.activity_type] ?? group.activity_type}</Badge>{/if}
 					· {members.length} สมาชิก{#if group.max_capacity} · รับสูงสุด {group.max_capacity} คน{/if}
 				</p>
 			{:else}
@@ -190,7 +148,6 @@
 		<Tabs.List>
 			<Tabs.Trigger value="members">สมาชิก ({members.length})</Tabs.Trigger>
 			<Tabs.Trigger value="instructors">ครูที่ดูแล ({instructors.length})</Tabs.Trigger>
-			<Tabs.Trigger value="timetable">ตารางเรียน</Tabs.Trigger>
 		</Tabs.List>
 
 		<!-- Members -->
@@ -299,61 +256,6 @@
 			</div>
 		</Tabs.Content>
 
-		<!-- Timetable -->
-		<Tabs.Content value="timetable">
-			<div class="space-y-4 pt-3">
-				<div class="space-y-3">
-					<div class="space-y-1">
-						<Label>วันที่สอน</Label>
-						{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
-							<Select.Root type="single" bind:value={editDay}>
-								<Select.Trigger class="w-48">{editDayLabel}</Select.Trigger>
-								<Select.Content>
-									{#each DAYS as d}<Select.Item value={d.value}>{d.label}</Select.Item>{/each}
-								</Select.Content>
-							</Select.Root>
-						{:else}
-							<p class="text-sm">{editDayLabel}</p>
-						{/if}
-					</div>
-					<div class="space-y-1">
-						<Label>คาบเรียน</Label>
-						{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
-							<div class="flex flex-wrap gap-2">
-								{#each (periods as any[]).filter((p) => p.type !== 'BREAK') as p}
-									{@const selected = editPeriodIds.includes(p.id)}
-									<button
-										type="button"
-										class="rounded-md border px-3 py-1.5 text-sm transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
-										onclick={() => togglePeriod(p.id)}
-									>
-										{p.name}
-									</button>
-								{/each}
-							</div>
-						{:else}
-							<div class="flex flex-wrap gap-2">
-								{#each scheduledPeriods as p}
-									<Badge variant="secondary">{p?.name}</Badge>
-								{:else}
-									<p class="text-sm text-muted-foreground">ยังไม่ได้กำหนด</p>
-								{/each}
-							</div>
-						{/if}
-					</div>
-					{#if scheduledPeriods.length > 0 && editDay}
-						<div class="text-sm text-muted-foreground">
-							สรุป: {editDayLabel} คาบ {scheduledPeriods.map((p) => p?.name).join(', ')}
-						</div>
-					{/if}
-				</div>
-				{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
-					<Button onclick={handleSaveSchedule} disabled={savingSchedule}>
-						<Calendar class="mr-1 h-4 w-4" />{savingSchedule ? 'กำลังบันทึก...' : 'บันทึกตารางเรียน'}
-					</Button>
-				{/if}
-			</div>
-		</Tabs.Content>
 	</Tabs.Root>
 </div>
 

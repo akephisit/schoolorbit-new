@@ -88,7 +88,11 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/scheduling/subjects", get(handlers::scheduling_config::list_subject_constraints))
         .route("/scheduling/subjects/{id}", put(handlers::scheduling_config::update_subject_constraints))
 
-        // Activity Groups (กิจกรรมพัฒนาผู้เรียน)
+        // Activity Slots (ช่องกิจกรรม — Admin)
+        .route("/activity-slots", get(handlers::activity::list_activity_slots).post(handlers::activity::create_activity_slot))
+        .route("/activity-slots/{id}", put(handlers::activity::update_activity_slot).delete(handlers::activity::delete_activity_slot))
+
+        // Activity Groups (กิจกรรมจริง ภายใต้ slot)
         .route("/activities", get(handlers::activity::list_activity_groups).post(handlers::activity::create_activity_group))
         .route("/activities/{id}", put(handlers::activity::update_activity_group).delete(handlers::activity::delete_activity_group))
         .route("/activities/{id}/members", get(handlers::activity::list_members).post(handlers::activity::add_members))

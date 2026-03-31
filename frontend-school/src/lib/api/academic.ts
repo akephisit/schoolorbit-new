@@ -601,27 +601,99 @@ export const generateCoursesFromPlan = async (data: {
 };
 
 // ==========================================
-// Activity Groups (กิจกรรมพัฒนาผู้เรียน)
+// Activity Slots (ช่องกิจกรรม — Admin)
 // ==========================================
 
-export interface ActivityGroup {
+export interface ActivitySlot {
     id: string;
     name: string;
     description?: string;
     activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
     semester_id: string;
-    instructor_id?: string;
-    registration_type: 'self' | 'assigned';
-    max_capacity?: number;
-    registration_open: boolean;
     allowed_grade_level_ids?: string[];
     day_of_week?: string;
     period_ids?: string[];
+    registration_type: 'self' | 'assigned';
+    teacher_reg_open: boolean;
+    student_reg_open: boolean;
+    student_reg_start?: string;
+    student_reg_end?: string;
+    is_active: boolean;
+    created_at: string;
+    // joined
+    semester_name?: string;
+    group_count?: number;
+    total_members?: number;
+}
+
+export const ACTIVITY_TYPE_LABELS: Record<string, string> = {
+    scout: 'ลูกเสือ / เนตรนารี / ยุวกาชาด',
+    club: 'ชุมนุม',
+    guidance: 'แนะแนว',
+    social: 'กิจกรรมเพื่อสังคม',
+    other: 'อื่น ๆ'
+};
+
+export const listActivitySlots = async (filter: {
+    semester_id?: string;
+    activity_type?: string;
+    teacher_reg_open?: boolean;
+    student_reg_open?: boolean;
+} = {}): Promise<{ data: ActivitySlot[] }> => {
+    const params = new URLSearchParams();
+    if (filter.semester_id) params.set('semester_id', filter.semester_id);
+    if (filter.activity_type) params.set('activity_type', filter.activity_type);
+    if (filter.teacher_reg_open !== undefined) params.set('teacher_reg_open', String(filter.teacher_reg_open));
+    if (filter.student_reg_open !== undefined) params.set('student_reg_open', String(filter.student_reg_open));
+    return await fetchApi(`/api/academic/activity-slots?${params}`);
+};
+
+export const createActivitySlot = async (data: {
+    name: string;
+    description?: string;
+    activity_type: string;
+    semester_id: string;
+    allowed_grade_level_ids?: string[];
+    day_of_week?: string;
+    period_ids?: string[];
+    registration_type?: string;
+}) => {
+    return await fetchApi('/api/academic/activity-slots', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const updateActivitySlot = async (id: string, data: Partial<ActivitySlot>) => {
+    return await fetchApi(`/api/academic/activity-slots/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};
+
+export const deleteActivitySlot = async (id: string) => {
+    return await fetchApi(`/api/academic/activity-slots/${id}`, { method: 'DELETE' });
+};
+
+// ==========================================
+// Activity Groups (กิจกรรมจริง ภายใต้ slot)
+// ==========================================
+
+export interface ActivityGroup {
+    id: string;
+    slot_id?: string;
+    name: string;
+    description?: string;
+    instructor_id?: string;
+    max_capacity?: number;
+    registration_open: boolean;
     is_active: boolean;
     created_at: string;
     // joined
     instructor_name?: string;
     member_count?: number;
+    slot_name?: string;
+    activity_type?: string;
     semester_name?: string;
 }
 
@@ -638,29 +710,31 @@ export interface ActivityGroupMember {
     grade_level_name?: string;
 }
 
-export const ACTIVITY_TYPE_LABELS: Record<string, string> = {
-    scout: 'ลูกเสือ / เนตรนารี / ยุวกาชาด',
-    club: 'ชุมนุม',
-    guidance: 'แนะแนว',
-    social: 'กิจกรรมเพื่อสังคม',
-    other: 'อื่น ๆ'
-};
-
 export const listActivityGroups = async (filter: {
+    slot_id?: string;
     semester_id?: string;
     activity_type?: string;
+    instructor_id?: string;
     registration_open?: boolean;
     search?: string;
 } = {}): Promise<{ data: ActivityGroup[] }> => {
     const params = new URLSearchParams();
+    if (filter.slot_id) params.set('slot_id', filter.slot_id);
     if (filter.semester_id) params.set('semester_id', filter.semester_id);
     if (filter.activity_type) params.set('activity_type', filter.activity_type);
+    if (filter.instructor_id) params.set('instructor_id', filter.instructor_id);
     if (filter.registration_open !== undefined) params.set('registration_open', String(filter.registration_open));
     if (filter.search) params.set('search', filter.search);
     return await fetchApi(`/api/academic/activities?${params}`);
 };
 
-export const createActivityGroup = async (data: Omit<ActivityGroup, 'id' | 'is_active' | 'created_at' | 'instructor_name' | 'member_count' | 'semester_name'>) => {
+export const createActivityGroup = async (data: {
+    slot_id: string;
+    name: string;
+    description?: string;
+    instructor_id?: string;
+    max_capacity?: number;
+}) => {
     return await fetchApi('/api/academic/activities', {
         method: 'POST',
         body: JSON.stringify(data)

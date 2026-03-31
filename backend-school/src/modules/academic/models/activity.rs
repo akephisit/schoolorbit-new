@@ -4,24 +4,93 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 // ==========================================
-// Activity Group Models
+// Activity Slot Models (ช่องกิจกรรม)
 // ==========================================
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
-pub struct ActivityGroup {
+pub struct ActivitySlot {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
     pub activity_type: String,
     pub semester_id: Uuid,
-    pub instructor_id: Option<Uuid>,
-    pub registration_type: String,
-    pub max_capacity: Option<i32>,
-    pub registration_open: bool,
     pub allowed_grade_level_ids: Option<serde_json::Value>,
-    pub created_by: Option<Uuid>,
     pub day_of_week: Option<String>,
     pub period_ids: Option<serde_json::Value>,
+    pub registration_type: String,
+    pub teacher_reg_open: bool,
+    pub student_reg_open: bool,
+    pub student_reg_start: Option<DateTime<Utc>>,
+    pub student_reg_end: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+
+    // Joined fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub semester_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub group_count: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub total_members: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateActivitySlotRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub activity_type: String,
+    pub semester_id: Uuid,
+    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
+    pub day_of_week: Option<String>,
+    pub period_ids: Option<Vec<Uuid>>,
+    pub registration_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateActivitySlotRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub activity_type: Option<String>,
+    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
+    pub day_of_week: Option<String>,
+    pub period_ids: Option<Vec<Uuid>>,
+    pub registration_type: Option<String>,
+    pub teacher_reg_open: Option<bool>,
+    pub student_reg_open: Option<bool>,
+    pub student_reg_start: Option<String>,
+    pub student_reg_end: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ActivitySlotFilter {
+    pub semester_id: Option<Uuid>,
+    pub activity_type: Option<String>,
+    pub teacher_reg_open: Option<bool>,
+    pub student_reg_open: Option<bool>,
+}
+
+// ==========================================
+// Activity Group Models (กิจกรรมจริง ภายใต้ slot)
+// ==========================================
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ActivityGroup {
+    pub id: Uuid,
+    pub slot_id: Option<Uuid>,
+    pub name: String,
+    pub description: Option<String>,
+    pub instructor_id: Option<Uuid>,
+    pub max_capacity: Option<i32>,
+    pub registration_open: bool,
+    pub created_by: Option<Uuid>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -37,41 +106,39 @@ pub struct ActivityGroup {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
+    pub slot_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub activity_type: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
     pub semester_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateActivityGroupRequest {
+    pub slot_id: Uuid,
     pub name: String,
     pub description: Option<String>,
-    pub activity_type: String,
-    pub semester_id: Uuid,
     pub instructor_id: Option<Uuid>,
-    pub registration_type: Option<String>, // default: "assigned"
     pub max_capacity: Option<i32>,
-    pub registration_open: Option<bool>,   // default: false
-    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
-    pub day_of_week: Option<String>,
-    pub period_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateActivityGroupRequest {
     pub name: Option<String>,
     pub description: Option<String>,
-    pub activity_type: Option<String>,
     pub instructor_id: Option<Uuid>,
-    pub registration_type: Option<String>,
     pub max_capacity: Option<i32>,
     pub registration_open: Option<bool>,
-    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub is_active: Option<bool>,
-    pub day_of_week: Option<String>,
-    pub period_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ActivityGroupFilter {
+    pub slot_id: Option<Uuid>,
     pub semester_id: Option<Uuid>,
     pub activity_type: Option<String>,
     pub instructor_id: Option<Uuid>,
