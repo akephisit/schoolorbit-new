@@ -109,6 +109,13 @@ export const createAcademicYear = async (data: {
     });
 };
 
+export const updateAcademicYear = async (id: string, data: Partial<AcademicYear>) => {
+    return await fetchApi(`/api/academic/years/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};
+
 export const toggleActiveYear = async (id: string) => {
     return await fetchApi(`/api/academic/years/${id}/active`, {
         method: 'PUT'

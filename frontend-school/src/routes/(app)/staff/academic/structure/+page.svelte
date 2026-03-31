@@ -6,6 +6,7 @@
 	import {
 		getAcademicStructure,
 		createAcademicYear,
+		updateAcademicYear,
 		toggleActiveYear,
 		createGradeLevel,
 		deleteGradeLevel,
@@ -13,7 +14,8 @@
 		saveYearLevelConfig,
 		createSemester,
 		updateSemester,
-		deleteSemester
+		deleteSemester,
+		ALL_DAYS
 	} from '$lib/api/academic';
 	import type { AcademicStructureData, GradeLevel, Semester } from '$lib/api/academic';
 	import { toast } from 'svelte-sonner';
@@ -58,13 +60,14 @@
 	let showConfigDialog = $state(false);
 	let configYear = $state<AcademicStructureData['years'][0] | null>(null);
 	let configLevelIds = $state<string[]>([]);
+	let configSchoolDays = $state<string[]>([]);
 	let isSavingConfig = $state(false);
 
 	async function openConfigDialog(year: AcademicStructureData['years'][0]) {
 		configYear = year;
 		isSavingConfig = false;
 		configLevelIds = [];
-		// Open first then load data (can show loading inside dialog)
+		configSchoolDays = (year.school_days || 'MON,TUE,WED,THU,FRI').split(',').map((d) => d.trim());
 		showConfigDialog = true;
 
 		try {
@@ -76,17 +79,23 @@
 		}
 	}
 
+	function toggleConfigDay(day: string) {
+		configSchoolDays = configSchoolDays.includes(day)
+			? configSchoolDays.filter((d) => d !== day)
+			: [...configSchoolDays, day];
+	}
+
 	async function saveConfig() {
 		if (!configYear) return;
 		isSavingConfig = true;
 		try {
 			await saveYearLevelConfig(configYear.id, configLevelIds);
-			toast.success(`บันทึกชั้นเรียนสำหรับ ${configYear.name} เรียบร้อย`);
+			await updateAcademicYear(configYear.id, {
+				school_days: configSchoolDays.join(',')
+			} as any);
+			toast.success(`บันทึกการตั้งค่าสำหรับ ${configYear.name} เรียบร้อย`);
 			showConfigDialog = false;
-			// Reload data to update UI badges if we just edited the active year
-			if (configYear.is_active) {
-				await loadData();
-			}
+			await loadData();
 		} catch (error) {
 			console.error(error);
 			toast.error('บันทึกข้อมูลไม่สำเร็จ');
@@ -399,6 +408,7 @@
 								<Table.Row>
 									<Table.Head>ปีการศึกษา</Table.Head>
 									<Table.Head>ช่วงเวลา</Table.Head>
+									<Table.Head>วันเรียน</Table.Head>
 									<Table.Head>สถานะ</Table.Head>
 									<Table.Head class="text-right">จัดการ</Table.Head>
 								</Table.Row>
@@ -413,6 +423,9 @@
 											{new Date(year.start_date).toLocaleDateString('th-TH')} - {new Date(
 												year.end_date
 											).toLocaleDateString('th-TH')}
+										</Table.Cell>
+										<Table.Cell class="text-sm text-muted-foreground">
+											{(year.school_days || 'MON,TUE,WED,THU,FRI').split(',').map((d) => ALL_DAYS.find((x) => x.value === d.trim())?.shortLabel ?? d.trim()).join(' ')}
 										</Table.Cell>
 										<Table.Cell>
 											{#if year.is_active}
@@ -429,7 +442,7 @@
 													variant="ghost"
 													size="icon"
 													onclick={() => openConfigDialog(year)}
-													title="กำหนดชั้นเรียนที่เปิดสอน"
+													title="ตั้งค่าวันเรียนและชั้นเรียน"
 												>
 													<Settings class="h-4 w-4" />
 												</Button>
@@ -456,7 +469,7 @@
 								{/each}
 								{#if structure.years.length === 0}
 									<Table.Row>
-										<Table.Cell colspan={4} class="h-24 text-center">
+										<Table.Cell colspan={5} class="h-24 text-center">
 											ไม่พบข้อมูลปีการศึกษา
 										</Table.Cell>
 									</Table.Row>
@@ -691,17 +704,37 @@
 	<Dialog.Root bind:open={showConfigDialog}>
 		<Dialog.Content class="sm:max-w-[500px]">
 			<Dialog.Header>
-				<Dialog.Title>กำหนดชั้นเรียนที่เปิดสอน</Dialog.Title>
+				<Dialog.Title>ตั้งค่าปีการศึกษา</Dialog.Title>
 				<Dialog.Description>
-					เลือกชั้นเรียนที่จะเปิดสอนในปีการศึกษา <strong>{configYear?.name}</strong>
+					ตั้งค่าวันเรียนและชั้นเรียนสำหรับ <strong>{configYear?.name}</strong>
 				</Dialog.Description>
 			</Dialog.Header>
 
-			<div class="py-4">
+			<div class="py-4 space-y-5">
+				<!-- วันที่เรียน -->
+				<div class="space-y-2">
+					<Label class="text-sm font-semibold">วันที่เรียน</Label>
+					<div class="flex flex-wrap gap-2">
+						{#each ALL_DAYS as d}
+							{@const selected = configSchoolDays.includes(d.value)}
+							<button
+								type="button"
+								class="rounded-md border px-3 py-1.5 text-sm transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
+								onclick={() => toggleConfigDay(d.value)}
+							>
+								{d.label}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<!-- ชั้นเรียน -->
+				<div class="space-y-2">
+					<Label class="text-sm font-semibold">ชั้นเรียนที่เปิดสอน</Label>
 				{#if !configYear}
 					<div class="flex justify-center p-4"><Loader2 class="animate-spin" /></div>
 				{:else}
-					<div class="grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-2">
+					<div class="grid grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto pr-2">
 						{#each structure.levels as level}
 							<div
 								class="flex items-center space-x-2 border p-2 rounded-md hover:bg-muted/50 transition-colors"
@@ -719,6 +752,7 @@
 						{/each}
 					</div>
 				{/if}
+				</div>
 			</div>
 
 			<Dialog.Footer>

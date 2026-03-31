@@ -125,6 +125,48 @@ pub async fn create_academic_year(
     }
 }
 
+pub async fn update_academic_year(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateAcademicYearRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let result = sqlx::query_as::<_, AcademicYear>(
+        r#"UPDATE academic_years SET
+            year = COALESCE($2, year),
+            name = COALESCE($3, name),
+            start_date = COALESCE($4, start_date),
+            end_date = COALESCE($5, end_date),
+            school_days = COALESCE($6, school_days),
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *"#
+    )
+    .bind(id)
+    .bind(payload.year)
+    .bind(&payload.name)
+    .bind(payload.start_date)
+    .bind(payload.end_date)
+    .bind(&payload.school_days)
+    .fetch_one(&pool)
+    .await;
+
+    match result {
+        Ok(year) => Ok(Json(json!({"success": true, "data": year})).into_response()),
+        Err(e) => {
+            eprintln!("Failed to update year: {}", e);
+            Err(AppError::NotFound("Academic year not found".to_string()))
+        }
+    }
+}
+
 pub async fn toggle_active_year(
     State(state): State<AppState>,
     headers: HeaderMap,
