@@ -379,7 +379,7 @@ pub async fn get_enrollment_form(
     Ok(Json(json!({ "success": true, "data": form })).into_response())
 }
 
-/// PUT /api/admission/portal/form — กรอกแบบฟอร์มมอบตัว
+/// PUT /api/admission/portal/form — กรอกแบบฟอร์มมอบตัว (ยืนยัน + บันทึกในขั้นตอนเดียว)
 pub async fn submit_enrollment_form(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -394,19 +394,29 @@ pub async fn submit_enrollment_form(
         return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว หรือหมดเขตแล้ว".to_string()));
     }
 
-    // ตรวจสอบว่ายืนยันแล้วหรือยัง (student_confirmed = true)
-    let confirmed: bool = sqlx::query_scalar(
-        "SELECT COALESCE(student_confirmed, false) FROM admission_room_assignments WHERE application_id = $1"
+    // ตรวจสอบว่าสถานะเป็น accepted
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM admission_applications WHERE id = $1"
     )
     .bind(application_id)
-    .fetch_optional(&pool)
+    .fetch_one(&pool)
     .await
-    .unwrap_or(None)
-    .unwrap_or(false);
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
-    if !confirmed {
-        return Err(AppError::BadRequest("กรุณายืนยันเข้าเรียนก่อนกรอกแบบฟอร์ม".to_string()));
+    if status != "accepted" {
+        return Err(AppError::BadRequest(
+            format!("ไม่สามารถยืนยันได้ (สถานะปัจจุบัน: {})", status)
+        ));
     }
+
+    // ยืนยันเข้าเรียน (student_confirmed = true) ในขั้นตอนเดียวกับบันทึกฟอร์ม
+    sqlx::query(
+        "UPDATE admission_room_assignments SET student_confirmed = true, student_confirmed_at = NOW() WHERE application_id = $1"
+    )
+    .bind(application_id)
+    .execute(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to confirm".to_string()))?;
 
     let form_data = payload.form_data.unwrap_or(json!({}));
 
@@ -430,7 +440,7 @@ pub async fn submit_enrollment_form(
 
     Ok(Json(json!({
         "success": true,
-        "message": "บันทึกแบบฟอร์มมอบตัวแล้ว",
+        "message": "ยืนยันมอบตัวและบันทึกข้อมูลแล้ว",
     })).into_response())
 }
 

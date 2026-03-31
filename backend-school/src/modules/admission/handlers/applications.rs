@@ -767,6 +767,7 @@ pub async fn list_enrollment_pending(
         student_confirmed: Option<bool>,
         pre_submitted: bool,
         assigned_student_id: Option<String>,
+        form_data: Option<serde_json::Value>,
     }
 
     let list = sqlx::query_as::<_, EnrollmentPendingRow>(
@@ -781,14 +782,15 @@ pub async fn list_enrollment_pending(
             aa.status,
             ara.student_confirmed,
             (aef.id IS NOT NULL AND aef.pre_submitted_at IS NOT NULL) AS pre_submitted,
-            aa.assigned_student_id
+            aa.assigned_student_id,
+            aef.form_data
         FROM admission_applications aa
         LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
         JOIN admission_room_assignments ara ON aa.id = ara.application_id
         LEFT JOIN class_rooms cr ON ara.class_room_id = cr.id
         LEFT JOIN admission_enrollment_forms aef ON aa.id = aef.application_id
         WHERE aa.admission_round_id = $1
-          AND aa.status = 'accepted'
+          AND aa.status IN ('accepted', 'enrolled')
         ORDER BY at2.name ASC, ara.rank_in_room ASC
         "#
     )
@@ -972,6 +974,150 @@ pub async fn complete_enrollment(
     .execute(&mut *tx)
     .await
     .ok(); // ไม่ error ถ้าไม่มี form
+
+    // 5.5 สร้าง account ผู้ปกครองจาก form_data (father, mother, guardians)
+    {
+        let form_data: Option<serde_json::Value> = sqlx::query_scalar(
+            "SELECT form_data FROM admission_enrollment_forms WHERE application_id = $1"
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .unwrap_or(None);
+
+        if let Some(fd) = form_data {
+            // รวบรวม parent entries จาก father, mother, guardians
+            let mut parent_entries: Vec<(String, String, String, String, String)> = Vec::new(); // (title, first_name, last_name, phone, relationship)
+
+            if let Some(father) = fd.get("father") {
+                let phone = father.get("phone").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                if !phone.is_empty() {
+                    parent_entries.push((
+                        father.get("title").and_then(|v| v.as_str()).unwrap_or("นาย").to_string(),
+                        father.get("firstName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        father.get("lastName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        phone,
+                        "father".to_string(),
+                    ));
+                }
+            }
+
+            if let Some(mother) = fd.get("mother") {
+                let phone = mother.get("phone").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                if !phone.is_empty() {
+                    parent_entries.push((
+                        mother.get("title").and_then(|v| v.as_str()).unwrap_or("นาง").to_string(),
+                        mother.get("firstName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        mother.get("lastName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        phone,
+                        "mother".to_string(),
+                    ));
+                }
+            }
+
+            if let Some(guardians) = fd.get("guardians").and_then(|v| v.as_array()) {
+                for g in guardians {
+                    let phone = g.get("phone").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                    if !phone.is_empty() {
+                        parent_entries.push((
+                            g.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            g.get("firstName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            g.get("lastName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            phone,
+                            g.get("relationship").and_then(|v| v.as_str()).unwrap_or("guardian").to_string(),
+                        ));
+                    }
+                }
+            }
+
+            // Deduplicate by phone number
+            let mut seen_phones = std::collections::HashSet::new();
+            let parent_entries: Vec<_> = parent_entries.into_iter().filter(|(_, _, _, phone, _)| {
+                seen_phones.insert(phone.clone())
+            }).collect();
+
+            for (title, first_name, last_name, phone, relationship) in parent_entries {
+                // ตรวจสอบว่ามี account อยู่แล้วหรือยัง (username = phone)
+                let existing_parent_id: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT id FROM users WHERE username = $1"
+                )
+                .bind(&phone)
+                .fetch_optional(&mut *tx)
+                .await
+                .unwrap_or(None);
+
+                let parent_id = if let Some(pid) = existing_parent_id {
+                    pid
+                } else {
+                    // สร้าง parent account ใหม่
+                    let parent_password_hash = bcrypt::hash(&phone, 8)
+                        .map_err(|_| AppError::InternalServerError("Parent password hash failed".to_string()))?;
+
+                    let pid: Uuid = sqlx::query_scalar(
+                        r#"
+                        INSERT INTO users (
+                            username, password_hash,
+                            title, first_name, last_name, phone,
+                            user_type, status
+                        ) VALUES ($1, $2, $3, $4, $5, $6, 'parent', 'active')
+                        RETURNING id
+                        "#
+                    )
+                    .bind(&phone)
+                    .bind(&parent_password_hash)
+                    .bind(&title)
+                    .bind(&first_name)
+                    .bind(&last_name)
+                    .bind(&phone)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(|e| {
+                        eprintln!("Failed to create parent user: {}", e);
+                        AppError::InternalServerError("ไม่สามารถสร้าง account ผู้ปกครองได้".to_string())
+                    })?;
+
+                    // Assign PARENT role
+                    let parent_role_id: Option<Uuid> =
+                        sqlx::query_scalar("SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true")
+                            .fetch_optional(&mut *tx)
+                            .await
+                            .ok()
+                            .flatten();
+
+                    if let Some(rid) = parent_role_id {
+                        let _ = sqlx::query(
+                            "INSERT INTO user_roles (user_id, role_id, is_primary) VALUES ($1, $2, true)"
+                        )
+                        .bind(pid)
+                        .bind(rid)
+                        .execute(&mut *tx)
+                        .await;
+                    }
+
+                    pid
+                };
+
+                // Link parent กับ student
+                sqlx::query(
+                    r#"
+                    INSERT INTO student_parents (student_user_id, parent_user_id, relationship, is_primary)
+                    VALUES ($1, $2, $3, false)
+                    ON CONFLICT (student_user_id, parent_user_id)
+                    DO UPDATE SET relationship = EXCLUDED.relationship
+                    "#
+                )
+                .bind(new_user_id)
+                .bind(parent_id)
+                .bind(&relationship)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    eprintln!("Failed to link parent to student: {}", e);
+                    AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
+                })?;
+            }
+        }
+    }
 
     // 6. อัปเดต application status
     sqlx::query(

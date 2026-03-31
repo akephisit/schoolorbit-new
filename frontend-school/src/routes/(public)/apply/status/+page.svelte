@@ -3,7 +3,6 @@
 		portalCheck,
 		portalGetStatus,
 		portalGetExamSeat,
-		portalConfirm,
 		portalSubmitForm
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
@@ -24,7 +23,10 @@
 		Clock,
 		X,
 		Edit3,
-		ArrowLeft
+		ArrowLeft,
+		Plus,
+		Trash2,
+		Copy
 	} from 'lucide-svelte';
 
 	type PortalStep = 'login' | 'status';
@@ -37,7 +39,6 @@
 
 	let step: PortalStep = $state('login');
 	let checking = $state(false);
-	let confirming = $state(false);
 	let savingForm = $state(false);
 
 	let nationalId = $state(''); // raw: digits or alphanumeric (e.g. G-code)
@@ -88,10 +89,19 @@
 			firstName: string;
 			lastName: string;
 			status: string;
+			dateOfBirth?: string;
 			trackName?: string;
 			assignedTrackName?: string;
 			roundName?: string;
 			rejectionReason?: string;
+			fatherName?: string;
+			fatherPhone?: string;
+			motherName?: string;
+			motherPhone?: string;
+			guardianName?: string;
+			guardianPhone?: string;
+			guardianRelation?: string;
+			guardianIs?: string;
 		};
 		assignment?: {
 			rankInTrack?: number;
@@ -143,14 +153,50 @@
 	};
 
 	// Enrollment form fields
+	interface ParentEntry {
+		title: string;
+		firstName: string;
+		lastName: string;
+		phone: string;
+		relationship: string;
+	}
+
 	let formFields = $state({
-		shirtSize: '',
 		bloodType: '',
-		allergy: '',
-		congenitalDisease: '',
-		emergencyContact: '',
-		emergencyPhone: ''
+		medicalConditions: '',
+		allergies: '',
+		father: { title: 'นาย', firstName: '', lastName: '', phone: '' },
+		mother: { title: 'นาง', firstName: '', lastName: '', phone: '' },
+		guardians: [] as ParentEntry[]
 	});
+
+	function addGuardian() {
+		formFields.guardians = [...formFields.guardians, { title: '', firstName: '', lastName: '', phone: '', relationship: '' }];
+	}
+
+	function removeGuardian(index: number) {
+		formFields.guardians = formFields.guardians.filter((_, i) => i !== index);
+	}
+
+	function copyFromFather(index: number) {
+		const g = formFields.guardians[index];
+		g.title = formFields.father.title;
+		g.firstName = formFields.father.firstName;
+		g.lastName = formFields.father.lastName;
+		g.phone = formFields.father.phone;
+		g.relationship = 'บิดา';
+		formFields.guardians = [...formFields.guardians];
+	}
+
+	function copyFromMother(index: number) {
+		const g = formFields.guardians[index];
+		g.title = formFields.mother.title;
+		g.firstName = formFields.mother.firstName;
+		g.lastName = formFields.mother.lastName;
+		g.phone = formFields.mother.phone;
+		g.relationship = 'มารดา';
+		formFields.guardians = [...formFields.guardians];
+	}
 
 	async function handleCheck(e: Event) {
 		e.preventDefault();
@@ -178,14 +224,52 @@
 	async function loadStatus() {
 		try {
 			portalData = (await portalGetStatus(nationalId, dateOfBirth.trim())) as typeof portalData;
+			const app = portalData?.application;
 			if (portalData?.enrollmentForm?.formData) {
-				const fd = portalData.enrollmentForm.formData as Record<string, string>;
-				formFields.shirtSize = fd.shirtSize ?? '';
-				formFields.bloodType = fd.bloodType ?? '';
-				formFields.allergy = fd.allergy ?? '';
-				formFields.congenitalDisease = fd.congenitalDisease ?? '';
-				formFields.emergencyContact = fd.emergencyContact ?? '';
-				formFields.emergencyPhone = fd.emergencyPhone ?? '';
+				// โหลดข้อมูลจากฟอร์มที่บันทึกไว้
+				const fd = portalData.enrollmentForm.formData as Record<string, unknown>;
+				formFields.bloodType = (fd.bloodType as string) ?? '';
+				formFields.medicalConditions = (fd.medicalConditions as string) ?? '';
+				formFields.allergies = (fd.allergies as string) ?? '';
+				if (fd.father) {
+					const f = fd.father as Record<string, string>;
+					formFields.father = { title: f.title ?? 'นาย', firstName: f.firstName ?? '', lastName: f.lastName ?? '', phone: f.phone ?? '' };
+				}
+				if (fd.mother) {
+					const m = fd.mother as Record<string, string>;
+					formFields.mother = { title: m.title ?? 'นาง', firstName: m.firstName ?? '', lastName: m.lastName ?? '', phone: m.phone ?? '' };
+				}
+				if (fd.guardians && Array.isArray(fd.guardians)) {
+					formFields.guardians = (fd.guardians as ParentEntry[]).map(g => ({
+						title: g.title ?? '', firstName: g.firstName ?? '', lastName: g.lastName ?? '',
+						phone: g.phone ?? '', relationship: g.relationship ?? ''
+					}));
+				}
+			} else if (app) {
+				// Pre-fill จากข้อมูลที่กรอกตอนสมัคร
+				if (app.fatherName) {
+					const parts = app.fatherName.split(' ');
+					formFields.father.firstName = parts[0] ?? '';
+					formFields.father.lastName = parts.slice(1).join(' ') ?? '';
+				}
+				if (app.fatherPhone) formFields.father.phone = app.fatherPhone;
+				if (app.motherName) {
+					const parts = app.motherName.split(' ');
+					formFields.mother.firstName = parts[0] ?? '';
+					formFields.mother.lastName = parts.slice(1).join(' ') ?? '';
+				}
+				if (app.motherPhone) formFields.mother.phone = app.motherPhone;
+				// ถ้ามีข้อมูลผู้ปกครอง pre-fill เป็น guardian ตัวแรก
+				if (app.guardianName && app.guardianPhone) {
+					const parts = app.guardianName.split(' ');
+					formFields.guardians = [{
+						title: '',
+						firstName: parts[0] ?? '',
+						lastName: parts.slice(1).join(' ') ?? '',
+						phone: app.guardianPhone,
+						relationship: app.guardianRelation ?? ''
+					}];
+				}
 			}
 
 			// โหลดที่นั่งสอบเฉพาะช่วงประกาศห้องสอบ
@@ -204,25 +288,22 @@
 		}
 	}
 
-	async function handleConfirm() {
-		confirming = true;
-		try {
-			await portalConfirm(nationalId, dateOfBirth.trim());
-			toast.success('ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัว');
-			await loadStatus();
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'ยืนยันไม่สำเร็จ');
-		} finally {
-			confirming = false;
-		}
-	}
-
 	async function handleSubmitForm(e: Event) {
 		e.preventDefault();
+		// ต้องมีผู้ปกครองอย่างน้อย 1 คน
+		if (formFields.guardians.length === 0) {
+			toast.error('กรุณาเพิ่มผู้ปกครองอย่างน้อย 1 คน');
+			return;
+		}
+		const hasEmptyGuardian = formFields.guardians.some(g => !g.firstName.trim() || !g.phone.trim());
+		if (hasEmptyGuardian) {
+			toast.error('กรุณากรอกชื่อและเบอร์โทรผู้ปกครองให้ครบ');
+			return;
+		}
 		savingForm = true;
 		try {
 			await portalSubmitForm(nationalId, dateOfBirth.trim(), formFields as Record<string, unknown>);
-			toast.success('บันทึกแบบฟอร์มสำเร็จ');
+			toast.success('ยืนยันมอบตัวและบันทึกข้อมูลสำเร็จ');
 			await loadStatus();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
@@ -399,28 +480,12 @@
 							</div>
 						</div>
 
-						<!-- Confirm Button -->
-						{#if app.status === 'accepted' && !assignment.studentConfirmed && roundStatus === 'enrolling'}
-							<div class="border border-orange-200 bg-orange-50 rounded-xl p-4">
-								<p class="text-sm font-medium text-orange-800 mb-3">
-									<AlertCircle class="w-4 h-4 inline mr-1" />
-									กรุณายืนยันเข้าเรียนภายในกำหนด
-								</p>
-								<Button
-									onclick={handleConfirm}
-									disabled={confirming}
-									class="w-full gap-2 bg-orange-600 hover:bg-orange-700"
-								>
-									<Check class="w-4 h-4" />
-									{confirming ? 'กำลังยืนยัน...' : 'ยืนยันเข้าเรียน'}
-								</Button>
-							</div>
-						{:else if assignment.studentConfirmed}
+						{#if assignment.studentConfirmed}
 							<div
 								class="flex items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm"
 							>
 								<Check class="w-4 h-4" />
-								ยืนยันเข้าเรียนแล้ว
+								ยืนยันมอบตัวแล้ว
 							</div>
 						{/if}
 					{/if}
@@ -484,35 +549,57 @@
 				</div>
 			{/if}
 
-			<!-- Enrollment Form (if confirmed and in enrolling phase) -->
-			{#if assignment?.studentConfirmed && app?.status !== 'enrolled' && roundStatus === 'enrolling'}
+			<!-- Enrollment Form — แสดงเมื่อ accepted + enrolling (ไม่ต้อง confirm ก่อน) -->
+			{#if app?.status === 'accepted' && roundStatus === 'enrolling'}
 				<div class="bg-white rounded-2xl shadow-lg p-6">
 					<h2 class="font-semibold text-gray-900 flex items-center gap-2 mb-4">
 						<FileText class="w-5 h-5 text-blue-600" />
-						แบบฟอร์มมอบตัว (กรอกล่วงหน้า)
+						แบบฟอร์มยืนยันมอบตัว
 					</h2>
 					{#if form}
-						<p class="text-xs text-green-600 mb-3">✓ บันทึกแล้ว — สามารถแก้ไขได้</p>
+						<p class="text-xs text-green-600 mb-3">บันทึกแล้ว — สามารถแก้ไขได้</p>
+					{:else}
+						<p class="text-xs text-orange-600 mb-3">
+							<AlertCircle class="w-3 h-3 inline mr-0.5" />
+							กรุณากรอกข้อมูลและกดยืนยันมอบตัวภายในกำหนด
+						</p>
 					{/if}
-					<form onsubmit={handleSubmitForm} class="space-y-3">
-						<div class="grid grid-cols-2 gap-3">
-							<div class="space-y-1">
-								<Label for="shirt-size" class="text-xs font-medium text-gray-600">ไซส์เสื้อ</Label>
-								<Select.Root type="single" bind:value={formFields.shirtSize}>
-									<Select.Trigger id="shirt-size" class="h-8 text-sm">
-										{formFields.shirtSize || '-- เลือก --'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as s}
-											<Select.Item value={s}>{s}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
+
+					<!-- ข้อมูลนักเรียน (read-only) -->
+					<div class="border border-gray-200 rounded-lg p-3 mb-4 bg-gray-50 space-y-2">
+						<p class="text-xs font-medium text-gray-500 uppercase tracking-wide">ข้อมูลนักเรียน</p>
+						<div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+							<div>
+								<span class="text-gray-500">ชื่อ:</span>
+								<span class="font-medium">{(app.title ?? '') + app.firstName} {app.lastName}</span>
 							</div>
+							<div>
+								<span class="text-gray-500">สาย:</span>
+								<span class="font-medium">{app.assignedTrackName ?? app.trackName ?? '-'}</span>
+							</div>
+							{#if assignment?.roomName}
+								<div>
+									<span class="text-gray-500">ห้อง:</span>
+									<span class="font-medium">{assignment.roomName}</span>
+								</div>
+							{/if}
+							{#if app.dateOfBirth}
+								<div>
+									<span class="text-gray-500">วันเกิด:</span>
+									<span class="font-medium">{new Date(app.dateOfBirth).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+								</div>
+							{/if}
+						</div>
+					</div>
+
+					<form onsubmit={handleSubmitForm} class="space-y-4">
+						<!-- ข้อมูลสุขภาพ -->
+						<div class="space-y-3">
+							<p class="text-sm font-medium text-gray-700">ข้อมูลสุขภาพ</p>
 							<div class="space-y-1">
-								<Label for="blood-type" class="text-xs font-medium text-gray-600">กลุ่มเลือด</Label>
+								<Label class="text-xs font-medium text-gray-600">กลุ่มเลือด</Label>
 								<Select.Root type="single" bind:value={formFields.bloodType}>
-									<Select.Trigger id="blood-type" class="h-8 text-sm">
+									<Select.Trigger class="h-8 text-sm">
 										{formFields.bloodType || '-- เลือก --'}
 									</Select.Trigger>
 									<Select.Content>
@@ -522,47 +609,172 @@
 									</Select.Content>
 								</Select.Root>
 							</div>
+							<div class="space-y-1">
+								<Label class="text-xs font-medium text-gray-600">โรคประจำตัว</Label>
+								<Textarea
+									bind:value={formFields.medicalConditions}
+									rows={2}
+									class="text-sm resize-none"
+									placeholder="ถ้าไม่มีใส่ ไม่มี"
+								/>
+							</div>
+							<div class="space-y-1">
+								<Label class="text-xs font-medium text-gray-600">แพ้ยา / แพ้อาหาร</Label>
+								<Textarea
+									bind:value={formFields.allergies}
+									rows={2}
+									class="text-sm resize-none"
+									placeholder="ถ้าไม่มีใส่ ไม่มี"
+								/>
+							</div>
 						</div>
-						<div class="space-y-1">
-							<Label for="emergency-contact" class="text-xs font-medium text-gray-600"
-								>ผู้ติดต่อฉุกเฉิน</Label
-							>
-							<Input
-								id="emergency-contact"
-								bind:value={formFields.emergencyContact}
-								placeholder="ชื่อ-สกุล ผู้ติดต่อ"
-								class="h-8 text-sm"
-							/>
+
+						<!-- ข้อมูลบิดา -->
+						<div class="border border-gray-200 rounded-lg p-3 space-y-2">
+							<p class="text-sm font-medium text-gray-700">ข้อมูลบิดา</p>
+							<div class="grid grid-cols-3 gap-2">
+								<div class="space-y-1">
+									<Label class="text-xs text-gray-600">คำนำหน้า</Label>
+									<Select.Root type="single" bind:value={formFields.father.title}>
+										<Select.Trigger class="h-8 text-sm">
+											{formFields.father.title || '-- เลือก --'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each ['นาย'] as t}
+												<Select.Item value={t}>{t}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								</div>
+								<div class="space-y-1">
+									<Label class="text-xs text-gray-600">ชื่อ</Label>
+									<Input bind:value={formFields.father.firstName} class="h-8 text-sm" placeholder="ชื่อ" />
+								</div>
+								<div class="space-y-1">
+									<Label class="text-xs text-gray-600">นามสกุล</Label>
+									<Input bind:value={formFields.father.lastName} class="h-8 text-sm" placeholder="นามสกุล" />
+								</div>
+							</div>
+							<div class="space-y-1">
+								<Label class="text-xs text-gray-600">เบอร์โทร</Label>
+								<Input bind:value={formFields.father.phone} class="h-8 text-sm" placeholder="0XX-XXX-XXXX" />
+							</div>
 						</div>
-						<div class="space-y-1">
-							<Label for="emergency-phone" class="text-xs font-medium text-gray-600"
-								>เบอร์โทรฉุกเฉิน</Label
-							>
-							<Input
-								id="emergency-phone"
-								bind:value={formFields.emergencyPhone}
-								placeholder="0XX-XXX-XXXX"
-								class="h-8 text-sm"
-							/>
+
+						<!-- ข้อมูลมารดา -->
+						<div class="border border-gray-200 rounded-lg p-3 space-y-2">
+							<p class="text-sm font-medium text-gray-700">ข้อมูลมารดา</p>
+							<div class="grid grid-cols-3 gap-2">
+								<div class="space-y-1">
+									<Label class="text-xs text-gray-600">คำนำหน้า</Label>
+									<Select.Root type="single" bind:value={formFields.mother.title}>
+										<Select.Trigger class="h-8 text-sm">
+											{formFields.mother.title || '-- เลือก --'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each ['นาง', 'นางสาว'] as t}
+												<Select.Item value={t}>{t}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								</div>
+								<div class="space-y-1">
+									<Label class="text-xs text-gray-600">ชื่อ</Label>
+									<Input bind:value={formFields.mother.firstName} class="h-8 text-sm" placeholder="ชื่อ" />
+								</div>
+								<div class="space-y-1">
+									<Label class="text-xs text-gray-600">นามสกุล</Label>
+									<Input bind:value={formFields.mother.lastName} class="h-8 text-sm" placeholder="นามสกุล" />
+								</div>
+							</div>
+							<div class="space-y-1">
+								<Label class="text-xs text-gray-600">เบอร์โทร</Label>
+								<Input bind:value={formFields.mother.phone} class="h-8 text-sm" placeholder="0XX-XXX-XXXX" />
+							</div>
 						</div>
-						<div class="space-y-1">
-							<Label for="allergy" class="text-xs font-medium text-gray-600"
-								>โรคประจำตัว / แพ้ยา</Label
-							>
-							<Textarea
-								id="allergy"
-								bind:value={formFields.allergy}
-								rows={2}
-								class="text-sm resize-none"
-								placeholder="ถ้าไม่มีใส่ - ไม่มี"
-							/>
+
+						<!-- ผู้ปกครอง -->
+						<div class="space-y-3">
+							<div class="flex items-center justify-between">
+								<p class="text-sm font-medium text-gray-700">ผู้ปกครอง <span class="text-red-500">*</span></p>
+								<Button type="button" variant="outline" size="sm" onclick={addGuardian} class="h-7 text-xs gap-1">
+									<Plus class="w-3 h-3" /> เพิ่มผู้ปกครอง
+								</Button>
+							</div>
+							{#if formFields.guardians.length === 0}
+								<p class="text-xs text-gray-400 text-center py-3 border border-dashed border-gray-200 rounded-lg">
+									กรุณาเพิ่มผู้ปกครองอย่างน้อย 1 คน
+								</p>
+							{/if}
+							{#each formFields.guardians as guardian, i}
+								<div class="border border-blue-200 bg-blue-50/30 rounded-lg p-3 space-y-2">
+									<div class="flex items-center justify-between">
+										<p class="text-xs font-medium text-blue-700">ผู้ปกครองคนที่ {i + 1}</p>
+										<div class="flex gap-1">
+											<Button type="button" variant="ghost" size="sm" onclick={() => copyFromFather(i)} class="h-6 text-xs px-2 text-gray-500 hover:text-blue-600" title="ใช้ข้อมูลจากบิดา">
+												<Copy class="w-3 h-3 mr-1" /> บิดา
+											</Button>
+											<Button type="button" variant="ghost" size="sm" onclick={() => copyFromMother(i)} class="h-6 text-xs px-2 text-gray-500 hover:text-blue-600" title="ใช้ข้อมูลจากมารดา">
+												<Copy class="w-3 h-3 mr-1" /> มารดา
+											</Button>
+											<Button type="button" variant="ghost" size="sm" onclick={() => removeGuardian(i)} class="h-6 px-1 text-red-400 hover:text-red-600">
+												<Trash2 class="w-3 h-3" />
+											</Button>
+										</div>
+									</div>
+									<div class="grid grid-cols-3 gap-2">
+										<div class="space-y-1">
+											<Label class="text-xs text-gray-600">คำนำหน้า</Label>
+											<Select.Root type="single" bind:value={guardian.title}>
+												<Select.Trigger class="h-8 text-sm">
+													{guardian.title || '-- เลือก --'}
+												</Select.Trigger>
+												<Select.Content>
+													{#each ['นาย', 'นาง', 'นางสาว'] as t}
+														<Select.Item value={t}>{t}</Select.Item>
+													{/each}
+												</Select.Content>
+											</Select.Root>
+										</div>
+										<div class="space-y-1">
+											<Label class="text-xs text-gray-600">ชื่อ <span class="text-red-500">*</span></Label>
+											<Input bind:value={guardian.firstName} class="h-8 text-sm" placeholder="ชื่อ" />
+										</div>
+										<div class="space-y-1">
+											<Label class="text-xs text-gray-600">นามสกุล</Label>
+											<Input bind:value={guardian.lastName} class="h-8 text-sm" placeholder="นามสกุล" />
+										</div>
+									</div>
+									<div class="grid grid-cols-2 gap-2">
+										<div class="space-y-1">
+											<Label class="text-xs text-gray-600">เบอร์โทร <span class="text-red-500">*</span></Label>
+											<Input bind:value={guardian.phone} class="h-8 text-sm" placeholder="0XX-XXX-XXXX" />
+										</div>
+										<div class="space-y-1">
+											<Label class="text-xs text-gray-600">ความสัมพันธ์</Label>
+											<Select.Root type="single" bind:value={guardian.relationship}>
+												<Select.Trigger class="h-8 text-sm">
+													{guardian.relationship || '-- เลือก --'}
+												</Select.Trigger>
+												<Select.Content>
+													{#each ['บิดา', 'มารดา', 'ปู่', 'ย่า', 'ตา', 'ยาย', 'ลุง', 'ป้า', 'น้า', 'อา', 'พี่', 'อื่นๆ'] as r}
+														<Select.Item value={r}>{r}</Select.Item>
+													{/each}
+												</Select.Content>
+											</Select.Root>
+										</div>
+									</div>
+								</div>
+							{/each}
 						</div>
+
 						<Button
 							type="submit"
 							disabled={savingForm}
-							class="w-full gap-2 text-white bg-blue-600 hover:bg-blue-700"
+							class="w-full gap-2 text-white bg-green-600 hover:bg-green-700"
 						>
-							{savingForm ? 'กำลังบันทึก...' : form ? 'อัปเดตแบบฟอร์ม' : 'บันทึกแบบฟอร์ม'}
+							<Check class="w-4 h-4" />
+							{savingForm ? 'กำลังบันทึก...' : form ? 'อัปเดตข้อมูลมอบตัว' : 'ยืนยันมอบตัว'}
 						</Button>
 					</form>
 				</div>
