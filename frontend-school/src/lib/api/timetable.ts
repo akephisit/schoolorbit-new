@@ -41,7 +41,6 @@ export interface AcademicPeriod {
 export interface TimetableEntry {
     id: string;
     classroom_course_id?: string;
-    activity_group_id?: string;
     day_of_week: 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
     period_id: string;
     room_id?: string;
@@ -51,7 +50,7 @@ export interface TimetableEntry {
     // New fields
     entry_type: 'COURSE' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM';
     title?: string;
-    classroom_id?: string;
+    classroom_id: string;
     academic_semester_id: string;
 
     // Joined fields
@@ -64,10 +63,6 @@ export interface TimetableEntry {
     period_name?: string;
     start_time?: string;
     end_time?: string;
-
-    // Activity group joined fields
-    activity_group_name?: string;
-    activity_type?: string;
 }
 
 export interface CreatePeriodRequest {
@@ -82,7 +77,6 @@ export interface CreatePeriodRequest {
 
 export interface CreateTimetableEntryRequest {
     classroom_course_id?: string;
-    activity_group_id?: string;
     day_of_week: string;
     period_id: string;
     room_id?: string;
@@ -155,7 +149,6 @@ export const deletePeriod = async (id: string) => {
 
 export const listTimetableEntries = async (filters: {
     classroom_id?: string;
-    activity_group_id?: string;
     student_id?: string;
     instructor_id?: string;
     room_id?: string;
@@ -165,7 +158,6 @@ export const listTimetableEntries = async (filters: {
 } = {}): Promise<{ data: TimetableEntry[] }> => {
     const params = new URLSearchParams();
     if (filters.classroom_id) params.append('classroom_id', filters.classroom_id);
-    if (filters.activity_group_id) params.append('activity_group_id', filters.activity_group_id);
     if (filters.student_id) params.append('student_id', filters.student_id);
     if (filters.instructor_id) params.append('instructor_id', filters.instructor_id);
     if (filters.room_id) params.append('room_id', filters.room_id);

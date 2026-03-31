@@ -20,6 +20,8 @@ pub struct ActivityGroup {
     pub registration_open: bool,
     pub allowed_grade_level_ids: Option<serde_json::Value>,
     pub created_by: Option<Uuid>,
+    pub day_of_week: Option<String>,
+    pub period_ids: Option<serde_json::Value>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -49,6 +51,8 @@ pub struct CreateActivityGroupRequest {
     pub max_capacity: Option<i32>,
     pub registration_open: Option<bool>,   // default: false
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
+    pub day_of_week: Option<String>,
+    pub period_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,6 +66,8 @@ pub struct UpdateActivityGroupRequest {
     pub registration_open: Option<bool>,
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub is_active: Option<bool>,
+    pub day_of_week: Option<String>,
+    pub period_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]

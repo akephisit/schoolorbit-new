@@ -19,8 +19,7 @@
 		type Classroom,
 		getAcademicStructure,
 		type AcademicYear,
-		type Semester,
-		ACTIVITY_TYPE_LABELS
+		type Semester
 	} from '$lib/api/academic';
 	import {
 		lookupRooms,
@@ -1492,7 +1491,6 @@
 
 											<div class="font-bold text-blue-900 truncate mb-0.5">
 												{entry.subject_code
-													|| (entry.activity_type ? ACTIVITY_TYPE_LABELS[entry.activity_type] : null)
 													|| entry.title
 													|| (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : '')}
 											</div>

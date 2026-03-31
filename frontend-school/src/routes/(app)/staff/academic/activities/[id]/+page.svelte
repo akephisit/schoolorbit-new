@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import {
 		listActivityGroups,
+		updateActivityGroup,
 		listActivityMembers,
 		addActivityMembers,
 		removeActivityMember,
@@ -28,7 +29,7 @@
 	import { ArrowLeft, UserPlus, Trash2, Search, UserCog, Calendar } from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { goto } from '$app/navigation';
-	import { listTimetableEntries, createTimetableEntry, deleteTimetableEntry, listPeriods, type TimetableEntry, type AcademicPeriod } from '$lib/api/timetable';
+	import { listPeriods, type AcademicPeriod } from '$lib/api/timetable';
 
 	let groupId = $derived($page.params.id as string);
 
@@ -36,7 +37,6 @@
 	let group = $state<ActivityGroup | null>(null);
 	let members = $state<ActivityGroupMember[]>([]);
 	let instructors = $state<ActivityInstructor[]>([]);
-	let timetable = $state<TimetableEntry[]>([]);
 	let periods = $state<AcademicPeriod[]>([]);
 	let activeTab = $state('members');
 
@@ -51,11 +51,9 @@
 	let addInstructorId = $state('');
 	let addInstructorRole = $state('assistant');
 
-	let showAddSlotDialog = $state(false);
-	let slotDay = $state('MON');
-	let slotPeriodId = $state('');
-	let slotNote = $state('');
-	let savingSlot = $state(false);
+	let editDay = $state('');
+	let editPeriodIds = $state<string[]>([]);
+	let savingSchedule = $state(false);
 
 	const DAYS = [
 		{ value: 'MON', label: 'จันทร์' }, { value: 'TUE', label: 'อังคาร' },
@@ -79,8 +77,8 @@
 	}).slice(0, 80));
 
 	let addInstructorName = $derived(allStaff.find((s) => s.id === addInstructorId)?.name ?? 'เลือกครู...');
-	let slotPeriodName = $derived(periods.find((p) => p.id === slotPeriodId)?.name ?? 'เลือกคาบ...');
-	let slotDayLabel = $derived(DAYS.find((d) => d.value === slotDay)?.label ?? slotDay);
+	let editDayLabel = $derived(DAYS.find((d) => d.value === editDay)?.label ?? 'เลือกวัน...');
+	let scheduledPeriods = $derived(editPeriodIds.map((pid) => periods.find((p) => p.id === pid)).filter(Boolean));
 
 	onMount(async () => {
 		await loadAll();
@@ -96,13 +94,10 @@
 		group = groupsRes.data.find((g) => g.id === groupId) ?? null;
 		members = membersRes.data ?? [];
 		instructors = instructorsRes.data ?? [];
+		periods = (await listPeriods()).data ?? [];
 		if (group) {
-			const [ttRes, periodsRes] = await Promise.all([
-				listTimetableEntries({ activity_group_id: groupId, academic_semester_id: group.semester_id }),
-				listPeriods()
-			]);
-			timetable = ttRes.data ?? [];
-			periods = periodsRes.data ?? [];
+			editDay = group.day_of_week ?? '';
+			editPeriodIds = group.period_ids ?? [];
 		}
 	}
 
@@ -150,20 +145,26 @@
 		catch { toast.error('เกิดข้อผิดพลาด'); }
 	}
 
-	async function handleAddSlot() {
-		if (!slotPeriodId) { toast.error('กรุณาเลือกคาบ'); return; }
-		savingSlot = true;
-		try {
-			await createTimetableEntry({ activity_group_id: groupId, day_of_week: slotDay, period_id: slotPeriodId, note: slotNote || undefined });
-			toast.success('เพิ่มคาบเรียนแล้ว'); showAddSlotDialog = false;
-			if (group) timetable = (await listTimetableEntries({ activity_group_id: groupId, academic_semester_id: group.semester_id })).data ?? [];
-		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { savingSlot = false; }
+	function togglePeriod(periodId: string) {
+		if (editPeriodIds.includes(periodId)) {
+			editPeriodIds = editPeriodIds.filter((id) => id !== periodId);
+		} else {
+			editPeriodIds = [...editPeriodIds, periodId];
+		}
 	}
-	async function handleDeleteSlot(entry: TimetableEntry) {
+	async function handleSaveSchedule() {
+		savingSchedule = true;
 		try {
-			await deleteTimetableEntry(entry.id); toast.success('ลบคาบเรียนแล้ว');
-			if (group) timetable = (await listTimetableEntries({ activity_group_id: groupId, academic_semester_id: group.semester_id })).data ?? [];
-		} catch { toast.error('เกิดข้อผิดพลาด'); }
+			await updateActivityGroup(groupId, {
+				day_of_week: editDay || undefined,
+				period_ids: editPeriodIds.length > 0 ? editPeriodIds : undefined
+			} as any);
+			toast.success('บันทึกตารางเรียนแล้ว');
+			if (group) {
+				group.day_of_week = editDay || undefined;
+				group.period_ids = editPeriodIds.length > 0 ? editPeriodIds : undefined;
+			}
+		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { savingSchedule = false; }
 	}
 </script>
 
@@ -189,7 +190,7 @@
 		<Tabs.List>
 			<Tabs.Trigger value="members">สมาชิก ({members.length})</Tabs.Trigger>
 			<Tabs.Trigger value="instructors">ครูที่ดูแล ({instructors.length})</Tabs.Trigger>
-			<Tabs.Trigger value="timetable">ตารางเรียน ({timetable.length})</Tabs.Trigger>
+			<Tabs.Trigger value="timetable">ตารางเรียน</Tabs.Trigger>
 		</Tabs.List>
 
 		<!-- Members -->
@@ -300,47 +301,56 @@
 
 		<!-- Timetable -->
 		<Tabs.Content value="timetable">
-			<div class="space-y-3 pt-3">
-				{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
-					<div class="flex justify-end">
-						<Button onclick={() => { showAddSlotDialog = true; }}><Calendar class="mr-1 h-4 w-4" />เพิ่มคาบเรียน</Button>
+			<div class="space-y-4 pt-3">
+				<div class="space-y-3">
+					<div class="space-y-1">
+						<Label>วันที่สอน</Label>
+						{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
+							<Select.Root type="single" bind:value={editDay}>
+								<Select.Trigger class="w-48">{editDayLabel}</Select.Trigger>
+								<Select.Content>
+									{#each DAYS as d}<Select.Item value={d.value}>{d.label}</Select.Item>{/each}
+								</Select.Content>
+							</Select.Root>
+						{:else}
+							<p class="text-sm">{editDayLabel}</p>
+						{/if}
 					</div>
-				{/if}
-				{#if timetable.length === 0}
-					<p class="text-sm text-muted-foreground">ยังไม่มีตารางเรียน</p>
-				{:else}
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head>วัน</Table.Head>
-								<Table.Head>คาบ</Table.Head>
-								<Table.Head>เวลา</Table.Head>
-								<Table.Head>หมายเหตุ</Table.Head>
-								{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}<Table.Head></Table.Head>{/if}
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each timetable as entry}
-								<Table.Row>
-									<Table.Cell>{DAYS.find((d) => d.value === entry.day_of_week)?.label ?? entry.day_of_week}</Table.Cell>
-									<Table.Cell class="text-sm">{(entry as any).period_name ?? '—'}</Table.Cell>
-									<Table.Cell class="text-sm text-muted-foreground">
-										{#if (entry as any).start_time && (entry as any).end_time}
-											{(entry as any).start_time} – {(entry as any).end_time}
-										{:else}—{/if}
-									</Table.Cell>
-									<Table.Cell class="text-sm">{entry.note ?? '—'}</Table.Cell>
-									{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
-										<Table.Cell>
-											<Button variant="ghost" size="icon" onclick={() => handleDeleteSlot(entry)}>
-												<Trash2 class="h-4 w-4 text-destructive" />
-											</Button>
-										</Table.Cell>
-									{/if}
-								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
+					<div class="space-y-1">
+						<Label>คาบเรียน</Label>
+						{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
+							<div class="flex flex-wrap gap-2">
+								{#each (periods as any[]).filter((p) => p.type !== 'BREAK') as p}
+									{@const selected = editPeriodIds.includes(p.id)}
+									<button
+										type="button"
+										class="rounded-md border px-3 py-1.5 text-sm transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
+										onclick={() => togglePeriod(p.id)}
+									>
+										{p.name}
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<div class="flex flex-wrap gap-2">
+								{#each scheduledPeriods as p}
+									<Badge variant="secondary">{p?.name}</Badge>
+								{:else}
+									<p class="text-sm text-muted-foreground">ยังไม่ได้กำหนด</p>
+								{/each}
+							</div>
+						{/if}
+					</div>
+					{#if scheduledPeriods.length > 0 && editDay}
+						<div class="text-sm text-muted-foreground">
+							สรุป: {editDayLabel} คาบ {scheduledPeriods.map((p) => p?.name).join(', ')}
+						</div>
+					{/if}
+				</div>
+				{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
+					<Button onclick={handleSaveSchedule} disabled={savingSchedule}>
+						<Calendar class="mr-1 h-4 w-4" />{savingSchedule ? 'กำลังบันทึก...' : 'บันทึกตารางเรียน'}
+					</Button>
 				{/if}
 			</div>
 		</Tabs.Content>
@@ -421,41 +431,3 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- Add Slot Dialog -->
-<Dialog.Root bind:open={showAddSlotDialog}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Header><Dialog.Title>เพิ่มคาบเรียน</Dialog.Title></Dialog.Header>
-		<div class="space-y-3 py-2">
-			<div class="grid grid-cols-2 gap-3">
-				<div class="space-y-1">
-					<Label>วัน</Label>
-					<Select.Root type="single" bind:value={slotDay}>
-						<Select.Trigger class="w-full">{slotDayLabel}</Select.Trigger>
-						<Select.Content>
-							{#each DAYS as d}<Select.Item value={d.value}>{d.label}</Select.Item>{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="space-y-1">
-					<Label>คาบ</Label>
-					<Select.Root type="single" bind:value={slotPeriodId}>
-						<Select.Trigger class="w-full">{slotPeriodName}</Select.Trigger>
-						<Select.Content class="max-h-56 overflow-y-auto">
-							{#each (periods as any[]).filter((p) => p.type !== 'BREAK') as p}
-								<Select.Item value={p.id}>{p.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-			<div class="space-y-1">
-				<Label>หมายเหตุ (เช่น ห้อง 201)</Label>
-				<Input bind:value={slotNote} placeholder="ไม่บังคับ" />
-			</div>
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => { showAddSlotDialog = false; }}>ยกเลิก</Button>
-			<Button onclick={handleAddSlot} disabled={savingSlot}>{savingSlot ? 'กำลังบันทึก...' : 'เพิ่ม'}</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>

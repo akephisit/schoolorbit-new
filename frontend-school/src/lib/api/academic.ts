@@ -615,6 +615,8 @@ export interface ActivityGroup {
     max_capacity?: number;
     registration_open: boolean;
     allowed_grade_level_ids?: string[];
+    day_of_week?: string;
+    period_ids?: string[];
     is_active: boolean;
     created_at: string;
     // joined

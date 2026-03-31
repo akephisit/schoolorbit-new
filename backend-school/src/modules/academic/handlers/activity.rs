@@ -107,11 +107,15 @@ pub async fn create_activity_group(
     let allowed = body.allowed_grade_level_ids
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
+    let period_ids_json = body.period_ids
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+
     let row: ActivityGroup = sqlx::query_as(
         r#"INSERT INTO activity_groups
             (name, description, activity_type, semester_id, instructor_id,
-             registration_type, max_capacity, registration_open, allowed_grade_level_ids)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             registration_type, max_capacity, registration_open, allowed_grade_level_ids,
+             day_of_week, period_ids)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING *, NULL::TEXT AS instructor_name, NULL::BIGINT AS member_count, NULL::TEXT AS semester_name"#,
     )
     .bind(&body.name)
@@ -123,6 +127,8 @@ pub async fn create_activity_group(
     .bind(body.max_capacity)
     .bind(registration_open)
     .bind(&allowed)
+    .bind(&body.day_of_week)
+    .bind(&period_ids_json)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -162,6 +168,8 @@ pub async fn update_activity_group(
     if body.registration_open.is_some() { parts.push(format!("registration_open = ${idx}")); idx += 1; }
     if body.allowed_grade_level_ids.is_some() { parts.push(format!("allowed_grade_level_ids = ${idx}")); idx += 1; }
     if body.is_active.is_some()         { parts.push(format!("is_active = ${idx}")); idx += 1; }
+    if body.day_of_week.is_some()       { parts.push(format!("day_of_week = ${idx}")); idx += 1; }
+    if body.period_ids.is_some()        { parts.push(format!("period_ids = ${idx}")); idx += 1; }
 
     if parts.len() == 1 {
         return Ok(Json(json!({ "message": "ไม่มีข้อมูลที่ต้องอัปเดต" })).into_response());
@@ -186,6 +194,10 @@ pub async fn update_activity_group(
         q = q.bind(serde_json::to_value(v).unwrap_or(serde_json::Value::Null));
     }
     if let Some(v) = body.is_active               { q = q.bind(v); }
+    if let Some(ref v) = body.day_of_week        { q = q.bind(v); }
+    if let Some(ref v) = body.period_ids {
+        q = q.bind(serde_json::to_value(v).unwrap_or(serde_json::Value::Null));
+    }
     q = q.bind(id);
 
     let row: ActivityGroup = q
