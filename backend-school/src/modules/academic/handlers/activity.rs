@@ -300,6 +300,15 @@ pub async fn create_activity_group(
     let allowed = body.allowed_grade_level_ids
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
+    // resolve user_id → staff_info.id (เพราะ lookup ส่ง users.id มา แต่ FK อ้าง staff_info.id)
+    let staff_id: Option<Uuid> = if let Some(user_id) = body.instructor_id {
+        sqlx::query_scalar("SELECT id FROM staff_info WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?
+    } else { None };
+
     let row: ActivityGroup = sqlx::query_as(
         r#"INSERT INTO activity_groups
             (slot_id, name, description, instructor_id, max_capacity, allowed_grade_level_ids)
@@ -310,7 +319,7 @@ pub async fn create_activity_group(
     .bind(body.slot_id)
     .bind(&body.name)
     .bind(&body.description)
-    .bind(body.instructor_id)
+    .bind(staff_id)
     .bind(body.max_capacity)
     .bind(&allowed)
     .fetch_one(&pool)
@@ -341,6 +350,15 @@ pub async fn update_activity_group(
     let allowed = body.allowed_grade_level_ids.as_ref()
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
+    // resolve user_id → staff_info.id
+    let staff_id: Option<Uuid> = if let Some(user_id) = body.instructor_id {
+        sqlx::query_scalar("SELECT id FROM staff_info WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?
+    } else { None };
+
     let row: ActivityGroup = sqlx::query_as(
         r#"UPDATE activity_groups SET
             name = COALESCE($2, name),
@@ -358,7 +376,7 @@ pub async fn update_activity_group(
     .bind(id)
     .bind(&body.name)
     .bind(&body.description)
-    .bind(body.instructor_id)
+    .bind(staff_id)
     .bind(body.max_capacity)
     .bind(body.registration_open)
     .bind(body.is_active)
