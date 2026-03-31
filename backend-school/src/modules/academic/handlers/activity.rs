@@ -107,14 +107,11 @@ pub async fn create_activity_slot(
     let registration_type = body.registration_type.unwrap_or_else(|| "assigned".to_string());
     let allowed = body.allowed_grade_level_ids
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
-    let period_ids = body.period_ids
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
     let row: ActivitySlot = sqlx::query_as(
         r#"INSERT INTO activity_slots
-            (name, description, activity_type, semester_id, allowed_grade_level_ids,
-             days_of_week, period_ids, registration_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            (name, description, activity_type, semester_id, allowed_grade_level_ids, registration_type)
+           VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING *, NULL::TEXT AS semester_name, NULL::BIGINT AS group_count, NULL::BIGINT AS total_members"#,
     )
     .bind(&body.name)
@@ -122,8 +119,6 @@ pub async fn create_activity_slot(
     .bind(&body.activity_type)
     .bind(body.semester_id)
     .bind(&allowed)
-    .bind(&body.days_of_week)
-    .bind(&period_ids)
     .bind(&registration_type)
     .fetch_one(&pool)
     .await
@@ -154,14 +149,12 @@ pub async fn update_activity_slot(
             description = COALESCE($3, description),
             activity_type = COALESCE($4, activity_type),
             allowed_grade_level_ids = COALESCE($5, allowed_grade_level_ids),
-            days_of_week = COALESCE($6, days_of_week),
-            period_ids = COALESCE($7, period_ids),
-            registration_type = COALESCE($8, registration_type),
-            teacher_reg_open = COALESCE($9, teacher_reg_open),
-            student_reg_open = COALESCE($10, student_reg_open),
-            student_reg_start = COALESCE($11, student_reg_start),
-            student_reg_end = COALESCE($12, student_reg_end),
-            is_active = COALESCE($13, is_active)
+            registration_type = COALESCE($6, registration_type),
+            teacher_reg_open = COALESCE($7, teacher_reg_open),
+            student_reg_open = COALESCE($8, student_reg_open),
+            student_reg_start = COALESCE($9, student_reg_start),
+            student_reg_end = COALESCE($10, student_reg_end),
+            is_active = COALESCE($11, is_active)
         WHERE id = $1
         RETURNING *, NULL::TEXT AS semester_name, NULL::BIGINT AS group_count, NULL::BIGINT AS total_members"#,
     )
@@ -170,8 +163,6 @@ pub async fn update_activity_slot(
     .bind(&body.description)
     .bind(&body.activity_type)
     .bind(body.allowed_grade_level_ids.as_ref().map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null)))
-    .bind(&body.days_of_week)
-    .bind(body.period_ids.as_ref().map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null)))
     .bind(&body.registration_type)
     .bind(body.teacher_reg_open)
     .bind(body.student_reg_open)
@@ -325,6 +316,24 @@ pub async fn create_activity_group(
             return Ok(Json(json!({ "error": "ช่องกิจกรรมนี้ยังไม่เปิดให้ลงทะเบียน" })).into_response());
         }
         _ => {}
+    }
+
+    // ตรวจว่าครูอยู่ใน slot (ยกเว้น admin)
+    if let Some(instructor_id) = body.instructor_id {
+        if !has_manage_all {
+            let in_slot: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM activity_slot_instructors WHERE slot_id = $1 AND user_id = $2)"
+            )
+            .bind(body.slot_id)
+            .bind(instructor_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
+
+            if !in_slot {
+                return Ok(Json(json!({ "error": "ครูคนนี้ไม่ได้อยู่ในรายชื่อครูของช่องกิจกรรมนี้" })).into_response());
+            }
+        }
     }
 
     let allowed = body.allowed_grade_level_ids
@@ -863,6 +872,97 @@ pub async fn remove_instructor(
     .execute(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "message": "ลบครูแล้ว" })).into_response())
+}
+
+// ============================================
+// Slot Instructors API (ครูใน slot)
+// ============================================
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct SlotInstructorInfo {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub instructor_name: Option<String>,
+}
+
+/// GET /api/academic/activity-slots/:id/instructors
+pub async fn list_slot_instructors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slot_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let rows: Vec<SlotInstructorInfo> = sqlx::query_as(
+        r#"SELECT asi.id, asi.user_id,
+                  u.first_name || ' ' || u.last_name AS instructor_name
+           FROM activity_slot_instructors asi
+           JOIN users u ON u.id = asi.user_id
+           WHERE asi.slot_id = $1
+           ORDER BY u.first_name"#,
+    )
+    .bind(slot_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "data": rows })).into_response())
+}
+
+/// POST /api/academic/activity-slots/:id/instructors
+pub async fn add_slot_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slot_id): Path<Uuid>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let user_id = body.get("user_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| AppError::BadRequest("user_id required".to_string()))?;
+
+    sqlx::query(
+        "INSERT INTO activity_slot_instructors (slot_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+    )
+    .bind(slot_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "message": "เพิ่มครูแล้ว" })).into_response())
+}
+
+/// DELETE /api/academic/activity-slots/:id/instructors/:user_id
+pub async fn remove_slot_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((slot_id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    sqlx::query("DELETE FROM activity_slot_instructors WHERE slot_id = $1 AND user_id = $2")
+        .bind(slot_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(json!({ "message": "ลบครูแล้ว" })).into_response())
 }

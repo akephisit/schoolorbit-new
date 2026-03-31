@@ -619,8 +619,6 @@ export interface ActivitySlot {
     activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
     semester_id: string;
     allowed_grade_level_ids?: string[];
-    days_of_week?: string;
-    period_ids?: string[];
     registration_type: 'self' | 'assigned';
     teacher_reg_open: boolean;
     student_reg_open: boolean;
@@ -678,8 +676,6 @@ export const createActivitySlot = async (data: {
     activity_type: string;
     semester_id: string;
     allowed_grade_level_ids?: string[];
-    days_of_week?: string;
-    period_ids?: string[];
     registration_type?: string;
 }) => {
     return await fetchApi('/api/academic/activity-slots', {
@@ -697,6 +693,28 @@ export const updateActivitySlot = async (id: string, data: Partial<ActivitySlot>
 
 export const deleteActivitySlot = async (id: string) => {
     return await fetchApi(`/api/academic/activity-slots/${id}`, { method: 'DELETE' });
+};
+
+// Slot Instructors
+export interface SlotInstructor {
+    id: string;
+    user_id: string;
+    instructor_name?: string;
+}
+
+export const listSlotInstructors = async (slotId: string): Promise<{ data: SlotInstructor[] }> => {
+    return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors`);
+};
+
+export const addSlotInstructor = async (slotId: string, userId: string) => {
+    return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId })
+    });
+};
+
+export const removeSlotInstructor = async (slotId: string, userId: string) => {
+    return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors/${userId}`, { method: 'DELETE' });
 };
 
 // ==========================================

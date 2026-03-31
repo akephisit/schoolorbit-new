@@ -92,6 +92,8 @@ pub fn academic_routes() -> Router<AppState> {
         // Activity Slots (ช่องกิจกรรม — Admin)
         .route("/activity-slots", get(handlers::activity::list_activity_slots).post(handlers::activity::create_activity_slot))
         .route("/activity-slots/{id}", put(handlers::activity::update_activity_slot).delete(handlers::activity::delete_activity_slot))
+        .route("/activity-slots/{id}/instructors", get(handlers::activity::list_slot_instructors).post(handlers::activity::add_slot_instructor))
+        .route("/activity-slots/{id}/instructors/{user_id}", axum::routing::delete(handlers::activity::remove_slot_instructor))
 
         // Activity Groups (กิจกรรมจริง ภายใต้ slot)
         .route("/activities/my-enrollments", get(handlers::activity::my_enrollments))

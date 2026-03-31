@@ -11,14 +11,16 @@
 		updateActivityGroup,
 		deleteActivityGroup,
 		listClassrooms,
-		getSchoolDays,
+		listSlotInstructors,
+		addSlotInstructor,
+		removeSlotInstructor,
 		ACTIVITY_TYPE_LABELS,
+		type SlotInstructor,
 		type ActivitySlot,
 		type ActivityGroup,
 		type AcademicStructureData,
 		type Classroom
 	} from '$lib/api/academic';
-	import { listPeriods, type AcademicPeriod } from '$lib/api/timetable';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -40,7 +42,7 @@
 	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
 	let classrooms = $state<Classroom[]>([]);
 	let staffList = $state<StaffLookupItem[]>([]);
-	let periods = $state<AcademicPeriod[]>([]);
+	let slotInstructorsMap = $state<Record<string, SlotInstructor[]>>({});
 	let slots = $state<ActivitySlot[]>([]);
 	let groups = $state<ActivityGroup[]>([]);
 
@@ -60,8 +62,6 @@
 	let slotDescription = $state('');
 	let slotActivityType = $state('club');
 	let slotSemesterId = $state('');
-	let slotDaysOfWeek = $state<string[]>([]);
-	let slotPeriodIds = $state<string[]>([]);
 	let slotRegistrationType = $state('assigned');
 	let slotAllowedGradeLevelIds = $state<string[]>([]);
 
@@ -80,9 +80,6 @@
 	let deleteSlotTarget = $state<ActivitySlot | null>(null);
 	let showDeleteSlotDialog = $state(false);
 
-	let DAYS = $derived(
-		getSchoolDays(structure.years.find((y) => y.id === filterYearId)?.school_days)
-	);
 
 	// ── Computed ───────────────────────────────────────
 	let filteredSlots = $derived(
@@ -115,23 +112,15 @@
 	let slotSemesterName = $derived(
 		structure.semesters.find((s) => s.id === slotSemesterId)?.name ?? 'เลือก...'
 	);
-	let slotDaysJoined = $derived(slotDaysOfWeek.join(','));
-
-	function toggleSlotDay(day: string) {
-		slotDaysOfWeek = slotDaysOfWeek.includes(day)
-			? slotDaysOfWeek.filter((d) => d !== day) : [...slotDaysOfWeek, day];
-	}
 
 	// ── Load ───────────────────────────────────────────
 	onMount(async () => {
-		const [structRes, staffRes, periodsRes] = await Promise.all([
+		const [structRes, staffRes] = await Promise.all([
 			getAcademicStructure(),
-			lookupStaff({ activeOnly: true, limit: 1000 }),
-			listPeriods()
+			lookupStaff({ activeOnly: true, limit: 1000 })
 		]);
 		structure = structRes.data;
 		staffList = staffRes;
-		periods = periodsRes.data ?? [];
 
 		// Default to active year + semester
 		const activeSem = structure.semesters.find((s) => s.is_active);
@@ -162,6 +151,13 @@
 		slots = slotsRes.data ?? [];
 		groups = groupsRes.data ?? [];
 		expandedSlots = new Set(slots.map((s) => s.id));
+		// Load slot instructors
+		const instrMap: Record<string, SlotInstructor[]> = {};
+		await Promise.all(slots.map(async (s) => {
+			try { instrMap[s.id] = (await listSlotInstructors(s.id)).data ?? []; }
+			catch { instrMap[s.id] = []; }
+		}));
+		slotInstructorsMap = instrMap;
 	}
 
 	let prevYearId = $state('');
@@ -194,8 +190,7 @@
 	// ── Slot Dialog ───────────────────────────────────
 	function openCreateSlot() {
 		slotName = ''; slotDescription = ''; slotActivityType = 'club';
-		slotSemesterId = filterSemesterId; slotDaysOfWeek = [];
-		slotPeriodIds = []; slotRegistrationType = 'assigned';
+		slotSemesterId = filterSemesterId; slotRegistrationType = 'assigned';
 		slotAllowedGradeLevelIds = [];
 		isSlotEdit = false; editSlotTarget = null;
 		showSlotDialog = true;
@@ -204,17 +199,12 @@
 	function openEditSlot(s: ActivitySlot) {
 		slotName = s.name; slotDescription = s.description ?? '';
 		slotActivityType = s.activity_type; slotSemesterId = s.semester_id;
-		slotDaysOfWeek = s.days_of_week ? s.days_of_week.split(',').map((d: string) => d.trim()) : []; slotPeriodIds = s.period_ids ?? [];
 		slotRegistrationType = s.registration_type;
 		slotAllowedGradeLevelIds = s.allowed_grade_level_ids ?? [];
 		isSlotEdit = true; editSlotTarget = s;
 		showSlotDialog = true;
 	}
 
-	function toggleSlotPeriod(id: string) {
-		slotPeriodIds = slotPeriodIds.includes(id)
-			? slotPeriodIds.filter((x) => x !== id) : [...slotPeriodIds, id];
-	}
 
 	function toggleSlotGrade(id: string) {
 		slotAllowedGradeLevelIds = slotAllowedGradeLevelIds.includes(id)
@@ -231,8 +221,6 @@
 					description: slotDescription || undefined,
 					activity_type: slotActivityType as any,
 					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					days_of_week: slotDaysJoined || undefined,
-					period_ids: slotPeriodIds.length > 0 ? slotPeriodIds : undefined,
 					registration_type: slotRegistrationType as any,
 				} as any);
 				toast.success('แก้ไขช่องกิจกรรมแล้ว');
@@ -243,8 +231,6 @@
 					activity_type: slotActivityType,
 					semester_id: slotSemesterId,
 					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					days_of_week: slotDaysJoined || undefined,
-					period_ids: slotPeriodIds.length > 0 ? slotPeriodIds : undefined,
 					registration_type: slotRegistrationType || undefined,
 				});
 				toast.success('สร้างช่องกิจกรรมแล้ว');
@@ -332,14 +318,28 @@
 		if (!ids || ids.length === 0) return 'ทุกระดับชั้น';
 		return ids.map((id) => yearGradeLevels.find((g) => g.id === id)?.short_name ?? id).join(', ');
 	}
-	function dayLabel(d?: string) {
-		if (!d) return '—';
-		return d.split(',').map((v) => DAYS.find((x) => x.value === v.trim())?.label ?? v.trim()).join(', ');
+	async function handleAddSlotInstructor(slotId: string, userId: string) {
+		try {
+			await addSlotInstructor(slotId, userId);
+			toast.success('เพิ่มครูแล้ว');
+			slotInstructorsMap[slotId] = (await listSlotInstructors(slotId)).data ?? [];
+			slotInstructorsMap = { ...slotInstructorsMap };
+		} catch { toast.error('เกิดข้อผิดพลาด'); }
 	}
-	function periodNames(ids?: string[]) {
-		if (!ids || ids.length === 0) return '—';
-		return ids.map((id) => (periods as any[]).find((p) => p.id === id)?.name ?? '?').join(', ');
+
+	async function handleRemoveSlotInstructor(slotId: string, userId: string) {
+		try {
+			await removeSlotInstructor(slotId, userId);
+			toast.success('ลบครูแล้ว');
+			slotInstructorsMap[slotId] = (await listSlotInstructors(slotId)).data ?? [];
+			slotInstructorsMap = { ...slotInstructorsMap };
+		} catch { toast.error('เกิดข้อผิดพลาด'); }
 	}
+
+	// Slot instructor dialog
+	let showSlotInstructorDialog = $state(false);
+	let slotInstructorSlotId = $state('');
+	let slotInstructorUserId = $state('');
 </script>
 
 <svelte:head>
@@ -414,8 +414,8 @@
 								<span class="text-sm text-muted-foreground">{gradeLevelDisplay(slot.allowed_grade_level_ids)}</span>
 							</div>
 							<div class="text-sm text-muted-foreground mt-0.5">
-								{dayLabel(slot.days_of_week)} คาบ {periodNames(slot.period_ids)}
-								· {slotGroups.length} กิจกรรม
+								{slotGroups.length} กิจกรรม
+								· {(slotInstructorsMap[slot.id] ?? []).length} ครู
 								· {slot.registration_type === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}
 							</div>
 						</div>
@@ -449,6 +449,25 @@
 									<Button variant="outline" size="sm" class="text-destructive" onclick={() => confirmDeleteSlot(slot)}>
 										<Trash2 class="mr-1 h-3 w-3" />ลบช่อง
 									</Button>
+								</div>
+							{/if}
+
+							<!-- Slot Instructors -->
+							{#if $can.has('activity.manage.all')}
+								{@const instrList = slotInstructorsMap[slot.id] ?? []}
+								<div class="space-y-1 pb-3">
+									<Label class="text-xs font-semibold text-muted-foreground">ครูผู้สอน ({instrList.length} คน)</Label>
+									<div class="flex flex-wrap gap-1.5">
+										{#each instrList as instr}
+											<Badge variant="secondary" class="gap-1">
+												{instr.instructor_name ?? '—'}
+												<button type="button" class="ml-0.5 hover:text-destructive" onclick={() => handleRemoveSlotInstructor(slot.id, instr.user_id)}>×</button>
+											</Badge>
+										{/each}
+										<Button variant="outline" size="sm" class="h-6 text-xs" onclick={() => { slotInstructorSlotId = slot.id; slotInstructorUserId = ''; showSlotInstructorDialog = true; }}>
+											<Plus class="h-3 w-3 mr-1" />เพิ่มครู
+										</Button>
+									</div>
 								</div>
 							{/if}
 
@@ -550,30 +569,6 @@
 					</Select.Root>
 				</div>
 			{/if}
-			<div class="space-y-3">
-				<div class="space-y-1">
-					<Label>วันที่สอน</Label>
-					<div class="flex flex-wrap gap-1.5">
-						{#each DAYS as d}
-							{@const selected = slotDaysOfWeek.includes(d.value)}
-							<button type="button"
-								class="rounded border px-2 py-1 text-xs transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
-								onclick={() => toggleSlotDay(d.value)}>{d.label}</button>
-						{/each}
-					</div>
-				</div>
-				<div class="space-y-1">
-					<Label>คาบเรียน</Label>
-					<div class="flex flex-wrap gap-1.5">
-						{#each (periods as any[]).filter((p) => p.type !== 'BREAK') as p}
-							{@const selected = slotPeriodIds.includes(p.id)}
-							<button type="button"
-								class="rounded border px-2 py-1 text-xs transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
-								onclick={() => toggleSlotPeriod(p.id)}>{p.name}</button>
-						{/each}
-					</div>
-				</div>
-			</div>
 			<div class="space-y-1">
 				<Label>ระดับชั้นที่รับ (ว่าง = ทุกระดับ)</Label>
 				<Popover.Root>
@@ -658,6 +653,29 @@
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => { showGroupDialog = false; }}>ยกเลิก</Button>
 			<Button onclick={handleSaveGroup} disabled={saving}>{saving ? 'กำลังบันทึก...' : isGroupEdit ? 'บันทึก' : 'สร้าง'}</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Add Slot Instructor Dialog -->
+<Dialog.Root bind:open={showSlotInstructorDialog}>
+	<Dialog.Content class="max-w-sm">
+		<Dialog.Header><Dialog.Title>เพิ่มครูใน slot</Dialog.Title></Dialog.Header>
+		<div class="py-2">
+			<Select.Root type="single" bind:value={slotInstructorUserId}>
+				<Select.Trigger class="w-full">
+					{slotInstructorUserId ? staffList.find((s) => s.id === slotInstructorUserId)?.name ?? 'เลือก...' : 'เลือกครู...'}
+				</Select.Trigger>
+				<Select.Content class="max-h-56 overflow-y-auto">
+					{#each staffList.filter((s) => !(slotInstructorsMap[slotInstructorSlotId] ?? []).some((i) => i.user_id === s.id)) as s}
+						<Select.Item value={s.id}>{s.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => { showSlotInstructorDialog = false; }}>ยกเลิก</Button>
+			<Button onclick={async () => { if (slotInstructorUserId) { await handleAddSlotInstructor(slotInstructorSlotId, slotInstructorUserId); showSlotInstructorDialog = false; } else { toast.error('กรุณาเลือกครู'); } }}>เพิ่ม</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

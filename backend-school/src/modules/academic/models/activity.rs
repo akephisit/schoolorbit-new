@@ -15,8 +15,6 @@ pub struct ActivitySlot {
     pub activity_type: String,
     pub semester_id: Uuid,
     pub allowed_grade_level_ids: Option<serde_json::Value>,
-    pub days_of_week: Option<String>,
-    pub period_ids: Option<serde_json::Value>,
     pub registration_type: String,
     pub teacher_reg_open: bool,
     pub student_reg_open: bool,
@@ -48,8 +46,6 @@ pub struct CreateActivitySlotRequest {
     pub activity_type: String,
     pub semester_id: Uuid,
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
-    pub days_of_week: Option<String>,
-    pub period_ids: Option<Vec<Uuid>>,
     pub registration_type: Option<String>,
 }
 
@@ -59,8 +55,6 @@ pub struct UpdateActivitySlotRequest {
     pub description: Option<String>,
     pub activity_type: Option<String>,
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
-    pub days_of_week: Option<String>,
-    pub period_ids: Option<Vec<Uuid>>,
     pub registration_type: Option<String>,
     pub teacher_reg_open: Option<bool>,
     pub student_reg_open: Option<bool>,
