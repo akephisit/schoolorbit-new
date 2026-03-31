@@ -333,7 +333,7 @@ pub async fn delete_semester(
 pub async fn list_classrooms(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(params): Query<serde_json::Value>,
+    Query(filter): Query<ClassroomQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
@@ -342,9 +342,7 @@ pub async fn list_classrooms(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    let year_id_filter = params.get("year_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| Uuid::parse_str(s).ok());
+    let year_id_filter = filter.year_id;
 
     let mut query = String::from(
         "SELECT c.*, 
@@ -382,7 +380,7 @@ pub async fn list_classrooms(
          c.room_number ASC");
 
     let mut q = sqlx::query_as::<_, Classroom>(&query);
-    if let Some(yid) = year_id_filter { q = q.bind(yid); }  // yid is Uuid now
+    if let Some(yid) = year_id_filter { q = q.bind(yid); }
 
     let classrooms = q
         .fetch_all(&pool)

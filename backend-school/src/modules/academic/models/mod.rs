@@ -209,6 +209,11 @@ pub struct Classroom {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ClassroomQuery {
+    pub year_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateClassroomRequest {
     pub academic_year_id: Uuid,
     pub grade_level_id: Uuid,
