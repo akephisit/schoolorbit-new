@@ -157,15 +157,16 @@
 		expandedSlots = new Set(slots.map((s) => s.id));
 	}
 
+	let prevYearId = $state('');
+
 	$effect(() => {
-		if (filterYearId) {
+		if (filterYearId && filterYearId !== prevYearId) {
+			prevYearId = filterYearId;
 			loadClassrooms();
-			// Auto-select first semester of year
+			// Auto-select first semester of new year
 			const sems = structure.semesters.filter((s) => s.academic_year_id === filterYearId);
 			const activeSem = sems.find((s) => s.is_active) ?? sems[0];
-			if (activeSem && activeSem.id !== filterSemesterId) {
-				filterSemesterId = activeSem.id;
-			}
+			if (activeSem) filterSemesterId = activeSem.id;
 		}
 	});
 
