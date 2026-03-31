@@ -92,6 +92,10 @@ pub async fn create_period(
     let end_time = NaiveTime::parse_from_str(&payload.end_time, "%H:%M")
         .map_err(|_| AppError::BadRequest("Invalid end_time format (use HH:MM)".to_string()))?;
 
+    if end_time <= start_time {
+        return Err(AppError::BadRequest("เวลาจบต้องมากกว่าเวลาเริ่ม".to_string()));
+    }
+
     let period = sqlx::query_as::<_, AcademicPeriod>(
         r#"
         INSERT INTO academic_periods (
@@ -111,7 +115,14 @@ pub async fn create_period(
     .await
     .map_err(|e| {
         eprintln!("Failed to create period: {}", e);
-        AppError::InternalServerError("Failed to create period".to_string())
+        let msg = if e.to_string().contains("valid_time_range") {
+            "เวลาจบต้องมากกว่าเวลาเริ่ม"
+        } else if e.to_string().contains("unique_period_per_year") {
+            "ลำดับคาบซ้ำกับที่มีอยู่แล้ว"
+        } else {
+            "ไม่สามารถสร้างคาบเรียนได้"
+        };
+        AppError::BadRequest(msg.to_string())
     })?;
 
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": period }))).into_response())
