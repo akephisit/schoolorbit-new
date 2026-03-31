@@ -342,6 +342,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>กิจกรรมพัฒนาผู้เรียน</title>
+</svelte:head>
+
 <div class="space-y-4 p-4">
 	<!-- Header -->
 	<div class="flex items-center justify-between">
