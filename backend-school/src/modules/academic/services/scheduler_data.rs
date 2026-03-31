@@ -136,16 +136,23 @@ impl<'a> SchedulerDataLoader<'a> {
 
         let days: Vec<&str> = school_days.split(',').map(|d| d.trim()).collect();
 
-        let query = r#"
-            SELECT id, order_index as period_order, name, start_time::text, end_time::text
-            FROM academic_periods
-            WHERE is_active = true
-            ORDER BY order_index
-        "#;
+        // ดึง academic_year_id จาก semester เพื่อ filter periods
+        let year_id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT academic_year_id FROM academic_semesters WHERE id = $1"
+        )
+        .bind(semester_id)
+        .fetch_optional(self.pool)
+        .await?;
 
-        let periods = sqlx::query_as::<_, PeriodRow>(query)
-            .fetch_all(self.pool)
-            .await?;
+        let periods = sqlx::query_as::<_, PeriodRow>(
+            r#"SELECT id, order_index as period_order, name, start_time::text, end_time::text
+               FROM academic_periods
+               WHERE is_active = true AND academic_year_id = $1
+               ORDER BY order_index"#
+        )
+        .bind(year_id)
+        .fetch_all(self.pool)
+        .await?;
 
         let mut slots = Vec::new();
 
@@ -162,18 +169,17 @@ impl<'a> SchedulerDataLoader<'a> {
         Ok(slots)
     }
     
-    /// Load periods info
-    pub async fn load_periods(&self) -> Result<Vec<PeriodInfo>, sqlx::Error> {
-        let query = r#"
-            SELECT id, order_index as period_order, name, start_time::text, end_time::text
-            FROM academic_periods
-            WHERE is_active = true
-            ORDER BY order_index
-        "#;
-        
-        let rows = sqlx::query_as::<_, PeriodRow>(query)
-            .fetch_all(self.pool)
-            .await?;
+    /// Load periods info filtered by academic year
+    pub async fn load_periods(&self, academic_year_id: Uuid) -> Result<Vec<PeriodInfo>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, PeriodRow>(
+            r#"SELECT id, order_index as period_order, name, start_time::text, end_time::text
+               FROM academic_periods
+               WHERE is_active = true AND academic_year_id = $1
+               ORDER BY order_index"#
+        )
+        .bind(academic_year_id)
+        .fetch_all(self.pool)
+        .await?;
         
         Ok(rows.into_iter().map(|r| PeriodInfo {
             id: r.id,
@@ -257,7 +263,7 @@ impl<'a> SchedulerDataLoader<'a> {
         academic_year_id: Uuid,
     ) -> Result<HashMap<Uuid, InstructorPrefData>, sqlx::Error> {
         // 1. Load periods to map index -> id
-        let periods = self.load_periods().await?;
+        let periods = self.load_periods(academic_year_id).await?;
         let period_map: HashMap<i32, Uuid> = periods.iter()
             .map(|p| (p.order, p.id)) 
             .collect();
@@ -329,18 +335,19 @@ impl<'a> SchedulerDataLoader<'a> {
     /// Load instructor room assignments
     async fn load_instructor_room_assignments(
         &self,
-        _semester_id: Uuid,
+        semester_id: Uuid,
     ) -> Result<HashMap<Uuid, Uuid>, sqlx::Error> {
-        let query = r#"
-            SELECT instructor_id, room_id
-            FROM instructor_room_assignments
-            -- WHERE is_required = true (Assuming all assignments in this table are binding for now)
-        "#;
-        
-        let rows = sqlx::query_as::<_, (Uuid, Uuid)>(query)
-            .fetch_all(self.pool)
-            .await?;
-        
+        // Filter by academic_year_id ของ semester
+        let rows = sqlx::query_as::<_, (Uuid, Uuid)>(
+            r#"SELECT ira.instructor_id, ira.room_id
+               FROM instructor_room_assignments ira
+               JOIN academic_semesters s ON s.academic_year_id = ira.academic_year_id
+               WHERE s.id = $1"#
+        )
+        .bind(semester_id)
+        .fetch_all(self.pool)
+        .await?;
+
         Ok(rows.into_iter().collect())
     }
 

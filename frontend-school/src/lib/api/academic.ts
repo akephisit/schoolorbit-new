@@ -711,6 +711,7 @@ export interface ActivityGroup {
     instructor_id?: string;
     max_capacity?: number;
     registration_open: boolean;
+    allowed_grade_level_ids?: string[];
     is_active: boolean;
     created_at: string;
     // joined
@@ -758,6 +759,7 @@ export const createActivityGroup = async (data: {
     description?: string;
     instructor_id?: string;
     max_capacity?: number;
+    allowed_grade_level_ids?: string[];
 }) => {
     return await fetchApi('/api/academic/activities', {
         method: 'POST',
@@ -818,5 +820,18 @@ export const addActivityInstructor = async (groupId: string, instructorId: strin
 
 export const removeActivityInstructor = async (groupId: string, instructorId: string) => {
     return await fetchApi(`/api/academic/activities/${groupId}/instructors/${instructorId}`, { method: 'DELETE' });
+};
+
+// Student self-enrollment
+export const selfEnrollActivity = async (groupId: string) => {
+    return await fetchApi(`/api/academic/activities/${groupId}/enroll`, { method: 'POST' });
+};
+
+export const selfUnenrollActivity = async (groupId: string) => {
+    return await fetchApi(`/api/academic/activities/${groupId}/enroll`, { method: 'DELETE' });
+};
+
+export const getMyActivityEnrollments = async (): Promise<{ data: string[] }> => {
+    return await fetchApi('/api/academic/activities/my-enrollments');
 };
 

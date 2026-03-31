@@ -90,6 +90,7 @@ pub struct ActivityGroup {
     pub instructor_id: Option<Uuid>,
     pub max_capacity: Option<i32>,
     pub registration_open: bool,
+    pub allowed_grade_level_ids: Option<serde_json::Value>,
     pub created_by: Option<Uuid>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
@@ -124,6 +125,7 @@ pub struct CreateActivityGroupRequest {
     pub description: Option<String>,
     pub instructor_id: Option<Uuid>,
     pub max_capacity: Option<i32>,
+    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,6 +136,7 @@ pub struct UpdateActivityGroupRequest {
     pub max_capacity: Option<i32>,
     pub registration_open: Option<bool>,
     pub is_active: Option<bool>,
+    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -8,6 +8,7 @@
 		deleteActivitySlot,
 		listActivityGroups,
 		createActivityGroup,
+		updateActivityGroup,
 		deleteActivityGroup,
 		listClassrooms,
 		getSchoolDays,
@@ -28,7 +29,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
 	import { toast } from 'svelte-sonner';
-	import { Users, Plus, Trash2, Check, ChevronsUpDown, UserCog, ChevronDown, ChevronRight, Settings } from 'lucide-svelte';
+	import { Users, Plus, Pencil, Trash2, Check, ChevronsUpDown, UserCog, ChevronDown, ChevronRight, Settings } from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { goto } from '$app/navigation';
 
@@ -64,13 +65,16 @@
 	let slotRegistrationType = $state('assigned');
 	let slotAllowedGradeLevelIds = $state<string[]>([]);
 
-	// Group Dialog (สร้างชุมนุมภายใต้ slot)
+	// Group Dialog (สร้าง/แก้ไขชุมนุมภายใต้ slot)
 	let showGroupDialog = $state(false);
+	let isGroupEdit = $state(false);
+	let editGroupTarget = $state<ActivityGroup | null>(null);
 	let groupSlotId = $state('');
 	let groupName = $state('');
 	let groupDescription = $state('');
 	let groupInstructorId = $state('');
 	let groupMaxCapacity = $state('');
+	let groupAllowedGradeLevelIds = $state<string[]>([]);
 
 	// Delete
 	let deleteSlotTarget = $state<ActivitySlot | null>(null);
@@ -273,21 +277,45 @@
 	function openCreateGroup(slotId: string) {
 		groupSlotId = slotId; groupName = ''; groupDescription = '';
 		groupInstructorId = ''; groupMaxCapacity = '';
+		groupAllowedGradeLevelIds = [];
+		isGroupEdit = false; editGroupTarget = null;
 		showGroupDialog = true;
+	}
+
+	function openEditGroup(g: ActivityGroup) {
+		groupSlotId = g.slot_id ?? '';
+		groupName = g.name;
+		groupDescription = g.description ?? '';
+		groupInstructorId = g.instructor_id ?? '';
+		groupMaxCapacity = g.max_capacity ? String(g.max_capacity) : '';
+		groupAllowedGradeLevelIds = g.allowed_grade_level_ids ?? [];
+		isGroupEdit = true; editGroupTarget = g;
+		showGroupDialog = true;
+	}
+
+	function toggleGroupGrade(id: string) {
+		groupAllowedGradeLevelIds = groupAllowedGradeLevelIds.includes(id)
+			? groupAllowedGradeLevelIds.filter((x) => x !== id) : [...groupAllowedGradeLevelIds, id];
 	}
 
 	async function handleSaveGroup() {
 		if (!groupName.trim()) { toast.error('กรุณาระบุชื่อ'); return; }
 		saving = true;
 		try {
-			await createActivityGroup({
-				slot_id: groupSlotId,
+			const payload = {
 				name: groupName.trim(),
 				description: groupDescription || undefined,
 				instructor_id: groupInstructorId || undefined,
 				max_capacity: groupMaxCapacity ? parseInt(groupMaxCapacity) : undefined,
-			});
-			toast.success('สร้างกิจกรรมแล้ว');
+				allowed_grade_level_ids: groupAllowedGradeLevelIds.length > 0 ? groupAllowedGradeLevelIds : undefined,
+			};
+			if (isGroupEdit && editGroupTarget) {
+				await updateActivityGroup(editGroupTarget.id, payload as any);
+				toast.success('แก้ไขกิจกรรมแล้ว');
+			} else {
+				await createActivityGroup({ slot_id: groupSlotId, ...payload });
+				toast.success('สร้างกิจกรรมแล้ว');
+			}
 			showGroupDialog = false;
 			await loadData();
 		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { saving = false; }
@@ -432,12 +460,20 @@
 												<div class="text-xs text-muted-foreground">
 													{g.instructor_name ?? '—'}
 													· {g.member_count ?? 0}{g.max_capacity ? `/${g.max_capacity}` : ''} คน
+													{#if g.allowed_grade_level_ids && g.allowed_grade_level_ids.length > 0}
+														· {gradeLevelDisplay(g.allowed_grade_level_ids)}
+													{/if}
 												</div>
 											</div>
 											<div class="flex gap-1 shrink-0">
-												<Button variant="ghost" size="icon" title="จัดการ" onclick={() => goto(`/staff/academic/activities/${g.id}`)}>
+												<Button variant="ghost" size="icon" title="จัดการสมาชิก" onclick={() => goto(`/staff/academic/activities/${g.id}`)}>
 													<UserCog class="h-4 w-4" />
 												</Button>
+												{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
+													<Button variant="ghost" size="icon" title="แก้ไข" onclick={() => openEditGroup(g)}>
+														<Pencil class="h-3 w-3" />
+													</Button>
+												{/if}
 												{#if $can.has('activity.manage.all')}
 													<Button variant="ghost" size="icon" onclick={() => handleDeleteGroup(g)}>
 														<Trash2 class="h-3 w-3 text-destructive" />
@@ -571,11 +607,11 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- Group Create Dialog -->
+<!-- Group Create/Edit Dialog -->
 <Dialog.Root bind:open={showGroupDialog}>
-	<Dialog.Content class="max-w-sm">
+	<Dialog.Content class="max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>สร้างกิจกรรม</Dialog.Title>
+			<Dialog.Title>{isGroupEdit ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรม'}</Dialog.Title>
 		</Dialog.Header>
 		<div class="space-y-3 py-2">
 			<div class="space-y-1">
@@ -583,7 +619,7 @@
 				<Input bind:value={groupName} placeholder="เช่น ชุมนุมวิทยาศาสตร์, ฟุตบอล" />
 			</div>
 			<div class="space-y-1">
-				<Label>ครูผู้ดูแล</Label>
+				<Label>ครูผู้ดูแล (หลัก)</Label>
 				<Select.Root type="single" bind:value={groupInstructorId}>
 					<Select.Trigger class="w-full">
 						{groupInstructorId ? staffList.find((s) => s.id === groupInstructorId)?.name ?? 'เลือก...' : 'ไม่ระบุ'}
@@ -593,10 +629,22 @@
 						{#each staffList as s}<Select.Item value={s.id}>{s.name}</Select.Item>{/each}
 					</Select.Content>
 				</Select.Root>
+				<p class="text-xs text-muted-foreground">ครูผู้ช่วยเพิ่มได้ในหน้าจัดการสมาชิก</p>
 			</div>
 			<div class="space-y-1">
 				<Label>จำนวนรับสูงสุด</Label>
 				<Input type="number" min="1" placeholder="ไม่จำกัด" bind:value={groupMaxCapacity} />
+			</div>
+			<div class="space-y-1">
+				<Label>ชั้นที่รับ (ว่าง = ตามช่องกิจกรรม)</Label>
+				<div class="flex flex-wrap gap-1.5">
+					{#each yearGradeLevels() as level}
+						{@const selected = groupAllowedGradeLevelIds.includes(level.id)}
+						<button type="button"
+							class="rounded border px-2 py-1 text-xs transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
+							onclick={() => toggleGroupGrade(level.id)}>{level.short_name}</button>
+					{/each}
+				</div>
 			</div>
 			<div class="space-y-1">
 				<Label>คำอธิบาย</Label>
@@ -605,7 +653,7 @@
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => { showGroupDialog = false; }}>ยกเลิก</Button>
-			<Button onclick={handleSaveGroup} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'สร้าง'}</Button>
+			<Button onclick={handleSaveGroup} disabled={saving}>{saving ? 'กำลังบันทึก...' : isGroupEdit ? 'บันทึก' : 'สร้าง'}</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

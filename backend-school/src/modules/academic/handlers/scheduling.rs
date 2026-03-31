@@ -274,19 +274,18 @@ async fn run_scheduling_job(
     // Load data
     let loader = SchedulerDataLoader::new(pool);
     
-    let courses = loader.load_courses(&classroom_ids, semester_id).await?;
-    let available_slots = loader.load_available_slots(semester_id).await?;
-    let periods = loader.load_periods().await?;
-    let locked_slots = loader.load_locked_slots(semester_id, &classroom_ids).await?;
-    
-    // Get academic year for instructor prefs
+    // Get academic year for filtering
     let academic_year_id: Uuid = sqlx::query_scalar(
         "SELECT academic_year_id FROM academic_semesters WHERE id = $1"
     )
     .bind(semester_id)
     .fetch_one(pool)
     .await?;
-    
+
+    let courses = loader.load_courses(&classroom_ids, semester_id).await?;
+    let available_slots = loader.load_available_slots(semester_id).await?;
+    let periods = loader.load_periods(academic_year_id).await?;
+    let locked_slots = loader.load_locked_slots(semester_id, &classroom_ids).await?;
     let instructor_prefs = loader.load_instructor_preferences(academic_year_id).await?;
     let rooms = loader.load_rooms().await?; // Load rooms
     

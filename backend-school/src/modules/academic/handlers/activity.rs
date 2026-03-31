@@ -297,10 +297,13 @@ pub async fn create_activity_group(
         _ => {}
     }
 
+    let allowed = body.allowed_grade_level_ids
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+
     let row: ActivityGroup = sqlx::query_as(
         r#"INSERT INTO activity_groups
-            (slot_id, name, description, instructor_id, max_capacity)
-           VALUES ($1, $2, $3, $4, $5)
+            (slot_id, name, description, instructor_id, max_capacity, allowed_grade_level_ids)
+           VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING *, NULL::TEXT AS instructor_name, NULL::BIGINT AS member_count,
                      NULL::TEXT AS slot_name, NULL::TEXT AS activity_type, NULL::TEXT AS semester_name"#,
     )
@@ -309,6 +312,7 @@ pub async fn create_activity_group(
     .bind(&body.description)
     .bind(body.instructor_id)
     .bind(body.max_capacity)
+    .bind(&allowed)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -334,6 +338,9 @@ pub async fn update_activity_group(
         }
     }
 
+    let allowed = body.allowed_grade_level_ids.as_ref()
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+
     let row: ActivityGroup = sqlx::query_as(
         r#"UPDATE activity_groups SET
             name = COALESCE($2, name),
@@ -342,6 +349,7 @@ pub async fn update_activity_group(
             max_capacity = COALESCE($5, max_capacity),
             registration_open = COALESCE($6, registration_open),
             is_active = COALESCE($7, is_active),
+            allowed_grade_level_ids = COALESCE($8, allowed_grade_level_ids),
             updated_at = NOW()
         WHERE id = $1
         RETURNING *, NULL::TEXT AS instructor_name, NULL::BIGINT AS member_count,
@@ -354,6 +362,7 @@ pub async fn update_activity_group(
     .bind(body.max_capacity)
     .bind(body.registration_open)
     .bind(body.is_active)
+    .bind(&allowed)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -493,6 +502,40 @@ pub async fn add_members(
     Ok(Json(json!({ "inserted": inserted })).into_response())
 }
 
+/// GET /api/academic/activities/my-enrollments — ดึง group_ids ที่นักเรียนลงทะเบียน
+pub async fn my_enrollments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await
+        .map_err(|e| AppError::AuthError(e))?;
+
+    let student_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM student_info WHERE user_id = $1"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let sid = match student_id {
+        Some(id) => id,
+        None => return Ok(Json(json!({ "data": [] })).into_response()),
+    };
+
+    let group_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT activity_group_id FROM activity_group_members WHERE student_id = $1"
+    )
+    .bind(sid)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "data": group_ids })).into_response())
+}
+
 /// POST /api/academic/activities/:id/enroll  — นักเรียน self-enroll
 pub async fn self_enroll(
     State(state): State<AppState>,
@@ -522,6 +565,23 @@ pub async fn self_enroll(
         return Ok(Json(json!({ "error": "ยังไม่เปิดรับสมัคร" })).into_response());
     }
 
+    // ดึง user_id จาก JWT
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await
+        .map_err(|e| AppError::AuthError(e))?;
+
+    // ดึง student_info.id จาก user_id
+    let student_info_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM student_info WHERE user_id = $1"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let student_id = student_info_id
+        .ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลนักเรียน".to_string()))?;
+
+    // เช็ค capacity
     if let Some(max) = cap {
         let (count,): (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM activity_group_members WHERE activity_group_id = $1",
@@ -536,7 +596,91 @@ pub async fn self_enroll(
         }
     }
 
-    Ok(Json(json!({ "message": "TODO: ต้องการ student_id จาก JWT" })).into_response())
+    // เช็คชั้นที่รับ (group level → slot level)
+    let student_grade: Option<Uuid> = sqlx::query_scalar(
+        r#"SELECT cr.grade_level_id FROM student_class_enrollments sce
+           JOIN class_rooms cr ON cr.id = sce.class_room_id
+           WHERE sce.student_id = $1 AND sce.status = 'active'
+           LIMIT 1"#
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if let Some(grade_id) = student_grade {
+        // ตรวจ group allowed_grade_level_ids ก่อน แล้วค่อย slot
+        let allowed: Option<serde_json::Value> = sqlx::query_scalar(
+            r#"SELECT COALESCE(ag.allowed_grade_level_ids, s.allowed_grade_level_ids)
+               FROM activity_groups ag
+               LEFT JOIN activity_slots s ON s.id = ag.slot_id
+               WHERE ag.id = $1"#
+        )
+        .bind(group_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .flatten();
+
+        if let Some(allowed_ids) = allowed {
+            if let Some(arr) = allowed_ids.as_array() {
+                let grade_str = grade_id.to_string();
+                let is_allowed = arr.iter().any(|v| v.as_str() == Some(&grade_str));
+                if !is_allowed {
+                    return Ok(Json(json!({ "error": "ชั้นเรียนของคุณไม่อยู่ในชั้นที่รับ" })).into_response());
+                }
+            }
+        }
+    }
+
+    // ลงทะเบียน
+    let result = sqlx::query(
+        "INSERT INTO activity_group_members (activity_group_id, student_id, enrolled_by)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+    )
+    .bind(group_id)
+    .bind(student_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if result.rows_affected() > 0 {
+        Ok(Json(json!({ "success": true, "message": "ลงทะเบียนสำเร็จ" })).into_response())
+    } else {
+        Ok(Json(json!({ "error": "ลงทะเบียนแล้วก่อนหน้านี้" })).into_response())
+    }
+}
+
+/// DELETE /api/academic/activities/:id/enroll — นักเรียนยกเลิกลงทะเบียน
+pub async fn self_unenroll(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(group_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await
+        .map_err(|e| AppError::AuthError(e))?;
+
+    let student_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM student_info WHERE user_id = $1"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let sid = student_id.ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลนักเรียน".to_string()))?;
+
+    sqlx::query("DELETE FROM activity_group_members WHERE activity_group_id = $1 AND student_id = $2")
+        .bind(group_id)
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "success": true, "message": "ยกเลิกลงทะเบียนแล้ว" })).into_response())
 }
 
 /// DELETE /api/academic/activities/:id/members/:student_id
