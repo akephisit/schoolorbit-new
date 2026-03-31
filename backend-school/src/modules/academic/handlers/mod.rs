@@ -519,20 +519,27 @@ pub async fn update_classroom(
 
     // If room_number changes, update name and code
     if let Some(ref new_room) = payload.room_number {
-         let current = sqlx::query_as::<_, Classroom>("SELECT * FROM class_rooms WHERE id = $1")
+         // ดึงเฉพาะ field ที่ต้องใช้ (grade_level_id, academic_year_id)
+         let current: (Uuid, Uuid) = sqlx::query_as(
+            "SELECT grade_level_id, academic_year_id FROM class_rooms WHERE id = $1"
+         )
             .bind(id)
             .fetch_one(&mut *tx)
             .await
             .map_err(|_| AppError::NotFound("Classroom not found".to_string()))?;
 
-         let grade_level = sqlx::query_as::<_, GradeLevel>("SELECT * FROM grade_levels WHERE id = $1")
-            .bind(current.grade_level_id)
+         let grade_level = sqlx::query_as::<_, GradeLevel>(
+            "SELECT id, level_type, year, next_grade_level_id, is_active FROM grade_levels WHERE id = $1"
+         )
+            .bind(current.0)
             .fetch_one(&mut *tx)
             .await
             .map_err(|_| AppError::InternalServerError("Failed to fetch grade level".to_string()))?;
-            
-         let year = sqlx::query_as::<_, AcademicYear>("SELECT * FROM academic_years WHERE id = $1")
-            .bind(current.academic_year_id)
+
+         let year = sqlx::query_as::<_, AcademicYear>(
+            "SELECT id, year, name, start_date, end_date, is_active, school_days, metadata, created_at, updated_at FROM academic_years WHERE id = $1"
+         )
+            .bind(current.1)
             .fetch_one(&mut *tx)
             .await
             .map_err(|_| AppError::InternalServerError("Failed to fetch year".to_string()))?;
