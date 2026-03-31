@@ -31,22 +31,22 @@ pub async fn list_study_plans(
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
     
     let mut sql = String::from("SELECT * FROM study_plans WHERE 1=1");
-    
+    let mut idx = 0u32;
+
     if query.active_only.unwrap_or(false) {
         sql.push_str(" AND is_active = true");
     }
-    
-    if let Some(ref level_scope) = query.level_scope {
-        sql.push_str(" AND level_scope = ");
-        sql.push_str(&format!("'{}'", level_scope));
+
+    if let Some(ref _level_scope) = query.level_scope {
+        idx += 1;
+        sql.push_str(&format!(" AND level_scope = ${idx}"));
     }
-    
+
     sql.push_str(" ORDER BY code");
-    
-    let plans = sqlx::query_as::<_, StudyPlan>(&sql)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
+
+    let mut q = sqlx::query_as::<_, StudyPlan>(&sql);
+    if let Some(ref level_scope) = query.level_scope { q = q.bind(level_scope); }
+    let plans = q.fetch_all(&pool).await.unwrap_or_default();
     
     Ok(Json(json!({"success": true, "data": plans})))
 }
@@ -226,20 +226,22 @@ pub async fn list_study_plan_versions(
          WHERE 1=1"
     );
     
-    if let Some(study_plan_id) = query.study_plan_id {
-        sql.push_str(&format!(" AND spv.study_plan_id = '{}'", study_plan_id));
+    let mut idx = 0u32;
+
+    if let Some(_study_plan_id) = query.study_plan_id {
+        idx += 1;
+        sql.push_str(&format!(" AND spv.study_plan_id = ${idx}"));
     }
-    
+
     if query.active_only.unwrap_or(false) {
         sql.push_str(" AND spv.is_active = true");
     }
-    
+
     sql.push_str(" ORDER BY spv.created_at DESC");
-    
-    let versions = sqlx::query_as::<_, StudyPlanVersion>(&sql)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
+
+    let mut q = sqlx::query_as::<_, StudyPlanVersion>(&sql);
+    if let Some(study_plan_id) = query.study_plan_id { q = q.bind(study_plan_id); }
+    let versions = q.fetch_all(&pool).await.unwrap_or_default();
     
     Ok(Json(json!({"success": true, "data": versions})))
 }
@@ -390,24 +392,30 @@ pub async fn list_study_plan_subjects(
          WHERE 1=1"
     );
     
-    if let Some(version_id) = query.study_plan_version_id {
-        sql.push_str(&format!(" AND sps.study_plan_version_id = '{}'", version_id));
+    let mut idx = 0u32;
+
+    if let Some(_version_id) = query.study_plan_version_id {
+        idx += 1;
+        sql.push_str(&format!(" AND sps.study_plan_version_id = ${idx}"));
     }
-    
-    if let Some(grade_id) = query.grade_level_id {
-        sql.push_str(&format!(" AND sps.grade_level_id = '{}'", grade_id));
+
+    if let Some(_grade_id) = query.grade_level_id {
+        idx += 1;
+        sql.push_str(&format!(" AND sps.grade_level_id = ${idx}"));
     }
-    
-    if let Some(ref term) = query.term {
-        sql.push_str(&format!(" AND sps.term = '{}'", term));
+
+    if let Some(ref _term) = query.term {
+        idx += 1;
+        sql.push_str(&format!(" AND sps.term = ${idx}"));
     }
-    
+
     sql.push_str(" ORDER BY sps.display_order, sps.subject_code");
-    
-    let subjects = sqlx::query_as::<_, StudyPlanSubject>(&sql)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
+
+    let mut q = sqlx::query_as::<_, StudyPlanSubject>(&sql);
+    if let Some(version_id) = query.study_plan_version_id { q = q.bind(version_id); }
+    if let Some(grade_id) = query.grade_level_id { q = q.bind(grade_id); }
+    if let Some(ref term) = query.term { q = q.bind(term); }
+    let subjects = q.fetch_all(&pool).await.unwrap_or_default();
     
     Ok(Json(json!({"success": true, "data": subjects})))
 }

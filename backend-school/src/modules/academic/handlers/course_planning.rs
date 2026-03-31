@@ -61,36 +61,47 @@ pub async fn list_classroom_courses(
         "#
     );
 
-    let mut conditions = Vec::new();
+    let mut idx = 0u32;
+    let mut has_filter = false;
 
-    if let Some(classroom_id) = query.classroom_id {
-        conditions.push(format!("cc.classroom_id = '{}'", classroom_id));
-    }
-    
-    if let Some(instructor_id) = query.instructor_id {
-        conditions.push(format!("cc.primary_instructor_id = '{}'", instructor_id));
-    }
-
-    if let Some(term_id) = query.academic_semester_id {
-        conditions.push(format!("cc.academic_semester_id = '{}'", term_id));
+    if let Some(_) = query.classroom_id {
+        idx += 1;
+        sql.push_str(&format!(" AND cc.classroom_id = ${idx}"));
+        has_filter = true;
     }
 
-    if let Some(subject_id) = query.subject_id {
-        conditions.push(format!("cc.subject_id = '{}'", subject_id));
+    if let Some(_) = query.instructor_id {
+        idx += 1;
+        sql.push_str(&format!(" AND cc.primary_instructor_id = ${idx}"));
+        has_filter = true;
     }
 
-    if !conditions.is_empty() {
-        sql.push_str(&format!(" AND {}", conditions.join(" AND ")));
-    } else {
-        // Prevent loading absolutely everything if no filter provided?
-        // Or default to 'false' to return nothing?
-        // For safety, let's return nothing if no main filter.
+    if let Some(_) = query.academic_semester_id {
+        idx += 1;
+        sql.push_str(&format!(" AND cc.academic_semester_id = ${idx}"));
+        has_filter = true;
+    }
+
+    if let Some(_) = query.subject_id {
+        idx += 1;
+        sql.push_str(&format!(" AND cc.subject_id = ${idx}"));
+        has_filter = true;
+    }
+
+    if !has_filter {
+        // Prevent loading absolutely everything if no filter provided.
+        // For safety, return nothing if no main filter.
         return Ok(Json(json!({ "success": true, "data": [] })).into_response());
     }
 
     sql.push_str(" ORDER BY s.code ASC");
 
-    let courses = sqlx::query_as::<_, ClassroomCourse>(&sql)
+    let mut q = sqlx::query_as::<_, ClassroomCourse>(&sql);
+    if let Some(classroom_id) = query.classroom_id { q = q.bind(classroom_id); }
+    if let Some(instructor_id) = query.instructor_id { q = q.bind(instructor_id); }
+    if let Some(term_id) = query.academic_semester_id { q = q.bind(term_id); }
+    if let Some(subject_id) = query.subject_id { q = q.bind(subject_id); }
+    let courses = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {

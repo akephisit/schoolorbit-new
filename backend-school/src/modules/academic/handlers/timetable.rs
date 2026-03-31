@@ -45,25 +45,24 @@ pub async fn list_periods(
     }
 
     let mut sql = String::from("SELECT * FROM academic_periods WHERE 1=1");
-    let mut conditions = Vec::new();
+    let mut idx = 0u32;
 
-    if let Some(year_id) = query.academic_year_id {
-        conditions.push(format!("academic_year_id = '{}'", year_id));
+    if let Some(_) = query.academic_year_id {
+        idx += 1;
+        sql.push_str(&format!(" AND academic_year_id = ${idx}"));
     }
-
-
 
     if query.active_only.unwrap_or(false) {
-        conditions.push("is_active = true".to_string());
-    }
-
-    if !conditions.is_empty() {
-        sql.push_str(&format!(" AND {}", conditions.join(" AND ")));
+        sql.push_str(" AND is_active = true");
     }
 
     sql.push_str(" ORDER BY order_index ASC");
 
-    let periods = sqlx::query_as::<_, AcademicPeriod>(&sql)
+    let mut q = sqlx::query_as::<_, AcademicPeriod>(&sql);
+    if let Some(year_id) = query.academic_year_id {
+        q = q.bind(year_id);
+    }
+    let periods = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
@@ -242,50 +241,55 @@ pub async fn list_timetable_entries(
         "#
     );
 
-    let mut conditions = Vec::new();
+    let mut idx = 0u32;
 
-    if let Some(classroom_id) = query.classroom_id {
-        conditions.push(format!("te.classroom_id = '{}'", classroom_id));
+    if let Some(_) = query.classroom_id {
+        idx += 1;
+        sql.push_str(&format!(" AND te.classroom_id = ${idx}"));
     }
 
     // student_id: ดึง classroom ที่นักเรียนสังกัด
-    if let Some(student_id) = query.student_id {
-        conditions.push(format!(
-            r#"te.classroom_id IN (
-                SELECT class_room_id FROM student_class_enrollments
-                WHERE student_id = (SELECT user_id FROM student_info WHERE id = '{student_id}')
-                  AND status = 'active'
-            )"#
-        ));
+    if let Some(_) = query.student_id {
+        idx += 1;
+        sql.push_str(&format!(" AND te.classroom_id IN (SELECT class_room_id FROM student_class_enrollments WHERE student_id = (SELECT user_id FROM student_info WHERE id = ${idx}) AND status = 'active')"));
     }
 
-    if let Some(instructor_id) = query.instructor_id {
-        conditions.push(format!("cc.primary_instructor_id = '{instructor_id}'"));
+    if let Some(_) = query.instructor_id {
+        idx += 1;
+        sql.push_str(&format!(" AND cc.primary_instructor_id = ${idx}"));
     }
 
-    if let Some(room_id) = query.room_id {
-        conditions.push(format!("te.room_id = '{}'", room_id));
+    if let Some(_) = query.room_id {
+        idx += 1;
+        sql.push_str(&format!(" AND te.room_id = ${idx}"));
     }
 
-    if let Some(semester_id) = query.academic_semester_id {
-        conditions.push(format!("te.academic_semester_id = '{}'", semester_id));
+    if let Some(_) = query.academic_semester_id {
+        idx += 1;
+        sql.push_str(&format!(" AND te.academic_semester_id = ${idx}"));
     }
 
-    if let Some(ref day) = query.day_of_week {
-        conditions.push(format!("te.day_of_week = '{}'", day));
+    if let Some(ref _day) = query.day_of_week {
+        idx += 1;
+        sql.push_str(&format!(" AND te.day_of_week = ${idx}"));
     }
 
-    if let Some(ref entry_type) = query.entry_type {
-        conditions.push(format!("te.entry_type = '{}'", entry_type));
-    }
-
-    if !conditions.is_empty() {
-        sql.push_str(&format!(" AND {}", conditions.join(" AND ")));
+    if let Some(ref _entry_type) = query.entry_type {
+        idx += 1;
+        sql.push_str(&format!(" AND te.entry_type = ${idx}"));
     }
 
     sql.push_str(" ORDER BY te.day_of_week, ap.order_index");
 
-    let entries = sqlx::query_as::<_, TimetableEntry>(&sql)
+    let mut q = sqlx::query_as::<_, TimetableEntry>(&sql);
+    if let Some(classroom_id) = query.classroom_id { q = q.bind(classroom_id); }
+    if let Some(student_id) = query.student_id { q = q.bind(student_id); }
+    if let Some(instructor_id) = query.instructor_id { q = q.bind(instructor_id); }
+    if let Some(room_id) = query.room_id { q = q.bind(room_id); }
+    if let Some(semester_id) = query.academic_semester_id { q = q.bind(semester_id); }
+    if let Some(ref day) = query.day_of_week { q = q.bind(day); }
+    if let Some(ref entry_type) = query.entry_type { q = q.bind(entry_type); }
+    let entries = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {

@@ -54,22 +54,34 @@ pub async fn list_activity_slots(
         WHERE s.is_active = true"#,
     );
 
+    let mut idx = 0u32;
+
     if let Some(semester_id) = filter.semester_id {
-        sql.push_str(&format!(" AND s.semester_id = '{semester_id}'"));
+        idx += 1;
+        sql.push_str(&format!(" AND s.semester_id = ${idx}"));
     }
     if let Some(ref activity_type) = filter.activity_type {
-        sql.push_str(&format!(" AND s.activity_type = '{activity_type}'"));
+        idx += 1;
+        sql.push_str(&format!(" AND s.activity_type = ${idx}"));
     }
     if let Some(open) = filter.teacher_reg_open {
-        sql.push_str(&format!(" AND s.teacher_reg_open = {open}"));
+        idx += 1;
+        sql.push_str(&format!(" AND s.teacher_reg_open = ${idx}"));
     }
     if let Some(open) = filter.student_reg_open {
-        sql.push_str(&format!(" AND s.student_reg_open = {open}"));
+        idx += 1;
+        sql.push_str(&format!(" AND s.student_reg_open = ${idx}"));
     }
 
     sql.push_str(" GROUP BY s.id, sem.name ORDER BY s.activity_type, s.name");
 
-    let slots: Vec<ActivitySlot> = sqlx::query_as(&sql)
+    let mut q = sqlx::query_as::<_, ActivitySlot>(&sql);
+    if let Some(semester_id) = filter.semester_id { q = q.bind(semester_id); }
+    if let Some(ref activity_type) = filter.activity_type { q = q.bind(activity_type); }
+    if let Some(open) = filter.teacher_reg_open { q = q.bind(open); }
+    if let Some(open) = filter.student_reg_open { q = q.bind(open); }
+
+    let slots: Vec<ActivitySlot> = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {
@@ -232,29 +244,48 @@ pub async fn list_activity_groups(
         WHERE ag.is_active = true"#,
     );
 
+    let mut idx = 0u32;
+
     if let Some(slot_id) = filter.slot_id {
-        sql.push_str(&format!(" AND ag.slot_id = '{slot_id}'"));
+        idx += 1;
+        sql.push_str(&format!(" AND ag.slot_id = ${idx}"));
     }
     if let Some(semester_id) = filter.semester_id {
-        sql.push_str(&format!(" AND s.semester_id = '{semester_id}'"));
+        idx += 1;
+        sql.push_str(&format!(" AND s.semester_id = ${idx}"));
     }
     if let Some(ref activity_type) = filter.activity_type {
-        sql.push_str(&format!(" AND s.activity_type = '{activity_type}'"));
+        idx += 1;
+        sql.push_str(&format!(" AND s.activity_type = ${idx}"));
     }
     if let Some(instructor_id) = filter.instructor_id {
-        sql.push_str(&format!(" AND ag.instructor_id = '{instructor_id}'"));
+        idx += 1;
+        sql.push_str(&format!(" AND ag.instructor_id = ${idx}"));
     }
     if let Some(open) = filter.registration_open {
-        sql.push_str(&format!(" AND ag.registration_open = {open}"));
+        idx += 1;
+        sql.push_str(&format!(" AND ag.registration_open = ${idx}"));
     }
     if let Some(ref search) = filter.search {
-        let escaped = search.replace('\'', "''");
-        sql.push_str(&format!(" AND ag.name ILIKE '%{escaped}%'"));
+        if !search.is_empty() {
+            idx += 1;
+            sql.push_str(&format!(" AND ag.name ILIKE ${idx}"));
+        }
     }
 
     sql.push_str(" GROUP BY ag.id, u.first_name, u.last_name, s.name, s.activity_type, sem.name ORDER BY s.activity_type, ag.name");
 
-    let groups: Vec<ActivityGroup> = sqlx::query_as(&sql)
+    let mut q = sqlx::query_as::<_, ActivityGroup>(&sql);
+    if let Some(slot_id) = filter.slot_id { q = q.bind(slot_id); }
+    if let Some(semester_id) = filter.semester_id { q = q.bind(semester_id); }
+    if let Some(ref activity_type) = filter.activity_type { q = q.bind(activity_type); }
+    if let Some(instructor_id) = filter.instructor_id { q = q.bind(instructor_id); }
+    if let Some(open) = filter.registration_open { q = q.bind(open); }
+    if let Some(ref search) = filter.search {
+        if !search.is_empty() { q = q.bind(format!("%{search}%")); }
+    }
+
+    let groups: Vec<ActivityGroup> = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {

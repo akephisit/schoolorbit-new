@@ -138,7 +138,9 @@ pub async fn list_subjects(
         "#
     );
 
-    // Apply Filters
+    // Apply Filters using parameterized queries to prevent SQL injection
+    let mut idx = 0u32;
+
     if let Some(active) = filter.active_only {
         if active {
             query.push_str(" AND s.is_active = true");
@@ -146,30 +148,38 @@ pub async fn list_subjects(
     }
 
     // dept-scope overrides any user-supplied group_id filter
-    if let Some(gid) = dept_group_id {
-        query.push_str(&format!(" AND s.group_id = '{}'", gid));
-    } else if let Some(gid) = filter.group_id {
-        query.push_str(&format!(" AND s.group_id = '{}'", gid));
+    let effective_group_id: Option<Uuid> = if dept_group_id.is_some() {
+        dept_group_id
+    } else {
+        filter.group_id
+    };
+    if effective_group_id.is_some() {
+        idx += 1;
+        query.push_str(&format!(" AND s.group_id = ${idx}"));
     }
 
-    if let Some(scope) = &filter.level_scope {
-        query.push_str(&format!(" AND s.level_scope = '{}'", scope));
-    }
-    
-    if let Some(stype) = &filter.subject_type {
-        query.push_str(&format!(" AND s.type = '{}'", stype));
+    if filter.level_scope.is_some() {
+        idx += 1;
+        query.push_str(&format!(" AND s.level_scope = ${idx}"));
     }
 
-    if let Some(search) = &filter.search {
-        if !search.is_empty() {
-            query.push_str(&format!(
-                " AND (s.code ILIKE '%{}%' OR s.name_th ILIKE '%{}%' OR s.name_en ILIKE '%{}%')",
-                search, search, search
-            ));
-        }
+    if filter.subject_type.is_some() {
+        idx += 1;
+        query.push_str(&format!(" AND s.type = ${idx}"));
     }
 
-    if let Some(year_id) = filter.start_academic_year_id {
+    let search_pattern = filter.search.as_ref().and_then(|s| {
+        if s.is_empty() { None } else { Some(format!("%{s}%")) }
+    });
+    if search_pattern.is_some() {
+        idx += 1;
+        query.push_str(&format!(
+            " AND (s.code ILIKE ${idx} OR s.name_th ILIKE ${idx} OR s.name_en ILIKE ${idx})"
+        ));
+    }
+
+    if filter.start_academic_year_id.is_some() {
+        idx += 1;
         // แสดงวิชาทั้งหมดที่ใช้งานได้ในปีนั้น:
         // สำหรับแต่ละ code ดึง version ล่าสุดที่ start_academic_year_id <= ปีเป้าหมาย
         query.push_str(&format!(
@@ -177,20 +187,30 @@ pub async fn list_subjects(
                 SELECT DISTINCT ON (sub.code) sub.id
                 FROM subjects sub
                 JOIN academic_years ay  ON ay.id  = sub.start_academic_year_id
-                JOIN academic_years ayt ON ayt.id = '{year_id}'
+                JOIN academic_years ayt ON ayt.id = ${idx}
                 WHERE ay.year <= ayt.year
                 ORDER BY sub.code, ay.year DESC
             )"#
         ));
     }
 
-    if let Some(term) = &filter.term {
-        query.push_str(&format!(" AND (s.term = '{}' OR s.term IS NULL)", term));
+    if filter.term.is_some() {
+        idx += 1;
+        query.push_str(&format!(" AND (s.term = ${idx} OR s.term IS NULL)"));
     }
 
     query.push_str(" ORDER BY s.code ASC");
 
-    let subjects = sqlx::query_as::<_, Subject>(&query)
+    // Build query and bind parameters in the same order as $N placeholders
+    let mut q = sqlx::query_as::<_, Subject>(&query);
+    if let Some(gid) = effective_group_id { q = q.bind(gid); }
+    if let Some(ref scope) = filter.level_scope { q = q.bind(scope); }
+    if let Some(ref stype) = filter.subject_type { q = q.bind(stype); }
+    if let Some(ref pattern) = search_pattern { q = q.bind(pattern); }
+    if let Some(year_id) = filter.start_academic_year_id { q = q.bind(year_id); }
+    if let Some(ref term) = filter.term { q = q.bind(term); }
+
+    let subjects = q
         .fetch_all(&pool)
         .await
         .map_err(|e| {

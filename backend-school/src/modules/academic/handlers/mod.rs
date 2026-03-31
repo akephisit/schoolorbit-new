@@ -362,21 +362,27 @@ pub async fn list_classrooms(
          WHERE 1=1"
     );
 
+    let mut idx = 0u32;
+
     if let Some(yid) = year_id_filter {
-        query.push_str(&format!(" AND c.academic_year_id = '{}'", yid));
+        idx += 1;
+        query.push_str(&format!(" AND c.academic_year_id = ${idx}"));
     }
 
-    query.push_str(" ORDER BY 
-         CASE gl.level_type 
-            WHEN 'kindergarten' THEN 1 
-            WHEN 'primary' THEN 2 
-            WHEN 'secondary' THEN 3 
-            ELSE 4 
-         END, 
-         gl.year ASC, 
+    query.push_str(" ORDER BY
+         CASE gl.level_type
+            WHEN 'kindergarten' THEN 1
+            WHEN 'primary' THEN 2
+            WHEN 'secondary' THEN 3
+            ELSE 4
+         END,
+         gl.year ASC,
          c.room_number ASC");
 
-    let classrooms = sqlx::query_as::<_, Classroom>(&query)
+    let mut q = sqlx::query_as::<_, Classroom>(&query);
+    if let Some(yid) = year_id_filter { q = q.bind(yid); }
+
+    let classrooms = q
         .fetch_all(&pool)
         .await
         .unwrap_or_default();
