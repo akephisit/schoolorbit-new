@@ -9,12 +9,13 @@
 		listActivityGroups,
 		createActivityGroup,
 		deleteActivityGroup,
-		lookupGradeLevels,
+		listClassrooms,
 		ACTIVITY_TYPE_LABELS,
 		type ActivitySlot,
 		type ActivityGroup,
 		type AcademicStructureData,
-		type LookupItem
+		type Classroom,
+		type GradeLevel
 	} from '$lib/api/academic';
 	import { listPeriods, type AcademicPeriod } from '$lib/api/timetable';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
@@ -27,24 +28,23 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
 	import { toast } from 'svelte-sonner';
-	import { Users, Plus, Pencil, Trash2, Search, Check, ChevronsUpDown, UserCog, ChevronDown, ChevronRight, Settings } from 'lucide-svelte';
+	import { Users, Plus, Trash2, Check, ChevronsUpDown, UserCog, ChevronDown, ChevronRight, Settings } from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { goto } from '$app/navigation';
-
-	let { data } = $props();
 
 	// ── State ──────────────────────────────────────────
 	let loading = $state(true);
 	let saving = $state(false);
 
 	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
-	let gradeLevels = $state<LookupItem[]>([]);
+	let classrooms = $state<Classroom[]>([]);
 	let staffList = $state<StaffLookupItem[]>([]);
 	let periods = $state<AcademicPeriod[]>([]);
 	let slots = $state<ActivitySlot[]>([]);
 	let groups = $state<ActivityGroup[]>([]);
 
 	// Filters
+	let filterYearId = $state('');
 	let filterSemesterId = $state('');
 	let filterType = $state('');
 
@@ -90,9 +90,25 @@
 		})
 	);
 
+	let yearSemesters = $derived(
+		structure.semesters.filter((s) => s.academic_year_id === filterYearId)
+	);
+
+	let currentYearName = $derived(
+		structure.years.find((y) => y.id === filterYearId)?.name ?? 'เลือกปีการศึกษา'
+	);
+
 	let currentSemesterName = $derived(
 		structure.semesters.find((s) => s.id === filterSemesterId)?.name ?? 'เลือกภาคเรียน'
 	);
+
+	// ชั้นที่เปิดสอนในปีนี้ (จาก classrooms)
+	let yearGradeLevels = $derived(() => {
+		const gradeIds = [...new Set(classrooms.map((c) => c.grade_level_id))];
+		return structure.levels
+			.filter((l) => gradeIds.includes(l.id))
+			.sort((a, b) => (a.code > b.code ? 1 : -1));
+	});
 
 	let slotSemesterName = $derived(
 		structure.semesters.find((s) => s.id === slotSemesterId)?.name ?? 'เลือก...'
@@ -101,23 +117,34 @@
 
 	// ── Load ───────────────────────────────────────────
 	onMount(async () => {
-		const [structRes, levelsRes, staffRes, periodsRes] = await Promise.all([
+		const [structRes, staffRes, periodsRes] = await Promise.all([
 			getAcademicStructure(),
-			lookupGradeLevels({ current_year: false }),
 			lookupStaff({ activeOnly: true, limit: 1000 }),
 			listPeriods()
 		]);
 		structure = structRes.data;
-		gradeLevels = levelsRes.data;
 		staffList = staffRes;
 		periods = periodsRes.data ?? [];
 
-		const current = structure.semesters.find((s) => s.is_active);
-		if (current) filterSemesterId = current.id;
+		// Default to active year + semester
+		const activeSem = structure.semesters.find((s) => s.is_active);
+		if (activeSem) {
+			filterYearId = activeSem.academic_year_id;
+			filterSemesterId = activeSem.id;
+		} else if (structure.years.length > 0) {
+			const activeYear = structure.years.find((y) => y.is_active) ?? structure.years[0];
+			filterYearId = activeYear.id;
+		}
 
+		await loadClassrooms();
 		await loadData();
 		loading = false;
 	});
+
+	async function loadClassrooms() {
+		if (!filterYearId) return;
+		classrooms = (await listClassrooms({ year_id: filterYearId })).data ?? [];
+	}
 
 	async function loadData() {
 		if (!filterSemesterId) return;
@@ -127,9 +154,20 @@
 		]);
 		slots = slotsRes.data ?? [];
 		groups = groupsRes.data ?? [];
-		// Auto-expand all slots
 		expandedSlots = new Set(slots.map((s) => s.id));
 	}
+
+	$effect(() => {
+		if (filterYearId) {
+			loadClassrooms();
+			// Auto-select first semester of year
+			const sems = structure.semesters.filter((s) => s.academic_year_id === filterYearId);
+			const activeSem = sems.find((s) => s.is_active) ?? sems[0];
+			if (activeSem && activeSem.id !== filterSemesterId) {
+				filterSemesterId = activeSem.id;
+			}
+		}
+	});
 
 	$effect(() => {
 		if (filterSemesterId) loadData();
@@ -260,7 +298,7 @@
 	// ── Helpers ────────────────────────────────────────
 	function gradeLevelDisplay(ids: string[] | undefined) {
 		if (!ids || ids.length === 0) return 'ทุกระดับชั้น';
-		return ids.map((id) => gradeLevels.find((g) => g.id === id)?.short_name ?? id).join(', ');
+		return ids.map((id) => yearGradeLevels().find((g) => g.id === id)?.short_name ?? id).join(', ');
 	}
 	function dayLabel(d?: string) { return DAYS.find((x) => x.value === d)?.label ?? '—'; }
 	function periodNames(ids?: string[]) {
@@ -285,10 +323,19 @@
 
 	<!-- Filters -->
 	<div class="flex flex-wrap gap-3">
-		<Select.Root type="single" bind:value={filterSemesterId}>
-			<Select.Trigger class="w-52">{currentSemesterName}</Select.Trigger>
+		<Select.Root type="single" bind:value={filterYearId}>
+			<Select.Trigger class="w-52">{currentYearName}</Select.Trigger>
 			<Select.Content>
-				{#each structure.semesters as s}
+				{#each structure.years as y}
+					<Select.Item value={y.id}>{y.name}</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+
+		<Select.Root type="single" bind:value={filterSemesterId}>
+			<Select.Trigger class="w-48">{currentSemesterName}</Select.Trigger>
+			<Select.Content>
+				{#each yearSemesters as s}
 					<Select.Item value={s.id}>{s.name}</Select.Item>
 				{/each}
 			</Select.Content>
@@ -449,7 +496,7 @@
 					<Select.Root type="single" bind:value={slotSemesterId}>
 						<Select.Trigger class="w-full">{slotSemesterName}</Select.Trigger>
 						<Select.Content>
-							{#each structure.semesters as s}
+							{#each yearSemesters as s}
 								<Select.Item value={s.id}>{s.name}</Select.Item>
 							{/each}
 						</Select.Content>
@@ -484,7 +531,7 @@
 					<Popover.Trigger class="w-full">
 						<Button variant="outline" class="w-full justify-between font-normal">
 							{#if slotAllowedGradeLevelIds.length > 0}
-								{slotAllowedGradeLevelIds.map((id) => gradeLevels.find((l) => l.id === id)?.short_name ?? id).join(', ')}
+								{slotAllowedGradeLevelIds.map((id) => yearGradeLevels().find((l) => l.id === id)?.short_name ?? id).join(', ')}
 							{:else}
 								<span class="text-muted-foreground">ทุกระดับชั้น</span>
 							{/if}
@@ -492,7 +539,7 @@
 						</Button>
 					</Popover.Trigger>
 					<Popover.Content class="w-[--radix-popover-trigger-width] p-1 max-h-56 overflow-y-auto">
-						{#each gradeLevels as level}
+						{#each yearGradeLevels() as level}
 							{@const checked = slotAllowedGradeLevelIds.includes(level.id)}
 							<button type="button" class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
 								onclick={() => toggleSlotGrade(level.id)}>
