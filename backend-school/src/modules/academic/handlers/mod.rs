@@ -342,7 +342,9 @@ pub async fn list_classrooms(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    let year_id_filter = params.get("year_id").and_then(|v| v.as_str());
+    let year_id_filter = params.get("year_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
 
     let mut query = String::from(
         "SELECT c.*, 
@@ -364,7 +366,7 @@ pub async fn list_classrooms(
 
     let mut idx = 0u32;
 
-    if let Some(yid) = year_id_filter {
+    if year_id_filter.is_some() {
         idx += 1;
         query.push_str(&format!(" AND c.academic_year_id = ${idx}"));
     }
@@ -380,7 +382,7 @@ pub async fn list_classrooms(
          c.room_number ASC");
 
     let mut q = sqlx::query_as::<_, Classroom>(&query);
-    if let Some(yid) = year_id_filter { q = q.bind(yid); }
+    if let Some(yid) = year_id_filter { q = q.bind(yid); }  // yid is Uuid now
 
     let classrooms = q
         .fetch_all(&pool)
