@@ -339,7 +339,37 @@
 	// Slot instructor dialog
 	let showSlotInstructorDialog = $state(false);
 	let slotInstructorSlotId = $state('');
-	let slotInstructorUserId = $state('');
+	let slotInstructorSelectedIds = $state<string[]>([]);
+	let slotInstructorSearch = $state('');
+	let addingSlotInstructors = $state(false);
+
+	let slotInstructorCandidates = $derived(
+		staffList.filter((s) => {
+			if ((slotInstructorsMap[slotInstructorSlotId] ?? []).some((i) => i.user_id === s.id)) return false;
+			if (slotInstructorSearch && !s.name.toLowerCase().includes(slotInstructorSearch.toLowerCase())) return false;
+			return true;
+		})
+	);
+
+	function toggleSlotInstructor(id: string) {
+		slotInstructorSelectedIds = slotInstructorSelectedIds.includes(id)
+			? slotInstructorSelectedIds.filter((x) => x !== id) : [...slotInstructorSelectedIds, id];
+	}
+
+	async function handleAddSlotInstructorsBatch() {
+		if (!slotInstructorSelectedIds.length) { toast.error('กรุณาเลือกครู'); return; }
+		addingSlotInstructors = true;
+		try {
+			for (const userId of slotInstructorSelectedIds) {
+				await addSlotInstructor(slotInstructorSlotId, userId);
+			}
+			toast.success(`เพิ่มครู ${slotInstructorSelectedIds.length} คนแล้ว`);
+			slotInstructorsMap[slotInstructorSlotId] = (await listSlotInstructors(slotInstructorSlotId)).data ?? [];
+			slotInstructorsMap = { ...slotInstructorsMap };
+			showSlotInstructorDialog = false;
+		} catch { toast.error('เกิดข้อผิดพลาด'); }
+		finally { addingSlotInstructors = false; }
+	}
 </script>
 
 <svelte:head>
@@ -464,7 +494,7 @@
 												<button type="button" class="ml-0.5 hover:text-destructive" onclick={() => handleRemoveSlotInstructor(slot.id, instr.user_id)}>×</button>
 											</Badge>
 										{/each}
-										<Button variant="outline" size="sm" class="h-6 text-xs" onclick={() => { slotInstructorSlotId = slot.id; slotInstructorUserId = ''; showSlotInstructorDialog = true; }}>
+										<Button variant="outline" size="sm" class="h-6 text-xs" onclick={() => { slotInstructorSlotId = slot.id; slotInstructorSelectedIds = []; slotInstructorSearch = ''; showSlotInstructorDialog = true; }}>
 											<Plus class="h-3 w-3 mr-1" />เพิ่มครู
 										</Button>
 									</div>
@@ -657,25 +687,36 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- Add Slot Instructor Dialog -->
+<!-- Add Slot Instructor Dialog (Multi-select) -->
 <Dialog.Root bind:open={showSlotInstructorDialog}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Header><Dialog.Title>เพิ่มครูใน slot</Dialog.Title></Dialog.Header>
-		<div class="py-2">
-			<Select.Root type="single" bind:value={slotInstructorUserId}>
-				<Select.Trigger class="w-full">
-					{slotInstructorUserId ? staffList.find((s) => s.id === slotInstructorUserId)?.name ?? 'เลือก...' : 'เลือกครู...'}
-				</Select.Trigger>
-				<Select.Content class="max-h-56 overflow-y-auto">
-					{#each staffList.filter((s) => !(slotInstructorsMap[slotInstructorSlotId] ?? []).some((i) => i.user_id === s.id)) as s}
-						<Select.Item value={s.id}>{s.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+	<Dialog.Content class="max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>เพิ่มครูผู้สอน</Dialog.Title>
+			<Dialog.Description>เลือกครูที่จะสอนในช่องกิจกรรมนี้{#if slotInstructorSelectedIds.length > 0} · เลือก {slotInstructorSelectedIds.length} คน{/if}</Dialog.Description>
+		</Dialog.Header>
+		<div class="space-y-3 py-2">
+			<div class="relative">
+				<Input class="pl-8" placeholder="ค้นหาครู..." bind:value={slotInstructorSearch} />
+			</div>
+			<div class="max-h-64 overflow-y-auto divide-y rounded border">
+				{#each slotInstructorCandidates as s}
+					{@const checked = slotInstructorSelectedIds.includes(s.id)}
+					<button type="button" class="flex w-full items-center gap-3 px-3 py-2 text-sm hover:bg-accent text-left" onclick={() => toggleSlotInstructor(s.id)}>
+						<div class="flex h-4 w-4 items-center justify-center rounded border {checked ? 'bg-primary border-primary' : 'border-input'}">
+							{#if checked}<span class="text-primary-foreground text-xs">✓</span>{/if}
+						</div>
+						<span>{s.name}</span>
+					</button>
+				{:else}
+					<div class="px-3 py-4 text-sm text-muted-foreground text-center">ไม่พบครู</div>
+				{/each}
+			</div>
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => { showSlotInstructorDialog = false; }}>ยกเลิก</Button>
-			<Button onclick={async () => { if (slotInstructorUserId) { await handleAddSlotInstructor(slotInstructorSlotId, slotInstructorUserId); showSlotInstructorDialog = false; } else { toast.error('กรุณาเลือกครู'); } }}>เพิ่ม</Button>
+			<Button onclick={handleAddSlotInstructorsBatch} disabled={addingSlotInstructors || !slotInstructorSelectedIds.length}>
+				{addingSlotInstructors ? 'กำลังเพิ่ม...' : `เพิ่ม ${slotInstructorSelectedIds.length} คน`}
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
