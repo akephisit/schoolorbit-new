@@ -32,7 +32,7 @@
 
 	// State
 	let uploading = $state(false);
-	let imageUrl = $state(currentImage);
+	let imageUrl = $state<string | null>(null);
 	let showCropper = $state(false);
 	let tempImageSrc = $state<string | null>(null);
 	let fileInput = $state<HTMLInputElement>();

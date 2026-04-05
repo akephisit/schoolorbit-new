@@ -34,7 +34,7 @@
 	import { LoaderCircle } from 'lucide-svelte';
 
 	const { params }: PageProps = $props();
-	const staffId = params.id;
+	let staffId = $derived(params.id);
 	let staff = $state<StaffProfileResponse | null>(null);
 	let achievements = $state<Achievement[]>([]);
 	let loading = $state(true);

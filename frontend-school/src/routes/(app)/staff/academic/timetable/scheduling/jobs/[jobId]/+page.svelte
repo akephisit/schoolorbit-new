@@ -21,7 +21,7 @@
 	import { getSchedulingJob } from '$lib/api/scheduling';
 
 	const { params }: PageProps = $props();
-	const jobId = params.jobId;
+	let jobId = $derived(params.jobId);
 
 	let job = $state<SchedulingJobResponse | null>(null);
 	let loading = $state(true);

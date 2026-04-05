@@ -34,7 +34,7 @@
 	let isDragging = $state(false);
 	let error = $state<string | null>(null);
 	let uploading = $state(false);
-	let preview = $state<string | null>(value);
+	let preview = $state<string | null>(null);
 	let fileInput = $state<HTMLInputElement>();
 
 	// Preview size classes

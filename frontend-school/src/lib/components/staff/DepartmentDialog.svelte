@@ -32,7 +32,7 @@
 		name_en: '',
 		description: '',
 		parent_department_id: 'none',
-		category: forcedCategory || 'administrative',
+		category: 'administrative',
 		org_type: 'unit',
 		phone: '',
 		email: '',
