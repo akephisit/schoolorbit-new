@@ -1075,20 +1075,18 @@
 
 	let lastCursorSend = 0;
 	let workspaceRef: HTMLDivElement;
-	let debugCursor = $state({ x: 0, y: 0 });
+	let wsRect = $state<DOMRect | null>(null);
 	function handleMouseMove(e: MouseEvent) {
 		const now = Date.now();
 		if (now - lastCursorSend > 50 && $authStore.user && workspaceRef) {
 			// 20fps cap
 			lastCursorSend = now;
 
-			// Relative coords within workspace
+			// Send workspace-relative coords (works across different screen sizes)
 			const rect = workspaceRef.getBoundingClientRect();
+			wsRect = rect;
 			const x = e.clientX - rect.left;
 			const y = e.clientY - rect.top;
-
-			// Debug: show own cursor position in overlay to verify alignment
-			debugCursor = { x, y };
 
 			const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
 
@@ -1637,12 +1635,11 @@
 		</Card.Root>
 	</div>
 
-		<!-- GHOST UI OVERLAY (relative coords, absolute inside workspace) -->
-		<div class="pointer-events-none absolute inset-0 z-50 overflow-hidden">
-			<!-- Debug A (blue): relative coords + absolute overlay -->
-			<div class="absolute w-3 h-3 bg-blue-500 rounded-full -translate-x-1/2 -translate-y-1/2 opacity-70" style="left: {debugCursor.x}px; top: {debugCursor.y}px;"></div>
-		<!-- Debug B (red): viewport coords + fixed = ควรตรง 100% -->
-		<div class="pointer-events-none fixed w-3 h-3 bg-red-500 rounded-full -translate-x-1/2 -translate-y-1/2 opacity-70 z-[9999]" style="left: {debugCursor.x + (workspaceRef?.getBoundingClientRect().left ?? 0)}px; top: {debugCursor.y + (workspaceRef?.getBoundingClientRect().top ?? 0)}px;"></div>
+		<!-- GHOST UI OVERLAY (fixed, clipped to workspace via clip-path) -->
+		<div
+			class="pointer-events-none fixed inset-0 z-[9999]"
+			style={wsRect ? `clip-path: inset(${wsRect.top}px ${typeof window !== 'undefined' ? window.innerWidth - wsRect.right : 0}px ${typeof window !== 'undefined' ? window.innerHeight - wsRect.bottom : 0}px ${wsRect.left}px)` : 'display:none'}
+		>
 			{#each $activeUsers as user (user.user_id)}
 				{@const cursor = $remoteCursors[user.user_id]}
 
@@ -1650,7 +1647,7 @@
 					{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
 						<div
 							class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
-							style="transform: translate({cursor.x}px, {cursor.y}px);"
+							style="transform: translate({cursor.x + (wsRect?.left ?? 0)}px, {cursor.y + (wsRect?.top ?? 0)}px);"
 						>
 							<svg
 								xmlns="http://www.w3.org/2000/svg"
