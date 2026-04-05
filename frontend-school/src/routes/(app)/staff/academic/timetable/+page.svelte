@@ -1639,8 +1639,10 @@
 
 		<!-- GHOST UI OVERLAY (relative coords, absolute inside workspace) -->
 		<div class="pointer-events-none absolute inset-0 z-50 overflow-hidden">
-			<!-- Debug: red dot follows own mouse to verify position -->
-			<div class="absolute w-3 h-3 bg-red-500 rounded-full -translate-x-1/2 -translate-y-1/2 opacity-50" style="left: {debugCursor.x}px; top: {debugCursor.y}px;"></div>
+			<!-- Debug A (blue): relative coords + absolute overlay -->
+			<div class="absolute w-3 h-3 bg-blue-500 rounded-full -translate-x-1/2 -translate-y-1/2 opacity-70" style="left: {debugCursor.x}px; top: {debugCursor.y}px;"></div>
+		<!-- Debug B (red): viewport coords + fixed = ควรตรง 100% -->
+		<div class="pointer-events-none fixed w-3 h-3 bg-red-500 rounded-full -translate-x-1/2 -translate-y-1/2 opacity-70 z-[9999]" style="left: {debugCursor.x + (workspaceRef?.getBoundingClientRect().left ?? 0)}px; top: {debugCursor.y + (workspaceRef?.getBoundingClientRect().top ?? 0)}px;"></div>
 			{#each $activeUsers as user (user.user_id)}
 				{@const cursor = $remoteCursors[user.user_id]}
 
