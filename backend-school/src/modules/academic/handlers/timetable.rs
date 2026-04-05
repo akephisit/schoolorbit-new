@@ -402,6 +402,51 @@ pub async fn create_timetable_entry(
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": entry }))).into_response())
 }
 
+/// DELETE /api/academic/timetable/batch
+/// Deletes all entries matching activity_slot_id + day_of_week + semester
+pub async fn delete_batch_timetable_entries(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<DeleteBatchTimetableEntriesRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(response);
+    }
+
+    let result = sqlx::query(
+        r#"
+        DELETE FROM academic_timetable_entries
+        WHERE activity_slot_id = $1
+          AND day_of_week = $2
+          AND academic_semester_id = $3
+        "#
+    )
+    .bind(payload.activity_slot_id)
+    .bind(&payload.day_of_week)
+    .bind(payload.academic_semester_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to batch delete entries: {}", e);
+        AppError::InternalServerError("Failed to batch delete entries".to_string())
+    })?;
+
+    // Broadcast refresh
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+    let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    let event = TimetableEvent::TableRefresh {
+        user_id: user_id.unwrap_or_default()
+    };
+    let _ = state.websocket_manager.get_or_create_room(subdomain, payload.academic_semester_id).send(event);
+
+    Ok(Json(json!({
+        "success": true,
+        "deleted_count": result.rows_affected()
+    })).into_response())
+}
+
 /// DELETE /api/academic/timetable/{id}
 pub async fn delete_timetable_entry(
     State(state): State<AppState>,

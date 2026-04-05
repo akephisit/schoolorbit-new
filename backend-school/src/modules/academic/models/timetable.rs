@@ -157,6 +157,13 @@ pub struct TimetableQuery {
     pub entry_type: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DeleteBatchTimetableEntriesRequest {
+    pub activity_slot_id: Uuid,
+    pub day_of_week: String,
+    pub academic_semester_id: Uuid,
+}
+
 // ============================================
 // Conflict Detection Response
 // ============================================

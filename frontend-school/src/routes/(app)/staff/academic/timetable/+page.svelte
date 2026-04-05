@@ -10,7 +10,8 @@
 		updateTimetableEntry,
 		deleteTimetableEntry,
 		listPeriods,
-		createBatchTimetableEntries
+		createBatchTimetableEntries,
+		deleteBatchTimetableEntries
 	} from '$lib/api/timetable';
 	import {
 		lookupAcademicYears,
@@ -263,12 +264,20 @@
 		}
 	}
 
-	async function handleDeleteEntry(entryId: string) {
+	async function handleDeleteEntry(entry: TimetableEntry) {
 		try {
-			await deleteTimetableEntry(entryId);
-			toast.success('ลบออกจากตารางสำเร็จ');
+			if (entry.activity_slot_id) {
+				const res = await deleteBatchTimetableEntries({
+					activity_slot_id: entry.activity_slot_id,
+					day_of_week: entry.day_of_week,
+					academic_semester_id: entry.academic_semester_id
+				});
+				toast.success(`ลบกิจกรรมทั้ง batch สำเร็จ (${res.deleted_count} รายการ)`);
+			} else {
+				await deleteTimetableEntry(entry.id);
+				toast.success('ลบออกจากตารางสำเร็จ');
+			}
 
-			// Notify others to refresh
 			if ($authStore.user) {
 				sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
 			}
@@ -1587,7 +1596,7 @@
 												class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
 												onclick={(e) => {
 													e.stopPropagation();
-													handleDeleteEntry(entry.id);
+													handleDeleteEntry(entry);
 												}}
 											>
 												<Trash2 class="w-3 h-3" />

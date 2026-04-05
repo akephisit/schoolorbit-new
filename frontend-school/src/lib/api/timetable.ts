@@ -249,6 +249,17 @@ export const deleteTimetableEntry = async (id: string) => {
     return await fetchApi(`/api/academic/timetable/${id}`, { method: 'DELETE' });
 };
 
+export const deleteBatchTimetableEntries = async (data: {
+    activity_slot_id: string;
+    day_of_week: string;
+    academic_semester_id: string;
+}): Promise<{ deleted_count: number }> => {
+    return await fetchApi('/api/academic/timetable/batch', {
+        method: 'DELETE',
+        body: JSON.stringify(data)
+    });
+};
+
 export interface MyActivityForEntry {
     enrolled: boolean;
     slot_id: string;
