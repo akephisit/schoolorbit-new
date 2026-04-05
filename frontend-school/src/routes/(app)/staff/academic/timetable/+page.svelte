@@ -1075,16 +1075,25 @@
 
 	let lastCursorSend = 0;
 	let workspaceRef: HTMLDivElement;
+	let workspaceClip = $state({ top: 0, right: 0, bottom: 0, left: 0 });
 	function handleMouseMove(e: MouseEvent) {
 		const now = Date.now();
 		if (now - lastCursorSend > 50 && $authStore.user && workspaceRef) {
 			// 20fps cap
 			lastCursorSend = now;
 
-			// Relative coords within workspace (no scroll offset — scroll is on <main>, not workspace)
+			// Send viewport coords directly — clip at render time
+			const x = e.clientX;
+			const y = e.clientY;
+
+			// Update clip rect for overlay
 			const rect = workspaceRef.getBoundingClientRect();
-			const x = e.clientX - rect.left;
-			const y = e.clientY - rect.top;
+			workspaceClip = {
+				top: rect.top,
+				right: window.innerWidth - rect.right,
+				bottom: window.innerHeight - rect.bottom,
+				left: rect.left
+			};
 
 			const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
 
@@ -1633,8 +1642,8 @@
 		</Card.Root>
 	</div>
 
-		<!-- GHOST UI OVERLAY (inside workspace) -->
-		<div class="pointer-events-none absolute inset-0 z-50 overflow-hidden">
+		<!-- GHOST UI OVERLAY (fixed viewport coords, clipped to workspace) -->
+		<div class="pointer-events-none fixed inset-0 z-[9999]" style="clip-path: inset({workspaceClip.top}px {workspaceClip.right}px {workspaceClip.bottom}px {workspaceClip.left}px)">
 			{#each $activeUsers as user (user.user_id)}
 				{@const cursor = $remoteCursors[user.user_id]}
 
