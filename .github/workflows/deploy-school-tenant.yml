@@ -76,7 +76,7 @@ jobs:
         run: npm run build
       
       - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v3.14.1
         env:
           PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
         with:
