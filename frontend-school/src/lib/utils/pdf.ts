@@ -1,6 +1,3 @@
-
-import pdfMake from 'pdfmake/build/pdfmake';
-// We don't import pdfFonts from build/vfs_fonts because we manage fonts manually
 import type { TDocumentDefinitions, CustomTableLayout } from 'pdfmake/interfaces';
 import type { TimetableEntry } from '$lib/api/timetable';
 
@@ -48,7 +45,10 @@ export const generateTimetablePDF = async (
     timetableEntries: TimetableEntry[],
     viewMode: 'CLASSROOM' | 'INSTRUCTOR' = 'CLASSROOM'
 ) => {
-    // 1. Configure Fonts
+    // 1. Dynamic import pdfmake (avoid bundling ~1.5MB in initial load)
+    const pdfMakeModule = await import('pdfmake/build/pdfmake');
+    const pdfMake = pdfMakeModule.default;
+
     const fonts = {
         Sarabun: {
             normal: window.location.origin + '/fonts/Sarabun-Regular.ttf',

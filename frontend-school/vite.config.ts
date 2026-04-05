@@ -84,30 +84,8 @@ export default defineConfig({
 	},
 	build: {
 		target: 'esnext',
-		sourcemap: false, // Save time generating maps
-		reportCompressedSize: false, // Save time on summary
-		chunkSizeWarningLimit: 1000,
-		rollupOptions: {
-			output: {
-				manualChunks: (id) => {
-					if (id.includes('node_modules')) {
-						// Split icons (used everywhere but update frequently independently)
-						if (id.includes('lucide-svelte')) {
-							return 'icons';
-						}
-
-						// Split Heavy image processing libraries (only used in specific components)
-						if (id.includes('heic2any') || id.includes('compressorjs') || id.includes('svelte-easy-crop')) {
-							return 'image-processing';
-						}
-
-						// Date formatting (date-fns)
-						if (id.includes('date-fns') || id.includes('internationalized/date')) {
-							return 'date-utils';
-						}
-					}
-				}
-			}
-		}
+		sourcemap: false,
+		reportCompressedSize: false,
+		chunkSizeWarningLimit: 1500
 	}
 });
