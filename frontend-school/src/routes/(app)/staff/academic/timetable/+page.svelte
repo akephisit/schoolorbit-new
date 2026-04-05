@@ -280,8 +280,22 @@
 	}
 
 	function getEntryForSlot(day: string, periodId: string): TimetableEntry | undefined {
-		return timetableEntries.find((e) => e.day_of_week === day && e.period_id === periodId);
+		return displayEntries.find((e) => e.day_of_week === day && e.period_id === periodId);
 	}
+
+	// In INSTRUCTOR view, deduplicate ACTIVITY entries that share the same slot+day+period
+	let displayEntries = $derived.by(() => {
+		if (viewMode !== 'INSTRUCTOR') return timetableEntries;
+		const seen = new Set<string>();
+		return timetableEntries.filter((e) => {
+			if (e.entry_type === 'ACTIVITY' && e.activity_slot_id) {
+				const key = `${e.activity_slot_id}:${e.day_of_week}:${e.period_id}`;
+				if (seen.has(key)) return false;
+				seen.add(key);
+			}
+			return true;
+		});
+	});
 
 	function formatTime(time?: string): string {
 		if (!time) return '';
@@ -1535,6 +1549,11 @@
 													<div class="flex items-center gap-1 truncate">
 														<Users class="w-3 h-3 shrink-0" />
 														{entry.instructor_name || '-'}
+													</div>
+												{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
+													<div class="flex items-center gap-1 truncate">
+														<BookOpen class="w-3 h-3 shrink-0" />
+														{entry.activity_type ? ACTIVITY_TYPE_LABELS[entry.activity_type] || entry.activity_type : 'กิจกรรม'}
 													</div>
 												{:else}
 													<div class="flex items-center gap-1 truncate">
