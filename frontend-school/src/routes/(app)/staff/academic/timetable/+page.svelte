@@ -1074,21 +1074,26 @@
 	});
 
 	let lastCursorSend = 0;
+	let workspaceRef: HTMLDivElement;
 	function handleMouseMove(e: MouseEvent) {
 		const now = Date.now();
-		if (now - lastCursorSend > 50 && $authStore.user) {
+		if (now - lastCursorSend > 50 && $authStore.user && workspaceRef) {
 			// 20fps cap
 			lastCursorSend = now;
 
-			// Dynamic Context
+			// Relative coords within workspace
+			const rect = workspaceRef.getBoundingClientRect();
+			const x = e.clientX - rect.left + workspaceRef.scrollLeft;
+			const y = e.clientY - rect.top + workspaceRef.scrollTop;
+
 			const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
 
 			sendTimetableEvent({
 				type: 'CursorMove',
 				payload: {
 					user_id: $authStore.user.id,
-					x: e.clientX,
-					y: e.clientY,
+					x,
+					y,
 					context: {
 						view_mode: viewMode,
 						view_id: currentViewId
@@ -1136,9 +1141,8 @@
 </svelte:head>
 
 <div
-	class="h-full flex flex-col space-y-4 relative"
+	class="h-full flex flex-col space-y-4"
 	role="application"
-	onmousemove={handleMouseMove}
 >
 	<div class="flex items-start justify-between gap-4">
 		<div class="flex flex-col gap-2">
@@ -1351,8 +1355,13 @@
 		</div>
 	</div>
 
-	<!-- Main Content Grid -->
-	<div class="grid grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[600px]">
+	<!-- Main Content Grid (Workspace = cursor canvas) -->
+	<div
+		class="grid grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[600px] relative"
+		bind:this={workspaceRef}
+		onmousemove={handleMouseMove}
+		role="application"
+	>
 		<!-- Left Sidebar: Courses -->
 		<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden">
 			<Card.Header class="py-3 px-4 border-b">
@@ -1623,6 +1632,59 @@
 			</div>
 		</Card.Root>
 	</div>
+
+		<!-- GHOST UI OVERLAY (inside workspace) -->
+		<div class="pointer-events-none absolute inset-0 z-50 overflow-hidden">
+			{#each $activeUsers as user (user.user_id)}
+				{@const cursor = $remoteCursors[user.user_id]}
+
+				{#if cursor && user.user_id !== $authStore.user?.id}
+					{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
+						<div
+							class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
+							style="transform: translate({cursor.x}px, {cursor.y}px);"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-5 w-5 drop-shadow-md"
+								fill={user.color}
+								viewBox="0 0 24 24"
+								stroke="white"
+								stroke-width="2"
+							>
+								<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+							</svg>
+
+							<div
+								class="px-2 py-0.5 rounded text-[10px] text-white font-bold whitespace-nowrap shadow-sm"
+								style="background-color: {user.color}"
+							>
+								{user.name}
+							</div>
+
+							{#if $userDrags[user.user_id]}
+								{@const drag = $userDrags[user.user_id]}
+								<div
+									class="bg-background border rounded shadow-lg p-2.5 flex items-center gap-3 mt-2 opacity-95 scale-90 origin-top-left animate-in fade-in zoom-in duration-200 min-w-[150px]"
+								>
+									<div class="p-1.5 rounded bg-muted">
+										<BookOpen class="w-4 h-4 text-primary" />
+									</div>
+									<div class="flex flex-col">
+										<span class="text-xs font-bold leading-tight line-clamp-1"
+											>{drag.info?.code || 'วิชา'}</span
+										>
+										<span class="text-[10px] text-muted-foreground line-clamp-1"
+											>{drag.info?.title || 'กำลังลาก...'}</span
+										>
+									</div>
+								</div>
+							{/if}
+						</div>
+					{/if}
+				{/if}
+			{/each}
+		</div>
 </div>
 
 <Dialog.Root bind:open={showRoomModal}>
@@ -2160,62 +2222,6 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- GHOST UI OVERLAY -->
-<div class="pointer-events-none fixed inset-0 z-[9999] overflow-hidden">
-	{#each $activeUsers as user (user.user_id)}
-		{@const cursor = $remoteCursors[user.user_id]}
-
-		{#if cursor && user.user_id !== $authStore.user?.id}
-			<!-- Context Check: Only show if in same view -->
-			{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
-				<div
-					class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
-					style="transform: translate({cursor.x}px, {cursor.y}px);"
-				>
-					<!-- Cursor Icon -->
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-5 w-5 drop-shadow-md"
-						fill={user.color}
-						viewBox="0 0 24 24"
-						stroke="white"
-						stroke-width="2"
-					>
-						<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-					</svg>
-
-					<!-- Name Tag -->
-					<div
-						class="px-2 py-0.5 rounded text-[10px] text-white font-bold whitespace-nowrap shadow-sm"
-						style="background-color: {user.color}"
-					>
-						{user.name}
-					</div>
-
-					<!-- GHOST DRAG ITEM -->
-					{#if $userDrags[user.user_id]}
-						{@const drag = $userDrags[user.user_id]}
-						<div
-							class="bg-background border rounded shadow-lg p-2.5 flex items-center gap-3 mt-2 opacity-95 scale-90 origin-top-left animate-in fade-in zoom-in duration-200 min-w-[150px]"
-						>
-							<div class="p-1.5 rounded bg-muted">
-								<BookOpen class="w-4 h-4 text-primary" />
-							</div>
-							<div class="flex flex-col">
-								<span class="text-xs font-bold leading-tight line-clamp-1"
-									>{drag.info?.code || 'วิชา'}</span
-								>
-								<span class="text-[10px] text-muted-foreground line-clamp-1"
-									>{drag.info?.title || 'กำลังลาก...'}</span
-								>
-							</div>
-						</div>
-					{/if}
-				</div>
-			{/if}
-		{/if}
-	{/each}
-</div>
 
 <style>
 	/* Custom Scrollbar */
