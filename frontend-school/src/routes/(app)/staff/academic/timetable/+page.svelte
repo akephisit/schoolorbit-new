@@ -1075,25 +1075,20 @@
 
 	let lastCursorSend = 0;
 	let workspaceRef: HTMLDivElement;
-	let workspaceClip = $state({ top: 0, right: 0, bottom: 0, left: 0 });
+	let debugCursor = $state({ x: 0, y: 0 });
 	function handleMouseMove(e: MouseEvent) {
 		const now = Date.now();
 		if (now - lastCursorSend > 50 && $authStore.user && workspaceRef) {
 			// 20fps cap
 			lastCursorSend = now;
 
-			// Send viewport coords directly — clip at render time
-			const x = e.clientX;
-			const y = e.clientY;
-
-			// Update clip rect for overlay
+			// Relative coords within workspace
 			const rect = workspaceRef.getBoundingClientRect();
-			workspaceClip = {
-				top: rect.top,
-				right: window.innerWidth - rect.right,
-				bottom: window.innerHeight - rect.bottom,
-				left: rect.left
-			};
+			const x = e.clientX - rect.left;
+			const y = e.clientY - rect.top;
+
+			// Debug: show own cursor position in overlay to verify alignment
+			debugCursor = { x, y };
 
 			const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
 
@@ -1642,8 +1637,10 @@
 		</Card.Root>
 	</div>
 
-		<!-- GHOST UI OVERLAY (fixed viewport coords, clipped to workspace) -->
-		<div class="pointer-events-none fixed inset-0 z-[9999]" style="clip-path: inset({workspaceClip.top}px {workspaceClip.right}px {workspaceClip.bottom}px {workspaceClip.left}px)">
+		<!-- GHOST UI OVERLAY (relative coords, absolute inside workspace) -->
+		<div class="pointer-events-none absolute inset-0 z-50 overflow-hidden">
+			<!-- Debug: red dot follows own mouse to verify position -->
+			<div class="absolute w-3 h-3 bg-red-500 rounded-full -translate-x-1/2 -translate-y-1/2 opacity-50" style="left: {debugCursor.x}px; top: {debugCursor.y}px;"></div>
 			{#each $activeUsers as user (user.user_id)}
 				{@const cursor = $remoteCursors[user.user_id]}
 
