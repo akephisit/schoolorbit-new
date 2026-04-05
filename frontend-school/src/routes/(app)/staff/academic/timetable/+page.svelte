@@ -924,8 +924,15 @@
 			if (validSet) {
 				list = list.filter((c) => validSet.has(c.id));
 			} else {
-				// Pending or Failed -> Empty list
 				list = [];
+			}
+		}
+
+		// SLOT mode: filter by slot's allowed_grade_level_ids
+		if (batchMode === 'SLOT' && batchSlotId) {
+			const slot = activitySlots.find((s) => s.id === batchSlotId);
+			if (slot?.allowed_grade_level_ids && slot.allowed_grade_level_ids.length > 0) {
+				list = list.filter((c) => slot.allowed_grade_level_ids!.includes(c.grade_level_id));
 			}
 		}
 
@@ -2037,7 +2044,13 @@
 
 			<!-- Classrooms Selection -->
 			<div class="border-t pt-4 mt-2">
-				{#if !(batchMode === 'COURSE' && batchSubjectId)}
+				{#if batchMode === 'SLOT' && batchSlotId && activitySlots.find((s) => s.id === batchSlotId)?.allowed_grade_level_ids?.length}
+					<div
+						class="flex items-center gap-2 mb-3 px-3 py-2 bg-emerald-50/50 rounded border border-emerald-100 text-xs text-emerald-700"
+					>
+						<span class="font-bold">Info:</span> แสดงเฉพาะห้องเรียนตามระดับชั้นที่กำหนดใน Activity Slot
+					</div>
+				{:else if !(batchMode === 'COURSE' && batchSubjectId)}
 					<div class="flex items-center gap-2 mb-3">
 						<Label.Root>กรองระดับชั้น:</Label.Root>
 						<select
