@@ -1082,11 +1082,11 @@
 			// 20fps cap
 			lastCursorSend = now;
 
-			// Send workspace-relative coords (works across different screen sizes)
+			// Send percentage coords (0-1) — works across any screen size
 			const rect = workspaceRef.getBoundingClientRect();
 			wsRect = rect;
-			const x = e.clientX - rect.left;
-			const y = e.clientY - rect.top;
+			const x = (e.clientX - rect.left) / rect.width;
+			const y = (e.clientY - rect.top) / rect.height;
 
 			const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
 
@@ -1647,7 +1647,7 @@
 					{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
 						<div
 							class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
-							style="transform: translate({cursor.x + (wsRect?.left ?? 0)}px, {cursor.y + (wsRect?.top ?? 0)}px);"
+							style="transform: translate({cursor.x * (wsRect?.width ?? 0) + (wsRect?.left ?? 0)}px, {cursor.y * (wsRect?.height ?? 0) + (wsRect?.top ?? 0)}px);"
 						>
 							<svg
 								xmlns="http://www.w3.org/2000/svg"
