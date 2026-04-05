@@ -1499,7 +1499,9 @@
 									{#if entry}
 										<!-- Timetable Entry Card -->
 										<div
-											class="absolute inset-1 border rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group cursor-grab active:cursor-grabbing {lockedBy
+											class="absolute inset-1 border rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !== 'COURSE'
+												? 'cursor-default'
+												: 'cursor-grab active:cursor-grabbing'} {lockedBy
 												? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
 													lockedBy.color
 												: ''}"
@@ -1514,7 +1516,7 @@
 													: entry.subject_code || entry.title || '',
 												entry.entry_type
 											)};"
-											draggable={!lockedBy}
+											draggable={!lockedBy && entry.entry_type === 'COURSE'}
 											ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
 											ondragend={handleDragEnd}
 											role="button"
