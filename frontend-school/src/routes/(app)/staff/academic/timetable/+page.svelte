@@ -20,7 +20,10 @@
 		type Classroom,
 		getAcademicStructure,
 		type AcademicYear,
-		type Semester
+		type Semester,
+		listActivitySlots,
+		type ActivitySlot,
+		ACTIVITY_TYPE_LABELS
 	} from '$lib/api/academic';
 	import {
 		lookupRooms,
@@ -812,10 +815,29 @@
 	let batchRoomId = $state('none');
 
 	// Batch Mode State
-	let batchMode = $state<'TEXT' | 'COURSE'>('TEXT');
+	let batchMode = $state<'TEXT' | 'COURSE' | 'SLOT'>('TEXT');
 	let subjectOptions = $state<LookupItem[]>([]);
 	let batchSubjectId = $state('');
 	let loadingSubjects = $state(false);
+
+	// Activity Slot mode
+	let activitySlots = $state<ActivitySlot[]>([]);
+	let batchSlotId = $state('');
+	let loadingSlots = $state(false);
+
+	async function ensureActivitySlotsLoaded() {
+		if (activitySlots.length > 0 || !selectedSemesterId) return;
+		loadingSlots = true;
+		try {
+			const res = await listActivitySlots({ semester_id: selectedSemesterId });
+			activitySlots = res.data;
+		} catch (e) {
+			console.error(e);
+			toast.error('โหลดข้อมูล Activity Slot ไม่สำเร็���');
+		} finally {
+			loadingSlots = false;
+		}
+	}
 
 	async function ensureSubjectsLoaded() {
 		if (subjectOptions.length > 0) return;
@@ -944,6 +966,10 @@
 			toast.error('กรุณาเลือกรายวิชา');
 			return;
 		}
+		if (batchMode === 'SLOT' && !batchSlotId) {
+			toast.error('กรุณาเลือก Activity Slot');
+			return;
+		}
 
 		try {
 			submitting = true;
@@ -951,14 +977,18 @@
 			let titleToSend = batchTitle;
 			let entryTypeToSend = batchType;
 			let subjectIdToSend = undefined;
+			let slotIdToSend: string | undefined = undefined;
 
 			if (batchMode === 'COURSE') {
 				const subj = subjectOptions.find((s) => s.id === batchSubjectId);
 				titleToSend = subj?.name || '';
-				// We send ACTIVITY first, backend might auto-convert to COURSE if it finds a mapping.
-				// Or we can send ACTIVITY and let backend handle it as per our new logic.
 				entryTypeToSend = 'ACTIVITY';
 				subjectIdToSend = batchSubjectId;
+			} else if (batchMode === 'SLOT') {
+				const slot = activitySlots.find((s) => s.id === batchSlotId);
+				titleToSend = slot?.name || '';
+				entryTypeToSend = 'ACTIVITY';
+				slotIdToSend = batchSlotId;
 			}
 
 			await createBatchTimetableEntries({
@@ -970,7 +1000,8 @@
 				title: titleToSend,
 				room_id: batchRoomId === 'none' ? undefined : batchRoomId,
 				subject_id: subjectIdToSend,
-				force: batchForce
+				force: batchForce,
+				activity_slot_id: slotIdToSend
 			});
 
 			toast.success('บันทึกกิจกรรมเรียบร้อย');
@@ -979,6 +1010,7 @@
 			// Reset fields
 			batchTitle = '';
 			batchSubjectId = '';
+			batchSlotId = '';
 
 			// Reload if current view is affected
 			if (
@@ -1769,6 +1801,16 @@
 					>
 						เลือกจากรายวิชา
 					</Button>
+					<Button
+						variant={batchMode === 'SLOT' ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => {
+							batchMode = 'SLOT';
+							ensureActivitySlotsLoaded();
+						}}
+					>
+						จากกิจกรรมพัฒนาผู้เรียน
+					</Button>
 				</div>
 			</div>
 
@@ -1809,6 +1851,55 @@
 								<Select.Item value="ACADEMIC">วิชาการ</Select.Item>
 							</Select.Content>
 						</Select.Root>
+					</div>
+				</div>
+			{:else if batchMode === 'SLOT'}
+				<div class="grid grid-cols-4 items-center gap-4">
+					<Label.Root class="text-right">กิจกรรม</Label.Root>
+					<div class="col-span-3">
+						{#if loadingSlots}
+							<div class="text-sm text-muted-foreground flex items-center gap-2">
+								<Loader2 class="w-3 h-3 animate-spin" /> กำลังโหลด...
+							</div>
+						{:else if activitySlots.length === 0}
+							<p class="text-sm text-muted-foreground">ไม่พบ Activity Slot ในภาคเรียนนี้</p>
+						{:else}
+							<Select.Root type="single" bind:value={batchSlotId}>
+								<Select.Trigger class="w-full h-auto py-2">
+									<div class="flex flex-col items-start gap-0.5 text-left overflow-hidden">
+										<span class="truncate block w-full">
+											{activitySlots.find((s) => s.id === batchSlotId)?.name || 'เลือกกิจกรรม'}
+										</span>
+										{#if batchSlotId}
+											{@const slot = activitySlots.find((s) => s.id === batchSlotId)}
+											{#if slot}
+												<span class="text-xs text-muted-foreground">
+													{ACTIVITY_TYPE_LABELS[slot.activity_type] || slot.activity_type}
+												</span>
+											{/if}
+										{/if}
+									</div>
+								</Select.Trigger>
+								<Select.Content class="max-h-[300px] w-[350px] overflow-y-auto">
+									{#each activitySlots as slot}
+										<Select.Item
+											value={slot.id}
+											label={slot.name}
+											class="flex flex-col items-start py-2 border-b last:border-0"
+										>
+											<span class="font-medium text-sm">{slot.name}</span>
+											<span class="text-xs text-muted-foreground">
+												{ACTIVITY_TYPE_LABELS[slot.activity_type] || slot.activity_type}
+											</span>
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{/if}
+						<p class="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+							*เลือก Activity Slot จากระบบกิจกรรมพัฒนาผู้เรียน<br />
+							นักเรียนจะกดดูกิจกรรมที่ตัวเองลงทะเบียนได้จากตารางเรียน
+						</p>
 					</div>
 				</div>
 			{:else}

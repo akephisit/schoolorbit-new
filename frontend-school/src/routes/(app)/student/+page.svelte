@@ -110,7 +110,7 @@
 					<span>ข้อมูลส่วนตัว</span>
 				</Button>
 
-				<Button variant="outline" class="h-auto py-4 flex-col gap-2" disabled>
+				<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/student/timetable">
 					<BookOpen class="w-6 h-6" />
 					<span>ตารางเรียน</span>
 				</Button>

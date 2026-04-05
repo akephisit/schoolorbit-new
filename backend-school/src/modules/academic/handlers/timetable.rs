@@ -240,7 +240,9 @@ pub async fn list_timetable_entries(
             ap.start_time,
             ap.end_time,
             ap.start_time,
-            ap.end_time
+            ap.end_time,
+            asl.name AS activity_slot_name,
+            asl.activity_type AS activity_type
         FROM academic_timetable_entries te
         LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
         LEFT JOIN subjects s ON cc.subject_id = s.id
@@ -248,6 +250,7 @@ pub async fn list_timetable_entries(
         JOIN academic_periods ap ON te.period_id = ap.id
         LEFT JOIN users u ON cc.primary_instructor_id = u.id
         LEFT JOIN rooms r ON te.room_id = r.id
+        LEFT JOIN activity_slots asl ON te.activity_slot_id = asl.id
         WHERE te.is_active = true
         "#
     );
@@ -369,7 +372,8 @@ pub async fn create_timetable_entry(
         RETURNING *, NULL::TEXT AS subject_code, NULL::TEXT AS subject_name_th,
                   NULL::TEXT AS instructor_name, NULL::TEXT AS classroom_name,
                   NULL::TEXT AS room_code, NULL::TEXT AS period_name,
-                  NULL::TIME AS start_time, NULL::TIME AS end_time
+                  NULL::TIME AS start_time, NULL::TIME AS end_time,
+                  NULL::TEXT AS activity_slot_name, NULL::TEXT AS activity_type
         "#
     )
     .bind(Uuid::new_v4())
@@ -592,7 +596,8 @@ pub async fn update_timetable_entry(
         r#"
         SELECT te.*, NULL::TEXT as subject_code, NULL::TEXT as subject_name_th, NULL::TEXT as instructor_name,
                NULL::TEXT as classroom_name, NULL::TEXT as room_code, NULL::TEXT as period_name,
-               NULL::TIME as start_time, NULL::TIME as end_time
+               NULL::TIME as start_time, NULL::TIME as end_time,
+               NULL::TEXT as activity_slot_name, NULL::TEXT as activity_type
         FROM academic_timetable_entries te WHERE id = $1
         "#
     )
@@ -791,11 +796,11 @@ pub async fn create_batch_timetable_entries(
         let result = sqlx::query(
             r#"
             INSERT INTO academic_timetable_entries (
-                id, classroom_id, academic_semester_id, day_of_week, period_id, room_id, 
+                id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
                 entry_type, title, is_active, created_by, updated_by,
-                classroom_course_id, note
+                classroom_course_id, note, activity_slot_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9, $10, $11, $12)
             ON CONFLICT DO NOTHING
             "#
         )
@@ -810,6 +815,7 @@ pub async fn create_batch_timetable_entries(
         .bind(user_id)
         .bind(classroom_course_id)
         .bind(&payload.note)
+        .bind(payload.activity_slot_id)
         .execute(&mut *tx)
         .await;
 
@@ -828,8 +834,110 @@ pub async fn create_batch_timetable_entries(
     };
     let _ = state.websocket_manager.get_or_create_room(subdomain, payload.academic_semester_id).send(event);
 
-    Ok(Json(json!({ 
-        "success": true, 
-        "message": "Batch entries created successfully" 
+    Ok(Json(json!({
+        "success": true,
+        "message": "Batch entries created successfully"
     })).into_response())
+}
+
+/// GET /api/academic/timetable/{id}/my-activity
+/// Returns the activity group the current user is enrolled in for a given timetable entry's slot
+pub async fn get_my_activity_for_entry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(entry_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await
+        .map_err(|_| AppError::AuthError("Not authenticated".to_string()))?;
+
+    // 1. Get the timetable entry's activity_slot_id
+    let slot_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT activity_slot_id FROM academic_timetable_entries WHERE id = $1"
+    )
+    .bind(entry_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Query failed".to_string()))?
+    .flatten();
+
+    let slot_id = match slot_id {
+        Some(id) => id,
+        None => return Ok(Json(json!({ "success": true, "data": null })).into_response()),
+    };
+
+    // 2. Find the activity group the user is enrolled in within this slot
+    let group = sqlx::query_as::<_, (Uuid, String, Option<i32>, Option<String>)>(
+        r#"
+        SELECT ag.id, ag.name, ag.max_capacity,
+               (SELECT concat(u.first_name, ' ', u.last_name)
+                FROM activity_group_instructors agi
+                JOIN users u ON agi.user_id = u.id
+                WHERE agi.activity_group_id = ag.id
+                LIMIT 1) AS instructor_name
+        FROM activity_group_members agm
+        JOIN activity_groups ag ON agm.activity_group_id = ag.id
+        WHERE agm.student_id = $1 AND ag.slot_id = $2 AND ag.is_active = true
+        LIMIT 1
+        "#
+    )
+    .bind(user_id)
+    .bind(slot_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to fetch activity for entry: {}", e);
+        AppError::InternalServerError("Query failed".to_string())
+    })?;
+
+    match group {
+        Some((id, name, max_capacity, instructor_name)) => {
+            // Get member count
+            let member_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM activity_group_members WHERE activity_group_id = $1"
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0);
+
+            // Get all instructors
+            let instructors: Vec<(Uuid, String)> = sqlx::query_as(
+                r#"
+                SELECT u.id, concat(u.first_name, ' ', u.last_name) AS name
+                FROM activity_group_instructors agi
+                JOIN users u ON agi.user_id = u.id
+                WHERE agi.activity_group_id = $1
+                "#
+            )
+            .bind(id)
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default();
+
+            Ok(Json(json!({
+                "success": true,
+                "data": {
+                    "enrolled": true,
+                    "group_id": id,
+                    "group_name": name,
+                    "max_capacity": max_capacity,
+                    "member_count": member_count,
+                    "instructor_name": instructor_name,
+                    "instructors": instructors.iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>(),
+                    "slot_id": slot_id
+                }
+            })).into_response())
+        }
+        None => {
+            Ok(Json(json!({
+                "success": true,
+                "data": {
+                    "enrolled": false,
+                    "slot_id": slot_id
+                }
+            })).into_response())
+        }
+    }
 }

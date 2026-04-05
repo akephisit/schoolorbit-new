@@ -53,6 +53,9 @@ export interface TimetableEntry {
     classroom_id: string;
     academic_semester_id: string;
 
+    // Activity slot link
+    activity_slot_id?: string;
+
     // Joined fields
     subject_code?: string;
     subject_name_th?: string;
@@ -63,6 +66,8 @@ export interface TimetableEntry {
     period_name?: string;
     start_time?: string;
     end_time?: string;
+    activity_slot_name?: string;
+    activity_type?: string;
 }
 
 export interface CreatePeriodRequest {
@@ -94,6 +99,7 @@ export interface CreateBatchTimetableEntriesRequest {
     note?: string;
     subject_id?: string;
     force?: boolean;
+    activity_slot_id?: string;
 }
 
 export interface ConflictInfo {
@@ -241,4 +247,19 @@ export const updateTimetableEntry = async (id: string, data: UpdateTimetableEntr
 
 export const deleteTimetableEntry = async (id: string) => {
     return await fetchApi(`/api/academic/timetable/${id}`, { method: 'DELETE' });
+};
+
+export interface MyActivityForEntry {
+    enrolled: boolean;
+    slot_id: string;
+    group_id?: string;
+    group_name?: string;
+    max_capacity?: number;
+    member_count?: number;
+    instructor_name?: string;
+    instructors?: { id: string; name: string }[];
+}
+
+export const getMyActivityForEntry = async (entryId: string): Promise<{ data: MyActivityForEntry | null }> => {
+    return await fetchApi(`/api/academic/timetable/${entryId}/my-activity`);
 };

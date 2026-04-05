@@ -70,6 +70,7 @@ pub struct TimetableEntry {
     pub title: Option<String>,
     pub classroom_id: Uuid,
     pub academic_semester_id: Uuid,
+    pub activity_slot_id: Option<Uuid>,
 
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -98,6 +99,12 @@ pub struct TimetableEntry {
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub period_name: Option<String>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity_slot_name: Option<String>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity_type: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_time: Option<NaiveTime>,
@@ -136,6 +143,7 @@ pub struct CreateBatchTimetableEntriesRequest {
     pub note: Option<String>,
     pub subject_id: Option<Uuid>,
     pub force: Option<bool>,
+    pub activity_slot_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
