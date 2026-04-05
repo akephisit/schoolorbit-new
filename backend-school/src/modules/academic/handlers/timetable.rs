@@ -270,7 +270,9 @@ pub async fn list_timetable_entries(
 
     if let Some(_) = query.instructor_id {
         idx += 1;
-        sql.push_str(&format!(" AND cc.primary_instructor_id = ${idx}"));
+        sql.push_str(&format!(
+            " AND (cc.primary_instructor_id = ${idx} OR te.activity_slot_id IN (SELECT activity_slot_id FROM activity_slot_instructors WHERE user_id = ${idx}))"
+        ));
     }
 
     if let Some(_) = query.room_id {
