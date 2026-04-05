@@ -91,7 +91,7 @@ export interface CreateTimetableEntryRequest {
 export interface CreateBatchTimetableEntriesRequest {
     classroom_ids: string[];
     day_of_week: string;
-    period_id: string;
+    period_ids: string[];
     academic_semester_id: string;
     entry_type: 'ACTIVITY' | 'BREAK' | 'HOMEROOM';
     title: string;

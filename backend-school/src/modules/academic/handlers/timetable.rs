@@ -717,7 +717,7 @@ pub async fn create_batch_timetable_entries(
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
     let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    for classroom_id in payload.classroom_ids {
+    for classroom_id in &payload.classroom_ids {
         let mut entry_type = payload.entry_type.clone();
         let mut classroom_course_id: Option<Uuid> = None;
         let mut title = payload.title.clone();
@@ -725,7 +725,7 @@ pub async fn create_batch_timetable_entries(
         // If subject_id is provided, try to find matching course mapping for this classroom
         if let Some(subject_id) = payload.subject_id {
             let course_info: Option<(Uuid, String)> = sqlx::query_as(
-               "SELECT cc.id, s.name_th FROM classroom_courses cc 
+               "SELECT cc.id, s.name_th FROM classroom_courses cc
                 JOIN subjects s ON cc.subject_id = s.id
                 WHERE cc.classroom_id = $1 AND cc.subject_id = $2"
             )
@@ -738,92 +738,91 @@ pub async fn create_batch_timetable_entries(
             if let Some((cc_id, s_name)) = course_info {
                 classroom_course_id = Some(cc_id);
                 entry_type = "COURSE".to_string();
-                // Use subject name as title just in case (though frontend might ignore it for COURSE type)
                 title = s_name;
             }
         }
 
-        // FORCE OVERRIDE LOGIC
-        if payload.force.unwrap_or(false) {
-            // 1. Clear slot for this classroom
-            let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE classroom_id = $1 AND day_of_week = $2 AND period_id = $3")
-                .bind(classroom_id)
-                .bind(&payload.day_of_week)
-                .bind(payload.period_id)
-                .execute(&mut *tx)
-                .await;
+        for period_id in &payload.period_ids {
+            // FORCE OVERRIDE LOGIC
+            if payload.force.unwrap_or(false) {
+                // 1. Clear slot for this classroom
+                let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE classroom_id = $1 AND day_of_week = $2 AND period_id = $3")
+                    .bind(classroom_id)
+                    .bind(&payload.day_of_week)
+                    .bind(period_id)
+                    .execute(&mut *tx)
+                    .await;
 
-            // 2. Clear slot for target room (if specified)
-            if let Some(rid) = payload.room_id {
-                 let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE room_id = $1 AND day_of_week = $2 AND period_id = $3")
-                .bind(rid)
-                .bind(&payload.day_of_week)
-                .bind(payload.period_id)
-                .execute(&mut *tx)
-                .await;
+                // 2. Clear slot for target room (if specified)
+                if let Some(rid) = payload.room_id {
+                     let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE room_id = $1 AND day_of_week = $2 AND period_id = $3")
+                    .bind(rid)
+                    .bind(&payload.day_of_week)
+                    .bind(period_id)
+                    .execute(&mut *tx)
+                    .await;
+                }
+
+                // 3. Clear slot for instructor (if course mode)
+                if let Some(cc_id) = classroom_course_id {
+                     let instructor_id: Option<Uuid> = sqlx::query_scalar(
+                         "SELECT primary_instructor_id FROM classroom_courses WHERE id = $1"
+                     )
+                     .bind(cc_id)
+                     .fetch_optional(&mut *tx)
+                     .await
+                     .unwrap_or(None);
+
+                     if let Some(inst_id) = instructor_id {
+                          let _ = sqlx::query(r#"
+                            DELETE FROM academic_timetable_entries
+                            WHERE id IN (
+                                SELECT te.id FROM academic_timetable_entries te
+                                JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+                                WHERE cc.primary_instructor_id = $1
+                                  AND te.day_of_week = $2
+                                  AND te.period_id = $3
+                            )
+                          "#)
+                          .bind(inst_id)
+                          .bind(&payload.day_of_week)
+                          .bind(period_id)
+                          .execute(&mut *tx)
+                          .await;
+                     }
+                }
             }
 
-            // 3. Clear slot for instructor (if course mode)
-            if let Some(cc_id) = classroom_course_id {
-                 // We need to fetch instructor ID. Since we are inside a transaction, we can query.
-                 let instructor_id: Option<Uuid> = sqlx::query_scalar(
-                     "SELECT primary_instructor_id FROM classroom_courses WHERE id = $1"
-                 )
-                 .bind(cc_id)
-                 .fetch_optional(&mut *tx)
-                 .await
-                 .unwrap_or(None);
-
-                 if let Some(inst_id) = instructor_id {
-                      // Remove any entry this instructor is teaching at this time
-                      let _ = sqlx::query(r#"
-                        DELETE FROM academic_timetable_entries 
-                        WHERE id IN (
-                            SELECT te.id FROM academic_timetable_entries te
-                            JOIN classroom_courses cc ON te.classroom_course_id = cc.id
-                            WHERE cc.primary_instructor_id = $1
-                              AND te.day_of_week = $2
-                              AND te.period_id = $3
-                        )
-                      "#)
-                      .bind(inst_id)
-                      .bind(&payload.day_of_week)
-                      .bind(payload.period_id)
-                      .execute(&mut *tx)
-                      .await;
-                 }
-            }
-        }
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO academic_timetable_entries (
-                id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
-                entry_type, title, is_active, created_by, updated_by,
-                classroom_course_id, note, activity_slot_id
+            let result = sqlx::query(
+                r#"
+                INSERT INTO academic_timetable_entries (
+                    id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
+                    entry_type, title, is_active, created_by, updated_by,
+                    classroom_course_id, note, activity_slot_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9, $10, $11, $12)
+                ON CONFLICT DO NOTHING
+                "#
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9, $10, $11, $12)
-            ON CONFLICT DO NOTHING
-            "#
-        )
-        .bind(Uuid::new_v4())
-        .bind(classroom_id)
-        .bind(payload.academic_semester_id)
-        .bind(&payload.day_of_week)
-        .bind(payload.period_id)
-        .bind(payload.room_id)
-        .bind(&entry_type)
-        .bind(&title)
-        .bind(user_id)
-        .bind(classroom_course_id)
-        .bind(&payload.note)
-        .bind(payload.activity_slot_id)
-        .execute(&mut *tx)
-        .await;
+            .bind(Uuid::new_v4())
+            .bind(classroom_id)
+            .bind(payload.academic_semester_id)
+            .bind(&payload.day_of_week)
+            .bind(period_id)
+            .bind(payload.room_id)
+            .bind(&entry_type)
+            .bind(&title)
+            .bind(user_id)
+            .bind(classroom_course_id)
+            .bind(&payload.note)
+            .bind(payload.activity_slot_id)
+            .execute(&mut *tx)
+            .await;
 
-        if let Err(e) = result {
-             eprintln!("Failed to batch insert for classroom {}: {}", classroom_id, e);
-             return Err(AppError::InternalServerError("Failed to batch create entries".to_string()));
+            if let Err(e) = result {
+                 eprintln!("Failed to batch insert for classroom {}: {}", classroom_id, e);
+                 return Err(AppError::InternalServerError("Failed to batch create entries".to_string()));
+            }
         }
     }
 

@@ -135,7 +135,7 @@ pub struct UpdateTimetableEntryRequest {
 pub struct CreateBatchTimetableEntriesRequest {
     pub classroom_ids: Vec<Uuid>,
     pub day_of_week: String,
-    pub period_id: Uuid,
+    pub period_ids: Vec<Uuid>,
     pub academic_semester_id: Uuid,
     pub entry_type: String, // ACTIVITY, BREAK, HOMEROOM
     pub title: String,

@@ -823,7 +823,7 @@
 	let showBatchModal = $state(false);
 	let batchClassrooms = $state<string[]>([]);
 	let batchDay = $state('MON');
-	let batchPeriodId = $state('');
+	let batchPeriodIds = $state<string[]>([]);
 	let batchType = $state('ACTIVITY');
 	let batchTitle = $state('');
 	let batchRoomId = $state('none');
@@ -966,8 +966,8 @@
 			toast.error('กรุณาเลือกห้องเรียนอย่างน้อย 1 ห้อง');
 			return;
 		}
-		if (!batchPeriodId) {
-			toast.error('กรุณาเลือกคาบเวลา');
+		if (batchPeriodIds.length === 0) {
+			toast.error('กรุณาเลือกคาบเวลาอย่างน้อย 1 คาบ');
 			return;
 		}
 
@@ -1008,7 +1008,7 @@
 			await createBatchTimetableEntries({
 				classroom_ids: batchClassrooms,
 				day_of_week: batchDay,
-				period_id: batchPeriodId,
+				period_ids: batchPeriodIds,
 				academic_semester_id: selectedSemesterId,
 				entry_type: entryTypeToSend as any,
 				title: titleToSend,
@@ -1971,10 +1971,10 @@
 			{/if}
 
 			<div class="grid grid-cols-4 items-center gap-4">
-				<Label.Root class="text-right">วัน/เวลา</Label.Root>
-				<div class="col-span-3 flex gap-2">
+				<Label.Root class="text-right">วัน</Label.Root>
+				<div class="col-span-3">
 					<Select.Root type="single" bind:value={batchDay}>
-						<Select.Trigger class="w-[120px]">
+						<Select.Trigger class="w-full">
 							{DAYS.find((d) => d.value === batchDay)?.label}
 						</Select.Trigger>
 						<Select.Content>
@@ -1984,22 +1984,33 @@
 						</Select.Content>
 					</Select.Root>
 
-					<Select.Root type="single" bind:value={batchPeriodId}>
-						<Select.Trigger class="flex-1">
-							{periods.find((p) => p.id === batchPeriodId)
-								? `คาบ ${periods.find((p) => p.id === batchPeriodId)?.order_index} (${formatTime(periods.find((p) => p.id === batchPeriodId)?.start_time)})`
-								: 'เลือกคาบ'}
-						</Select.Trigger>
-						<Select.Content class="max-h-[200px] overflow-y-auto">
-							{#each periods as period}
-								<Select.Item value={period.id}>
-									คาบ {period.order_index} ({formatTime(period.start_time)}-{formatTime(
-										period.end_time
-									)})
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-4 items-start gap-4">
+				<Label.Root class="text-right mt-1">คาบ ({batchPeriodIds.length})</Label.Root>
+				<div class="col-span-3 border rounded-md max-h-[160px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-1.5">
+					{#each periods as period}
+						<label
+							class="flex items-center gap-2 p-1.5 rounded border bg-background cursor-pointer hover:bg-muted/50 text-sm {batchPeriodIds.includes(period.id) ? 'border-primary bg-primary/5' : ''}"
+						>
+							<input
+								type="checkbox"
+								checked={batchPeriodIds.includes(period.id)}
+								onchange={() => {
+									if (batchPeriodIds.includes(period.id)) {
+										batchPeriodIds = batchPeriodIds.filter((id) => id !== period.id);
+									} else {
+										batchPeriodIds = [...batchPeriodIds, period.id];
+									}
+								}}
+								class="rounded"
+							/>
+							<span class="truncate">
+								{period.name} ({formatTime(period.start_time)}-{formatTime(period.end_time)})
+							</span>
+						</label>
+					{/each}
 				</div>
 			</div>
 
