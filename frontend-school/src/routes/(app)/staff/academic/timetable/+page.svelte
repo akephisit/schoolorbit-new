@@ -1081,10 +1081,10 @@
 			// 20fps cap
 			lastCursorSend = now;
 
-			// Relative coords within workspace
+			// Relative coords within workspace (no scroll offset — scroll is on <main>, not workspace)
 			const rect = workspaceRef.getBoundingClientRect();
-			const x = e.clientX - rect.left + workspaceRef.scrollLeft;
-			const y = e.clientY - rect.top + workspaceRef.scrollTop;
+			const x = e.clientX - rect.left;
+			const y = e.clientY - rect.top;
 
 			const currentViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
 
