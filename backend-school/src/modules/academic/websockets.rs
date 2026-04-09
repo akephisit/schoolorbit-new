@@ -72,8 +72,16 @@ pub enum TimetableEvent {
         info: Option<DragInfo>
     },
     
-    DragEnd { 
-        user_id: Uuid 
+    DragEnd {
+        user_id: Uuid
+    },
+
+    DragMove {
+        user_id: Uuid,
+        x: f64,
+        y: f64,
+        target_day: Option<String>,
+        target_period_id: Option<String>,
     },
 }
 
@@ -308,8 +316,18 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
                     TimetableEvent::DragEnd { .. } => {
                         // Clear Drag
                         state.websocket_manager.update_drag(school_key.clone(), params.semester_id, params.user_id, None);
-                        
+
                         valid_event = Some(TimetableEvent::DragEnd { user_id: params.user_id });
+                    },
+                    TimetableEvent::DragMove { x, y, target_day, target_period_id, .. } => {
+                        // Relay drag position — no state storage needed (ephemeral)
+                        valid_event = Some(TimetableEvent::DragMove {
+                            user_id: params.user_id,
+                            x: *x,
+                            y: *y,
+                            target_day: target_day.clone(),
+                            target_period_id: target_period_id.clone(),
+                        });
                     },
                     TimetableEvent::TableRefresh { .. } => {
                         valid_event = Some(TimetableEvent::TableRefresh { user_id: params.user_id });

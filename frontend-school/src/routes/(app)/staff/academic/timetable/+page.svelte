@@ -70,6 +70,7 @@
 		sendTimetableEvent,
 		activeUsers,
 		remoteCursors,
+		dragPositions,
 		userDrags,
 		refreshTrigger,
 		isConnected
@@ -528,6 +529,7 @@
 		}
 		draggedCourse = null;
 		draggedEntryId = null;
+		currentDragTarget = null;
 		occupiedSlots = new Set();
 	}
 
@@ -1188,6 +1190,44 @@
 		}
 	}
 
+	let lastDragSend = 0;
+	let currentDragTarget = $state<{ day: string; periodId: string } | null>(null);
+
+	function handleDragMoveOnGrid(e: DragEvent) {
+		// HTML5 drag event fires during drag — use it to send cursor position
+		if (!draggedCourse || !$authStore.user || !workspaceRef) return;
+		// Chrome sometimes fires drag with clientX=0,clientY=0 — ignore those
+		if (e.clientX === 0 && e.clientY === 0) return;
+
+		const now = Date.now();
+		if (now - lastDragSend < 50) return; // throttle 20fps
+		lastDragSend = now;
+
+		const rect = workspaceRef.getBoundingClientRect();
+		wsRect = rect;
+		const x = (e.clientX - rect.left) / rect.width;
+		const y = (e.clientY - rect.top) / rect.height;
+
+		// Find target cell from element under cursor
+		const el = document.elementFromPoint(e.clientX, e.clientY);
+		const cell = el?.closest('[data-day][data-period]') as HTMLElement | null;
+		const targetDay = cell?.dataset.day;
+		const targetPeriod = cell?.dataset.period;
+
+		currentDragTarget = targetDay && targetPeriod ? { day: targetDay, periodId: targetPeriod } : null;
+
+		sendTimetableEvent({
+			type: 'DragMove',
+			payload: {
+				user_id: $authStore.user.id,
+				x,
+				y,
+				target_day: targetDay,
+				target_period_id: targetPeriod
+			}
+		});
+	}
+
 	// Auto Refresh Listener
 	$effect(() => {
 		if ($refreshTrigger > 0) {
@@ -1213,6 +1253,17 @@
 				// Lock list item if someone is dragging this course
 				if (drag.course_id === courseId && !drag.entry_id)
 					return $activeUsers.find((u) => u.user_id === userId);
+			}
+		}
+		return null;
+	}
+
+	function getRemoteDragHover(day: string, periodId: string) {
+		for (const [userId, pos] of Object.entries($dragPositions)) {
+			if (pos.target_day === day && pos.target_period_id === periodId) {
+				const user = $activeUsers.find((u) => u.user_id === userId);
+				const drag = $userDrags[userId];
+				if (user && drag) return { user, drag };
 			}
 		}
 		return null;
@@ -1445,6 +1496,7 @@
 		class="grid grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[600px] relative"
 		bind:this={workspaceRef}
 		onmousemove={handleMouseMove}
+		ondrag={handleDragMoveOnGrid}
 		role="application"
 	>
 		<!-- Left Sidebar: Courses -->
@@ -1655,6 +1707,7 @@
 								{@const isOccupied = isSlotOccupiedByInstructor(day.value, period.id)}
 								{@const isUnavailableRoom = unavailableRooms.has(period.id)}
 								{@const lockedBy = entry ? getDragOwner(entry.id) : null}
+								{@const remoteDrag = !entry ? getRemoteDragHover(day.value, period.id) : null}
 
 								<!-- Drop Zone -->
 								<div
@@ -1662,11 +1715,32 @@
 										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
 										: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied
 										? 'bg-blue-50/30'
-										: ''}"
+										: ''} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
+									style={remoteDrag ? `--tw-ring-color: ${remoteDrag.user.color}40; background-color: ${remoteDrag.user.color}10;` : ''}
+									data-day={day.value}
+									data-period={period.id}
 									ondragover={handleDragOver}
 									ondrop={(e) => handleDrop(e, day.value, period.id)}
 									role="application"
 								>
+									{#if remoteDrag}
+										<!-- Remote user drag ghost preview -->
+										<div class="absolute inset-1 rounded border-2 border-dashed p-1.5 flex flex-col justify-center items-center gap-0.5 animate-in fade-in duration-200 pointer-events-none"
+											style="border-color: {remoteDrag.user.color}80; background-color: {remoteDrag.user.color}15;"
+										>
+											<span class="text-[10px] font-bold truncate max-w-full" style="color: {remoteDrag.user.color}">
+												{remoteDrag.drag.info?.code || 'วิชา'}
+											</span>
+											<span class="text-[9px] text-muted-foreground truncate max-w-full">
+												{remoteDrag.drag.info?.title || ''}
+											</span>
+											<span class="text-[8px] font-medium px-1.5 py-0.5 rounded-full text-white mt-0.5"
+												style="background-color: {remoteDrag.user.color};"
+											>
+												{remoteDrag.user.name}
+											</span>
+										</div>
+									{/if}
 									{#if entry}
 										<!-- Timetable Entry Card -->
 										<div

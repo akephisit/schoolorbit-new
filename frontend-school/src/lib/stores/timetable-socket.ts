@@ -28,13 +28,16 @@ export type TimetableEvent =
     | { type: 'CursorMove', payload: { user_id: string, x: number, y: number, context?: UserContext } }
     // Locking
     | { type: 'DragStart', payload: { user_id: string, course_id?: string, entry_id?: string, info?: DragInfo } }
-    | { type: 'DragEnd', payload: { user_id: string } };
+    | { type: 'DragEnd', payload: { user_id: string } }
+    | { type: 'DragMove', payload: { user_id: string, x: number, y: number, target_day?: string, target_period_id?: string } };
 
 // Stores
 export const activeUsers: Writable<UserPresence[]> = writable([]);
 export const remoteCursors: Writable<Record<string, { x: number, y: number, context?: UserContext }>> = writable({});
 // Key: user_id -> What they are dragging
 export const userDrags: Writable<Record<string, { course_id?: string, entry_id?: string, info?: DragInfo }>> = writable({});
+// Key: user_id -> Current drag position & target cell
+export const dragPositions: Writable<Record<string, { x: number, y: number, target_day?: string, target_period_id?: string }>> = writable({});
 export const refreshTrigger: Writable<number> = writable(0);
 export const isConnected: Writable<boolean> = writable(false);
 
@@ -132,6 +135,7 @@ export function connectTimetableSocket(params: {
             activeUsers.set([]);
             remoteCursors.set({});
             userDrags.set({});
+            dragPositions.set({});
 
             // Auto Reconnect
             if (shouldReconnect) {
@@ -215,6 +219,11 @@ function handleMessage(msg: any) {
                 delete newDrags[user_id];
                 return newDrags;
             });
+            dragPositions.update(pos => {
+                const newPos = { ...pos };
+                delete newPos[user_id];
+                return newPos;
+            });
             break;
         }
         case 'CursorMove': {
@@ -242,6 +251,22 @@ function handleMessage(msg: any) {
             }));
             break;
         }
+        case 'DragMove': {
+            const { user_id, x, y, target_day, target_period_id } = payload;
+            if (user_id === currentUserId) return;
+
+            // Update cursor position during drag
+            remoteCursors.update(cursors => ({
+                ...cursors,
+                [user_id]: { ...cursors[user_id], x, y }
+            }));
+
+            dragPositions.update(pos => ({
+                ...pos,
+                [user_id]: { x, y, target_day, target_period_id }
+            }));
+            break;
+        }
         case 'DragEnd': {
             const { user_id } = payload;
             if (user_id === currentUserId) return;
@@ -250,6 +275,11 @@ function handleMessage(msg: any) {
                 const newDrags = { ...drags };
                 delete newDrags[user_id];
                 return newDrags;
+            });
+            dragPositions.update(pos => {
+                const newPos = { ...pos };
+                delete newPos[user_id];
+                return newPos;
             });
             break;
         }
