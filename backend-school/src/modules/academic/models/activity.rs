@@ -194,3 +194,35 @@ pub struct SelfEnrollRequest {
 pub struct UpdateMemberResultRequest {
     pub result: String, // "pass" | "fail"
 }
+
+// ==========================================
+// Classroom Assignments (ครูต่อห้อง — independent slots)
+// ==========================================
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct SlotClassroomAssignment {
+    pub id: Uuid,
+    pub slot_id: Uuid,
+    pub classroom_id: Uuid,
+    pub instructor_id: Uuid,
+    pub created_at: DateTime<Utc>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub classroom_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub instructor_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertSlotClassroomAssignmentRequest {
+    pub classroom_id: Uuid,
+    pub instructor_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchUpsertSlotClassroomAssignmentsRequest {
+    pub assignments: Vec<UpsertSlotClassroomAssignmentRequest>,
+}

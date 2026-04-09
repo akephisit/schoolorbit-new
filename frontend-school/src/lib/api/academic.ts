@@ -722,6 +722,34 @@ export const removeSlotInstructor = async (slotId: string, userId: string) => {
 };
 
 // ==========================================
+// Slot Classroom Assignments (ครูต่อห้อง — independent)
+// ==========================================
+
+export interface SlotClassroomAssignment {
+    id: string;
+    slot_id: string;
+    classroom_id: string;
+    instructor_id: string;
+    classroom_name?: string;
+    instructor_name?: string;
+}
+
+export const listSlotClassroomAssignments = async (slotId: string): Promise<{ data: SlotClassroomAssignment[] }> => {
+    return await fetchApi(`/api/academic/activity-slots/${slotId}/classroom-assignments`);
+};
+
+export const batchUpsertSlotClassroomAssignments = async (slotId: string, assignments: { classroom_id: string; instructor_id: string }[]) => {
+    return await fetchApi(`/api/academic/activity-slots/${slotId}/classroom-assignments`, {
+        method: 'POST',
+        body: JSON.stringify({ assignments })
+    });
+};
+
+export const deleteSlotClassroomAssignment = async (slotId: string, assignmentId: string) => {
+    return await fetchApi(`/api/academic/activity-slots/${slotId}/classroom-assignments/${assignmentId}`, { method: 'DELETE' });
+};
+
+// ==========================================
 // Activity Groups (กิจกรรมจริง ภายใต้ slot)
 // ==========================================
 

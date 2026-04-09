@@ -976,3 +976,99 @@ pub async fn remove_slot_instructor(
 
     Ok(Json(json!({ "message": "ลบครูแล้ว" })).into_response())
 }
+
+// ============================================
+// Slot Classroom Assignments (ครูต่อห้อง — independent)
+// ============================================
+
+/// GET /api/academic/activity-slots/:id/classroom-assignments
+pub async fn list_slot_classroom_assignments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slot_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let rows = sqlx::query_as::<_, SlotClassroomAssignment>(
+        r#"SELECT asca.*, cr.name AS classroom_name,
+                  concat(u.first_name, ' ', u.last_name) AS instructor_name
+           FROM activity_slot_classroom_assignments asca
+           JOIN class_rooms cr ON cr.id = asca.classroom_id
+           JOIN users u ON u.id = asca.instructor_id
+           WHERE asca.slot_id = $1
+           ORDER BY cr.name"#,
+    )
+    .bind(slot_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("list_slot_classroom_assignments error: {e}");
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
+
+    Ok(Json(json!({ "data": rows })).into_response())
+}
+
+/// POST /api/academic/activity-slots/:id/classroom-assignments
+pub async fn batch_upsert_slot_classroom_assignments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slot_id): Path<Uuid>,
+    Json(body): Json<BatchUpsertSlotClassroomAssignmentsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    for a in &body.assignments {
+        sqlx::query(
+            r#"INSERT INTO activity_slot_classroom_assignments (slot_id, classroom_id, instructor_id)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (slot_id, classroom_id)
+               DO UPDATE SET instructor_id = EXCLUDED.instructor_id"#,
+        )
+        .bind(slot_id)
+        .bind(a.classroom_id)
+        .bind(a.instructor_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("upsert_slot_classroom_assignment error: {e}");
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
+    }
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "message": "บันทึกสำเร็จ", "count": body.assignments.len() })).into_response())
+}
+
+/// DELETE /api/academic/activity-slots/:id/classroom-assignments/:assignment_id
+pub async fn delete_slot_classroom_assignment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((slot_id, assignment_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    sqlx::query("DELETE FROM activity_slot_classroom_assignments WHERE id = $1 AND slot_id = $2")
+        .bind(assignment_id)
+        .bind(slot_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "message": "ลบสำเร็จ" })).into_response())
+}

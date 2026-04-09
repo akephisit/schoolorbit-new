@@ -19,7 +19,10 @@
 		type ActivitySlot,
 		type ActivityGroup,
 		type AcademicStructureData,
-		type Classroom
+		type Classroom,
+		listSlotClassroomAssignments,
+		batchUpsertSlotClassroomAssignments,
+		type SlotClassroomAssignment
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
@@ -43,6 +46,7 @@
 	let classrooms = $state<Classroom[]>([]);
 	let staffList = $state<StaffLookupItem[]>([]);
 	let slotInstructorsMap = $state<Record<string, SlotInstructor[]>>({});
+	let slotClassroomAssignmentsMap = $state<Record<string, SlotClassroomAssignment[]>>({});
 	let slots = $state<ActivitySlot[]>([]);
 	let groups = $state<ActivityGroup[]>([]);
 
@@ -160,6 +164,13 @@
 			catch { instrMap[s.id] = []; }
 		}));
 		slotInstructorsMap = instrMap;
+		// Load classroom assignments for independent slots
+		const assignMap: Record<string, SlotClassroomAssignment[]> = {};
+		await Promise.all(slots.filter((s) => s.scheduling_mode === 'independent').map(async (s) => {
+			try { assignMap[s.id] = (await listSlotClassroomAssignments(s.id)).data ?? []; }
+			catch { assignMap[s.id] = []; }
+		}));
+		slotClassroomAssignmentsMap = assignMap;
 	}
 
 	let prevYearId = $state('');
@@ -327,6 +338,15 @@
 		if (!ids || ids.length === 0) return 'ทุกระดับชั้น';
 		return ids.map((id) => yearGradeLevels.find((g) => g.id === id)?.short_name ?? id).join(', ');
 	}
+	async function handleAssignClassroomInstructor(slotId: string, classroomId: string, instructorId: string) {
+		try {
+			await batchUpsertSlotClassroomAssignments(slotId, [{ classroom_id: classroomId, instructor_id: instructorId }]);
+			slotClassroomAssignmentsMap[slotId] = (await listSlotClassroomAssignments(slotId)).data ?? [];
+			slotClassroomAssignmentsMap = { ...slotClassroomAssignmentsMap };
+			toast.success('กำหนดครูแล้ว');
+		} catch { toast.error('เกิดข้อผิดพลาด'); }
+	}
+
 	async function handleAddSlotInstructor(slotId: string, userId: string) {
 		try {
 			await addSlotInstructor(slotId, userId);
@@ -508,6 +528,53 @@
 										<Button variant="outline" size="sm" class="h-6 text-xs" onclick={() => { slotInstructorSlotId = slot.id; slotInstructorSelectedIds = []; slotInstructorSearch = ''; showSlotInstructorDialog = true; }}>
 											<Plus class="h-3 w-3 mr-1" />เพิ่มครู
 										</Button>
+									</div>
+								</div>
+							{/if}
+
+							<!-- Classroom Instructor Assignments (independent slots) -->
+							{#if slot.scheduling_mode === 'independent' && $can.has('activity.manage.all')}
+								{@const assignments = slotClassroomAssignmentsMap[slot.id] ?? []}
+								{@const slotClassrooms = classrooms.filter((c) => {
+									if (!slot.allowed_grade_level_ids || slot.allowed_grade_level_ids.length === 0) return true;
+									return slot.allowed_grade_level_ids.includes(c.grade_level_id);
+								})}
+								<div class="space-y-2 pb-3">
+									<Label class="text-xs font-semibold text-muted-foreground">ครูประจำห้อง ({assignments.length}/{slotClassrooms.length} ห้อง)</Label>
+									<div class="border rounded-lg overflow-hidden">
+										<table class="w-full text-sm">
+											<thead>
+												<tr class="bg-muted/50 text-xs text-muted-foreground">
+													<th class="text-left px-3 py-1.5 font-medium">ห้องเรียน</th>
+													<th class="text-left px-3 py-1.5 font-medium">ครูผู้สอน</th>
+												</tr>
+											</thead>
+											<tbody>
+												{#each slotClassrooms as classroom}
+													{@const existing = assignments.find((a) => a.classroom_id === classroom.id)}
+													<tr class="border-t hover:bg-accent/30">
+														<td class="px-3 py-1.5 text-xs">{classroom.name}</td>
+														<td class="px-3 py-1">
+															<Select.Root type="single"
+																value={existing?.instructor_id ?? ''}
+																onValueChange={(val) => {
+																	if (val) handleAssignClassroomInstructor(slot.id, classroom.id, val);
+																}}
+															>
+																<Select.Trigger class="h-7 text-xs w-full max-w-[200px]">
+																	{existing?.instructor_name ?? 'เลือกครู'}
+																</Select.Trigger>
+																<Select.Content class="max-h-[200px] overflow-y-auto">
+																	{#each staffList as staff}
+																		<Select.Item value={staff.id}>{staff.name}</Select.Item>
+																	{/each}
+																</Select.Content>
+															</Select.Root>
+														</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
 									</div>
 								</div>
 							{/if}

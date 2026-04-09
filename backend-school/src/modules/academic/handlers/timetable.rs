@@ -233,7 +233,11 @@ pub async fn list_timetable_entries(
             te.*,
             s.code   AS subject_code,
             s.name_th AS subject_name_th,
-            concat(u.first_name, ' ', u.last_name) AS instructor_name,
+            CASE
+                WHEN u.id IS NOT NULL THEN concat(u.first_name, ' ', u.last_name)
+                WHEN u2.id IS NOT NULL THEN concat(u2.first_name, ' ', u2.last_name)
+                ELSE NULL
+            END AS instructor_name,
             cr.name  AS classroom_name,
             r.code   AS room_code,
             ap.name  AS period_name,
@@ -251,6 +255,8 @@ pub async fn list_timetable_entries(
         LEFT JOIN users u ON cc.primary_instructor_id = u.id
         LEFT JOIN rooms r ON te.room_id = r.id
         LEFT JOIN activity_slots asl ON te.activity_slot_id = asl.id
+        LEFT JOIN activity_slot_classroom_assignments asca ON asca.slot_id = te.activity_slot_id AND asca.classroom_id = te.classroom_id
+        LEFT JOIN users u2 ON asca.instructor_id = u2.id
         WHERE te.is_active = true
         "#
     );
@@ -271,7 +277,7 @@ pub async fn list_timetable_entries(
     if let Some(_) = query.instructor_id {
         idx += 1;
         sql.push_str(&format!(
-            " AND (cc.primary_instructor_id = ${idx} OR te.activity_slot_id IN (SELECT activity_slot_id FROM activity_slot_instructors WHERE user_id = ${idx}))"
+            " AND (cc.primary_instructor_id = ${idx} OR te.activity_slot_id IN (SELECT activity_slot_id FROM activity_slot_instructors WHERE user_id = ${idx}) OR asca.instructor_id = ${idx})"
         ));
     }
 
