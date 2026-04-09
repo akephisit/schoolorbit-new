@@ -289,12 +289,19 @@
 	async function handleDeleteEntry(entry: TimetableEntry) {
 		try {
 			if (entry.activity_slot_id) {
-				const res = await deleteBatchTimetableEntries({
-					activity_slot_id: entry.activity_slot_id,
-					day_of_week: entry.day_of_week,
-					academic_semester_id: entry.academic_semester_id
-				});
-				toast.success(`ลบกิจกรรมทั้ง batch สำเร็จ (${res.deleted_count} รายการ)`);
+				// Check if this slot is independent → delete single entry only
+				const slot = sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id);
+				if (slot?.scheduling_mode === 'independent') {
+					await deleteTimetableEntry(entry.id);
+					toast.success('ลบกิจกรรมออกจากตารางสำเร็จ');
+				} else {
+					const res = await deleteBatchTimetableEntries({
+						activity_slot_id: entry.activity_slot_id,
+						day_of_week: entry.day_of_week,
+						academic_semester_id: entry.academic_semester_id
+					});
+					toast.success(`ลบกิจกรรมทั้ง batch สำเร็จ (${res.deleted_count} รายการ)`);
+				}
 			} else {
 				await deleteTimetableEntry(entry.id);
 				toast.success('ลบออกจากตารางสำเร็จ');
@@ -453,6 +460,21 @@
 			);
 			event.dataTransfer.setDragImage(dragElement, 10, 10);
 			setTimeout(() => document.body.removeChild(dragElement), 0);
+		}
+
+		// Notify others
+		if ($authStore.user) {
+			sendTimetableEvent({
+				type: 'DragStart',
+				payload: {
+					user_id: $authStore.user.id,
+					course_id: activity.id,
+					info: {
+						code: ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type,
+						title: activity.name
+					}
+				}
+			});
 		}
 	}
 
