@@ -63,6 +63,8 @@
 	let slotActivityType = $state('club');
 	let slotSemesterId = $state('');
 	let slotRegistrationType = $state('assigned');
+	let slotPeriodsPerWeek = $state(1);
+	let slotSchedulingMode = $state<'synchronized' | 'independent'>('synchronized');
 	let slotAllowedGradeLevelIds = $state<string[]>([]);
 
 	// Group Dialog (สร้าง/แก้ไขชุมนุมภายใต้ slot)
@@ -191,6 +193,7 @@
 	function openCreateSlot() {
 		slotName = ''; slotDescription = ''; slotActivityType = 'club';
 		slotSemesterId = filterSemesterId; slotRegistrationType = 'assigned';
+		slotPeriodsPerWeek = 1; slotSchedulingMode = 'synchronized';
 		slotAllowedGradeLevelIds = [];
 		isSlotEdit = false; editSlotTarget = null;
 		showSlotDialog = true;
@@ -200,6 +203,8 @@
 		slotName = s.name; slotDescription = s.description ?? '';
 		slotActivityType = s.activity_type; slotSemesterId = s.semester_id;
 		slotRegistrationType = s.registration_type;
+		slotPeriodsPerWeek = s.periods_per_week ?? 1;
+		slotSchedulingMode = s.scheduling_mode ?? 'synchronized';
 		slotAllowedGradeLevelIds = s.allowed_grade_level_ids ?? [];
 		isSlotEdit = true; editSlotTarget = s;
 		showSlotDialog = true;
@@ -222,6 +227,8 @@
 					activity_type: slotActivityType as any,
 					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
 					registration_type: slotRegistrationType as any,
+					periods_per_week: slotPeriodsPerWeek,
+					scheduling_mode: slotSchedulingMode,
 				} as any);
 				toast.success('แก้ไขช่องกิจกรรมแล้ว');
 			} else {
@@ -232,6 +239,8 @@
 					semester_id: slotSemesterId,
 					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
 					registration_type: slotRegistrationType || undefined,
+					periods_per_week: slotPeriodsPerWeek,
+					scheduling_mode: slotSchedulingMode,
 				});
 				toast.success('สร้างช่องกิจกรรมแล้ว');
 			}
@@ -447,6 +456,8 @@
 								{slotGroups.length} กิจกรรม
 								· {(slotInstructorsMap[slot.id] ?? []).length} ครู
 								· {slot.registration_type === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}
+								· {slot.periods_per_week} คาบ/สัปดาห์
+								· {slot.scheduling_mode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
 							</div>
 						</div>
 						<div class="flex items-center gap-2 shrink-0">
@@ -623,6 +634,22 @@
 						{/each}
 					</Popover.Content>
 				</Popover.Root>
+			</div>
+			<div class="grid grid-cols-2 gap-3">
+				<div class="space-y-1">
+					<Label>คาบ/สัปดาห์</Label>
+					<Input type="number" min={1} max={10} bind:value={slotPeriodsPerWeek} />
+				</div>
+				<div class="space-y-1">
+					<Label>รูปแบบจัดตาราง</Label>
+					<Select.Root type="single" bind:value={slotSchedulingMode}>
+						<Select.Trigger class="w-full">{slotSchedulingMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="synchronized">จัดพร้อมกันทุกห้อง</Select.Item>
+							<Select.Item value="independent">แต่ละห้องจัดเอง</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
 			</div>
 			<div class="space-y-1">
 				<Label>คำอธิบาย</Label>

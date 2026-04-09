@@ -121,6 +121,12 @@ pub struct CreateTimetableEntryRequest {
     pub period_id: Uuid,
     pub room_id: Option<Uuid>,
     pub note: Option<String>,
+    // Activity entry support
+    pub activity_slot_id: Option<Uuid>,
+    pub entry_type: Option<String>,
+    pub title: Option<String>,
+    pub classroom_id: Option<Uuid>,
+    pub academic_semester_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

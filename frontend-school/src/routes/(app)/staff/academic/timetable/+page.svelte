@@ -55,7 +55,8 @@
 		PlusCircle,
 		MapPin,
 		Download,
-		Zap
+		Zap,
+		Lock
 	} from 'lucide-svelte';
 	import { tick } from 'svelte';
 	import { generateTimetablePDF } from '$lib/utils/pdf';
@@ -119,6 +120,9 @@
 	let allSemesters = $state<Semester[]>([]);
 	let rooms = $state<RoomLookupItem[]>([]);
 	let instructors = $state<StaffLookupItem[]>([]);
+
+	// Activity slots for sidebar
+	let sidebarActivitySlots = $state<ActivitySlot[]>([]);
 
 	// View Mode: 'CLASSROOM' or 'INSTRUCTOR'
 	let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
@@ -232,6 +236,23 @@
 		} catch (e) {
 			console.error(e);
 			toast.error('โหลดรายวิชาไม่สำเร็จ');
+		}
+	}
+
+	async function loadSidebarActivitySlots() {
+		if (viewMode !== 'CLASSROOM' || !selectedSemesterId || !selectedClassroomId) {
+			sidebarActivitySlots = [];
+			return;
+		}
+		try {
+			const res = await listActivitySlots({ semester_id: selectedSemesterId });
+			const classroom = classrooms.find((c) => c.id === selectedClassroomId);
+			sidebarActivitySlots = res.data.filter((slot) => {
+				if (!slot.allowed_grade_level_ids || slot.allowed_grade_level_ids.length === 0) return true;
+				return classroom && slot.allowed_grade_level_ids.includes(classroom.grade_level_id);
+			});
+		} catch (e) {
+			console.error('Failed to load activity slots for sidebar', e);
 		}
 	}
 
@@ -410,6 +431,30 @@
 		return div;
 	}
 
+	function handleActivityDragStart(event: DragEvent, activity: typeof unscheduledActivities[number]) {
+		dragType = 'NEW';
+		draggedCourse = {
+			id: activity.id,
+			_isActivity: true,
+			activity_slot_id: activity.id,
+			subject_code: ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type,
+			title_th: activity.name,
+			title: activity.name
+		};
+		draggedEntryId = null;
+
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'copy';
+			event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'NEW', id: activity.id }));
+			const dragElement = createDragImage(
+				ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type,
+				activity.name
+			);
+			event.dataTransfer.setDragImage(dragElement, 10, 10);
+			setTimeout(() => document.body.removeChild(dragElement), 0);
+		}
+	}
+
 	function handleDragStart(event: DragEvent, item: any, type: 'NEW' | 'MOVE') {
 		dragType = type;
 
@@ -573,12 +618,28 @@
 			if (dragType === 'NEW') {
 				// CREATE NEW
 				const courseCode = course.subject_code;
-				const payload: any = {
-					classroom_course_id: course.id,
-					day_of_week: day,
-					period_id: periodId,
-					room_id: roomId
-				};
+				let payload: any;
+
+				if (course._isActivity) {
+					// Activity slot drop
+					payload = {
+						activity_slot_id: course.activity_slot_id,
+						classroom_id: selectedClassroomId,
+						academic_semester_id: selectedSemesterId,
+						day_of_week: day,
+						period_id: periodId,
+						room_id: roomId,
+						entry_type: 'ACTIVITY',
+						title: course.title_th
+					};
+				} else {
+					payload = {
+						classroom_course_id: course.id,
+						day_of_week: day,
+						period_id: periodId,
+						room_id: roomId
+					};
+				}
 
 				const res = await createTimetableEntry(payload);
 				handleResponse(res, `ลงตาราง ${courseCode} สำเร็จ`);
@@ -774,10 +835,32 @@
 		}
 	});
 
+	let unscheduledActivities = $derived.by(() => {
+		const slotCounts = new Map<string, number>();
+		timetableEntries.forEach((entry) => {
+			if (entry.activity_slot_id) {
+				slotCounts.set(entry.activity_slot_id, (slotCounts.get(entry.activity_slot_id) || 0) + 1);
+			}
+		});
+
+		return sidebarActivitySlots.map((slot) => {
+			const scheduled = slotCounts.get(slot.id) || 0;
+			const maxPeriods = slot.periods_per_week;
+			return {
+				...slot,
+				scheduled_count: scheduled,
+				max_periods: maxPeriods,
+				is_completed: scheduled >= maxPeriods,
+				is_draggable: slot.scheduling_mode === 'independent'
+			};
+		}).filter((s) => !s.is_completed);
+	});
+
 	$effect(() => {
 		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
 			loadCourses();
 			loadTimetable();
+			loadSidebarActivitySlots();
 
 			// Broadcast View Context
 			if ($authStore.user) {
@@ -1453,6 +1536,67 @@
 					</div>
 				{/each}
 			</div>
+
+			<!-- Activity Slots Section -->
+			{#if viewMode === 'CLASSROOM' && unscheduledActivities.length > 0}
+				<div class="border-t">
+					<div class="py-2 px-4 bg-emerald-50 border-b">
+						<span class="text-xs font-medium text-emerald-700 flex items-center gap-1">
+							<CalendarDays class="w-3 h-3" /> กิจกรรมพัฒนาผู้เรียน
+						</span>
+					</div>
+					<div class="overflow-y-auto p-3 space-y-2 max-h-[200px]">
+						{#each unscheduledActivities as activity}
+							{#if activity.is_draggable}
+								<!-- Independent: draggable -->
+								<div
+									class="border rounded-lg p-2.5 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all bg-emerald-50 border-emerald-200"
+									draggable={true}
+									ondragstart={(e) => handleActivityDragStart(e, activity)}
+									ondragend={handleDragEnd}
+									role="button"
+									tabindex="0"
+								>
+									<div class="flex justify-between items-start mb-1">
+										<Badge variant="outline" class="text-[10px] border-emerald-300 text-emerald-700">
+											{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+										</Badge>
+										<Badge variant="default" class="text-[10px] bg-emerald-600">
+											{activity.scheduled_count}/{activity.max_periods} คาบ
+										</Badge>
+									</div>
+									<h4 class="font-medium text-sm line-clamp-1 leading-tight">{activity.name}</h4>
+									<div class="text-[10px] text-emerald-600 mt-1">อิสระ — ลากวางได้</div>
+									<div class="mt-1.5 h-1 w-full bg-emerald-100 rounded-full overflow-hidden">
+										<div
+											class="h-full bg-emerald-500 transition-all"
+											style="width: {(activity.scheduled_count / activity.max_periods) * 100}%"
+										></div>
+									</div>
+								</div>
+							{:else}
+								<!-- Synchronized: read-only -->
+								<div
+									class="border border-dashed rounded-lg p-2.5 opacity-60 cursor-not-allowed bg-gray-50 border-gray-300"
+								>
+									<div class="flex justify-between items-start mb-1">
+										<Badge variant="outline" class="text-[10px]">
+											{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+										</Badge>
+										<Badge variant="secondary" class="text-[10px]">
+											{activity.scheduled_count}/{activity.max_periods} คาบ
+										</Badge>
+									</div>
+									<h4 class="font-medium text-sm line-clamp-1 leading-tight flex items-center gap-1">
+										<Lock class="w-3 h-3 shrink-0" /> {activity.name}
+									</h4>
+									<div class="text-[10px] text-muted-foreground mt-1">จัดพร้อมกัน — ใช้ Batch</div>
+								</div>
+							{/if}
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</Card.Root>
 
 		<!-- Right Content: Timetable Grid -->

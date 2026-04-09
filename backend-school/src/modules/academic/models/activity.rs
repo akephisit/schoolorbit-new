@@ -20,6 +20,8 @@ pub struct ActivitySlot {
     pub student_reg_open: bool,
     pub student_reg_start: Option<DateTime<Utc>>,
     pub student_reg_end: Option<DateTime<Utc>>,
+    pub periods_per_week: i32,
+    pub scheduling_mode: String,
     pub created_by: Option<Uuid>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
@@ -47,6 +49,8 @@ pub struct CreateActivitySlotRequest {
     pub semester_id: Uuid,
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub registration_type: Option<String>,
+    pub periods_per_week: Option<i32>,
+    pub scheduling_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,6 +65,8 @@ pub struct UpdateActivitySlotRequest {
     pub student_reg_start: Option<String>,
     pub student_reg_end: Option<String>,
     pub is_active: Option<bool>,
+    pub periods_per_week: Option<i32>,
+    pub scheduling_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

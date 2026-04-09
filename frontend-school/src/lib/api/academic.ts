@@ -624,6 +624,8 @@ export interface ActivitySlot {
     student_reg_open: boolean;
     student_reg_start?: string;
     student_reg_end?: string;
+    periods_per_week: number;
+    scheduling_mode: 'synchronized' | 'independent';
     is_active: boolean;
     created_at: string;
     // joined
@@ -677,6 +679,8 @@ export const createActivitySlot = async (data: {
     semester_id: string;
     allowed_grade_level_ids?: string[];
     registration_type?: string;
+    periods_per_week?: number;
+    scheduling_mode?: string;
 }) => {
     return await fetchApi('/api/academic/activity-slots', {
         method: 'POST',

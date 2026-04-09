@@ -345,7 +345,7 @@ pub async fn create_timetable_entry(
     }
 
     // Lookup IDs depending on entry type
-    let (classroom_id_val, academic_semester_id, entry_type) =
+    let (classroom_id_val, academic_semester_id, entry_type, title, activity_slot_id) =
         if let Some(course_id) = payload.classroom_course_id {
             let info: Option<(Uuid, Uuid)> = sqlx::query_as(
                 "SELECT classroom_id, academic_semester_id FROM classroom_courses WHERE id = $1"
@@ -356,21 +356,40 @@ pub async fn create_timetable_entry(
             .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
             match info {
-                Some((cls, sem)) => (cls, sem, "COURSE"),
+                Some((cls, sem)) => (cls, sem, "COURSE".to_string(), None::<String>, None::<Uuid>),
                 None => return Err(AppError::NotFound("Classroom course not found".to_string()))
             }
+        } else if let Some(slot_id) = payload.activity_slot_id {
+            // Activity slot entry — require classroom_id + academic_semester_id from payload
+            let cls = payload.classroom_id
+                .ok_or_else(|| AppError::BadRequest("classroom_id required for activity entry".to_string()))?;
+            let sem = payload.academic_semester_id
+                .ok_or_else(|| AppError::BadRequest("academic_semester_id required for activity entry".to_string()))?;
+
+            // Lookup slot name for title
+            let slot_name: Option<String> = sqlx::query_scalar(
+                "SELECT name FROM activity_slots WHERE id = $1"
+            )
+            .bind(slot_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+            let title = payload.title.or(slot_name);
+            let et = payload.entry_type.unwrap_or_else(|| "ACTIVITY".to_string());
+            (cls, sem, et, title, Some(slot_id))
         } else {
-            return Err(AppError::BadRequest("classroom_course_id required".to_string()));
+            return Err(AppError::BadRequest("classroom_course_id or activity_slot_id required".to_string()));
         };
 
     let entry = sqlx::query_as::<_, TimetableEntry>(
         r#"
         INSERT INTO academic_timetable_entries (
             id, classroom_course_id, day_of_week, period_id,
-            room_id, note, classroom_id, academic_semester_id, entry_type, is_active,
-            created_by, updated_by
+            room_id, note, classroom_id, academic_semester_id, entry_type, title, is_active,
+            created_by, updated_by, activity_slot_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $11, $12)
         RETURNING *, NULL::TEXT AS subject_code, NULL::TEXT AS subject_name_th,
                   NULL::TEXT AS instructor_name, NULL::TEXT AS classroom_name,
                   NULL::TEXT AS room_code, NULL::TEXT AS period_name,
@@ -386,8 +405,10 @@ pub async fn create_timetable_entry(
     .bind(&payload.note)
     .bind(classroom_id_val)
     .bind(academic_semester_id)
-    .bind(entry_type)
+    .bind(&entry_type)
+    .bind(&title)
     .bind(user_id)
+    .bind(activity_slot_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -585,6 +606,34 @@ async fn validate_timetable_entry(
                 });
             }
         }
+    } else if let Some(cls_id) = payload.classroom_id {
+        // Activity entry: check classroom conflict using payload.classroom_id
+        let classroom_conflict: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM academic_timetable_entries te
+                LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+                WHERE (te.classroom_id = $1 OR cc.classroom_id = $1)
+                  AND te.day_of_week = $2
+                  AND te.period_id = $3
+                  AND te.is_active = true
+            )
+            "#
+        )
+        .bind(cls_id)
+        .bind(&payload.day_of_week)
+        .bind(payload.period_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+
+        if classroom_conflict {
+            conflicts.push(ConflictInfo {
+                conflict_type: "CLASSROOM_CONFLICT".to_string(),
+                message: "ห้องเรียนนี้มีตารางในคาบนี้อยู่แล้ว".to_string(),
+                existing_entry: None,
+            });
+        }
     }
 
     // 2. Check room conflict (if room is specified)
@@ -660,6 +709,11 @@ pub async fn update_timetable_entry(
         period_id: payload.period_id.unwrap_or(existing_entry.period_id),
         room_id: payload.room_id.or(existing_entry.room_id),
         note: payload.note.clone().or(existing_entry.note),
+        activity_slot_id: existing_entry.activity_slot_id,
+        entry_type: Some(existing_entry.entry_type.clone()),
+        title: existing_entry.title.clone(),
+        classroom_id: Some(existing_entry.classroom_id),
+        academic_semester_id: Some(existing_entry.academic_semester_id),
     };
 
     // 3. Validate conflicts (BUT need to exclude current entry ID)

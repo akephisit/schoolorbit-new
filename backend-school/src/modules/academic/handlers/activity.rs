@@ -108,10 +108,14 @@ pub async fn create_activity_slot(
     let allowed = body.allowed_grade_level_ids
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
+    let periods_per_week = body.periods_per_week.unwrap_or(1);
+    let scheduling_mode = body.scheduling_mode.unwrap_or_else(|| "synchronized".to_string());
+
     let row: ActivitySlot = sqlx::query_as(
         r#"INSERT INTO activity_slots
-            (name, description, activity_type, semester_id, allowed_grade_level_ids, registration_type)
-           VALUES ($1, $2, $3, $4, $5, $6)
+            (name, description, activity_type, semester_id, allowed_grade_level_ids, registration_type,
+             periods_per_week, scheduling_mode)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING *, NULL::TEXT AS semester_name, NULL::BIGINT AS group_count, NULL::BIGINT AS total_members"#,
     )
     .bind(&body.name)
@@ -120,6 +124,8 @@ pub async fn create_activity_slot(
     .bind(body.semester_id)
     .bind(&allowed)
     .bind(&registration_type)
+    .bind(periods_per_week)
+    .bind(&scheduling_mode)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -154,7 +160,9 @@ pub async fn update_activity_slot(
             student_reg_open = COALESCE($8, student_reg_open),
             student_reg_start = COALESCE($9, student_reg_start),
             student_reg_end = COALESCE($10, student_reg_end),
-            is_active = COALESCE($11, is_active)
+            is_active = COALESCE($11, is_active),
+            periods_per_week = COALESCE($12, periods_per_week),
+            scheduling_mode = COALESCE($13, scheduling_mode)
         WHERE id = $1
         RETURNING *, NULL::TEXT AS semester_name, NULL::BIGINT AS group_count, NULL::BIGINT AS total_members"#,
     )
@@ -169,6 +177,8 @@ pub async fn update_activity_slot(
     .bind(body.student_reg_start.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&Utc)))
     .bind(body.student_reg_end.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&Utc)))
     .bind(body.is_active)
+    .bind(body.periods_per_week)
+    .bind(&body.scheduling_mode)
     .fetch_one(&pool)
     .await
     .map_err(|e| {

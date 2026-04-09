@@ -86,6 +86,12 @@ export interface CreateTimetableEntryRequest {
     period_id: string;
     room_id?: string;
     note?: string;
+    // Activity entry support
+    activity_slot_id?: string;
+    entry_type?: string;
+    title?: string;
+    classroom_id?: string;
+    academic_semester_id?: string;
 }
 
 export interface CreateBatchTimetableEntriesRequest {
