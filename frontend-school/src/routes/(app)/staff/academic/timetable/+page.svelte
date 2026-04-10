@@ -130,6 +130,10 @@
 	// Instructor's activity groups map: slot_id → group name (for INSTRUCTOR view)
 	let instructorGroupsMap = $state<Record<string, string>>({});
 
+	// Delete activity dialog (synchronized: ask single vs batch)
+	let showDeleteActivityDialog = $state(false);
+	let deleteActivityTarget = $state<TimetableEntry | null>(null);
+
 	// View Mode: 'CLASSROOM' or 'INSTRUCTOR'
 	let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
 
@@ -316,23 +320,32 @@
 	}
 
 	async function handleDeleteEntry(entry: TimetableEntry) {
-		try {
-			if (entry.activity_slot_id) {
-				// Check if this slot is independent → delete single entry only
-				const slot = sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id);
-				if (slot?.scheduling_mode === 'independent') {
-					await deleteTimetableEntry(entry.id);
-					toast.success('ลบกิจกรรมออกจากตารางสำเร็จ');
-				} else {
-					const res = await deleteBatchTimetableEntries({
-						activity_slot_id: entry.activity_slot_id,
-						day_of_week: entry.day_of_week,
-						academic_semester_id: entry.academic_semester_id
-					});
-					toast.success(`ลบกิจกรรมทั้ง batch สำเร็จ (${res.deleted_count} รายการ)`);
-				}
+		if (entry.activity_slot_id) {
+			const slot = sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id);
+			if (slot?.scheduling_mode === 'independent') {
+				// Independent: ลบ single entry ตรง ๆ
+				await doDeleteEntry(entry.id, false);
 			} else {
-				await deleteTimetableEntry(entry.id);
+				// Synchronized: ถามก่อน
+				deleteActivityTarget = entry;
+				showDeleteActivityDialog = true;
+			}
+		} else {
+			await doDeleteEntry(entry.id, false);
+		}
+	}
+
+	async function doDeleteEntry(entryId: string, batch: boolean) {
+		try {
+			if (batch && deleteActivityTarget?.activity_slot_id) {
+				const res = await deleteBatchTimetableEntries({
+					activity_slot_id: deleteActivityTarget.activity_slot_id,
+					day_of_week: deleteActivityTarget.day_of_week,
+					academic_semester_id: deleteActivityTarget.academic_semester_id
+				});
+				toast.success(`ลบกิจกรรมทั้ง batch สำเร็จ (${res.deleted_count} รายการ)`);
+			} else {
+				await deleteTimetableEntry(entryId);
 				toast.success('ลบออกจากตารางสำเร็จ');
 			}
 
@@ -340,6 +353,8 @@
 				sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
 			}
 
+			showDeleteActivityDialog = false;
+			deleteActivityTarget = null;
 			loadTimetable();
 		} catch (e: any) {
 			toast.error(e.message || 'ลบไม่สำเร็จ');
@@ -2076,6 +2091,32 @@
 				{/if}
 				ยืนยัน
 			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Delete Activity Dialog (synchronized: single vs batch) -->
+<Dialog.Root bind:open={showDeleteActivityDialog}>
+	<Dialog.Content class="max-w-sm">
+		<Dialog.Header>
+			<Dialog.Title>ลบกิจกรรมจากตาราง</Dialog.Title>
+			<Dialog.Description>
+				{deleteActivityTarget?.activity_slot_name || deleteActivityTarget?.title || 'กิจกรรม'}
+				{#if deleteActivityTarget?.classroom_name}
+					— {deleteActivityTarget.classroom_name}
+				{/if}
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="flex flex-col gap-2 py-2">
+			<Button variant="outline" onclick={() => { if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, false); }}>
+				ลบเฉพาะห้องนี้
+			</Button>
+			<Button variant="destructive" onclick={() => { if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, true); }}>
+				ลบทุกห้อง
+			</Button>
+		</div>
+		<Dialog.Footer>
+			<Button variant="ghost" onclick={() => { showDeleteActivityDialog = false; }}>ยกเลิก</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
