@@ -374,12 +374,16 @@
 
 	async function handleDeleteEntry(entry: TimetableEntry) {
 		if (entry.activity_slot_id) {
-			const slot = sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id);
+			const slot = sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id)
+				|| instructorActivityItems.find((i) => i.slot.id === entry.activity_slot_id)?.slot;
 			if (slot?.scheduling_mode === 'independent') {
 				// Independent: ลบ single entry ตรง ๆ
 				await doDeleteEntry(entry.id, false);
+			} else if (viewMode === 'INSTRUCTOR') {
+				// INSTRUCTOR view + synchronized: ลบแค่ entry เดียว (ไม่ batch ทุกห้อง)
+				await doDeleteEntry(entry.id, false);
 			} else {
-				// Synchronized: ถามก่อน
+				// CLASSROOM view + synchronized: ถามก่อน
 				deleteActivityTarget = entry;
 				showDeleteActivityDialog = true;
 			}
