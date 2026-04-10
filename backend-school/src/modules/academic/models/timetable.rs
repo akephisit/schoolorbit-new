@@ -107,6 +107,9 @@ pub struct TimetableEntry {
     pub activity_type: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity_scheduling_mode: Option<String>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start_time: Option<NaiveTime>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -246,7 +246,8 @@ pub async fn list_timetable_entries(
             ap.start_time,
             ap.end_time,
             asl.name AS activity_slot_name,
-            asl.activity_type AS activity_type
+            asl.activity_type AS activity_type,
+            asl.scheduling_mode AS activity_scheduling_mode
         FROM academic_timetable_entries te
         LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
         LEFT JOIN subjects s ON cc.subject_id = s.id
@@ -400,7 +401,8 @@ pub async fn create_timetable_entry(
                   NULL::TEXT AS instructor_name, NULL::TEXT AS classroom_name,
                   NULL::TEXT AS room_code, NULL::TEXT AS period_name,
                   NULL::TIME AS start_time, NULL::TIME AS end_time,
-                  NULL::TEXT AS activity_slot_name, NULL::TEXT AS activity_type
+                  NULL::TEXT AS activity_slot_name, NULL::TEXT AS activity_type,
+                  NULL::TEXT AS activity_scheduling_mode
         "#
     )
     .bind(Uuid::new_v4())

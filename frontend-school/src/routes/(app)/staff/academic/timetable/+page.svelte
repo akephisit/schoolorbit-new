@@ -24,7 +24,8 @@
 		type Semester,
 		listActivitySlots,
 		type ActivitySlot,
-		ACTIVITY_TYPE_LABELS
+		ACTIVITY_TYPE_LABELS,
+		listActivityGroups
 	} from '$lib/api/academic';
 	import {
 		lookupRooms,
@@ -124,6 +125,9 @@
 
 	// Activity slots for sidebar
 	let sidebarActivitySlots = $state<ActivitySlot[]>([]);
+
+	// Instructor's activity groups map: slot_id → group name (for INSTRUCTOR view)
+	let instructorGroupsMap = $state<Record<string, string>>({});
 
 	// View Mode: 'CLASSROOM' or 'INSTRUCTOR'
 	let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
@@ -254,6 +258,23 @@
 			});
 		} catch (e) {
 			console.error('Failed to load activity slots for sidebar', e);
+		}
+	}
+
+	async function loadInstructorGroups() {
+		if (viewMode !== 'INSTRUCTOR' || !selectedInstructorId || !selectedSemesterId) {
+			instructorGroupsMap = {};
+			return;
+		}
+		try {
+			const res = await listActivityGroups({ instructor_id: selectedInstructorId, semester_id: selectedSemesterId });
+			const map: Record<string, string> = {};
+			for (const g of res.data ?? []) {
+				if (g.slot_id) map[g.slot_id] = g.name;
+			}
+			instructorGroupsMap = map;
+		} catch (e) {
+			console.error('Failed to load instructor groups', e);
 		}
 	}
 
@@ -904,6 +925,7 @@
 		} else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
 			loadCourses();
 			loadTimetable();
+			loadInstructorGroups();
 
 			// Broadcast View Context
 			if ($authStore.user) {
@@ -1819,10 +1841,22 @@
 														<Users class="w-3 h-3 shrink-0" />
 														{entry.instructor_name || '-'}
 													</div>
-												{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
+												{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
+													<!-- Independent: แสดงชื่อห้อง -->
 													<div class="flex items-center gap-1 truncate">
 														<School class="w-3 h-3 shrink-0" />
 														{entry.classroom_name || '-'}
+													</div>
+												{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
+													<!-- Synchronized: แสดงชื่อกิจกรรมถ้ามี -->
+													{@const groupName = instructorGroupsMap[entry.activity_slot_id]}
+													<div class="flex items-center gap-1 truncate">
+														<BookOpen class="w-3 h-3 shrink-0" />
+														{#if groupName}
+															{groupName}
+														{:else}
+															{entry.activity_slot_name || '-'}
+														{/if}
 													</div>
 												{:else}
 													<div class="flex items-center gap-1 truncate">

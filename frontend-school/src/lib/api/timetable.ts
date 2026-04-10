@@ -55,6 +55,7 @@ export interface TimetableEntry {
 
     // Activity slot link
     activity_slot_id?: string;
+    activity_scheduling_mode?: string;
 
     // Joined fields
     subject_code?: string;
