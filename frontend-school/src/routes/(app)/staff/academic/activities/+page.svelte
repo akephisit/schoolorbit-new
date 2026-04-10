@@ -525,8 +525,8 @@
 								</div>
 							{/if}
 
-							<!-- Slot Instructors -->
-							{#if $can.has('activity.manage.all')}
+							<!-- Slot Instructors (synchronized only) -->
+							{#if $can.has('activity.manage.all') && slot.scheduling_mode !== 'independent'}
 								{@const instrList = slotInstructorsMap[slot.id] ?? []}
 								<div class="space-y-1 pb-3">
 									<Label class="text-xs font-semibold text-muted-foreground">ครูผู้สอน ({instrList.length} คน)</Label>

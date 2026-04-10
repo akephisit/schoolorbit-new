@@ -25,7 +25,8 @@
 		listActivitySlots,
 		type ActivitySlot,
 		ACTIVITY_TYPE_LABELS,
-		listActivityGroups
+		listActivityGroups,
+		listSlotClassroomAssignments
 	} from '$lib/api/academic';
 	import {
 		lookupRooms,
@@ -242,6 +243,13 @@
 			console.error(e);
 			toast.error('โหลดรายวิชาไม่สำเร็จ');
 		}
+	}
+
+	async function checkClassroomHasInstructor(slotId: string): Promise<boolean> {
+		try {
+			const res = await listSlotClassroomAssignments(slotId);
+			return (res.data ?? []).some((a) => a.classroom_id === selectedClassroomId);
+		} catch { return false; }
 	}
 
 	async function loadSidebarActivitySlots() {
@@ -666,6 +674,19 @@
 				let payload: any;
 
 				if (course._isActivity) {
+					// Check if independent slot has instructor assigned for this classroom
+					const slot = sidebarActivitySlots.find((s) => s.id === course.activity_slot_id);
+					if (slot?.scheduling_mode === 'independent') {
+						const hasInstructor = await checkClassroomHasInstructor(course.activity_slot_id);
+						if (!hasInstructor) {
+							toast.error('กรุณากำหนดครูประจำห้องนี้ก่อนในหน้ากิจกรรม');
+							submitting = false;
+							pendingDropContext = null;
+							isDropPending = false;
+							handleDragEnd();
+							return;
+						}
+					}
 					// Activity slot drop
 					payload = {
 						activity_slot_id: course.activity_slot_id,
