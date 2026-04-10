@@ -25,6 +25,7 @@
 		batchUpsertSlotClassroomAssignments,
 		deleteAllSlotClassroomAssignments,
 		deleteAllSlotGroups,
+		deleteSlotTimetableEntries,
 		type SlotClassroomAssignment
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
@@ -265,8 +266,13 @@
 	function confirmDeleteSlot(s: ActivitySlot) { deleteSlotTarget = s; showDeleteSlotDialog = true; }
 	async function handleDeleteSlot() {
 		if (!deleteSlotTarget) return;
-		try { await deleteActivitySlot(deleteSlotTarget.id); toast.success('ลบแล้ว'); showDeleteSlotDialog = false; await loadData(); }
-		catch { toast.error('เกิดข้อผิดพลาด'); }
+		try {
+			await deleteSlotTimetableEntries(deleteSlotTarget.id);
+			await deleteActivitySlot(deleteSlotTarget.id);
+			toast.success('ลบแล้ว');
+			showDeleteSlotDialog = false;
+			await loadData();
+		} catch { toast.error('เกิดข้อผิดพลาด'); }
 	}
 
 	// ── Group Dialog ──────────────────────────────────
@@ -333,11 +339,10 @@
 	async function confirmSwitchToIndependent() {
 		showSwitchModeDialog = false;
 		if (!editSlotTarget) return;
-		// Delete all groups in this slot, then proceed with save
 		try {
 			await deleteAllSlotGroups(editSlotTarget.id);
-		} catch { toast.error('ลบกิจกรรมไม่สำเร็จ'); return; }
-		// Now save (re-call without the groups check since we just deleted them)
+			await deleteSlotTimetableEntries(editSlotTarget.id);
+		} catch { toast.error('ลบข้อมูลไม่สำเร็จ'); return; }
 		doSaveSlot();
 	}
 
@@ -362,6 +367,7 @@
 				}
 				if (switchingToSynchronized) {
 					await deleteAllSlotClassroomAssignments(editSlotTarget.id);
+					await deleteSlotTimetableEntries(editSlotTarget.id);
 				}
 				toast.success('แก้ไขช่องกิจกรรมแล้ว');
 			} else {
@@ -875,7 +881,7 @@
 	<Dialog.Content class="max-w-sm">
 		<Dialog.Header>
 			<Dialog.Title>ยืนยันการลบ</Dialog.Title>
-			<Dialog.Description>ลบช่อง "<strong>{deleteSlotTarget?.name}</strong>" และกิจกรรมทั้งหมดภายใน?</Dialog.Description>
+			<Dialog.Description>ลบช่อง "<strong>{deleteSlotTarget?.name}</strong>" รวมถึงกิจกรรม สมาชิก และรายการในตารางสอนทั้งหมด?</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => { showDeleteSlotDialog = false; }}>ยกเลิก</Button>
@@ -908,7 +914,7 @@
 				{#if switchModeMemberCount > 0}
 					({switchModeMemberCount} สมาชิก)
 				{/if}
-				ในช่องนี้ทั้งหมด ดำเนินการต่อ?
+				และรายการในตารางสอนทั้งหมด ดำเนินการต่อ?
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>

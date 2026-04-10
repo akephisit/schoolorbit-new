@@ -977,6 +977,27 @@ pub async fn remove_slot_instructor(
     Ok(Json(json!({ "message": "ลบครูแล้ว" })).into_response())
 }
 
+/// DELETE /api/academic/activity-slots/:id/timetable-entries
+pub async fn delete_slot_timetable_entries(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slot_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let result = sqlx::query("DELETE FROM academic_timetable_entries WHERE activity_slot_id = $1")
+        .bind(slot_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "message": "ลบรายการตารางสอนแล้ว", "deleted_count": result.rows_affected() })).into_response())
+}
+
 /// DELETE /api/academic/activity-slots/:id/groups
 pub async fn delete_all_slot_groups(
     State(state): State<AppState>,
