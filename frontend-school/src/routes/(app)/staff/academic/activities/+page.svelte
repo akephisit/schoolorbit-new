@@ -347,12 +347,13 @@
 			if (isSlotEdit && editSlotTarget) {
 				const switchingToIndependent = slotSchedulingMode === 'independent' && editSlotTarget.scheduling_mode !== 'independent';
 				const switchingToSynchronized = slotSchedulingMode === 'synchronized' && editSlotTarget.scheduling_mode !== 'synchronized';
+				const effectiveRegType = slotSchedulingMode === 'independent' ? 'assigned' : slotRegistrationType;
 				await updateActivitySlot(editSlotTarget.id, {
 					name: slotName.trim(),
 					description: slotDescription || undefined,
 					activity_type: slotActivityType as any,
 					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					registration_type: slotRegistrationType as any,
+					registration_type: effectiveRegType as any,
 					periods_per_week: slotPeriodsPerWeek,
 					scheduling_mode: slotSchedulingMode,
 				} as any);
@@ -370,7 +371,7 @@
 					activity_type: slotActivityType,
 					semester_id: slotSemesterId,
 					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					registration_type: slotRegistrationType || undefined,
+					registration_type: (slotSchedulingMode === 'independent' ? 'assigned' : slotRegistrationType) || undefined,
 					periods_per_week: slotPeriodsPerWeek,
 					scheduling_mode: slotSchedulingMode,
 				});
