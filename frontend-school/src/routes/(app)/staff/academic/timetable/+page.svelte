@@ -27,7 +27,8 @@
 		ACTIVITY_TYPE_LABELS,
 		listActivityGroups,
 		listSlotClassroomAssignments,
-		listSlotInstructors
+		listSlotInstructors,
+		removeSlotInstructor
 	} from '$lib/api/academic';
 	import {
 		lookupRooms,
@@ -380,8 +381,9 @@
 				// Independent: ลบ single entry ตรง ๆ
 				await doDeleteEntry(entry.id, false);
 			} else if (viewMode === 'INSTRUCTOR') {
-				// INSTRUCTOR view + synchronized: ลบแค่ entry เดียว (ไม่ batch ทุกห้อง)
-				await doDeleteEntry(entry.id, false);
+				// INSTRUCTOR view + synchronized: ลบครูออกจาก slot instructors (ไม่ลบ timetable entry)
+				deleteActivityTarget = entry;
+				showDeleteActivityDialog = true;
 			} else {
 				// CLASSROOM view + synchronized: ถามก่อน
 				deleteActivityTarget = entry;
@@ -389,6 +391,20 @@
 			}
 		} else {
 			await doDeleteEntry(entry.id, false);
+		}
+	}
+
+	async function doRemoveInstructorFromSlot() {
+		if (!deleteActivityTarget?.activity_slot_id || !selectedInstructorId) return;
+		try {
+			await removeSlotInstructor(deleteActivityTarget.activity_slot_id, selectedInstructorId);
+			toast.success('ลบครูออกจากกิจกรรมนี้แล้ว');
+			showDeleteActivityDialog = false;
+			deleteActivityTarget = null;
+			loadTimetable();
+			loadSidebarActivitySlots();
+		} catch (e: any) {
+			toast.error(e.message || 'ลบไม่สำเร็จ');
 		}
 	}
 
@@ -2213,25 +2229,33 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- Delete Activity Dialog (synchronized: single vs batch) -->
+<!-- Delete Activity Dialog -->
 <Dialog.Root bind:open={showDeleteActivityDialog}>
 	<Dialog.Content class="max-w-sm">
 		<Dialog.Header>
-			<Dialog.Title>ลบกิจกรรมจากตาราง</Dialog.Title>
+			<Dialog.Title>{viewMode === 'INSTRUCTOR' ? 'ลบครูออกจากกิจกรรม' : 'ลบกิจกรรมจากตาราง'}</Dialog.Title>
 			<Dialog.Description>
 				{deleteActivityTarget?.activity_slot_name || deleteActivityTarget?.title || 'กิจกรรม'}
-				{#if deleteActivityTarget?.classroom_name}
+				{#if viewMode === 'INSTRUCTOR'}
+					— ครูจะไม่เห็นกิจกรรมนี้ในตารางอีก (ตารางห้องเรียนไม่ถูกกระทบ)
+				{:else if deleteActivityTarget?.classroom_name}
 					— {deleteActivityTarget.classroom_name}
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="flex flex-col gap-2 py-2">
-			<Button variant="outline" onclick={() => { if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, false); }}>
-				ลบเฉพาะห้องนี้
-			</Button>
-			<Button variant="destructive" onclick={() => { if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, true); }}>
-				ลบทุกห้อง
-			</Button>
+			{#if viewMode === 'INSTRUCTOR'}
+				<Button variant="destructive" onclick={doRemoveInstructorFromSlot}>
+					ลบครูออกจากกิจกรรมนี้
+				</Button>
+			{:else}
+				<Button variant="outline" onclick={() => { if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, false); }}>
+					ลบเฉพาะห้องนี้
+				</Button>
+				<Button variant="destructive" onclick={() => { if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, true); }}>
+					ลบทุกห้อง
+				</Button>
+			{/if}
 		</div>
 		<Dialog.Footer>
 			<Button variant="ghost" onclick={() => { showDeleteActivityDialog = false; }}>ยกเลิก</Button>
