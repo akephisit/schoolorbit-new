@@ -183,10 +183,24 @@ export const listTimetableEntries = async (filters: {
 };
 
 export const createBatchTimetableEntries = async (data: CreateBatchTimetableEntriesRequest) => {
-    return await fetchApi('/api/academic/timetable/batch', {
+    const response = await fetch(`${BACKEND_URL}/api/academic/timetable/batch`, {
         method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     });
+
+    const result = await response.json();
+
+    if (response.status === 409) {
+        return { success: false, message: result.message, conflicts: result.conflicts };
+    }
+
+    if (!response.ok) {
+        throw new Error(result.error || `Request failed with status ${response.status}`);
+    }
+
+    return result;
 };
 
 export interface UpdateTimetableEntryRequest {

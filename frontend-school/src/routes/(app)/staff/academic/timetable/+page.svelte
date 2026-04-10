@@ -1171,7 +1171,7 @@
 				slotIdToSend = batchSlotId;
 			}
 
-			await createBatchTimetableEntries({
+			const res = await createBatchTimetableEntries({
 				classroom_ids: batchClassrooms,
 				day_of_week: batchDay,
 				period_ids: batchPeriodIds,
@@ -1183,6 +1183,15 @@
 				force: batchForce,
 				activity_slot_id: slotIdToSend
 			});
+
+			if (res.success === false && res.conflicts) {
+				toast.error(res.message || 'พบรายการที่ชนกัน');
+				for (const c of res.conflicts) {
+					toast.error(c.message);
+				}
+				submitting = false;
+				return;
+			}
 
 			toast.success('บันทึกกิจกรรมเรียบร้อย');
 			showBatchModal = false;
