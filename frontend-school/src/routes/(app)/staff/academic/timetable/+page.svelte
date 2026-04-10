@@ -26,7 +26,8 @@
 		type ActivitySlot,
 		ACTIVITY_TYPE_LABELS,
 		listActivityGroups,
-		listSlotClassroomAssignments
+		listSlotClassroomAssignments,
+		listSlotInstructors
 	} from '$lib/api/academic';
 	import {
 		lookupRooms,
@@ -249,27 +250,79 @@
 		}
 	}
 
-	async function checkClassroomHasInstructor(slotId: string): Promise<boolean> {
+	async function checkClassroomHasInstructor(slotId: string, classroomIdOverride?: string): Promise<boolean> {
 		try {
 			const res = await listSlotClassroomAssignments(slotId);
-			return (res.data ?? []).some((a) => a.classroom_id === selectedClassroomId);
+			const clsId = classroomIdOverride || selectedClassroomId;
+			return (res.data ?? []).some((a) => a.classroom_id === clsId);
 		} catch { return false; }
 	}
 
+	// For INSTRUCTOR view: independent slots with per-classroom items
+	let instructorActivityItems = $state<Array<{
+		slot: ActivitySlot;
+		classroom_id: string;
+		classroom_name: string;
+	}>>([]);
+
 	async function loadSidebarActivitySlots() {
-		if (viewMode !== 'CLASSROOM' || !selectedSemesterId || !selectedClassroomId) {
+		if (!selectedSemesterId) {
 			sidebarActivitySlots = [];
+			instructorActivityItems = [];
 			return;
 		}
-		try {
-			const res = await listActivitySlots({ semester_id: selectedSemesterId });
-			const classroom = classrooms.find((c) => c.id === selectedClassroomId);
-			sidebarActivitySlots = res.data.filter((slot) => {
-				if (!slot.allowed_grade_level_ids || slot.allowed_grade_level_ids.length === 0) return true;
-				return classroom && slot.allowed_grade_level_ids.includes(classroom.grade_level_id);
-			});
-		} catch (e) {
-			console.error('Failed to load activity slots for sidebar', e);
+
+		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
+			try {
+				const res = await listActivitySlots({ semester_id: selectedSemesterId });
+				const classroom = classrooms.find((c) => c.id === selectedClassroomId);
+				sidebarActivitySlots = res.data.filter((slot) => {
+					if (!slot.allowed_grade_level_ids || slot.allowed_grade_level_ids.length === 0) return true;
+					return classroom && slot.allowed_grade_level_ids.includes(classroom.grade_level_id);
+				});
+			} catch (e) {
+				console.error('Failed to load activity slots for sidebar', e);
+			}
+		} else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
+			try {
+				const res = await listActivitySlots({ semester_id: selectedSemesterId });
+				const allSlots = res.data;
+
+				// Synchronized: slots where instructor is in slot_instructors
+				const syncSlots = allSlots.filter((s) => s.scheduling_mode === 'synchronized');
+				// Check which slots this instructor belongs to
+				const relevantSyncSlots: ActivitySlot[] = [];
+				for (const slot of syncSlots) {
+					try {
+						const instrRes = await listSlotInstructors(slot.id);
+						if ((instrRes.data ?? []).some((i) => i.user_id === selectedInstructorId)) {
+							relevantSyncSlots.push(slot);
+						}
+					} catch {}
+				}
+
+				// Independent: slots where instructor is assigned to classrooms
+				const indepSlots = allSlots.filter((s) => s.scheduling_mode === 'independent');
+				const items: typeof instructorActivityItems = [];
+				for (const slot of indepSlots) {
+					try {
+						const assignRes = await listSlotClassroomAssignments(slot.id);
+						for (const a of assignRes.data ?? []) {
+							if (a.instructor_id === selectedInstructorId) {
+								items.push({ slot, classroom_id: a.classroom_id, classroom_name: a.classroom_name ?? '' });
+							}
+						}
+					} catch {}
+				}
+
+				sidebarActivitySlots = relevantSyncSlots;
+				instructorActivityItems = items;
+			} catch (e) {
+				console.error('Failed to load activity slots for sidebar', e);
+			}
+		} else {
+			sidebarActivitySlots = [];
+			instructorActivityItems = [];
 		}
 	}
 
@@ -485,10 +538,13 @@
 
 	function handleActivityDragStart(event: DragEvent, activity: typeof unscheduledActivities[number]) {
 		dragType = 'NEW';
+		// For INSTRUCTOR view independent: classroom comes from _classroom_id
+		const classroomId = activity._classroom_id || selectedClassroomId;
 		draggedCourse = {
 			id: activity.id,
 			_isActivity: true,
 			activity_slot_id: activity.id,
+			_classroom_id: classroomId,
 			subject_code: ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type,
 			title_th: activity.name,
 			title: activity.name
@@ -496,9 +552,9 @@
 		draggedEntryId = null;
 
 		// Lookup instructor for this classroom from assignments → show conflict highlights
-		if (activity.scheduling_mode === 'independent' && selectedClassroomId) {
+		if (activity.scheduling_mode === 'independent' && classroomId) {
 			listSlotClassroomAssignments(activity.id).then((res) => {
-				const assignment = (res.data ?? []).find((a) => a.classroom_id === selectedClassroomId);
+				const assignment = (res.data ?? []).find((a) => a.classroom_id === classroomId);
 				if (assignment) {
 					fetchInstructorConflicts({ primary_instructor_id: assignment.instructor_id });
 				}
@@ -699,10 +755,12 @@
 				let payload: any;
 
 				if (course._isActivity) {
+					const activityClassroomId = course._classroom_id || selectedClassroomId;
 					// Check if independent slot has instructor assigned for this classroom
-					const slot = sidebarActivitySlots.find((s) => s.id === course.activity_slot_id);
+					const slot = sidebarActivitySlots.find((s) => s.id === course.activity_slot_id)
+						|| instructorActivityItems.find((i) => i.slot.id === course.activity_slot_id)?.slot;
 					if (slot?.scheduling_mode === 'independent') {
-						const hasInstructor = await checkClassroomHasInstructor(course.activity_slot_id);
+						const hasInstructor = await checkClassroomHasInstructor(course.activity_slot_id, activityClassroomId);
 						if (!hasInstructor) {
 							toast.error('กรุณากำหนดครูประจำห้องนี้ก่อนในหน้ากิจกรรม');
 							submitting = false;
@@ -715,7 +773,7 @@
 					// Activity slot drop
 					payload = {
 						activity_slot_id: course.activity_slot_id,
-						classroom_id: selectedClassroomId,
+						classroom_id: activityClassroomId,
 						academic_semester_id: selectedSemesterId,
 						day_of_week: day,
 						period_id: periodId,
@@ -926,13 +984,66 @@
 		}
 	});
 
-	let unscheduledActivities = $derived.by(() => {
+	type UnscheduledActivity = ActivitySlot & {
+		scheduled_count: number;
+		max_periods: number;
+		is_completed: boolean;
+		is_draggable: boolean;
+		_classroom_id?: string;
+		_classroom_name?: string;
+	};
+
+	let unscheduledActivities: UnscheduledActivity[] = $derived.by(() => {
 		const slotCounts = new Map<string, number>();
 		timetableEntries.forEach((entry) => {
 			if (entry.activity_slot_id) {
-				slotCounts.set(entry.activity_slot_id, (slotCounts.get(entry.activity_slot_id) || 0) + 1);
+				// For INSTRUCTOR view with independent: count per slot+classroom
+				const key = viewMode === 'INSTRUCTOR' && entry.classroom_id
+					? `${entry.activity_slot_id}:${entry.classroom_id}`
+					: entry.activity_slot_id;
+				slotCounts.set(key, (slotCounts.get(key) || 0) + 1);
 			}
 		});
+
+		if (viewMode === 'INSTRUCTOR') {
+			const items: UnscheduledActivity[] = [];
+
+			// Synchronized slots (read-only)
+			for (const slot of sidebarActivitySlots) {
+				const scheduled = slotCounts.get(slot.id) || 0;
+				if (scheduled < slot.periods_per_week) {
+					items.push({
+						...slot,
+						scheduled_count: scheduled,
+						max_periods: slot.periods_per_week,
+						is_completed: false,
+						is_draggable: false,
+						_classroom_id: undefined,
+						_classroom_name: undefined,
+					});
+				}
+			}
+
+			// Independent items per classroom (draggable)
+			for (const item of instructorActivityItems) {
+				const key = `${item.slot.id}:${item.classroom_id}`;
+				const scheduled = slotCounts.get(key) || 0;
+				if (scheduled < item.slot.periods_per_week) {
+					items.push({
+						...item.slot,
+						name: `${item.slot.name} — ${item.classroom_name}`,
+						scheduled_count: scheduled,
+						max_periods: item.slot.periods_per_week,
+						is_completed: false,
+						is_draggable: true,
+						_classroom_id: item.classroom_id,
+						_classroom_name: item.classroom_name,
+					});
+				}
+			}
+
+			return items;
+		}
 
 		return sidebarActivitySlots.map((slot) => {
 			const scheduled = slotCounts.get(slot.id) || 0;
@@ -942,7 +1053,9 @@
 				scheduled_count: scheduled,
 				max_periods: maxPeriods,
 				is_completed: scheduled >= maxPeriods,
-				is_draggable: slot.scheduling_mode === 'independent'
+				is_draggable: slot.scheduling_mode === 'independent',
+				_classroom_id: undefined as string | undefined,
+				_classroom_name: undefined as string | undefined,
 			};
 		}).filter((s) => !s.is_completed);
 	});
@@ -972,6 +1085,7 @@
 			loadCourses();
 			loadTimetable();
 			loadInstructorGroups();
+			loadSidebarActivitySlots();
 
 			// Broadcast View Context
 			if ($authStore.user) {
@@ -1689,7 +1803,7 @@
 			</div>
 
 			<!-- Activity Slots Section -->
-			{#if viewMode === 'CLASSROOM' && unscheduledActivities.length > 0}
+			{#if unscheduledActivities.length > 0}
 				<div class="border-t">
 					<div class="py-2 px-4 bg-emerald-50 border-b">
 						<span class="text-xs font-medium text-emerald-700 flex items-center gap-1">
