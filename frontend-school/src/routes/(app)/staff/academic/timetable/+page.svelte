@@ -480,6 +480,16 @@
 		};
 		draggedEntryId = null;
 
+		// Lookup instructor for this classroom from assignments → show conflict highlights
+		if (activity.scheduling_mode === 'independent' && selectedClassroomId) {
+			listSlotClassroomAssignments(activity.id).then((res) => {
+				const assignment = (res.data ?? []).find((a) => a.classroom_id === selectedClassroomId);
+				if (assignment) {
+					fetchInstructorConflicts({ primary_instructor_id: assignment.instructor_id });
+				}
+			}).catch(() => {});
+		}
+
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = 'copy';
 			event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'NEW', id: activity.id }));
