@@ -1821,8 +1821,8 @@
 													</div>
 												{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
 													<div class="flex items-center gap-1 truncate">
-														<BookOpen class="w-3 h-3 shrink-0" />
-														{entry.activity_type ? ACTIVITY_TYPE_LABELS[entry.activity_type] || entry.activity_type : 'กิจกรรม'}
+														<School class="w-3 h-3 shrink-0" />
+														{entry.classroom_name || '-'}
 													</div>
 												{:else}
 													<div class="flex items-center gap-1 truncate">
