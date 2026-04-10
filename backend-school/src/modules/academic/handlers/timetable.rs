@@ -871,6 +871,7 @@ pub async fn create_batch_timetable_entries(
         let mut conflicts: Vec<serde_json::Value> = Vec::new();
 
         // 1. Check classroom conflicts — single query with ANY
+        // Skip entries that belong to the same activity_slot_id (re-batch scenario)
         let classroom_conflicts: Vec<(String,)> = sqlx::query_as(
             r#"SELECT DISTINCT cr.name
                FROM academic_timetable_entries te
@@ -878,11 +879,13 @@ pub async fn create_batch_timetable_entries(
                WHERE te.classroom_id = ANY($1)
                  AND te.day_of_week = $2
                  AND te.period_id = ANY($3)
-                 AND te.is_active = true"#
+                 AND te.is_active = true
+                 AND (te.activity_slot_id IS DISTINCT FROM $4 OR te.activity_slot_id IS NULL)"#
         )
         .bind(&payload.classroom_ids)
         .bind(&payload.day_of_week)
         .bind(&payload.period_ids)
+        .bind(payload.activity_slot_id)
         .fetch_all(&pool)
         .await
         .unwrap_or_default();
