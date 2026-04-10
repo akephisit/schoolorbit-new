@@ -642,6 +642,49 @@ async fn validate_timetable_entry(
                 existing_entry: None,
             });
         }
+
+        // Activity entry: check instructor conflict via classroom assignment
+        if let Some(slot_id) = payload.activity_slot_id {
+            let instr_id: Option<Uuid> = sqlx::query_scalar(
+                "SELECT instructor_id FROM activity_slot_classroom_assignments WHERE slot_id = $1 AND classroom_id = $2"
+            )
+            .bind(slot_id)
+            .bind(cls_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some(instr_id) = instr_id {
+                let instructor_conflict: bool = sqlx::query_scalar(
+                    r#"
+                    SELECT EXISTS(
+                        SELECT 1 FROM academic_timetable_entries te
+                        LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+                        LEFT JOIN activity_slot_classroom_assignments asca ON asca.slot_id = te.activity_slot_id AND asca.classroom_id = te.classroom_id
+                        WHERE (cc.primary_instructor_id = $1 OR asca.instructor_id = $1)
+                          AND te.day_of_week = $2
+                          AND te.period_id = $3
+                          AND te.is_active = true
+                    )
+                    "#
+                )
+                .bind(instr_id)
+                .bind(&payload.day_of_week)
+                .bind(payload.period_id)
+                .fetch_one(pool)
+                .await
+                .unwrap_or(false);
+
+                if instructor_conflict {
+                    conflicts.push(ConflictInfo {
+                        conflict_type: "INSTRUCTOR_CONFLICT".to_string(),
+                        message: "ครูมีตารางสอนในคาบนี้อยู่แล้ว".to_string(),
+                        existing_entry: None,
+                    });
+                }
+            }
+        }
     }
 
     // 2. Check room conflict (if room is specified)
