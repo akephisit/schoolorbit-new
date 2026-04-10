@@ -229,6 +229,14 @@
 
 	async function handleSaveSlot() {
 		if (!slotName.trim()) { toast.error('กรุณาระบุชื่อ'); return; }
+		// Block switching to independent if groups exist
+		if (isSlotEdit && editSlotTarget && slotSchedulingMode === 'independent' && editSlotTarget.scheduling_mode !== 'independent') {
+			const slotHasGroups = groups.some((g) => g.slot_id === editSlotTarget!.id);
+			if (slotHasGroups) {
+				toast.error('กรุณาลบกิจกรรมในช่องนี้ก่อนเปลี่ยนเป็นแบบอิสระ');
+				return;
+			}
+		}
 		saving = true;
 		try {
 			if (isSlotEdit && editSlotTarget) {
