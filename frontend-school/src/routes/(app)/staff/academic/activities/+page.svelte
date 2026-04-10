@@ -524,11 +524,13 @@
 							</div>
 						</div>
 						<div class="flex items-center gap-2 shrink-0">
-							{#if slot.teacher_reg_open}
-								<Badge variant="default">ครูลงทะเบียน</Badge>
-							{/if}
-							{#if slot.student_reg_open}
-								<Badge>นร.ลงทะเบียน</Badge>
+							{#if slot.scheduling_mode !== 'independent'}
+								{#if slot.teacher_reg_open}
+									<Badge variant="default">ครูลงทะเบียน</Badge>
+								{/if}
+								{#if slot.student_reg_open}
+									<Badge>นร.ลงทะเบียน</Badge>
+								{/if}
 							{/if}
 						</div>
 					</button>
@@ -539,13 +541,15 @@
 							<!-- Slot Actions -->
 							{#if $can.has('activity.manage.all')}
 								<div class="flex flex-wrap gap-2 py-3">
-									<Button variant="outline" size="sm" onclick={() => handleToggleTeacherReg(slot)}>
-										{slot.teacher_reg_open ? 'ปิดลงทะเบียนครู' : 'เปิดลงทะเบียนครู'}
-									</Button>
-									{#if slot.registration_type === 'self'}
-										<Button variant="outline" size="sm" onclick={() => handleToggleStudentReg(slot)}>
-											{slot.student_reg_open ? 'ปิดลงทะเบียนนักเรียน' : 'เปิดลงทะเบียนนักเรียน'}
+									{#if slot.scheduling_mode !== 'independent'}
+										<Button variant="outline" size="sm" onclick={() => handleToggleTeacherReg(slot)}>
+											{slot.teacher_reg_open ? 'ปิดลงทะเบียนครู' : 'เปิดลงทะเบียนครู'}
 										</Button>
+										{#if slot.registration_type === 'self'}
+											<Button variant="outline" size="sm" onclick={() => handleToggleStudentReg(slot)}>
+												{slot.student_reg_open ? 'ปิดลงทะเบียนนักเรียน' : 'เปิดลงทะเบียนนักเรียน'}
+											</Button>
+										{/if}
 									{/if}
 									<Button variant="outline" size="sm" onclick={() => openEditSlot(slot)}>
 										<Settings class="mr-1 h-3 w-3" />ตั้งค่า
@@ -701,16 +705,18 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
-				<div class="space-y-1">
-					<Label>การรับสมาชิก</Label>
-					<Select.Root type="single" bind:value={slotRegistrationType}>
-						<Select.Trigger class="w-full">{slotRegistrationType === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="assigned">ครู/admin จัดสรร</Select.Item>
-							<Select.Item value="self">นักเรียนเลือกเอง</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
+				{#if slotSchedulingMode !== 'independent'}
+					<div class="space-y-1">
+						<Label>การรับสมาชิก</Label>
+						<Select.Root type="single" bind:value={slotRegistrationType}>
+							<Select.Trigger class="w-full">{slotRegistrationType === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="assigned">ครู/admin จัดสรร</Select.Item>
+								<Select.Item value="self">นักเรียนเลือกเอง</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+				{/if}
 			</div>
 			{#if !isSlotEdit}
 				<div class="space-y-1">
