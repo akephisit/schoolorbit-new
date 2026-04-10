@@ -932,6 +932,33 @@ pub async fn create_batch_timetable_entries(
             }
         }
 
+        // 3. Check room conflict
+        if let Some(room_id) = payload.room_id {
+            let room_conflicts: Vec<(String, String)> = sqlx::query_as(
+                r#"SELECT DISTINCT r.code, ap.name
+                   FROM academic_timetable_entries te
+                   JOIN rooms r ON r.id = te.room_id
+                   JOIN academic_periods ap ON ap.id = te.period_id
+                   WHERE te.room_id = $1
+                     AND te.day_of_week = $2
+                     AND te.period_id = ANY($3)
+                     AND te.is_active = true"#
+            )
+            .bind(room_id)
+            .bind(&payload.day_of_week)
+            .bind(&payload.period_ids)
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default();
+
+            for (room_code, period_name) in &room_conflicts {
+                conflicts.push(serde_json::json!({
+                    "conflict_type": "ROOM_CONFLICT",
+                    "message": format!("ห้อง {} ถูกใช้ในคาบ {} อยู่แล้ว", room_code, period_name)
+                }));
+            }
+        }
+
         if !conflicts.is_empty() {
             return Ok((
                 StatusCode::CONFLICT,
