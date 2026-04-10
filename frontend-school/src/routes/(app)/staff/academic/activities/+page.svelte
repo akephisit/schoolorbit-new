@@ -242,6 +242,7 @@
 		saving = true;
 		try {
 			if (isSlotEdit && editSlotTarget) {
+				const switchingToIndependent = slotSchedulingMode === 'independent' && editSlotTarget.scheduling_mode !== 'independent';
 				await updateActivitySlot(editSlotTarget.id, {
 					name: slotName.trim(),
 					description: slotDescription || undefined,
@@ -251,6 +252,13 @@
 					periods_per_week: slotPeriodsPerWeek,
 					scheduling_mode: slotSchedulingMode,
 				} as any);
+				// Auto-remove slot instructors when switching to independent
+				if (switchingToIndependent) {
+					const instrList = slotInstructorsMap[editSlotTarget.id] ?? [];
+					for (const instr of instrList) {
+						await removeSlotInstructor(editSlotTarget.id, instr.user_id);
+					}
+				}
 				toast.success('แก้ไขช่องกิจกรรมแล้ว');
 			} else {
 				await createActivitySlot({
