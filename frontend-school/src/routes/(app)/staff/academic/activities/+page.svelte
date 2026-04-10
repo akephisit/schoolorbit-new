@@ -14,6 +14,7 @@
 		listSlotInstructors,
 		addSlotInstructor,
 		removeSlotInstructor,
+		removeAllSlotInstructors,
 		ACTIVITY_TYPE_LABELS,
 		type SlotInstructor,
 		type ActivitySlot,
@@ -254,10 +255,7 @@
 				} as any);
 				// Auto-remove slot instructors when switching to independent
 				if (switchingToIndependent) {
-					const instrList = slotInstructorsMap[editSlotTarget.id] ?? [];
-					for (const instr of instrList) {
-						await removeSlotInstructor(editSlotTarget.id, instr.user_id);
-					}
+					await removeAllSlotInstructors(editSlotTarget.id);
 				}
 				toast.success('แก้ไขช่องกิจกรรมแล้ว');
 			} else {

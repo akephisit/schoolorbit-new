@@ -721,6 +721,10 @@ export const removeSlotInstructor = async (slotId: string, userId: string) => {
     return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors/${userId}`, { method: 'DELETE' });
 };
 
+export const removeAllSlotInstructors = async (slotId: string) => {
+    return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors/all`, { method: 'DELETE' });
+};
+
 // ==========================================
 // Slot Classroom Assignments (ครูต่อห้อง — independent)
 // ==========================================
