@@ -579,48 +579,53 @@
 								</div>
 							{/if}
 
-							<!-- Groups List -->
-							{#if slotGroups.length === 0}
-								<p class="text-sm text-muted-foreground py-2">ยังไม่มีกิจกรรมในช่องนี้</p>
+							{#if slot.scheduling_mode === 'independent'}
+								<!-- Independent: ไม่ต้องสร้างกลุ่ม -->
+								<p class="text-sm text-muted-foreground py-2">กิจกรรมแบบอิสระ — เรียนตามห้อง ไม่ต้องสร้างกลุ่ม</p>
 							{:else}
-								<div class="divide-y rounded border">
-									{#each slotGroups as g}
-										<div class="flex items-center gap-3 px-3 py-2">
-											<div class="flex-1 min-w-0">
-												<div class="font-medium text-sm">{g.name}</div>
-												<div class="text-xs text-muted-foreground">
-													{g.instructor_name ?? '—'}
-													· {g.member_count ?? 0}{g.max_capacity ? `/${g.max_capacity}` : ''} คน
-													{#if g.allowed_grade_level_ids && g.allowed_grade_level_ids.length > 0}
-														· {gradeLevelDisplay(g.allowed_grade_level_ids)}
+								<!-- Groups List -->
+								{#if slotGroups.length === 0}
+									<p class="text-sm text-muted-foreground py-2">ยังไม่มีกิจกรรมในช่องนี้</p>
+								{:else}
+									<div class="divide-y rounded border">
+										{#each slotGroups as g}
+											<div class="flex items-center gap-3 px-3 py-2">
+												<div class="flex-1 min-w-0">
+													<div class="font-medium text-sm">{g.name}</div>
+													<div class="text-xs text-muted-foreground">
+														{g.instructor_name ?? '—'}
+														· {g.member_count ?? 0}{g.max_capacity ? `/${g.max_capacity}` : ''} คน
+														{#if g.allowed_grade_level_ids && g.allowed_grade_level_ids.length > 0}
+															· {gradeLevelDisplay(g.allowed_grade_level_ids)}
+														{/if}
+													</div>
+												</div>
+												<div class="flex gap-1 shrink-0">
+													<Button variant="ghost" size="icon" title="จัดการสมาชิก" onclick={() => goto(`/staff/academic/activities/${g.id}`)}>
+														<UserCog class="h-4 w-4" />
+													</Button>
+													{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
+														<Button variant="ghost" size="icon" title="แก้ไข" onclick={() => openEditGroup(g)}>
+															<Pencil class="h-3 w-3" />
+														</Button>
+													{/if}
+													{#if $can.has('activity.manage.all')}
+														<Button variant="ghost" size="icon" onclick={() => handleDeleteGroup(g)}>
+															<Trash2 class="h-3 w-3 text-destructive" />
+														</Button>
 													{/if}
 												</div>
 											</div>
-											<div class="flex gap-1 shrink-0">
-												<Button variant="ghost" size="icon" title="จัดการสมาชิก" onclick={() => goto(`/staff/academic/activities/${g.id}`)}>
-													<UserCog class="h-4 w-4" />
-												</Button>
-												{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
-													<Button variant="ghost" size="icon" title="แก้ไข" onclick={() => openEditGroup(g)}>
-														<Pencil class="h-3 w-3" />
-													</Button>
-												{/if}
-												{#if $can.has('activity.manage.all')}
-													<Button variant="ghost" size="icon" onclick={() => handleDeleteGroup(g)}>
-														<Trash2 class="h-3 w-3 text-destructive" />
-													</Button>
-												{/if}
-											</div>
-										</div>
-									{/each}
-								</div>
-							{/if}
+										{/each}
+									</div>
+								{/if}
 
-							<!-- Add Group Button -->
-							{#if $can.has('activity.manage.all') || ($can.has('activity.manage.own') && slot.teacher_reg_open)}
-								<Button variant="outline" size="sm" class="mt-3" onclick={() => openCreateGroup(slot.id)}>
-									<Plus class="mr-1 h-3 w-3" />สร้างกิจกรรม
-								</Button>
+								<!-- Add Group Button -->
+								{#if $can.has('activity.manage.all') || ($can.has('activity.manage.own') && slot.teacher_reg_open)}
+									<Button variant="outline" size="sm" class="mt-3" onclick={() => openCreateGroup(slot.id)}>
+										<Plus class="mr-1 h-3 w-3" />สร้างกิจกรรม
+									</Button>
+								{/if}
 							{/if}
 						</div>
 					{/if}
