@@ -870,33 +870,31 @@ pub async fn create_batch_timetable_entries(
     if !payload.force.unwrap_or(false) {
         let mut conflicts: Vec<serde_json::Value> = Vec::new();
 
-        // 1. Check classroom conflicts
-        for classroom_id in &payload.classroom_ids {
-            for period_id in &payload.period_ids {
-                let conflict: Option<(String,)> = sqlx::query_as(
-                    r#"SELECT cr.name FROM academic_timetable_entries te
-                       JOIN class_rooms cr ON cr.id = te.classroom_id
-                       WHERE te.classroom_id = $1 AND te.day_of_week = $2 AND te.period_id = $3 AND te.is_active = true
-                       LIMIT 1"#
-                )
-                .bind(classroom_id)
-                .bind(&payload.day_of_week)
-                .bind(period_id)
-                .fetch_optional(&pool)
-                .await
-                .ok()
-                .flatten();
+        // 1. Check classroom conflicts — single query with ANY
+        let classroom_conflicts: Vec<(String,)> = sqlx::query_as(
+            r#"SELECT DISTINCT cr.name
+               FROM academic_timetable_entries te
+               JOIN class_rooms cr ON cr.id = te.classroom_id
+               WHERE te.classroom_id = ANY($1)
+                 AND te.day_of_week = $2
+                 AND te.period_id = ANY($3)
+                 AND te.is_active = true"#
+        )
+        .bind(&payload.classroom_ids)
+        .bind(&payload.day_of_week)
+        .bind(&payload.period_ids)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
 
-                if let Some((name,)) = conflict {
-                    conflicts.push(serde_json::json!({
-                        "conflict_type": "CLASSROOM_CONFLICT",
-                        "message": format!("{} มีตารางในคาบนี้อยู่แล้ว", name)
-                    }));
-                }
-            }
+        for (name,) in &classroom_conflicts {
+            conflicts.push(serde_json::json!({
+                "conflict_type": "CLASSROOM_CONFLICT",
+                "message": format!("{} มีตารางในคาบนี้อยู่แล้ว", name)
+            }));
         }
 
-        // 2. Check slot instructor conflicts
+        // 2. Check slot instructor conflicts — single query with ANY
         if let Some(slot_id) = payload.activity_slot_id {
             let instructor_ids: Vec<Uuid> = sqlx::query_scalar(
                 "SELECT user_id FROM activity_slot_instructors WHERE slot_id = $1"
@@ -906,35 +904,30 @@ pub async fn create_batch_timetable_entries(
             .await
             .unwrap_or_default();
 
-            for instr_id in &instructor_ids {
-                for period_id in &payload.period_ids {
-                    let conflict: Option<(String, String)> = sqlx::query_as(
-                        r#"SELECT concat(u.first_name, ' ', u.last_name), COALESCE(s.name_th, te.title, '')
-                           FROM academic_timetable_entries te
-                           LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
-                           LEFT JOIN subjects s ON cc.subject_id = s.id
-                           LEFT JOIN users u ON u.id = $1
-                           LEFT JOIN activity_slot_classroom_assignments asca ON asca.slot_id = te.activity_slot_id AND asca.classroom_id = te.classroom_id
-                           WHERE (cc.primary_instructor_id = $1 OR asca.instructor_id = $1)
-                             AND te.day_of_week = $2
-                             AND te.period_id = $3
-                             AND te.is_active = true
-                           LIMIT 1"#
-                    )
-                    .bind(instr_id)
-                    .bind(&payload.day_of_week)
-                    .bind(period_id)
-                    .fetch_optional(&pool)
-                    .await
-                    .ok()
-                    .flatten();
+            if !instructor_ids.is_empty() {
+                let instructor_conflicts: Vec<(String, String)> = sqlx::query_as(
+                    r#"SELECT DISTINCT concat(u.first_name, ' ', u.last_name), COALESCE(s.name_th, te.title, '')
+                       FROM academic_timetable_entries te
+                       LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+                       LEFT JOIN subjects s ON cc.subject_id = s.id
+                       LEFT JOIN activity_slot_classroom_assignments asca ON asca.slot_id = te.activity_slot_id AND asca.classroom_id = te.classroom_id
+                       JOIN users u ON u.id = ANY($1) AND (cc.primary_instructor_id = u.id OR asca.instructor_id = u.id)
+                       WHERE te.day_of_week = $2
+                         AND te.period_id = ANY($3)
+                         AND te.is_active = true"#
+                )
+                .bind(&instructor_ids)
+                .bind(&payload.day_of_week)
+                .bind(&payload.period_ids)
+                .fetch_all(&pool)
+                .await
+                .unwrap_or_default();
 
-                    if let Some((teacher_name, existing_subject)) = conflict {
-                        conflicts.push(serde_json::json!({
-                            "conflict_type": "INSTRUCTOR_CONFLICT",
-                            "message": format!("{} มีสอน {} ในคาบนี้อยู่แล้ว", teacher_name, existing_subject)
-                        }));
-                    }
+                for (teacher_name, existing_subject) in &instructor_conflicts {
+                    conflicts.push(serde_json::json!({
+                        "conflict_type": "INSTRUCTOR_CONFLICT",
+                        "message": format!("{} มีสอน {} ในคาบนี้อยู่แล้ว", teacher_name, existing_subject)
+                    }));
                 }
             }
         }
