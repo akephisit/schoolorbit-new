@@ -24,6 +24,7 @@
 		listSlotClassroomAssignments,
 		batchUpsertSlotClassroomAssignments,
 		deleteAllSlotClassroomAssignments,
+		deleteAllSlotGroups,
 		type SlotClassroomAssignment
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
@@ -89,6 +90,9 @@
 	let showDeleteSlotDialog = $state(false);
 	let deleteGroupTarget = $state<ActivityGroup | null>(null);
 	let showDeleteGroupDialog = $state(false);
+	let showSwitchModeDialog = $state(false);
+	let switchModeGroupCount = $state(0);
+	let switchModeMemberCount = $state(0);
 
 
 	// ── Computed ───────────────────────────────────────
@@ -233,52 +237,17 @@
 
 	async function handleSaveSlot() {
 		if (!slotName.trim()) { toast.error('กรุณาระบุชื่อ'); return; }
-		// Block switching to independent if groups exist
+		// Warn before switching to independent if groups exist
 		if (isSlotEdit && editSlotTarget && slotSchedulingMode === 'independent' && editSlotTarget.scheduling_mode !== 'independent') {
-			const slotHasGroups = groups.some((g) => g.slot_id === editSlotTarget!.id);
-			if (slotHasGroups) {
-				toast.error('กรุณาลบกิจกรรมในช่องนี้ก่อนเปลี่ยนเป็นแบบอิสระ');
+			const slotGroups = groups.filter((g) => g.slot_id === editSlotTarget!.id);
+			if (slotGroups.length > 0) {
+				switchModeGroupCount = slotGroups.length;
+				switchModeMemberCount = slotGroups.reduce((sum, g) => sum + (g.member_count ?? 0), 0);
+				showSwitchModeDialog = true;
 				return;
 			}
 		}
-		saving = true;
-		try {
-			if (isSlotEdit && editSlotTarget) {
-				const switchingToIndependent = slotSchedulingMode === 'independent' && editSlotTarget.scheduling_mode !== 'independent';
-				const switchingToSynchronized = slotSchedulingMode === 'synchronized' && editSlotTarget.scheduling_mode !== 'synchronized';
-				await updateActivitySlot(editSlotTarget.id, {
-					name: slotName.trim(),
-					description: slotDescription || undefined,
-					activity_type: slotActivityType as any,
-					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					registration_type: slotRegistrationType as any,
-					periods_per_week: slotPeriodsPerWeek,
-					scheduling_mode: slotSchedulingMode,
-				} as any);
-				// Auto-cleanup when switching modes
-				if (switchingToIndependent) {
-					await removeAllSlotInstructors(editSlotTarget.id);
-				}
-				if (switchingToSynchronized) {
-					await deleteAllSlotClassroomAssignments(editSlotTarget.id);
-				}
-				toast.success('แก้ไขช่องกิจกรรมแล้ว');
-			} else {
-				await createActivitySlot({
-					name: slotName.trim(),
-					description: slotDescription || undefined,
-					activity_type: slotActivityType,
-					semester_id: slotSemesterId,
-					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					registration_type: slotRegistrationType || undefined,
-					periods_per_week: slotPeriodsPerWeek,
-					scheduling_mode: slotSchedulingMode,
-				});
-				toast.success('สร้างช่องกิจกรรมแล้ว');
-			}
-			showSlotDialog = false;
-			await loadData();
-		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { saving = false; }
+		doSaveSlot();
 	}
 
 	async function handleToggleTeacherReg(slot: ActivitySlot) {
@@ -361,6 +330,57 @@
 		if (!ids || ids.length === 0) return 'ทุกระดับชั้น';
 		return ids.map((id) => yearGradeLevels.find((g) => g.id === id)?.short_name ?? id).join(', ');
 	}
+	async function confirmSwitchToIndependent() {
+		showSwitchModeDialog = false;
+		if (!editSlotTarget) return;
+		// Delete all groups in this slot, then proceed with save
+		try {
+			await deleteAllSlotGroups(editSlotTarget.id);
+		} catch { toast.error('ลบกิจกรรมไม่สำเร็จ'); return; }
+		// Now save (re-call without the groups check since we just deleted them)
+		doSaveSlot();
+	}
+
+	async function doSaveSlot() {
+		saving = true;
+		try {
+			if (isSlotEdit && editSlotTarget) {
+				const switchingToIndependent = slotSchedulingMode === 'independent' && editSlotTarget.scheduling_mode !== 'independent';
+				const switchingToSynchronized = slotSchedulingMode === 'synchronized' && editSlotTarget.scheduling_mode !== 'synchronized';
+				await updateActivitySlot(editSlotTarget.id, {
+					name: slotName.trim(),
+					description: slotDescription || undefined,
+					activity_type: slotActivityType as any,
+					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
+					registration_type: slotRegistrationType as any,
+					periods_per_week: slotPeriodsPerWeek,
+					scheduling_mode: slotSchedulingMode,
+				} as any);
+				if (switchingToIndependent) {
+					await removeAllSlotInstructors(editSlotTarget.id);
+				}
+				if (switchingToSynchronized) {
+					await deleteAllSlotClassroomAssignments(editSlotTarget.id);
+				}
+				toast.success('แก้ไขช่องกิจกรรมแล้ว');
+			} else {
+				await createActivitySlot({
+					name: slotName.trim(),
+					description: slotDescription || undefined,
+					activity_type: slotActivityType,
+					semester_id: slotSemesterId,
+					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
+					registration_type: slotRegistrationType || undefined,
+					periods_per_week: slotPeriodsPerWeek,
+					scheduling_mode: slotSchedulingMode,
+				});
+				toast.success('สร้างช่องกิจกรรมแล้ว');
+			}
+			showSlotDialog = false;
+			await loadData();
+		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { saving = false; }
+	}
+
 	async function handleAssignClassroomInstructor(slotId: string, classroomId: string, instructorId: string) {
 		try {
 			await batchUpsertSlotClassroomAssignments(slotId, [{ classroom_id: classroomId, instructor_id: instructorId }]);
@@ -867,6 +887,26 @@
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => { showDeleteGroupDialog = false; }}>ยกเลิก</Button>
 			<Button variant="destructive" onclick={handleDeleteGroup}>ลบ</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Switch Mode Confirmation Dialog -->
+<Dialog.Root bind:open={showSwitchModeDialog}>
+	<Dialog.Content class="max-w-sm">
+		<Dialog.Header>
+			<Dialog.Title>เปลี่ยนเป็นแบบอิสระ</Dialog.Title>
+			<Dialog.Description>
+				จะลบกิจกรรม <strong>{switchModeGroupCount} กลุ่ม</strong>
+				{#if switchModeMemberCount > 0}
+					({switchModeMemberCount} สมาชิก)
+				{/if}
+				ในช่องนี้ทั้งหมด ดำเนินการต่อ?
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => { showSwitchModeDialog = false; }}>ยกเลิก</Button>
+			<Button variant="destructive" onclick={confirmSwitchToIndependent}>ลบและเปลี่ยน</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
