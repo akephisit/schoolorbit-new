@@ -23,6 +23,7 @@
 		type Classroom,
 		listSlotClassroomAssignments,
 		batchUpsertSlotClassroomAssignments,
+		deleteAllSlotClassroomAssignments,
 		type SlotClassroomAssignment
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
@@ -244,6 +245,7 @@
 		try {
 			if (isSlotEdit && editSlotTarget) {
 				const switchingToIndependent = slotSchedulingMode === 'independent' && editSlotTarget.scheduling_mode !== 'independent';
+				const switchingToSynchronized = slotSchedulingMode === 'synchronized' && editSlotTarget.scheduling_mode !== 'synchronized';
 				await updateActivitySlot(editSlotTarget.id, {
 					name: slotName.trim(),
 					description: slotDescription || undefined,
@@ -253,9 +255,12 @@
 					periods_per_week: slotPeriodsPerWeek,
 					scheduling_mode: slotSchedulingMode,
 				} as any);
-				// Auto-remove slot instructors when switching to independent
+				// Auto-cleanup when switching modes
 				if (switchingToIndependent) {
 					await removeAllSlotInstructors(editSlotTarget.id);
+				}
+				if (switchingToSynchronized) {
+					await deleteAllSlotClassroomAssignments(editSlotTarget.id);
 				}
 				toast.success('แก้ไขช่องกิจกรรมแล้ว');
 			} else {

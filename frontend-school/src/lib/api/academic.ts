@@ -753,6 +753,10 @@ export const deleteSlotClassroomAssignment = async (slotId: string, assignmentId
     return await fetchApi(`/api/academic/activity-slots/${slotId}/classroom-assignments/${assignmentId}`, { method: 'DELETE' });
 };
 
+export const deleteAllSlotClassroomAssignments = async (slotId: string) => {
+    return await fetchApi(`/api/academic/activity-slots/${slotId}/classroom-assignments/all`, { method: 'DELETE' });
+};
+
 // ==========================================
 // Activity Groups (กิจกรรมจริง ภายใต้ slot)
 // ==========================================

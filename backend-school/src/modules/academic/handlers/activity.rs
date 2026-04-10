@@ -1072,6 +1072,27 @@ pub async fn batch_upsert_slot_classroom_assignments(
     Ok(Json(json!({ "message": "บันทึกสำเร็จ", "count": body.assignments.len() })).into_response())
 }
 
+/// DELETE /api/academic/activity-slots/:id/classroom-assignments/all
+pub async fn delete_all_slot_classroom_assignments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slot_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let result = sqlx::query("DELETE FROM activity_slot_classroom_assignments WHERE slot_id = $1")
+        .bind(slot_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "message": "ลบครูประจำห้องทั้งหมดแล้ว", "deleted_count": result.rows_affected() })).into_response())
+}
+
 /// DELETE /api/academic/activity-slots/:id/classroom-assignments/:assignment_id
 pub async fn delete_slot_classroom_assignment(
     State(state): State<AppState>,

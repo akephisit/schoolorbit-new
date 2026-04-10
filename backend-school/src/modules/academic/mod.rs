@@ -97,6 +97,7 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/activity-slots/{id}/instructors/all", axum::routing::delete(handlers::activity::remove_all_slot_instructors))
         .route("/activity-slots/{id}/instructors/{user_id}", axum::routing::delete(handlers::activity::remove_slot_instructor))
         .route("/activity-slots/{id}/classroom-assignments", get(handlers::activity::list_slot_classroom_assignments).post(handlers::activity::batch_upsert_slot_classroom_assignments))
+        .route("/activity-slots/{id}/classroom-assignments/all", axum::routing::delete(handlers::activity::delete_all_slot_classroom_assignments))
         .route("/activity-slots/{id}/classroom-assignments/{assignment_id}", axum::routing::delete(handlers::activity::delete_slot_classroom_assignment))
 
         // Activity Groups (กิจกรรมจริง ภายใต้ slot)
