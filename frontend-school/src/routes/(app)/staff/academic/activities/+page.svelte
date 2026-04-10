@@ -85,6 +85,8 @@
 	// Delete
 	let deleteSlotTarget = $state<ActivitySlot | null>(null);
 	let showDeleteSlotDialog = $state(false);
+	let deleteGroupTarget = $state<ActivityGroup | null>(null);
+	let showDeleteGroupDialog = $state(false);
 
 
 	// ── Computed ───────────────────────────────────────
@@ -335,9 +337,11 @@
 		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { saving = false; }
 	}
 
-	async function handleDeleteGroup(g: ActivityGroup) {
-		if (!confirm(`ลบ "${g.name}" ?`)) return;
-		try { await deleteActivityGroup(g.id); toast.success('ลบแล้ว'); await loadData(); }
+	function confirmDeleteGroup(g: ActivityGroup) { deleteGroupTarget = g; showDeleteGroupDialog = true; }
+
+	async function handleDeleteGroup() {
+		if (!deleteGroupTarget) return;
+		try { await deleteActivityGroup(deleteGroupTarget.id); toast.success('ลบแล้ว'); showDeleteGroupDialog = false; await loadData(); }
 		catch { toast.error('เกิดข้อผิดพลาด'); }
 	}
 
@@ -618,7 +622,7 @@
 														</Button>
 													{/if}
 													{#if $can.has('activity.manage.all')}
-														<Button variant="ghost" size="icon" onclick={() => handleDeleteGroup(g)}>
+														<Button variant="ghost" size="icon" onclick={() => confirmDeleteGroup(g)}>
 															<Trash2 class="h-3 w-3 text-destructive" />
 														</Button>
 													{/if}
@@ -838,6 +842,20 @@
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => { showDeleteSlotDialog = false; }}>ยกเลิก</Button>
 			<Button variant="destructive" onclick={handleDeleteSlot}>ลบ</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Delete Group Dialog -->
+<Dialog.Root bind:open={showDeleteGroupDialog}>
+	<Dialog.Content class="max-w-sm">
+		<Dialog.Header>
+			<Dialog.Title>ยืนยันการลบ</Dialog.Title>
+			<Dialog.Description>ลบกิจกรรม "<strong>{deleteGroupTarget?.name}</strong>"?</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => { showDeleteGroupDialog = false; }}>ยกเลิก</Button>
+			<Button variant="destructive" onclick={handleDeleteGroup}>ลบ</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
