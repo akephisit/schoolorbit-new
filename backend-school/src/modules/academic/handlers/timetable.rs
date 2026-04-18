@@ -542,11 +542,20 @@ pub async fn delete_timetable_entry(
         return Ok(response);
     }
 
-    sqlx::query("DELETE FROM academic_timetable_entries WHERE id = $1")
-        .bind(id)
-        .execute(&pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to delete entry".to_string()))?;
+    let semester_id: Option<Uuid> = sqlx::query_scalar(
+        "DELETE FROM academic_timetable_entries WHERE id = $1 RETURNING academic_semester_id"
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to delete entry".to_string()))?;
+
+    if let Some(semester_id) = semester_id {
+        let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+        let event = TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() };
+        let _ = state.websocket_manager.get_or_create_room(subdomain, semester_id).send(event);
+    }
 
     Ok(Json(json!({ "success": true })).into_response())
 }
