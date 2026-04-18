@@ -579,7 +579,8 @@ pub async fn generate_courses_from_plan(
             }
         }
         
-        // Insert, return new course id so we can populate the instructor junction
+        // Trigger cc_sync_junction (migration 078) upserts the junction + demotes other
+        // primaries automatically when primary_instructor_id is set on INSERT.
         let inserted: Option<(Uuid,)> = sqlx::query_as(
             "INSERT INTO classroom_courses
              (classroom_id, subject_id, academic_semester_id, settings, primary_instructor_id)
@@ -598,39 +599,9 @@ pub async fn generate_courses_from_plan(
              AppError::InternalServerError("Database error".to_string())
         })?;
 
-        if let Some((course_id,)) = inserted {
-            if let Some(instructor_id) = default_instructor_id {
-                sqlx::query(
-                    "INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
-                     VALUES ($1, $2, 'primary')
-                     ON CONFLICT (classroom_course_id, instructor_id)
-                     DO UPDATE SET role = 'primary'"
-                )
-                .bind(course_id)
-                .bind(instructor_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    eprintln!("Failed to insert course instructor junction: {}", e);
-                    AppError::InternalServerError("Database error".to_string())
-                })?;
-
-                sqlx::query(
-                    "UPDATE classroom_course_instructors SET role = 'secondary'
-                     WHERE classroom_course_id = $1 AND role = 'primary' AND instructor_id <> $2"
-                )
-                .bind(course_id)
-                .bind(instructor_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    eprintln!("Failed to demote other primary instructors: {}", e);
-                    AppError::InternalServerError("Database error".to_string())
-                })?;
-            }
+        if inserted.is_some() {
+            added += 1;
         }
-
-        added += 1;
     }
     
     tx.commit().await?;

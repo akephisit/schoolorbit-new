@@ -158,30 +158,9 @@ pub async fn assign_courses(
         .fetch_optional(&pool)
         .await;
 
-        if let Ok(Some((course_id, Some(instructor_id)))) = result {
-            added_count += 1;
-            // Populate junction so INSTRUCTOR view sees this course
-            let _ = sqlx::query(
-                "INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
-                 VALUES ($1, $2, 'primary')
-                 ON CONFLICT (classroom_course_id, instructor_id)
-                 DO UPDATE SET role = 'primary'"
-            )
-            .bind(course_id)
-            .bind(instructor_id)
-            .execute(&pool)
-            .await;
-            // Demote any OTHER primary to secondary (enforce uniqueness of primary)
-            let _ = sqlx::query(
-                "UPDATE classroom_course_instructors SET role = 'secondary'
-                 WHERE classroom_course_id = $1 AND role = 'primary' AND instructor_id <> $2"
-            )
-            .bind(course_id)
-            .bind(instructor_id)
-            .execute(&pool)
-            .await;
-        } else if let Ok(Some(_)) = result {
-            // Course inserted but no default instructor — skip junction write
+        // Trigger cc_sync_junction (migration 078) handles junction upsert + primary demotion
+        // automatically when classroom_courses.primary_instructor_id is set on INSERT.
+        if let Ok(Some(_)) = result {
             added_count += 1;
         }
     }
@@ -251,36 +230,8 @@ pub async fn update_course(
         return Err(AppError::InternalServerError("Failed to update course".to_string()));
     }
 
-    // If payload supplied a non-null primary_instructor_id, also keep junction in sync
-    if let Some(instructor_id) = payload.primary_instructor_id {
-        sqlx::query(
-            "INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
-             VALUES ($1, $2, 'primary')
-             ON CONFLICT (classroom_course_id, instructor_id)
-             DO UPDATE SET role = 'primary'"
-        )
-        .bind(id)
-        .bind(instructor_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Junction upsert error: {}", e);
-            AppError::InternalServerError("Failed to sync course instructors".to_string())
-        })?;
-
-        sqlx::query(
-            "UPDATE classroom_course_instructors SET role = 'secondary'
-             WHERE classroom_course_id = $1 AND role = 'primary' AND instructor_id <> $2"
-        )
-        .bind(id)
-        .bind(instructor_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Junction demote error: {}", e);
-            AppError::InternalServerError("Failed to sync course instructors".to_string())
-        })?;
-    }
+    // Trigger cc_sync_junction (migration 078) upserts the junction and demotes other primaries
+    // automatically when classroom_courses.primary_instructor_id changes.
 
     Ok(Json(json!({ "success": true })).into_response())
 }
@@ -368,17 +319,9 @@ pub async fn add_course_instructor(
         return Ok(r);
     }
     let role = body.role.unwrap_or_else(|| "secondary".to_string());
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // If inserting as primary, demote existing primary to secondary
-    if role == "primary" {
-        sqlx::query(
-            "UPDATE classroom_course_instructors SET role = 'secondary'
-             WHERE classroom_course_id = $1 AND role = 'primary'"
-        ).bind(course_id).execute(&mut *tx).await
-          .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    }
-
+    // Trigger cci_sync_primary (migration 078) demotes any existing primary when a new primary
+    // is inserted and refreshes classroom_courses.primary_instructor_id from the junction.
     sqlx::query(
         "INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
          VALUES ($1, $2, $3)
@@ -387,14 +330,10 @@ pub async fn add_course_instructor(
     .bind(course_id)
     .bind(body.instructor_id)
     .bind(&role)
-    .execute(&mut *tx)
+    .execute(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    sync_primary_instructor(&mut *tx, course_id).await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(Json(json!({ "success": true })).into_response())
 }
 
@@ -408,13 +347,11 @@ pub async fn remove_course_instructor(
     if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    // Trigger cci_sync_primary (migration 078) refreshes classroom_courses.primary_instructor_id
+    // from the remaining junction rows after delete.
     sqlx::query("DELETE FROM classroom_course_instructors WHERE classroom_course_id = $1 AND instructor_id = $2")
-        .bind(course_id).bind(instructor_id).execute(&mut *tx).await
+        .bind(course_id).bind(instructor_id).execute(&pool).await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    sync_primary_instructor(&mut *tx, course_id).await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(Json(json!({ "success": true })).into_response())
 }
 
@@ -429,37 +366,12 @@ pub async fn update_course_instructor_role(
     if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    if body.role == "primary" {
-        sqlx::query(
-            "UPDATE classroom_course_instructors SET role = 'secondary'
-             WHERE classroom_course_id = $1 AND role = 'primary' AND instructor_id <> $2"
-        ).bind(course_id).bind(instructor_id).execute(&mut *tx).await
-          .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    }
+    // Trigger cci_sync_primary (migration 078) demotes other primaries and refreshes
+    // classroom_courses.primary_instructor_id when role changes to/from 'primary'.
     sqlx::query(
         "UPDATE classroom_course_instructors SET role = $3
          WHERE classroom_course_id = $1 AND instructor_id = $2"
-    ).bind(course_id).bind(instructor_id).bind(&body.role).execute(&mut *tx).await
+    ).bind(course_id).bind(instructor_id).bind(&body.role).execute(&pool).await
       .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    sync_primary_instructor(&mut *tx, course_id).await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(Json(json!({ "success": true })).into_response())
-}
-
-/// Keep classroom_courses.primary_instructor_id in sync with the oldest primary (or oldest instructor) in the junction.
-async fn sync_primary_instructor(
-    tx: &mut sqlx::PgConnection,
-    course_id: Uuid,
-) -> Result<(), sqlx::Error> {
-    let chosen: Option<Uuid> = sqlx::query_scalar(
-        "SELECT instructor_id FROM classroom_course_instructors
-         WHERE classroom_course_id = $1
-         ORDER BY (role = 'primary') DESC, created_at ASC LIMIT 1"
-    ).bind(course_id).fetch_optional(&mut *tx).await?;
-    sqlx::query(
-        "UPDATE classroom_courses SET primary_instructor_id = $1 WHERE id = $2"
-    ).bind(chosen).bind(course_id).execute(&mut *tx).await?;
-    Ok(())
 }
