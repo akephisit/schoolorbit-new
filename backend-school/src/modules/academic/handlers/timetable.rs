@@ -493,6 +493,17 @@ pub async fn create_timetable_entry(
         }
     })?;
 
+    // Populate junction from source tables (non-fatal; log only)
+    if let Err(e) = populate_entry_instructors(
+        &pool,
+        entry.id,
+        entry.classroom_course_id,
+        entry.activity_slot_id,
+        entry.classroom_id,
+    ).await {
+        eprintln!("Failed to populate entry instructors: {}", e);
+    }
+
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": entry }))).into_response())
 }
 
