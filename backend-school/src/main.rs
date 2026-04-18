@@ -19,7 +19,7 @@ use axum::{
 use db::admin_client::AdminClient;
 use db::pool_manager::PoolManager;
 use db::permission_cache::PermissionCache;
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use serde_json::json;
 use tokio::sync::broadcast;
 use crate::modules::notification::handlers::Notification;
