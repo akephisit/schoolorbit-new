@@ -8,7 +8,8 @@ use axum::{
 use serde_json::json;
 use crate::middleware::permission::check_permission;
 use crate::modules::academic::models::course_planning::{
-    ClassroomCourse, PlanQuery, AssignCoursesRequest, UpdateCourseRequest
+    ClassroomCourse, PlanQuery, AssignCoursesRequest, UpdateCourseRequest,
+    CourseInstructor, AddCourseInstructorRequest, UpdateCourseInstructorRoleRequest
 };
 use uuid::Uuid;
 use crate::permissions::registry::codes;
@@ -230,4 +231,136 @@ pub async fn update_course(
              Err(AppError::InternalServerError("Failed to update course".to_string()))
         }
     }
+}
+
+/// GET /api/academic/planning/courses/:id/instructors
+pub async fn list_course_instructors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(course_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+    let rows: Vec<CourseInstructor> = sqlx::query_as(
+        r#"SELECT cci.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
+           FROM classroom_course_instructors cci
+           JOIN users u ON u.id = cci.instructor_id
+           WHERE cci.classroom_course_id = $1
+           ORDER BY cci.role, cci.created_at"#
+    )
+    .bind(course_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    Ok(Json(json!({ "data": rows })).into_response())
+}
+
+/// POST /api/academic/planning/courses/:id/instructors
+pub async fn add_course_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(course_id): Path<Uuid>,
+    Json(body): Json<AddCourseInstructorRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+    let role = body.role.unwrap_or_else(|| "secondary".to_string());
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // If inserting as primary, demote existing primary to secondary
+    if role == "primary" {
+        sqlx::query(
+            "UPDATE classroom_course_instructors SET role = 'secondary'
+             WHERE classroom_course_id = $1 AND role = 'primary'"
+        ).bind(course_id).execute(&mut *tx).await
+          .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    sqlx::query(
+        "INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (classroom_course_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
+    )
+    .bind(course_id)
+    .bind(body.instructor_id)
+    .bind(&role)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    sync_primary_instructor(&mut *tx, course_id).await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
+/// DELETE /api/academic/planning/courses/:id/instructors/:uid
+pub async fn remove_course_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((course_id, instructor_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    sqlx::query("DELETE FROM classroom_course_instructors WHERE classroom_course_id = $1 AND instructor_id = $2")
+        .bind(course_id).bind(instructor_id).execute(&mut *tx).await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    sync_primary_instructor(&mut *tx, course_id).await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
+/// PUT /api/academic/planning/courses/:id/instructors/:uid
+pub async fn update_course_instructor_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((course_id, instructor_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<UpdateCourseInstructorRoleRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    if body.role == "primary" {
+        sqlx::query(
+            "UPDATE classroom_course_instructors SET role = 'secondary'
+             WHERE classroom_course_id = $1 AND role = 'primary' AND instructor_id <> $2"
+        ).bind(course_id).bind(instructor_id).execute(&mut *tx).await
+          .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+    sqlx::query(
+        "UPDATE classroom_course_instructors SET role = $3
+         WHERE classroom_course_id = $1 AND instructor_id = $2"
+    ).bind(course_id).bind(instructor_id).bind(&body.role).execute(&mut *tx).await
+      .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    sync_primary_instructor(&mut *tx, course_id).await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
+/// Keep classroom_courses.primary_instructor_id in sync with the oldest primary (or oldest instructor) in the junction.
+async fn sync_primary_instructor(
+    tx: &mut sqlx::PgConnection,
+    course_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    let chosen: Option<Uuid> = sqlx::query_scalar(
+        "SELECT instructor_id FROM classroom_course_instructors
+         WHERE classroom_course_id = $1
+         ORDER BY (role = 'primary') DESC, created_at ASC LIMIT 1"
+    ).bind(course_id).fetch_optional(&mut *tx).await?;
+    sqlx::query(
+        "UPDATE classroom_courses SET primary_instructor_id = $1 WHERE id = $2"
+    ).bind(chosen).bind(course_id).execute(&mut *tx).await?;
+    Ok(())
 }

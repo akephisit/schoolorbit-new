@@ -43,6 +43,12 @@ pub fn academic_routes() -> Router<AppState> {
         // Course Planning
         .route("/planning/courses", get(handlers::course_planning::list_classroom_courses).post(handlers::course_planning::assign_courses))
         .route("/planning/courses/{id}", put(handlers::course_planning::update_course).delete(handlers::course_planning::remove_course))
+        .route("/planning/courses/{id}/instructors",
+               get(handlers::course_planning::list_course_instructors)
+               .post(handlers::course_planning::add_course_instructor))
+        .route("/planning/courses/{id}/instructors/{uid}",
+               axum::routing::delete(handlers::course_planning::remove_course_instructor)
+               .put(handlers::course_planning::update_course_instructor_role))
 
         // Timetable: Periods
         .route("/periods", get(handlers::timetable::list_periods).post(handlers::timetable::create_period))
