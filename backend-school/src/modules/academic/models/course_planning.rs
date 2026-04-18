@@ -52,3 +52,31 @@ pub struct UpdateCourseRequest {
     pub primary_instructor_id: Option<Uuid>,
     pub settings: Option<serde_json::Value>,
 }
+
+// ==========================================
+// Classroom Course Instructors (team teaching)
+// ==========================================
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CourseInstructor {
+    pub id: Uuid,
+    pub classroom_course_id: Uuid,
+    pub instructor_id: Uuid,
+    pub role: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub instructor_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddCourseInstructorRequest {
+    pub instructor_id: Uuid,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateCourseInstructorRoleRequest {
+    pub role: String,
+}
