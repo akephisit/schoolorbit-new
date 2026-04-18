@@ -1890,7 +1890,7 @@
 							{:else}
 								<!-- Synchronized: read-only -->
 								<div
-									class="border border-dashed rounded-lg p-2.5 opacity-60 cursor-not-allowed bg-gray-50 border-gray-300"
+									class="border border-dashed rounded-lg p-2.5 opacity-60 bg-gray-50 border-gray-300"
 								>
 									<div class="flex justify-between items-start mb-1">
 										<Badge variant="outline" class="text-[10px]">
@@ -1903,7 +1903,27 @@
 									<h4 class="font-medium text-sm line-clamp-1 leading-tight flex items-center gap-1">
 										<Lock class="w-3 h-3 shrink-0" /> {activity.name}
 									</h4>
-									<div class="text-[10px] text-muted-foreground mt-1">จัดพร้อมกัน — ใช้ Batch</div>
+									{#if viewMode === 'INSTRUCTOR' && selectedInstructorId}
+										<Button
+											variant="outline"
+											size="sm"
+											class="mt-1 h-6 text-xs w-full"
+											onclick={async () => {
+												try {
+													await restoreInstructorToSlot(activity.id, selectedInstructorId);
+													toast.success('แสดงในตารางแล้ว');
+													loadTimetable();
+													loadSidebarActivitySlots();
+												} catch (e: any) {
+													toast.error(e.message || 'ไม่สำเร็จ');
+												}
+											}}
+										>
+											แสดงในตาราง
+										</Button>
+									{:else}
+										<div class="text-[10px] text-muted-foreground mt-1">จัดพร้อมกัน — ใช้ Batch</div>
+									{/if}
 								</div>
 							{/if}
 						{/each}
