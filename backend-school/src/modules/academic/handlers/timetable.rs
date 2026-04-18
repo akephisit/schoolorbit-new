@@ -298,16 +298,19 @@ pub async fn list_timetable_entries(
             te.*,
             s.code   AS subject_code,
             s.name_th AS subject_name_th,
-            CASE
-                WHEN u.id IS NOT NULL THEN concat(u.first_name, ' ', u.last_name)
-                WHEN u2.id IS NOT NULL THEN concat(u2.first_name, ' ', u2.last_name)
-                ELSE NULL
-            END AS instructor_name,
+            (SELECT ARRAY_AGG(concat(u2.first_name, ' ', u2.last_name) ORDER BY tei2.role, tei2.created_at)
+             FROM timetable_entry_instructors tei2
+             JOIN users u2 ON u2.id = tei2.instructor_id
+             WHERE tei2.entry_id = te.id) AS instructor_names,
+            (SELECT concat(u3.first_name, ' ', u3.last_name)
+             FROM timetable_entry_instructors tei3
+             JOIN users u3 ON u3.id = tei3.instructor_id
+             WHERE tei3.entry_id = te.id
+             ORDER BY tei3.role, tei3.created_at
+             LIMIT 1) AS instructor_name,
             cr.name  AS classroom_name,
             r.code   AS room_code,
             ap.name  AS period_name,
-            ap.start_time,
-            ap.end_time,
             ap.start_time,
             ap.end_time,
             asl.name AS activity_slot_name,
@@ -318,11 +321,8 @@ pub async fn list_timetable_entries(
         LEFT JOIN subjects s ON cc.subject_id = s.id
         JOIN class_rooms cr ON te.classroom_id = cr.id
         JOIN academic_periods ap ON te.period_id = ap.id
-        LEFT JOIN users u ON cc.primary_instructor_id = u.id
         LEFT JOIN rooms r ON te.room_id = r.id
         LEFT JOIN activity_slots asl ON te.activity_slot_id = asl.id
-        LEFT JOIN activity_slot_classroom_assignments asca ON asca.slot_id = te.activity_slot_id AND asca.classroom_id = te.classroom_id
-        LEFT JOIN users u2 ON asca.instructor_id = u2.id
         WHERE te.is_active = true
         "#
     );
@@ -343,7 +343,7 @@ pub async fn list_timetable_entries(
     if let Some(_) = query.instructor_id {
         idx += 1;
         sql.push_str(&format!(
-            " AND (cc.primary_instructor_id = ${idx} OR te.activity_slot_id IN (SELECT activity_slot_id FROM activity_slot_instructors WHERE user_id = ${idx}) OR asca.instructor_id = ${idx})"
+            " AND EXISTS (SELECT 1 FROM timetable_entry_instructors tei WHERE tei.entry_id = te.id AND tei.instructor_id = ${idx})"
         ));
     }
 
