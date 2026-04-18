@@ -1338,3 +1338,28 @@ pub async fn remove_entry_instructor(
 
     Ok(Json(json!({ "success": true })).into_response())
 }
+
+/// POST /api/academic/timetable/slots/:slot_id/instructors/:uid/restore
+/// Adds the instructor back to every active entry of the slot.
+pub async fn restore_instructor_to_slot_entries(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+    let affected = sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         SELECT te.id, $2, 'primary' FROM academic_timetable_entries te
+         WHERE te.activity_slot_id = $1 AND te.is_active = true
+         ON CONFLICT DO NOTHING"
+    )
+    .bind(slot_id)
+    .bind(instructor_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    Ok(Json(json!({ "success": true, "inserted": affected.rows_affected() })).into_response())
+}
