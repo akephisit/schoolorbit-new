@@ -285,6 +285,53 @@ pub async fn update_course(
     Ok(Json(json!({ "success": true })).into_response())
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct BatchListCourseInstructorsQuery {
+    /// Comma-separated UUIDs
+    pub course_ids: String,
+}
+
+/// GET /api/academic/planning/courses/instructors?course_ids=uuid1,uuid2,...
+/// Returns instructors for multiple courses in one query. Output is an object keyed by course_id.
+pub async fn batch_list_course_instructors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<BatchListCourseInstructorsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let ids: Vec<Uuid> = query.course_ids.split(',')
+        .filter_map(|s| s.trim().parse::<Uuid>().ok())
+        .collect();
+
+    if ids.is_empty() {
+        return Ok(Json(json!({ "data": {} })).into_response());
+    }
+
+    let rows: Vec<CourseInstructor> = sqlx::query_as(
+        r#"SELECT cci.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
+           FROM classroom_course_instructors cci
+           JOIN users u ON u.id = cci.instructor_id
+           WHERE cci.classroom_course_id = ANY($1)
+           ORDER BY cci.classroom_course_id, cci.role, cci.created_at"#
+    )
+    .bind(&ids)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Group by classroom_course_id
+    let mut grouped: std::collections::HashMap<Uuid, Vec<CourseInstructor>> = std::collections::HashMap::new();
+    for row in rows {
+        grouped.entry(row.classroom_course_id).or_default().push(row);
+    }
+
+    Ok(Json(json!({ "data": grouped })).into_response())
+}
+
 /// GET /api/academic/planning/courses/:id/instructors
 pub async fn list_course_instructors(
     State(state): State<AppState>,

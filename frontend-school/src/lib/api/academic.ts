@@ -913,6 +913,12 @@ export const listCourseInstructors = async (courseId: string): Promise<{ data: C
     return await fetchApi(`/api/academic/planning/courses/${courseId}/instructors`);
 };
 
+export const batchListCourseInstructors = async (courseIds: string[]): Promise<{ data: Record<string, CourseInstructor[]> }> => {
+    if (courseIds.length === 0) return { data: {} };
+    const params = new URLSearchParams({ course_ids: courseIds.join(',') });
+    return await fetchApi(`/api/academic/planning/courses/instructors?${params}`);
+};
+
 export const addCourseInstructor = async (
     courseId: string,
     instructorId: string,

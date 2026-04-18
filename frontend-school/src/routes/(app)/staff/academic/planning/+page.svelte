@@ -13,6 +13,7 @@
 		updateCourse,
 		generateCoursesFromPlan,
 		listCourseInstructors,
+		batchListCourseInstructors,
 		addCourseInstructor,
 		removeCourseInstructor,
 		updateCourseInstructorRole,
@@ -427,13 +428,26 @@
 		}
 	});
 
-	// Auto-load team instructors when courses list changes
+	// Auto-load team instructors when courses list changes — batched to avoid N+1
+	let loadedTeamCourseIds = $state<Set<string>>(new Set());
+
 	$effect(() => {
-		for (const c of courses) {
-			if (!(c.id in teamInstructorsMap)) {
-				loadTeamInstructors(c.id);
-			}
-		}
+		const courseIds = courses.map((c) => c.id).filter((id) => !loadedTeamCourseIds.has(id));
+		if (courseIds.length === 0) return;
+
+		batchListCourseInstructors(courseIds)
+			.then((res) => {
+				const newMap = { ...teamInstructorsMap };
+				for (const id of courseIds) {
+					newMap[id] = res.data[id] ?? [];
+					loadedTeamCourseIds.add(id);
+				}
+				teamInstructorsMap = newMap;
+				loadedTeamCourseIds = new Set(loadedTeamCourseIds);
+			})
+			.catch(() => {
+				/* ignore */
+			});
 	});
 
 	onMount(initData);
