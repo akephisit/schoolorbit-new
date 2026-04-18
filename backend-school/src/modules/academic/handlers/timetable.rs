@@ -1128,7 +1128,7 @@ pub async fn create_batch_timetable_entries(
                 }
             }
 
-            let result = sqlx::query(
+            let inserted_id: Option<Uuid> = sqlx::query_scalar(
                 r#"
                 INSERT INTO academic_timetable_entries (
                     id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
@@ -1137,6 +1137,7 @@ pub async fn create_batch_timetable_entries(
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9, $10, $11, $12)
                 ON CONFLICT DO NOTHING
+                RETURNING id
                 "#
             )
             .bind(Uuid::new_v4())
@@ -1151,12 +1152,42 @@ pub async fn create_batch_timetable_entries(
             .bind(classroom_course_id)
             .bind(&payload.note)
             .bind(payload.activity_slot_id)
-            .execute(&mut *tx)
-            .await;
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to batch insert for classroom {}: {}", classroom_id, e);
+                AppError::InternalServerError("Failed to batch create entries".to_string())
+            })?;
 
-            if let Err(e) = result {
-                 eprintln!("Failed to batch insert for classroom {}: {}", classroom_id, e);
-                 return Err(AppError::InternalServerError("Failed to batch create entries".to_string()));
+            if let Some(new_entry_id) = inserted_id {
+                if let Some(cc_id) = classroom_course_id {
+                    sqlx::query(
+                        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                         SELECT $1, instructor_id, role FROM classroom_course_instructors
+                         WHERE classroom_course_id = $2 ON CONFLICT DO NOTHING"
+                    ).bind(new_entry_id).bind(cc_id).execute(&mut *tx).await
+                      .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+                } else if let Some(slot_id) = payload.activity_slot_id {
+                    let mode: Option<String> = sqlx::query_scalar(
+                        "SELECT scheduling_mode FROM activity_slots WHERE id = $1"
+                    ).bind(slot_id).fetch_optional(&mut *tx).await.ok().flatten();
+                    if mode.as_deref() == Some("independent") {
+                        sqlx::query(
+                            "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                             SELECT $1, instructor_id, 'primary'
+                             FROM activity_slot_classroom_assignments
+                             WHERE slot_id = $2 AND classroom_id = $3 ON CONFLICT DO NOTHING"
+                        ).bind(new_entry_id).bind(slot_id).bind(classroom_id).execute(&mut *tx).await
+                          .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+                    } else {
+                        sqlx::query(
+                            "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                             SELECT $1, user_id, 'primary' FROM activity_slot_instructors
+                             WHERE slot_id = $2 ON CONFLICT DO NOTHING"
+                        ).bind(new_entry_id).bind(slot_id).execute(&mut *tx).await
+                          .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+                    }
+                }
             }
         }
     }
