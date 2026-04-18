@@ -11,7 +11,9 @@
 		deleteTimetableEntry,
 		listPeriods,
 		createBatchTimetableEntries,
-		deleteBatchTimetableEntries
+		deleteBatchTimetableEntries,
+		removeEntryInstructor,
+		restoreInstructorToSlot
 	} from '$lib/api/timetable';
 	import {
 		lookupAcademicYears,
@@ -373,14 +375,56 @@
 	}
 
 	async function handleDeleteEntry(entry: TimetableEntry) {
+		if (viewMode === 'INSTRUCTOR') {
+			if (entry.activity_slot_id) {
+				const slot = sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id)
+					|| instructorActivityItems.find((i) => i.slot.id === entry.activity_slot_id)?.slot;
+				if (slot?.scheduling_mode === 'synchronized') {
+					if (!selectedInstructorId) return;
+					const entriesOfSlot = timetableEntries.filter((e) => e.activity_slot_id === entry.activity_slot_id);
+					try {
+						for (const e of entriesOfSlot) {
+							await removeEntryInstructor(e.id, selectedInstructorId);
+						}
+						toast.success('ลบครูออกจากกิจกรรมนี้แล้ว (ทุกห้อง)');
+					} catch (e: any) {
+						toast.error(e.message || 'ลบไม่สำเร็จ');
+						return;
+					}
+				} else {
+					// Independent: one entry = one classroom; delete entry
+					try {
+						await deleteTimetableEntry(entry.id);
+						toast.success('ลบกิจกรรมออกจากตารางสำเร็จ');
+					} catch (e: any) {
+						toast.error(e.message || 'ลบไม่สำเร็จ');
+						return;
+					}
+				}
+			} else {
+				// Regular course / team: remove this instructor from junction
+				if (!selectedInstructorId) return;
+				try {
+					await removeEntryInstructor(entry.id, selectedInstructorId);
+					toast.success('ลบคุณออกจากวิชานี้แล้ว');
+				} catch (e: any) {
+					toast.error(e.message || 'ลบไม่สำเร็จ');
+					return;
+				}
+			}
+			if ($authStore.user) {
+				sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+			}
+			loadTimetable();
+			loadSidebarActivitySlots();
+			return;
+		}
+
 		if (entry.activity_slot_id) {
 			const slot = sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id)
 				|| instructorActivityItems.find((i) => i.slot.id === entry.activity_slot_id)?.slot;
 			if (slot?.scheduling_mode === 'independent') {
 				// Independent: ลบ single entry ตรง ๆ
-				await doDeleteEntry(entry.id, false);
-			} else if (viewMode === 'INSTRUCTOR') {
-				// INSTRUCTOR view + synchronized: ลบแค่ entry เดียว (ไม่ batch ทุกห้อง)
 				await doDeleteEntry(entry.id, false);
 			} else {
 				// CLASSROOM view + synchronized: ถามก่อน
