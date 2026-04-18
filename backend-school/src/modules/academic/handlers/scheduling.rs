@@ -347,12 +347,12 @@ async fn run_scheduling_job(
     
     // Insert new assignments
     for assignment in &result.assignments {
-        sqlx::query(
+        let inserted_id: Option<Uuid> = sqlx::query_scalar(
             r#"
-            INSERT INTO academic_timetable_entries 
+            INSERT INTO academic_timetable_entries
                 (id, classroom_course_id, day_of_week, period_id, room_id,
                  classroom_id, academic_semester_id, entry_type)
-            SELECT 
+            SELECT
                 $1, $2, $3, $4, $5,
                 cc.classroom_id, cc.academic_semester_id, 'COURSE'
             FROM classroom_courses cc
@@ -360,6 +360,7 @@ async fn run_scheduling_job(
             ON CONFLICT (classroom_id, academic_semester_id, day_of_week, period_id) WHERE is_active = true
             DO UPDATE
             SET room_id = EXCLUDED.room_id, updated_at = NOW()
+            RETURNING id
             "#
         )
         .bind(assignment.id)
@@ -367,8 +368,24 @@ async fn run_scheduling_job(
         .bind(&assignment.time_slot.day)
         .bind(assignment.time_slot.period_id)
         .bind(assignment.room_id)
-        .execute(pool)
+        .fetch_optional(pool)
         .await?;
+
+        // Populate timetable_entry_instructors junction so INSTRUCTOR view
+        // (which filters via EXISTS on this table) can see auto-scheduled entries.
+        if let Some(entry_id) = inserted_id {
+            sqlx::query(
+                "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                 SELECT $1, instructor_id, role FROM classroom_course_instructors
+                 WHERE classroom_course_id = $2
+                 ON CONFLICT DO NOTHING"
+            )
+            .bind(entry_id)
+            .bind(assignment.classroom_course_id)
+            .execute(pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+        }
     }
     
     // Update job with results
