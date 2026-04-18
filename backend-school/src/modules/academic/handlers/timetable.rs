@@ -28,6 +28,71 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
+/// Populate timetable_entry_instructors from the source table for a newly-created entry.
+/// Uses &PgPool only; callers inside transactions should inline the same INSERTs.
+async fn populate_entry_instructors(
+    pool: &sqlx::PgPool,
+    entry_id: Uuid,
+    classroom_course_id: Option<Uuid>,
+    activity_slot_id: Option<Uuid>,
+    classroom_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    if let Some(cc_id) = classroom_course_id {
+        sqlx::query(
+            "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+             SELECT $1, instructor_id, role FROM classroom_course_instructors
+             WHERE classroom_course_id = $2
+             ON CONFLICT DO NOTHING"
+        )
+        .bind(entry_id)
+        .bind(cc_id)
+        .execute(pool)
+        .await?;
+        return Ok(());
+    }
+
+    if let Some(slot_id) = activity_slot_id {
+        let mode: Option<String> = sqlx::query_scalar(
+            "SELECT scheduling_mode FROM activity_slots WHERE id = $1"
+        )
+        .bind(slot_id)
+        .fetch_optional(pool)
+        .await?;
+
+        match mode.as_deref() {
+            Some("independent") => {
+                sqlx::query(
+                    "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                     SELECT $1, instructor_id, 'primary'
+                     FROM activity_slot_classroom_assignments
+                     WHERE slot_id = $2 AND classroom_id = $3
+                     ON CONFLICT DO NOTHING"
+                )
+                .bind(entry_id)
+                .bind(slot_id)
+                .bind(classroom_id)
+                .execute(pool)
+                .await?;
+            }
+            _ => {
+                sqlx::query(
+                    "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                     SELECT $1, user_id, 'primary'
+                     FROM activity_slot_instructors
+                     WHERE slot_id = $2
+                     ON CONFLICT DO NOTHING"
+                )
+                .bind(entry_id)
+                .bind(slot_id)
+                .execute(pool)
+                .await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // ============================================
 // Academic Periods API
 // ============================================
