@@ -463,6 +463,7 @@ pub async fn create_timetable_entry(
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $11, $12)
         RETURNING *, NULL::TEXT AS subject_code, NULL::TEXT AS subject_name_th,
+                  NULL::TEXT[] AS instructor_names,
                   NULL::TEXT AS instructor_name, NULL::TEXT AS classroom_name,
                   NULL::TEXT AS room_code, NULL::TEXT AS period_name,
                   NULL::TIME AS start_time, NULL::TIME AS end_time,
