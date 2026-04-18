@@ -901,3 +901,43 @@ export const getMyActivityEnrollments = async (): Promise<{ data: string[] }> =>
     return await fetchApi('/api/academic/activities/my-enrollments');
 };
 
+export interface CourseInstructor {
+    id: string;
+    classroom_course_id: string;
+    instructor_id: string;
+    role: 'primary' | 'secondary';
+    instructor_name?: string;
+}
+
+export const listCourseInstructors = async (courseId: string): Promise<{ data: CourseInstructor[] }> => {
+    return await fetchApi(`/api/academic/planning/courses/${courseId}/instructors`);
+};
+
+export const addCourseInstructor = async (
+    courseId: string,
+    instructorId: string,
+    role: 'primary' | 'secondary' = 'secondary'
+) => {
+    return await fetchApi(`/api/academic/planning/courses/${courseId}/instructors`, {
+        method: 'POST',
+        body: JSON.stringify({ instructor_id: instructorId, role })
+    });
+};
+
+export const removeCourseInstructor = async (courseId: string, instructorId: string) => {
+    return await fetchApi(`/api/academic/planning/courses/${courseId}/instructors/${instructorId}`, {
+        method: 'DELETE'
+    });
+};
+
+export const updateCourseInstructorRole = async (
+    courseId: string,
+    instructorId: string,
+    role: 'primary' | 'secondary'
+) => {
+    return await fetchApi(`/api/academic/planning/courses/${courseId}/instructors/${instructorId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ role })
+    });
+};
+

@@ -296,3 +296,26 @@ export interface MyActivityForEntry {
 export const getMyActivityForEntry = async (entryId: string): Promise<{ data: MyActivityForEntry | null }> => {
     return await fetchApi(`/api/academic/timetable/${entryId}/my-activity`);
 };
+
+export const addEntryInstructor = async (
+    entryId: string,
+    instructorId: string,
+    role: 'primary' | 'secondary' = 'secondary'
+) => {
+    return await fetchApi(`/api/academic/timetable/${entryId}/instructors`, {
+        method: 'POST',
+        body: JSON.stringify({ instructor_id: instructorId, role })
+    });
+};
+
+export const removeEntryInstructor = async (entryId: string, instructorId: string) => {
+    return await fetchApi(`/api/academic/timetable/${entryId}/instructors/${instructorId}`, {
+        method: 'DELETE'
+    });
+};
+
+export const restoreInstructorToSlot = async (slotId: string, instructorId: string) => {
+    return await fetchApi(`/api/academic/timetable/slots/${slotId}/instructors/${instructorId}/restore`, {
+        method: 'POST'
+    });
+};
