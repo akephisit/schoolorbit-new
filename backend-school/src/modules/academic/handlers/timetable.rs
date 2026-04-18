@@ -1273,3 +1273,68 @@ pub async fn get_my_activity_for_entry(
         }
     }
 }
+
+/// POST /api/academic/timetable/:id/instructors
+#[derive(Debug, serde::Deserialize)]
+pub struct AddEntryInstructorRequest {
+    pub instructor_id: Uuid,
+    pub role: Option<String>,
+}
+
+pub async fn add_entry_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(entry_id): Path<Uuid>,
+    Json(body): Json<AddEntryInstructorRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+    let role = body.role.unwrap_or_else(|| "primary".to_string());
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+    )
+    .bind(entry_id)
+    .bind(body.instructor_id)
+    .bind(role)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
+/// DELETE /api/academic/timetable/:id/instructors/:uid
+pub async fn remove_entry_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((entry_id, instructor_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+    sqlx::query("DELETE FROM timetable_entry_instructors WHERE entry_id = $1 AND instructor_id = $2")
+        .bind(entry_id)
+        .bind(instructor_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // If entry has no instructors left AND it's a regular course entry, delete the entry too
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM timetable_entry_instructors WHERE entry_id = $1"
+    ).bind(entry_id).fetch_one(&pool).await.unwrap_or(1);
+    if remaining == 0 {
+        let is_course: bool = sqlx::query_scalar(
+            "SELECT classroom_course_id IS NOT NULL FROM academic_timetable_entries WHERE id = $1"
+        ).bind(entry_id).fetch_optional(&pool).await.ok().flatten().unwrap_or(false);
+        if is_course {
+            sqlx::query("DELETE FROM academic_timetable_entries WHERE id = $1")
+                .bind(entry_id).execute(&pool).await.ok();
+        }
+    }
+
+    Ok(Json(json!({ "success": true })).into_response())
+}
