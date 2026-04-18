@@ -89,6 +89,11 @@ pub struct TimetableEntry {
     pub subject_name_th: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructor_names: Option<Vec<String>>,
+
+    // Keep for backward-compat UI display (first name). Populated from instructor_names[0].
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub instructor_name: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
