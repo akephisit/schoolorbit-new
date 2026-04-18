@@ -39,7 +39,7 @@ hex = "0.4"
 
 # Field Encryption (AES-256-GCM)
 aes-gcm = "0.10"
-base64 = "0.21"
+base64 = "0.22"
 sha256 = "1.5"
 rand = "0.8"
 tokio-cron-scheduler = "0.15.1"
