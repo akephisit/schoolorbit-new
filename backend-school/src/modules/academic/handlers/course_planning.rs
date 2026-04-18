@@ -139,8 +139,8 @@ pub async fn assign_courses(
     let mut added_count = 0;
 
     for subject_id in payload.subject_ids {
-        // Insert if not exists
-        let result = sqlx::query(
+        // Insert if not exists, return new course id + resolved instructor
+        let result = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
             r#"
             INSERT INTO classroom_courses (
                 classroom_id, academic_semester_id, subject_id, primary_instructor_id
@@ -149,18 +149,40 @@ pub async fn assign_courses(
             FROM subjects s
             WHERE s.id = $3
             ON CONFLICT (classroom_id, academic_semester_id, subject_id) DO NOTHING
+            RETURNING id, primary_instructor_id
             "#
         )
         .bind(payload.classroom_id)
         .bind(payload.academic_semester_id)
         .bind(subject_id)
-        .execute(&pool)
+        .fetch_optional(&pool)
         .await;
 
-        if let Ok(res) = result {
-            if res.rows_affected() > 0 {
-                added_count += 1;
-            }
+        if let Ok(Some((course_id, Some(instructor_id)))) = result {
+            added_count += 1;
+            // Populate junction so INSTRUCTOR view sees this course
+            let _ = sqlx::query(
+                "INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
+                 VALUES ($1, $2, 'primary')
+                 ON CONFLICT (classroom_course_id, instructor_id)
+                 DO UPDATE SET role = 'primary'"
+            )
+            .bind(course_id)
+            .bind(instructor_id)
+            .execute(&pool)
+            .await;
+            // Demote any OTHER primary to secondary (enforce uniqueness of primary)
+            let _ = sqlx::query(
+                "UPDATE classroom_course_instructors SET role = 'secondary'
+                 WHERE classroom_course_id = $1 AND role = 'primary' AND instructor_id <> $2"
+            )
+            .bind(course_id)
+            .bind(instructor_id)
+            .execute(&pool)
+            .await;
+        } else if let Ok(Some(_)) = result {
+            // Course inserted but no default instructor — skip junction write
+            added_count += 1;
         }
     }
 
@@ -210,7 +232,7 @@ pub async fn update_course(
     // Simple update query
     let result = sqlx::query(
         r#"
-        UPDATE classroom_courses SET 
+        UPDATE classroom_courses SET
             primary_instructor_id = COALESCE($1, primary_instructor_id),
             settings = COALESCE($2, settings),
             updated_at = NOW()
@@ -223,14 +245,44 @@ pub async fn update_course(
     .bind(id)
     .execute(&pool)
     .await;
-    
-    match result {
-        Ok(_) => Ok(Json(json!({ "success": true })).into_response()),
-        Err(e) => {
-             eprintln!("Update error: {}", e);
-             Err(AppError::InternalServerError("Failed to update course".to_string()))
-        }
+
+    if let Err(e) = result {
+        eprintln!("Update error: {}", e);
+        return Err(AppError::InternalServerError("Failed to update course".to_string()));
     }
+
+    // If payload supplied a non-null primary_instructor_id, also keep junction in sync
+    if let Some(instructor_id) = payload.primary_instructor_id {
+        sqlx::query(
+            "INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
+             VALUES ($1, $2, 'primary')
+             ON CONFLICT (classroom_course_id, instructor_id)
+             DO UPDATE SET role = 'primary'"
+        )
+        .bind(id)
+        .bind(instructor_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Junction upsert error: {}", e);
+            AppError::InternalServerError("Failed to sync course instructors".to_string())
+        })?;
+
+        sqlx::query(
+            "UPDATE classroom_course_instructors SET role = 'secondary'
+             WHERE classroom_course_id = $1 AND role = 'primary' AND instructor_id <> $2"
+        )
+        .bind(id)
+        .bind(instructor_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Junction demote error: {}", e);
+            AppError::InternalServerError("Failed to sync course instructors".to_string())
+        })?;
+    }
+
+    Ok(Json(json!({ "success": true })).into_response())
 }
 
 /// GET /api/academic/planning/courses/:id/instructors

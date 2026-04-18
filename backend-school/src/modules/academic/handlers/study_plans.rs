@@ -579,24 +579,57 @@ pub async fn generate_courses_from_plan(
             }
         }
         
-        // Insert
-        sqlx::query(
+        // Insert, return new course id so we can populate the instructor junction
+        let inserted: Option<(Uuid,)> = sqlx::query_as(
             "INSERT INTO classroom_courses
              (classroom_id, subject_id, academic_semester_id, settings, primary_instructor_id)
              VALUES ($1, $2, $3, '{}'::jsonb, $4)
-             ON CONFLICT (classroom_id, subject_id, academic_semester_id) DO NOTHING"
+             ON CONFLICT (classroom_id, subject_id, academic_semester_id) DO NOTHING
+             RETURNING id"
         )
         .bind(req.classroom_id)
         .bind(subject_id)
         .bind(req.academic_semester_id)
         .bind(default_instructor_id)
-        .execute(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| {
              eprintln!("Failed to generate course: {}", e);
              AppError::InternalServerError("Database error".to_string())
         })?;
-        
+
+        if let Some((course_id,)) = inserted {
+            if let Some(instructor_id) = default_instructor_id {
+                sqlx::query(
+                    "INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
+                     VALUES ($1, $2, 'primary')
+                     ON CONFLICT (classroom_course_id, instructor_id)
+                     DO UPDATE SET role = 'primary'"
+                )
+                .bind(course_id)
+                .bind(instructor_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    eprintln!("Failed to insert course instructor junction: {}", e);
+                    AppError::InternalServerError("Database error".to_string())
+                })?;
+
+                sqlx::query(
+                    "UPDATE classroom_course_instructors SET role = 'secondary'
+                     WHERE classroom_course_id = $1 AND role = 'primary' AND instructor_id <> $2"
+                )
+                .bind(course_id)
+                .bind(instructor_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    eprintln!("Failed to demote other primary instructors: {}", e);
+                    AppError::InternalServerError("Database error".to_string())
+                })?;
+            }
+        }
+
         added += 1;
     }
     
