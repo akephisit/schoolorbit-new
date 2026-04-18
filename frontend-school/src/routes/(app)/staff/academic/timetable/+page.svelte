@@ -2012,7 +2012,7 @@
 												{#if viewMode === 'CLASSROOM'}
 													<div class="flex items-center gap-1 truncate">
 														<Users class="w-3 h-3 shrink-0" />
-														{entry.instructor_name || '-'}
+														{(entry.instructor_names && entry.instructor_names.length > 0) ? entry.instructor_names.join(', ') : (entry.instructor_name || '-')}
 													</div>
 												{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
 													<!-- Independent: แสดงชื่อห้อง -->
