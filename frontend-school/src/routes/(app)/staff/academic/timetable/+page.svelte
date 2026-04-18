@@ -13,7 +13,8 @@
 		createBatchTimetableEntries,
 		deleteBatchTimetableEntries,
 		removeEntryInstructor,
-		restoreInstructorToSlot
+		restoreInstructorToSlot,
+		hideInstructorFromSlot
 	} from '$lib/api/timetable';
 	import {
 		lookupAcademicYears,
@@ -381,14 +382,11 @@
 					|| instructorActivityItems.find((i) => i.slot.id === entry.activity_slot_id)?.slot;
 				if (slot?.scheduling_mode === 'synchronized') {
 					if (!selectedInstructorId) return;
-					const entriesOfSlot = timetableEntries.filter((e) => e.activity_slot_id === entry.activity_slot_id);
 					try {
-						for (const e of entriesOfSlot) {
-							await removeEntryInstructor(e.id, selectedInstructorId);
-						}
+						await hideInstructorFromSlot(entry.activity_slot_id, selectedInstructorId);
 						toast.success('ลบครูออกจากกิจกรรมนี้แล้ว (ทุกห้อง)');
-					} catch (e: any) {
-						toast.error(e.message || 'ลบไม่สำเร็จ');
+					} catch (err: any) {
+						toast.error(err.message || 'ลบไม่สำเร็จ');
 						return;
 					}
 				} else {

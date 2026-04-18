@@ -1404,3 +1404,31 @@ pub async fn restore_instructor_to_slot_entries(
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(Json(json!({ "success": true, "inserted": affected.rows_affected() })).into_response())
 }
+
+/// DELETE /api/academic/timetable/slots/:slot_id/instructors/:uid
+/// Removes the instructor from every entry of the given slot (current semester implied by the entries).
+/// Opposite of restore_instructor_to_slot_entries.
+pub async fn hide_instructor_from_slot_entries(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+    let affected = sqlx::query(
+        "DELETE FROM timetable_entry_instructors
+         WHERE instructor_id = $1
+           AND entry_id IN (
+               SELECT id FROM academic_timetable_entries
+               WHERE activity_slot_id = $2 AND is_active = true
+           )"
+    )
+    .bind(instructor_id)
+    .bind(slot_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    Ok(Json(json!({ "success": true, "deleted": affected.rows_affected() })).into_response())
+}

@@ -319,3 +319,9 @@ export const restoreInstructorToSlot = async (slotId: string, instructorId: stri
         method: 'POST'
     });
 };
+
+export const hideInstructorFromSlot = async (slotId: string, instructorId: string) => {
+    return await fetchApi(`/api/academic/timetable/slots/${slotId}/instructors/${instructorId}`, {
+        method: 'DELETE'
+    });
+};
