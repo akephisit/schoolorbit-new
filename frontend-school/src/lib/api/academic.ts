@@ -467,7 +467,6 @@ export interface StudyPlanSubject {
     term: string; // '1', '2', '3'
     subject_id: string;
     subject_code: string;
-    is_required: boolean;
     display_order: number;
     // Joined fields
     subject_name_th?: string;
@@ -581,7 +580,6 @@ export const addSubjectsToVersion = async (versionId: string, subjects: {
     subject_id: string;
     grade_level_id: string;
     term: string;
-    is_required?: boolean;
     display_order?: number;
 }[]) => {
     return await fetchApi(`/api/academic/study-plan-versions/${versionId}/subjects`, {
@@ -963,7 +961,6 @@ export interface StudyPlanVersionActivity {
     study_plan_version_id: string;
     activity_catalog_id: string;
     allowed_grade_level_ids?: string[];
-    is_required: boolean;
     display_order: number;
     created_at: string;
     updated_at: string;
@@ -985,7 +982,6 @@ export const listPlanActivities = async (versionId: string): Promise<{ data: Stu
 export const addPlanActivity = async (versionId: string, data: {
     activity_catalog_id: string;
     allowed_grade_level_ids?: string[];
-    is_required?: boolean;
     display_order?: number;
 }) => {
     return await fetchApi(`/api/academic/study-plan-versions/${versionId}/activities`, {
@@ -996,7 +992,6 @@ export const addPlanActivity = async (versionId: string, data: {
 
 export const updatePlanActivity = async (id: string, data: Partial<{
     allowed_grade_level_ids: string[];
-    is_required: boolean;
     display_order: number;
 }>) => {
     return await fetchApi(`/api/academic/study-plan-activities/${id}`, {

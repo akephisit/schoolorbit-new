@@ -276,7 +276,6 @@
 	let activityCatalog = $state<ActivityCatalog[]>([]);
 	let paCatalogId = $state('');
 	let paGradeLevelIds = $state<string[]>([]);
-	let paIsRequired = $state(true);
 
 	async function loadActivityCatalog() {
 		try {
@@ -315,7 +314,6 @@
 		editingPlanActivity = pa;
 		paCatalogId = pa.activity_catalog_id;
 		paGradeLevelIds = pa.allowed_grade_level_ids ?? [];
-		paIsRequired = pa.is_required;
 		showPlanActivityDialog = true;
 		loadActivityCatalog();
 	}
@@ -334,8 +332,7 @@
 
 		const payload = {
 			activity_catalog_id: paCatalogId,
-			allowed_grade_level_ids: paGradeLevelIds.length > 0 ? paGradeLevelIds : undefined,
-			is_required: paIsRequired
+			allowed_grade_level_ids: paGradeLevelIds.length > 0 ? paGradeLevelIds : undefined
 		};
 
 		try {
@@ -382,7 +379,6 @@
 	// Target (right panel)
 	let addTargetGradeId = $state('');
 	let addTerm = $state('1');
-	let addIsRequired = $state(true);
 
 	// Filters (left panel)
 	let filterGradeId = $state('');
@@ -397,7 +393,6 @@
 		code?: string;
 		target_grade_id: string;
 		target_term: string;
-		is_required: boolean;
 	};
 	let pendingQueue = $state<PendingItem[]>([]);
 
@@ -445,8 +440,7 @@
 						: (item as ActivityCatalog).name,
 				code: type === 'subject' ? (item as Subject).code : undefined,
 				target_grade_id: addTargetGradeId,
-				target_term: addTerm,
-				is_required: addIsRequired
+				target_term: addTerm
 			}
 		];
 	}
@@ -470,7 +464,6 @@
 		filterTerm = '';
 		filterGroupId = '';
 		addTerm = '1';
-		addIsRequired = true;
 
 		// Pre-fill target grade from plan's first grade_level_id
 		const plan = plans.find((p) => p.id === selectedVersion?.study_plan_id);
@@ -494,8 +487,7 @@
 				.map((q) => ({
 					subject_id: q.id,
 					grade_level_id: q.target_grade_id,
-					term: q.target_term,
-					is_required: q.is_required
+					term: q.target_term
 				}));
 
 			if (subjectRows.length > 0) {
@@ -506,8 +498,7 @@
 			for (const a of activityItems) {
 				await addPlanActivity(selectedVersion.id, {
 					activity_catalog_id: a.id,
-					allowed_grade_level_ids: [a.target_grade_id],
-					is_required: a.is_required
+					allowed_grade_level_ids: [a.target_grade_id]
 				});
 			}
 
@@ -920,15 +911,6 @@
 															{PA_TYPE_LABELS[a.catalog_activity_type ?? 'other']}
 														</Badge>
 														<span class="font-medium text-sm">{a.catalog_name}</span>
-														{#if a.is_required}
-															<Badge
-																variant="outline"
-																class="text-[10px]"
-																title="บังคับ = นักเรียนทุกคนต้องเรียน (ไม่ใช่วิชาเลือก)"
-															>
-																บังคับ
-															</Badge>
-														{/if}
 													</div>
 													<div class="text-xs text-muted-foreground mt-1">
 														{a.catalog_periods_per_week ?? 1} คาบ ·
@@ -1136,17 +1118,6 @@
 					<a href="/staff/academic/subjects" class="underline">คลังรายวิชา tab "กิจกรรม"</a>
 				</p>
 			</div>
-
-			<div class="flex items-center gap-2">
-				<Checkbox bind:checked={paIsRequired} id="pa-required" />
-				<Label
-					for="pa-required"
-					class="cursor-pointer"
-					title="บังคับ = นักเรียนทุกคนต้องเรียน (ไม่ใช่วิชาเลือก)"
-				>
-					บังคับ
-				</Label>
-			</div>
 		</div>
 
 		<DialogFooter>
@@ -1324,12 +1295,6 @@
 							</Select.Root>
 						</div>
 					</div>
-					<div class="flex items-center gap-2">
-						<Checkbox bind:checked={addIsRequired} id="add-required" />
-						<Label for="add-required" class="cursor-pointer text-xs">
-							บังคับ <span class="text-muted-foreground">(นักเรียนทุกคนต้องเรียน — ไม่ใช่วิชาเลือก)</span>
-						</Label>
-					</div>
 				</div>
 
 				<!-- Queue: subjects -->
@@ -1347,7 +1312,6 @@
 										<span class="text-[10px] text-blue-600 ml-2">
 											{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name} · เทอม
 											{q.target_term}
-											{#if q.is_required} · <span title="บังคับ = นักเรียนทุกคนต้องเรียน (ไม่ใช่วิชาเลือก)">บังคับ</span>{/if}
 										</span>
 									</span>
 									<Button
@@ -1380,7 +1344,6 @@
 										{q.name}
 										<span class="text-[10px] text-blue-600 ml-2">
 											{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name}
-											{#if q.is_required} · <span title="บังคับ = นักเรียนทุกคนต้องเรียน (ไม่ใช่วิชาเลือก)">บังคับ</span>{/if}
 										</span>
 									</span>
 									<Button
