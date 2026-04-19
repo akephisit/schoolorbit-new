@@ -630,6 +630,7 @@ export interface ActivitySlot {
     student_reg_end?: string;
     periods_per_week: number;
     scheduling_mode: 'synchronized' | 'independent';
+    source_plan_activity_id?: string;
     is_active: boolean;
     created_at: string;
     // joined

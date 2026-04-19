@@ -26,7 +26,10 @@
 		deleteAllSlotClassroomAssignments,
 		deleteAllSlotGroups,
 		deleteSlotTimetableEntries,
-		type SlotClassroomAssignment
+		type SlotClassroomAssignment,
+		listStudyPlanVersions,
+		generateActivitiesFromPlan,
+		type StudyPlanVersion
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
@@ -38,7 +41,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
 	import { toast } from 'svelte-sonner';
-	import { Users, Plus, Pencil, Trash2, Check, ChevronsUpDown, UserCog, ChevronDown, ChevronRight, Settings } from 'lucide-svelte';
+	import { Users, Plus, Pencil, Trash2, Check, ChevronsUpDown, UserCog, ChevronDown, ChevronRight, Settings, FolderInput } from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { goto } from '$app/navigation';
 
@@ -94,6 +97,12 @@
 	let showSwitchModeDialog = $state(false);
 	let switchModeGroupCount = $state(0);
 	let switchModeMemberCount = $state(0);
+
+	// Generate from Plan Dialog
+	let showGenerateDialog = $state(false);
+	let generateVersionId = $state('');
+	let planVersions = $state<StudyPlanVersion[]>([]);
+	let generating = $state(false);
 
 
 	// ── Computed ───────────────────────────────────────
@@ -207,6 +216,37 @@
 		const next = new Set(expandedSlots);
 		if (next.has(id)) next.delete(id); else next.add(id);
 		expandedSlots = next;
+	}
+
+	// ── Generate from Plan ────────────────────────────
+	async function openGenerateDialog() {
+		try {
+			const res = await listStudyPlanVersions();
+			planVersions = res.data ?? [];
+		} catch { planVersions = []; }
+		generateVersionId = '';
+		showGenerateDialog = true;
+	}
+
+	async function handleGenerate() {
+		if (!generateVersionId || !filterSemesterId) {
+			toast.error('กรุณาเลือกหลักสูตรและภาคเรียน');
+			return;
+		}
+		generating = true;
+		try {
+			const res = await generateActivitiesFromPlan({
+				study_plan_version_id: generateVersionId,
+				semester_id: filterSemesterId
+			});
+			toast.success(`สร้าง ${res.created} กิจกรรม (ข้าม ${res.skipped} อันที่มีอยู่แล้ว)`);
+			showGenerateDialog = false;
+			await loadData();
+		} catch {
+			toast.error('Generate ไม่สำเร็จ');
+		} finally {
+			generating = false;
+		}
 	}
 
 	// ── Slot Dialog ───────────────────────────────────
@@ -463,9 +503,15 @@
 			<h1 class="text-xl font-semibold">กิจกรรมพัฒนาผู้เรียน</h1>
 		</div>
 		{#if $can.has('activity.manage.all')}
-			<Button onclick={openCreateSlot}>
-				<Plus class="mr-1 h-4 w-4" />สร้างช่องกิจกรรม
-			</Button>
+			<div class="flex gap-2">
+				<Button variant="outline" onclick={openGenerateDialog} disabled={!filterSemesterId}>
+					<FolderInput class="w-4 h-4 mr-1" />
+					Generate จากหลักสูตร
+				</Button>
+				<Button onclick={openCreateSlot}>
+					<Plus class="mr-1 h-4 w-4" />สร้างช่องกิจกรรม
+				</Button>
+			</div>
 		{/if}
 	</div>
 
@@ -520,6 +566,11 @@
 							<div class="flex items-center gap-2 flex-wrap">
 								<span class="font-semibold">{slot.name}</span>
 								<Badge variant="secondary">{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge>
+								{#if slot.source_plan_activity_id}
+									<Badge variant="outline" class="text-[10px] border-blue-300 text-blue-700">
+										📎 จากหลักสูตร
+									</Badge>
+								{/if}
 								<span class="text-sm text-muted-foreground">{gradeLevelDisplay(slot.allowed_grade_level_ids)}</span>
 							</div>
 							<div class="text-sm text-muted-foreground mt-0.5">
@@ -900,6 +951,42 @@
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => { showDeleteGroupDialog = false; }}>ยกเลิก</Button>
 			<Button variant="destructive" onclick={handleDeleteGroup}>ลบ</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Generate from Plan Dialog -->
+<Dialog.Root bind:open={showGenerateDialog}>
+	<Dialog.Content class="max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Generate กิจกรรมจากหลักสูตร</Dialog.Title>
+			<Dialog.Description>
+				สร้าง activity slots ตามแม่แบบในหลักสูตรสำหรับภาคเรียนที่เลือก
+				(ข้ามกิจกรรมที่มีอยู่แล้ว)
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="space-y-3 py-2">
+			<div class="space-y-1">
+				<Label>หลักสูตร *</Label>
+				<Select.Root type="single" bind:value={generateVersionId}>
+					<Select.Trigger class="w-full">
+						{planVersions.find((v) => v.id === generateVersionId)?.version_name ?? 'เลือกหลักสูตร'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each planVersions as v}
+							<Select.Item value={v.id}>{v.version_name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+		</div>
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => { showGenerateDialog = false; }}>ยกเลิก</Button>
+			<Button onclick={handleGenerate} disabled={generating || !generateVersionId}>
+				{generating ? 'กำลังสร้าง...' : 'Generate'}
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
