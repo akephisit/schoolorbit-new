@@ -373,11 +373,6 @@
 				คลังรายวิชา
 			</h1>
 			<p class="text-muted-foreground mt-1">จัดการรายชื่อวิชาและกลุ่มสาระการเรียนรู้</p>
-			{#if currentAcademicYear}
-				<span class="ml-2 text-primary font-medium">
-					• {currentAcademicYear.name}
-				</span>
-			{/if}
 		</div>
 		<div class="flex items-center gap-2">
 				<Button onclick={handleOpenCreate} class="flex items-center gap-2">
