@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import {
 		listSubjects,
 		listSubjectGroups,
@@ -44,7 +45,8 @@
 		ChevronDown,
 		ChevronRight,
 		Inbox,
-		Info
+		Info,
+		FolderInput
 	} from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 
@@ -378,6 +380,14 @@
 				<Button onclick={handleOpenCreate} class="flex items-center gap-2">
 				<Plus class="w-4 h-4" />
 				เพิ่มรายวิชา
+			</Button>
+			<Button
+				variant="outline"
+				onclick={() => goto('/staff/academic/study-plans')}
+				title="กิจกรรมพัฒนาผู้เรียนจัดการในหน้าหลักสูตร"
+			>
+				<FolderInput class="w-4 h-4 mr-2" />
+				กิจกรรมพัฒนาผู้เรียน →
 			</Button>
 		</div>
 	</div>
