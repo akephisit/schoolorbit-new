@@ -289,6 +289,8 @@ export interface Subject {
     term?: string;
     default_instructor_id?: string;
     default_instructor_name?: string;
+    /** Pass on create/update to replace default instructor team atomically. */
+    default_instructors?: { instructor_id: string; role: 'primary' | 'secondary' }[];
 }
 
 export const listSubjectGroups = async (): Promise<{ data: SubjectGroup[] }> => {
