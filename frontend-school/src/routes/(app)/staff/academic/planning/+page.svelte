@@ -6,10 +6,7 @@
 	import {
 		getAcademicStructure,
 		listClassrooms,
-		listSubjects,
-		listPlanSubjects,
 		listClassroomCourses,
-		assignCourses,
 		removeCourse,
 		updateCourse,
 		generateCoursesFromPlan,
@@ -20,7 +17,6 @@
 		updateCourseInstructorRole,
 		type AcademicStructureData,
 		type Classroom,
-		type Subject,
 		type ClassroomCourse,
 		type CourseInstructor
 	} from '$lib/api/academic';
@@ -33,15 +29,10 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Input } from '$lib/components/ui/input';
 	import {
 		Loader2,
 		BookOpen,
-		Plus,
-		Search,
 		Trash2,
-		Save,
 		Calendar,
 		Settings,
 		Wand2
@@ -55,29 +46,17 @@
 	let selectedYearId = $state('');
 	let selectedTermId = $state('');
 	let selectedClassroomId = $state('');
-	let selectedTermFilter = $state('');
 
 	// Data
 	let classrooms = $state<Classroom[]>([]);
 	let courses = $state<ClassroomCourse[]>([]);
-	let allSubjects = $state<Subject[]>([]);
-
-	// Dialog
-	let showAddDialog = $state(false);
-	let selectedSubjectIds = $state<string[]>([]);
-	let subjectSearchTerm = $state('');
-	let submitting = $state(false);
-	// Plan-first source: default to subjects in the classroom's study plan.
-	// `hasPlan=false` means the classroom has no plan → catalog is the only option.
-	// `showOutsidePlan=true` is a user-opt-in escape hatch to see catalog-wide.
-	let hasPlan = $state(true);
-	let showOutsidePlan = $state(false);
 
 	// Edit Dialog
 	let showEditDialog = $state(false);
 	let editingCourse = $state<ClassroomCourse | null>(null);
 	let deletingCourse = $state<ClassroomCourse | null>(null);
 	let showDeleteDialog = $state(false);
+	let submitting = $state(false);
 	let teachers = $state<StaffLookupItem[]>([]);
 	let selectedTeacherId = $state<string>(''); // For dropdown
 	let teachersLoaded = $state(false);
@@ -157,18 +136,6 @@
 	);
 
 	let currentClassroom = $derived(classrooms.find((c) => c.id === selectedClassroomId));
-
-	let filteredSubjects = $derived(
-		allSubjects.filter((s) => {
-			if (!subjectSearchTerm) return true;
-			const term = subjectSearchTerm.toLowerCase();
-			return (
-				s.code.toLowerCase().includes(term) ||
-				s.name_th.toLowerCase().includes(term) ||
-				(s.name_en && s.name_en.toLowerCase().includes(term))
-			);
-		})
-	);
 
 	// Summary Statistics
 	let summaryStats = $derived.by(() => {
@@ -271,75 +238,6 @@
 		}
 	}
 
-	async function loadModalSubjects() {
-		// Plan-first: if user hasn't opted into "show outside plan", fetch plan subjects.
-		// If the classroom has no plan, silently fall back to catalog.
-		if (!showOutsidePlan && selectedClassroomId && selectedTermId) {
-			try {
-				const res = await listPlanSubjects(selectedClassroomId, selectedTermId);
-				hasPlan = res.data.has_plan;
-				if (hasPlan) {
-					allSubjects = res.data.subjects;
-					return;
-				}
-			} catch (e) {
-				// Fall through to catalog on error
-				console.error(e);
-			}
-		}
-		// Catalog fallback (no plan, or user opted in)
-		try {
-			const res = await listSubjects({
-				active_in_year_id: selectedYearId,
-				term: selectedTermFilter || undefined
-			});
-			allSubjects = res.data;
-		} catch (e) {
-			toast.error('โหลดรายวิชาไม่สำเร็จ');
-		}
-	}
-
-	async function openAddDialog() {
-		// Auto-set filter based on current term
-		const activeTerm = filteredSemesters.find((s) => s.id === selectedTermId);
-		if (activeTerm) {
-			selectedTermFilter = activeTerm.term;
-		} else {
-			selectedTermFilter = '';
-		}
-
-		// Reset dialog state each open; plan-first by default.
-		showOutsidePlan = false;
-		hasPlan = true;
-		await loadModalSubjects();
-
-		selectedSubjectIds = [];
-		subjectSearchTerm = '';
-		showAddDialog = true;
-	}
-
-	async function handleAssign() {
-		if (selectedSubjectIds.length === 0) {
-			toast.error('กรุณาเลือกวิชาอย่างน้อย 1 วิชา');
-			return;
-		}
-		try {
-			submitting = true;
-			await assignCourses({
-				classroom_id: selectedClassroomId,
-				academic_semester_id: selectedTermId,
-				subject_ids: selectedSubjectIds
-			});
-			toast.success(`เพิ่มวิชาสำเร็จ ${selectedSubjectIds.length} รายการ`);
-			showAddDialog = false;
-			await fetchCourses();
-		} catch (e) {
-			console.error(e);
-			toast.error('เพิ่มวิชาไม่สำเร็จ');
-		} finally {
-			submitting = false;
-		}
-	}
 
 	function openDeleteDialog(course: ClassroomCourse) {
 		deletingCourse = course;
@@ -612,10 +510,6 @@
 							สร้างรายวิชาอัตโนมัติ
 						</Button>
 					{/if}
-					<Button onclick={openAddDialog}>
-						<Plus class="w-4 h-4 mr-2" />
-						เพิ่มรายวิชา
-					</Button>
 				</div>
 			</div>
 
@@ -736,130 +630,6 @@
 		</div>
 	{/if}
 
-	<!-- Add Dialog -->
-	<Dialog.Root bind:open={showAddDialog}>
-		<Dialog.Content class="sm:max-w-[600px] max-h-[80vh] flex flex-col">
-			<Dialog.Header>
-				<Dialog.Title>เพิ่มรายวิชาเข้าสู่ห้องเรียน</Dialog.Title>
-			</Dialog.Header>
-
-			<!-- Source banner -->
-			{#if !hasPlan}
-				<div class="rounded-md border bg-amber-50 text-amber-900 px-3 py-2 text-xs mb-1">
-					ห้องนี้ยังไม่มีแผนการเรียน — แสดงวิชาจากคลังรายวิชาทั้งหมด
-				</div>
-			{:else if showOutsidePlan}
-				<div class="rounded-md border bg-muted px-3 py-2 text-xs mb-1 flex items-center justify-between">
-					<span>กำลังแสดง <b>คลังทั้งหมด</b> (นอกแผนก็เห็น)</span>
-					<button
-						type="button"
-						class="underline hover:text-primary"
-						onclick={async () => {
-							showOutsidePlan = false;
-							await loadModalSubjects();
-						}}
-					>
-						กลับไปดูเฉพาะในแผน
-					</button>
-				</div>
-			{:else}
-				<div class="rounded-md border bg-primary/5 text-primary px-3 py-2 text-xs mb-1 flex items-center justify-between">
-					<span>แสดงวิชาตาม <b>แผนการเรียน</b> ของห้องนี้</span>
-					<button
-						type="button"
-						class="underline hover:text-primary/80"
-						onclick={async () => {
-							showOutsidePlan = true;
-							await loadModalSubjects();
-						}}
-					>
-						แสดงวิชานอกแผน...
-					</button>
-				</div>
-			{/if}
-
-			<div class="p-1">
-				<div class="flex gap-2 mb-4">
-					<div class="relative flex-1">
-						<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-						<Input
-							type="search"
-							placeholder="ค้นหารหัส หรือ ชื่อวิชา..."
-							class="pl-8"
-							bind:value={subjectSearchTerm}
-						/>
-					</div>
-					{#if showOutsidePlan || !hasPlan}
-						<!-- Term filter only meaningful in catalog mode; plan mode is already term-scoped -->
-						<div class="w-[140px]">
-							<Select.Root
-								type="single"
-								bind:value={selectedTermFilter}
-								onValueChange={loadModalSubjects}
-							>
-								<Select.Trigger>
-									{#if selectedTermFilter === '1'}เทอม 1
-									{:else if selectedTermFilter === '2'}เทอม 2
-									{:else if selectedTermFilter === 'SUMMER'}ซัมเมอร์
-									{:else}ทุกเทอม{/if}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="">ทุกเทอม</Select.Item>
-									<Select.Item value="1">เทอม 1</Select.Item>
-									<Select.Item value="2">เทอม 2</Select.Item>
-									<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
-								</Select.Content>
-							</Select.Root>
-						</div>
-					{/if}
-				</div>
-
-				<div class="border rounded-md overflow-hidden h-[300px] md:h-[400px]">
-					<div class="overflow-y-auto h-full p-2 space-y-1">
-						{#each filteredSubjects as subject}
-							<label
-								class="flex items-center space-x-3 p-2 rounded hover:bg-muted/50 cursor-pointer border border-transparent has-[:checked]:border-primary/20 has-[:checked]:bg-primary/5 transition-colors"
-							>
-								<Checkbox
-									checked={selectedSubjectIds.includes(subject.id)}
-									onCheckedChange={(v) => {
-										if (v) selectedSubjectIds = [...selectedSubjectIds, subject.id];
-										else selectedSubjectIds = selectedSubjectIds.filter((id) => id !== subject.id);
-									}}
-								/>
-								<div class="flex-1">
-									<div class="flex items-center gap-2">
-										<span class="font-bold text-sm">{subject.code}</span>
-										<Badge variant="outline" class="text-[10px] h-5">{subject.credit} นก.</Badge>
-										{#if subject.type !== 'BASIC'}
-											<Badge variant="secondary" class="text-[10px] h-5">{subject.type}</Badge>
-										{/if}
-									</div>
-									<div class="text-sm">{subject.name_th}</div>
-								</div>
-							</label>
-						{:else}
-							<div class="text-center py-8 text-muted-foreground">ไม่พบรายวิชา</div>
-						{/each}
-					</div>
-				</div>
-
-				<div class="flex justify-between items-center mt-2 text-sm text-muted-foreground">
-					<span>เลือกแล้ว {selectedSubjectIds.length} วิชา</span>
-				</div>
-			</div>
-
-			<Dialog.Footer class="mt-auto pt-2">
-				<Button variant="outline" onclick={() => (showAddDialog = false)}>ยกเลิก</Button>
-				<Button onclick={handleAssign} disabled={submitting || selectedSubjectIds.length === 0}>
-					{#if submitting}
-						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-					{/if}
-					บันทึก ({selectedSubjectIds.length})
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
 	<!-- Edit Dialog -->
 	<Dialog.Root bind:open={showEditDialog}>
 		<Dialog.Content class="sm:max-w-[500px]">
@@ -967,9 +737,9 @@
 						<div class="text-sm text-blue-900 dark:text-blue-100 space-y-1">
 							<p class="font-medium">หมายเหตุ:</p>
 							<ul class="list-disc list-inside space-y-1 text-xs">
-								<li>รายวิชาที่มีอยู่แล้วจะไม่ถูกสร้างซ้ำ</li>
-								<li>สามารถเพิ่มรายวิชาเพิ่มเติมได้ภายหลัง</li>
-								<li>สามารถลบหรือแก้ไขรายวิชาที่สร้างแล้วได้</li>
+								<li>รายวิชา/กิจกรรมที่มีอยู่แล้วจะไม่ถูกสร้างซ้ำ</li>
+								<li>ต้องการเพิ่ม/เอาวิชาออก → แก้ที่หลักสูตรแล้วกดซ้ำได้</li>
+								<li>สามารถลบหรือแก้ไขรายวิชาที่สร้างแล้วในห้องนี้ได้</li>
 							</ul>
 						</div>
 					</div>
