@@ -371,28 +371,33 @@
 	});
 
 	// ==========================================
-	// Unified "Add to Plan" dialog (วิชา + กิจกรรม)
+	// Unified "Add to Plan" dialog (วิชา + กิจกรรม, multi-select)
 	// ==========================================
-	let showUnifiedPlanAddDialog = $state(false);
-	let unifiedPlanAddType = $state<'subject' | 'activity'>('subject');
+	let showAddDialog = $state(false);
+	let addGradeLevelIds = $state<string[]>([]); // multi-select grade (applies to all picks)
+	let addTerm = $state('1');
+	let addIsRequired = $state(true);
 
-	// Shared fields
-	let upGradeLevelIds = $state<string[]>([]);
-	let upTerm = $state('1');
-	let upIsRequired = $state(true);
-	let upDisplayOrder = $state(0);
+	// Subject picker state
+	let addGroupFilter = $state(''); // group filter (optional)
+	let selectedSubjectIds = $state<Set<string>>(new Set()); // checked subjects
 
-	// Subject-only
-	let upGroupId = $state('');
-	let upSubjectId = $state('');
+	// Activity picker state
+	let selectedCatalogIds = $state<Set<string>>(new Set()); // checked activities
 
-	// Activity-only
-	let upCatalogId = $state('');
+	function toggleSubjectPick(id: string) {
+		const next = new Set(selectedSubjectIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selectedSubjectIds = next;
+	}
 
-	// Derived: subjects filtered by selected subject group
-	let subjectsForGroup = $derived(
-		upGroupId ? subjects.filter((s) => s.group_id === upGroupId) : []
-	);
+	function toggleCatalogPick(id: string) {
+		const next = new Set(selectedCatalogIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selectedCatalogIds = next;
+	}
 
 	// Derived: valid grade levels for current version (based on plan level_scope)
 	let unifiedGradeLevels = $derived(
@@ -404,74 +409,88 @@
 		})
 	);
 
-	// Derived: selected catalog item (for display of term/grade_level_ids in activity mode)
-	let selectedCatalog = $derived(activityCatalog.find((c) => c.id === upCatalogId));
+	// Filter subjects by group (uses the already-loaded `subjects` state from initData)
+	let filteredSubjectsInDialog = $derived.by(() => {
+		if (!addGroupFilter) return subjects;
+		return subjects.filter((s) => s.group_id === addGroupFilter);
+	});
 
-	function openUnifiedPlanAdd() {
-		upGroupId = '';
-		upSubjectId = '';
-		upCatalogId = '';
-		upGradeLevelIds = [];
-		upTerm = '1';
-		upIsRequired = true;
-		upDisplayOrder = 0;
-		unifiedPlanAddType = 'subject';
-		showUnifiedPlanAddDialog = true;
+	async function loadAllSubjects() {
+		try {
+			const res = await listSubjects({ active_only: true, latest_only: true });
+			subjects = res.data ?? [];
+		} catch {
+			// keep existing
+		}
+	}
+
+	function openAddDialog() {
+		addGradeLevelIds = [];
+		addTerm = '1';
+		addIsRequired = true;
+		addGroupFilter = '';
+		selectedSubjectIds = new Set();
+		selectedCatalogIds = new Set();
+		showAddDialog = true;
 
 		// Ensure catalogs are loaded
 		if (activityCatalog.length === 0) loadActivityCatalog();
+		if (subjects.length === 0) loadAllSubjects();
 	}
 
-	// When catalog selection changes in activity mode, pre-fill grade levels from catalog
-	$effect(() => {
-		if (unifiedPlanAddType === 'activity' && selectedCatalog) {
-			if (selectedCatalog.grade_level_ids && selectedCatalog.grade_level_ids.length > 0) {
-				upGradeLevelIds = [...selectedCatalog.grade_level_ids];
-			}
-		}
-	});
-
-	async function handleUnifiedPlanSave() {
+	async function handleAddDialogSave() {
 		if (!selectedVersion?.id) {
 			toast.error('กรุณาเลือก version');
 			return;
 		}
+		if (addGradeLevelIds.length === 0) {
+			toast.error('กรุณาเลือกระดับชั้น');
+			return;
+		}
+		if (selectedSubjectIds.size === 0 && selectedCatalogIds.size === 0) {
+			toast.error('กรุณาเลือกวิชาหรือกิจกรรมอย่างน้อย 1 รายการ');
+			return;
+		}
+
 		try {
-			if (unifiedPlanAddType === 'subject') {
-				if (!upSubjectId) {
-					toast.error('กรุณาเลือกวิชา');
-					return;
+			// Subjects: addSubjectsToVersion expects array of { subject_id, grade_level_id, term, is_required }
+			if (selectedSubjectIds.size > 0) {
+				const rows: {
+					subject_id: string;
+					grade_level_id: string;
+					term: string;
+					is_required?: boolean;
+				}[] = [];
+				for (const sid of selectedSubjectIds) {
+					for (const gid of addGradeLevelIds) {
+						rows.push({
+							subject_id: sid,
+							grade_level_id: gid,
+							term: addTerm,
+							is_required: addIsRequired
+						});
+					}
 				}
-				if (upGradeLevelIds.length === 0) {
-					toast.error('กรุณาเลือกระดับชั้นอย่างน้อย 1 ระดับ');
-					return;
-				}
-				const subjectsToAdd = upGradeLevelIds.map((gradeId, index) => ({
-					subject_id: upSubjectId,
-					grade_level_id: gradeId,
-					term: upTerm,
-					is_required: upIsRequired,
-					display_order: upDisplayOrder + index
-				}));
-				await addSubjectsToVersion(selectedVersion.id, subjectsToAdd);
-				toast.success('เพิ่มวิชาเข้าหลักสูตรแล้ว');
-				await loadPlanSubjects(selectedVersion.id);
-			} else {
-				if (!upCatalogId) {
-					toast.error('กรุณาเลือกกิจกรรม');
-					return;
-				}
-				// sva doesn't have term column — term flows from catalog
-				await addPlanActivity(selectedVersion.id, {
-					activity_catalog_id: upCatalogId,
-					allowed_grade_level_ids: upGradeLevelIds.length > 0 ? upGradeLevelIds : undefined,
-					is_required: upIsRequired,
-					display_order: upDisplayOrder
-				});
-				toast.success('เพิ่มกิจกรรมเข้าหลักสูตรแล้ว');
-				await loadPlanActivitiesForVersion(selectedVersion.id);
+				await addSubjectsToVersion(selectedVersion.id, rows);
 			}
-			showUnifiedPlanAddDialog = false;
+
+			// Activities: addPlanActivity once per catalog item
+			if (selectedCatalogIds.size > 0) {
+				for (const cid of selectedCatalogIds) {
+					await addPlanActivity(selectedVersion.id, {
+						activity_catalog_id: cid,
+						allowed_grade_level_ids: addGradeLevelIds,
+						is_required: addIsRequired
+					});
+				}
+			}
+
+			toast.success('เพิ่มเข้าหลักสูตรแล้ว');
+			showAddDialog = false;
+
+			// Reload
+			await loadPlanSubjects(selectedVersion.id);
+			await loadPlanActivitiesForVersion(selectedVersion.id);
 		} catch {
 			toast.error('บันทึกไม่สำเร็จ');
 		}
@@ -744,7 +763,7 @@
 							({selectedVersion.study_plan_name_th})
 						{/if}
 					</div>
-					<Button onclick={openUnifiedPlanAdd} size="sm">
+					<Button onclick={openAddDialog} size="sm">
 						<Plus class="w-4 h-4 mr-1" />
 						เพิ่มเข้าหลักสูตร
 					</Button>
@@ -1078,61 +1097,21 @@
 	</DialogContent>
 </Dialog>
 
-<!-- Unified Add to Plan Dialog -->
-<Dialog bind:open={showUnifiedPlanAddDialog}>
-	<DialogContent class="sm:max-w-lg">
+<!-- Add to Plan Dialog (multi-select subjects + activities) -->
+<Dialog bind:open={showAddDialog}>
+	<DialogContent class="max-w-3xl max-h-[85vh] overflow-y-auto">
 		<DialogHeader>
 			<DialogTitle>เพิ่มเข้าหลักสูตร</DialogTitle>
-			<DialogDescription>เลือกประเภทและข้อมูลที่ต้องการเพิ่ม</DialogDescription>
+			<DialogDescription>
+				เลือกวิชาและ/หรือกิจกรรมที่จะเพิ่มเข้าหลักสูตรนี้
+			</DialogDescription>
 		</DialogHeader>
 
-		<!-- Type selector -->
-		<div class="border rounded-lg p-3 bg-muted/30 mb-3">
-			<Label class="mb-2 block text-sm">ประเภท</Label>
-			<div class="flex gap-4">
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="radio" bind:group={unifiedPlanAddType} value="subject" />
-					<span>วิชา</span>
-				</label>
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="radio" bind:group={unifiedPlanAddType} value="activity" />
-					<span>กิจกรรมพัฒนาผู้เรียน</span>
-				</label>
-			</div>
-		</div>
-
-		<div class="space-y-3">
-			{#if unifiedPlanAddType === 'subject'}
+		<div class="space-y-4 py-2">
+			<!-- Common fields -->
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 				<div class="space-y-1">
-					<Label>กลุ่มสาระ *</Label>
-					<Select.Root type="single" bind:value={upGroupId}>
-						<Select.Trigger class="w-full">
-							{subjectGroups.find((g) => g.id === upGroupId)?.name_th ?? 'เลือกกลุ่มสาระ'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each subjectGroups as g}
-								<Select.Item value={g.id}>{g.name_th}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				<div class="space-y-1">
-					<Label>วิชา *</Label>
-					<Select.Root type="single" bind:value={upSubjectId}>
-						<Select.Trigger class="w-full">
-							{subjectsForGroup.find((s) => s.id === upSubjectId)?.name_th ?? 'เลือกวิชา'}
-						</Select.Trigger>
-						<Select.Content class="max-h-[280px] overflow-y-auto">
-							{#each subjectsForGroup as s}
-								<Select.Item value={s.id}>{s.code} · {s.name_th}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				<div class="space-y-1">
-					<Label>ระดับชั้น</Label>
+					<Label>ระดับชั้น <span class="text-destructive">*</span></Label>
 					<div class="flex flex-wrap gap-2">
 						{#each unifiedGradeLevels as gl}
 							<label
@@ -1140,94 +1119,12 @@
 							>
 								<input
 									type="checkbox"
-									checked={upGradeLevelIds.includes(gl.id)}
+									checked={addGradeLevelIds.includes(gl.id)}
 									onchange={(e) => {
 										if ((e.target as HTMLInputElement).checked) {
-											upGradeLevelIds = [...upGradeLevelIds, gl.id];
+											addGradeLevelIds = [...addGradeLevelIds, gl.id];
 										} else {
-											upGradeLevelIds = upGradeLevelIds.filter((id) => id !== gl.id);
-										}
-									}}
-								/>
-								{gl.short_name ?? gl.code}
-							</label>
-						{/each}
-					</div>
-				</div>
-
-				<div class="grid grid-cols-2 gap-3">
-					<div class="space-y-1">
-						<Label>ภาคเรียน</Label>
-						<Select.Root type="single" bind:value={upTerm}>
-							<Select.Trigger class="w-full">
-								{upTerm === '1'
-									? 'เทอม 1'
-									: upTerm === '2'
-										? 'เทอม 2'
-										: upTerm === 'SUMMER'
-											? 'ฤดูร้อน'
-											: 'ทุกเทอม'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="1">เทอม 1</Select.Item>
-								<Select.Item value="2">เทอม 2</Select.Item>
-								<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="flex items-center gap-2 pt-6">
-						<Checkbox bind:checked={upIsRequired} id="up-required" />
-						<Label for="up-required" class="cursor-pointer">บังคับ</Label>
-					</div>
-				</div>
-			{:else}
-				<div class="space-y-1">
-					<Label>กลุ่มสาระ</Label>
-					<div class="px-3 py-2 border rounded bg-muted text-sm">กิจกรรมพัฒนาผู้เรียน</div>
-				</div>
-
-				<div class="space-y-1">
-					<Label>กิจกรรม *</Label>
-					<Select.Root type="single" bind:value={upCatalogId}>
-						<Select.Trigger class="w-full">
-							{activityCatalog.find((c) => c.id === upCatalogId)?.name ?? 'เลือกกิจกรรม'}
-						</Select.Trigger>
-						<Select.Content class="max-h-[280px] overflow-y-auto">
-							{#each activityCatalog as c}
-								<Select.Item value={c.id}>{c.name} · {c.activity_type}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				<div class="space-y-1">
-					<Label>ระดับชั้น (overrideได้)</Label>
-					{#if selectedCatalog}
-						<p class="text-xs text-muted-foreground">
-							จากคลัง: {(selectedCatalog.grade_level_ids ?? [])
-								.map(
-									(id) =>
-										unifiedGradeLevels.find((g) => g.id === id)?.short_name ??
-										unifiedGradeLevels.find((g) => g.id === id)?.code ??
-										''
-								)
-								.filter(Boolean)
-								.join(', ') || 'ไม่ระบุ'}
-						</p>
-					{/if}
-					<div class="flex flex-wrap gap-2">
-						{#each unifiedGradeLevels as gl}
-							<label
-								class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted"
-							>
-								<input
-									type="checkbox"
-									checked={upGradeLevelIds.includes(gl.id)}
-									onchange={(e) => {
-										if ((e.target as HTMLInputElement).checked) {
-											upGradeLevelIds = [...upGradeLevelIds, gl.id];
-										} else {
-											upGradeLevelIds = upGradeLevelIds.filter((id) => id !== gl.id);
+											addGradeLevelIds = addGradeLevelIds.filter((id) => id !== gl.id);
 										}
 									}}
 								/>
@@ -1239,28 +1136,102 @@
 
 				<div class="space-y-1">
 					<Label>ภาคเรียน</Label>
-					<div class="px-3 py-2 border rounded bg-muted text-sm">
-						{selectedCatalog?.term
-							? selectedCatalog.term === '1'
-								? 'เทอม 1'
-								: selectedCatalog.term === '2'
-									? 'เทอม 2'
-									: selectedCatalog.term
-							: 'ทุกเทอม (ไม่ระบุในคลัง)'}
-					</div>
-					<p class="text-xs text-muted-foreground">มาจากคลัง · ปรับได้ที่หน้าคลังกิจกรรม</p>
+					<Select.Root type="single" bind:value={addTerm}>
+						<Select.Trigger class="w-full">
+							{addTerm === '1' ? 'เทอม 1' : addTerm === '2' ? 'เทอม 2' : 'ฤดูร้อน'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="1">เทอม 1</Select.Item>
+							<Select.Item value="2">เทอม 2</Select.Item>
+							<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
+						</Select.Content>
+					</Select.Root>
 				</div>
+			</div>
 
-				<div class="flex items-center gap-2">
-					<Checkbox bind:checked={upIsRequired} id="up-required-a" />
-					<Label for="up-required-a" class="cursor-pointer">บังคับ</Label>
+			<!-- Subjects picker -->
+			<div class="border rounded-lg p-3 space-y-2">
+				<div class="flex items-center justify-between">
+					<h4 class="font-semibold text-sm">วิชา ({selectedSubjectIds.size} เลือก)</h4>
+					<Select.Root type="single" bind:value={addGroupFilter}>
+						<Select.Trigger class="w-[200px] h-7 text-xs">
+							{subjectGroups.find((g) => g.id === addGroupFilter)?.name_th ?? 'ทุกกลุ่มสาระ'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">ทุกกลุ่มสาระ</Select.Item>
+							{#each subjectGroups as g}
+								<Select.Item value={g.id}>{g.name_th}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
-			{/if}
+				<div class="max-h-[200px] overflow-y-auto divide-y rounded border">
+					{#each filteredSubjectsInDialog as s (s.id)}
+						<label
+							class="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-muted text-sm"
+						>
+							<input
+								type="checkbox"
+								checked={selectedSubjectIds.has(s.id)}
+								onchange={() => toggleSubjectPick(s.id)}
+							/>
+							<span class="flex-1 truncate">
+								<span class="font-medium">{s.code}</span>
+								<span class="text-muted-foreground ml-1">{s.name_th}</span>
+							</span>
+							<Badge variant="outline" class="text-[10px]">{s.credit} นก</Badge>
+						</label>
+					{:else}
+						<p class="text-xs text-muted-foreground italic text-center py-3">
+							ไม่มีวิชาในกลุ่มนี้
+						</p>
+					{/each}
+				</div>
+			</div>
+
+			<!-- Activities picker -->
+			<div class="border rounded-lg p-3 space-y-2">
+				<h4 class="font-semibold text-sm">
+					กิจกรรมพัฒนาผู้เรียน ({selectedCatalogIds.size} เลือก)
+				</h4>
+				<div class="max-h-[180px] overflow-y-auto divide-y rounded border">
+					{#each activityCatalog as c (c.id)}
+						<label
+							class="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-muted text-sm"
+						>
+							<input
+								type="checkbox"
+								checked={selectedCatalogIds.has(c.id)}
+								onchange={() => toggleCatalogPick(c.id)}
+							/>
+							<span class="flex-1 truncate">{c.name}</span>
+							<Badge variant="outline" class="text-[10px]">{c.activity_type}</Badge>
+							<Badge variant="outline" class="text-[10px]">{c.periods_per_week} คาบ</Badge>
+						</label>
+					{:else}
+						<p class="text-xs text-muted-foreground italic text-center py-3">
+							ไม่มีกิจกรรมในคลัง
+						</p>
+					{/each}
+				</div>
+			</div>
+
+			<div class="flex items-center gap-2">
+				<Checkbox bind:checked={addIsRequired} id="add-required" />
+				<Label for="add-required" class="cursor-pointer">
+					บังคับ (apply ให้ทั้งวิชาและกิจกรรมที่เลือก)
+				</Label>
+			</div>
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={() => (showUnifiedPlanAddDialog = false)}>ยกเลิก</Button>
-			<Button onclick={handleUnifiedPlanSave}>บันทึก</Button>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showAddDialog = false;
+				}}>ยกเลิก</Button
+			>
+			<Button onclick={handleAddDialogSave}>บันทึก</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
