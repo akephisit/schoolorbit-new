@@ -110,5 +110,8 @@ pub struct SubjectFilter {
     /// start_academic_year_id (kept for backward compat).
     pub active_in_year_id: Option<Uuid>,
     pub term: Option<String>,
+    /// When true (default), return only the latest version per `code`.
+    /// When false, return all versions (for history/management views).
+    pub latest_only: Option<bool>,
 }
 

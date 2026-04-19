@@ -183,6 +183,10 @@ pub async fn list_subjects(
     let active_in_year_id: Option<Uuid> = filter
         .active_in_year_id
         .or(filter.start_academic_year_id);
+
+    // Default to latest_only = true (show only latest version per code)
+    let latest_only = filter.latest_only.unwrap_or(true);
+
     if active_in_year_id.is_some() {
         idx += 1;
         // แสดงวิชาทั้งหมดที่ใช้งานได้ในปีนั้น:
@@ -197,7 +201,18 @@ pub async fn list_subjects(
                 ORDER BY sub.code, ay.year DESC
             )"#
         ));
+    } else if latest_only {
+        // No year filter but latest-only mode: latest version per code regardless of year
+        query.push_str(
+            r#" AND s.id IN (
+                SELECT DISTINCT ON (sub.code) sub.id
+                FROM subjects sub
+                JOIN academic_years ay ON ay.id = sub.start_academic_year_id
+                ORDER BY sub.code, ay.year DESC
+            )"#
+        );
     }
+    // else: no filter applied — show all versions
 
     if filter.term.is_some() {
         idx += 1;
