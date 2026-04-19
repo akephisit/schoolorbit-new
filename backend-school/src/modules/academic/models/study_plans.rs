@@ -98,7 +98,6 @@ pub struct StudyPlanSubject {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject_code: Option<String>,  // joined from subjects.code
     pub display_order: i32,
-    pub is_required: bool,
     #[sqlx(default)]
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
@@ -135,14 +134,12 @@ pub struct SubjectInPlan {
     pub grade_level_id: Uuid,
     pub term: String,
     pub subject_id: Uuid,
-    pub is_required: Option<bool>,
     pub display_order: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateStudyPlanSubjectRequest {
     pub display_order: Option<i32>,
-    pub is_required: Option<bool>,
 }
 
 // ==========================================
@@ -196,7 +193,6 @@ pub struct StudyPlanVersionActivity {
     pub study_plan_version_id: Uuid,
     pub activity_catalog_id: Uuid,
     pub allowed_grade_level_ids: Option<serde_json::Value>,
-    pub is_required: bool,
     pub display_order: i32,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -229,14 +225,12 @@ pub struct StudyPlanVersionActivity {
 pub struct CreatePlanActivityRequest {
     pub activity_catalog_id: Uuid,
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
-    pub is_required: Option<bool>,
     pub display_order: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdatePlanActivityRequest {
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
-    pub is_required: Option<bool>,
     pub display_order: Option<i32>,
 }
 

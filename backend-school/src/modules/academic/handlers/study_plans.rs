@@ -375,7 +375,7 @@ pub async fn list_study_plan_subjects(
         "SELECT sps.id, sps.study_plan_version_id, sps.grade_level_id, sps.term,
                 sps.subject_id,
                 s.code as subject_code,
-                sps.display_order, sps.is_required, sps.metadata,
+                sps.display_order, sps.metadata,
                 sps.created_at, sps.updated_at,
                 s.name_th as subject_name_th,
                 s.name_en as subject_name_en,
@@ -440,15 +440,14 @@ pub async fn add_subjects_to_version(
     for subject in &req.subjects {
         sqlx::query(
             "INSERT INTO study_plan_subjects
-             (study_plan_version_id, grade_level_id, term, subject_id, is_required, display_order)
-             VALUES ($1, $2, $3, $4, $5, $6)
+             (study_plan_version_id, grade_level_id, term, subject_id, display_order)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (study_plan_version_id, grade_level_id, term, subject_id) DO NOTHING"
         )
         .bind(version_id)
         .bind(subject.grade_level_id)
         .bind(&subject.term)
         .bind(subject.subject_id)
-        .bind(subject.is_required.unwrap_or(true))
         .bind(subject.display_order.unwrap_or(0))
         .execute(&mut *tx)
         .await?;
@@ -743,16 +742,14 @@ pub async fn add_plan_activity(
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"INSERT INTO study_plan_version_activities
             (study_plan_version_id, activity_catalog_id, allowed_grade_level_ids,
-             is_required, display_order)
+             display_order)
            VALUES ($1, $2, $3,
-                   COALESCE($4, true),
-                   COALESCE($5, 0))
+                   COALESCE($4, 0))
            RETURNING *"#
     )
     .bind(version_id)
     .bind(req.activity_catalog_id)
     .bind(&allowed)
-    .bind(req.is_required)
     .bind(req.display_order)
     .fetch_one(&pool)
     .await
@@ -781,15 +778,13 @@ pub async fn update_plan_activity(
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"UPDATE study_plan_version_activities SET
             allowed_grade_level_ids = COALESCE($2, allowed_grade_level_ids),
-            is_required = COALESCE($3, is_required),
-            display_order = COALESCE($4, display_order),
+            display_order = COALESCE($3, display_order),
             updated_at = NOW()
            WHERE id = $1
            RETURNING *"#
     )
     .bind(id)
     .bind(&allowed)
-    .bind(req.is_required)
     .bind(req.display_order)
     .fetch_one(&pool)
     .await
