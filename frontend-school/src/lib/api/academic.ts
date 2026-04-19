@@ -417,18 +417,6 @@ export const assignCourses = async (data: {
     });
 };
 
-/** Subjects prescribed by the classroom's study plan for the given semester.
- *  has_plan = false → classroom has no plan assigned; caller should fall back to catalog. */
-export const listPlanSubjects = async (
-    classroomId: string,
-    semesterId: string
-): Promise<{ success: boolean; data: { has_plan: boolean; subjects: Subject[] } }> => {
-    const params = new URLSearchParams({
-        classroom_id: classroomId,
-        semester_id: semesterId
-    });
-    return await fetchApi(`/api/academic/planning/plan-subjects?${params}`);
-};
 
 export const removeCourse = async (id: string) => {
     return await fetchApi(`/api/academic/planning/courses/${id}`, { method: 'DELETE' });
