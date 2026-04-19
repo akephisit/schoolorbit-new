@@ -559,34 +559,51 @@
 		return 'other';
 	}
 
-	let subjectsByTermType = $derived.by(() => {
-		const grouped: Record<'1' | '2', Record<'BASIC' | 'ADDITIONAL', StudyPlanSubject[]>> = {
-			'1': { BASIC: [], ADDITIONAL: [] },
-			'2': { BASIC: [], ADDITIONAL: [] }
-		};
+	// subjects: grade → term → type → subjects[]
+	let subjectsByGradeTermType = $derived.by(() => {
+		const result: Record<
+			string,
+			Record<'1' | '2', Record<'BASIC' | 'ADDITIONAL', StudyPlanSubject[]>>
+		> = {};
+		for (const g of planGradeLevels) {
+			result[g.id] = {
+				'1': { BASIC: [], ADDITIONAL: [] },
+				'2': { BASIC: [], ADDITIONAL: [] }
+			};
+		}
 		for (const s of planSubjects) {
 			const tk = termKey(s.term);
 			if (tk === 'other') continue;
+			const gid = s.grade_level_id;
+			if (!gid || !result[gid]) continue;
 			const st = (s.subject_type ?? 'BASIC').toUpperCase();
-			if (st === 'BASIC') grouped[tk].BASIC.push(s);
-			else if (st === 'ADDITIONAL') grouped[tk].ADDITIONAL.push(s);
-			else grouped[tk].BASIC.push(s); // fallback
+			if (st === 'BASIC') result[gid][tk].BASIC.push(s);
+			else if (st === 'ADDITIONAL') result[gid][tk].ADDITIONAL.push(s);
+			else result[gid][tk].BASIC.push(s); // fallback
 		}
-		return grouped;
+		return result;
 	});
 
-	let activitiesByTerm = $derived.by(() => {
-		const grouped: Record<'1' | '2', StudyPlanVersionActivity[]> = { '1': [], '2': [] };
+	// activities: grade → term → activities[]
+	let activitiesByGradeTerm = $derived.by(() => {
+		const result: Record<string, Record<'1' | '2', StudyPlanVersionActivity[]>> = {};
+		for (const g of planGradeLevels) {
+			result[g.id] = { '1': [], '2': [] };
+		}
 		for (const a of planActivities) {
+			const allowed = a.allowed_grade_level_ids ?? [];
 			const at = a.catalog_term;
-			if (at === null || at === undefined || at === '') {
-				grouped['1'].push(a);
-				grouped['2'].push(a);
-			} else if (at === '1' || at === '2') {
-				grouped[at].push(a);
+			for (const g of planGradeLevels) {
+				if (allowed.length > 0 && !allowed.includes(g.id)) continue;
+				if (at === null || at === undefined || at === '') {
+					result[g.id]['1'].push(a);
+					result[g.id]['2'].push(a);
+				} else if (at === '1' || at === '2') {
+					result[g.id][at].push(a);
+				}
 			}
 		}
-		return grouped;
+		return result;
 	});
 
 	function sectionTotals(items: StudyPlanSubject[]) {
@@ -836,158 +853,163 @@
 					</Button>
 				</div>
 
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-					{#each ['1', '2'] as term (term)}
-						{@const tterm = term as '1' | '2'}
-						{@const basicList = subjectsByTermType[tterm].BASIC}
-						{@const additionalList = subjectsByTermType[tterm].ADDITIONAL}
-						{@const actList = activitiesByTerm[tterm]}
-						{@const tb = sectionTotals(basicList)}
-						{@const ta = sectionTotals(additionalList)}
-						{@const tact = activityTotals(actList)}
-						<div class="border rounded-lg p-4 space-y-4 bg-card">
-							<h2 class="text-lg font-bold border-b pb-2">ภาคเรียนที่ {term}</h2>
+				<div class="space-y-6">
+					{#each planGradeLevels as grade (grade.id)}
+						<div class="border-2 rounded-lg p-4 bg-card">
+							<h2 class="text-xl font-bold mb-3 text-center">
+								{grade.short_name ?? grade.name}
+							</h2>
 
-							<!-- วิชาพื้นฐาน -->
-							<section>
-								<h3 class="font-semibold flex items-center gap-1 mb-2 text-sm">
-									<BookOpen class="w-4 h-4" /> วิชาพื้นฐาน
-								</h3>
-								{#if basicList.length === 0}
-									<p class="text-xs text-muted-foreground italic">—</p>
-								{:else}
-									<div class="divide-y border rounded">
-										{#each basicList as s (s.id)}
-											<div class="px-3 py-2 flex items-center gap-2">
-												<div class="flex-1 min-w-0">
-													<div class="font-medium text-sm">
-														{s.subject_code}
-														{s.subject_name_th ?? ''}
-														{#if s.grade_level_name}
-															<span class="text-xs text-muted-foreground"
-																>· {s.grade_level_name}</span
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								{#each ['1', '2'] as term (term)}
+									{@const tterm = term as '1' | '2'}
+									{@const basicList = subjectsByGradeTermType[grade.id]?.[tterm]?.BASIC ?? []}
+									{@const additionalList =
+										subjectsByGradeTermType[grade.id]?.[tterm]?.ADDITIONAL ?? []}
+									{@const actList = activitiesByGradeTerm[grade.id]?.[tterm] ?? []}
+									{@const tb = sectionTotals(basicList)}
+									{@const ta = sectionTotals(additionalList)}
+									{@const tact = activityTotals(actList)}
+									<div class="border rounded-lg p-3 space-y-3">
+										<h3 class="font-semibold text-lg border-b pb-2">ภาคเรียนที่ {term}</h3>
+
+										<!-- วิชาพื้นฐาน -->
+										<section>
+											<h4 class="font-semibold flex items-center gap-1 mb-2 text-sm">
+												<BookOpen class="w-4 h-4" /> วิชาพื้นฐาน
+											</h4>
+											{#if basicList.length === 0}
+												<p class="text-xs text-muted-foreground italic">—</p>
+											{:else}
+												<div class="divide-y border rounded">
+													{#each basicList as s (s.id)}
+														<div class="px-3 py-2 flex items-center gap-2">
+															<div class="flex-1 min-w-0">
+																<div class="font-medium text-sm">
+																	{s.subject_code}
+																	{s.subject_name_th ?? ''}
+																</div>
+																<div class="text-xs text-muted-foreground">
+																	{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
+																</div>
+															</div>
+															<Button
+																variant="ghost"
+																size="icon"
+																class="h-7 w-7 text-destructive"
+																onclick={() => handleDeletePlanSubject(s)}
 															>
-														{/if}
-													</div>
-													<div class="text-xs text-muted-foreground">
-														{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
-													</div>
+																<Trash2 class="w-4 h-4" />
+															</Button>
+														</div>
+													{/each}
 												</div>
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-7 w-7 text-destructive"
-													onclick={() => handleDeletePlanSubject(s)}
-												>
-													<Trash2 class="w-4 h-4" />
-												</Button>
-											</div>
-										{/each}
-									</div>
-									<p class="text-xs font-medium text-right mt-1">
-										รวม: {tb.credits.toFixed(1)} นก · {tb.hours} ชม
-									</p>
-								{/if}
-							</section>
+												<p class="text-xs font-medium text-right mt-1">
+													รวม: {tb.credits.toFixed(1)} นก · {tb.hours} ชม
+												</p>
+											{/if}
+										</section>
 
-							<!-- วิชาเพิ่มเติม -->
-							<section>
-								<h3 class="font-semibold flex items-center gap-1 mb-2 text-sm">
-									<ListTodo class="w-4 h-4" /> วิชาเพิ่มเติม
-								</h3>
-								{#if additionalList.length === 0}
-									<p class="text-xs text-muted-foreground italic">—</p>
-								{:else}
-									<div class="divide-y border rounded">
-										{#each additionalList as s (s.id)}
-											<div class="px-3 py-2 flex items-center gap-2">
-												<div class="flex-1 min-w-0">
-													<div class="font-medium text-sm">
-														{s.subject_code}
-														{s.subject_name_th ?? ''}
-														{#if s.grade_level_name}
-															<span class="text-xs text-muted-foreground"
-																>· {s.grade_level_name}</span
+										<!-- วิชาเพิ่มเติม -->
+										<section>
+											<h4 class="font-semibold flex items-center gap-1 mb-2 text-sm">
+												<ListTodo class="w-4 h-4" /> วิชาเพิ่มเติม
+											</h4>
+											{#if additionalList.length === 0}
+												<p class="text-xs text-muted-foreground italic">—</p>
+											{:else}
+												<div class="divide-y border rounded">
+													{#each additionalList as s (s.id)}
+														<div class="px-3 py-2 flex items-center gap-2">
+															<div class="flex-1 min-w-0">
+																<div class="font-medium text-sm">
+																	{s.subject_code}
+																	{s.subject_name_th ?? ''}
+																</div>
+																<div class="text-xs text-muted-foreground">
+																	{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
+																</div>
+															</div>
+															<Button
+																variant="ghost"
+																size="icon"
+																class="h-7 w-7 text-destructive"
+																onclick={() => handleDeletePlanSubject(s)}
 															>
-														{/if}
-													</div>
-													<div class="text-xs text-muted-foreground">
-														{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
-													</div>
+																<Trash2 class="w-4 h-4" />
+															</Button>
+														</div>
+													{/each}
 												</div>
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-7 w-7 text-destructive"
-													onclick={() => handleDeletePlanSubject(s)}
-												>
-													<Trash2 class="w-4 h-4" />
-												</Button>
-											</div>
-										{/each}
-									</div>
-									<p class="text-xs font-medium text-right mt-1">
-										รวม: {ta.credits.toFixed(1)} นก · {ta.hours} ชม
-									</p>
-								{/if}
-							</section>
+												<p class="text-xs font-medium text-right mt-1">
+													รวม: {ta.credits.toFixed(1)} นก · {ta.hours} ชม
+												</p>
+											{/if}
+										</section>
 
-							<!-- กิจกรรมพัฒนาผู้เรียน -->
-							<section>
-								<h3 class="font-semibold flex items-center gap-1 mb-2 text-sm">
-									<GraduationCap class="w-4 h-4" /> กิจกรรมพัฒนาผู้เรียน
-								</h3>
-								{#if actList.length === 0}
-									<p class="text-xs text-muted-foreground italic">—</p>
-								{:else}
-									<div class="divide-y border rounded">
-										{#each actList as a (a.id)}
-											<div class="px-3 py-2 flex items-center gap-2">
-												<div class="flex-1 min-w-0">
-													<div class="flex items-center gap-2 flex-wrap">
-														<Badge variant="secondary" class="text-[10px]">
-															{PA_TYPE_LABELS[a.catalog_activity_type ?? 'other']}
-														</Badge>
-														<span class="font-medium text-sm">{a.catalog_name}</span>
-													</div>
-													<div class="text-xs text-muted-foreground mt-1">
-														{a.catalog_periods_per_week ?? 1} คาบ ·
-														{a.catalog_scheduling_mode === 'independent'
-															? 'แต่ละห้องจัดเอง'
-															: 'จัดพร้อมกัน'}
-													</div>
+										<!-- กิจกรรมพัฒนาผู้เรียน -->
+										<section>
+											<h4 class="font-semibold flex items-center gap-1 mb-2 text-sm">
+												<GraduationCap class="w-4 h-4" /> กิจกรรมพัฒนาผู้เรียน
+											</h4>
+											{#if actList.length === 0}
+												<p class="text-xs text-muted-foreground italic">—</p>
+											{:else}
+												<div class="divide-y border rounded">
+													{#each actList as a (a.id)}
+														<div class="px-3 py-2 flex items-center gap-2">
+															<div class="flex-1 min-w-0">
+																<div class="flex items-center gap-2 flex-wrap">
+																	<Badge variant="secondary" class="text-[10px]">
+																		{PA_TYPE_LABELS[a.catalog_activity_type ?? 'other']}
+																	</Badge>
+																	<span class="font-medium text-sm">{a.catalog_name}</span>
+																</div>
+																<div class="text-xs text-muted-foreground mt-1">
+																	{a.catalog_periods_per_week ?? 1} คาบ ·
+																	{a.catalog_scheduling_mode === 'independent'
+																		? 'แต่ละห้องจัดเอง'
+																		: 'จัดพร้อมกัน'}
+																</div>
+															</div>
+															<Button
+																variant="ghost"
+																size="icon"
+																class="h-7 w-7"
+																onclick={() => openEditPlanActivity(a)}
+															>
+																<Pencil class="w-4 h-4" />
+															</Button>
+															<Button
+																variant="ghost"
+																size="icon"
+																class="h-7 w-7 text-destructive"
+																onclick={() => handleDeletePlanActivity(a)}
+															>
+																<Trash2 class="w-4 h-4" />
+															</Button>
+														</div>
+													{/each}
 												</div>
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-7 w-7"
-													onclick={() => openEditPlanActivity(a)}
-												>
-													<Pencil class="w-4 h-4" />
-												</Button>
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-7 w-7 text-destructive"
-													onclick={() => handleDeletePlanActivity(a)}
-												>
-													<Trash2 class="w-4 h-4" />
-												</Button>
-											</div>
-										{/each}
-									</div>
-									<p class="text-xs font-medium text-right mt-1">
-										รวม: {tact.periods} คาบ/สัปดาห์
-									</p>
-								{/if}
-							</section>
+												<p class="text-xs font-medium text-right mt-1">
+													รวม: {tact.periods} คาบ/สัปดาห์
+												</p>
+											{/if}
+										</section>
 
-							<!-- Grand total per term -->
-							<div class="border-t pt-2 text-sm font-semibold text-right">
-								รวมทั้งหมด: {(tb.credits + ta.credits).toFixed(1)} นก · {tb.hours + ta.hours} ชม
-								· {tact.periods} คาบกิจกรรม
+										<!-- Grand total per term -->
+										<div class="border-t pt-2 text-sm font-semibold text-right">
+											รวมทั้งหมด: {(tb.credits + ta.credits).toFixed(1)} นก · {tb.hours +
+												ta.hours} ชม · {tact.periods} คาบกิจกรรม
+										</div>
+									</div>
+								{/each}
 							</div>
 						</div>
+					{:else}
+						<p class="text-center text-muted-foreground py-10">
+							ไม่มีระดับชั้นในแผนการเรียนนี้
+						</p>
 					{/each}
 				</div>
 			{:else}
