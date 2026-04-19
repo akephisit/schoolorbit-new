@@ -396,6 +396,12 @@
 	};
 	let pendingQueue = $state<PendingItem[]>([]);
 
+	let planGradeLevels = $derived.by(() => {
+		const plan = plans.find((p) => p.id === selectedVersion?.study_plan_id);
+		if (!plan?.grade_level_ids || plan.grade_level_ids.length === 0) return gradeLevels;
+		return gradeLevels.filter((g) => plan.grade_level_ids!.includes(g.id));
+	});
+
 	let filteredSubjectsForDialog = $derived.by(() => {
 		return subjects.filter((s) => {
 			if (filterGroupId && s.group_id !== filterGroupId) return false;
@@ -413,7 +419,23 @@
 		});
 	});
 
-	function isAlreadyAdded(type: 'subject' | 'activity', id: string): boolean {
+	function isInPlan(type: 'subject' | 'activity', id: string): boolean {
+		if (type === 'subject') {
+			return planSubjects.some(
+				(s) =>
+					s.subject_id === id &&
+					s.grade_level_id === addTargetGradeId &&
+					s.term === addTerm
+			);
+		}
+		return planActivities.some(
+			(a) =>
+				a.activity_catalog_id === id &&
+				(a.allowed_grade_level_ids ?? []).includes(addTargetGradeId)
+		);
+	}
+
+	function isInQueue(type: 'subject' | 'activity', id: string): boolean {
 		return pendingQueue.some(
 			(q) =>
 				q.type === type &&
@@ -422,6 +444,18 @@
 				q.target_term === addTerm
 		);
 	}
+
+	function isAlreadyAdded(type: 'subject' | 'activity', id: string): boolean {
+		return isInQueue(type, id) || isInPlan(type, id);
+	}
+
+	let existingSubjectsForTarget = $derived.by(() =>
+		planSubjects.filter((s) => s.grade_level_id === addTargetGradeId && s.term === addTerm)
+	);
+
+	let existingActivitiesForTarget = $derived.by(() =>
+		planActivities.filter((a) => (a.allowed_grade_level_ids ?? []).includes(addTargetGradeId))
+	);
 
 	function moveToQueue(type: 'subject' | 'activity', item: Subject | ActivityCatalog) {
 		if (!addTargetGradeId) {
@@ -1147,11 +1181,11 @@
 						<Label class="text-xs">ชั้นที่เปิดสอน (filter)</Label>
 						<Select.Root type="single" bind:value={filterGradeId}>
 							<Select.Trigger class="w-full h-8 text-xs">
-								{gradeLevels.find((g) => g.id === filterGradeId)?.short_name ?? 'ทั้งหมด'}
+								{planGradeLevels.find((g) => g.id === filterGradeId)?.short_name ?? 'ทั้งหมด'}
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="">ทั้งหมด</Select.Item>
-								{#each gradeLevels as g}
+								{#each planGradeLevels as g}
 									<Select.Item value={g.id}>{g.short_name ?? g.name}</Select.Item>
 								{/each}
 							</Select.Content>
@@ -1200,14 +1234,17 @@
 					<h4 class="text-xs font-semibold mb-1">วิชา ({filteredSubjectsForDialog.length})</h4>
 					<div class="max-h-[400px] overflow-y-auto divide-y rounded border">
 						{#each filteredSubjectsForDialog as s (s.id)}
-							{@const added = isAlreadyAdded('subject', s.id)}
+							{@const inPlan = isInPlan('subject', s.id)}
+							{@const inQueue = isInQueue('subject', s.id)}
 							<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
 								<span class="flex-1 truncate">
 									<span class="font-medium">{s.code}</span>
 									<span class="text-muted-foreground ml-1">{s.name_th}</span>
 								</span>
-								{#if added}
-									<Badge variant="secondary" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+								{#if inPlan}
+									<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
+								{:else if inQueue}
+									<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
 								{:else}
 									<Button
 										variant="outline"
@@ -1235,11 +1272,14 @@
 					</h4>
 					<div class="max-h-[220px] overflow-y-auto divide-y rounded border">
 						{#each filteredActivitiesForDialog as c (c.id)}
-							{@const added = isAlreadyAdded('activity', c.id)}
+							{@const inPlan = isInPlan('activity', c.id)}
+							{@const inQueue = isInQueue('activity', c.id)}
 							<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
 								<span class="flex-1 truncate">{c.name}</span>
-								{#if added}
-									<Badge variant="secondary" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+								{#if inPlan}
+									<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
+								{:else if inQueue}
+									<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
 								{:else}
 									<Button
 										variant="outline"
@@ -1272,10 +1312,10 @@
 							<Label class="text-xs">ชั้น *</Label>
 							<Select.Root type="single" bind:value={addTargetGradeId}>
 								<Select.Trigger class="w-full h-8 text-xs">
-									{gradeLevels.find((g) => g.id === addTargetGradeId)?.short_name ?? 'เลือกชั้น'}
+									{planGradeLevels.find((g) => g.id === addTargetGradeId)?.short_name ?? 'เลือกชั้น'}
 								</Select.Trigger>
 								<Select.Content>
-									{#each gradeLevels as g}
+									{#each planGradeLevels as g}
 										<Select.Item value={g.id}>{g.short_name ?? g.name}</Select.Item>
 									{/each}
 								</Select.Content>
@@ -1294,6 +1334,26 @@
 								</Select.Content>
 							</Select.Root>
 						</div>
+					</div>
+				</div>
+
+				<!-- Existing subjects in plan (read-only) -->
+				<div>
+					<h4 class="text-xs font-semibold mb-1 text-muted-foreground">
+						ในหลักสูตรแล้ว ({existingSubjectsForTarget.length})
+					</h4>
+					<div class="max-h-[150px] overflow-y-auto divide-y rounded border bg-muted/30">
+						{#each existingSubjectsForTarget as s (s.id)}
+							<div class="flex items-center gap-2 px-2 py-1.5 text-xs opacity-70">
+								<span class="flex-1 truncate">
+									<span class="font-medium">{s.subject_code}</span>
+									<span class="text-muted-foreground ml-1">{s.subject_name_th}</span>
+								</span>
+								<Badge variant="secondary" class="text-[10px]">✓ มีแล้ว</Badge>
+							</div>
+						{:else}
+							<p class="text-xs text-muted-foreground italic text-center py-2">—</p>
+						{/each}
 					</div>
 				</div>
 
@@ -1327,6 +1387,25 @@
 							{/if}
 						{:else}
 							<p class="text-xs text-muted-foreground italic text-center py-3">—</p>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Existing activities in plan (read-only) -->
+				<div>
+					<h4 class="text-xs font-semibold mb-1 text-muted-foreground">
+						ในหลักสูตรแล้ว ({existingActivitiesForTarget.length})
+					</h4>
+					<div class="max-h-[150px] overflow-y-auto divide-y rounded border bg-muted/30">
+						{#each existingActivitiesForTarget as a (a.id)}
+							<div class="flex items-center gap-2 px-2 py-1.5 text-xs opacity-70">
+								<span class="flex-1 truncate">
+									<span class="font-medium">{a.catalog_name}</span>
+								</span>
+								<Badge variant="secondary" class="text-[10px]">✓ มีแล้ว</Badge>
+							</div>
+						{:else}
+							<p class="text-xs text-muted-foreground italic text-center py-2">—</p>
 						{/each}
 					</div>
 				</div>
