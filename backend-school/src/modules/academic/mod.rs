@@ -95,6 +95,14 @@ pub fn academic_routes() -> Router<AppState> {
         // Generate activities from plan
         .route("/activities/generate-from-plan",
                post(handlers::study_plans::generate_activities_from_plan))
+
+        // Activity Catalog (คลังกิจกรรม — pattern เดียวกับ subjects)
+        .route("/activity-catalog",
+               get(handlers::study_plans::list_activity_catalog)
+               .post(handlers::study_plans::create_activity_catalog))
+        .route("/activity-catalog/{id}",
+               put(handlers::study_plans::update_activity_catalog)
+               .delete(handlers::study_plans::delete_activity_catalog))
         
         // Auto-Scheduling
         .route("/scheduling/auto-schedule", post(handlers::scheduling::auto_schedule_timetable))

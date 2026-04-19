@@ -191,25 +191,34 @@ pub struct GenerateCoursesResponse {
 pub struct StudyPlanVersionActivity {
     pub id: Uuid,
     pub study_plan_version_id: Uuid,
-    pub activity_type: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub periods_per_week: i32,
-    pub scheduling_mode: String,
+    pub activity_catalog_id: Uuid,
     pub allowed_grade_level_ids: Option<serde_json::Value>,
     pub is_required: bool,
     pub display_order: i32,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+
+    // Joined fields from catalog (for display)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub catalog_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub catalog_activity_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub catalog_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub catalog_periods_per_week: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub catalog_scheduling_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreatePlanActivityRequest {
-    pub activity_type: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub periods_per_week: Option<i32>,
-    pub scheduling_mode: Option<String>,
+    pub activity_catalog_id: Uuid,
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
@@ -217,11 +226,6 @@ pub struct CreatePlanActivityRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdatePlanActivityRequest {
-    pub activity_type: Option<String>,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub periods_per_week: Option<i32>,
-    pub scheduling_mode: Option<String>,
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
@@ -231,4 +235,40 @@ pub struct UpdatePlanActivityRequest {
 pub struct GenerateActivitiesFromPlanRequest {
     pub study_plan_version_id: Uuid,
     pub semester_id: Uuid,
+}
+
+// ==========================================
+// Activity Catalog (คลังกิจกรรม — pattern เดียวกับ subjects)
+// ==========================================
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ActivityCatalog {
+    pub id: Uuid,
+    pub name: String,
+    pub activity_type: String,
+    pub description: Option<String>,
+    pub periods_per_week: i32,
+    pub scheduling_mode: String,
+    pub is_active: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCatalogRequest {
+    pub name: String,
+    pub activity_type: String,
+    pub description: Option<String>,
+    pub periods_per_week: Option<i32>,
+    pub scheduling_mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateCatalogRequest {
+    pub name: Option<String>,
+    pub activity_type: Option<String>,
+    pub description: Option<String>,
+    pub periods_per_week: Option<i32>,
+    pub scheduling_mode: Option<String>,
+    pub is_active: Option<bool>,
 }

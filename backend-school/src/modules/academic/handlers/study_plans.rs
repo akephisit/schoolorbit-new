@@ -631,9 +631,16 @@ pub async fn list_plan_activities(
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     let rows: Vec<StudyPlanVersionActivity> = sqlx::query_as(
-        "SELECT * FROM study_plan_version_activities
-         WHERE study_plan_version_id = $1
-         ORDER BY display_order, name"
+        "SELECT sva.*,
+                ac.name AS catalog_name,
+                ac.activity_type AS catalog_activity_type,
+                ac.description AS catalog_description,
+                ac.periods_per_week AS catalog_periods_per_week,
+                ac.scheduling_mode AS catalog_scheduling_mode
+         FROM study_plan_version_activities sva
+         JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
+         WHERE sva.study_plan_version_id = $1
+         ORDER BY sva.display_order, ac.name"
     )
     .bind(version_id)
     .fetch_all(&pool)
@@ -662,23 +669,15 @@ pub async fn add_plan_activity(
 
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"INSERT INTO study_plan_version_activities
-            (study_plan_version_id, activity_type, name, description,
-             periods_per_week, scheduling_mode, allowed_grade_level_ids,
+            (study_plan_version_id, activity_catalog_id, allowed_grade_level_ids,
              is_required, display_order)
-           VALUES ($1, $2, $3, $4,
-                   COALESCE($5, 1),
-                   COALESCE($6, 'synchronized'),
-                   $7,
-                   COALESCE($8, true),
-                   COALESCE($9, 0))
+           VALUES ($1, $2, $3,
+                   COALESCE($4, true),
+                   COALESCE($5, 0))
            RETURNING *"#
     )
     .bind(version_id)
-    .bind(&req.activity_type)
-    .bind(&req.name)
-    .bind(&req.description)
-    .bind(req.periods_per_week)
-    .bind(&req.scheduling_mode)
+    .bind(req.activity_catalog_id)
     .bind(&allowed)
     .bind(req.is_required)
     .bind(req.display_order)
@@ -708,24 +707,14 @@ pub async fn update_plan_activity(
 
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"UPDATE study_plan_version_activities SET
-            activity_type = COALESCE($2, activity_type),
-            name = COALESCE($3, name),
-            description = COALESCE($4, description),
-            periods_per_week = COALESCE($5, periods_per_week),
-            scheduling_mode = COALESCE($6, scheduling_mode),
-            allowed_grade_level_ids = COALESCE($7, allowed_grade_level_ids),
-            is_required = COALESCE($8, is_required),
-            display_order = COALESCE($9, display_order),
+            allowed_grade_level_ids = COALESCE($2, allowed_grade_level_ids),
+            is_required = COALESCE($3, is_required),
+            display_order = COALESCE($4, display_order),
             updated_at = NOW()
            WHERE id = $1
            RETURNING *"#
     )
     .bind(id)
-    .bind(&req.activity_type)
-    .bind(&req.name)
-    .bind(&req.description)
-    .bind(req.periods_per_week)
-    .bind(&req.scheduling_mode)
     .bind(&allowed)
     .bind(req.is_required)
     .bind(req.display_order)
@@ -774,11 +763,18 @@ pub async fn generate_activities_from_plan(
 
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
 
-    // Fetch all template activities for this plan version
+    // Fetch all template activities for this plan version, joined with catalog data
     let templates: Vec<StudyPlanVersionActivity> = sqlx::query_as(
-        "SELECT * FROM study_plan_version_activities
-         WHERE study_plan_version_id = $1
-         ORDER BY display_order, name"
+        "SELECT sva.*,
+                ac.name AS catalog_name,
+                ac.activity_type AS catalog_activity_type,
+                ac.description AS catalog_description,
+                ac.periods_per_week AS catalog_periods_per_week,
+                ac.scheduling_mode AS catalog_scheduling_mode
+         FROM study_plan_version_activities sva
+         JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
+         WHERE sva.study_plan_version_id = $1
+         ORDER BY sva.display_order, ac.name"
     )
     .bind(req.study_plan_version_id)
     .fetch_all(&pool)
@@ -809,6 +805,12 @@ pub async fn generate_activities_from_plan(
             continue;
         }
 
+        // Pull activity fields from joined catalog (required — activity_catalog_id is NOT NULL)
+        let catalog_name = tpl.catalog_name.as_deref().unwrap_or("");
+        let catalog_activity_type = tpl.catalog_activity_type.as_deref().unwrap_or("other");
+        let catalog_periods_per_week = tpl.catalog_periods_per_week.unwrap_or(1);
+        let catalog_scheduling_mode = tpl.catalog_scheduling_mode.as_deref().unwrap_or("synchronized");
+
         sqlx::query(
             r#"INSERT INTO activity_slots
                 (name, description, activity_type, semester_id, allowed_grade_level_ids,
@@ -818,13 +820,13 @@ pub async fn generate_activities_from_plan(
                        'assigned', $6, $7,
                        $8, $9)"#
         )
-        .bind(&tpl.name)
-        .bind(&tpl.description)
-        .bind(&tpl.activity_type)
+        .bind(catalog_name)
+        .bind(&tpl.catalog_description)
+        .bind(catalog_activity_type)
         .bind(req.semester_id)
         .bind(&tpl.allowed_grade_level_ids)
-        .bind(tpl.periods_per_week)
-        .bind(&tpl.scheduling_mode)
+        .bind(catalog_periods_per_week)
+        .bind(catalog_scheduling_mode)
         .bind(tpl.id)
         .bind(user_id)
         .execute(&mut *tx)
@@ -842,4 +844,128 @@ pub async fn generate_activities_from_plan(
         "skipped": skipped,
         "total_templates": templates.len()
     })))
+}
+
+// ============================================
+// Activity Catalog CRUD
+// ============================================
+
+/// GET /api/academic/activity-catalog
+pub async fn list_activity_catalog(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let rows: Vec<ActivityCatalog> = sqlx::query_as(
+        "SELECT * FROM activity_catalog WHERE is_active = true ORDER BY activity_type, name"
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "success": true, "data": rows })))
+}
+
+/// POST /api/academic/activity-catalog
+pub async fn create_activity_catalog(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateCatalogRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let row: ActivityCatalog = sqlx::query_as(
+        r#"INSERT INTO activity_catalog (name, activity_type, description, periods_per_week, scheduling_mode)
+           VALUES ($1, $2, $3, COALESCE($4, 1), COALESCE($5, 'synchronized'))
+           RETURNING *"#
+    )
+    .bind(&req.name)
+    .bind(&req.activity_type)
+    .bind(&req.description)
+    .bind(req.periods_per_week)
+    .bind(&req.scheduling_mode)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": row }))))
+}
+
+/// PUT /api/academic/activity-catalog/:id
+pub async fn update_activity_catalog(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateCatalogRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let row: ActivityCatalog = sqlx::query_as(
+        r#"UPDATE activity_catalog SET
+            name = COALESCE($2, name),
+            activity_type = COALESCE($3, activity_type),
+            description = COALESCE($4, description),
+            periods_per_week = COALESCE($5, periods_per_week),
+            scheduling_mode = COALESCE($6, scheduling_mode),
+            is_active = COALESCE($7, is_active),
+            updated_at = NOW()
+           WHERE id = $1
+           RETURNING *"#
+    )
+    .bind(id)
+    .bind(&req.name)
+    .bind(&req.activity_type)
+    .bind(&req.description)
+    .bind(req.periods_per_week)
+    .bind(&req.scheduling_mode)
+    .bind(req.is_active)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::NotFound(e.to_string()))?;
+
+    Ok(Json(json!({ "success": true, "data": row })))
+}
+
+/// DELETE /api/academic/activity-catalog/:id
+pub async fn delete_activity_catalog(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    sqlx::query("DELETE FROM activity_catalog WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::BadRequest(
+            if e.to_string().contains("foreign key") {
+                "ไม่สามารถลบได้ มีหลักสูตรที่ใช้กิจกรรมนี้อยู่".to_string()
+            } else {
+                e.to_string()
+            }
+        ))?;
+
+    Ok(Json(json!({ "success": true })))
 }
