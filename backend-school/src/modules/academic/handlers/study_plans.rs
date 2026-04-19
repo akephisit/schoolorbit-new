@@ -930,7 +930,8 @@ pub async fn update_activity_catalog(
             periods_per_week = COALESCE($5, periods_per_week),
             scheduling_mode = COALESCE($6, scheduling_mode),
             is_active = COALESCE($7, is_active),
-            term = COALESCE($8, term),
+            -- term: null = "ทุกเทอม" (meaningful), not "keep old" — always overwrite
+            term = $8,
             grade_level_ids = COALESCE($9, grade_level_ids),
             updated_at = NOW()
            WHERE id = $1

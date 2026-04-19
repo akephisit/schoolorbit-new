@@ -429,8 +429,10 @@ pub async fn update_subject(
             description = COALESCE($8, description),
             is_active = COALESCE($9, is_active),
             start_academic_year_id = COALESCE($10, start_academic_year_id),
-            term = COALESCE($12, term),
-            default_instructor_id = COALESCE($13, default_instructor_id),
+            -- term/default_instructor_id: null = "clear to NULL" (meaningful state),
+            -- not "keep old" — always overwrite with whatever caller sent.
+            term = $12,
+            default_instructor_id = $13,
             updated_at = NOW()
         WHERE id = $11
         RETURNING *
