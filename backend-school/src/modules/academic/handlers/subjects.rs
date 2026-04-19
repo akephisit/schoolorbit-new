@@ -178,11 +178,7 @@ pub async fn list_subjects(
         ));
     }
 
-    // Prefer the new `active_in_year_id`; fall back to the legacy
-    // `start_academic_year_id` alias (kept for backward compatibility).
-    let active_in_year_id: Option<Uuid> = filter
-        .active_in_year_id
-        .or(filter.start_academic_year_id);
+    let active_in_year_id: Option<Uuid> = filter.active_in_year_id;
 
     // Default to latest_only = true (show only latest version per code)
     let latest_only = filter.latest_only.unwrap_or(true);
