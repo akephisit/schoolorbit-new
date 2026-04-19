@@ -178,7 +178,12 @@ pub async fn list_subjects(
         ));
     }
 
-    if filter.start_academic_year_id.is_some() {
+    // Prefer the new `active_in_year_id`; fall back to the legacy
+    // `start_academic_year_id` alias (kept for backward compatibility).
+    let active_in_year_id: Option<Uuid> = filter
+        .active_in_year_id
+        .or(filter.start_academic_year_id);
+    if active_in_year_id.is_some() {
         idx += 1;
         // แสดงวิชาทั้งหมดที่ใช้งานได้ในปีนั้น:
         // สำหรับแต่ละ code ดึง version ล่าสุดที่ start_academic_year_id <= ปีเป้าหมาย
@@ -207,7 +212,7 @@ pub async fn list_subjects(
     if let Some(ref scope) = filter.level_scope { q = q.bind(scope); }
     if let Some(ref stype) = filter.subject_type { q = q.bind(stype); }
     if let Some(ref pattern) = search_pattern { q = q.bind(pattern); }
-    if let Some(year_id) = filter.start_academic_year_id { q = q.bind(year_id); }
+    if let Some(year_id) = active_in_year_id { q = q.bind(year_id); }
     if let Some(ref term) = filter.term { q = q.bind(term); }
 
     let subjects = q

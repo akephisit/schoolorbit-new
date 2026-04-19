@@ -102,7 +102,13 @@ pub struct SubjectFilter {
     pub subject_type: Option<String>,
     pub search: Option<String>,
     pub active_only: Option<bool>,
+    /// (deprecated alias) legacy param name — historically already used the
+    /// "latest version with start_academic_year_id <= target" semantic.
     pub start_academic_year_id: Option<Uuid>,
+    /// For each subject code, return the latest version whose
+    /// start_academic_year_id <= this target year. Prefer this over
+    /// start_academic_year_id (kept for backward compat).
+    pub active_in_year_id: Option<Uuid>,
     pub term: Option<String>,
 }
 
