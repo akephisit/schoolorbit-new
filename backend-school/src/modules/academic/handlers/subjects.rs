@@ -339,6 +339,34 @@ pub async fn create_subject(
         subject.grade_level_ids = Some(level_ids.clone());
     }
 
+    // 5. Default instructor team (catalog-level team teaching defaults)
+    // When caller supplies `default_instructors`, that is the source of truth:
+    // clear any row auto-seeded by the subject_sync_junction trigger (from
+    // default_instructor_id) and insert the full team atomically.
+    if let Some(team) = &payload.default_instructors {
+        sqlx::query("DELETE FROM subject_default_instructors WHERE subject_id = $1")
+            .bind(subject.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to clear team: {}", e)))?;
+        for t in team {
+            if t.role != "primary" && t.role != "secondary" {
+                return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+            }
+            sqlx::query(
+                "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (subject_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
+            )
+            .bind(subject.id)
+            .bind(t.instructor_id)
+            .bind(&t.role)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
+        }
+    }
+
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": subject }))).into_response())
@@ -436,7 +464,7 @@ pub async fn update_subject(
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::InternalServerError(format!("Failed to clear links: {}", e)))?;
-            
+
         // Insert new
         for lid in level_ids {
             sqlx::query("INSERT INTO subject_grade_levels (subject_id, grade_level_id) VALUES ($1, $2)")
@@ -446,8 +474,33 @@ pub async fn update_subject(
                 .await
                 .map_err(|e| AppError::InternalServerError(format!("Failed to link grade level: {}", e)))?;
         }
-        
+
         subject.grade_level_ids = Some(level_ids.clone());
+    }
+
+    // 4. Replace default instructor team if provided (empty list = clear all)
+    if let Some(team) = &payload.default_instructors {
+        sqlx::query("DELETE FROM subject_default_instructors WHERE subject_id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to clear team: {}", e)))?;
+        for t in team {
+            if t.role != "primary" && t.role != "secondary" {
+                return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+            }
+            sqlx::query(
+                "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (subject_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
+            )
+            .bind(id)
+            .bind(t.instructor_id)
+            .bind(&t.role)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
+        }
     }
 
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
