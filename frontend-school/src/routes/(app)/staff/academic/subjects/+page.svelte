@@ -13,11 +13,15 @@
 		createActivityCatalog,
 		updateActivityCatalog,
 		deleteActivityCatalog,
+		listSubjectDefaultInstructors,
+		addSubjectDefaultInstructor,
+		removeSubjectDefaultInstructor,
 		ACTIVITY_TYPE_LABELS,
 		type Subject,
 		type SubjectGroup,
 		type LookupItem,
-		type ActivityCatalog
+		type ActivityCatalog,
+		type SubjectDefaultInstructor
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
@@ -121,6 +125,54 @@
 	// Unified Add Dialog State
 	let showUnifiedAddDialog = $state(false);
 	let unifiedAddType = $state<'subject' | 'activity'>('subject');
+
+	// Subject default instructors (team teaching at catalog level)
+	let teamInstructors = $state<SubjectDefaultInstructor[]>([]);
+	let teamLoading = $state(false);
+	let addInstructorId = $state('');
+
+	async function loadTeamInstructors(subjectId: string) {
+		teamLoading = true;
+		try {
+			const res = await listSubjectDefaultInstructors(subjectId);
+			teamInstructors = res.data ?? [];
+		} catch {
+			teamInstructors = [];
+		} finally {
+			teamLoading = false;
+		}
+	}
+
+	async function handleAddTeamInstructor() {
+		if (!currentSubject.id || !addInstructorId) return;
+		// Prevent duplicate (including the primary, which lives in default_instructor_id)
+		if (addInstructorId === currentSubject.default_instructor_id) {
+			toast.error('ครูคนนี้เป็นครูหลักอยู่แล้ว');
+			return;
+		}
+		if (teamInstructors.some((t) => t.instructor_id === addInstructorId)) {
+			toast.error('ครูคนนี้อยู่ในทีมแล้ว');
+			return;
+		}
+		try {
+			await addSubjectDefaultInstructor(currentSubject.id, addInstructorId, 'secondary');
+			addInstructorId = '';
+			await loadTeamInstructors(currentSubject.id);
+			toast.success('เพิ่มครูร่วมแล้ว');
+		} catch (e) {
+			toast.error('เพิ่มครูร่วมไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		}
+	}
+
+	async function handleRemoveTeamInstructor(instructorId: string) {
+		if (!currentSubject.id) return;
+		try {
+			await removeSubjectDefaultInstructor(currentSubject.id, instructorId);
+			await loadTeamInstructors(currentSubject.id);
+		} catch (e) {
+			toast.error('ลบครูร่วมไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		}
+	}
 
 	// Version grouping: compute map of code -> versions (all versions of that code
 	// in the currently-loaded list). Used to render "version เก่า" / "ปัจจุบัน"
@@ -264,6 +316,9 @@
 		isEditing = true;
 		isNewVersion = false;
 		showDialog = true;
+		teamInstructors = [];
+		addInstructorId = '';
+		if (subject.id) void loadTeamInstructors(subject.id);
 	}
 
 	function handleOpenNewVersion(subject: Subject) {
@@ -1126,6 +1181,68 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
+
+				{#if isEditing && currentSubject.id}
+					<div class="space-y-2">
+						<Label
+							class="flex items-center gap-1"
+							title="ครูร่วมสอน (Team Teaching) — ใช้เป็นค่าเริ่มต้น เมื่อวิชานี้ถูกเพิ่มเข้าห้องใดก็ตาม ครูทั้งทีมจะถูกกำหนดอัตโนมัติ (แก้รายห้องได้ภายหลัง)"
+						>
+							ครูร่วมสอน (Team Teaching Default)
+							<Info class="w-3 h-3 text-muted-foreground" />
+						</Label>
+						<div class="flex gap-2">
+							<Select.Root type="single" bind:value={addInstructorId}>
+								<Select.Trigger class="flex-1 truncate">
+									{(() => {
+										const st = staffList.find((s) => s.id === addInstructorId);
+										return st ? st.name : 'เลือกครูที่จะเพิ่ม';
+									})()}
+								</Select.Trigger>
+								<Select.Content class="max-h-[300px]">
+									{#each staffList.filter((s) => s.id !== currentSubject.default_instructor_id && !teamInstructors.some((t) => t.instructor_id === s.id)) as staff}
+										<Select.Item value={staff.id}>{staff.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							<Button
+								type="button"
+								variant="outline"
+								onclick={handleAddTeamInstructor}
+								disabled={!addInstructorId}
+							>
+								เพิ่ม
+							</Button>
+						</div>
+						{#if teamLoading}
+							<p class="text-[11px] text-muted-foreground">กำลังโหลด...</p>
+						{:else if teamInstructors.length === 0}
+							<p class="text-[11px] text-muted-foreground">
+								ยังไม่มีครูร่วม — เพิ่มได้เพื่อให้ระบบผูกครูทั้งทีมให้ทุกห้องอัตโนมัติ
+							</p>
+						{:else}
+							<div class="flex flex-wrap gap-1.5">
+								{#each teamInstructors as t (t.id)}
+									<Badge variant="secondary" class="gap-1 pr-1">
+										<span>{t.instructor_name ?? t.instructor_id}</span>
+										<button
+											type="button"
+											class="ml-1 rounded hover:bg-destructive/20 p-0.5"
+											onclick={() => handleRemoveTeamInstructor(t.instructor_id)}
+											aria-label="ลบครูร่วม"
+										>
+											<Trash2 class="h-3 w-3" />
+										</button>
+									</Badge>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{:else if !isEditing}
+					<p class="text-[11px] text-muted-foreground">
+						บันทึกวิชาก่อน แล้วกลับมาแก้ไขเพื่อเพิ่มครูร่วมสอน (ทีม)
+					</p>
+				{/if}
 
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-2">
