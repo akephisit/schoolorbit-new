@@ -282,7 +282,6 @@ export interface Subject {
     hours_per_semester?: number;
     type: 'BASIC' | 'ADDITIONAL' | 'ACTIVITY';
     group_id?: string;
-    level_scope?: string;
     description?: string;
     is_active: boolean;
     group_name_th?: string;
@@ -298,7 +297,6 @@ export const listSubjectGroups = async (): Promise<{ data: SubjectGroup[] }> => 
 
 export const listSubjects = async (filters: {
     group_id?: string;
-    level_scope?: string;
     subject_type?: string;
     search?: string;
     active_only?: boolean;
@@ -310,7 +308,6 @@ export const listSubjects = async (filters: {
 } = {}): Promise<{ data: Subject[] }> => {
     const params = new URLSearchParams();
     if (filters.group_id) params.append('group_id', filters.group_id);
-    if (filters.level_scope) params.append('level_scope', filters.level_scope);
     if (filters.subject_type) params.append('subject_type', filters.subject_type);
     if (filters.search) params.append('search', filters.search);
     if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
@@ -442,7 +439,6 @@ export interface StudyPlan {
     name_th: string;
     name_en?: string;
     description?: string;
-    level_scope?: string; // 'kindergarten' | 'primary' | 'secondary' | 'all' (legacy, kept for backward compat)
     grade_level_ids?: string[];
     is_active: boolean;
     created_at: string;
@@ -485,11 +481,9 @@ export interface StudyPlanSubject {
 // Study Plans CRUD
 export const listStudyPlans = async (filters: {
     active_only?: boolean;
-    level_scope?: string;
 } = {}): Promise<{ data: StudyPlan[] }> => {
     const params = new URLSearchParams();
     if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
-    if (filters.level_scope) params.append('level_scope', filters.level_scope);
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return await fetchApi(`/api/academic/study-plans${queryString}`);
@@ -504,7 +498,6 @@ export const createStudyPlan = async (data: {
     name_th: string;
     name_en?: string;
     description?: string;
-    level_scope?: string;
     grade_level_ids?: string[];
 }) => {
     return await fetchApi('/api/academic/study-plans', {

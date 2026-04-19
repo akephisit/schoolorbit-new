@@ -85,7 +85,6 @@
 		name_th: string;
 		name_en?: string;
 		description?: string;
-		level_scope?: string;
 		grade_level_ids: string[];
 	} {
 		return {
@@ -94,7 +93,6 @@
 			name_th: '',
 			name_en: '',
 			description: '',
-			level_scope: 'all',
 			grade_level_ids: []
 		};
 	}
@@ -405,20 +403,18 @@
 		selectedCatalogIds = next;
 	}
 
-	// Derived: valid grade levels for current version (prefer plan.grade_level_ids, fallback to level_scope)
+	// Derived: valid grade levels for current version (uses plan.grade_level_ids; empty = all)
 	let unifiedGradeLevels = $derived.by(() => {
 		if (!selectedVersion) return gradeLevels;
 		const plan = plans.find((p) => p.id === selectedVersion!.study_plan_id);
 		if (!plan) return gradeLevels;
 
-		// New: if grade_level_ids is set, use those
 		if (plan.grade_level_ids && plan.grade_level_ids.length > 0) {
 			return gradeLevels.filter((g) => plan.grade_level_ids!.includes(g.id));
 		}
 
-		// Fallback: legacy level_scope
-		if (!plan.level_scope || plan.level_scope === 'all') return gradeLevels;
-		return gradeLevels.filter((g) => g.level_type === plan.level_scope);
+		// empty/undefined = all grade levels
+		return gradeLevels;
 	});
 
 	// Filter subjects by group (uses the already-loaded `subjects` state from initData)

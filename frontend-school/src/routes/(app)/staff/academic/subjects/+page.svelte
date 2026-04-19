@@ -80,7 +80,6 @@
 	let searchQuery = $state('');
 	let selectedGroupId = $state('');
 	let selectedSubjectType = $state('');
-	let selectedLevelScope = $state('');
 	let selectedYearFilter = $state('');
 	let selectedYearObj = $derived(academicYears.find((y) => y.id === selectedYearFilter));
 	let showAllVersions = $state(false);
@@ -182,7 +181,6 @@
 			hours_per_semester: 40,
 			type: 'BASIC',
 			group_id: '',
-			level_scope: undefined,
 			grade_level_ids: [],
 			description: '',
 			is_active: true
@@ -235,7 +233,6 @@
 				search: searchQuery,
 				group_id: selectedGroupId || undefined,
 				subject_type: selectedSubjectType || undefined,
-				level_scope: selectedLevelScope || undefined,
 				active_in_year_id: selectedYearFilter || undefined,
 				latest_only: !showAllVersions
 			});
@@ -286,7 +283,6 @@
 			name_en: subject.name_en ?? '',
 			type: subject.type,
 			group_id: subject.group_id ?? '',
-			level_scope: subject.level_scope,
 			grade_level_ids: [...(subject.grade_level_ids ?? [])],
 			term: subject.term ?? '',
 			default_instructor_id: subject.default_instructor_id ?? '',
@@ -325,7 +321,6 @@
 			payload.group_id = nullify(payload.group_id);
 			payload.start_academic_year_id = nullify(payload.start_academic_year_id);
 			payload.default_instructor_id = nullify(payload.default_instructor_id);
-			payload.level_scope = nullify(payload.level_scope);
 			payload.description = nullify(payload.description);
 			payload.term = nullify(payload.term);
 
@@ -508,7 +503,6 @@
 		searchQuery = '';
 		if (!isDeptScope) selectedGroupId = '';
 		selectedSubjectType = '';
-		selectedLevelScope = '';
 		// Reset year filter back to current academic year (the default)
 		const current = academicYears.find((y) => y.is_current);
 		selectedYearFilter = current?.id ?? academicYears[0]?.id ?? '';
@@ -524,7 +518,6 @@
 		if (searchQuery) return true;
 		if (!isDeptScope && selectedGroupId) return true;
 		if (selectedSubjectType) return true;
-		if (selectedLevelScope) return true;
 		if (selectedYearFilter && selectedYearFilter !== defaultYear) return true;
 		if (showAllVersions) return true;
 		return false;
@@ -629,38 +622,6 @@
 					{#each groups as group}
 						<Select.Item value={group.id}>{group.name_th}</Select.Item>
 					{/each}
-				</Select.Content>
-			</Select.Root>
-		</div>
-
-		<!-- Level Filter -->
-		<div class="w-full md:w-[140px]">
-			<Select.Root type="single" bind:value={selectedLevelScope} onValueChange={() => loadData()}>
-				<Select.Trigger>
-					{#if selectedLevelScope === 'JUNIOR'}มัธยมต้น
-					{:else if selectedLevelScope === 'SENIOR'}มัธยมปลาย
-					{:else if selectedLevelScope === 'ALL'}ทุกระดับ
-					{:else if selectedLevelScope}
-						{gradeLevels.find((l) => l.code === selectedLevelScope)?.name || selectedLevelScope}
-					{:else}ทุกระดับชั้น{/if}
-				</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="">ทุกระดับชั้น</Select.Item>
-					<Select.Group>
-						<Select.Label>ช่วงชั้น</Select.Label>
-						<Select.Item value="JUNIOR">มัธยมต้น (ม.1-3)</Select.Item>
-						<Select.Item value="SENIOR">มัธยมปลาย (ม.4-6)</Select.Item>
-						<Select.Item value="ALL">ทุกระดับ</Select.Item>
-					</Select.Group>
-					{#if gradeLevels.length > 0}
-						<Select.Separator />
-						<Select.Group>
-							<Select.Label>ระดับชั้นเรียน</Select.Label>
-							{#each gradeLevels as level}
-								<Select.Item value={level.code}>{level.name}</Select.Item>
-							{/each}
-						</Select.Group>
-					{/if}
 				</Select.Content>
 			</Select.Root>
 		</div>
