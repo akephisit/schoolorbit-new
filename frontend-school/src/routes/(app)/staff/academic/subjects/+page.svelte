@@ -40,7 +40,11 @@
 		Copy,
 		CircleCheck,
 		Check,
-		ChevronsUpDown
+		ChevronsUpDown,
+		ChevronDown,
+		ChevronRight,
+		Inbox,
+		Info
 	} from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 
@@ -82,7 +86,54 @@
 	let isNewVersion = $state(false);
 	let submitting = $state(false);
 	let deleting = $state(false);
+	let showAdvanced = $state(false);
 	let currentSubject: Partial<Subject> = $state(getInitialSubjectState());
+
+	// Version grouping: compute map of code -> versions (all versions of that code
+	// in the currently-loaded list). Used to render "version เก่า" / "ปัจจุบัน"
+	// badges and to show a "N versions" hint when multiple versions are loaded.
+	type VersionInfo = {
+		versions: Subject[]; // sorted DESC by start year
+		latestId: string;
+	};
+	let versionsByCode = $derived.by(() => {
+		const map = new Map<string, VersionInfo>();
+		// group
+		for (const s of subjects) {
+			const arr = map.get(s.code)?.versions ?? [];
+			arr.push(s);
+			map.set(s.code, { versions: arr, latestId: '' });
+		}
+		// sort each group DESC by academic-year numeric value, then derive latestId
+		for (const [code, info] of map) {
+			info.versions.sort((a, b) => {
+				const ay = academicYears.find((y) => y.id === a.start_academic_year_id)?.year ?? 0;
+				const by = academicYears.find((y) => y.id === b.start_academic_year_id)?.year ?? 0;
+				return by - ay;
+			});
+			info.latestId = info.versions[0]?.id ?? '';
+			map.set(code, info);
+		}
+		return map;
+	});
+
+	/** Compose a short effective-year-range label for an older version.
+	 *  "เก่า (ปี 2566 → 2567)" means: effective from 2566 until 2567 (exclusive).
+	 *  If it's the oldest loaded version with no successor, falls back to just "ปี 2566". */
+	function versionRangeLabel(subject: Subject): string {
+		const info = versionsByCode.get(subject.code);
+		if (!info) return '';
+		const idx = info.versions.findIndex((v) => v.id === subject.id);
+		const startYear = academicYears.find((y) => y.id === subject.start_academic_year_id)?.year;
+		// "next" in chronological order = the version immediately newer than this one.
+		// versions[] is DESC by year, so the newer one is at idx-1.
+		const nextYear =
+			idx > 0
+				? academicYears.find((y) => y.id === info.versions[idx - 1].start_academic_year_id)?.year
+				: undefined;
+		if (startYear == null) return '';
+		return nextYear != null ? `ปี ${startYear}–${nextYear}` : `ตั้งแต่ปี ${startYear}`;
+	}
 
 	function getInitialSubjectState(): Partial<Subject> {
 		// Find current/active academic year from the list, or use first one
@@ -151,7 +202,7 @@
 				group_id: selectedGroupId || undefined,
 				subject_type: selectedSubjectType || undefined,
 				level_scope: selectedLevelScope || undefined,
-				start_academic_year_id: selectedYearFilter || undefined
+				active_in_year_id: selectedYearFilter || undefined
 			});
 			subjects = subjectsRes.data;
 		} catch (e) {
@@ -278,11 +329,27 @@
 
 	function clearFilters() {
 		searchQuery = '';
-		selectedGroupId = '';
+		if (!isDeptScope) selectedGroupId = '';
 		selectedSubjectType = '';
 		selectedLevelScope = '';
+		// Reset year filter back to current academic year (the default)
+		const current = academicYears.find((y) => y.is_current);
+		selectedYearFilter = current?.id ?? academicYears[0]?.id ?? '';
 		loadData();
 	}
+
+	// "Active filter" = something is set that differs from defaults.
+	// selectedYearFilter defaults to current year, so a mismatch counts as active.
+	let hasActiveFilters = $derived.by(() => {
+		const current = academicYears.find((y) => y.is_current);
+		const defaultYear = current?.id ?? academicYears[0]?.id ?? '';
+		if (searchQuery) return true;
+		if (!isDeptScope && selectedGroupId) return true;
+		if (selectedSubjectType) return true;
+		if (selectedLevelScope) return true;
+		if (selectedYearFilter && selectedYearFilter !== defaultYear) return true;
+		return false;
+	});
 
 	onMount(() => {
 		initData();
@@ -322,25 +389,30 @@
 		class="bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row gap-3 items-end md:items-center flex-wrap"
 	>
 		<!-- Search -->
-		<div class="relative w-full md:w-[240px]">
-			<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-			<Input
-				type="text"
-				bind:value={searchQuery}
-				onkeydown={(e) => e.key === 'Enter' && loadData()}
-				placeholder="ค้นหารหัส หรือ ชื่อวิชา..."
-				class="pl-10"
-			/>
+		<div class="w-full md:w-[240px] space-y-1">
+			<div class="relative">
+				<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+				<Input
+					type="text"
+					bind:value={searchQuery}
+					onkeydown={(e) => e.key === 'Enter' && loadData()}
+					placeholder="ค้นหารหัสหรือชื่อวิชา..."
+					class="pl-10"
+				/>
+			</div>
+			<p class="text-[10px] text-muted-foreground pl-1">
+				ค้นได้ทั้งรหัสวิชา (เช่น ท21101) และชื่อ
+			</p>
 		</div>
 
 		<!-- Year Filter -->
-		<div class="w-full md:w-[180px]">
+		<div class="w-full md:w-[200px] space-y-1">
 			<Select.Root type="single" bind:value={selectedYearFilter} onValueChange={() => loadData()}>
-				<Select.Trigger>
+				<Select.Trigger title="แสดงวิชาทุกรหัสที่ 'มีผลบังคับ' ในปีการศึกษาที่เลือก (รวมวิชาที่เริ่มใช้ตั้งแต่ปีก่อนหน้า)">
 					{academicYears.find((y) => y.id === selectedYearFilter)?.name || 'ทุกปีการศึกษา'}
 				</Select.Trigger>
 				<Select.Content>
-					<Select.Item value="">ทุกปีการศึกษา</Select.Item>
+					<Select.Item value="">ทุกเวอร์ชัน (ไม่กรองปี)</Select.Item>
 					{#each academicYears as year}
 						<Select.Item value={year.id}
 							>{year.name} {year.is_current ? '(ปัจจุบัน)' : ''}</Select.Item
@@ -348,6 +420,7 @@
 					{/each}
 				</Select.Content>
 			</Select.Root>
+			<p class="text-[10px] text-muted-foreground pl-1">วิชาที่ใช้ในปี</p>
 		</div>
 
 		<!-- Group Filter -->
@@ -439,24 +512,75 @@
 					</Table.Row>
 				{:else if subjects.length === 0}
 					<Table.Row>
-						<Table.Cell colspan={5} class="text-center h-24 text-muted-foreground">
-							ไม่พบรายวิชา <Button
-								variant="link"
-								onclick={clearFilters}
-								class="p-0 h-auto font-normal">ล้างตัวกรอง</Button
-							>
+						<Table.Cell colspan={5} class="h-48">
+							<div class="flex flex-col items-center justify-center gap-3 py-6 text-center">
+								{#if hasActiveFilters}
+									<Inbox class="w-10 h-10 text-muted-foreground/60" />
+									<div class="text-muted-foreground">ไม่พบวิชาที่ตรงกับตัวกรอง</div>
+									<Button variant="outline" size="sm" onclick={clearFilters}>
+										ล้างตัวกรอง
+									</Button>
+								{:else}
+									<Inbox class="w-10 h-10 text-muted-foreground/60" />
+									<div class="font-medium">ยังไม่มีวิชาในระบบ</div>
+									<div class="text-xs text-muted-foreground">
+										เริ่มต้นโดยคลิก "+ เพิ่มรายวิชา" ด้านบน
+									</div>
+									<Button size="sm" onclick={handleOpenCreate} class="gap-2">
+										<Plus class="w-4 h-4" />
+										เพิ่มรายวิชา
+									</Button>
+								{/if}
+							</div>
 						</Table.Cell>
 					</Table.Row>
 				{:else}
 					{#each subjects as subject (subject.id)}
+						{@const vInfo = versionsByCode.get(subject.code)}
+						{@const totalVersions = vInfo?.versions.length ?? 1}
+						{@const isLatestVersion = vInfo ? vInfo.latestId === subject.id : true}
+						{@const latestYearName = vInfo
+							? academicYears.find(
+									(y) => y.id === vInfo.versions[0]?.start_academic_year_id
+								)?.name
+							: undefined}
 						<Table.Row>
-							<Table.Cell class="font-medium">
+							<Table.Cell class="font-medium align-top">
 								<div class="font-bold text-primary">{subject.code}</div>
-								{#if subject.type !== 'BASIC'}
-									<Badge variant="outline" class="mt-1 text-[10px] px-1 py-0 h-auto"
-										>{subject.type}</Badge
-									>
-								{/if}
+								<div class="flex flex-wrap items-center gap-1 mt-1">
+									{#if totalVersions > 1}
+										{#if isLatestVersion}
+											<Badge
+												class="text-[10px] px-1.5 py-0 h-auto bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+												title="เวอร์ชันปัจจุบันของรหัสวิชานี้"
+											>
+												ปัจจุบัน
+											</Badge>
+										{:else}
+											<Badge
+												variant="outline"
+												class="text-[10px] px-1.5 py-0 h-auto text-muted-foreground"
+												title={latestYearName
+													? `เวอร์ชันล่าสุดคือ ${latestYearName}`
+													: 'มีเวอร์ชันที่ใหม่กว่านี้อยู่'}
+											>
+												เก่า · {versionRangeLabel(subject)}
+											</Badge>
+										{/if}
+										<Badge
+											variant="secondary"
+											class="text-[10px] px-1.5 py-0 h-auto font-normal"
+											title="มี {totalVersions} เวอร์ชันของรหัสวิชานี้ที่โหลดอยู่"
+										>
+											{totalVersions} versions
+										</Badge>
+									{/if}
+									{#if subject.type !== 'BASIC'}
+										<Badge variant="outline" class="text-[10px] px-1 py-0 h-auto">
+											{subject.type}
+										</Badge>
+									{/if}
+								</div>
 							</Table.Cell>
 							<Table.Cell>
 								<div class="font-medium">{subject.name_th}</div>
