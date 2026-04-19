@@ -7,6 +7,7 @@
 		getAcademicStructure,
 		listClassrooms,
 		listSubjects,
+		listPlanSubjects,
 		listClassroomCourses,
 		assignCourses,
 		removeCourse,
@@ -66,6 +67,11 @@
 	let selectedSubjectIds = $state<string[]>([]);
 	let subjectSearchTerm = $state('');
 	let submitting = $state(false);
+	// Plan-first source: default to subjects in the classroom's study plan.
+	// `hasPlan=false` means the classroom has no plan → catalog is the only option.
+	// `showOutsidePlan=true` is a user-opt-in escape hatch to see catalog-wide.
+	let hasPlan = $state(true);
+	let showOutsidePlan = $state(false);
 
 	// Edit Dialog
 	let showEditDialog = $state(false);
@@ -266,6 +272,22 @@
 	}
 
 	async function loadModalSubjects() {
+		// Plan-first: if user hasn't opted into "show outside plan", fetch plan subjects.
+		// If the classroom has no plan, silently fall back to catalog.
+		if (!showOutsidePlan && selectedClassroomId && selectedTermId) {
+			try {
+				const res = await listPlanSubjects(selectedClassroomId, selectedTermId);
+				hasPlan = res.data.has_plan;
+				if (hasPlan) {
+					allSubjects = res.data.subjects;
+					return;
+				}
+			} catch (e) {
+				// Fall through to catalog on error
+				console.error(e);
+			}
+		}
+		// Catalog fallback (no plan, or user opted in)
 		try {
 			const res = await listSubjects({
 				active_in_year_id: selectedYearId,
@@ -286,6 +308,9 @@
 			selectedTermFilter = '';
 		}
 
+		// Reset dialog state each open; plan-first by default.
+		showOutsidePlan = false;
+		hasPlan = true;
 		await loadModalSubjects();
 
 		selectedSubjectIds = [];
@@ -715,8 +740,43 @@
 	<Dialog.Root bind:open={showAddDialog}>
 		<Dialog.Content class="sm:max-w-[600px] max-h-[80vh] flex flex-col">
 			<Dialog.Header>
-				<Dialog.Title>เพิ่มรายวิชาเข้าสู่แผนการเรียน</Dialog.Title>
+				<Dialog.Title>เพิ่มรายวิชาเข้าสู่ห้องเรียน</Dialog.Title>
 			</Dialog.Header>
+
+			<!-- Source banner -->
+			{#if !hasPlan}
+				<div class="rounded-md border bg-amber-50 text-amber-900 px-3 py-2 text-xs mb-1">
+					ห้องนี้ยังไม่มีแผนการเรียน — แสดงวิชาจากคลังรายวิชาทั้งหมด
+				</div>
+			{:else if showOutsidePlan}
+				<div class="rounded-md border bg-muted px-3 py-2 text-xs mb-1 flex items-center justify-between">
+					<span>กำลังแสดง <b>คลังทั้งหมด</b> (นอกแผนก็เห็น)</span>
+					<button
+						type="button"
+						class="underline hover:text-primary"
+						onclick={async () => {
+							showOutsidePlan = false;
+							await loadModalSubjects();
+						}}
+					>
+						กลับไปดูเฉพาะในแผน
+					</button>
+				</div>
+			{:else}
+				<div class="rounded-md border bg-primary/5 text-primary px-3 py-2 text-xs mb-1 flex items-center justify-between">
+					<span>แสดงวิชาตาม <b>แผนการเรียน</b> ของห้องนี้</span>
+					<button
+						type="button"
+						class="underline hover:text-primary/80"
+						onclick={async () => {
+							showOutsidePlan = true;
+							await loadModalSubjects();
+						}}
+					>
+						แสดงวิชานอกแผน...
+					</button>
+				</div>
+			{/if}
 
 			<div class="p-1">
 				<div class="flex gap-2 mb-4">
@@ -729,26 +789,29 @@
 							bind:value={subjectSearchTerm}
 						/>
 					</div>
-					<div class="w-[140px]">
-						<Select.Root
-							type="single"
-							bind:value={selectedTermFilter}
-							onValueChange={loadModalSubjects}
-						>
-							<Select.Trigger>
-								{#if selectedTermFilter === '1'}เทอม 1
-								{:else if selectedTermFilter === '2'}เทอม 2
-								{:else if selectedTermFilter === 'SUMMER'}ซัมเมอร์
-								{:else}ทุกเทอม{/if}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="">ทุกเทอม</Select.Item>
-								<Select.Item value="1">เทอม 1</Select.Item>
-								<Select.Item value="2">เทอม 2</Select.Item>
-								<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
+					{#if showOutsidePlan || !hasPlan}
+						<!-- Term filter only meaningful in catalog mode; plan mode is already term-scoped -->
+						<div class="w-[140px]">
+							<Select.Root
+								type="single"
+								bind:value={selectedTermFilter}
+								onValueChange={loadModalSubjects}
+							>
+								<Select.Trigger>
+									{#if selectedTermFilter === '1'}เทอม 1
+									{:else if selectedTermFilter === '2'}เทอม 2
+									{:else if selectedTermFilter === 'SUMMER'}ซัมเมอร์
+									{:else}ทุกเทอม{/if}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="">ทุกเทอม</Select.Item>
+									<Select.Item value="1">เทอม 1</Select.Item>
+									<Select.Item value="2">เทอม 2</Select.Item>
+									<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
+					{/if}
 				</div>
 
 				<div class="border rounded-md overflow-hidden h-[300px] md:h-[400px]">
@@ -874,11 +937,11 @@
 			<Dialog.Header>
 				<Dialog.Title class="flex items-center gap-2">
 					<Wand2 class="w-5 h-5" />
-					สร้างรายวิชาอัตโนมัติจากหลักสูตร
+					สร้างวิชา + กิจกรรมอัตโนมัติจากแผนการเรียน
 				</Dialog.Title>
 				<Dialog.Description>
-					ระบบจะดึงรายวิชาจากหลักสูตรสถานศึกษาที่เลือกไว้ในห้องเรียนนี้
-					และสร้างรายวิชาให้อัตโนมัติตามระดับชั้นและภาคเรียนที่เหมาะสม
+					ระบบจะดึงทั้ง <b>รายวิชา</b> และ <b>กิจกรรมพัฒนาผู้เรียน</b> จากหลักสูตรที่ห้องนี้ใช้
+					แล้วสร้างให้อัตโนมัติตามระดับชั้น + ภาคเรียนที่เลือก (ครูทีมจะถูก copy จากคลังรายวิชาให้ด้วย)
 				</Dialog.Description>
 			</Dialog.Header>
 
@@ -927,7 +990,7 @@
 						กำลังสร้าง...
 					{:else}
 						<Wand2 class="w-4 h-4 mr-2" />
-						สร้างรายวิชาอัตโนมัติ
+						สร้างวิชา + กิจกรรม
 					{/if}
 				</Button>
 			</Dialog.Footer>
