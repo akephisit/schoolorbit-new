@@ -37,7 +37,7 @@
 		Search,
 		Pencil,
 		Trash2,
-	
+		Copy,
 		CircleCheck,
 		Check,
 		ChevronsUpDown
@@ -79,6 +79,7 @@
 	let successTitle = $state('');
 	let successMessage = $state('');
 	let isEditing = $state(false);
+	let isNewVersion = $state(false);
 	let submitting = $state(false);
 	let deleting = $state(false);
 	let currentSubject: Partial<Subject> = $state(getInitialSubjectState());
@@ -171,12 +172,46 @@
 			currentSubject.group_id = selectedGroupId;
 		}
 		isEditing = false;
+		isNewVersion = false;
 		showDialog = true;
 	}
 
 	function handleOpenEdit(subject: Subject) {
 		currentSubject = { ...subject }; // Clone
 		isEditing = true;
+		isNewVersion = false;
+		showDialog = true;
+	}
+
+	function handleOpenNewVersion(subject: Subject) {
+		// Create a new version of an existing subject (same code, different start year)
+		// Find next academic year after subject's current start year
+		const currentYear = academicYears.find((y) => y.id === subject.start_academic_year_id);
+		const sortedYears = [...academicYears].sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
+		const nextYear = currentYear
+			? (sortedYears.find((y) => (y.year ?? 0) > (currentYear.year ?? 0)) ?? currentYear)
+			: (academicYears.find((y) => y.is_current) ?? academicYears[0]);
+
+		// Pre-fill from current subject, but drop id + reset to next year
+		currentSubject = {
+			code: subject.code,
+			start_academic_year_id: nextYear?.id || '',
+			name_th: subject.name_th,
+			name_en: subject.name_en ?? '',
+			type: subject.type,
+			group_id: subject.group_id ?? '',
+			level_scope: subject.level_scope,
+			grade_level_ids: [...(subject.grade_level_ids ?? [])],
+			term: subject.term ?? '',
+			default_instructor_id: subject.default_instructor_id ?? '',
+			credit: subject.credit,
+			hours_per_semester: subject.hours_per_semester,
+			description: subject.description ?? '',
+			is_active: true
+		};
+
+		isEditing = false; // CREATE mode so submit INSERTs
+		isNewVersion = true;
 		showDialog = true;
 	}
 
@@ -451,8 +486,18 @@
 										variant="ghost"
 										size="icon"
 										class="h-8 w-8"
+										title="แก้ไขข้อมูลวิชา (กระทบทุกแผน)"
 									>
 										<Pencil class="w-4 h-4" />
+									</Button>
+									<Button
+										onclick={() => handleOpenNewVersion(subject)}
+										variant="ghost"
+										size="icon"
+										class="h-8 w-8"
+										title="สร้าง version ใหม่สำหรับปีการศึกษาอื่น"
+									>
+										<Copy class="w-4 h-4" />
 									</Button>
 									<Button
 										onclick={() => handleOpenDelete(subject)}
@@ -476,11 +521,37 @@
 <Dialog bind:open={showDialog}>
 	<DialogContent class="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
 		<DialogHeader>
-			<DialogTitle>{isEditing ? 'แก้ไขรายวิชา' : 'เพิ่มรายวิชาใหม่'}</DialogTitle>
+			<DialogTitle>
+				{isNewVersion
+					? `สร้าง version ใหม่: ${currentSubject.code ?? ''}`
+					: isEditing
+						? 'แก้ไขรายวิชา'
+						: 'เพิ่มรายวิชาใหม่'}
+			</DialogTitle>
 			<DialogDescription>กรอกข้อมูลรายวิชาให้ครบถ้วน รหัสวิชาห้ามซ้ำกัน</DialogDescription>
 		</DialogHeader>
 
 		<div class="grid gap-4 py-4">
+			{#if isNewVersion}
+				<div
+					class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-1"
+				>
+					<div class="font-semibold">✨ สร้าง version ใหม่ของวิชา "{currentSubject.code}"</div>
+					<div>• แผนเก่าที่ใช้ version เดิมจะไม่กระทบ</div>
+					<div>• เลือกปีการศึกษาที่ version ใหม่นี้เริ่มมีผล</div>
+				</div>
+			{:else if isEditing}
+				<div
+					class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-1"
+				>
+					<div class="font-semibold">⚠ การแก้ไขนี้กระทบทุกแผนที่ใช้วิชานี้</div>
+					<div>• เหมาะสำหรับแก้ typo, ปรับคำอธิบาย, ข้อมูลเล็กน้อย</div>
+					<div>
+						• ถ้าต้องการ<strong>เปลี่ยนข้อมูลตามปีการศึกษา</strong> (เช่น ปรับหน่วยกิต/จำนวนคาบ) → ปิด
+						dialog นี้ แล้วกดปุ่ม <strong>"สร้าง version ใหม่"</strong> ที่แถวของวิชา
+					</div>
+				</div>
+			{/if}
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
 					<Label for="subject-code">รหัสวิชา <span class="text-destructive">*</span></Label>
