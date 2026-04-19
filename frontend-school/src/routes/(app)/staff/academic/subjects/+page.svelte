@@ -105,6 +105,8 @@
 	let catalogMode = $state<'synchronized' | 'independent'>('synchronized');
 	let catalogTerm = $state(''); // '' = ทุกเทอม, '1', '2', 'SUMMER'
 	let catalogGradeLevelIds = $state<string[]>([]);
+	let catalogStartYearId = $state('');
+	let isNewCatalogVersion = $state(false);
 
 	// Modal States
 	let showDialog = $state(false);
@@ -463,6 +465,30 @@
 		catalogMode = 'synchronized';
 		catalogTerm = '';
 		catalogGradeLevelIds = [];
+		catalogStartYearId = (academicYears.find((y) => y.is_current) ?? academicYears[0])?.id ?? '';
+		isNewCatalogVersion = false;
+		showCatalogDialog = true;
+	}
+
+	function openNewCatalogVersion(item: ActivityCatalog) {
+		// Create new version of existing catalog entry (same name, later start year).
+		// Pattern mirrors handleOpenNewVersion for subjects.
+		const cur = academicYears.find((y) => y.id === item.start_academic_year_id);
+		const sorted = [...academicYears].sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
+		const next = cur
+			? (sorted.find((y) => (y.year ?? 0) > (cur.year ?? 0)) ?? cur)
+			: (academicYears.find((y) => y.is_current) ?? academicYears[0]);
+
+		editingCatalog = null; // CREATE mode
+		catalogName = item.name; // same name = same activity across versions
+		catalogType = item.activity_type;
+		catalogDesc = item.description ?? '';
+		catalogPeriods = item.periods_per_week;
+		catalogMode = item.scheduling_mode;
+		catalogTerm = item.term ?? '';
+		catalogGradeLevelIds = item.grade_level_ids ?? [];
+		catalogStartYearId = next?.id ?? '';
+		isNewCatalogVersion = true;
 		showCatalogDialog = true;
 	}
 
@@ -515,6 +541,8 @@
 		catalogMode = item.scheduling_mode;
 		catalogTerm = item.term ?? '';
 		catalogGradeLevelIds = item.grade_level_ids ?? [];
+		catalogStartYearId = item.start_academic_year_id;
+		isNewCatalogVersion = false;
 		showCatalogDialog = true;
 	}
 
@@ -540,14 +568,12 @@
 				await updateActivityCatalog(editingCatalog.id, payload);
 				toast.success('บันทึกแล้ว');
 			} else {
-				// New catalog entry defaults to current academic year as its version.
-				const currentYear = academicYears.find((y) => y.is_current) || academicYears[0];
-				if (!currentYear) {
-					toast.error('ไม่พบปีการศึกษา — โปรดตั้งปีการศึกษาก่อน');
+				if (!catalogStartYearId) {
+					toast.error('กรุณาเลือกปีเริ่มใช้');
 					return;
 				}
-				await createActivityCatalog({ ...payload, start_academic_year_id: currentYear.id });
-				toast.success('เพิ่มกิจกรรมแล้ว');
+				await createActivityCatalog({ ...payload, start_academic_year_id: catalogStartYearId });
+				toast.success(isNewCatalogVersion ? 'สร้าง version ใหม่แล้ว' : 'เพิ่มกิจกรรมแล้ว');
 			}
 			showCatalogDialog = false;
 			await loadCatalog();
@@ -916,7 +942,17 @@
 						<Table.Body>
 							{#each catalogItems as item (item.id)}
 								<Table.Row>
-									<Table.Cell class="font-medium">{item.name}</Table.Cell>
+									<Table.Cell class="font-medium">
+										{item.name}
+										{#if item.start_academic_year_id}
+											{@const year = academicYears.find((y) => y.id === item.start_academic_year_id)}
+											{#if year}
+												<Badge variant="outline" class="ml-2 text-[10px] h-5">
+													ตั้งแต่ {year.name}
+												</Badge>
+											{/if}
+										{/if}
+									</Table.Cell>
 									<Table.Cell>
 										<span class="text-xs text-muted-foreground">กิจกรรมพัฒนาผู้เรียน</span>
 									</Table.Cell>
@@ -957,9 +993,19 @@
 											variant="ghost"
 											size="icon"
 											class="h-8 w-8"
+											title="แก้ไข version นี้"
 											onclick={() => openEditCatalog(item)}
 										>
 											<Pencil class="w-4 h-4" />
+										</Button>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-8 w-8"
+											title="สร้าง version ใหม่ (ปีถัดไป)"
+											onclick={() => openNewCatalogVersion(item)}
+										>
+											<Copy class="w-4 h-4" />
 										</Button>
 										<Button
 											variant="ghost"
@@ -1392,14 +1438,59 @@
 <Dialog bind:open={showCatalogDialog}>
 	<DialogContent class="sm:max-w-[500px]">
 		<DialogHeader>
-			<DialogTitle>{editingCatalog ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม'}</DialogTitle>
-			<DialogDescription>กำหนดข้อมูลกิจกรรมในคลังกลาง</DialogDescription>
+			<DialogTitle>
+				{#if isNewCatalogVersion}
+					สร้าง version ใหม่ — {catalogName}
+				{:else if editingCatalog}
+					แก้ไขกิจกรรม
+				{:else}
+					เพิ่มกิจกรรม
+				{/if}
+			</DialogTitle>
+			<DialogDescription>
+				{#if isNewCatalogVersion}
+					สร้าง version ใหม่สำหรับปีการศึกษาถัดไป — version เก่ายังคงอยู่
+				{:else}
+					กำหนดข้อมูลกิจกรรมในคลังกลาง
+				{/if}
+			</DialogDescription>
 		</DialogHeader>
 
 		<div class="space-y-3 py-2">
-			<div class="space-y-1">
-				<Label>ชื่อกิจกรรม <span class="text-destructive">*</span></Label>
-				<Input bind:value={catalogName} placeholder="เช่น ลูกเสือ / เนตรนารี, ชุมนุม ม.ต้น" />
+			<div class="grid grid-cols-2 gap-3">
+				<div class="space-y-1">
+					<Label>ชื่อกิจกรรม <span class="text-destructive">*</span></Label>
+					<Input
+						bind:value={catalogName}
+						placeholder="เช่น ลูกเสือ, ชุมนุม ม.ต้น"
+						disabled={isNewCatalogVersion}
+					/>
+					{#if isNewCatalogVersion}
+						<p class="text-[10px] text-muted-foreground">version ใหม่ใช้ชื่อเดิม</p>
+					{/if}
+				</div>
+				<div class="space-y-1">
+					<Label>ปีเริ่มใช้ <span class="text-destructive">*</span></Label>
+					<Select.Root
+						type="single"
+						bind:value={catalogStartYearId}
+						disabled={!!editingCatalog}
+					>
+						<Select.Trigger class="w-full">
+							{academicYears.find((y) => y.id === catalogStartYearId)?.name ?? 'เลือกปี'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[300px]">
+							{#each academicYears as year}
+								<Select.Item value={year.id}>
+									{year.name}{year.is_current ? ' (ปัจจุบัน)' : ''}
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+					{#if editingCatalog}
+						<p class="text-[10px] text-muted-foreground">แก้ version เดิม — ใช้ "สร้าง version ใหม่" ถ้าอยากแยกปี</p>
+					{/if}
+				</div>
 			</div>
 
 			<div class="space-y-1">
