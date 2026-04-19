@@ -655,7 +655,7 @@
 			<DialogDescription>กรอกข้อมูลรายวิชาให้ครบถ้วน รหัสวิชาห้ามซ้ำกัน</DialogDescription>
 		</DialogHeader>
 
-		<div class="grid gap-4 py-4">
+		<div class="grid gap-6 py-4">
 			{#if isNewVersion}
 				<div
 					class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-1"
@@ -676,180 +676,278 @@
 					</div>
 				</div>
 			{/if}
-			<div class="grid grid-cols-2 gap-4">
-				<div class="space-y-2">
-					<Label for="subject-code">รหัสวิชา <span class="text-destructive">*</span></Label>
-					<Input id="subject-code" bind:value={currentSubject.code} placeholder="e.g. ท21101" />
-				</div>
-				<div class="space-y-2">
-					<Label>ปีการศึกษาที่เริ่มใช้ <span class="text-destructive">*</span></Label>
-					<Select.Root type="single" bind:value={currentSubject.start_academic_year_id}>
-						<Select.Trigger>
-							{academicYears.find((y) => y.id === currentSubject.start_academic_year_id)?.name ||
-								'เลือกปีการศึกษา'}
-						</Select.Trigger>
-						<Select.Content>
-							{#if academicYears.length > 0}
-								{#each academicYears as year}
-									<Select.Item value={year.id}>{year.name}</Select.Item>
-								{/each}
-							{:else}
-								<Select.Item value="" disabled>กรุณาสร้างปีการศึกษาก่อน</Select.Item>
-							{/if}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
 
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-				<div class="space-y-2">
-					<Label>ระดับชั้นที่เปิดสอน</Label>
-					<Popover.Root>
-						<Popover.Trigger class="w-full">
-							<Button variant="outline" role="combobox" class="w-full justify-between font-normal">
-								{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
-									{currentSubject.grade_level_ids
-										.map((id) => {
-											const l = gradeLevels.find((l) => l.id === id);
-											return l?.short_name ?? l?.code ?? id;
-										})
-										.join(', ')}
+			<!-- Section: ข้อมูลหลัก -->
+			<section class="space-y-4">
+				<h3 class="text-sm font-semibold text-foreground border-b pb-1">ข้อมูลหลัก</h3>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-2">
+						<Label for="subject-code">รหัสวิชา <span class="text-destructive">*</span></Label>
+						<Input id="subject-code" bind:value={currentSubject.code} placeholder="e.g. ท21101" />
+					</div>
+					<div class="space-y-2">
+						<Label>ปีการศึกษาที่เริ่มใช้ <span class="text-destructive">*</span></Label>
+						<Select.Root type="single" bind:value={currentSubject.start_academic_year_id}>
+							<Select.Trigger>
+								{academicYears.find((y) => y.id === currentSubject.start_academic_year_id)?.name ||
+									'เลือกปีการศึกษา'}
+							</Select.Trigger>
+							<Select.Content>
+								{#if academicYears.length > 0}
+									{#each academicYears as year}
+										<Select.Item value={year.id}>{year.name}</Select.Item>
+									{/each}
 								{:else}
-									<span class="text-muted-foreground">เลือกระดับชั้น...</span>
+									<Select.Item value="" disabled>กรุณาสร้างปีการศึกษาก่อน</Select.Item>
 								{/if}
-								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-							</Button>
-						</Popover.Trigger>
-						<Popover.Content class="w-[--radix-popover-trigger-width] p-1 max-h-[260px] overflow-y-auto">
-							{#each gradeLevels as level}
-								{@const checked = currentSubject.grade_level_ids?.includes(level.id) ?? false}
-								<button
-									type="button"
-									class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
-									onclick={() => {
-										const ids = currentSubject.grade_level_ids ?? [];
-										currentSubject.grade_level_ids = checked
-											? ids.filter((id) => id !== level.id)
-											: [...ids, level.id];
-									}}
+							</Select.Content>
+						</Select.Root>
+					</div>
+				</div>
+
+				<div class="space-y-2">
+					<Label for="subject-name-th"
+						>ชื่อวิชา (ภาษาไทย) <span class="text-destructive">*</span></Label
+					>
+					<Input id="subject-name-th" bind:value={currentSubject.name_th} placeholder="ภาษาไทย 1" />
+				</div>
+
+				<div class="space-y-2">
+					<Label for="subject-name-en">ชื่อวิชา (English)</Label>
+					<Input
+						id="subject-name-en"
+						bind:value={currentSubject.name_en}
+						placeholder="Thai Language 1"
+					/>
+				</div>
+			</section>
+
+			<!-- Section: ประเภทและระดับชั้น -->
+			<section class="space-y-4">
+				<h3 class="text-sm font-semibold text-foreground border-b pb-1">ประเภทและระดับชั้น</h3>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-2">
+						<Label
+							class="flex items-center gap-1"
+							title="BASIC = พื้นฐาน, ADDITIONAL = เพิ่มเติม, ACTIVITY = กิจกรรมพัฒนาผู้เรียน"
+						>
+							ประเภทวิชา <span class="text-destructive">*</span>
+							<Info class="w-3 h-3 text-muted-foreground" />
+						</Label>
+						<Select.Root type="single" bind:value={currentSubject.type}>
+							<Select.Trigger>
+								{#if currentSubject.type === 'BASIC'}พื้นฐาน (Basic)
+								{:else if currentSubject.type === 'ADDITIONAL'}เพิ่มเติม (Additional)
+								{:else if currentSubject.type === 'ACTIVITY'}กิจกรรม (Activity)
+								{:else}เลือกประเภท{/if}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="BASIC">พื้นฐาน (Basic)</Select.Item>
+								<Select.Item value="ADDITIONAL">เพิ่มเติม (Additional)</Select.Item>
+								<Select.Item value="ACTIVITY">กิจกรรม (Activity)</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="space-y-2">
+						<Label>กลุ่มสาระฯ <span class="text-destructive">*</span></Label>
+						<Select.Root type="single" bind:value={currentSubject.group_id} disabled={isDeptScope}>
+							<Select.Trigger class="truncate">
+								{groups.find((g) => g.id === currentSubject.group_id)?.name_th || 'เลือกกลุ่มสาระ'}
+							</Select.Trigger>
+							<Select.Content class="max-h-[300px]">
+								{#each groups as group}
+									<Select.Item value={group.id}>{group.code} - {group.name_th}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						{#if isDeptScope}
+							<p class="text-[11px] text-muted-foreground">
+								กลุ่มสาระที่ท่านสังกัด (ไม่สามารถเปลี่ยนได้)
+							</p>
+						{/if}
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<div class="space-y-2">
+						<Label
+							class="flex items-center gap-1"
+							title="ระดับชั้นที่ใช้วิชานี้ เช่น ม.ต้น (ม.1-ม.3) หรือ ทุกระดับ"
+						>
+							ระดับชั้นที่เปิดสอน
+							<Info class="w-3 h-3 text-muted-foreground" />
+						</Label>
+						<Popover.Root>
+							<Popover.Trigger class="w-full">
+								<Button
+									variant="outline"
+									role="combobox"
+									class="w-full justify-between font-normal"
 								>
-									<Check class="h-4 w-4 {checked ? 'opacity-100' : 'opacity-0'}" />
-									{level.name}
-								</button>
-							{/each}
-						</Popover.Content>
-					</Popover.Root>
-					<p class="text-[10px] text-muted-foreground">ใช้สำหรับกรองรายวิชาเท่านั้น</p>
+									{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
+										{currentSubject.grade_level_ids
+											.map((id) => {
+												const l = gradeLevels.find((l) => l.id === id);
+												return l?.short_name ?? l?.code ?? id;
+											})
+											.join(', ')}
+									{:else}
+										<span class="text-muted-foreground">เลือกระดับชั้น...</span>
+									{/if}
+									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+								</Button>
+							</Popover.Trigger>
+							<Popover.Content
+								class="w-[--radix-popover-trigger-width] p-1 max-h-[260px] overflow-y-auto"
+							>
+								{#each gradeLevels as level}
+									{@const checked = currentSubject.grade_level_ids?.includes(level.id) ?? false}
+									<button
+										type="button"
+										class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
+										onclick={() => {
+											const ids = currentSubject.grade_level_ids ?? [];
+											currentSubject.grade_level_ids = checked
+												? ids.filter((id) => id !== level.id)
+												: [...ids, level.id];
+										}}
+									>
+										<Check class="h-4 w-4 {checked ? 'opacity-100' : 'opacity-0'}" />
+										{level.name}
+									</button>
+								{/each}
+							</Popover.Content>
+						</Popover.Root>
+						<p class="text-[10px] text-muted-foreground">ใช้สำหรับกรองรายวิชาเท่านั้น</p>
+					</div>
+					<div class="space-y-2">
+						<Label
+							class="flex items-center gap-1"
+							title="เทอมที่วิชานี้จัด — ว่างไว้หมายถึงจัดได้ทุกเทอม"
+						>
+							ภาคเรียนที่เปิดสอน
+							<Info class="w-3 h-3 text-muted-foreground" />
+						</Label>
+						<Select.Root type="single" bind:value={currentSubject.term}>
+							<Select.Trigger>
+								{#if currentSubject.term === '1'}ภาคเรียนที่ 1
+								{:else if currentSubject.term === '2'}ภาคเรียนที่ 2
+								{:else if currentSubject.term === 'SUMMER'}ซัมเมอร์
+								{:else}ทุกภาคเรียน{/if}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="">ทุกภาคเรียน</Select.Item>
+								<Select.Item value="1">ภาคเรียนที่ 1</Select.Item>
+								<Select.Item value="2">ภาคเรียนที่ 2</Select.Item>
+								<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
+							</Select.Content>
+						</Select.Root>
+						<p class="text-[10px] text-muted-foreground">ใช้สำหรับกรองรายวิชาเท่านั้น</p>
+					</div>
 				</div>
-				<div class="space-y-2">
-					<Label>ภาคเรียนที่เปิดสอน</Label>
-					<Select.Root type="single" bind:value={currentSubject.term}>
-						<Select.Trigger>
-							{#if currentSubject.term === '1'}ภาคเรียนที่ 1
-							{:else if currentSubject.term === '2'}ภาคเรียนที่ 2
-							{:else if currentSubject.term === 'SUMMER'}ซัมเมอร์
-							{:else}ทุกภาคเรียน{/if}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="">ทุกภาคเรียน</Select.Item>
-							<Select.Item value="1">ภาคเรียนที่ 1</Select.Item>
-							<Select.Item value="2">ภาคเรียนที่ 2</Select.Item>
-							<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
-						</Select.Content>
-					</Select.Root>
-					<p class="text-[10px] text-muted-foreground">ใช้สำหรับกรองรายวิชาเท่านั้น</p>
-				</div>
-			</div>
+			</section>
 
-			<div class="space-y-2">
-				<Label for="subject-name-th"
-					>ชื่อวิชา (ภาษาไทย) <span class="text-destructive">*</span></Label
-				>
-				<Input id="subject-name-th" bind:value={currentSubject.name_th} placeholder="ภาษาไทย 1" />
-			</div>
+			<!-- Section: ครูและคาบเรียน -->
+			<section class="space-y-4">
+				<h3 class="text-sm font-semibold text-foreground border-b pb-1">ครูและคาบเรียน</h3>
 
-			<div class="space-y-2">
-				<Label for="subject-name-en">ชื่อวิชา (English)</Label>
-				<Input
-					id="subject-name-en"
-					bind:value={currentSubject.name_en}
-					placeholder="Thai Language 1"
-				/>
-			</div>
-
-			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<Label>ประเภทวิชา <span class="text-destructive">*</span></Label>
-					<Select.Root type="single" bind:value={currentSubject.type}>
-						<Select.Trigger>
-							{#if currentSubject.type === 'BASIC'}พื้นฐาน (Basic)
-							{:else if currentSubject.type === 'ADDITIONAL'}เพิ่มเติม (Additional)
-							{:else if currentSubject.type === 'ACTIVITY'}กิจกรรม (Activity)
-							{:else}เลือกประเภท{/if}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="BASIC">พื้นฐาน (Basic)</Select.Item>
-							<Select.Item value="ADDITIONAL">เพิ่มเติม (Additional)</Select.Item>
-							<Select.Item value="ACTIVITY">กิจกรรม (Activity)</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="space-y-2">
-					<Label>กลุ่มสาระฯ <span class="text-destructive">*</span></Label>
-					<Select.Root type="single" bind:value={currentSubject.group_id} disabled={isDeptScope}>
+					<Label
+						class="flex items-center gap-1"
+						title="ครูที่ระบบจะเลือกให้อัตโนมัติเมื่อสร้างคอร์ส (แก้ได้ภายหลังใน Course Planning)"
+					>
+						ครูผู้สอนหลัก (Default)
+						<Info class="w-3 h-3 text-muted-foreground" />
+					</Label>
+					<Select.Root type="single" bind:value={currentSubject.default_instructor_id}>
 						<Select.Trigger class="truncate">
-							{groups.find((g) => g.id === currentSubject.group_id)?.name_th || 'เลือกกลุ่มสาระ'}
+							{(() => {
+								const st = staffList.find((s) => s.id === currentSubject.default_instructor_id);
+								return st ? st.name : 'เลือกครูผู้สอน';
+							})()}
 						</Select.Trigger>
 						<Select.Content class="max-h-[300px]">
-							{#each groups as group}
-								<Select.Item value={group.id}>{group.code} - {group.name_th}</Select.Item>
+							<Select.Item value="">(ไม่ระบุ)</Select.Item>
+							{#each staffList as staff}
+								<Select.Item value={staff.id}>{staff.name}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
-					{#if isDeptScope}
-						<p class="text-[11px] text-muted-foreground">กลุ่มสาระที่ท่านสังกัด (ไม่สามารถเปลี่ยนได้)</p>
+				</div>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-2">
+						<Label for="subject-credit">หน่วยกิต (Credit)</Label>
+						<Input
+							id="subject-credit"
+							type="number"
+							step="0.5"
+							bind:value={currentSubject.credit}
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label
+							for="subject-hours"
+							class="flex items-center gap-1"
+							title="จำนวนคาบเรียนรวมต่อภาคเรียน (เช่น 40 = 40 คาบ/เทอม)"
+						>
+							คาบ/ภาค (Hours per semester)
+							<Info class="w-3 h-3 text-muted-foreground" />
+						</Label>
+						<Input
+							id="subject-hours"
+							type="number"
+							bind:value={currentSubject.hours_per_semester}
+						/>
+					</div>
+				</div>
+			</section>
+
+			<!-- Section: ขั้นสูง (collapsible) -->
+			<section class="space-y-2">
+				<button
+					type="button"
+					class="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+					onclick={() => (showAdvanced = !showAdvanced)}
+				>
+					{#if showAdvanced}
+						<ChevronDown class="w-4 h-4" />
+						ซ่อนขั้นสูง
+					{:else}
+						<ChevronRight class="w-4 h-4" />
+						แสดงขั้นสูง
 					{/if}
-				</div>
-			</div>
+				</button>
+				{#if showAdvanced}
+					<div class="space-y-4 pt-2 pl-1 border-l-2 border-border pl-4">
+						<div class="space-y-2">
+							<Label for="subject-desc">คำอธิบายรายวิชา (สังเขป)</Label>
+							<Textarea
+								id="subject-desc"
+								bind:value={currentSubject.description}
+								placeholder="คำอธิบายรายวิชาย่อๆ..."
+								class="min-h-[80px]"
+							/>
+						</div>
 
-			<div class="space-y-2">
-				<Label>ครูผู้สอนหลัก (Default)</Label>
-				<Select.Root type="single" bind:value={currentSubject.default_instructor_id}>
-					<Select.Trigger class="truncate">
-						{(() => {
-							const st = staffList.find((s) => s.id === currentSubject.default_instructor_id);
-							return st ? st.name : 'เลือกครูผู้สอน';
-						})()}
-					</Select.Trigger>
-					<Select.Content class="max-h-[300px]">
-						<Select.Item value="">(ไม่ระบุ)</Select.Item>
-						{#each staffList as staff}
-							<Select.Item value={staff.id}>{staff.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			<div class="grid grid-cols-2 gap-4">
-				<div class="space-y-2">
-					<Label for="subject-credit">หน่วยกิต (Credit)</Label>
-					<Input id="subject-credit" type="number" step="0.5" bind:value={currentSubject.credit} />
-				</div>
-				<div class="space-y-2">
-					<Label for="subject-hours">ชั่วโมง/เทอม</Label>
-					<Input id="subject-hours" type="number" bind:value={currentSubject.hours_per_semester} />
-				</div>
-			</div>
-
-			<div class="space-y-2">
-				<Label for="subject-desc">คำอธิบายรายวิชา (สังเขป)</Label>
-				<Textarea
-					id="subject-desc"
-					bind:value={currentSubject.description}
-					placeholder="คำอธิบายรายวิชาย่อๆ..."
-					class="min-h-[80px]"
-				/>
-			</div>
+						<div class="flex items-center gap-2">
+							<Checkbox
+								id="subject-is-active"
+								checked={currentSubject.is_active ?? true}
+								onCheckedChange={(v) => (currentSubject.is_active = !!v)}
+							/>
+							<Label for="subject-is-active" class="cursor-pointer font-normal">
+								เปิดใช้งาน (is_active)
+							</Label>
+							<span class="text-[10px] text-muted-foreground"
+								>ปิดไว้จะไม่แสดงในตัวเลือกตอนสร้างแผน</span
+							>
+						</div>
+					</div>
+				{/if}
+			</section>
 		</div>
 
 		<DialogFooter>
