@@ -117,6 +117,10 @@
 	let showAdvanced = $state(false);
 	let currentSubject: Partial<Subject> = $state(getInitialSubjectState());
 
+	// Unified Add Dialog State
+	let showUnifiedAddDialog = $state(false);
+	let unifiedAddType = $state<'subject' | 'activity'>('subject');
+
 	// Version grouping: compute map of code -> versions (all versions of that code
 	// in the currently-loaded list). Used to render "version เก่า" / "ปัจจุบัน"
 	// badges and to show a "N versions" hint when multiple versions are loaded.
@@ -383,6 +387,43 @@
 		showCatalogDialog = true;
 	}
 
+	function openUnifiedAdd() {
+		// init both forms for safety so either branch starts fresh
+		currentSubject = getInitialSubjectState();
+		if (isDeptScope && selectedGroupId) currentSubject.group_id = selectedGroupId;
+		isEditing = false;
+		isNewVersion = false;
+
+		editingCatalog = null;
+		catalogName = '';
+		catalogType = 'scout';
+		catalogPeriods = 1;
+		catalogMode = 'synchronized';
+		catalogDesc = '';
+
+		// Default to the tab the user is currently looking at for a nicer UX.
+		unifiedAddType = activeTab === 'activities' ? 'activity' : 'subject';
+		showUnifiedAddDialog = true;
+	}
+
+	async function handleUnifiedSave() {
+		if (unifiedAddType === 'subject') {
+			// handleSubmit closes showDialog on success (which we don't open here),
+			// but either way after it resolves we close the unified dialog.
+			// handleSubmit catches errors internally with alert(), so we mirror behavior:
+			// only close if validation/save didn't fail.
+			const before = subjects.length;
+			await handleSubmit();
+			// If a new subject was saved, subjects will have been reloaded with >= previous length.
+			// Use a simpler signal: if showDialog is false AND not submitting, assume success.
+			if (!submitting) showUnifiedAddDialog = false;
+			void before;
+		} else {
+			await handleSaveCatalog();
+			if (!catalogSubmitting) showUnifiedAddDialog = false;
+		}
+	}
+
 	function openEditCatalog(item: ActivityCatalog) {
 		editingCatalog = item;
 		catalogName = item.name;
@@ -499,12 +540,10 @@
 			<p class="text-muted-foreground mt-1">จัดการรายชื่อวิชาและกลุ่มสาระการเรียนรู้</p>
 		</div>
 		<div class="flex items-center gap-2">
-			{#if activeTab === 'subjects'}
-				<Button onclick={handleOpenCreate} class="flex items-center gap-2">
-					<Plus class="w-4 h-4" />
-					เพิ่มรายวิชา
-				</Button>
-			{/if}
+			<Button onclick={openUnifiedAdd} class="flex items-center gap-2">
+				<Plus class="w-4 h-4" />
+				เพิ่ม
+			</Button>
 		</div>
 	</div>
 
@@ -668,9 +707,9 @@
 									<Inbox class="w-10 h-10 text-muted-foreground/60" />
 									<div class="font-medium">ยังไม่มีวิชาในระบบ</div>
 									<div class="text-xs text-muted-foreground">
-										เริ่มต้นโดยคลิก "+ เพิ่มรายวิชา" ด้านบน
+										เริ่มต้นโดยคลิก "+ เพิ่ม" ด้านบน
 									</div>
-									<Button size="sm" onclick={handleOpenCreate} class="gap-2">
+									<Button size="sm" onclick={openUnifiedAdd} class="gap-2">
 										<Plus class="w-4 h-4" />
 										เพิ่มรายวิชา
 									</Button>
@@ -788,9 +827,6 @@
 		<Tabs.Content value="activities" class="space-y-4 mt-4">
 			<div class="flex justify-between items-center mb-4">
 				<h3 class="font-semibold">คลังกิจกรรมพัฒนาผู้เรียน</h3>
-				<Button onclick={openCreateCatalog}>
-					<Plus class="w-4 h-4 mr-1" /> เพิ่มกิจกรรม
-				</Button>
 			</div>
 			<p class="text-xs text-muted-foreground mb-3">
 				กิจกรรมที่นี่เป็นคลังกลาง — ใช้อ้างอิงในหลักสูตร (tab "กิจกรรม" ของแต่ละ version)
@@ -1282,6 +1318,367 @@
 			<Button variant="outline" onclick={() => (showCatalogDeleteDialog = false)}>ยกเลิก</Button>
 			<Button variant="destructive" onclick={confirmDeleteCatalog} disabled={catalogDeleting}>
 				{catalogDeleting ? 'กำลังลบ...' : 'ลบ'}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Unified Add Dialog: Subject OR Activity (create-only) -->
+<Dialog bind:open={showUnifiedAddDialog}>
+	<DialogContent class="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
+		<DialogHeader>
+			<DialogTitle>
+				{unifiedAddType === 'subject' ? 'เพิ่มรายวิชา' : 'เพิ่มกิจกรรมพัฒนาผู้เรียน'}
+			</DialogTitle>
+			<DialogDescription>
+				เลือกประเภทที่ต้องการเพิ่ม แล้วกรอกข้อมูลตามฟอร์มด้านล่าง
+			</DialogDescription>
+		</DialogHeader>
+
+		<!-- Type selector -->
+		<div class="border rounded-lg p-3 bg-muted/30 mb-3">
+			<Label class="mb-2 block text-sm">ประเภทหลัก</Label>
+			<div class="flex flex-wrap gap-4">
+				<label class="flex items-center gap-2 cursor-pointer text-sm">
+					<input type="radio" bind:group={unifiedAddType} value="subject" />
+					<span>รายวิชา (พื้นฐาน/เพิ่มเติม)</span>
+				</label>
+				<label class="flex items-center gap-2 cursor-pointer text-sm">
+					<input type="radio" bind:group={unifiedAddType} value="activity" />
+					<span>กิจกรรมพัฒนาผู้เรียน</span>
+				</label>
+			</div>
+		</div>
+
+		{#if unifiedAddType === 'subject'}
+			<div class="grid gap-6 py-2">
+				<!-- Section: ข้อมูลหลัก -->
+				<section class="space-y-4">
+					<h3 class="text-sm font-semibold text-foreground border-b pb-1">ข้อมูลหลัก</h3>
+
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label for="u-subject-code"
+								>รหัสวิชา <span class="text-destructive">*</span></Label
+							>
+							<Input
+								id="u-subject-code"
+								bind:value={currentSubject.code}
+								placeholder="e.g. ท21101"
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label>ปีการศึกษาที่เริ่มใช้ <span class="text-destructive">*</span></Label>
+							<Select.Root type="single" bind:value={currentSubject.start_academic_year_id}>
+								<Select.Trigger>
+									{academicYears.find((y) => y.id === currentSubject.start_academic_year_id)
+										?.name || 'เลือกปีการศึกษา'}
+								</Select.Trigger>
+								<Select.Content>
+									{#if academicYears.length > 0}
+										{#each academicYears as year}
+											<Select.Item value={year.id}>{year.name}</Select.Item>
+										{/each}
+									{:else}
+										<Select.Item value="" disabled>กรุณาสร้างปีการศึกษาก่อน</Select.Item>
+									{/if}
+								</Select.Content>
+							</Select.Root>
+						</div>
+					</div>
+
+					<div class="space-y-2">
+						<Label for="u-subject-name-th"
+							>ชื่อวิชา (ภาษาไทย) <span class="text-destructive">*</span></Label
+						>
+						<Input
+							id="u-subject-name-th"
+							bind:value={currentSubject.name_th}
+							placeholder="ภาษาไทย 1"
+						/>
+					</div>
+
+					<div class="space-y-2">
+						<Label for="u-subject-name-en">ชื่อวิชา (English)</Label>
+						<Input
+							id="u-subject-name-en"
+							bind:value={currentSubject.name_en}
+							placeholder="Thai Language 1"
+						/>
+					</div>
+				</section>
+
+				<!-- Section: ประเภทและระดับชั้น -->
+				<section class="space-y-4">
+					<h3 class="text-sm font-semibold text-foreground border-b pb-1">
+						ประเภทและระดับชั้น
+					</h3>
+
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label class="flex items-center gap-1">
+								ประเภทวิชา <span class="text-destructive">*</span>
+								<Info class="w-3 h-3 text-muted-foreground" />
+							</Label>
+							<Select.Root type="single" bind:value={currentSubject.type}>
+								<Select.Trigger>
+									{#if currentSubject.type === 'BASIC'}พื้นฐาน (Basic)
+									{:else if currentSubject.type === 'ADDITIONAL'}เพิ่มเติม (Additional)
+									{:else}เลือกประเภท{/if}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="BASIC">พื้นฐาน (Basic)</Select.Item>
+									<Select.Item value="ADDITIONAL">เพิ่มเติม (Additional)</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="space-y-2">
+							<Label>กลุ่มสาระฯ <span class="text-destructive">*</span></Label>
+							<Select.Root
+								type="single"
+								bind:value={currentSubject.group_id}
+								disabled={isDeptScope}
+							>
+								<Select.Trigger class="truncate">
+									{groups.find((g) => g.id === currentSubject.group_id)?.name_th ||
+										'เลือกกลุ่มสาระ'}
+								</Select.Trigger>
+								<Select.Content class="max-h-[300px]">
+									{#each groups as group}
+										<Select.Item value={group.id}
+											>{group.code} - {group.name_th}</Select.Item
+										>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							{#if isDeptScope}
+								<p class="text-[11px] text-muted-foreground">
+									กลุ่มสาระที่ท่านสังกัด (ไม่สามารถเปลี่ยนได้)
+								</p>
+							{/if}
+						</div>
+					</div>
+
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label class="flex items-center gap-1">
+								ระดับชั้นที่เปิดสอน
+								<Info class="w-3 h-3 text-muted-foreground" />
+							</Label>
+							<Popover.Root>
+								<Popover.Trigger class="w-full">
+									<Button
+										variant="outline"
+										role="combobox"
+										class="w-full justify-between font-normal"
+									>
+										{#if currentSubject.grade_level_ids && currentSubject.grade_level_ids.length > 0}
+											{currentSubject.grade_level_ids
+												.map((id) => {
+													const l = gradeLevels.find((l) => l.id === id);
+													return l?.short_name ?? l?.code ?? id;
+												})
+												.join(', ')}
+										{:else}
+											<span class="text-muted-foreground">เลือกระดับชั้น...</span>
+										{/if}
+										<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+									</Button>
+								</Popover.Trigger>
+								<Popover.Content
+									class="w-[--radix-popover-trigger-width] p-1 max-h-[260px] overflow-y-auto"
+								>
+									{#each gradeLevels as level}
+										{@const checked =
+											currentSubject.grade_level_ids?.includes(level.id) ?? false}
+										<button
+											type="button"
+											class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
+											onclick={() => {
+												const ids = currentSubject.grade_level_ids ?? [];
+												currentSubject.grade_level_ids = checked
+													? ids.filter((id) => id !== level.id)
+													: [...ids, level.id];
+											}}
+										>
+											<Check class="h-4 w-4 {checked ? 'opacity-100' : 'opacity-0'}" />
+											{level.name}
+										</button>
+									{/each}
+								</Popover.Content>
+							</Popover.Root>
+						</div>
+						<div class="space-y-2">
+							<Label class="flex items-center gap-1">
+								ภาคเรียนที่เปิดสอน
+								<Info class="w-3 h-3 text-muted-foreground" />
+							</Label>
+							<Select.Root type="single" bind:value={currentSubject.term}>
+								<Select.Trigger>
+									{#if currentSubject.term === '1'}ภาคเรียนที่ 1
+									{:else if currentSubject.term === '2'}ภาคเรียนที่ 2
+									{:else if currentSubject.term === 'SUMMER'}ซัมเมอร์
+									{:else}ทุกภาคเรียน{/if}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="">ทุกภาคเรียน</Select.Item>
+									<Select.Item value="1">ภาคเรียนที่ 1</Select.Item>
+									<Select.Item value="2">ภาคเรียนที่ 2</Select.Item>
+									<Select.Item value="SUMMER">ซัมเมอร์</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
+					</div>
+				</section>
+
+				<!-- Section: ครูและคาบเรียน -->
+				<section class="space-y-4">
+					<h3 class="text-sm font-semibold text-foreground border-b pb-1">ครูและคาบเรียน</h3>
+
+					<div class="space-y-2">
+						<Label class="flex items-center gap-1">
+							ครูผู้สอนหลัก (Default)
+							<Info class="w-3 h-3 text-muted-foreground" />
+						</Label>
+						<Select.Root type="single" bind:value={currentSubject.default_instructor_id}>
+							<Select.Trigger class="truncate">
+								{(() => {
+									const st = staffList.find(
+										(s) => s.id === currentSubject.default_instructor_id
+									);
+									return st ? st.name : 'เลือกครูผู้สอน';
+								})()}
+							</Select.Trigger>
+							<Select.Content class="max-h-[300px]">
+								<Select.Item value="">(ไม่ระบุ)</Select.Item>
+								{#each staffList as staff}
+									<Select.Item value={staff.id}>{staff.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label for="u-subject-credit">หน่วยกิต (Credit)</Label>
+							<Input
+								id="u-subject-credit"
+								type="number"
+								step="0.5"
+								bind:value={currentSubject.credit}
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label for="u-subject-hours" class="flex items-center gap-1">
+								คาบ/ภาค (Hours per semester)
+								<Info class="w-3 h-3 text-muted-foreground" />
+							</Label>
+							<Input
+								id="u-subject-hours"
+								type="number"
+								bind:value={currentSubject.hours_per_semester}
+							/>
+						</div>
+					</div>
+				</section>
+
+				<!-- Section: ขั้นสูง (collapsible) -->
+				<section class="space-y-2">
+					<button
+						type="button"
+						class="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+						onclick={() => (showAdvanced = !showAdvanced)}
+					>
+						{#if showAdvanced}
+							<ChevronDown class="w-4 h-4" />
+							ซ่อนขั้นสูง
+						{:else}
+							<ChevronRight class="w-4 h-4" />
+							แสดงขั้นสูง
+						{/if}
+					</button>
+					{#if showAdvanced}
+						<div class="space-y-4 pt-2 pl-1 border-l-2 border-border pl-4">
+							<div class="space-y-2">
+								<Label for="u-subject-desc">คำอธิบายรายวิชา (สังเขป)</Label>
+								<Textarea
+									id="u-subject-desc"
+									bind:value={currentSubject.description}
+									placeholder="คำอธิบายรายวิชาย่อๆ..."
+									class="min-h-[80px]"
+								/>
+							</div>
+
+							<div class="flex items-center gap-2">
+								<Checkbox
+									id="u-subject-is-active"
+									checked={currentSubject.is_active ?? true}
+									onCheckedChange={(v) => (currentSubject.is_active = !!v)}
+								/>
+								<Label for="u-subject-is-active" class="cursor-pointer font-normal">
+									เปิดใช้งาน (is_active)
+								</Label>
+							</div>
+						</div>
+					{/if}
+				</section>
+			</div>
+		{:else}
+			<div class="space-y-3 py-2">
+				<div class="space-y-1">
+					<Label>ชื่อกิจกรรม <span class="text-destructive">*</span></Label>
+					<Input bind:value={catalogName} placeholder="เช่น ลูกเสือ / เนตรนารี, ชุมนุม ม.ต้น" />
+				</div>
+
+				<div class="grid grid-cols-2 gap-3">
+					<div class="space-y-1">
+						<Label>ประเภท</Label>
+						<Select.Root type="single" bind:value={catalogType}>
+							<Select.Trigger class="w-full"
+								>{ACTIVITY_TYPE_LABELS[catalogType]}</Select.Trigger
+							>
+							<Select.Content>
+								{#each Object.entries(ACTIVITY_TYPE_LABELS) as [v, label]}
+									<Select.Item value={v}>{label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="space-y-1">
+						<Label>รูปแบบจัดตาราง</Label>
+						<Select.Root type="single" bind:value={catalogMode}>
+							<Select.Trigger class="w-full">
+								{catalogMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="synchronized">จัดพร้อมกันทุกห้อง</Select.Item>
+								<Select.Item value="independent">แต่ละห้องจัดเอง</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+				</div>
+
+				<div class="space-y-1">
+					<Label>คาบ/สัปดาห์</Label>
+					<Input type="number" min={1} max={10} bind:value={catalogPeriods} />
+				</div>
+
+				<div class="space-y-1">
+					<Label>คำอธิบาย</Label>
+					<Textarea bind:value={catalogDesc} rows={2} />
+				</div>
+			</div>
+		{/if}
+
+		<DialogFooter>
+			<Button variant="outline" onclick={() => (showUnifiedAddDialog = false)}>ยกเลิก</Button>
+			<Button
+				onclick={handleUnifiedSave}
+				disabled={unifiedAddType === 'subject' ? submitting : catalogSubmitting}
+			>
+				{(unifiedAddType === 'subject' ? submitting : catalogSubmitting)
+					? 'กำลังบันทึก...'
+					: 'บันทึก'}
 			</Button>
 		</DialogFooter>
 	</DialogContent>

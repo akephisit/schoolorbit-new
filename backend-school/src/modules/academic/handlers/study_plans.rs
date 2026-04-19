@@ -600,15 +600,88 @@ pub async fn generate_courses_from_plan(
             added += 1;
         }
     }
-    
+
+    // ============================================
+    // Also generate activity_slots from plan's activities for the same semester
+    // ============================================
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+
+    let plan_acts: Vec<(Uuid, Option<serde_json::Value>, String, Option<String>, String, i32, String)> = sqlx::query_as(
+        r#"SELECT sva.id,
+                  sva.allowed_grade_level_ids,
+                  ac.name,
+                  ac.description,
+                  ac.activity_type,
+                  ac.periods_per_week,
+                  ac.scheduling_mode
+           FROM study_plan_version_activities sva
+           JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
+           WHERE sva.study_plan_version_id = $1"#
+    )
+    .bind(plan_version_id)
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap_or_default();
+
+    let mut activities_created = 0i32;
+    let mut activities_skipped = 0i32;
+
+    for (sva_id, allowed, name, description, activity_type, periods_per_week, scheduling_mode) in &plan_acts {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM activity_slots WHERE source_plan_activity_id = $1 AND semester_id = $2)"
+        )
+        .bind(sva_id)
+        .bind(req.academic_semester_id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or(false);
+
+        if exists {
+            activities_skipped += 1;
+            continue;
+        }
+
+        let res = sqlx::query(
+            r#"INSERT INTO activity_slots
+                (name, description, activity_type, semester_id, allowed_grade_level_ids,
+                 registration_type, periods_per_week, scheduling_mode,
+                 source_plan_activity_id, created_by)
+               VALUES ($1, $2, $3, $4, $5,
+                       'assigned', $6, $7,
+                       $8, $9)"#
+        )
+        .bind(name)
+        .bind(description)
+        .bind(activity_type)
+        .bind(req.academic_semester_id)
+        .bind(allowed)
+        .bind(periods_per_week)
+        .bind(scheduling_mode)
+        .bind(sva_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await;
+
+        if res.is_ok() {
+            activities_created += 1;
+        }
+    }
+
     tx.commit().await?;
 
     Ok(Json(json!({
         "success": true,
+        "courses_created": added,
+        "courses_skipped": skipped,
+        "activities_created": activities_created,
+        "activities_skipped": activities_skipped,
         "data": GenerateCoursesResponse {
             added_count: added,
             skipped_count: skipped,
-            message: format!("Added {} courses, skipped {} existing courses", added, skipped),
+            message: format!(
+                "Added {} courses, skipped {} existing courses; Added {} activities, skipped {}",
+                added, skipped, activities_created, activities_skipped
+            ),
         }
     })))
 }

@@ -600,12 +600,18 @@ export const deleteStudyPlanSubject = async (id: string) => {
     });
 };
 
-// Bulk: Generate Courses from Study Plan
+// Bulk: Generate Courses (+ activities) from Study Plan
 export const generateCoursesFromPlan = async (data: {
     classroom_id: string;
     academic_semester_id: string;
     skip_existing?: boolean;
-}): Promise<{ data: { added_count: number; skipped_count: number; message: string } }> => {
+}): Promise<{
+    data: { added_count: number; skipped_count: number; message: string };
+    courses_created?: number;
+    courses_skipped?: number;
+    activities_created?: number;
+    activities_skipped?: number;
+}> => {
     return await fetchApi('/api/academic/planning/generate-from-plan', {
         method: 'POST',
         body: JSON.stringify(data)
