@@ -14,7 +14,6 @@ pub struct StudyPlan {
     pub name_th: String,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    pub level_scope: Option<String>,
     #[sqlx(default)]
     pub grade_level_ids: Option<serde_json::Value>,
     pub is_active: bool,
@@ -28,7 +27,6 @@ pub struct CreateStudyPlanRequest {
     pub name_th: String,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    pub level_scope: Option<String>,
     pub grade_level_ids: Option<Vec<Uuid>>,
 }
 
@@ -38,7 +36,6 @@ pub struct UpdateStudyPlanRequest {
     pub name_th: Option<String>,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    pub level_scope: Option<String>,
     pub grade_level_ids: Option<Vec<Uuid>>,
     pub is_active: Option<bool>,
 }
@@ -154,7 +151,6 @@ pub struct UpdateStudyPlanSubjectRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct StudyPlanQuery {
-    pub level_scope: Option<String>,
     pub active_only: Option<bool>,
 }
 

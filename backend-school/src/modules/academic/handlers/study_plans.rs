@@ -31,21 +31,14 @@ pub async fn list_study_plans(
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
     
     let mut sql = String::from("SELECT * FROM study_plans WHERE 1=1");
-    let mut idx = 0u32;
 
     if query.active_only.unwrap_or(false) {
         sql.push_str(" AND is_active = true");
     }
 
-    if let Some(ref _level_scope) = query.level_scope {
-        idx += 1;
-        sql.push_str(&format!(" AND level_scope = ${idx}"));
-    }
-
     sql.push_str(" ORDER BY code");
 
-    let mut q = sqlx::query_as::<_, StudyPlan>(&sql);
-    if let Some(ref level_scope) = query.level_scope { q = q.bind(level_scope); }
+    let q = sqlx::query_as::<_, StudyPlan>(&sql);
     let plans = q.fetch_all(&pool).await.unwrap_or_default();
     
     Ok(Json(json!({"success": true, "data": plans})))
@@ -89,15 +82,14 @@ pub async fn create_study_plan(
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
     let plan = sqlx::query_as::<_, StudyPlan>(
-        "INSERT INTO study_plans (code, name_th, name_en, description, level_scope, grade_level_ids)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO study_plans (code, name_th, name_en, description, grade_level_ids)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING *"
     )
     .bind(&req.code)
     .bind(&req.name_th)
     .bind(&req.name_en)
     .bind(&req.description)
-    .bind(&req.level_scope)
     .bind(&grade_ids)
     .fetch_one(&pool)
     .await?;
@@ -137,10 +129,6 @@ pub async fn update_study_plan(
         updates.push(format!("description = ${}", param_count));
         param_count += 1;
     }
-    if req.level_scope.is_some() {
-        updates.push(format!("level_scope = ${}", param_count));
-        param_count += 1;
-    }
     if req.grade_level_ids.is_some() {
         updates.push(format!("grade_level_ids = ${}", param_count));
         param_count += 1;
@@ -173,9 +161,6 @@ pub async fn update_study_plan(
     }
     if let Some(ref description) = req.description {
         query = query.bind(description);
-    }
-    if let Some(ref level_scope) = req.level_scope {
-        query = query.bind(level_scope);
     }
     if let Some(ref grade_level_ids) = req.grade_level_ids {
         let grade_ids = serde_json::to_value(grade_level_ids).unwrap_or(serde_json::Value::Null);

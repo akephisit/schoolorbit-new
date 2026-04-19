@@ -36,7 +36,6 @@ pub struct Subject {
     #[sqlx(rename = "type")]
     pub subject_type: String, // 'type' is a reserved keyword in Rust
     pub group_id: Option<Uuid>,
-    pub level_scope: Option<String>,
     pub description: Option<String>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
@@ -68,7 +67,6 @@ pub struct CreateSubjectRequest {
     #[serde(rename = "type")]
     pub subject_type: String,
     pub group_id: Option<Uuid>,
-    pub level_scope: Option<String>,
     pub description: Option<String>,
     pub grade_level_ids: Option<Vec<Uuid>>,
     pub term: Option<String>,
@@ -85,7 +83,6 @@ pub struct UpdateSubjectRequest {
     #[serde(rename = "type")]
     pub subject_type: Option<String>,
     pub group_id: Option<Uuid>,
-    pub level_scope: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
     pub start_academic_year_id: Option<Uuid>,
@@ -97,7 +94,6 @@ pub struct UpdateSubjectRequest {
 #[derive(Debug, Deserialize)]
 pub struct SubjectFilter {
     pub group_id: Option<Uuid>,
-    pub level_scope: Option<String>,
     #[serde(rename = "type")]
     pub subject_type: Option<String>,
     pub search: Option<String>,

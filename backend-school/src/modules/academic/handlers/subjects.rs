@@ -158,11 +158,6 @@ pub async fn list_subjects(
         query.push_str(&format!(" AND s.group_id = ${idx}"));
     }
 
-    if filter.level_scope.is_some() {
-        idx += 1;
-        query.push_str(&format!(" AND s.level_scope = ${idx}"));
-    }
-
     if filter.subject_type.is_some() {
         idx += 1;
         query.push_str(&format!(" AND s.type = ${idx}"));
@@ -220,7 +215,6 @@ pub async fn list_subjects(
     // Build query and bind parameters in the same order as $N placeholders
     let mut q = sqlx::query_as::<_, Subject>(&query);
     if let Some(gid) = effective_group_id { q = q.bind(gid); }
-    if let Some(ref scope) = filter.level_scope { q = q.bind(scope); }
     if let Some(ref stype) = filter.subject_type { q = q.bind(stype); }
     if let Some(ref pattern) = search_pattern { q = q.bind(pattern); }
     if let Some(year_id) = active_in_year_id { q = q.bind(year_id); }
@@ -302,10 +296,10 @@ pub async fn create_subject(
         r#"
         INSERT INTO subjects (
             code, name_th, name_en,
-            credit, hours_per_semester, type, group_id, level_scope, description,
+            credit, hours_per_semester, type, group_id, description,
             start_academic_year_id, term, default_instructor_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
         "#
     )
@@ -316,7 +310,6 @@ pub async fn create_subject(
     .bind(payload.hours_per_semester)
     .bind(&payload.subject_type)
     .bind(payload.group_id)
-    .bind(&payload.level_scope)
     .bind(&payload.description)
     .bind(payload.start_academic_year_id)
     .bind(&payload.term)
@@ -404,14 +397,13 @@ pub async fn update_subject(
             hours_per_semester = COALESCE($5, hours_per_semester),
             type = COALESCE($6, type),
             group_id = COALESCE($7, group_id),
-            level_scope = COALESCE($8, level_scope),
-            description = COALESCE($9, description),
-            is_active = COALESCE($10, is_active),
-            start_academic_year_id = COALESCE($11, start_academic_year_id),
-            term = COALESCE($13, term),
-            default_instructor_id = COALESCE($14, default_instructor_id),
+            description = COALESCE($8, description),
+            is_active = COALESCE($9, is_active),
+            start_academic_year_id = COALESCE($10, start_academic_year_id),
+            term = COALESCE($12, term),
+            default_instructor_id = COALESCE($13, default_instructor_id),
             updated_at = NOW()
-        WHERE id = $12
+        WHERE id = $11
         RETURNING *
         "#
     )
@@ -422,7 +414,6 @@ pub async fn update_subject(
     .bind(payload.hours_per_semester)
     .bind(&payload.subject_type)
     .bind(payload.group_id)
-    .bind(&payload.level_scope)
     .bind(&payload.description)
     .bind(payload.is_active)
     .bind(payload.start_academic_year_id)
