@@ -588,70 +588,40 @@ pub async fn generate_courses_from_plan(
     let _ = req.skip_existing; // flag retained for API compat; ON CONFLICT always skips
 
     // ============================================
-    // Also generate activity_slots from plan's activities for the same semester
+    // Generate activity_slots from plan — share 1 slot per (catalog, semester)
+    // across all plans. INSERT ... ON CONFLICT DO NOTHING gives us the skipped count.
     // ============================================
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
 
-    let plan_acts: Vec<(Uuid, Option<serde_json::Value>, String, Option<String>, String, i32, String)> = sqlx::query_as(
-        r#"SELECT sva.id,
-                  sva.allowed_grade_level_ids,
-                  ac.name,
-                  ac.description,
-                  ac.activity_type,
-                  ac.periods_per_week,
-                  ac.scheduling_mode
-           FROM study_plan_version_activities sva
-           JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
-           WHERE sva.study_plan_version_id = $1"#
+    let activity_counts: (i64, i64) = sqlx::query_as(
+        r#"
+        WITH plan_acts AS (
+            SELECT DISTINCT sva.activity_catalog_id
+            FROM study_plan_version_activities sva
+            WHERE sva.study_plan_version_id = $1
+        ),
+        inserted AS (
+            INSERT INTO activity_slots
+                (activity_catalog_id, semester_id, registration_type, created_by)
+            SELECT pa.activity_catalog_id, $2, 'assigned', $3
+            FROM plan_acts pa
+            ON CONFLICT (activity_catalog_id, semester_id) DO NOTHING
+            RETURNING id
+        )
+        SELECT
+            (SELECT COUNT(*) FROM plan_acts) AS total,
+            (SELECT COUNT(*) FROM inserted) AS added
+        "#
     )
     .bind(plan_version_id)
-    .fetch_all(&mut *tx)
+    .bind(req.academic_semester_id)
+    .bind(user_id)
+    .fetch_one(&mut *tx)
     .await
-    .unwrap_or_default();
+    .unwrap_or((0, 0));
 
-    let mut activities_created = 0i32;
-    let mut activities_skipped = 0i32;
-
-    for (sva_id, allowed, name, description, activity_type, periods_per_week, scheduling_mode) in &plan_acts {
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM activity_slots WHERE source_plan_activity_id = $1 AND semester_id = $2)"
-        )
-        .bind(sva_id)
-        .bind(req.academic_semester_id)
-        .fetch_one(&mut *tx)
-        .await
-        .unwrap_or(false);
-
-        if exists {
-            activities_skipped += 1;
-            continue;
-        }
-
-        let res = sqlx::query(
-            r#"INSERT INTO activity_slots
-                (name, description, activity_type, semester_id, allowed_grade_level_ids,
-                 registration_type, periods_per_week, scheduling_mode,
-                 source_plan_activity_id, created_by)
-               VALUES ($1, $2, $3, $4, $5,
-                       'assigned', $6, $7,
-                       $8, $9)"#
-        )
-        .bind(name)
-        .bind(description)
-        .bind(activity_type)
-        .bind(req.academic_semester_id)
-        .bind(allowed)
-        .bind(periods_per_week)
-        .bind(scheduling_mode)
-        .bind(sva_id)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await;
-
-        if res.is_ok() {
-            activities_created += 1;
-        }
-    }
+    let activities_created = activity_counts.1 as i32;
+    let activities_skipped = (activity_counts.0 - activity_counts.1) as i32;
 
     tx.commit().await?;
 
@@ -725,20 +695,14 @@ pub async fn add_plan_activity(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    let allowed = req.allowed_grade_level_ids
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
-
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"INSERT INTO study_plan_version_activities
-            (study_plan_version_id, activity_catalog_id, allowed_grade_level_ids,
-             display_order)
-           VALUES ($1, $2, $3,
-                   COALESCE($4, 0))
+            (study_plan_version_id, activity_catalog_id, display_order)
+           VALUES ($1, $2, COALESCE($3, 0))
            RETURNING *"#
     )
     .bind(version_id)
     .bind(req.activity_catalog_id)
-    .bind(&allowed)
     .bind(req.display_order)
     .fetch_one(&pool)
     .await
@@ -761,19 +725,14 @@ pub async fn update_plan_activity(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    let allowed = req.allowed_grade_level_ids.as_ref()
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
-
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"UPDATE study_plan_version_activities SET
-            allowed_grade_level_ids = COALESCE($2, allowed_grade_level_ids),
-            display_order = COALESCE($3, display_order),
+            display_order = COALESCE($2, display_order),
             updated_at = NOW()
            WHERE id = $1
            RETURNING *"#
     )
     .bind(id)
-    .bind(&allowed)
     .bind(req.display_order)
     .fetch_one(&pool)
     .await
@@ -820,88 +779,43 @@ pub async fn generate_activities_from_plan(
 
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
 
-    // Fetch all template activities for this plan version, joined with catalog data
-    let templates: Vec<StudyPlanVersionActivity> = sqlx::query_as(
-        "SELECT sva.*,
-                ac.name AS catalog_name,
-                ac.activity_type AS catalog_activity_type,
-                ac.description AS catalog_description,
-                ac.periods_per_week AS catalog_periods_per_week,
-                ac.scheduling_mode AS catalog_scheduling_mode,
-                ac.term AS catalog_term,
-                ac.grade_level_ids AS catalog_grade_level_ids
-         FROM study_plan_version_activities sva
-         JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
-         WHERE sva.study_plan_version_id = $1
-         ORDER BY sva.display_order, ac.name"
+    // Single CTE: distinct catalogs in plan → insert slot keyed on (catalog_id, semester_id).
+    // ON CONFLICT DO NOTHING — pre-existing slots are skipped (idempotent).
+    let counts: (i64, i64) = sqlx::query_as(
+        r#"
+        WITH plan_cats AS (
+            SELECT DISTINCT sva.activity_catalog_id
+            FROM study_plan_version_activities sva
+            WHERE sva.study_plan_version_id = $1
+        ),
+        inserted AS (
+            INSERT INTO activity_slots
+                (activity_catalog_id, semester_id, registration_type, created_by)
+            SELECT pc.activity_catalog_id, $2, 'assigned', $3
+            FROM plan_cats pc
+            ON CONFLICT (activity_catalog_id, semester_id) DO NOTHING
+            RETURNING id
+        )
+        SELECT
+            (SELECT COUNT(*) FROM plan_cats) AS total,
+            (SELECT COUNT(*) FROM inserted) AS added
+        "#
     )
     .bind(req.study_plan_version_id)
-    .fetch_all(&pool)
+    .bind(req.semester_id)
+    .bind(user_id)
+    .fetch_one(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    let mut created = 0i32;
-    let mut skipped = 0i32;
-
-    for tpl in &templates {
-        // Skip if activity_slot with same source_plan_activity_id already exists in this semester
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(
-                SELECT 1 FROM activity_slots
-                WHERE source_plan_activity_id = $1 AND semester_id = $2
-            )"
-        )
-        .bind(tpl.id)
-        .bind(req.semester_id)
-        .fetch_one(&mut *tx)
-        .await
-        .unwrap_or(false);
-
-        if exists {
-            skipped += 1;
-            continue;
-        }
-
-        // Pull activity fields from joined catalog (required — activity_catalog_id is NOT NULL)
-        let catalog_name = tpl.catalog_name.as_deref().unwrap_or("");
-        let catalog_activity_type = tpl.catalog_activity_type.as_deref().unwrap_or("other");
-        let catalog_periods_per_week = tpl.catalog_periods_per_week.unwrap_or(1);
-        let catalog_scheduling_mode = tpl.catalog_scheduling_mode.as_deref().unwrap_or("synchronized");
-
-        sqlx::query(
-            r#"INSERT INTO activity_slots
-                (name, description, activity_type, semester_id, allowed_grade_level_ids,
-                 registration_type, periods_per_week, scheduling_mode,
-                 source_plan_activity_id, created_by)
-               VALUES ($1, $2, $3, $4, $5,
-                       'assigned', $6, $7,
-                       $8, $9)"#
-        )
-        .bind(catalog_name)
-        .bind(&tpl.catalog_description)
-        .bind(catalog_activity_type)
-        .bind(req.semester_id)
-        .bind(&tpl.allowed_grade_level_ids)
-        .bind(catalog_periods_per_week)
-        .bind(catalog_scheduling_mode)
-        .bind(tpl.id)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-        created += 1;
-    }
-
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let created = counts.1 as i32;
+    let skipped = (counts.0 - counts.1) as i32;
 
     Ok(Json(json!({
         "success": true,
         "created": created,
         "skipped": skipped,
-        "total_templates": templates.len()
+        "total_templates": counts.0
     })))
 }
 
@@ -921,8 +835,13 @@ pub async fn list_activity_catalog(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
+    // Default: latest version per name (same semantics as subjects `latest_only`)
     let rows: Vec<ActivityCatalog> = sqlx::query_as(
-        "SELECT * FROM activity_catalog WHERE is_active = true ORDER BY activity_type, name"
+        r#"SELECT DISTINCT ON (ac.name) ac.*
+           FROM activity_catalog ac
+           JOIN academic_years ay ON ay.id = ac.start_academic_year_id
+           WHERE ac.is_active = true
+           ORDER BY ac.name, ay.year DESC"#
     )
     .fetch_all(&pool)
     .await
@@ -948,11 +867,14 @@ pub async fn create_activity_catalog(
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
     let row: ActivityCatalog = sqlx::query_as(
-        r#"INSERT INTO activity_catalog (name, activity_type, description, periods_per_week, scheduling_mode, term, grade_level_ids)
-           VALUES ($1, $2, $3, COALESCE($4, 1), COALESCE($5, 'synchronized'), $6, $7)
+        r#"INSERT INTO activity_catalog
+               (name, start_academic_year_id, activity_type, description,
+                periods_per_week, scheduling_mode, term, grade_level_ids)
+           VALUES ($1, $2, $3, $4, COALESCE($5, 1), COALESCE($6, 'synchronized'), $7, $8)
            RETURNING *"#
     )
     .bind(&req.name)
+    .bind(req.start_academic_year_id)
     .bind(&req.activity_type)
     .bind(&req.description)
     .bind(req.periods_per_week)

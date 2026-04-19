@@ -10,24 +10,39 @@ use chrono::{DateTime, Utc};
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct ActivitySlot {
     pub id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    pub activity_type: String,
+    pub activity_catalog_id: Uuid,
     pub semester_id: Uuid,
-    pub allowed_grade_level_ids: Option<serde_json::Value>,
     pub registration_type: String,
     pub teacher_reg_open: bool,
     pub student_reg_open: bool,
     pub student_reg_start: Option<DateTime<Utc>>,
     pub student_reg_end: Option<DateTime<Utc>>,
-    pub periods_per_week: i32,
-    pub scheduling_mode: String,
     pub created_by: Option<Uuid>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 
-    // Joined fields
+    // Joined fields from activity_catalog (live link — version snapshot via activity_catalog_id)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub activity_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub periods_per_week: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub scheduling_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub allowed_grade_level_ids: Option<serde_json::Value>,
+
+    // Other joins
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
     pub semester_name: Option<String>,
@@ -41,32 +56,16 @@ pub struct ActivitySlot {
     pub total_members: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct CreateActivitySlotRequest {
-    pub name: String,
-    pub description: Option<String>,
-    pub activity_type: String,
-    pub semester_id: Uuid,
-    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
-    pub registration_type: Option<String>,
-    pub periods_per_week: Option<i32>,
-    pub scheduling_mode: Option<String>,
-}
-
+/// Semester-specific fields only. Template fields (name/type/periods/mode/grade)
+/// come from activity_catalog and are edited there — not here.
 #[derive(Debug, Deserialize)]
 pub struct UpdateActivitySlotRequest {
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub activity_type: Option<String>,
-    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub registration_type: Option<String>,
     pub teacher_reg_open: Option<bool>,
     pub student_reg_open: Option<bool>,
     pub student_reg_start: Option<String>,
     pub student_reg_end: Option<String>,
     pub is_active: Option<bool>,
-    pub periods_per_week: Option<i32>,
-    pub scheduling_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

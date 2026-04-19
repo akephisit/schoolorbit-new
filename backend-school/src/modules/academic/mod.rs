@@ -135,7 +135,8 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/scheduling/subjects/{id}", put(handlers::scheduling_config::update_subject_constraints))
 
         // Activity Slots (ช่องกิจกรรม — Admin)
-        .route("/activity-slots", get(handlers::activity::list_activity_slots).post(handlers::activity::create_activity_slot))
+        // POST removed: slots must come from plan via generate_courses_from_plan
+        .route("/activity-slots", get(handlers::activity::list_activity_slots))
         .route("/activity-slots/{id}", put(handlers::activity::update_activity_slot).delete(handlers::activity::delete_activity_slot))
         .route("/activity-slots/{id}/instructors", get(handlers::activity::list_slot_instructors).post(handlers::activity::add_slot_instructor))
         .route("/activity-slots/{id}/groups", axum::routing::delete(handlers::activity::delete_all_slot_groups))

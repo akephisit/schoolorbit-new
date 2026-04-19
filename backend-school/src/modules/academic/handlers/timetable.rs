@@ -248,9 +248,9 @@ pub async fn list_timetable_entries(
             ap.name  AS period_name,
             ap.start_time,
             ap.end_time,
-            asl.name AS activity_slot_name,
-            asl.activity_type AS activity_type,
-            asl.scheduling_mode AS activity_scheduling_mode
+            asl_ac.name AS activity_slot_name,
+            asl_ac.activity_type AS activity_type,
+            asl_ac.scheduling_mode AS activity_scheduling_mode
         FROM academic_timetable_entries te
         LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
         LEFT JOIN subjects s ON cc.subject_id = s.id
@@ -258,6 +258,7 @@ pub async fn list_timetable_entries(
         JOIN academic_periods ap ON te.period_id = ap.id
         LEFT JOIN rooms r ON te.room_id = r.id
         LEFT JOIN activity_slots asl ON te.activity_slot_id = asl.id
+        LEFT JOIN activity_catalog asl_ac ON asl.activity_catalog_id = asl_ac.id
         WHERE te.is_active = true
         "#
     );
@@ -445,7 +446,7 @@ pub async fn create_timetable_entry(
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     } else if let Some(slot_id) = entry.activity_slot_id {
         let mode: Option<String> = sqlx::query_scalar(
-            "SELECT scheduling_mode FROM activity_slots WHERE id = $1"
+            "SELECT ac.scheduling_mode FROM activity_slots s JOIN activity_catalog ac ON ac.id = s.activity_catalog_id WHERE s.id = $1"
         )
         .bind(slot_id)
         .fetch_optional(&mut *tx)
@@ -581,7 +582,7 @@ async fn validate_timetable_entry(
         .unwrap_or_default()
     } else if let Some(slot_id) = payload.activity_slot_id {
         let mode: Option<String> = sqlx::query_scalar(
-            "SELECT scheduling_mode FROM activity_slots WHERE id = $1"
+            "SELECT ac.scheduling_mode FROM activity_slots s JOIN activity_catalog ac ON ac.id = s.activity_catalog_id WHERE s.id = $1"
         ).bind(slot_id).fetch_optional(pool).await.ok().flatten();
         if mode.as_deref() == Some("independent") {
             if let Some(cls_id) = payload.classroom_id {
@@ -911,7 +912,7 @@ pub async fn create_batch_timetable_entries(
         // 2. Check candidate instructor conflicts via junction
         let candidate_instructors: Vec<Uuid> = if let Some(slot_id) = payload.activity_slot_id {
             let mode: Option<String> = sqlx::query_scalar(
-                "SELECT scheduling_mode FROM activity_slots WHERE id = $1"
+                "SELECT ac.scheduling_mode FROM activity_slots s JOIN activity_catalog ac ON ac.id = s.activity_catalog_id WHERE s.id = $1"
             ).bind(slot_id).fetch_optional(&pool).await.ok().flatten();
             if mode.as_deref() == Some("independent") {
                 sqlx::query_scalar(
@@ -1119,7 +1120,7 @@ pub async fn create_batch_timetable_entries(
                       .map_err(|e| AppError::InternalServerError(e.to_string()))?;
                 } else if let Some(slot_id) = payload.activity_slot_id {
                     let mode: Option<String> = sqlx::query_scalar(
-                        "SELECT scheduling_mode FROM activity_slots WHERE id = $1"
+                        "SELECT ac.scheduling_mode FROM activity_slots s JOIN activity_catalog ac ON ac.id = s.activity_catalog_id WHERE s.id = $1"
                     ).bind(slot_id).fetch_optional(&mut *tx).await.ok().flatten();
                     if mode.as_deref() == Some("independent") {
                         sqlx::query(

@@ -44,10 +44,17 @@ pub async fn list_activity_slots(
     let mut sql = String::from(
         r#"SELECT
             s.*,
+            ac.name AS name,
+            ac.description AS description,
+            ac.activity_type AS activity_type,
+            ac.periods_per_week AS periods_per_week,
+            ac.scheduling_mode AS scheduling_mode,
+            ac.grade_level_ids AS allowed_grade_level_ids,
             sem.name AS semester_name,
             COUNT(DISTINCT ag.id) AS group_count,
             COUNT(DISTINCT agm.id) AS total_members
         FROM activity_slots s
+        JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
         LEFT JOIN academic_semesters sem ON sem.id = s.semester_id
         LEFT JOIN activity_groups ag ON ag.slot_id = s.id AND ag.is_active = true
         LEFT JOIN activity_group_members agm ON agm.activity_group_id = ag.id
@@ -60,20 +67,20 @@ pub async fn list_activity_slots(
         idx += 1;
         sql.push_str(&format!(" AND s.semester_id = ${idx}"));
     }
-    if let Some(ref activity_type) = filter.activity_type {
+    if let Some(ref _activity_type) = filter.activity_type {
         idx += 1;
-        sql.push_str(&format!(" AND s.activity_type = ${idx}"));
+        sql.push_str(&format!(" AND ac.activity_type = ${idx}"));
     }
-    if let Some(open) = filter.teacher_reg_open {
+    if let Some(_open) = filter.teacher_reg_open {
         idx += 1;
         sql.push_str(&format!(" AND s.teacher_reg_open = ${idx}"));
     }
-    if let Some(open) = filter.student_reg_open {
+    if let Some(_open) = filter.student_reg_open {
         idx += 1;
         sql.push_str(&format!(" AND s.student_reg_open = ${idx}"));
     }
 
-    sql.push_str(" GROUP BY s.id, sem.name ORDER BY s.activity_type, s.name");
+    sql.push_str(" GROUP BY s.id, ac.id, sem.name ORDER BY ac.activity_type, ac.name");
 
     let mut q = sqlx::query_as::<_, ActivitySlot>(&sql);
     if let Some(semester_id) = filter.semester_id { q = q.bind(semester_id); }
@@ -92,51 +99,9 @@ pub async fn list_activity_slots(
     Ok(Json(json!({ "data": slots })).into_response())
 }
 
-/// POST /api/academic/activity-slots
-pub async fn create_activity_slot(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(body): Json<CreateActivitySlotRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
-        return Ok(r);
-    }
-
-    let registration_type = body.registration_type.unwrap_or_else(|| "assigned".to_string());
-    let allowed = body.allowed_grade_level_ids
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
-
-    let periods_per_week = body.periods_per_week.unwrap_or(1);
-    let scheduling_mode = body.scheduling_mode.unwrap_or_else(|| "synchronized".to_string());
-
-    let row: ActivitySlot = sqlx::query_as(
-        r#"INSERT INTO activity_slots
-            (name, description, activity_type, semester_id, allowed_grade_level_ids, registration_type,
-             periods_per_week, scheduling_mode)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           RETURNING *, NULL::TEXT AS semester_name, NULL::BIGINT AS group_count, NULL::BIGINT AS total_members"#,
-    )
-    .bind(&body.name)
-    .bind(&body.description)
-    .bind(&body.activity_type)
-    .bind(body.semester_id)
-    .bind(&allowed)
-    .bind(&registration_type)
-    .bind(periods_per_week)
-    .bind(&scheduling_mode)
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("create_activity_slot error: {e}");
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
-
-    Ok(Json(json!({ "data": row })).into_response())
-}
-
 /// PUT /api/academic/activity-slots/:id
+/// Only semester-specific fields are editable here. Template fields
+/// (name/activity_type/periods/mode/grade) live in activity_catalog.
 pub async fn update_activity_slot(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -150,35 +115,38 @@ pub async fn update_activity_slot(
     }
 
     let row: ActivitySlot = sqlx::query_as(
-        r#"UPDATE activity_slots SET
-            name = COALESCE($2, name),
-            description = COALESCE($3, description),
-            activity_type = COALESCE($4, activity_type),
-            allowed_grade_level_ids = COALESCE($5, allowed_grade_level_ids),
-            registration_type = COALESCE($6, registration_type),
-            teacher_reg_open = COALESCE($7, teacher_reg_open),
-            student_reg_open = COALESCE($8, student_reg_open),
-            student_reg_start = COALESCE($9, student_reg_start),
-            student_reg_end = COALESCE($10, student_reg_end),
-            is_active = COALESCE($11, is_active),
-            periods_per_week = COALESCE($12, periods_per_week),
-            scheduling_mode = COALESCE($13, scheduling_mode)
-        WHERE id = $1
-        RETURNING *, NULL::TEXT AS semester_name, NULL::BIGINT AS group_count, NULL::BIGINT AS total_members"#,
+        r#"WITH upd AS (
+            UPDATE activity_slots SET
+                registration_type = COALESCE($2, registration_type),
+                teacher_reg_open = COALESCE($3, teacher_reg_open),
+                student_reg_open = COALESCE($4, student_reg_open),
+                student_reg_start = COALESCE($5, student_reg_start),
+                student_reg_end = COALESCE($6, student_reg_end),
+                is_active = COALESCE($7, is_active),
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING *
+        )
+        SELECT upd.*,
+            ac.name AS name,
+            ac.description AS description,
+            ac.activity_type AS activity_type,
+            ac.periods_per_week AS periods_per_week,
+            ac.scheduling_mode AS scheduling_mode,
+            ac.grade_level_ids AS allowed_grade_level_ids,
+            NULL::TEXT AS semester_name,
+            NULL::BIGINT AS group_count,
+            NULL::BIGINT AS total_members
+        FROM upd
+        JOIN activity_catalog ac ON ac.id = upd.activity_catalog_id"#,
     )
     .bind(id)
-    .bind(&body.name)
-    .bind(&body.description)
-    .bind(&body.activity_type)
-    .bind(body.allowed_grade_level_ids.as_ref().map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null)))
     .bind(&body.registration_type)
     .bind(body.teacher_reg_open)
     .bind(body.student_reg_open)
     .bind(body.student_reg_start.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&Utc)))
     .bind(body.student_reg_end.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&Utc)))
     .bind(body.is_active)
-    .bind(body.periods_per_week)
-    .bind(&body.scheduling_mode)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -234,36 +202,37 @@ pub async fn list_activity_groups(
             ag.*,
             u.first_name || ' ' || u.last_name AS instructor_name,
             COUNT(agm.id) AS member_count,
-            s.name AS slot_name,
-            s.activity_type,
+            ac.name AS slot_name,
+            ac.activity_type,
             sem.name AS semester_name
         FROM activity_groups ag
         LEFT JOIN users u ON u.id = ag.instructor_id
         LEFT JOIN activity_group_members agm ON agm.activity_group_id = ag.id
         LEFT JOIN activity_slots s ON s.id = ag.slot_id
+        LEFT JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
         LEFT JOIN academic_semesters sem ON sem.id = s.semester_id
         WHERE ag.is_active = true"#,
     );
 
     let mut idx = 0u32;
 
-    if let Some(slot_id) = filter.slot_id {
+    if let Some(_slot_id) = filter.slot_id {
         idx += 1;
         sql.push_str(&format!(" AND ag.slot_id = ${idx}"));
     }
-    if let Some(semester_id) = filter.semester_id {
+    if let Some(_semester_id) = filter.semester_id {
         idx += 1;
         sql.push_str(&format!(" AND s.semester_id = ${idx}"));
     }
-    if let Some(ref activity_type) = filter.activity_type {
+    if let Some(ref _activity_type) = filter.activity_type {
         idx += 1;
-        sql.push_str(&format!(" AND s.activity_type = ${idx}"));
+        sql.push_str(&format!(" AND ac.activity_type = ${idx}"));
     }
-    if let Some(instructor_id) = filter.instructor_id {
+    if let Some(_instructor_id) = filter.instructor_id {
         idx += 1;
         sql.push_str(&format!(" AND ag.instructor_id = ${idx}"));
     }
-    if let Some(open) = filter.registration_open {
+    if let Some(_open) = filter.registration_open {
         idx += 1;
         sql.push_str(&format!(" AND ag.registration_open = ${idx}"));
     }
@@ -274,7 +243,7 @@ pub async fn list_activity_groups(
         }
     }
 
-    sql.push_str(" GROUP BY ag.id, u.first_name, u.last_name, s.name, s.activity_type, sem.name ORDER BY s.activity_type, ag.name");
+    sql.push_str(" GROUP BY ag.id, u.first_name, u.last_name, ac.name, ac.activity_type, sem.name ORDER BY ac.activity_type, ag.name");
 
     let mut q = sqlx::query_as::<_, ActivityGroup>(&sql);
     if let Some(slot_id) = filter.slot_id { q = q.bind(slot_id); }
@@ -658,11 +627,12 @@ pub async fn self_enroll(
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     if let Some(grade_id) = student_grade {
-        // ตรวจ group allowed_grade_level_ids ก่อน แล้วค่อย slot
+        // ตรวจ group allowed_grade_level_ids ก่อน แล้วค่อย catalog (ผ่าน slot)
         let allowed: Option<serde_json::Value> = sqlx::query_scalar(
-            r#"SELECT COALESCE(ag.allowed_grade_level_ids, s.allowed_grade_level_ids)
+            r#"SELECT COALESCE(ag.allowed_grade_level_ids, ac.grade_level_ids)
                FROM activity_groups ag
                LEFT JOIN activity_slots s ON s.id = ag.slot_id
+               LEFT JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
                WHERE ag.id = $1"#
         )
         .bind(group_id)

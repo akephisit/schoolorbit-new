@@ -192,7 +192,6 @@ pub struct StudyPlanVersionActivity {
     pub id: Uuid,
     pub study_plan_version_id: Uuid,
     pub activity_catalog_id: Uuid,
-    pub allowed_grade_level_ids: Option<serde_json::Value>,
     pub display_order: i32,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -224,13 +223,11 @@ pub struct StudyPlanVersionActivity {
 #[derive(Debug, Deserialize)]
 pub struct CreatePlanActivityRequest {
     pub activity_catalog_id: Uuid,
-    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub display_order: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdatePlanActivityRequest {
-    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub display_order: Option<i32>,
 }
 
@@ -248,6 +245,7 @@ pub struct GenerateActivitiesFromPlanRequest {
 pub struct ActivityCatalog {
     pub id: Uuid,
     pub name: String,
+    pub start_academic_year_id: Uuid, // version key — name เดียวมีหลายเวอร์ชันแยกปี
     pub activity_type: String,
     pub description: Option<String>,
     pub periods_per_week: i32,
@@ -262,6 +260,7 @@ pub struct ActivityCatalog {
 #[derive(Debug, Deserialize)]
 pub struct CreateCatalogRequest {
     pub name: String,
+    pub start_academic_year_id: Uuid,
     pub activity_type: String,
     pub description: Option<String>,
     pub periods_per_week: Option<i32>,
