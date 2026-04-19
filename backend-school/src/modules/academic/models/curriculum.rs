@@ -91,6 +91,34 @@ pub struct UpdateSubjectRequest {
     pub default_instructor_id: Option<Uuid>,
 }
 
+// ==========================================
+// Subject Default Instructors (team teaching at catalog level)
+// ==========================================
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct SubjectDefaultInstructor {
+    pub id: Uuid,
+    pub subject_id: Uuid,
+    pub instructor_id: Uuid,
+    pub role: String,
+    pub created_at: DateTime<Utc>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub instructor_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddSubjectDefaultInstructorRequest {
+    pub instructor_id: Uuid,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSubjectDefaultInstructorRoleRequest {
+    pub role: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SubjectFilter {
     pub group_id: Option<Uuid>,

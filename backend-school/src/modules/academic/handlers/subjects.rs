@@ -8,7 +8,8 @@ use axum::{
 use serde_json::json;
 use crate::middleware::permission::{check_permission, get_user_with_permissions};
 use crate::modules::academic::models::curriculum::{
-    Subject, SubjectGroup, CreateSubjectRequest, UpdateSubjectRequest, SubjectFilter
+    Subject, SubjectGroup, CreateSubjectRequest, UpdateSubjectRequest, SubjectFilter,
+    SubjectDefaultInstructor, AddSubjectDefaultInstructorRequest, UpdateSubjectDefaultInstructorRoleRequest,
 };
 use uuid::Uuid;
 use crate::permissions::registry::codes;
@@ -506,3 +507,271 @@ pub async fn delete_subject(
     Ok(Json(json!({ "success": true })).into_response())
 }
 
+// ==========================================
+// Subject Default Instructors (team teaching at catalog level)
+// Pattern mirrors classroom_course_instructors — admin sets team
+// once per subject, assign_courses auto-copies into junction.
+// ==========================================
+
+/// Ensure the caller is allowed to read/write default instructors for this subject.
+/// Returns Ok(()) if allowed, Err(response) to short-circuit.
+async fn check_subject_manage(
+    state: &AppState,
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    subject_id: Uuid,
+    manage_code: &str,
+    read_only: bool,
+) -> Result<(), axum::response::Response> {
+    let (user_id, permissions) = match get_user_with_permissions(headers, pool, &state.permission_cache).await {
+        Ok(r) => r,
+        Err(resp) => return Err(resp),
+    };
+    let read_codes = [
+        "*".to_string(),
+        codes::ACADEMIC_CURRICULUM_READ_ALL.to_string(),
+        codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string(),
+        manage_code.to_string(),
+    ];
+    let has_all = permissions.contains(&"*".to_string())
+        || permissions.contains(&manage_code.to_string())
+        || (read_only && read_codes.iter().any(|c| permissions.contains(c)));
+    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    if !has_all && !has_dept {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", manage_code) })),
+        ).into_response());
+    }
+    if !has_all && has_dept {
+        let teacher_group = match get_user_subject_group_id(user_id, pool).await {
+            Some(gid) => gid,
+            None => return Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({ "success": false, "error": "ไม่พบกลุ่มสาระที่สังกัด" })),
+            ).into_response()),
+        };
+        let subject_group: Option<Uuid> = sqlx::query_scalar(
+            "SELECT group_id FROM subjects WHERE id = $1"
+        )
+        .bind(subject_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        if subject_group != Some(teacher_group) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({ "success": false, "error": "ไม่สามารถจัดการวิชาในกลุ่มสาระอื่นได้" })),
+            ).into_response());
+        }
+    }
+    Ok(())
+}
+
+/// GET /api/academic/subjects/:id/default-instructors
+pub async fn list_subject_default_instructors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subject_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(resp) = check_subject_manage(
+        &state, &headers, &pool, subject_id,
+        codes::ACADEMIC_CURRICULUM_UPDATE_ALL, true,
+    ).await { return Ok(resp); }
+
+    let rows: Vec<SubjectDefaultInstructor> = sqlx::query_as(
+        r#"SELECT sdi.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
+           FROM subject_default_instructors sdi
+           JOIN users u ON u.id = sdi.instructor_id
+           WHERE sdi.subject_id = $1
+           ORDER BY sdi.role, sdi.created_at"#
+    )
+    .bind(subject_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "data": rows })).into_response())
+}
+
+/// POST /api/academic/subjects/:id/default-instructors
+pub async fn add_subject_default_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subject_id): Path<Uuid>,
+    Json(body): Json<AddSubjectDefaultInstructorRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(resp) = check_subject_manage(
+        &state, &headers, &pool, subject_id,
+        codes::ACADEMIC_CURRICULUM_UPDATE_ALL, false,
+    ).await { return Ok(resp); }
+
+    let role = body.role.unwrap_or_else(|| "secondary".to_string());
+    if role != "primary" && role != "secondary" {
+        return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+    }
+
+    // Demote any existing primary if this one is primary
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    if role == "primary" {
+        sqlx::query(
+            "UPDATE subject_default_instructors SET role = 'secondary'
+             WHERE subject_id = $1 AND instructor_id <> $2 AND role = 'primary'"
+        )
+        .bind(subject_id)
+        .bind(body.instructor_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    sqlx::query(
+        "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (subject_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
+    )
+    .bind(subject_id)
+    .bind(body.instructor_id)
+    .bind(&role)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
+/// DELETE /api/academic/subjects/:id/default-instructors/:uid
+pub async fn remove_subject_default_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((subject_id, instructor_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(resp) = check_subject_manage(
+        &state, &headers, &pool, subject_id,
+        codes::ACADEMIC_CURRICULUM_UPDATE_ALL, false,
+    ).await { return Ok(resp); }
+
+    sqlx::query(
+        "DELETE FROM subject_default_instructors WHERE subject_id = $1 AND instructor_id = $2"
+    )
+    .bind(subject_id)
+    .bind(instructor_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
+/// PUT /api/academic/subjects/:id/default-instructors/:uid
+pub async fn update_subject_default_instructor_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((subject_id, instructor_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<UpdateSubjectDefaultInstructorRoleRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(resp) = check_subject_manage(
+        &state, &headers, &pool, subject_id,
+        codes::ACADEMIC_CURRICULUM_UPDATE_ALL, false,
+    ).await { return Ok(resp); }
+
+    if body.role != "primary" && body.role != "secondary" {
+        return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+    }
+
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    if body.role == "primary" {
+        sqlx::query(
+            "UPDATE subject_default_instructors SET role = 'secondary'
+             WHERE subject_id = $1 AND instructor_id <> $2 AND role = 'primary'"
+        )
+        .bind(subject_id)
+        .bind(instructor_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    sqlx::query(
+        "UPDATE subject_default_instructors SET role = $3
+         WHERE subject_id = $1 AND instructor_id = $2"
+    )
+    .bind(subject_id)
+    .bind(instructor_id)
+    .bind(&body.role)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({ "success": true })).into_response())
+}
+
+/// GET /api/academic/subjects/default-instructors?subject_ids=uuid1,uuid2,...
+/// Batch fetch default instructors for multiple subjects. Returns object keyed by subject_id.
+#[derive(Debug, serde::Deserialize)]
+pub struct BatchListSubjectDefaultInstructorsQuery {
+    pub subject_ids: String,
+}
+
+pub async fn batch_list_subject_default_instructors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<BatchListSubjectDefaultInstructorsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    // Any curriculum reader can view — consistent with list_subjects
+    let (_, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
+        Ok(r) => r,
+        Err(resp) => return Ok(resp),
+    };
+    let has_access = permissions.contains(&"*".to_string())
+        || permissions.contains(&codes::ACADEMIC_CURRICULUM_READ_ALL.to_string())
+        || permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    if !has_access {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_READ_ALL) })),
+        ).into_response());
+    }
+
+    let ids: Vec<Uuid> = query.subject_ids.split(',')
+        .filter_map(|s| s.trim().parse::<Uuid>().ok())
+        .collect();
+
+    if ids.is_empty() {
+        return Ok(Json(json!({ "data": {} })).into_response());
+    }
+
+    let rows: Vec<SubjectDefaultInstructor> = sqlx::query_as(
+        r#"SELECT sdi.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
+           FROM subject_default_instructors sdi
+           JOIN users u ON u.id = sdi.instructor_id
+           WHERE sdi.subject_id = ANY($1)
+           ORDER BY sdi.subject_id, sdi.role, sdi.created_at"#
+    )
+    .bind(&ids)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let mut grouped: std::collections::HashMap<Uuid, Vec<SubjectDefaultInstructor>> = std::collections::HashMap::new();
+    for row in rows {
+        grouped.entry(row.subject_id).or_default().push(row);
+    }
+
+    Ok(Json(json!({ "data": grouped })).into_response())
+}

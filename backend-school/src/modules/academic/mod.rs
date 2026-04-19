@@ -37,8 +37,17 @@ pub fn academic_routes() -> Router<AppState> {
 
         // Curriculum: Subjects
         .route("/subjects/groups", get(handlers::subjects::list_subject_groups))
+        // Batch endpoint — MUST be registered BEFORE `/subjects/{id}/...`
+        // so Axum doesn't match `default-instructors` as `id`.
+        .route("/subjects/default-instructors", get(handlers::subjects::batch_list_subject_default_instructors))
         .route("/subjects", get(handlers::subjects::list_subjects).post(handlers::subjects::create_subject))
         .route("/subjects/{id}", put(handlers::subjects::update_subject).delete(handlers::subjects::delete_subject))
+        .route("/subjects/{id}/default-instructors",
+               get(handlers::subjects::list_subject_default_instructors)
+               .post(handlers::subjects::add_subject_default_instructor))
+        .route("/subjects/{id}/default-instructors/{uid}",
+               axum::routing::delete(handlers::subjects::remove_subject_default_instructor)
+               .put(handlers::subjects::update_subject_default_instructor_role))
 
         // Course Planning
         .route("/planning/courses", get(handlers::course_planning::list_classroom_courses).post(handlers::course_planning::assign_courses))
