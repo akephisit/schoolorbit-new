@@ -85,9 +85,12 @@ pub async fn create_study_plan(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
     
+    let grade_ids = req.grade_level_ids
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+
     let plan = sqlx::query_as::<_, StudyPlan>(
-        "INSERT INTO study_plans (code, name_th, name_en, description, level_scope)
-         VALUES ($1, $2, $3, $4, $5)
+        "INSERT INTO study_plans (code, name_th, name_en, description, level_scope, grade_level_ids)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *"
     )
     .bind(&req.code)
@@ -95,6 +98,7 @@ pub async fn create_study_plan(
     .bind(&req.name_en)
     .bind(&req.description)
     .bind(&req.level_scope)
+    .bind(&grade_ids)
     .fetch_one(&pool)
     .await?;
     
@@ -116,7 +120,7 @@ pub async fn update_study_plan(
     
     let mut updates = Vec::new();
     let mut param_count = 1;
-    
+
     if req.code.is_some() {
         updates.push(format!("code = ${}", param_count));
         param_count += 1;
@@ -137,23 +141,27 @@ pub async fn update_study_plan(
         updates.push(format!("level_scope = ${}", param_count));
         param_count += 1;
     }
+    if req.grade_level_ids.is_some() {
+        updates.push(format!("grade_level_ids = ${}", param_count));
+        param_count += 1;
+    }
     if req.is_active.is_some() {
         updates.push(format!("is_active = ${}", param_count));
         param_count += 1;
     }
-    
+
     if updates.is_empty() {
         return Err(AppError::BadRequest("No fields to update".to_string()));
     }
-    
+
     let sql = format!(
         "UPDATE study_plans SET {} WHERE id = ${} RETURNING *",
         updates.join(", "),
         param_count
     );
-    
+
     let mut query = sqlx::query_as::<_, StudyPlan>(&sql);
-    
+
     if let Some(ref code) = req.code {
         query = query.bind(code);
     }
@@ -169,14 +177,18 @@ pub async fn update_study_plan(
     if let Some(ref level_scope) = req.level_scope {
         query = query.bind(level_scope);
     }
+    if let Some(ref grade_level_ids) = req.grade_level_ids {
+        let grade_ids = serde_json::to_value(grade_level_ids).unwrap_or(serde_json::Value::Null);
+        query = query.bind(grade_ids);
+    }
     if let Some(is_active) = req.is_active {
         query = query.bind(is_active);
     }
-    
+
     query = query.bind(plan_id);
-    
+
     let plan = query.fetch_one(&pool).await?;
-    
+
     Ok(Json(json!({"success": true, "data": plan})))
 }
 

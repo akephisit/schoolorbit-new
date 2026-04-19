@@ -86,6 +86,7 @@
 		name_en?: string;
 		description?: string;
 		level_scope?: string;
+		grade_level_ids: string[];
 	} {
 		return {
 			id: '',
@@ -93,7 +94,8 @@
 			name_th: '',
 			name_en: '',
 			description: '',
-			level_scope: 'all'
+			level_scope: 'all',
+			grade_level_ids: []
 		};
 	}
 
@@ -167,7 +169,11 @@
 	}
 
 	function handleOpenEditPlan(plan: StudyPlan) {
-		planForm = { ...plan };
+		planForm = {
+			...getEmptyPlanForm(),
+			...plan,
+			grade_level_ids: plan.grade_level_ids ?? []
+		};
 		showPlanDialog = true;
 	}
 
@@ -399,15 +405,21 @@
 		selectedCatalogIds = next;
 	}
 
-	// Derived: valid grade levels for current version (based on plan level_scope)
-	let unifiedGradeLevels = $derived(
-		gradeLevels.filter((grade) => {
-			if (!selectedVersion) return true;
-			const plan = plans.find((p) => p.id === selectedVersion!.study_plan_id);
-			if (!plan || !plan.level_scope || plan.level_scope === 'all') return true;
-			return grade.level_type === plan.level_scope;
-		})
-	);
+	// Derived: valid grade levels for current version (prefer plan.grade_level_ids, fallback to level_scope)
+	let unifiedGradeLevels = $derived.by(() => {
+		if (!selectedVersion) return gradeLevels;
+		const plan = plans.find((p) => p.id === selectedVersion!.study_plan_id);
+		if (!plan) return gradeLevels;
+
+		// New: if grade_level_ids is set, use those
+		if (plan.grade_level_ids && plan.grade_level_ids.length > 0) {
+			return gradeLevels.filter((g) => plan.grade_level_ids!.includes(g.id));
+		}
+
+		// Fallback: legacy level_scope
+		if (!plan.level_scope || plan.level_scope === 'all') return gradeLevels;
+		return gradeLevels.filter((g) => g.level_type === plan.level_scope);
+	});
 
 	// Filter subjects by group (uses the already-loaded `subjects` state from initData)
 	let filteredSubjectsInDialog = $derived.by(() => {
@@ -619,7 +631,19 @@
 										{/if}
 									</Table.Cell>
 									<Table.Cell>
-										<Badge variant="secondary">{plan.level_scope || 'ทุกระดับ'}</Badge>
+										{#if plan.grade_level_ids && plan.grade_level_ids.length > 0}
+											<Badge variant="secondary" class="text-[10px]">
+												{plan.grade_level_ids.length} ระดับ: {plan.grade_level_ids
+													.map(
+														(id) =>
+															gradeLevels.find((g) => g.id === id)?.short_name ?? ''
+													)
+													.filter(Boolean)
+													.join(', ')}
+											</Badge>
+										{:else}
+											<Badge variant="secondary" class="text-[10px]">ทุกระดับ</Badge>
+										{/if}
 									</Table.Cell>
 									<Table.Cell>
 										<div class="flex gap-1">
@@ -960,24 +984,33 @@
 			</div>
 
 			<div class="space-y-2">
-				<Label>ระดับชั้น</Label>
-				<Select.Root type="single" bind:value={planForm.level_scope}>
-					<Select.Trigger>
-						{planForm.level_scope === 'kindergarten'
-							? 'อนุบาล'
-							: planForm.level_scope === 'primary'
-								? 'ประถม'
-								: planForm.level_scope === 'secondary'
-									? 'มัธยม'
-									: 'ทุกระดับ'}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="all">ทุกระดับ</Select.Item>
-						<Select.Item value="kindergarten">อนุบาล</Select.Item>
-						<Select.Item value="primary">ประถม</Select.Item>
-						<Select.Item value="secondary">มัธยม</Select.Item>
-					</Select.Content>
-				</Select.Root>
+				<Label>
+					ระดับชั้น
+					<span class="text-xs text-muted-foreground">(เลือกหลายชั้นได้)</span>
+				</Label>
+				<div class="flex flex-wrap gap-2 p-2 border rounded min-h-[48px]">
+					{#each gradeLevels as gl}
+						{@const checked = (planForm.grade_level_ids ?? []).includes(gl.id)}
+						<label
+							class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted {checked
+								? 'bg-muted font-medium'
+								: ''}"
+						>
+							<input
+								type="checkbox"
+								{checked}
+								onchange={(e) => {
+									const ids = new Set(planForm.grade_level_ids ?? []);
+									if ((e.target as HTMLInputElement).checked) ids.add(gl.id);
+									else ids.delete(gl.id);
+									planForm.grade_level_ids = [...ids];
+								}}
+							/>
+							{gl.short_name ?? gl.code ?? gl.name}
+						</label>
+					{/each}
+				</div>
+				<p class="text-xs text-muted-foreground">ถ้าไม่เลือก = ทุกระดับ</p>
 			</div>
 
 			<div class="space-y-2">

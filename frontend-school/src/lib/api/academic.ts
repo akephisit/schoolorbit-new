@@ -442,7 +442,8 @@ export interface StudyPlan {
     name_th: string;
     name_en?: string;
     description?: string;
-    level_scope?: string; // 'kindergarten' | 'primary' | 'secondary' | 'all'
+    level_scope?: string; // 'kindergarten' | 'primary' | 'secondary' | 'all' (legacy, kept for backward compat)
+    grade_level_ids?: string[];
     is_active: boolean;
     created_at: string;
     updated_at: string;
@@ -504,6 +505,7 @@ export const createStudyPlan = async (data: {
     name_en?: string;
     description?: string;
     level_scope?: string;
+    grade_level_ids?: string[];
 }) => {
     return await fetchApi('/api/academic/study-plans', {
         method: 'POST',
