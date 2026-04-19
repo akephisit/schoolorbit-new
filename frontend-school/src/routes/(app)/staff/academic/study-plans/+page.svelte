@@ -499,9 +499,8 @@
 		filterGroupId = '';
 		addTerm = '1';
 
-		// Pre-fill target grade from plan's first grade_level_id
-		const plan = plans.find((p) => p.id === selectedVersion?.study_plan_id);
-		addTargetGradeId = plan?.grade_level_ids?.[0] ?? (gradeLevels[0]?.id ?? '');
+		// Pre-fill target grade: use lowest grade from the plan (sorted by year, not click-order)
+		addTargetGradeId = planGradeLevels[0]?.id ?? '';
 
 		if (activityCatalog.length === 0) loadActivityCatalog();
 		if (subjects.length === 0) loadAllSubjects();
