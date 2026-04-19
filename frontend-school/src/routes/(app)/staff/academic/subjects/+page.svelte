@@ -14,14 +14,11 @@
 		updateActivityCatalog,
 		deleteActivityCatalog,
 		listSubjectDefaultInstructors,
-		addSubjectDefaultInstructor,
-		removeSubjectDefaultInstructor,
 		ACTIVITY_TYPE_LABELS,
 		type Subject,
 		type SubjectGroup,
 		type LookupItem,
-		type ActivityCatalog,
-		type SubjectDefaultInstructor
+		type ActivityCatalog
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
@@ -126,52 +123,68 @@
 	let showUnifiedAddDialog = $state(false);
 	let unifiedAddType = $state<'subject' | 'activity'>('subject');
 
-	// Subject default instructors (team teaching at catalog level)
-	let teamInstructors = $state<SubjectDefaultInstructor[]>([]);
+	// Subject default instructors (team teaching at catalog level).
+	// We work on a local draft and submit the full team atomically with create/update.
+	// This keeps both create and edit paths consistent and avoids partial saves.
+	type TeamDraftRow = { instructor_id: string; role: 'primary' | 'secondary'; instructor_name?: string };
+	let teamDraft = $state<TeamDraftRow[]>([]);
 	let teamLoading = $state(false);
-	let addInstructorId = $state('');
+	let teamAddInstructorId = $state('');
+	let teamAddRole = $state<'primary' | 'secondary'>('secondary');
 
-	async function loadTeamInstructors(subjectId: string) {
+	async function hydrateTeamDraftFor(subjectId: string) {
 		teamLoading = true;
 		try {
 			const res = await listSubjectDefaultInstructors(subjectId);
-			teamInstructors = res.data ?? [];
+			teamDraft = (res.data ?? []).map((r) => ({
+				instructor_id: r.instructor_id,
+				role: r.role,
+				instructor_name: r.instructor_name
+			}));
 		} catch {
-			teamInstructors = [];
+			teamDraft = [];
 		} finally {
 			teamLoading = false;
 		}
 	}
 
-	async function handleAddTeamInstructor() {
-		if (!currentSubject.id || !addInstructorId) return;
-		// Prevent duplicate (including the primary, which lives in default_instructor_id)
-		if (addInstructorId === currentSubject.default_instructor_id) {
-			toast.error('ครูคนนี้เป็นครูหลักอยู่แล้ว');
-			return;
-		}
-		if (teamInstructors.some((t) => t.instructor_id === addInstructorId)) {
+	function resetTeamDraft() {
+		teamDraft = [];
+		teamAddInstructorId = '';
+		teamAddRole = 'secondary';
+	}
+
+	function addToTeamDraft() {
+		if (!teamAddInstructorId) return;
+		if (teamDraft.some((t) => t.instructor_id === teamAddInstructorId)) {
 			toast.error('ครูคนนี้อยู่ในทีมแล้ว');
 			return;
 		}
-		try {
-			await addSubjectDefaultInstructor(currentSubject.id, addInstructorId, 'secondary');
-			addInstructorId = '';
-			await loadTeamInstructors(currentSubject.id);
-			toast.success('เพิ่มครูร่วมแล้ว');
-		} catch (e) {
-			toast.error('เพิ่มครูร่วมไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		// If adding as primary, demote any existing primary locally
+		let next = teamDraft;
+		if (teamAddRole === 'primary') {
+			next = teamDraft.map((t) => (t.role === 'primary' ? { ...t, role: 'secondary' as const } : t));
 		}
+		const name = staffList.find((s) => s.id === teamAddInstructorId)?.name;
+		teamDraft = [...next, { instructor_id: teamAddInstructorId, role: teamAddRole, instructor_name: name }];
+		teamAddInstructorId = '';
+		teamAddRole = 'secondary';
 	}
 
-	async function handleRemoveTeamInstructor(instructorId: string) {
-		if (!currentSubject.id) return;
-		try {
-			await removeSubjectDefaultInstructor(currentSubject.id, instructorId);
-			await loadTeamInstructors(currentSubject.id);
-		} catch (e) {
-			toast.error('ลบครูร่วมไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
-		}
+	function removeFromTeamDraft(instructorId: string) {
+		teamDraft = teamDraft.filter((t) => t.instructor_id !== instructorId);
+	}
+
+	function toggleTeamRole(instructorId: string) {
+		const row = teamDraft.find((t) => t.instructor_id === instructorId);
+		if (!row) return;
+		const nextRole: 'primary' | 'secondary' = row.role === 'primary' ? 'secondary' : 'primary';
+		teamDraft = teamDraft.map((t) => {
+			if (t.instructor_id === instructorId) return { ...t, role: nextRole };
+			// Demote any other primary when promoting someone else
+			if (nextRole === 'primary' && t.role === 'primary') return { ...t, role: 'secondary' as const };
+			return t;
+		});
 	}
 
 	// Version grouping: compute map of code -> versions (all versions of that code
@@ -309,6 +322,7 @@
 		isEditing = false;
 		isNewVersion = false;
 		showDialog = true;
+		resetTeamDraft();
 	}
 
 	function handleOpenEdit(subject: Subject) {
@@ -316,9 +330,8 @@
 		isEditing = true;
 		isNewVersion = false;
 		showDialog = true;
-		teamInstructors = [];
-		addInstructorId = '';
-		if (subject.id) void loadTeamInstructors(subject.id);
+		resetTeamDraft();
+		if (subject.id) void hydrateTeamDraftFor(subject.id);
 	}
 
 	function handleOpenNewVersion(subject: Subject) {
@@ -346,6 +359,11 @@
 			description: subject.description ?? '',
 			is_active: true
 		};
+
+		// Carry over the existing subject's team to the new version so the catalog default
+		// is preserved across year rollovers (users can still edit before saving).
+		resetTeamDraft();
+		if (subject.id) void hydrateTeamDraftFor(subject.id);
 
 		isEditing = false; // CREATE mode so submit INSERTs
 		isNewVersion = true;
@@ -381,6 +399,13 @@
 
 			if (payload.credit === ('' as any)) payload.credit = null as any;
 			if (payload.hours_per_semester === ('' as any)) payload.hours_per_semester = null as any;
+
+			// Attach full team — backend replaces subject_default_instructors atomically.
+			// Empty array clears all defaults. Strip the instructor_name helper before send.
+			payload.default_instructors = teamDraft.map((t) => ({
+				instructor_id: t.instructor_id,
+				role: t.role
+			}));
 
 			console.log('Submitting Subject Payload:', payload);
 
@@ -447,6 +472,7 @@
 		if (isDeptScope && selectedGroupId) currentSubject.group_id = selectedGroupId;
 		isEditing = false;
 		isNewVersion = false;
+		resetTeamDraft();
 
 		editingCatalog = null;
 		catalogName = '';
@@ -1161,88 +1187,83 @@
 				<div class="space-y-2">
 					<Label
 						class="flex items-center gap-1"
-						title="ครูที่ระบบจะเลือกให้อัตโนมัติเมื่อสร้างคอร์ส (แก้ได้ภายหลังใน Course Planning)"
+						title="ทีมครูเริ่มต้นของวิชานี้ — เมื่อวิชาถูกเพิ่มเข้าห้องใด ทีมนี้จะถูกกำหนดให้อัตโนมัติทุกห้อง (แก้รายห้องได้ภายหลัง)"
 					>
-						ครูผู้สอนหลัก (Default)
+						ครูผู้สอน (ทีมเริ่มต้น)
 						<Info class="w-3 h-3 text-muted-foreground" />
 					</Label>
-					<Select.Root type="single" bind:value={currentSubject.default_instructor_id}>
-						<Select.Trigger class="truncate">
-							{(() => {
-								const st = staffList.find((s) => s.id === currentSubject.default_instructor_id);
-								return st ? st.name : 'เลือกครูผู้สอน';
-							})()}
-						</Select.Trigger>
-						<Select.Content class="max-h-[300px]">
-							<Select.Item value="">(ไม่ระบุ)</Select.Item>
-							{#each staffList as staff}
-								<Select.Item value={staff.id}>{staff.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				{#if isEditing && currentSubject.id}
-					<div class="space-y-2">
-						<Label
-							class="flex items-center gap-1"
-							title="ครูร่วมสอน (Team Teaching) — ใช้เป็นค่าเริ่มต้น เมื่อวิชานี้ถูกเพิ่มเข้าห้องใดก็ตาม ครูทั้งทีมจะถูกกำหนดอัตโนมัติ (แก้รายห้องได้ภายหลัง)"
-						>
-							ครูร่วมสอน (Team Teaching Default)
-							<Info class="w-3 h-3 text-muted-foreground" />
-						</Label>
-						<div class="flex gap-2">
-							<Select.Root type="single" bind:value={addInstructorId}>
-								<Select.Trigger class="flex-1 truncate">
-									{(() => {
-										const st = staffList.find((s) => s.id === addInstructorId);
-										return st ? st.name : 'เลือกครูที่จะเพิ่ม';
-									})()}
-								</Select.Trigger>
-								<Select.Content class="max-h-[300px]">
-									{#each staffList.filter((s) => s.id !== currentSubject.default_instructor_id && !teamInstructors.some((t) => t.instructor_id === s.id)) as staff}
-										<Select.Item value={staff.id}>{staff.name}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-							<Button
-								type="button"
-								variant="outline"
-								onclick={handleAddTeamInstructor}
-								disabled={!addInstructorId}
-							>
-								เพิ่ม
-							</Button>
-						</div>
-						{#if teamLoading}
-							<p class="text-[11px] text-muted-foreground">กำลังโหลด...</p>
-						{:else if teamInstructors.length === 0}
-							<p class="text-[11px] text-muted-foreground">
-								ยังไม่มีครูร่วม — เพิ่มได้เพื่อให้ระบบผูกครูทั้งทีมให้ทุกห้องอัตโนมัติ
-							</p>
-						{:else}
-							<div class="flex flex-wrap gap-1.5">
-								{#each teamInstructors as t (t.id)}
-									<Badge variant="secondary" class="gap-1 pr-1">
-										<span>{t.instructor_name ?? t.instructor_id}</span>
-										<button
-											type="button"
-											class="ml-1 rounded hover:bg-destructive/20 p-0.5"
-											onclick={() => handleRemoveTeamInstructor(t.instructor_id)}
-											aria-label="ลบครูร่วม"
-										>
-											<Trash2 class="h-3 w-3" />
-										</button>
-									</Badge>
+					<div class="flex gap-2">
+						<Select.Root type="single" bind:value={teamAddInstructorId}>
+							<Select.Trigger class="flex-1 truncate">
+								{(() => {
+									const st = staffList.find((s) => s.id === teamAddInstructorId);
+									return st ? st.name : 'เลือกครู';
+								})()}
+							</Select.Trigger>
+							<Select.Content class="max-h-[300px]">
+								{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff}
+									<Select.Item value={staff.id}>{staff.name}</Select.Item>
 								{/each}
-							</div>
-						{/if}
+							</Select.Content>
+						</Select.Root>
+						<Select.Root type="single" bind:value={teamAddRole}>
+							<Select.Trigger class="w-[130px]">
+								{teamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="primary">ครูหลัก</Select.Item>
+								<Select.Item value="secondary">ครูร่วม</Select.Item>
+							</Select.Content>
+						</Select.Root>
+						<Button
+							type="button"
+							variant="outline"
+							onclick={addToTeamDraft}
+							disabled={!teamAddInstructorId}
+						>
+							เพิ่ม
+						</Button>
 					</div>
-				{:else if !isEditing}
-					<p class="text-[11px] text-muted-foreground">
-						บันทึกวิชาก่อน แล้วกลับมาแก้ไขเพื่อเพิ่มครูร่วมสอน (ทีม)
-					</p>
-				{/if}
+					{#if teamLoading}
+						<p class="text-[11px] text-muted-foreground">กำลังโหลด...</p>
+					{:else if teamDraft.length === 0}
+						<p class="text-[11px] text-muted-foreground">
+							ยังไม่มีครู — เลือกและเพิ่มได้ เมื่อบันทึกจะผูกครูทั้งทีมให้ทุกห้องที่เรียนวิชานี้อัตโนมัติ
+						</p>
+					{:else}
+						<div class="flex flex-wrap gap-1.5">
+							{#each teamDraft as t (t.instructor_id)}
+								<Badge
+									variant={t.role === 'primary' ? 'default' : 'secondary'}
+									class="gap-1 pr-1"
+								>
+									<button
+										type="button"
+										class="cursor-pointer hover:underline"
+										onclick={() => toggleTeamRole(t.instructor_id)}
+										title="คลิกเพื่อสลับ ครูหลัก ↔ ครูร่วม"
+									>
+										{t.role === 'primary' ? '⭐' : ''}
+										{t.instructor_name ??
+											staffList.find((s) => s.id === t.instructor_id)?.name ??
+											t.instructor_id}
+									</button>
+									<button
+										type="button"
+										class="ml-1 rounded hover:bg-destructive/20 p-0.5"
+										onclick={() => removeFromTeamDraft(t.instructor_id)}
+										aria-label="ลบครู"
+									>
+										<Trash2 class="h-3 w-3" />
+									</button>
+								</Badge>
+							{/each}
+						</div>
+						<p class="text-[10px] text-muted-foreground">
+							⭐ = ครูหลัก — คลิกชื่อเพื่อสลับ ครูหลัก ↔ ครูร่วม
+						</p>
+					{/if}
+				</div>
 
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-2">
@@ -1706,26 +1727,77 @@
 					<h3 class="text-sm font-semibold text-foreground border-b pb-1">ครูและคาบเรียน</h3>
 
 					<div class="space-y-2">
-						<Label class="flex items-center gap-1">
-							ครูผู้สอนหลัก (Default)
+						<Label
+							class="flex items-center gap-1"
+							title="ทีมครูเริ่มต้นของวิชานี้ — เมื่อวิชาถูกเพิ่มเข้าห้องใด ทีมนี้จะถูกกำหนดให้อัตโนมัติทุกห้อง (แก้รายห้องได้ภายหลัง)"
+						>
+							ครูผู้สอน (ทีมเริ่มต้น)
 							<Info class="w-3 h-3 text-muted-foreground" />
 						</Label>
-						<Select.Root type="single" bind:value={currentSubject.default_instructor_id}>
-							<Select.Trigger class="truncate">
-								{(() => {
-									const st = staffList.find(
-										(s) => s.id === currentSubject.default_instructor_id
-									);
-									return st ? st.name : 'เลือกครูผู้สอน';
-								})()}
-							</Select.Trigger>
-							<Select.Content class="max-h-[300px]">
-								<Select.Item value="">(ไม่ระบุ)</Select.Item>
-								{#each staffList as staff}
-									<Select.Item value={staff.id}>{staff.name}</Select.Item>
+						<div class="flex gap-2">
+							<Select.Root type="single" bind:value={teamAddInstructorId}>
+								<Select.Trigger class="flex-1 truncate">
+									{(() => {
+										const st = staffList.find((s) => s.id === teamAddInstructorId);
+										return st ? st.name : 'เลือกครู';
+									})()}
+								</Select.Trigger>
+								<Select.Content class="max-h-[300px]">
+									{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff}
+										<Select.Item value={staff.id}>{staff.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							<Select.Root type="single" bind:value={teamAddRole}>
+								<Select.Trigger class="w-[130px]">
+									{teamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="primary">ครูหลัก</Select.Item>
+									<Select.Item value="secondary">ครูร่วม</Select.Item>
+								</Select.Content>
+							</Select.Root>
+							<Button
+								type="button"
+								variant="outline"
+								onclick={addToTeamDraft}
+								disabled={!teamAddInstructorId}
+							>
+								เพิ่ม
+							</Button>
+						</div>
+						{#if teamDraft.length === 0}
+							<p class="text-[11px] text-muted-foreground">ยังไม่มีครู — เลือกและเพิ่มได้</p>
+						{:else}
+							<div class="flex flex-wrap gap-1.5">
+								{#each teamDraft as t (t.instructor_id)}
+									<Badge
+										variant={t.role === 'primary' ? 'default' : 'secondary'}
+										class="gap-1 pr-1"
+									>
+										<button
+											type="button"
+											class="cursor-pointer hover:underline"
+											onclick={() => toggleTeamRole(t.instructor_id)}
+											title="คลิกเพื่อสลับ ครูหลัก ↔ ครูร่วม"
+										>
+											{t.role === 'primary' ? '⭐' : ''}
+											{t.instructor_name ??
+												staffList.find((s) => s.id === t.instructor_id)?.name ??
+												t.instructor_id}
+										</button>
+										<button
+											type="button"
+											class="ml-1 rounded hover:bg-destructive/20 p-0.5"
+											onclick={() => removeFromTeamDraft(t.instructor_id)}
+											aria-label="ลบครู"
+										>
+											<Trash2 class="h-3 w-3" />
+										</button>
+									</Badge>
 								{/each}
-							</Select.Content>
-						</Select.Root>
+							</div>
+						{/if}
 					</div>
 
 					<div class="grid grid-cols-2 gap-4">
