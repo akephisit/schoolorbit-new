@@ -377,7 +377,7 @@ pub async fn list_study_plan_subjects(
     let mut sql = String::from(
         "SELECT sps.id, sps.study_plan_version_id, sps.grade_level_id, sps.term,
                 sps.subject_id,
-                COALESCE(s.code, sps.subject_code) as subject_code,
+                s.code as subject_code,
                 sps.display_order, sps.is_required, sps.metadata,
                 sps.created_at, sps.updated_at,
                 s.name_th as subject_name_th,
@@ -413,7 +413,7 @@ pub async fn list_study_plan_subjects(
         sql.push_str(&format!(" AND sps.term = ${idx}"));
     }
 
-    sql.push_str(" ORDER BY sps.display_order, COALESCE(s.code, sps.subject_code)");
+    sql.push_str(" ORDER BY sps.display_order, s.code");
 
     let mut q = sqlx::query_as::<_, StudyPlanSubject>(&sql);
     if let Some(version_id) = query.study_plan_version_id { q = q.bind(version_id); }
