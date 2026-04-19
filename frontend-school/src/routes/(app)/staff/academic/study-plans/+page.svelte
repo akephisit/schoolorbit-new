@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import {
 		listStudyPlans,
 		createStudyPlan,
@@ -15,9 +16,14 @@
 		lookupAcademicYears,
 		lookupGradeLevels,
 		listSubjects,
+		listPlanActivities,
+		addPlanActivity,
+		updatePlanActivity,
+		deletePlanActivity,
 		type StudyPlan,
 		type StudyPlanVersion,
 		type StudyPlanSubject,
+		type StudyPlanVersionActivity,
 		type LookupItem,
 		type Subject
 	} from '$lib/api/academic';
@@ -353,6 +359,127 @@
 		}
 	}
 
+	// ==========================================
+	// Plan Activities (template)
+	// ==========================================
+	let planActivities = $state<StudyPlanVersionActivity[]>([]);
+	let loadingPlanActivities = $state(false);
+	let showPlanActivityDialog = $state(false);
+	let editingPlanActivity = $state<StudyPlanVersionActivity | null>(null);
+	let paName = $state('');
+	let paType = $state<'scout' | 'club' | 'guidance' | 'social' | 'other'>('scout');
+	let paDescription = $state('');
+	let paPeriods = $state(1);
+	let paSchedulingMode = $state<'synchronized' | 'independent'>('synchronized');
+	let paGradeLevelIds = $state<string[]>([]);
+	let paIsRequired = $state(true);
+
+	const PA_TYPE_LABELS: Record<string, string> = {
+		scout: 'ลูกเสือ / เนตรนารี / ยุวกาชาด',
+		club: 'ชุมนุม',
+		guidance: 'แนะแนว',
+		social: 'กิจกรรมเพื่อสังคม',
+		other: 'อื่น ๆ'
+	};
+
+	async function loadPlanActivitiesForVersion(versionId: string) {
+		if (!versionId) {
+			planActivities = [];
+			return;
+		}
+		loadingPlanActivities = true;
+		try {
+			const res = await listPlanActivities(versionId);
+			planActivities = res.data ?? [];
+		} catch {
+			planActivities = [];
+		} finally {
+			loadingPlanActivities = false;
+		}
+	}
+
+	function openCreatePlanActivity() {
+		editingPlanActivity = null;
+		paName = '';
+		paType = 'scout';
+		paDescription = '';
+		paPeriods = 1;
+		paSchedulingMode = 'synchronized';
+		paGradeLevelIds = [];
+		paIsRequired = true;
+		showPlanActivityDialog = true;
+	}
+
+	function openEditPlanActivity(pa: StudyPlanVersionActivity) {
+		editingPlanActivity = pa;
+		paName = pa.name;
+		paType = pa.activity_type;
+		paDescription = pa.description ?? '';
+		paPeriods = pa.periods_per_week;
+		paSchedulingMode = pa.scheduling_mode;
+		paGradeLevelIds = pa.allowed_grade_level_ids ?? [];
+		paIsRequired = pa.is_required;
+		showPlanActivityDialog = true;
+	}
+
+	async function handleSavePlanActivity() {
+		if (!paName.trim()) {
+			toast.error('กรุณาระบุชื่อ');
+			return;
+		}
+
+		const versionId = selectedVersion?.id;
+		if (!versionId) {
+			toast.error('กรุณาเลือก version');
+			return;
+		}
+
+		const payload = {
+			activity_type: paType,
+			name: paName.trim(),
+			description: paDescription || undefined,
+			periods_per_week: paPeriods,
+			scheduling_mode: paSchedulingMode,
+			allowed_grade_level_ids: paGradeLevelIds.length > 0 ? paGradeLevelIds : undefined,
+			is_required: paIsRequired
+		};
+
+		try {
+			if (editingPlanActivity) {
+				await updatePlanActivity(editingPlanActivity.id, payload);
+				toast.success('บันทึกแล้ว');
+			} else {
+				await addPlanActivity(versionId, payload);
+				toast.success('เพิ่มกิจกรรมแล้ว');
+			}
+			showPlanActivityDialog = false;
+			await loadPlanActivitiesForVersion(versionId);
+		} catch {
+			toast.error('บันทึกไม่สำเร็จ');
+		}
+	}
+
+	async function handleDeletePlanActivity(pa: StudyPlanVersionActivity) {
+		if (!confirm(`ลบกิจกรรม "${pa.name}"?`)) return;
+		try {
+			await deletePlanActivity(pa.id);
+			toast.success('ลบแล้ว');
+			const versionId = selectedVersion?.id;
+			if (versionId) await loadPlanActivitiesForVersion(versionId);
+		} catch {
+			toast.error('ลบไม่สำเร็จ');
+		}
+	}
+
+	// Reload plan activities whenever selectedVersion changes
+	$effect(() => {
+		if (selectedVersion?.id) {
+			loadPlanActivitiesForVersion(selectedVersion.id);
+		} else {
+			planActivities = [];
+		}
+	});
+
 	onMount(() => {
 		initData();
 	});
@@ -376,10 +503,11 @@
 
 	<!-- Tabs -->
 	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List class="grid w-full grid-cols-3">
+		<Tabs.List class="grid w-full grid-cols-4">
 			<Tabs.Trigger value="plans">แผนการเรียน</Tabs.Trigger>
 			<Tabs.Trigger value="versions">เวอร์ชัน</Tabs.Trigger>
 			<Tabs.Trigger value="subjects">รายวิชา</Tabs.Trigger>
+			<Tabs.Trigger value="activities">กิจกรรมพัฒนาผู้เรียน</Tabs.Trigger>
 		</Tabs.List>
 
 		<!-- Plans Tab -->
@@ -624,6 +752,82 @@
 							{/if}
 						</Table.Body>
 					</Table.Root>
+				</div>
+			{:else}
+				<div class="text-center text-muted-foreground p-8">
+					กรุณาเลือกเวอร์ชันจากแท็บ "เวอร์ชัน"
+				</div>
+			{/if}
+		</Tabs.Content>
+
+		<!-- Plan Activities Tab -->
+		<Tabs.Content value="activities" class="space-y-4">
+			{#if selectedVersion}
+				<div class="bg-muted/50 p-4 rounded-lg">
+					<div class="font-medium">
+						เวอร์ชัน: {selectedVersion.version_name}
+						{#if selectedVersion.study_plan_name_th}
+							({selectedVersion.study_plan_name_th})
+						{/if}
+					</div>
+				</div>
+
+				<div class="mt-2">
+					<div class="flex items-center justify-between mb-3">
+						<h3 class="font-semibold text-lg">กิจกรรมพัฒนาผู้เรียน (แม่แบบหลักสูตร)</h3>
+						<Button size="sm" onclick={openCreatePlanActivity}>
+							<Plus class="w-4 h-4 mr-1" />
+							เพิ่มกิจกรรม
+						</Button>
+					</div>
+
+					<p class="text-xs text-muted-foreground mb-3">
+						กำหนดกิจกรรมที่หลักสูตรนี้ต้องมี (เช่น ลูกเสือ, ชุมนุม, แนะแนว) แล้ว
+						<strong>Generate จากหลักสูตร</strong> ในหน้ากิจกรรม เพื่อสร้าง slot ในแต่ละเทอม
+					</p>
+
+					{#if loadingPlanActivities}
+						<p class="text-sm text-muted-foreground">กำลังโหลด...</p>
+					{:else if planActivities.length === 0}
+						<div
+							class="text-center py-6 text-sm text-muted-foreground border rounded-lg border-dashed"
+						>
+							ยังไม่มีกิจกรรม — กดปุ่ม "เพิ่มกิจกรรม" เพื่อเริ่ม
+						</div>
+					{:else}
+						<div class="divide-y rounded-lg border">
+							{#each planActivities as pa (pa.id)}
+								<div class="flex items-center gap-3 px-3 py-2">
+									<div class="flex-1 min-w-0">
+										<div class="flex items-center gap-2 flex-wrap">
+											<Badge variant="secondary">{PA_TYPE_LABELS[pa.activity_type]}</Badge>
+											<span class="font-medium text-sm">{pa.name}</span>
+											{#if pa.is_required}
+												<Badge variant="outline" class="text-[10px]">บังคับ</Badge>
+											{/if}
+										</div>
+										<div class="text-xs text-muted-foreground mt-1">
+											{pa.periods_per_week} คาบ/สัปดาห์ ·
+											{pa.scheduling_mode === 'independent'
+												? 'แต่ละห้องจัดเอง'
+												: 'จัดพร้อมกันทุกห้อง'}
+										</div>
+									</div>
+									<Button variant="ghost" size="icon" onclick={() => openEditPlanActivity(pa)}>
+										<Pencil class="w-4 h-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="text-destructive"
+										onclick={() => handleDeletePlanActivity(pa)}
+									>
+										<Trash2 class="w-4 h-4" />
+									</Button>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{:else}
 				<div class="text-center text-muted-foreground p-8">
@@ -878,6 +1082,70 @@
 			<Button onclick={handleSubmitSubjects} disabled={submitting || selectedSubjects.length === 0}>
 				{submitting ? 'กำลังเพิ่ม...' : `เพิ่มรายวิชา (${selectedSubjects.length})`}
 			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Plan Activity Dialog -->
+<Dialog bind:open={showPlanActivityDialog}>
+	<DialogContent class="sm:max-w-[500px]">
+		<DialogHeader>
+			<DialogTitle>{editingPlanActivity ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม (แม่แบบ)'}</DialogTitle>
+			<DialogDescription>กำหนดข้อมูลกิจกรรมพัฒนาผู้เรียนในหลักสูตร</DialogDescription>
+		</DialogHeader>
+
+		<div class="space-y-3 py-2">
+			<div class="space-y-1">
+				<Label>ชื่อ <span class="text-destructive">*</span></Label>
+				<Input bind:value={paName} placeholder="เช่น ลูกเสือ / เนตรนารี, ชุมนุม ม.ต้น" />
+			</div>
+
+			<div class="grid grid-cols-2 gap-3">
+				<div class="space-y-1">
+					<Label>ประเภท</Label>
+					<Select.Root type="single" bind:value={paType}>
+						<Select.Trigger class="w-full">{PA_TYPE_LABELS[paType]}</Select.Trigger>
+						<Select.Content>
+							{#each Object.entries(PA_TYPE_LABELS) as [v, label]}
+								<Select.Item value={v}>{label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="space-y-1">
+					<Label>รูปแบบจัดตาราง</Label>
+					<Select.Root type="single" bind:value={paSchedulingMode}>
+						<Select.Trigger class="w-full">
+							{paSchedulingMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="synchronized">จัดพร้อมกันทุกห้อง</Select.Item>
+							<Select.Item value="independent">แต่ละห้องจัดเอง</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-2 gap-3">
+				<div class="space-y-1">
+					<Label>คาบ/สัปดาห์</Label>
+					<Input type="number" min={1} max={10} bind:value={paPeriods} />
+				</div>
+				<div class="space-y-1 flex items-center gap-2 pt-6">
+					<Checkbox bind:checked={paIsRequired} id="pa-required" />
+					<Label for="pa-required" class="cursor-pointer">บังคับ</Label>
+				</div>
+			</div>
+
+			<div class="space-y-1">
+				<Label>คำอธิบาย</Label>
+				<Textarea bind:value={paDescription} rows={2} />
+			</div>
+		</div>
+
+		<DialogFooter>
+			<Button variant="outline" onclick={() => (showPlanActivityDialog = false)}>ยกเลิก</Button>
+			<Button onclick={handleSavePlanActivity}>บันทึก</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
