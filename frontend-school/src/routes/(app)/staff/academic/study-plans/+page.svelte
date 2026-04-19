@@ -428,7 +428,7 @@
 			(a) =>
 				a.activity_catalog_id === id &&
 				(a.catalog_grade_level_ids ?? []).includes(addTargetGradeId) &&
-				(!a.catalog_term || a.catalog_term === addTerm)
+				(!a.term || a.term === addTerm)
 		);
 	}
 
@@ -454,7 +454,7 @@
 		planActivities.filter(
 			(a) =>
 				(a.catalog_grade_level_ids ?? []).includes(addTargetGradeId) &&
-				(!a.catalog_term || a.catalog_term === addTerm)
+				(!a.term || a.term === addTerm)
 		)
 	);
 
@@ -530,7 +530,11 @@
 
 			const activityItems = pendingQueue.filter((q) => q.type === 'activity');
 			for (const a of activityItems) {
-				await addPlanActivity(selectedVersion.id, { activity_catalog_id: a.id });
+				// Pin the term in the plan at the term user selected when adding.
+				await addPlanActivity(selectedVersion.id, {
+					activity_catalog_id: a.id,
+					term: a.target_term || null
+				});
 			}
 
 			toast.success(`เพิ่มเข้าหลักสูตร ${pendingQueue.length} รายการแล้ว`);
@@ -585,7 +589,7 @@
 		}
 		for (const a of planActivities) {
 			const allowed = a.catalog_grade_level_ids ?? [];
-			const at = a.catalog_term;
+			const at = a.term;
 			for (const g of planGradeLevels) {
 				if (allowed.length > 0 && !allowed.includes(g.id)) continue;
 				if (at === null || at === undefined || at === '') {

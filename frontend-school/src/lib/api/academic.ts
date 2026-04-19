@@ -1013,6 +1013,8 @@ export interface StudyPlanVersionActivity {
     id: string;
     study_plan_version_id: string;
     activity_catalog_id: string;
+    /** Pinned term in this plan (snapshot จาก catalog ตอน add). null = ทุกเทอม. */
+    term?: string | null;
     display_order: number;
     created_at: string;
     updated_at: string;
@@ -1023,7 +1025,7 @@ export interface StudyPlanVersionActivity {
     catalog_description?: string;
     catalog_periods_per_week?: number;
     catalog_scheduling_mode?: string;
-    catalog_term?: string;
+    catalog_term?: string; // original catalog.term (for reference/badge only)
     catalog_grade_level_ids?: string[];
 }
 
@@ -1033,6 +1035,8 @@ export const listPlanActivities = async (versionId: string): Promise<{ data: Stu
 
 export const addPlanActivity = async (versionId: string, data: {
     activity_catalog_id: string;
+    /** Override term. Omit to snapshot from catalog.term at insert time. */
+    term?: string | null;
     display_order?: number;
 }) => {
     return await fetchApi(`/api/academic/study-plan-versions/${versionId}/activities`, {
@@ -1042,6 +1046,8 @@ export const addPlanActivity = async (versionId: string, data: {
 };
 
 export const updatePlanActivity = async (id: string, data: Partial<{
+    /** null = ทุกเทอม (always overwrites — caller pass existing value to preserve). */
+    term: string | null;
     display_order: number;
 }>) => {
     return await fetchApi(`/api/academic/study-plan-activities/${id}`, {

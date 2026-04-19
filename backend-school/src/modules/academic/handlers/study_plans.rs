@@ -695,15 +695,22 @@ pub async fn add_plan_activity(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
+    // Snapshot term from catalog at insert time (user can override via req.term).
+    // `req.term` is Option<String> — None = take from catalog, Some = explicit override.
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"INSERT INTO study_plan_version_activities
-            (study_plan_version_id, activity_catalog_id, display_order)
-           VALUES ($1, $2, COALESCE($3, 0))
+            (study_plan_version_id, activity_catalog_id, term, display_order)
+           SELECT $1, ac.id,
+               COALESCE($4, ac.term),  -- user-supplied overrides catalog snapshot
+               COALESCE($3, 0)
+           FROM activity_catalog ac
+           WHERE ac.id = $2
            RETURNING *"#
     )
     .bind(version_id)
     .bind(req.activity_catalog_id)
     .bind(req.display_order)
+    .bind(&req.term)
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
@@ -728,12 +735,16 @@ pub async fn update_plan_activity(
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"UPDATE study_plan_version_activities SET
             display_order = COALESCE($2, display_order),
+            -- term: null = ทุกเทอม (meaningful state); always overwrites. Caller passes
+            -- existing value to preserve (mirror pattern of subjects.term update).
+            term = $3,
             updated_at = NOW()
            WHERE id = $1
            RETURNING *"#
     )
     .bind(id)
     .bind(req.display_order)
+    .bind(&req.term)
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::NotFound(e.to_string()))?;

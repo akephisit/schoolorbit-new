@@ -192,6 +192,9 @@ pub struct StudyPlanVersionActivity {
     pub id: Uuid,
     pub study_plan_version_id: Uuid,
     pub activity_catalog_id: Uuid,
+    /// Snapshot from activity_catalog.term at add time. null = ทุกเทอม.
+    /// Pinned in the plan — editing catalog term does NOT change existing plan rows.
+    pub term: Option<String>,
     pub display_order: i32,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -223,11 +226,16 @@ pub struct StudyPlanVersionActivity {
 #[derive(Debug, Deserialize)]
 pub struct CreatePlanActivityRequest {
     pub activity_catalog_id: Uuid,
+    /// Override term for this plan. Omit to snapshot from catalog.term at insert time.
+    pub term: Option<String>,
     pub display_order: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdatePlanActivityRequest {
+    /// Pinned term — null means "ทุกเทอม" (always overwrites; no "keep old" semantic).
+    /// Caller should pass the existing value to preserve.
+    pub term: Option<String>,
     pub display_order: Option<i32>,
 }
 
