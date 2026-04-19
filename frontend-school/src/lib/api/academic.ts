@@ -621,22 +621,24 @@ export const generateCoursesFromPlan = async (data: {
 
 export interface ActivitySlot {
     id: string;
-    name: string;
-    description?: string;
-    activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
+    activity_catalog_id: string; // FK to specific catalog version (template snapshot)
     semester_id: string;
-    allowed_grade_level_ids?: string[];
     registration_type: 'self' | 'assigned';
     teacher_reg_open: boolean;
     student_reg_open: boolean;
     student_reg_start?: string;
     student_reg_end?: string;
-    periods_per_week: number;
-    scheduling_mode: 'synchronized' | 'independent';
-    source_plan_activity_id?: string;
     is_active: boolean;
     created_at: string;
-    // joined
+    // Live-linked from activity_catalog (read-only — edit at คลังกิจกรรม).
+    // Backend always JOINs, so these are present even though DB model is via FK.
+    name: string;
+    description?: string;
+    activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
+    periods_per_week: number;
+    scheduling_mode: 'synchronized' | 'independent';
+    allowed_grade_level_ids?: string[];
+    // Other joins
     semester_name?: string;
     group_count?: number;
     total_members?: number;
@@ -680,23 +682,16 @@ export const listActivitySlots = async (filter: {
     return await fetchApi(`/api/academic/activity-slots?${params}`);
 };
 
-export const createActivitySlot = async (data: {
-    name: string;
-    description?: string;
-    activity_type: string;
-    semester_id: string;
-    allowed_grade_level_ids?: string[];
+// Slots must come from plan via generate_courses_from_plan — no standalone creation.
+// Only semester-specific fields can be updated (template fields live in activity_catalog).
+export const updateActivitySlot = async (id: string, data: {
     registration_type?: string;
-    periods_per_week?: number;
-    scheduling_mode?: string;
+    teacher_reg_open?: boolean;
+    student_reg_open?: boolean;
+    student_reg_start?: string;
+    student_reg_end?: string;
+    is_active?: boolean;
 }) => {
-    return await fetchApi('/api/academic/activity-slots', {
-        method: 'POST',
-        body: JSON.stringify(data)
-    });
-};
-
-export const updateActivitySlot = async (id: string, data: Partial<ActivitySlot>) => {
     return await fetchApi(`/api/academic/activity-slots/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data)
@@ -1018,12 +1013,11 @@ export interface StudyPlanVersionActivity {
     id: string;
     study_plan_version_id: string;
     activity_catalog_id: string;
-    allowed_grade_level_ids?: string[];
     display_order: number;
     created_at: string;
     updated_at: string;
 
-    // Joined from catalog
+    // Joined from catalog (grade scope comes from catalog — no plan override)
     catalog_name?: string;
     catalog_activity_type?: string;
     catalog_description?: string;
@@ -1039,7 +1033,6 @@ export const listPlanActivities = async (versionId: string): Promise<{ data: Stu
 
 export const addPlanActivity = async (versionId: string, data: {
     activity_catalog_id: string;
-    allowed_grade_level_ids?: string[];
     display_order?: number;
 }) => {
     return await fetchApi(`/api/academic/study-plan-versions/${versionId}/activities`, {
@@ -1049,7 +1042,6 @@ export const addPlanActivity = async (versionId: string, data: {
 };
 
 export const updatePlanActivity = async (id: string, data: Partial<{
-    allowed_grade_level_ids: string[];
     display_order: number;
 }>) => {
     return await fetchApi(`/api/academic/study-plan-activities/${id}`, {
@@ -1065,6 +1057,7 @@ export const updatePlanActivity = async (id: string, data: Partial<{
 export interface ActivityCatalog {
     id: string;
     name: string;
+    start_academic_year_id: string; // version key — name เดียวมีหลาย version แยกตามปี
     activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
     description?: string;
     periods_per_week: number;
@@ -1082,6 +1075,7 @@ export const listActivityCatalog = async (): Promise<{ data: ActivityCatalog[] }
 
 export const createActivityCatalog = async (data: {
     name: string;
+    start_academic_year_id: string;
     activity_type: string;
     description?: string;
     periods_per_week?: number;
