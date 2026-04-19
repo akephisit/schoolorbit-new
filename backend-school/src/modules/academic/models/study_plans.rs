@@ -182,3 +182,53 @@ pub struct GenerateCoursesResponse {
     pub skipped_count: i32,
     pub message: String,
 }
+
+// ==========================================
+// Study Plan Version Activities (template กิจกรรมพัฒนาผู้เรียน)
+// ==========================================
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct StudyPlanVersionActivity {
+    pub id: Uuid,
+    pub study_plan_version_id: Uuid,
+    pub activity_type: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub periods_per_week: i32,
+    pub scheduling_mode: String,
+    pub allowed_grade_level_ids: Option<serde_json::Value>,
+    pub is_required: bool,
+    pub display_order: i32,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreatePlanActivityRequest {
+    pub activity_type: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub periods_per_week: Option<i32>,
+    pub scheduling_mode: Option<String>,
+    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
+    pub is_required: Option<bool>,
+    pub display_order: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePlanActivityRequest {
+    pub activity_type: Option<String>,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub periods_per_week: Option<i32>,
+    pub scheduling_mode: Option<String>,
+    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
+    pub is_required: Option<bool>,
+    pub display_order: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GenerateActivitiesFromPlanRequest {
+    pub study_plan_version_id: Uuid,
+    pub semester_id: Uuid,
+}

@@ -83,6 +83,18 @@ pub fn academic_routes() -> Router<AppState> {
         
         // Bulk: Generate Courses from Study Plan
         .route("/planning/generate-from-plan", post(handlers::study_plans::generate_courses_from_plan))
+
+        // Study Plan Activities (template)
+        .route("/study-plan-versions/{id}/activities",
+               get(handlers::study_plans::list_plan_activities)
+               .post(handlers::study_plans::add_plan_activity))
+        .route("/study-plan-activities/{id}",
+               put(handlers::study_plans::update_plan_activity)
+               .delete(handlers::study_plans::delete_plan_activity))
+
+        // Generate activities from plan
+        .route("/activities/generate-from-plan",
+               post(handlers::study_plans::generate_activities_from_plan))
         
         // Auto-Scheduling
         .route("/scheduling/auto-schedule", post(handlers::scheduling::auto_schedule_timetable))

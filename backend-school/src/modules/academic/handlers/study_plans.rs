@@ -602,7 +602,7 @@ pub async fn generate_courses_from_plan(
     }
     
     tx.commit().await?;
-    
+
     Ok(Json(json!({
         "success": true,
         "data": GenerateCoursesResponse {
@@ -610,5 +610,236 @@ pub async fn generate_courses_from_plan(
             skipped_count: skipped,
             message: format!("Added {} courses, skipped {} existing courses", added, skipped),
         }
+    })))
+}
+
+// ============================================
+// Study Plan Version Activities CRUD
+// ============================================
+
+/// GET /api/academic/study-plan-versions/:id/activities
+pub async fn list_plan_activities(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(version_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let rows: Vec<StudyPlanVersionActivity> = sqlx::query_as(
+        "SELECT * FROM study_plan_version_activities
+         WHERE study_plan_version_id = $1
+         ORDER BY display_order, name"
+    )
+    .bind(version_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "success": true, "data": rows })))
+}
+
+/// POST /api/academic/study-plan-versions/:id/activities
+pub async fn add_plan_activity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(version_id): Path<Uuid>,
+    Json(req): Json<CreatePlanActivityRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let allowed = req.allowed_grade_level_ids
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+
+    let row: StudyPlanVersionActivity = sqlx::query_as(
+        r#"INSERT INTO study_plan_version_activities
+            (study_plan_version_id, activity_type, name, description,
+             periods_per_week, scheduling_mode, allowed_grade_level_ids,
+             is_required, display_order)
+           VALUES ($1, $2, $3, $4,
+                   COALESCE($5, 1),
+                   COALESCE($6, 'synchronized'),
+                   $7,
+                   COALESCE($8, true),
+                   COALESCE($9, 0))
+           RETURNING *"#
+    )
+    .bind(version_id)
+    .bind(&req.activity_type)
+    .bind(&req.name)
+    .bind(&req.description)
+    .bind(req.periods_per_week)
+    .bind(&req.scheduling_mode)
+    .bind(&allowed)
+    .bind(req.is_required)
+    .bind(req.display_order)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": row }))))
+}
+
+/// PUT /api/academic/study-plan-activities/:id
+pub async fn update_plan_activity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdatePlanActivityRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let allowed = req.allowed_grade_level_ids.as_ref()
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+
+    let row: StudyPlanVersionActivity = sqlx::query_as(
+        r#"UPDATE study_plan_version_activities SET
+            activity_type = COALESCE($2, activity_type),
+            name = COALESCE($3, name),
+            description = COALESCE($4, description),
+            periods_per_week = COALESCE($5, periods_per_week),
+            scheduling_mode = COALESCE($6, scheduling_mode),
+            allowed_grade_level_ids = COALESCE($7, allowed_grade_level_ids),
+            is_required = COALESCE($8, is_required),
+            display_order = COALESCE($9, display_order),
+            updated_at = NOW()
+           WHERE id = $1
+           RETURNING *"#
+    )
+    .bind(id)
+    .bind(&req.activity_type)
+    .bind(&req.name)
+    .bind(&req.description)
+    .bind(req.periods_per_week)
+    .bind(&req.scheduling_mode)
+    .bind(&allowed)
+    .bind(req.is_required)
+    .bind(req.display_order)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::NotFound(e.to_string()))?;
+
+    Ok(Json(json!({ "success": true, "data": row })))
+}
+
+/// DELETE /api/academic/study-plan-activities/:id
+pub async fn delete_plan_activity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    sqlx::query("DELETE FROM study_plan_version_activities WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "success": true })))
+}
+
+/// POST /api/academic/activities/generate-from-plan
+/// Body: { study_plan_version_id, semester_id }
+pub async fn generate_activities_from_plan(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<GenerateActivitiesFromPlanRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+
+    // Fetch all template activities for this plan version
+    let templates: Vec<StudyPlanVersionActivity> = sqlx::query_as(
+        "SELECT * FROM study_plan_version_activities
+         WHERE study_plan_version_id = $1
+         ORDER BY display_order, name"
+    )
+    .bind(req.study_plan_version_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let mut created = 0i32;
+    let mut skipped = 0i32;
+
+    for tpl in &templates {
+        // Skip if activity_slot with same source_plan_activity_id already exists in this semester
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(
+                SELECT 1 FROM activity_slots
+                WHERE source_plan_activity_id = $1 AND semester_id = $2
+            )"
+        )
+        .bind(tpl.id)
+        .bind(req.semester_id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or(false);
+
+        if exists {
+            skipped += 1;
+            continue;
+        }
+
+        sqlx::query(
+            r#"INSERT INTO activity_slots
+                (name, description, activity_type, semester_id, allowed_grade_level_ids,
+                 registration_type, periods_per_week, scheduling_mode,
+                 source_plan_activity_id, created_by)
+               VALUES ($1, $2, $3, $4, $5,
+                       'assigned', $6, $7,
+                       $8, $9)"#
+        )
+        .bind(&tpl.name)
+        .bind(&tpl.description)
+        .bind(&tpl.activity_type)
+        .bind(req.semester_id)
+        .bind(&tpl.allowed_grade_level_ids)
+        .bind(tpl.periods_per_week)
+        .bind(&tpl.scheduling_mode)
+        .bind(tpl.id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+        created += 1;
+    }
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "created": created,
+        "skipped": skipped,
+        "total_templates": templates.len()
     })))
 }
