@@ -365,7 +365,14 @@
 	// ── Helpers ────────────────────────────────────────
 	function gradeLevelDisplay(ids: string[] | undefined) {
 		if (!ids || ids.length === 0) return 'ทุกระดับชั้น';
-		return ids.map((id) => yearGradeLevels.find((g) => g.id === id)?.short_name ?? id).join(', ');
+		// Look up in the full school grade_levels list (not just current-year filter) —
+		// a catalog can target grades that don't have classrooms in the selected year.
+		// Drop orphan UUIDs (referenced grades that no longer exist in the lookup).
+		const names = ids
+			.map((id) => structure.levels.find((g) => g.id === id)?.short_name)
+			.filter((n): n is string => !!n);
+		if (names.length === 0) return 'ทุกระดับชั้น';
+		return names.join(', ');
 	}
 	async function confirmSwitchToIndependent() {
 		showSwitchModeDialog = false;
@@ -704,100 +711,54 @@
 	{/if}
 </div>
 
-<!-- Slot Create/Edit Dialog -->
+<!-- Slot Edit Dialog — template fields มาจาก catalog (อ่านเท่านั้น) -->
 <Dialog.Root bind:open={showSlotDialog}>
 	<Dialog.Content class="max-w-lg">
 		<Dialog.Header>
-			<Dialog.Title>{isSlotEdit ? 'แก้ไขช่องกิจกรรม' : 'สร้างช่องกิจกรรม'}</Dialog.Title>
+			<Dialog.Title>แก้ไขช่องกิจกรรม</Dialog.Title>
 		</Dialog.Header>
-		<div class="space-y-4 py-2">
-			<div class="space-y-1">
-				<Label>ชื่อช่อง <span class="text-destructive">*</span></Label>
-				<Input bind:value={slotName} placeholder="เช่น ชุมนุม ม.ต้น, ลูกเสือ ม.ปลาย" />
-			</div>
-			<div class="grid grid-cols-2 gap-3">
-				<div class="space-y-1">
-					<Label>ประเภท</Label>
-					<Select.Root type="single" bind:value={slotActivityType}>
-						<Select.Trigger class="w-full">{ACTIVITY_TYPE_LABELS[slotActivityType] ?? slotActivityType}</Select.Trigger>
-						<Select.Content>
-							{#each Object.entries(ACTIVITY_TYPE_LABELS) as [val, label]}
-								<Select.Item value={val}>{label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+
+		<div class="rounded-md border bg-muted/50 px-3 py-2 text-xs">
+			📎 ช่องนี้สร้างจากคลังกิจกรรม — <b>ชื่อ / ประเภท / คาบ / โหมด / ระดับชั้น</b> แก้ที่
+			<a href="/staff/academic/subjects" class="underline hover:text-primary">คลังรายวิชา → tab กิจกรรม</a>
+		</div>
+
+		<div class="space-y-3 py-2">
+			<!-- Read-only summary of template fields -->
+			<div class="rounded-md border p-3 space-y-2 bg-background">
+				<div class="flex items-center gap-2 text-sm">
+					<span class="font-semibold">{slotName}</span>
+					<Badge variant="secondary">{ACTIVITY_TYPE_LABELS[slotActivityType] ?? slotActivityType}</Badge>
 				</div>
-				{#if slotSchedulingMode !== 'independent'}
-					<div class="space-y-1">
-						<Label>การรับสมาชิก</Label>
-						<Select.Root type="single" bind:value={slotRegistrationType}>
-							<Select.Trigger class="w-full">{slotRegistrationType === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="assigned">ครู/admin จัดสรร</Select.Item>
-								<Select.Item value="self">นักเรียนเลือกเอง</Select.Item>
-							</Select.Content>
-						</Select.Root>
+				<div class="text-xs text-muted-foreground space-y-1">
+					<div>
+						<span class="text-foreground">ระดับชั้น:</span>
+						{gradeLevelDisplay(slotAllowedGradeLevelIds)}
 					</div>
-				{/if}
+					<div>
+						<span class="text-foreground">คาบ/สัปดาห์:</span> {slotPeriodsPerWeek}
+						· <span class="text-foreground">โหมด:</span>
+						{slotSchedulingMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
+					</div>
+					{#if slotDescription}
+						<div>{slotDescription}</div>
+					{/if}
+				</div>
 			</div>
-			{#if !isSlotEdit}
+
+			<!-- Editable semester-specific fields -->
+			{#if slotSchedulingMode !== 'independent'}
 				<div class="space-y-1">
-					<Label>ภาคเรียน <span class="text-destructive">*</span></Label>
-					<Select.Root type="single" bind:value={slotSemesterId}>
-						<Select.Trigger class="w-full">{slotSemesterName}</Select.Trigger>
+					<Label>การรับสมาชิก</Label>
+					<Select.Root type="single" bind:value={slotRegistrationType}>
+						<Select.Trigger class="w-full">{slotRegistrationType === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}</Select.Trigger>
 						<Select.Content>
-							{#each yearSemesters as s}
-								<Select.Item value={s.id}>{s.name}</Select.Item>
-							{/each}
+							<Select.Item value="assigned">ครู/admin จัดสรร</Select.Item>
+							<Select.Item value="self">นักเรียนเลือกเอง</Select.Item>
 						</Select.Content>
 					</Select.Root>
 				</div>
 			{/if}
-			<div class="space-y-1">
-				<Label>ระดับชั้นที่รับ (ว่าง = ทุกระดับ)</Label>
-				<Popover.Root>
-					<Popover.Trigger class="w-full">
-						<Button variant="outline" class="w-full justify-between font-normal">
-							{#if slotAllowedGradeLevelIds.length > 0}
-								{slotAllowedGradeLevelIds.map((id) => yearGradeLevels.find((l) => l.id === id)?.short_name ?? id).join(', ')}
-							{:else}
-								<span class="text-muted-foreground">ทุกระดับชั้น</span>
-							{/if}
-							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-						</Button>
-					</Popover.Trigger>
-					<Popover.Content class="w-[--radix-popover-trigger-width] p-1 max-h-56 overflow-y-auto">
-						{#each yearGradeLevels as level}
-							{@const checked = slotAllowedGradeLevelIds.includes(level.id)}
-							<button type="button" class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
-								onclick={() => toggleSlotGrade(level.id)}>
-								<Check class="h-4 w-4 {checked ? 'opacity-100' : 'opacity-0'}" />
-								{level.name}
-							</button>
-						{/each}
-					</Popover.Content>
-				</Popover.Root>
-			</div>
-			<div class="grid grid-cols-2 gap-3">
-				<div class="space-y-1">
-					<Label>คาบ/สัปดาห์</Label>
-					<Input type="number" min={1} max={10} bind:value={slotPeriodsPerWeek} />
-				</div>
-				<div class="space-y-1">
-					<Label>รูปแบบจัดตาราง</Label>
-					<Select.Root type="single" bind:value={slotSchedulingMode}>
-						<Select.Trigger class="w-full">{slotSchedulingMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="synchronized">จัดพร้อมกันทุกห้อง</Select.Item>
-							<Select.Item value="independent">แต่ละห้องจัดเอง</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-			<div class="space-y-1">
-				<Label>คำอธิบาย</Label>
-				<Textarea bind:value={slotDescription} placeholder="รายละเอียดเพิ่มเติม..." rows={2} />
-			</div>
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => { showSlotDialog = false; }}>ยกเลิก</Button>
@@ -896,11 +857,18 @@
 	<Dialog.Content class="max-w-sm">
 		<Dialog.Header>
 			<Dialog.Title>ยืนยันการลบ</Dialog.Title>
-			<Dialog.Description>ลบช่อง "<strong>{deleteSlotTarget?.name}</strong>" รวมถึงกิจกรรม สมาชิก และรายการในตารางสอนทั้งหมด?</Dialog.Description>
+			<Dialog.Description>
+				ลบช่อง "<strong>{deleteSlotTarget?.name}</strong>"
+				รวมถึงกิจกรรม สมาชิก และรายการในตารางสอนทั้งหมด?
+			</Dialog.Description>
 		</Dialog.Header>
+		<div class="rounded-md border bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+			⚠️ ช่องนี้มาจากคลังกิจกรรมในหลักสูตร — หากลบแล้วกด "สร้างอัตโนมัติ" ที่หน้า planning ก็จะถูกสร้างกลับมา
+			<br />หากต้องการปิดแค่ภาคเรียนนี้ โปรดถอนออกจากหลักสูตรแทน
+		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => { showDeleteSlotDialog = false; }}>ยกเลิก</Button>
-			<Button variant="destructive" onclick={handleDeleteSlot}>ลบ</Button>
+			<Button variant="destructive" onclick={handleDeleteSlot}>ลบต่อไป</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
