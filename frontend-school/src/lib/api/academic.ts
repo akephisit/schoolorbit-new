@@ -969,6 +969,7 @@ export interface StudyPlanVersionActivity {
     allowed_grade_level_ids?: string[];
     is_required: boolean;
     display_order: number;
+    term?: string;
     created_at: string;
     updated_at: string;
 
@@ -989,6 +990,7 @@ export const addPlanActivity = async (versionId: string, data: {
     allowed_grade_level_ids?: string[];
     is_required?: boolean;
     display_order?: number;
+    term?: string;
 }) => {
     return await fetchApi(`/api/academic/study-plan-versions/${versionId}/activities`, {
         method: 'POST',
@@ -1000,6 +1002,7 @@ export const updatePlanActivity = async (id: string, data: Partial<{
     allowed_grade_level_ids: string[];
     is_required: boolean;
     display_order: number;
+    term: string;
 }>) => {
     return await fetchApi(`/api/academic/study-plan-activities/${id}`, {
         method: 'PUT',
