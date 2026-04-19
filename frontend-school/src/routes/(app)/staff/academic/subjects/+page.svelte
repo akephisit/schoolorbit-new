@@ -508,6 +508,8 @@
 		catalogDesc = '';
 		catalogTerm = '';
 		catalogGradeLevelIds = [];
+		catalogStartYearId = (academicYears.find((y) => y.is_current) ?? academicYears[0])?.id ?? '';
+		isNewCatalogVersion = false;
 
 		// Default to the tab the user is currently looking at for a nicer UX.
 		unifiedAddType = activeTab === 'activities' ? 'activity' : 'subject';
@@ -1964,9 +1966,26 @@
 			</div>
 		{:else}
 			<div class="space-y-3 py-2">
-				<div class="space-y-1">
-					<Label>ชื่อกิจกรรม <span class="text-destructive">*</span></Label>
-					<Input bind:value={catalogName} placeholder="เช่น ลูกเสือ / เนตรนารี, ชุมนุม ม.ต้น" />
+				<div class="grid grid-cols-2 gap-3">
+					<div class="space-y-1">
+						<Label>ชื่อกิจกรรม <span class="text-destructive">*</span></Label>
+						<Input bind:value={catalogName} placeholder="เช่น ลูกเสือ, ชุมนุม ม.ต้น" />
+					</div>
+					<div class="space-y-1">
+						<Label>ปีเริ่มใช้ <span class="text-destructive">*</span></Label>
+						<Select.Root type="single" bind:value={catalogStartYearId}>
+							<Select.Trigger class="w-full">
+								{academicYears.find((y) => y.id === catalogStartYearId)?.name ?? 'เลือกปี'}
+							</Select.Trigger>
+							<Select.Content class="max-h-[300px]">
+								{#each academicYears as year}
+									<Select.Item value={year.id}>
+										{year.name}{year.is_current ? ' (ปัจจุบัน)' : ''}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
 				</div>
 
 				<div class="space-y-1">
