@@ -118,6 +118,9 @@ pub struct StudyPlanSubject {
     pub subject_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
+    pub subject_hours: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
     pub grade_level_name: Option<String>,
 }
 
@@ -214,6 +217,12 @@ pub struct StudyPlanVersionActivity {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
     pub catalog_scheduling_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub catalog_term: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub catalog_grade_level_ids: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -477,6 +477,7 @@ export interface StudyPlanSubject {
     subject_name_en?: string;
     subject_credit?: number;
     subject_type?: string;
+    subject_hours?: number;
     grade_level_name?: string;
 }
 
@@ -978,6 +979,8 @@ export interface StudyPlanVersionActivity {
     catalog_description?: string;
     catalog_periods_per_week?: number;
     catalog_scheduling_mode?: string;
+    catalog_term?: string;
+    catalog_grade_level_ids?: string[];
 }
 
 export const listPlanActivities = async (versionId: string): Promise<{ data: StudyPlanVersionActivity[] }> => {

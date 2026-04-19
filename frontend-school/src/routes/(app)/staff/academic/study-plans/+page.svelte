@@ -16,6 +16,7 @@
 		lookupAcademicYears,
 		lookupGradeLevels,
 		listSubjects,
+		listSubjectGroups,
 		listPlanActivities,
 		addPlanActivity,
 		updatePlanActivity,
@@ -27,7 +28,8 @@
 		type StudyPlanVersionActivity,
 		type ActivityCatalog,
 		type LookupItem,
-		type Subject
+		type Subject,
+		type SubjectGroup
 	} from '$lib/api/academic';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -57,13 +59,13 @@
 	let academicYears: LookupItem[] = $state([]);
 	let gradeLevels: LookupItem[] = $state([]);
 	let subjects: Subject[] = $state([]);
+	let subjectGroups: SubjectGroup[] = $state([]);
 	let loading = $state(true);
 
 	// UI States
 	let activeTab = $state('plans');
 	let showPlanDialog = $state(false);
 	let showVersionDialog = $state(false);
-	let showSubjectsDialog = $state(false);
 	let showDeleteDialog = $state(false);
 	let submitting = $state(false);
 	let deleteTarget: { type: 'plan' | 'version' | 'subject'; id: string; name: string } | null =
@@ -76,65 +78,6 @@
 	// Form States
 	let planForm = $state(getEmptyPlanForm());
 	let versionForm = $state(getEmptyVersionForm());
-	let selectedSubjects: string[] = $state([]);
-	let selectedGrade = $state('');
-	let selectedTerm = $state('1');
-
-	// Derived: Filter grade levels based on selected version's study plan level_scope
-	let filteredGradeLevels = $derived(
-		gradeLevels.filter((grade) => {
-			if (!selectedVersion) return true; // Show all if no version selected
-
-			// Get the study plan's level_scope
-			const plan = plans.find((p) => p.id === selectedVersion!.study_plan_id);
-			if (!plan || !plan.level_scope || plan.level_scope === 'all') return true;
-
-			// Check if grade level matches the plan's scope
-			const levelType = grade.level_type; // 'kindergarten', 'primary', 'secondary'
-			return levelType === plan.level_scope;
-		})
-	);
-
-	// Derived: Filter subjects based on selected grade
-	let filteredSubjects = $derived(
-		subjects.filter((subject) => {
-			if (!selectedGrade) return false; // Don't show any subjects if no grade selected
-
-			// Filter by Term
-			if (selectedTerm && subject.term && subject.term !== selectedTerm) {
-				return false;
-			}
-
-			// Get the grade level info
-			const grade = gradeLevels.find((g) => g.id === selectedGrade);
-			if (!grade) return false;
-
-			// 1. Check specific grade_level_ids (Specific Scope)
-			if (subject.grade_level_ids && subject.grade_level_ids.length > 0) {
-				return subject.grade_level_ids.includes(selectedGrade);
-			}
-
-			// 2. If subject has level_scope, check if it matches
-			if (subject.level_scope) {
-				// level_scope can be 'ALL', 'M1', 'M2', 'P1', etc.
-				if (subject.level_scope.toUpperCase() === 'ALL') return true;
-
-				// Match by shortname (e.g., 'ม.1' matches 'M1')
-				const gradeShortName = grade.code || ''; // e.g., 'ม.1'
-				const scopeUpper = subject.level_scope.toUpperCase(); // e.g., 'M1'
-
-				// Convert 'ม.1' to 'M1', 'ป.1' to 'P1', etc.
-				const normalizedGrade = gradeShortName
-					.replace('ม.', 'M')
-					.replace('ป.', 'P')
-					.replace('อ.', 'K');
-
-				return scopeUpper === normalizedGrade;
-			}
-
-			return true; // If no level_scope, show for all grades
-		})
-	);
 
 	function getEmptyPlanForm(): {
 		id: string;
@@ -175,17 +118,19 @@
 	async function initData() {
 		try {
 			loading = true;
-			const [plansRes, yearsRes, levelsRes, subjectsRes] = await Promise.all([
+			const [plansRes, yearsRes, levelsRes, subjectsRes, groupsRes] = await Promise.all([
 				listStudyPlans(),
 				lookupAcademicYears(false),
 				lookupGradeLevels({}),
-				listSubjects({ active_only: true })
+				listSubjects({ active_only: true }),
+				listSubjectGroups()
 			]);
 
 			plans = plansRes.data;
 			academicYears = yearsRes.data;
 			gradeLevels = levelsRes.data;
 			subjects = subjectsRes.data;
+			subjectGroups = groupsRes.data ?? [];
 		} catch (e) {
 			alert('เกิดข้อผิดพลาด: ' + (e instanceof Error ? e.message : ''));
 		} finally {
@@ -287,50 +232,6 @@
 		}
 	}
 
-	// Subject Handlers
-	function handleOpenAddSubjects(version: StudyPlanVersion) {
-		selectedVersion = version;
-		selectedSubjects = [];
-		selectedTerm = '1';
-
-		// Calculate valid grade levels based on plan scope
-		const plan = plans.find((p) => p.id === version.study_plan_id);
-		let validGrades = gradeLevels;
-		if (plan && plan.level_scope && plan.level_scope !== 'all') {
-			validGrades = gradeLevels.filter((g) => g.level_type === plan.level_scope);
-		}
-
-		// Set first valid grade as default
-		selectedGrade = validGrades.length > 0 ? validGrades[0].id : '';
-
-		showSubjectsDialog = true;
-	}
-
-	async function handleSubmitSubjects() {
-		if (!selectedVersion || selectedSubjects.length === 0 || !selectedGrade) {
-			alert('กรุณาเลือกรายวิชาและระดับชั้น');
-			return;
-		}
-
-		submitting = true;
-		try {
-			const subjectsToAdd = selectedSubjects.map((subjectId, index) => ({
-				subject_id: subjectId,
-				grade_level_id: selectedGrade,
-				term: selectedTerm,
-				is_required: true,
-				display_order: index
-			}));
-
-			await addSubjectsToVersion(selectedVersion.id, subjectsToAdd);
-			showSubjectsDialog = false;
-			await loadPlanSubjects(selectedVersion.id);
-		} catch (e) {
-			alert('เพิ่มรายวิชาไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
-		} finally {
-			submitting = false;
-		}
-	}
 
 	// Delete Handlers
 	function handleOpenDelete(type: 'plan' | 'version' | 'subject', id: string, name: string) {
@@ -406,15 +307,6 @@
 		}
 	}
 
-	function openCreatePlanActivity() {
-		editingPlanActivity = null;
-		paCatalogId = '';
-		paGradeLevelIds = [];
-		paIsRequired = true;
-		showPlanActivityDialog = true;
-		loadActivityCatalog();
-	}
-
 	function openEditPlanActivity(pa: StudyPlanVersionActivity) {
 		editingPlanActivity = pa;
 		paCatalogId = pa.activity_catalog_id;
@@ -478,6 +370,166 @@
 		}
 	});
 
+	// ==========================================
+	// Unified "Add to Plan" dialog (วิชา + กิจกรรม)
+	// ==========================================
+	let showUnifiedPlanAddDialog = $state(false);
+	let unifiedPlanAddType = $state<'subject' | 'activity'>('subject');
+
+	// Shared fields
+	let upGradeLevelIds = $state<string[]>([]);
+	let upTerm = $state('1');
+	let upIsRequired = $state(true);
+	let upDisplayOrder = $state(0);
+
+	// Subject-only
+	let upGroupId = $state('');
+	let upSubjectId = $state('');
+
+	// Activity-only
+	let upCatalogId = $state('');
+
+	// Derived: subjects filtered by selected subject group
+	let subjectsForGroup = $derived(
+		upGroupId ? subjects.filter((s) => s.group_id === upGroupId) : []
+	);
+
+	// Derived: valid grade levels for current version (based on plan level_scope)
+	let unifiedGradeLevels = $derived(
+		gradeLevels.filter((grade) => {
+			if (!selectedVersion) return true;
+			const plan = plans.find((p) => p.id === selectedVersion!.study_plan_id);
+			if (!plan || !plan.level_scope || plan.level_scope === 'all') return true;
+			return grade.level_type === plan.level_scope;
+		})
+	);
+
+	// Derived: selected catalog item (for display of term/grade_level_ids in activity mode)
+	let selectedCatalog = $derived(activityCatalog.find((c) => c.id === upCatalogId));
+
+	function openUnifiedPlanAdd() {
+		upGroupId = '';
+		upSubjectId = '';
+		upCatalogId = '';
+		upGradeLevelIds = [];
+		upTerm = '1';
+		upIsRequired = true;
+		upDisplayOrder = 0;
+		unifiedPlanAddType = 'subject';
+		showUnifiedPlanAddDialog = true;
+
+		// Ensure catalogs are loaded
+		if (activityCatalog.length === 0) loadActivityCatalog();
+	}
+
+	// When catalog selection changes in activity mode, pre-fill grade levels from catalog
+	$effect(() => {
+		if (unifiedPlanAddType === 'activity' && selectedCatalog) {
+			if (selectedCatalog.grade_level_ids && selectedCatalog.grade_level_ids.length > 0) {
+				upGradeLevelIds = [...selectedCatalog.grade_level_ids];
+			}
+		}
+	});
+
+	async function handleUnifiedPlanSave() {
+		if (!selectedVersion?.id) {
+			toast.error('กรุณาเลือก version');
+			return;
+		}
+		try {
+			if (unifiedPlanAddType === 'subject') {
+				if (!upSubjectId) {
+					toast.error('กรุณาเลือกวิชา');
+					return;
+				}
+				if (upGradeLevelIds.length === 0) {
+					toast.error('กรุณาเลือกระดับชั้นอย่างน้อย 1 ระดับ');
+					return;
+				}
+				const subjectsToAdd = upGradeLevelIds.map((gradeId, index) => ({
+					subject_id: upSubjectId,
+					grade_level_id: gradeId,
+					term: upTerm,
+					is_required: upIsRequired,
+					display_order: upDisplayOrder + index
+				}));
+				await addSubjectsToVersion(selectedVersion.id, subjectsToAdd);
+				toast.success('เพิ่มวิชาเข้าหลักสูตรแล้ว');
+				await loadPlanSubjects(selectedVersion.id);
+			} else {
+				if (!upCatalogId) {
+					toast.error('กรุณาเลือกกิจกรรม');
+					return;
+				}
+				// sva doesn't have term column — term flows from catalog
+				await addPlanActivity(selectedVersion.id, {
+					activity_catalog_id: upCatalogId,
+					allowed_grade_level_ids: upGradeLevelIds.length > 0 ? upGradeLevelIds : undefined,
+					is_required: upIsRequired,
+					display_order: upDisplayOrder
+				});
+				toast.success('เพิ่มกิจกรรมเข้าหลักสูตรแล้ว');
+				await loadPlanActivitiesForVersion(selectedVersion.id);
+			}
+			showUnifiedPlanAddDialog = false;
+		} catch {
+			toast.error('บันทึกไม่สำเร็จ');
+		}
+	}
+
+	// ==========================================
+	// Derived state: integrated 2-column term view
+	// ==========================================
+	function termKey(t: string | null | undefined): '1' | '2' | 'other' {
+		if (t === '1' || t === '2') return t;
+		return 'other';
+	}
+
+	let subjectsByTermType = $derived.by(() => {
+		const grouped: Record<'1' | '2', Record<'BASIC' | 'ADDITIONAL', StudyPlanSubject[]>> = {
+			'1': { BASIC: [], ADDITIONAL: [] },
+			'2': { BASIC: [], ADDITIONAL: [] }
+		};
+		for (const s of planSubjects) {
+			const tk = termKey(s.term);
+			if (tk === 'other') continue;
+			const st = (s.subject_type ?? 'BASIC').toUpperCase();
+			if (st === 'BASIC') grouped[tk].BASIC.push(s);
+			else if (st === 'ADDITIONAL') grouped[tk].ADDITIONAL.push(s);
+			else grouped[tk].BASIC.push(s); // fallback
+		}
+		return grouped;
+	});
+
+	let activitiesByTerm = $derived.by(() => {
+		const grouped: Record<'1' | '2', StudyPlanVersionActivity[]> = { '1': [], '2': [] };
+		for (const a of planActivities) {
+			const at = a.catalog_term;
+			if (at === null || at === undefined || at === '') {
+				grouped['1'].push(a);
+				grouped['2'].push(a);
+			} else if (at === '1' || at === '2') {
+				grouped[at].push(a);
+			}
+		}
+		return grouped;
+	});
+
+	function sectionTotals(items: StudyPlanSubject[]) {
+		const credits = items.reduce((s, x) => s + (x.subject_credit ?? 0), 0);
+		const hours = items.reduce((s, x) => s + (x.subject_hours ?? 0), 0);
+		return { credits, hours };
+	}
+
+	function activityTotals(items: StudyPlanVersionActivity[]) {
+		const periods = items.reduce((s, x) => s + (x.catalog_periods_per_week ?? 0), 0);
+		return { periods };
+	}
+
+	function handleDeletePlanSubject(s: StudyPlanSubject) {
+		handleOpenDelete('subject', s.id, s.subject_name_th || s.subject_code);
+	}
+
 	onMount(() => {
 		initData();
 	});
@@ -501,11 +553,10 @@
 
 	<!-- Tabs -->
 	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List class="grid w-full grid-cols-4">
+		<Tabs.List class="grid w-full grid-cols-3">
 			<Tabs.Trigger value="plans">แผนการเรียน</Tabs.Trigger>
 			<Tabs.Trigger value="versions">เวอร์ชัน</Tabs.Trigger>
-			<Tabs.Trigger value="subjects">รายวิชา</Tabs.Trigger>
-			<Tabs.Trigger value="activities">กิจกรรมพัฒนาผู้เรียน</Tabs.Trigger>
+			<Tabs.Trigger value="detail">รายละเอียดหลักสูตร</Tabs.Trigger>
 		</Tabs.List>
 
 		<!-- Plans Tab -->
@@ -643,13 +694,13 @@
 													onclick={() => {
 														selectedVersion = version;
 														loadPlanSubjects(version.id);
-														activeTab = 'subjects';
+														activeTab = 'detail';
 													}}
 													variant="ghost"
 													size="sm"
 												>
 													<ListTodo class="w-4 h-4 mr-1" />
-													รายวิชา
+													รายละเอียด
 												</Button>
 												<Button
 													onclick={() => handleOpenEditVersion(version)}
@@ -683,151 +734,178 @@
 			{/if}
 		</Tabs.Content>
 
-		<!-- Subjects Tab -->
-		<Tabs.Content value="subjects" class="space-y-4">
+		<!-- Detail Tab: integrated 2-column view by term -->
+		<Tabs.Content value="detail" class="space-y-4">
 			{#if selectedVersion}
-				<div class="bg-muted/50 p-4 rounded-lg">
+				<div class="bg-muted/50 p-4 rounded-lg flex items-center justify-between flex-wrap gap-2">
 					<div class="font-medium">
 						เวอร์ชัน: {selectedVersion.version_name}
 						{#if selectedVersion.study_plan_name_th}
 							({selectedVersion.study_plan_name_th})
 						{/if}
 					</div>
-					<div class="flex gap-2 mt-2">
-						<Button
-							onclick={() => selectedVersion && handleOpenAddSubjects(selectedVersion)}
-							variant="outline"
-							size="sm"
-						>
-							<Plus class="w-4 h-4 mr-1" />
-							เพิ่มรายวิชา
-						</Button>
-					</div>
+					<Button onclick={openUnifiedPlanAdd} size="sm">
+						<Plus class="w-4 h-4 mr-1" />
+						เพิ่มเข้าหลักสูตร
+					</Button>
 				</div>
 
-				<div class="bg-card border border-border rounded-lg overflow-hidden">
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head>รหัสวิชา</Table.Head>
-								<Table.Head>ชื่อวิชา</Table.Head>
-								<Table.Head>ระดับชั้น</Table.Head>
-								<Table.Head>เทอม</Table.Head>
-								<Table.Head class="w-[80px]">จัดการ</Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#if planSubjects.length === 0}
-								<Table.Row>
-									<Table.Cell colspan={5} class="text-center h-24 text-muted-foreground">
-										ยังไม่มีรายวิชา
-									</Table.Cell>
-								</Table.Row>
-							{:else}
-								{#each planSubjects as subject (subject.id)}
-									<Table.Row>
-										<Table.Cell class="font-medium">{subject.subject_code}</Table.Cell>
-										<Table.Cell>{subject.subject_name_th || '-'}</Table.Cell>
-										<Table.Cell>{subject.grade_level_name || '-'}</Table.Cell>
-										<Table.Cell>ภาคเรียนที่ {subject.term}</Table.Cell>
-										<Table.Cell>
-											<Button
-												onclick={() =>
-													handleOpenDelete(
-														'subject',
-														subject.id,
-														subject.subject_name_th || subject.subject_code
-													)}
-												variant="ghost"
-												size="icon"
-												class="h-8 w-8 text-destructive"
-											>
-												<Trash2 class="w-4 h-4" />
-											</Button>
-										</Table.Cell>
-									</Table.Row>
-								{/each}
-							{/if}
-						</Table.Body>
-					</Table.Root>
-				</div>
-			{:else}
-				<div class="text-center text-muted-foreground p-8">
-					กรุณาเลือกเวอร์ชันจากแท็บ "เวอร์ชัน"
-				</div>
-			{/if}
-		</Tabs.Content>
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					{#each ['1', '2'] as term (term)}
+						{@const tterm = term as '1' | '2'}
+						{@const basicList = subjectsByTermType[tterm].BASIC}
+						{@const additionalList = subjectsByTermType[tterm].ADDITIONAL}
+						{@const actList = activitiesByTerm[tterm]}
+						{@const tb = sectionTotals(basicList)}
+						{@const ta = sectionTotals(additionalList)}
+						{@const tact = activityTotals(actList)}
+						<div class="border rounded-lg p-4 space-y-4 bg-card">
+							<h2 class="text-lg font-bold border-b pb-2">ภาคเรียนที่ {term}</h2>
 
-		<!-- Plan Activities Tab -->
-		<Tabs.Content value="activities" class="space-y-4">
-			{#if selectedVersion}
-				<div class="bg-muted/50 p-4 rounded-lg">
-					<div class="font-medium">
-						เวอร์ชัน: {selectedVersion.version_name}
-						{#if selectedVersion.study_plan_name_th}
-							({selectedVersion.study_plan_name_th})
-						{/if}
-					</div>
-				</div>
-
-				<div class="mt-2">
-					<div class="flex items-center justify-between mb-3">
-						<h3 class="font-semibold text-lg">กิจกรรมพัฒนาผู้เรียน (แม่แบบหลักสูตร)</h3>
-						<Button size="sm" onclick={openCreatePlanActivity}>
-							<Plus class="w-4 h-4 mr-1" />
-							เพิ่มกิจกรรม
-						</Button>
-					</div>
-
-					<p class="text-xs text-muted-foreground mb-3">
-						กำหนดกิจกรรมที่หลักสูตรนี้ต้องมี (เช่น ลูกเสือ, ชุมนุม, แนะแนว) แล้ว
-						<strong>Generate จากหลักสูตร</strong> ในหน้ากิจกรรม เพื่อสร้าง slot ในแต่ละเทอม
-					</p>
-
-					{#if loadingPlanActivities}
-						<p class="text-sm text-muted-foreground">กำลังโหลด...</p>
-					{:else if planActivities.length === 0}
-						<div
-							class="text-center py-6 text-sm text-muted-foreground border rounded-lg border-dashed"
-						>
-							ยังไม่มีกิจกรรม — กดปุ่ม "เพิ่มกิจกรรม" เพื่อเริ่ม
-						</div>
-					{:else}
-						<div class="divide-y rounded-lg border">
-							{#each planActivities as pa (pa.id)}
-								<div class="flex items-center gap-3 px-3 py-2">
-									<div class="flex-1 min-w-0">
-										<div class="flex items-center gap-2 flex-wrap">
-											<Badge variant="secondary"
-												>{PA_TYPE_LABELS[pa.catalog_activity_type ?? 'other']}</Badge
-											>
-											<span class="font-medium text-sm">{pa.catalog_name}</span>
-											{#if pa.is_required}
-												<Badge variant="outline" class="text-[10px]">บังคับ</Badge>
-											{/if}
-										</div>
-										<div class="text-xs text-muted-foreground mt-1">
-											{pa.catalog_periods_per_week} คาบ/สัปดาห์ ·
-											{pa.catalog_scheduling_mode === 'independent'
-												? 'แต่ละห้องจัดเอง'
-												: 'จัดพร้อมกันทุกห้อง'}
-										</div>
+							<!-- วิชาพื้นฐาน -->
+							<section>
+								<h3 class="font-semibold flex items-center gap-1 mb-2 text-sm">
+									<BookOpen class="w-4 h-4" /> วิชาพื้นฐาน
+								</h3>
+								{#if basicList.length === 0}
+									<p class="text-xs text-muted-foreground italic">—</p>
+								{:else}
+									<div class="divide-y border rounded">
+										{#each basicList as s (s.id)}
+											<div class="px-3 py-2 flex items-center gap-2">
+												<div class="flex-1 min-w-0">
+													<div class="font-medium text-sm">
+														{s.subject_code}
+														{s.subject_name_th ?? ''}
+														{#if s.grade_level_name}
+															<span class="text-xs text-muted-foreground"
+																>· {s.grade_level_name}</span
+															>
+														{/if}
+													</div>
+													<div class="text-xs text-muted-foreground">
+														{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
+													</div>
+												</div>
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-7 w-7 text-destructive"
+													onclick={() => handleDeletePlanSubject(s)}
+												>
+													<Trash2 class="w-4 h-4" />
+												</Button>
+											</div>
+										{/each}
 									</div>
-									<Button variant="ghost" size="icon" onclick={() => openEditPlanActivity(pa)}>
-										<Pencil class="w-4 h-4" />
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon"
-										class="text-destructive"
-										onclick={() => handleDeletePlanActivity(pa)}
-									>
-										<Trash2 class="w-4 h-4" />
-									</Button>
-								</div>
-							{/each}
+									<p class="text-xs font-medium text-right mt-1">
+										รวม: {tb.credits.toFixed(1)} นก · {tb.hours} ชม
+									</p>
+								{/if}
+							</section>
+
+							<!-- วิชาเพิ่มเติม -->
+							<section>
+								<h3 class="font-semibold flex items-center gap-1 mb-2 text-sm">
+									<ListTodo class="w-4 h-4" /> วิชาเพิ่มเติม
+								</h3>
+								{#if additionalList.length === 0}
+									<p class="text-xs text-muted-foreground italic">—</p>
+								{:else}
+									<div class="divide-y border rounded">
+										{#each additionalList as s (s.id)}
+											<div class="px-3 py-2 flex items-center gap-2">
+												<div class="flex-1 min-w-0">
+													<div class="font-medium text-sm">
+														{s.subject_code}
+														{s.subject_name_th ?? ''}
+														{#if s.grade_level_name}
+															<span class="text-xs text-muted-foreground"
+																>· {s.grade_level_name}</span
+															>
+														{/if}
+													</div>
+													<div class="text-xs text-muted-foreground">
+														{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
+													</div>
+												</div>
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-7 w-7 text-destructive"
+													onclick={() => handleDeletePlanSubject(s)}
+												>
+													<Trash2 class="w-4 h-4" />
+												</Button>
+											</div>
+										{/each}
+									</div>
+									<p class="text-xs font-medium text-right mt-1">
+										รวม: {ta.credits.toFixed(1)} นก · {ta.hours} ชม
+									</p>
+								{/if}
+							</section>
+
+							<!-- กิจกรรมพัฒนาผู้เรียน -->
+							<section>
+								<h3 class="font-semibold flex items-center gap-1 mb-2 text-sm">
+									<GraduationCap class="w-4 h-4" /> กิจกรรมพัฒนาผู้เรียน
+								</h3>
+								{#if actList.length === 0}
+									<p class="text-xs text-muted-foreground italic">—</p>
+								{:else}
+									<div class="divide-y border rounded">
+										{#each actList as a (a.id)}
+											<div class="px-3 py-2 flex items-center gap-2">
+												<div class="flex-1 min-w-0">
+													<div class="flex items-center gap-2 flex-wrap">
+														<Badge variant="secondary" class="text-[10px]">
+															{PA_TYPE_LABELS[a.catalog_activity_type ?? 'other']}
+														</Badge>
+														<span class="font-medium text-sm">{a.catalog_name}</span>
+														{#if a.is_required}
+															<Badge variant="outline" class="text-[10px]">บังคับ</Badge>
+														{/if}
+													</div>
+													<div class="text-xs text-muted-foreground mt-1">
+														{a.catalog_periods_per_week ?? 1} คาบ ·
+														{a.catalog_scheduling_mode === 'independent'
+															? 'แต่ละห้องจัดเอง'
+															: 'จัดพร้อมกัน'}
+													</div>
+												</div>
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-7 w-7"
+													onclick={() => openEditPlanActivity(a)}
+												>
+													<Pencil class="w-4 h-4" />
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-7 w-7 text-destructive"
+													onclick={() => handleDeletePlanActivity(a)}
+												>
+													<Trash2 class="w-4 h-4" />
+												</Button>
+											</div>
+										{/each}
+									</div>
+									<p class="text-xs font-medium text-right mt-1">
+										รวม: {tact.periods} คาบ/สัปดาห์
+									</p>
+								{/if}
+							</section>
+
+							<!-- Grand total per term -->
+							<div class="border-t pt-2 text-sm font-semibold text-right">
+								รวมทั้งหมด: {(tb.credits + ta.credits).toFixed(1)} นก · {tb.hours + ta.hours} ชม
+								· {tact.periods} คาบกิจกรรม
+							</div>
 						</div>
-					{/if}
+					{/each}
 				</div>
 			{:else}
 				<div class="text-center text-muted-foreground p-8">
@@ -958,134 +1036,6 @@
 	</DialogContent>
 </Dialog>
 
-<!-- Add Subjects Dialog -->
-<Dialog bind:open={showSubjectsDialog}>
-	<DialogContent class="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-		<DialogHeader>
-			<DialogTitle>เพิ่มรายวิชา</DialogTitle>
-			<DialogDescription>เลือกรายวิชาที่ต้องการเพิ่มเข้าหลักสูตร</DialogDescription>
-		</DialogHeader>
-
-		<div class="grid gap-4 py-4">
-			<div class="grid grid-cols-2 gap-4">
-				<div class="space-y-2">
-					<Label>ระดับชั้น <span class="text-destructive">*</span></Label>
-					{#if filteredGradeLevels.length === 0}
-						<div
-							class="text-sm text-destructive p-2 border border-destructive/20 bg-destructive/10 rounded"
-						>
-							ไม่พบระดับชั้นที่ตรงกับแผนการเรียนนี้ (โปรดตรวจสอบ "ขอบเขตระดับชั้น"
-							ในการตั้งค่าแผนการเรียน หรือเพิ่มระดับชั้นในระบบ)
-						</div>
-					{:else}
-						<Select.Root type="single" bind:value={selectedGrade}>
-							<Select.Trigger>
-								{filteredGradeLevels.find((g) => g.id === selectedGrade)?.name || 'เลือกระดับชั้น'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each filteredGradeLevels as level}
-									<Select.Item value={level.id}>{level.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					{/if}
-				</div>
-
-				<div class="space-y-2">
-					<Label>ภาคเรียน <span class="text-destructive">*</span></Label>
-					<Select.Root type="single" bind:value={selectedTerm}>
-						<Select.Trigger>ภาคเรียนที่ {selectedTerm}</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="1">ภาคเรียนที่ 1</Select.Item>
-							<Select.Item value="2">ภาคเรียนที่ 2</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-
-			<div class="space-y-2">
-				<Label>เลือกรายวิชา</Label>
-				<div class="border rounded-md p-2 max-h-[300px] overflow-y-auto space-y-1">
-					{#if filteredSubjects.length === 0}
-						<div class="text-center text-muted-foreground p-4">
-							{#if selectedGrade}
-								ไม่พบรายวิชาสำหรับระดับชั้นนี้
-							{:else}
-								กรุณาเลือกระดับชั้น
-							{/if}
-						</div>
-					{:else}
-						{#each [...filteredSubjects].sort((a, b) => {
-							const aAdded = planSubjects.some((ps) => ps.subject_id === a.id && ps.grade_level_id === selectedGrade);
-							const bAdded = planSubjects.some((ps) => ps.subject_id === b.id && ps.grade_level_id === selectedGrade);
-							// Sort: Not added first (0), Added last (1)
-							return Number(aAdded) - Number(bAdded) || a.code.localeCompare(b.code);
-						}) as subject}
-							{@const isAdded = planSubjects.some(
-								(ps) => ps.subject_id === subject.id && ps.grade_level_id === selectedGrade
-							)}
-							<label
-								class="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer transition-colors"
-								class:opacity-50={isAdded}
-								class:bg-muted={isAdded}
-							>
-								<Checkbox
-									checked={isAdded || selectedSubjects.includes(subject.id)}
-									disabled={isAdded}
-									onCheckedChange={(v) => {
-										const checked = v === true; // Handle boolean | 'indeterminate'
-										if (checked) {
-											selectedSubjects = [...selectedSubjects, subject.id];
-										} else {
-											selectedSubjects = selectedSubjects.filter((id) => id !== subject.id);
-										}
-									}}
-								/>
-								<div class="flex-1 flex items-center justify-between">
-									<div class="flex flex-col">
-										<div class="flex items-center gap-2">
-											<span class="font-medium text-sm">{subject.code}</span>
-											{#if subject.term}
-												<Badge
-													variant="outline"
-													class="text-[10px] px-1 h-4 bg-blue-50 text-blue-700 border-blue-200"
-												>
-													เทอม {subject.term}
-												</Badge>
-											{/if}
-											{#if isAdded}
-												<Badge variant="secondary" class="text-[10px] px-1 h-4">เลือกแล้ว</Badge>
-											{/if}
-										</div>
-										<span class="text-xs text-muted-foreground">{subject.name_th}</span>
-									</div>
-
-									{#if subject.level_scope && subject.level_scope.toUpperCase() !== 'ALL'}
-										<Badge variant="outline" class="text-[10px] h-5">{subject.level_scope}</Badge>
-									{/if}
-								</div>
-							</label>
-						{/each}
-					{/if}
-				</div>
-				<p class="text-xs text-muted-foreground">
-					เลือกแล้ว: {selectedSubjects.length} วิชา
-					{#if filteredSubjects.length > 0}
-						(จาก {filteredSubjects.length} วิชาที่แสดง)
-					{/if}
-				</p>
-			</div>
-		</div>
-
-		<DialogFooter>
-			<Button variant="outline" onclick={() => (showSubjectsDialog = false)}>ยกเลิก</Button>
-			<Button onclick={handleSubmitSubjects} disabled={submitting || selectedSubjects.length === 0}>
-				{submitting ? 'กำลังเพิ่ม...' : `เพิ่มรายวิชา (${selectedSubjects.length})`}
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
-
 <!-- Plan Activity Dialog -->
 <Dialog bind:open={showPlanActivityDialog}>
 	<DialogContent class="sm:max-w-[500px]">
@@ -1124,6 +1074,193 @@
 		<DialogFooter>
 			<Button variant="outline" onclick={() => (showPlanActivityDialog = false)}>ยกเลิก</Button>
 			<Button onclick={handleSavePlanActivity}>บันทึก</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Unified Add to Plan Dialog -->
+<Dialog bind:open={showUnifiedPlanAddDialog}>
+	<DialogContent class="sm:max-w-lg">
+		<DialogHeader>
+			<DialogTitle>เพิ่มเข้าหลักสูตร</DialogTitle>
+			<DialogDescription>เลือกประเภทและข้อมูลที่ต้องการเพิ่ม</DialogDescription>
+		</DialogHeader>
+
+		<!-- Type selector -->
+		<div class="border rounded-lg p-3 bg-muted/30 mb-3">
+			<Label class="mb-2 block text-sm">ประเภท</Label>
+			<div class="flex gap-4">
+				<label class="flex items-center gap-2 cursor-pointer">
+					<input type="radio" bind:group={unifiedPlanAddType} value="subject" />
+					<span>วิชา</span>
+				</label>
+				<label class="flex items-center gap-2 cursor-pointer">
+					<input type="radio" bind:group={unifiedPlanAddType} value="activity" />
+					<span>กิจกรรมพัฒนาผู้เรียน</span>
+				</label>
+			</div>
+		</div>
+
+		<div class="space-y-3">
+			{#if unifiedPlanAddType === 'subject'}
+				<div class="space-y-1">
+					<Label>กลุ่มสาระ *</Label>
+					<Select.Root type="single" bind:value={upGroupId}>
+						<Select.Trigger class="w-full">
+							{subjectGroups.find((g) => g.id === upGroupId)?.name_th ?? 'เลือกกลุ่มสาระ'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each subjectGroups as g}
+								<Select.Item value={g.id}>{g.name_th}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="space-y-1">
+					<Label>วิชา *</Label>
+					<Select.Root type="single" bind:value={upSubjectId}>
+						<Select.Trigger class="w-full">
+							{subjectsForGroup.find((s) => s.id === upSubjectId)?.name_th ?? 'เลือกวิชา'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[280px] overflow-y-auto">
+							{#each subjectsForGroup as s}
+								<Select.Item value={s.id}>{s.code} · {s.name_th}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="space-y-1">
+					<Label>ระดับชั้น</Label>
+					<div class="flex flex-wrap gap-2">
+						{#each unifiedGradeLevels as gl}
+							<label
+								class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted"
+							>
+								<input
+									type="checkbox"
+									checked={upGradeLevelIds.includes(gl.id)}
+									onchange={(e) => {
+										if ((e.target as HTMLInputElement).checked) {
+											upGradeLevelIds = [...upGradeLevelIds, gl.id];
+										} else {
+											upGradeLevelIds = upGradeLevelIds.filter((id) => id !== gl.id);
+										}
+									}}
+								/>
+								{gl.short_name ?? gl.code}
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<div class="grid grid-cols-2 gap-3">
+					<div class="space-y-1">
+						<Label>ภาคเรียน</Label>
+						<Select.Root type="single" bind:value={upTerm}>
+							<Select.Trigger class="w-full">
+								{upTerm === '1'
+									? 'เทอม 1'
+									: upTerm === '2'
+										? 'เทอม 2'
+										: upTerm === 'SUMMER'
+											? 'ฤดูร้อน'
+											: 'ทุกเทอม'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="1">เทอม 1</Select.Item>
+								<Select.Item value="2">เทอม 2</Select.Item>
+								<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="flex items-center gap-2 pt-6">
+						<Checkbox bind:checked={upIsRequired} id="up-required" />
+						<Label for="up-required" class="cursor-pointer">บังคับ</Label>
+					</div>
+				</div>
+			{:else}
+				<div class="space-y-1">
+					<Label>กลุ่มสาระ</Label>
+					<div class="px-3 py-2 border rounded bg-muted text-sm">กิจกรรมพัฒนาผู้เรียน</div>
+				</div>
+
+				<div class="space-y-1">
+					<Label>กิจกรรม *</Label>
+					<Select.Root type="single" bind:value={upCatalogId}>
+						<Select.Trigger class="w-full">
+							{activityCatalog.find((c) => c.id === upCatalogId)?.name ?? 'เลือกกิจกรรม'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[280px] overflow-y-auto">
+							{#each activityCatalog as c}
+								<Select.Item value={c.id}>{c.name} · {c.activity_type}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="space-y-1">
+					<Label>ระดับชั้น (overrideได้)</Label>
+					{#if selectedCatalog}
+						<p class="text-xs text-muted-foreground">
+							จากคลัง: {(selectedCatalog.grade_level_ids ?? [])
+								.map(
+									(id) =>
+										unifiedGradeLevels.find((g) => g.id === id)?.short_name ??
+										unifiedGradeLevels.find((g) => g.id === id)?.code ??
+										''
+								)
+								.filter(Boolean)
+								.join(', ') || 'ไม่ระบุ'}
+						</p>
+					{/if}
+					<div class="flex flex-wrap gap-2">
+						{#each unifiedGradeLevels as gl}
+							<label
+								class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted"
+							>
+								<input
+									type="checkbox"
+									checked={upGradeLevelIds.includes(gl.id)}
+									onchange={(e) => {
+										if ((e.target as HTMLInputElement).checked) {
+											upGradeLevelIds = [...upGradeLevelIds, gl.id];
+										} else {
+											upGradeLevelIds = upGradeLevelIds.filter((id) => id !== gl.id);
+										}
+									}}
+								/>
+								{gl.short_name ?? gl.code}
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<div class="space-y-1">
+					<Label>ภาคเรียน</Label>
+					<div class="px-3 py-2 border rounded bg-muted text-sm">
+						{selectedCatalog?.term
+							? selectedCatalog.term === '1'
+								? 'เทอม 1'
+								: selectedCatalog.term === '2'
+									? 'เทอม 2'
+									: selectedCatalog.term
+							: 'ทุกเทอม (ไม่ระบุในคลัง)'}
+					</div>
+					<p class="text-xs text-muted-foreground">มาจากคลัง · ปรับได้ที่หน้าคลังกิจกรรม</p>
+				</div>
+
+				<div class="flex items-center gap-2">
+					<Checkbox bind:checked={upIsRequired} id="up-required-a" />
+					<Label for="up-required-a" class="cursor-pointer">บังคับ</Label>
+				</div>
+			{/if}
+		</div>
+
+		<DialogFooter>
+			<Button variant="outline" onclick={() => (showUnifiedPlanAddDialog = false)}>ยกเลิก</Button>
+			<Button onclick={handleUnifiedPlanSave}>บันทึก</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

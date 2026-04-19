@@ -384,6 +384,7 @@ pub async fn list_study_plan_subjects(
                 s.name_en as subject_name_en,
                 s.credit as subject_credit,
                 s.type as subject_type,
+                s.hours_per_semester as subject_hours,
                 CASE gl.level_type
                     WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
                     WHEN 'primary' THEN CONCAT('ป.', gl.year)
@@ -709,7 +710,9 @@ pub async fn list_plan_activities(
                 ac.activity_type AS catalog_activity_type,
                 ac.description AS catalog_description,
                 ac.periods_per_week AS catalog_periods_per_week,
-                ac.scheduling_mode AS catalog_scheduling_mode
+                ac.scheduling_mode AS catalog_scheduling_mode,
+                ac.term AS catalog_term,
+                ac.grade_level_ids AS catalog_grade_level_ids
          FROM study_plan_version_activities sva
          JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
          WHERE sva.study_plan_version_id = $1
@@ -843,7 +846,9 @@ pub async fn generate_activities_from_plan(
                 ac.activity_type AS catalog_activity_type,
                 ac.description AS catalog_description,
                 ac.periods_per_week AS catalog_periods_per_week,
-                ac.scheduling_mode AS catalog_scheduling_mode
+                ac.scheduling_mode AS catalog_scheduling_mode,
+                ac.term AS catalog_term,
+                ac.grade_level_ids AS catalog_grade_level_ids
          FROM study_plan_version_activities sva
          JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
          WHERE sva.study_plan_version_id = $1
