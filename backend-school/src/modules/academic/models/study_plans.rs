@@ -250,6 +250,8 @@ pub struct ActivityCatalog {
     pub periods_per_week: i32,
     pub scheduling_mode: String,
     pub is_active: bool,
+    pub term: Option<String>,
+    pub grade_level_ids: Option<serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -261,6 +263,8 @@ pub struct CreateCatalogRequest {
     pub description: Option<String>,
     pub periods_per_week: Option<i32>,
     pub scheduling_mode: Option<String>,
+    pub term: Option<String>,
+    pub grade_level_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -271,4 +275,6 @@ pub struct UpdateCatalogRequest {
     pub periods_per_week: Option<i32>,
     pub scheduling_mode: Option<String>,
     pub is_active: Option<bool>,
+    pub term: Option<String>,
+    pub grade_level_ids: Option<Vec<Uuid>>,
 }

@@ -1019,6 +1019,8 @@ export interface ActivityCatalog {
     periods_per_week: number;
     scheduling_mode: 'synchronized' | 'independent';
     is_active: boolean;
+    term?: string;
+    grade_level_ids?: string[];
     created_at: string;
     updated_at: string;
 }
@@ -1033,6 +1035,8 @@ export const createActivityCatalog = async (data: {
     description?: string;
     periods_per_week?: number;
     scheduling_mode?: string;
+    term?: string;
+    grade_level_ids?: string[];
 }) => {
     return await fetchApi(`/api/academic/activity-catalog`, {
         method: 'POST',

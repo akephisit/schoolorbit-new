@@ -958,9 +958,12 @@ pub async fn create_activity_catalog(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
+    let allowed = req.grade_level_ids
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+
     let row: ActivityCatalog = sqlx::query_as(
-        r#"INSERT INTO activity_catalog (name, activity_type, description, periods_per_week, scheduling_mode)
-           VALUES ($1, $2, $3, COALESCE($4, 1), COALESCE($5, 'synchronized'))
+        r#"INSERT INTO activity_catalog (name, activity_type, description, periods_per_week, scheduling_mode, term, grade_level_ids)
+           VALUES ($1, $2, $3, COALESCE($4, 1), COALESCE($5, 'synchronized'), $6, $7)
            RETURNING *"#
     )
     .bind(&req.name)
@@ -968,6 +971,8 @@ pub async fn create_activity_catalog(
     .bind(&req.description)
     .bind(req.periods_per_week)
     .bind(&req.scheduling_mode)
+    .bind(&req.term)
+    .bind(&allowed)
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -989,6 +994,9 @@ pub async fn update_activity_catalog(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
+    let allowed = req.grade_level_ids.as_ref()
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+
     let row: ActivityCatalog = sqlx::query_as(
         r#"UPDATE activity_catalog SET
             name = COALESCE($2, name),
@@ -997,6 +1005,8 @@ pub async fn update_activity_catalog(
             periods_per_week = COALESCE($5, periods_per_week),
             scheduling_mode = COALESCE($6, scheduling_mode),
             is_active = COALESCE($7, is_active),
+            term = COALESCE($8, term),
+            grade_level_ids = COALESCE($9, grade_level_ids),
             updated_at = NOW()
            WHERE id = $1
            RETURNING *"#
@@ -1008,6 +1018,8 @@ pub async fn update_activity_catalog(
     .bind(req.periods_per_week)
     .bind(&req.scheduling_mode)
     .bind(req.is_active)
+    .bind(&req.term)
+    .bind(&allowed)
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::NotFound(e.to_string()))?;

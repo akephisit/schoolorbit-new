@@ -103,6 +103,8 @@
 	let catalogDesc = $state('');
 	let catalogPeriods = $state(1);
 	let catalogMode = $state<'synchronized' | 'independent'>('synchronized');
+	let catalogTerm = $state(''); // '' = ทุกเทอม, '1', '2', 'SUMMER'
+	let catalogGradeLevelIds = $state<string[]>([]);
 
 	// Modal States
 	let showDialog = $state(false);
@@ -384,6 +386,8 @@
 		catalogDesc = '';
 		catalogPeriods = 1;
 		catalogMode = 'synchronized';
+		catalogTerm = '';
+		catalogGradeLevelIds = [];
 		showCatalogDialog = true;
 	}
 
@@ -400,6 +404,8 @@
 		catalogPeriods = 1;
 		catalogMode = 'synchronized';
 		catalogDesc = '';
+		catalogTerm = '';
+		catalogGradeLevelIds = [];
 
 		// Default to the tab the user is currently looking at for a nicer UX.
 		unifiedAddType = activeTab === 'activities' ? 'activity' : 'subject';
@@ -431,6 +437,8 @@
 		catalogDesc = item.description ?? '';
 		catalogPeriods = item.periods_per_week;
 		catalogMode = item.scheduling_mode;
+		catalogTerm = item.term ?? '';
+		catalogGradeLevelIds = item.grade_level_ids ?? [];
 		showCatalogDialog = true;
 	}
 
@@ -447,7 +455,9 @@
 				activity_type: catalogType,
 				description: catalogDesc || undefined,
 				periods_per_week: catalogPeriods,
-				scheduling_mode: catalogMode
+				scheduling_mode: catalogMode,
+				term: catalogTerm || undefined,
+				grade_level_ids: catalogGradeLevelIds.length > 0 ? catalogGradeLevelIds : undefined
 			};
 
 			if (editingCatalog) {
@@ -846,7 +856,10 @@
 						<Table.Header>
 							<Table.Row>
 								<Table.Head>ชื่อ</Table.Head>
+								<Table.Head>กลุ่มสาระ</Table.Head>
 								<Table.Head>ประเภท</Table.Head>
+								<Table.Head>ภาคเรียน</Table.Head>
+								<Table.Head>ระดับชั้น</Table.Head>
 								<Table.Head class="text-center">คาบ/สัปดาห์</Table.Head>
 								<Table.Head>รูปแบบ</Table.Head>
 								<Table.Head class="text-right w-[100px]"></Table.Head>
@@ -857,9 +870,35 @@
 								<Table.Row>
 									<Table.Cell class="font-medium">{item.name}</Table.Cell>
 									<Table.Cell>
+										<span class="text-xs text-muted-foreground">กิจกรรมพัฒนาผู้เรียน</span>
+									</Table.Cell>
+									<Table.Cell>
 										<Badge variant="secondary"
 											>{ACTIVITY_TYPE_LABELS[item.activity_type]}</Badge
 										>
+									</Table.Cell>
+									<Table.Cell>
+										{item.term === '1'
+											? 'เทอม 1'
+											: item.term === '2'
+												? 'เทอม 2'
+												: item.term === 'SUMMER'
+													? 'ฤดูร้อน'
+													: 'ทุกเทอม'}
+									</Table.Cell>
+									<Table.Cell>
+										{#if item.grade_level_ids && item.grade_level_ids.length > 0}
+											<span class="text-xs">
+												{item.grade_level_ids
+													.map((id) => {
+														const l = gradeLevels.find((l) => l.id === id);
+														return l?.short_name ?? l?.code ?? id;
+													})
+													.join(', ')}
+											</span>
+										{:else}
+											<span class="text-xs text-muted-foreground">—</span>
+										{/if}
 									</Table.Cell>
 									<Table.Cell class="text-center">{item.periods_per_week}</Table.Cell>
 									<Table.Cell>
@@ -1258,6 +1297,13 @@
 				<Input bind:value={catalogName} placeholder="เช่น ลูกเสือ / เนตรนารี, ชุมนุม ม.ต้น" />
 			</div>
 
+			<div class="space-y-1">
+				<Label>กลุ่มสาระ</Label>
+				<div class="px-3 py-2 border rounded bg-muted text-sm">
+					กิจกรรมพัฒนาผู้เรียน
+				</div>
+			</div>
+
 			<div class="grid grid-cols-2 gap-3">
 				<div class="space-y-1">
 					<Label>ประเภท</Label>
@@ -1284,9 +1330,55 @@
 				</div>
 			</div>
 
+			<div class="grid grid-cols-2 gap-3">
+				<div class="space-y-1">
+					<Label>คาบ/สัปดาห์</Label>
+					<Input type="number" min={1} max={10} bind:value={catalogPeriods} />
+				</div>
+				<div class="space-y-1">
+					<Label>ภาคเรียน</Label>
+					<Select.Root type="single" bind:value={catalogTerm}>
+						<Select.Trigger class="w-full">
+							{catalogTerm === ''
+								? 'ทุกเทอม'
+								: catalogTerm === '1'
+									? 'เทอม 1'
+									: catalogTerm === '2'
+										? 'เทอม 2'
+										: 'ฤดูร้อน'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">ทุกเทอม</Select.Item>
+							<Select.Item value="1">เทอม 1</Select.Item>
+							<Select.Item value="2">เทอม 2</Select.Item>
+							<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
 			<div class="space-y-1">
-				<Label>คาบ/สัปดาห์</Label>
-				<Input type="number" min={1} max={10} bind:value={catalogPeriods} />
+				<Label>ระดับชั้น</Label>
+				<div class="flex flex-wrap gap-2">
+					{#each gradeLevels as gl}
+						<label
+							class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted"
+						>
+							<input
+								type="checkbox"
+								checked={catalogGradeLevelIds.includes(gl.id)}
+								onchange={(e) => {
+									if ((e.target as HTMLInputElement).checked) {
+										catalogGradeLevelIds = [...catalogGradeLevelIds, gl.id];
+									} else {
+										catalogGradeLevelIds = catalogGradeLevelIds.filter((id) => id !== gl.id);
+									}
+								}}
+							/>
+							{gl.short_name ?? gl.code}
+						</label>
+					{/each}
+				</div>
 			</div>
 
 			<div class="space-y-1">
@@ -1630,6 +1722,13 @@
 					<Input bind:value={catalogName} placeholder="เช่น ลูกเสือ / เนตรนารี, ชุมนุม ม.ต้น" />
 				</div>
 
+				<div class="space-y-1">
+					<Label>กลุ่มสาระ</Label>
+					<div class="px-3 py-2 border rounded bg-muted text-sm">
+						กิจกรรมพัฒนาผู้เรียน
+					</div>
+				</div>
+
 				<div class="grid grid-cols-2 gap-3">
 					<div class="space-y-1">
 						<Label>ประเภท</Label>
@@ -1658,9 +1757,55 @@
 					</div>
 				</div>
 
+				<div class="grid grid-cols-2 gap-3">
+					<div class="space-y-1">
+						<Label>คาบ/สัปดาห์</Label>
+						<Input type="number" min={1} max={10} bind:value={catalogPeriods} />
+					</div>
+					<div class="space-y-1">
+						<Label>ภาคเรียน</Label>
+						<Select.Root type="single" bind:value={catalogTerm}>
+							<Select.Trigger class="w-full">
+								{catalogTerm === ''
+									? 'ทุกเทอม'
+									: catalogTerm === '1'
+										? 'เทอม 1'
+										: catalogTerm === '2'
+											? 'เทอม 2'
+											: 'ฤดูร้อน'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="">ทุกเทอม</Select.Item>
+								<Select.Item value="1">เทอม 1</Select.Item>
+								<Select.Item value="2">เทอม 2</Select.Item>
+								<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+				</div>
+
 				<div class="space-y-1">
-					<Label>คาบ/สัปดาห์</Label>
-					<Input type="number" min={1} max={10} bind:value={catalogPeriods} />
+					<Label>ระดับชั้น</Label>
+					<div class="flex flex-wrap gap-2">
+						{#each gradeLevels as gl}
+							<label
+								class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted"
+							>
+								<input
+									type="checkbox"
+									checked={catalogGradeLevelIds.includes(gl.id)}
+									onchange={(e) => {
+										if ((e.target as HTMLInputElement).checked) {
+											catalogGradeLevelIds = [...catalogGradeLevelIds, gl.id];
+										} else {
+											catalogGradeLevelIds = catalogGradeLevelIds.filter((id) => id !== gl.id);
+										}
+									}}
+								/>
+								{gl.short_name ?? gl.code}
+							</label>
+						{/each}
+					</div>
 				</div>
 
 				<div class="space-y-1">
