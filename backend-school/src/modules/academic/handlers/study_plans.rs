@@ -375,12 +375,16 @@ pub async fn list_study_plan_subjects(
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
     
     let mut sql = String::from(
-        "SELECT sps.*,
+        "SELECT sps.id, sps.study_plan_version_id, sps.grade_level_id, sps.term,
+                sps.subject_id,
+                COALESCE(s.code, sps.subject_code) as subject_code,
+                sps.display_order, sps.is_required, sps.metadata,
+                sps.created_at, sps.updated_at,
                 s.name_th as subject_name_th,
                 s.name_en as subject_name_en,
                 s.credit as subject_credit,
                 s.type as subject_type,
-                CASE gl.level_type 
+                CASE gl.level_type
                     WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
                     WHEN 'primary' THEN CONCAT('ป.', gl.year)
                     WHEN 'secondary' THEN CONCAT('ม.', gl.year)
@@ -409,7 +413,7 @@ pub async fn list_study_plan_subjects(
         sql.push_str(&format!(" AND sps.term = ${idx}"));
     }
 
-    sql.push_str(" ORDER BY sps.display_order, sps.subject_code");
+    sql.push_str(" ORDER BY sps.display_order, COALESCE(s.code, sps.subject_code)");
 
     let mut q = sqlx::query_as::<_, StudyPlanSubject>(&sql);
     if let Some(version_id) = query.study_plan_version_id { q = q.bind(version_id); }
