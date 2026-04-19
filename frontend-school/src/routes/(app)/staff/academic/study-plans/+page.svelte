@@ -921,7 +921,13 @@
 														</Badge>
 														<span class="font-medium text-sm">{a.catalog_name}</span>
 														{#if a.is_required}
-															<Badge variant="outline" class="text-[10px]">บังคับ</Badge>
+															<Badge
+																variant="outline"
+																class="text-[10px]"
+																title="บังคับ = นักเรียนทุกคนต้องเรียน (ไม่ใช่วิชาเลือก)"
+															>
+																บังคับ
+															</Badge>
 														{/if}
 													</div>
 													<div class="text-xs text-muted-foreground mt-1">
@@ -1133,7 +1139,13 @@
 
 			<div class="flex items-center gap-2">
 				<Checkbox bind:checked={paIsRequired} id="pa-required" />
-				<Label for="pa-required" class="cursor-pointer">บังคับ</Label>
+				<Label
+					for="pa-required"
+					class="cursor-pointer"
+					title="บังคับ = นักเรียนทุกคนต้องเรียน (ไม่ใช่วิชาเลือก)"
+				>
+					บังคับ
+				</Label>
 			</div>
 		</div>
 
@@ -1146,7 +1158,7 @@
 
 <!-- Add to Plan Dialog (2-panel transfer list) -->
 <Dialog bind:open={showAddDialog}>
-	<DialogContent class="max-w-5xl max-h-[90vh] overflow-y-auto">
+	<DialogContent class="max-w-[95vw] sm:max-w-[90vw] lg:max-w-[1400px] max-h-[95vh] overflow-y-auto">
 		<DialogHeader>
 			<DialogTitle>เพิ่มเข้าหลักสูตร</DialogTitle>
 		</DialogHeader>
@@ -1215,7 +1227,7 @@
 				<!-- Subjects list -->
 				<div>
 					<h4 class="text-xs font-semibold mb-1">วิชา ({filteredSubjectsForDialog.length})</h4>
-					<div class="max-h-[260px] overflow-y-auto divide-y rounded border">
+					<div class="max-h-[400px] overflow-y-auto divide-y rounded border">
 						{#each filteredSubjectsForDialog as s (s.id)}
 							{@const added = isAlreadyAdded('subject', s.id)}
 							<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
@@ -1250,7 +1262,7 @@
 					<h4 class="text-xs font-semibold mb-1">
 						กิจกรรมพัฒนาผู้เรียน ({filteredActivitiesForDialog.length})
 					</h4>
-					<div class="max-h-[180px] overflow-y-auto divide-y rounded border">
+					<div class="max-h-[220px] overflow-y-auto divide-y rounded border">
 						{#each filteredActivitiesForDialog as c (c.id)}
 							{@const added = isAlreadyAdded('activity', c.id)}
 							<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
@@ -1314,7 +1326,9 @@
 					</div>
 					<div class="flex items-center gap-2">
 						<Checkbox bind:checked={addIsRequired} id="add-required" />
-						<Label for="add-required" class="cursor-pointer text-xs">บังคับ</Label>
+						<Label for="add-required" class="cursor-pointer text-xs">
+							บังคับ <span class="text-muted-foreground">(นักเรียนทุกคนต้องเรียน — ไม่ใช่วิชาเลือก)</span>
+						</Label>
 					</div>
 				</div>
 
@@ -1323,7 +1337,7 @@
 					<h4 class="text-xs font-semibold mb-1">
 						วิชาที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'subject').length})
 					</h4>
-					<div class="max-h-[260px] overflow-y-auto divide-y rounded border bg-background">
+					<div class="max-h-[400px] overflow-y-auto divide-y rounded border bg-background">
 						{#each pendingQueue as q, idx}
 							{#if q.type === 'subject'}
 								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
@@ -1333,7 +1347,7 @@
 										<span class="text-[10px] text-blue-600 ml-2">
 											{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name} · เทอม
 											{q.target_term}
-											{#if q.is_required} · บังคับ{/if}
+											{#if q.is_required} · <span title="บังคับ = นักเรียนทุกคนต้องเรียน (ไม่ใช่วิชาเลือก)">บังคับ</span>{/if}
 										</span>
 									</span>
 									<Button
@@ -1358,7 +1372,7 @@
 					<h4 class="text-xs font-semibold mb-1">
 						กิจกรรมที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'activity').length})
 					</h4>
-					<div class="max-h-[180px] overflow-y-auto divide-y rounded border bg-background">
+					<div class="max-h-[220px] overflow-y-auto divide-y rounded border bg-background">
 						{#each pendingQueue as q, idx}
 							{#if q.type === 'activity'}
 								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
@@ -1366,7 +1380,7 @@
 										{q.name}
 										<span class="text-[10px] text-blue-600 ml-2">
 											{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name}
-											{#if q.is_required} · บังคับ{/if}
+											{#if q.is_required} · <span title="บังคับ = นักเรียนทุกคนต้องเรียน (ไม่ใช่วิชาเลือก)">บังคับ</span>{/if}
 										</span>
 									</span>
 									<Button
