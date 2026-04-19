@@ -951,3 +951,74 @@ export const updateCourseInstructorRole = async (
     });
 };
 
+// ==========================================
+// Study Plan Version Activities (template)
+// ==========================================
+
+export interface StudyPlanVersionActivity {
+    id: string;
+    study_plan_version_id: string;
+    activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
+    name: string;
+    description?: string;
+    periods_per_week: number;
+    scheduling_mode: 'synchronized' | 'independent';
+    allowed_grade_level_ids?: string[];
+    is_required: boolean;
+    display_order: number;
+    created_at: string;
+    updated_at: string;
+}
+
+export const listPlanActivities = async (versionId: string): Promise<{ data: StudyPlanVersionActivity[] }> => {
+    return await fetchApi(`/api/academic/study-plan-versions/${versionId}/activities`);
+};
+
+export const addPlanActivity = async (versionId: string, data: {
+    activity_type: string;
+    name: string;
+    description?: string;
+    periods_per_week?: number;
+    scheduling_mode?: string;
+    allowed_grade_level_ids?: string[];
+    is_required?: boolean;
+    display_order?: number;
+}) => {
+    return await fetchApi(`/api/academic/study-plan-versions/${versionId}/activities`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const updatePlanActivity = async (id: string, data: Partial<{
+    activity_type: string;
+    name: string;
+    description: string;
+    periods_per_week: number;
+    scheduling_mode: string;
+    allowed_grade_level_ids: string[];
+    is_required: boolean;
+    display_order: number;
+}>) => {
+    return await fetchApi(`/api/academic/study-plan-activities/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};
+
+export const deletePlanActivity = async (id: string) => {
+    return await fetchApi(`/api/academic/study-plan-activities/${id}`, {
+        method: 'DELETE'
+    });
+};
+
+export const generateActivitiesFromPlan = async (data: {
+    study_plan_version_id: string;
+    semester_id: string;
+}): Promise<{ success: boolean; created: number; skipped: number; total_templates: number }> => {
+    return await fetchApi(`/api/academic/activities/generate-from-plan`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
