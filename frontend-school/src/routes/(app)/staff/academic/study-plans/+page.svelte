@@ -431,7 +431,8 @@
 		return planActivities.some(
 			(a) =>
 				a.activity_catalog_id === id &&
-				(a.allowed_grade_level_ids ?? []).includes(addTargetGradeId)
+				(a.allowed_grade_level_ids ?? []).includes(addTargetGradeId) &&
+				(!a.catalog_term || a.catalog_term === addTerm)
 		);
 	}
 
@@ -454,7 +455,11 @@
 	);
 
 	let existingActivitiesForTarget = $derived.by(() =>
-		planActivities.filter((a) => (a.allowed_grade_level_ids ?? []).includes(addTargetGradeId))
+		planActivities.filter(
+			(a) =>
+				(a.allowed_grade_level_ids ?? []).includes(addTargetGradeId) &&
+				(!a.catalog_term || a.catalog_term === addTerm)
+		)
 	);
 
 	function moveToQueue(type: 'subject' | 'activity', item: Subject | ActivityCatalog) {
