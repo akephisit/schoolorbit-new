@@ -1137,11 +1137,23 @@
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-2">
 						<Label for="subject-code">รหัสวิชา <span class="text-destructive">*</span></Label>
-						<Input id="subject-code" bind:value={currentSubject.code} placeholder="e.g. ท21101" />
+						<Input
+							id="subject-code"
+							bind:value={currentSubject.code}
+							placeholder="e.g. ท21101"
+							disabled={isEditing || isNewVersion}
+						/>
+						{#if isNewVersion}
+							<p class="text-[10px] text-muted-foreground">version ใหม่ใช้รหัสเดิม</p>
+						{/if}
 					</div>
 					<div class="space-y-2">
 						<Label>ปีการศึกษาที่เริ่มใช้ <span class="text-destructive">*</span></Label>
-						<Select.Root type="single" bind:value={currentSubject.start_academic_year_id}>
+						<Select.Root
+							type="single"
+							bind:value={currentSubject.start_academic_year_id}
+							disabled={isEditing}
+						>
 							<Select.Trigger>
 								{academicYears.find((y) => y.id === currentSubject.start_academic_year_id)?.name ||
 									'เลือกปีการศึกษา'}
@@ -1156,6 +1168,9 @@
 								{/if}
 							</Select.Content>
 						</Select.Root>
+						{#if isEditing}
+							<p class="text-[10px] text-muted-foreground">แก้ version เดิม — ใช้ "สร้าง version ใหม่" ถ้าอยากแยกปี</p>
+						{/if}
 					</div>
 				</div>
 
