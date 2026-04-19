@@ -16,7 +16,6 @@
 		lookupAcademicYears,
 		lookupGradeLevels,
 		listSubjects,
-		listSubjectGroups,
 		listPlanActivities,
 		addPlanActivity,
 		updatePlanActivity,
@@ -28,8 +27,7 @@
 		type StudyPlanVersionActivity,
 		type ActivityCatalog,
 		type LookupItem,
-		type Subject,
-		type SubjectGroup
+		type Subject
 	} from '$lib/api/academic';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -59,7 +57,6 @@
 	let academicYears: LookupItem[] = $state([]);
 	let gradeLevels: LookupItem[] = $state([]);
 	let subjects: Subject[] = $state([]);
-	let subjectGroups: SubjectGroup[] = $state([]);
 	let loading = $state(true);
 
 	// UI States
@@ -178,19 +175,17 @@
 	async function initData() {
 		try {
 			loading = true;
-			const [plansRes, yearsRes, levelsRes, subjectsRes, groupsRes] = await Promise.all([
+			const [plansRes, yearsRes, levelsRes, subjectsRes] = await Promise.all([
 				listStudyPlans(),
 				lookupAcademicYears(false),
 				lookupGradeLevels({}),
-				listSubjects({ active_only: true }),
-				listSubjectGroups()
+				listSubjects({ active_only: true })
 			]);
 
 			plans = plansRes.data;
 			academicYears = yearsRes.data;
 			gradeLevels = levelsRes.data;
 			subjects = subjectsRes.data;
-			subjectGroups = groupsRes.data ?? [];
 		} catch (e) {
 			alert('เกิดข้อผิดพลาด: ' + (e instanceof Error ? e.message : ''));
 		} finally {
@@ -483,102 +478,6 @@
 		}
 	});
 
-	// ==========================================
-	// Unified "Add to Plan" dialog (วิชา + กิจกรรม)
-	// ==========================================
-	let showUnifiedPlanAddDialog = $state(false);
-	let unifiedPlanAddType = $state<'subject' | 'activity'>('subject');
-
-	// Shared fields
-	let upGroupId = $state('');
-	let upGradeLevelIds = $state<string[]>([]);
-	let upTerm = $state('1');
-	let upIsRequired = $state(true);
-	let upDisplayOrder = $state(0);
-
-	// Subject-only
-	let upSubjectId = $state('');
-
-	// Activity-only
-	let upCatalogId = $state('');
-
-	// Derived: subjects filtered by selected subject group (for subject picker in unified dialog)
-	let subjectsForGroup = $derived(
-		upGroupId ? subjects.filter((s) => s.group_id === upGroupId) : []
-	);
-
-	// Derived: valid grade levels for the current selected version (based on plan level_scope)
-	let unifiedGradeLevels = $derived(
-		gradeLevels.filter((grade) => {
-			if (!selectedVersion) return true;
-			const plan = plans.find((p) => p.id === selectedVersion!.study_plan_id);
-			if (!plan || !plan.level_scope || plan.level_scope === 'all') return true;
-			return grade.level_type === plan.level_scope;
-		})
-	);
-
-	function openUnifiedPlanAdd() {
-		upGroupId = '';
-		upSubjectId = '';
-		upCatalogId = '';
-		upGradeLevelIds = [];
-		upTerm = '1';
-		upIsRequired = true;
-		upDisplayOrder = 0;
-		unifiedPlanAddType = 'subject';
-		showUnifiedPlanAddDialog = true;
-
-		// Ensure catalogs are loaded
-		if (activityCatalog.length === 0) loadActivityCatalog();
-	}
-
-	async function handleUnifiedPlanSave() {
-		if (!selectedVersion?.id) {
-			toast.error('กรุณาเลือก version');
-			return;
-		}
-		try {
-			if (unifiedPlanAddType === 'subject') {
-				if (!upSubjectId) {
-					toast.error('กรุณาเลือกวิชา');
-					return;
-				}
-				if (upGradeLevelIds.length === 0) {
-					toast.error('กรุณาเลือกระดับชั้นอย่างน้อย 1 ระดับ');
-					return;
-				}
-				// addSubjectsToVersion expects an array of subjects (per-grade rows)
-				const subjectsToAdd = upGradeLevelIds.map((gradeId, index) => ({
-					subject_id: upSubjectId,
-					grade_level_id: gradeId,
-					term: upTerm,
-					is_required: upIsRequired,
-					display_order: upDisplayOrder + index
-				}));
-				await addSubjectsToVersion(selectedVersion.id, subjectsToAdd);
-				toast.success('เพิ่มวิชาเข้าหลักสูตรแล้ว');
-				await loadPlanSubjects(selectedVersion.id);
-			} else {
-				if (!upCatalogId) {
-					toast.error('กรุณาเลือกกิจกรรม');
-					return;
-				}
-				await addPlanActivity(selectedVersion.id, {
-					activity_catalog_id: upCatalogId,
-					allowed_grade_level_ids: upGradeLevelIds.length > 0 ? upGradeLevelIds : undefined,
-					is_required: upIsRequired,
-					display_order: upDisplayOrder,
-					term: upTerm
-				});
-				toast.success('เพิ่มกิจกรรมเข้าหลักสูตรแล้ว');
-				await loadPlanActivitiesForVersion(selectedVersion.id);
-			}
-			showUnifiedPlanAddDialog = false;
-		} catch {
-			toast.error('บันทึกไม่สำเร็จ');
-		}
-	}
-
 	onMount(() => {
 		initData();
 	});
@@ -795,9 +694,13 @@
 						{/if}
 					</div>
 					<div class="flex gap-2 mt-2">
-						<Button onclick={openUnifiedPlanAdd} variant="outline" size="sm">
+						<Button
+							onclick={() => selectedVersion && handleOpenAddSubjects(selectedVersion)}
+							variant="outline"
+							size="sm"
+						>
 							<Plus class="w-4 h-4 mr-1" />
-							เพิ่มเข้าหลักสูตร
+							เพิ่มรายวิชา
 						</Button>
 					</div>
 				</div>
@@ -870,9 +773,9 @@
 				<div class="mt-2">
 					<div class="flex items-center justify-between mb-3">
 						<h3 class="font-semibold text-lg">กิจกรรมพัฒนาผู้เรียน (แม่แบบหลักสูตร)</h3>
-						<Button size="sm" onclick={openUnifiedPlanAdd}>
+						<Button size="sm" onclick={openCreatePlanActivity}>
 							<Plus class="w-4 h-4 mr-1" />
-							เพิ่มเข้าหลักสูตร
+							เพิ่มกิจกรรม
 						</Button>
 					</div>
 
@@ -901,9 +804,6 @@
 											<span class="font-medium text-sm">{pa.catalog_name}</span>
 											{#if pa.is_required}
 												<Badge variant="outline" class="text-[10px]">บังคับ</Badge>
-											{/if}
-											{#if pa.term}
-												<Badge variant="outline" class="text-[10px]">เทอม {pa.term}</Badge>
 											{/if}
 										</div>
 										<div class="text-xs text-muted-foreground mt-1">
@@ -1224,138 +1124,6 @@
 		<DialogFooter>
 			<Button variant="outline" onclick={() => (showPlanActivityDialog = false)}>ยกเลิก</Button>
 			<Button onclick={handleSavePlanActivity}>บันทึก</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
-
-<!-- Unified Add to Plan Dialog -->
-<Dialog bind:open={showUnifiedPlanAddDialog}>
-	<DialogContent class="sm:max-w-lg">
-		<DialogHeader>
-			<DialogTitle>เพิ่มเข้าหลักสูตร</DialogTitle>
-			<DialogDescription>เลือกประเภทและข้อมูลที่ต้องการเพิ่ม</DialogDescription>
-		</DialogHeader>
-
-		<!-- Type selector -->
-		<div class="border rounded-lg p-3 bg-muted/30 mb-3">
-			<Label class="mb-2 block text-sm">ประเภท</Label>
-			<div class="flex gap-4">
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="radio" bind:group={unifiedPlanAddType} value="subject" />
-					<span>รายวิชา</span>
-				</label>
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="radio" bind:group={unifiedPlanAddType} value="activity" />
-					<span>กิจกรรมพัฒนาผู้เรียน</span>
-				</label>
-			</div>
-		</div>
-
-		<div class="space-y-3">
-			{#if unifiedPlanAddType === 'subject'}
-				<div class="space-y-1">
-					<Label>กลุ่มสาระ *</Label>
-					<Select.Root type="single" bind:value={upGroupId}>
-						<Select.Trigger class="w-full">
-							{subjectGroups.find((g) => g.id === upGroupId)?.name_th ?? 'เลือกกลุ่มสาระ'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each subjectGroups as g}
-								<Select.Item value={g.id}>{g.name_th}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				<div class="space-y-1">
-					<Label>วิชา *</Label>
-					<Select.Root type="single" bind:value={upSubjectId}>
-						<Select.Trigger class="w-full">
-							{subjectsForGroup.find((s) => s.id === upSubjectId)?.name_th ?? 'เลือกวิชา'}
-						</Select.Trigger>
-						<Select.Content class="max-h-[280px] overflow-y-auto">
-							{#each subjectsForGroup as s}
-								<Select.Item value={s.id}>{s.code} · {s.name_th}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			{:else}
-				<div class="space-y-1">
-					<Label>กลุ่มสาระ</Label>
-					<div class="px-3 py-2 border rounded bg-muted text-sm">กิจกรรมพัฒนาผู้เรียน</div>
-				</div>
-
-				<div class="space-y-1">
-					<Label>กิจกรรม *</Label>
-					<Select.Root type="single" bind:value={upCatalogId}>
-						<Select.Trigger class="w-full">
-							{activityCatalog.find((c) => c.id === upCatalogId)?.name ?? 'เลือกกิจกรรม'}
-						</Select.Trigger>
-						<Select.Content class="max-h-[280px] overflow-y-auto">
-							{#each activityCatalog as c}
-								<Select.Item value={c.id}>{c.name} · {c.activity_type}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			{/if}
-
-			<!-- Shared fields -->
-			<div class="space-y-1">
-				<Label>ระดับชั้น</Label>
-				<div class="flex flex-wrap gap-2">
-					{#each unifiedGradeLevels as gl}
-						<label
-							class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted"
-						>
-							<input
-								type="checkbox"
-								checked={upGradeLevelIds.includes(gl.id)}
-								onchange={(e) => {
-									if ((e.target as HTMLInputElement).checked) {
-										upGradeLevelIds = [...upGradeLevelIds, gl.id];
-									} else {
-										upGradeLevelIds = upGradeLevelIds.filter((id) => id !== gl.id);
-									}
-								}}
-							/>
-							{gl.short_name ?? gl.code}
-						</label>
-					{/each}
-				</div>
-			</div>
-
-			<div class="grid grid-cols-2 gap-3">
-				<div class="space-y-1">
-					<Label>ภาคเรียน</Label>
-					<Select.Root type="single" bind:value={upTerm}>
-						<Select.Trigger class="w-full">
-							{upTerm === '1'
-								? 'เทอม 1'
-								: upTerm === '2'
-									? 'เทอม 2'
-									: upTerm === 'SUMMER'
-										? 'ฤดูร้อน'
-										: 'ทุกเทอม'}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="1">เทอม 1</Select.Item>
-							<Select.Item value="2">เทอม 2</Select.Item>
-							<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="flex items-center gap-2 pt-6">
-					<Checkbox bind:checked={upIsRequired} id="up-required" />
-					<Label for="up-required" class="cursor-pointer">บังคับ</Label>
-				</div>
-			</div>
-		</div>
-
-		<DialogFooter>
-			<Button variant="outline" onclick={() => (showUnifiedPlanAddDialog = false)}>ยกเลิก</Button>
-			<Button onclick={handleUnifiedPlanSave}>บันทึก</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

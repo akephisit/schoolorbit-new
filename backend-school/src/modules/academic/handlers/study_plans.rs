@@ -606,15 +606,14 @@ pub async fn generate_courses_from_plan(
     // ============================================
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
 
-    let plan_acts: Vec<(Uuid, Option<serde_json::Value>, String, Option<String>, String, i32, String, Option<String>)> = sqlx::query_as(
+    let plan_acts: Vec<(Uuid, Option<serde_json::Value>, String, Option<String>, String, i32, String)> = sqlx::query_as(
         r#"SELECT sva.id,
                   sva.allowed_grade_level_ids,
                   ac.name,
                   ac.description,
                   ac.activity_type,
                   ac.periods_per_week,
-                  ac.scheduling_mode,
-                  sva.term
+                  ac.scheduling_mode
            FROM study_plan_version_activities sva
            JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
            WHERE sva.study_plan_version_id = $1"#
@@ -627,13 +626,7 @@ pub async fn generate_courses_from_plan(
     let mut activities_created = 0i32;
     let mut activities_skipped = 0i32;
 
-    for (sva_id, allowed, name, description, activity_type, periods_per_week, scheduling_mode, tpl_term) in &plan_acts {
-        // Filter by term: if template.term is set and doesn't match semester term, skip
-        if tpl_term.is_some() && tpl_term.as_deref() != Some(semester_term.as_str()) {
-            activities_skipped += 1;
-            continue;
-        }
-
+    for (sva_id, allowed, name, description, activity_type, periods_per_week, scheduling_mode) in &plan_acts {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM activity_slots WHERE source_plan_activity_id = $1 AND semester_id = $2)"
         )
@@ -750,11 +743,10 @@ pub async fn add_plan_activity(
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"INSERT INTO study_plan_version_activities
             (study_plan_version_id, activity_catalog_id, allowed_grade_level_ids,
-             is_required, display_order, term)
+             is_required, display_order)
            VALUES ($1, $2, $3,
                    COALESCE($4, true),
-                   COALESCE($5, 0),
-                   $6)
+                   COALESCE($5, 0))
            RETURNING *"#
     )
     .bind(version_id)
@@ -762,7 +754,6 @@ pub async fn add_plan_activity(
     .bind(&allowed)
     .bind(req.is_required)
     .bind(req.display_order)
-    .bind(&req.term)
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
@@ -792,7 +783,6 @@ pub async fn update_plan_activity(
             allowed_grade_level_ids = COALESCE($2, allowed_grade_level_ids),
             is_required = COALESCE($3, is_required),
             display_order = COALESCE($4, display_order),
-            term = COALESCE($5, term),
             updated_at = NOW()
            WHERE id = $1
            RETURNING *"#
@@ -801,7 +791,6 @@ pub async fn update_plan_activity(
     .bind(&allowed)
     .bind(req.is_required)
     .bind(req.display_order)
-    .bind(&req.term)
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::NotFound(e.to_string()))?;
@@ -847,15 +836,6 @@ pub async fn generate_activities_from_plan(
 
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
 
-    // Fetch target semester's term (for activity filtering by term)
-    let semester_term: Option<String> = sqlx::query_scalar(
-        "SELECT term FROM academic_semesters WHERE id = $1"
-    )
-    .bind(req.semester_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
     // Fetch all template activities for this plan version, joined with catalog data
     let templates: Vec<StudyPlanVersionActivity> = sqlx::query_as(
         "SELECT sva.*,
@@ -880,12 +860,6 @@ pub async fn generate_activities_from_plan(
     let mut skipped = 0i32;
 
     for tpl in &templates {
-        // Filter by term: if template.term is set and doesn't match semester term, skip
-        if tpl.term.is_some() && tpl.term != semester_term {
-            skipped += 1;
-            continue;
-        }
-
         // Skip if activity_slot with same source_plan_activity_id already exists in this semester
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(

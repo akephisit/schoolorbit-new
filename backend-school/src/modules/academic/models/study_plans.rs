@@ -195,7 +195,6 @@ pub struct StudyPlanVersionActivity {
     pub allowed_grade_level_ids: Option<serde_json::Value>,
     pub is_required: bool,
     pub display_order: i32,
-    pub term: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 
@@ -223,7 +222,6 @@ pub struct CreatePlanActivityRequest {
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
-    pub term: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -231,7 +229,6 @@ pub struct UpdatePlanActivityRequest {
     pub allowed_grade_level_ids: Option<Vec<Uuid>>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
-    pub term: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
