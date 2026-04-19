@@ -490,14 +490,12 @@
 				<Select.Trigger>
 					{#if selectedSubjectType === 'BASIC'}วิชาพื้นฐาน
 					{:else if selectedSubjectType === 'ADDITIONAL'}วิชาเพิ่มเติม
-					{:else if selectedSubjectType === 'ACTIVITY'}กิจกรรมฯ
 					{:else}ทุกประเภท{/if}
 				</Select.Trigger>
 				<Select.Content>
 					<Select.Item value="">ทุกประเภท</Select.Item>
 					<Select.Item value="BASIC">วิชาพื้นฐาน</Select.Item>
 					<Select.Item value="ADDITIONAL">วิชาเพิ่มเติม</Select.Item>
-					<Select.Item value="ACTIVITY">กิจกรรมฯ</Select.Item>
 				</Select.Content>
 			</Select.Root>
 		</div>
@@ -745,7 +743,7 @@
 					<div class="space-y-2">
 						<Label
 							class="flex items-center gap-1"
-							title="BASIC = พื้นฐาน, ADDITIONAL = เพิ่มเติม, ACTIVITY = กิจกรรมพัฒนาผู้เรียน"
+							title="BASIC = พื้นฐาน, ADDITIONAL = เพิ่มเติม (กิจกรรมพัฒนาผู้เรียนจัดการที่หน้า 'กิจกรรม')"
 						>
 							ประเภทวิชา <span class="text-destructive">*</span>
 							<Info class="w-3 h-3 text-muted-foreground" />
@@ -754,13 +752,11 @@
 							<Select.Trigger>
 								{#if currentSubject.type === 'BASIC'}พื้นฐาน (Basic)
 								{:else if currentSubject.type === 'ADDITIONAL'}เพิ่มเติม (Additional)
-								{:else if currentSubject.type === 'ACTIVITY'}กิจกรรม (Activity)
 								{:else}เลือกประเภท{/if}
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="BASIC">พื้นฐาน (Basic)</Select.Item>
 								<Select.Item value="ADDITIONAL">เพิ่มเติม (Additional)</Select.Item>
-								<Select.Item value="ACTIVITY">กิจกรรม (Activity)</Select.Item>
 							</Select.Content>
 						</Select.Root>
 					</div>
