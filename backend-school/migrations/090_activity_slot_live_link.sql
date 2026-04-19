@@ -34,7 +34,7 @@ INSERT INTO activity_catalog (name, activity_type, description, periods_per_week
 SELECT DISTINCT ON (slot.name)
     slot.name, slot.activity_type, slot.description, slot.periods_per_week, slot.scheduling_mode,
     COALESCE(
-        (SELECT id FROM academic_years WHERE is_current = true ORDER BY year DESC LIMIT 1),
+        (SELECT id FROM academic_years WHERE is_active = true ORDER BY year DESC LIMIT 1),
         (SELECT id FROM academic_years ORDER BY year ASC LIMIT 1)
     )
 FROM activity_slots slot

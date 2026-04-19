@@ -10,7 +10,7 @@ ALTER TABLE activity_catalog
 -- Backfill: ใช้ปีที่ current ถ้ามี ไม่เช่นนั้นใช้ปีแรกสุดในระบบ
 UPDATE activity_catalog
 SET start_academic_year_id = COALESCE(
-    (SELECT id FROM academic_years WHERE is_current = true ORDER BY year DESC LIMIT 1),
+    (SELECT id FROM academic_years WHERE is_active = true ORDER BY year DESC LIMIT 1),
     (SELECT id FROM academic_years ORDER BY year ASC LIMIT 1)
 )
 WHERE start_academic_year_id IS NULL;
