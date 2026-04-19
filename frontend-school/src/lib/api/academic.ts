@@ -959,16 +959,19 @@ export const updateCourseInstructorRole = async (
 export interface StudyPlanVersionActivity {
     id: string;
     study_plan_version_id: string;
-    activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
-    name: string;
-    description?: string;
-    periods_per_week: number;
-    scheduling_mode: 'synchronized' | 'independent';
+    activity_catalog_id: string;
     allowed_grade_level_ids?: string[];
     is_required: boolean;
     display_order: number;
     created_at: string;
     updated_at: string;
+
+    // Joined from catalog
+    catalog_name?: string;
+    catalog_activity_type?: string;
+    catalog_description?: string;
+    catalog_periods_per_week?: number;
+    catalog_scheduling_mode?: string;
 }
 
 export const listPlanActivities = async (versionId: string): Promise<{ data: StudyPlanVersionActivity[] }> => {
@@ -976,11 +979,7 @@ export const listPlanActivities = async (versionId: string): Promise<{ data: Stu
 };
 
 export const addPlanActivity = async (versionId: string, data: {
-    activity_type: string;
-    name: string;
-    description?: string;
-    periods_per_week?: number;
-    scheduling_mode?: string;
+    activity_catalog_id: string;
     allowed_grade_level_ids?: string[];
     is_required?: boolean;
     display_order?: number;
@@ -992,11 +991,6 @@ export const addPlanActivity = async (versionId: string, data: {
 };
 
 export const updatePlanActivity = async (id: string, data: Partial<{
-    activity_type: string;
-    name: string;
-    description: string;
-    periods_per_week: number;
-    scheduling_mode: string;
     allowed_grade_level_ids: string[];
     is_required: boolean;
     display_order: number;
@@ -1005,6 +999,50 @@ export const updatePlanActivity = async (id: string, data: Partial<{
         method: 'PUT',
         body: JSON.stringify(data)
     });
+};
+
+// ==========================================
+// Activity Catalog (คลังกิจกรรม)
+// ==========================================
+
+export interface ActivityCatalog {
+    id: string;
+    name: string;
+    activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
+    description?: string;
+    periods_per_week: number;
+    scheduling_mode: 'synchronized' | 'independent';
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export const listActivityCatalog = async (): Promise<{ data: ActivityCatalog[] }> => {
+    return await fetchApi(`/api/academic/activity-catalog`);
+};
+
+export const createActivityCatalog = async (data: {
+    name: string;
+    activity_type: string;
+    description?: string;
+    periods_per_week?: number;
+    scheduling_mode?: string;
+}) => {
+    return await fetchApi(`/api/academic/activity-catalog`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+};
+
+export const updateActivityCatalog = async (id: string, data: Partial<ActivityCatalog>) => {
+    return await fetchApi(`/api/academic/activity-catalog/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+};
+
+export const deleteActivityCatalog = async (id: string) => {
+    return await fetchApi(`/api/academic/activity-catalog/${id}`, { method: 'DELETE' });
 };
 
 export const deletePlanActivity = async (id: string) => {

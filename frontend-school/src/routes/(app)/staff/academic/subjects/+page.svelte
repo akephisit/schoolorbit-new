@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
 	import {
 		listSubjects,
 		listSubjectGroups,
@@ -9,9 +9,15 @@
 		deleteSubject,
 		lookupGradeLevels,
 		lookupAcademicYears,
+		listActivityCatalog,
+		createActivityCatalog,
+		updateActivityCatalog,
+		deleteActivityCatalog,
+		ACTIVITY_TYPE_LABELS,
 		type Subject,
 		type SubjectGroup,
-		type LookupItem
+		type LookupItem,
+		type ActivityCatalog
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
@@ -32,6 +38,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
+	import * as Tabs from '$lib/components/ui/tabs';
 	import {
 		BookOpen,
 		Plus,
@@ -45,8 +52,7 @@
 		ChevronDown,
 		ChevronRight,
 		Inbox,
-		Info,
-		FolderInput
+		Info
 	} from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 
@@ -78,6 +84,25 @@
 	let selectedYearFilter = $state('');
 	let selectedYearObj = $derived(academicYears.find((y) => y.id === selectedYearFilter));
 	let showAllVersions = $state(false);
+
+	// Tabs
+	let activeTab = $state('subjects');
+
+	// Activity Catalog States
+	let catalogItems = $state<ActivityCatalog[]>([]);
+	let catalogLoading = $state(false);
+	let catalogLoaded = $state(false);
+	let showCatalogDialog = $state(false);
+	let showCatalogDeleteDialog = $state(false);
+	let editingCatalog = $state<ActivityCatalog | null>(null);
+	let catalogDeleteTarget = $state<ActivityCatalog | null>(null);
+	let catalogSubmitting = $state(false);
+	let catalogDeleting = $state(false);
+	let catalogName = $state('');
+	let catalogType = $state<'scout' | 'club' | 'guidance' | 'social' | 'other'>('scout');
+	let catalogDesc = $state('');
+	let catalogPeriods = $state(1);
+	let catalogMode = $state<'synchronized' | 'independent'>('synchronized');
 
 	// Modal States
 	let showDialog = $state(false);
@@ -331,6 +356,103 @@
 		}
 	}
 
+	// ==========================================
+	// Activity Catalog Handlers
+	// ==========================================
+
+	async function loadCatalog() {
+		catalogLoading = true;
+		try {
+			const res = await listActivityCatalog();
+			catalogItems = res.data ?? [];
+			catalogLoaded = true;
+		} catch {
+			catalogItems = [];
+		} finally {
+			catalogLoading = false;
+		}
+	}
+
+	function openCreateCatalog() {
+		editingCatalog = null;
+		catalogName = '';
+		catalogType = 'scout';
+		catalogDesc = '';
+		catalogPeriods = 1;
+		catalogMode = 'synchronized';
+		showCatalogDialog = true;
+	}
+
+	function openEditCatalog(item: ActivityCatalog) {
+		editingCatalog = item;
+		catalogName = item.name;
+		catalogType = item.activity_type;
+		catalogDesc = item.description ?? '';
+		catalogPeriods = item.periods_per_week;
+		catalogMode = item.scheduling_mode;
+		showCatalogDialog = true;
+	}
+
+	async function handleSaveCatalog() {
+		if (!catalogName.trim()) {
+			toast.error('กรุณาระบุชื่อกิจกรรม');
+			return;
+		}
+
+		catalogSubmitting = true;
+		try {
+			const payload = {
+				name: catalogName.trim(),
+				activity_type: catalogType,
+				description: catalogDesc || undefined,
+				periods_per_week: catalogPeriods,
+				scheduling_mode: catalogMode
+			};
+
+			if (editingCatalog) {
+				await updateActivityCatalog(editingCatalog.id, payload);
+				toast.success('บันทึกแล้ว');
+			} else {
+				await createActivityCatalog(payload);
+				toast.success('เพิ่มกิจกรรมแล้ว');
+			}
+			showCatalogDialog = false;
+			await loadCatalog();
+		} catch (e) {
+			toast.error('บันทึกไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		} finally {
+			catalogSubmitting = false;
+		}
+	}
+
+	function handleDeleteCatalog(item: ActivityCatalog) {
+		catalogDeleteTarget = item;
+		showCatalogDeleteDialog = true;
+	}
+
+	async function confirmDeleteCatalog() {
+		if (!catalogDeleteTarget) return;
+		catalogDeleting = true;
+		try {
+			await deleteActivityCatalog(catalogDeleteTarget.id);
+			toast.success('ลบแล้ว');
+			showCatalogDeleteDialog = false;
+			catalogDeleteTarget = null;
+			await loadCatalog();
+		} catch (e) {
+			toast.error('ลบไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		} finally {
+			catalogDeleting = false;
+		}
+	}
+
+	// Load catalog when switching to its tab
+	$effect(() => {
+		if (activeTab === 'activities' && !catalogLoaded) {
+			loadCatalog();
+		}
+	});
+
 	function clearFilters() {
 		searchQuery = '';
 		if (!isDeptScope) selectedGroupId = '';
@@ -377,22 +499,22 @@
 			<p class="text-muted-foreground mt-1">จัดการรายชื่อวิชาและกลุ่มสาระการเรียนรู้</p>
 		</div>
 		<div class="flex items-center gap-2">
+			{#if activeTab === 'subjects'}
 				<Button onclick={handleOpenCreate} class="flex items-center gap-2">
-				<Plus class="w-4 h-4" />
-				เพิ่มรายวิชา
-			</Button>
-			<Button
-				variant="outline"
-				onclick={() => goto('/staff/academic/study-plans')}
-				title="กิจกรรมพัฒนาผู้เรียนจัดการในหน้าหลักสูตร"
-			>
-				<FolderInput class="w-4 h-4 mr-2" />
-				กิจกรรมพัฒนาผู้เรียน →
-			</Button>
+					<Plus class="w-4 h-4" />
+					เพิ่มรายวิชา
+				</Button>
+			{/if}
 		</div>
 	</div>
 
-	<!-- Filters & Search -->
+	<Tabs.Root bind:value={activeTab}>
+		<Tabs.List class="grid w-full grid-cols-2 max-w-md">
+			<Tabs.Trigger value="subjects">รายวิชา</Tabs.Trigger>
+			<Tabs.Trigger value="activities">กิจกรรม</Tabs.Trigger>
+		</Tabs.List>
+
+		<Tabs.Content value="subjects" class="space-y-4 mt-4">
 	<!-- Filters & Search -->
 	<div
 		class="bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row gap-3 items-end md:items-center flex-wrap"
@@ -661,6 +783,78 @@
 			</Table.Body>
 		</Table.Root>
 	</div>
+		</Tabs.Content>
+
+		<Tabs.Content value="activities" class="space-y-4 mt-4">
+			<div class="flex justify-between items-center mb-4">
+				<h3 class="font-semibold">คลังกิจกรรมพัฒนาผู้เรียน</h3>
+				<Button onclick={openCreateCatalog}>
+					<Plus class="w-4 h-4 mr-1" /> เพิ่มกิจกรรม
+				</Button>
+			</div>
+			<p class="text-xs text-muted-foreground mb-3">
+				กิจกรรมที่นี่เป็นคลังกลาง — ใช้อ้างอิงในหลักสูตร (tab "กิจกรรม" ของแต่ละ version)
+			</p>
+
+			{#if catalogLoading}
+				<div class="text-center py-6 text-sm text-muted-foreground">กำลังโหลด...</div>
+			{:else if catalogItems.length === 0}
+				<div
+					class="text-center py-6 text-sm text-muted-foreground border rounded-lg border-dashed"
+				>
+					ยังไม่มีกิจกรรม — กดปุ่ม "เพิ่มกิจกรรม"
+				</div>
+			{:else}
+				<div class="bg-card border border-border rounded-lg overflow-hidden">
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head>ชื่อ</Table.Head>
+								<Table.Head>ประเภท</Table.Head>
+								<Table.Head class="text-center">คาบ/สัปดาห์</Table.Head>
+								<Table.Head>รูปแบบ</Table.Head>
+								<Table.Head class="text-right w-[100px]"></Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each catalogItems as item (item.id)}
+								<Table.Row>
+									<Table.Cell class="font-medium">{item.name}</Table.Cell>
+									<Table.Cell>
+										<Badge variant="secondary"
+											>{ACTIVITY_TYPE_LABELS[item.activity_type]}</Badge
+										>
+									</Table.Cell>
+									<Table.Cell class="text-center">{item.periods_per_week}</Table.Cell>
+									<Table.Cell>
+										{item.scheduling_mode === 'independent' ? 'อิสระ' : 'พร้อมกัน'}
+									</Table.Cell>
+									<Table.Cell class="text-right">
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-8 w-8"
+											onclick={() => openEditCatalog(item)}
+										>
+											<Pencil class="w-4 h-4" />
+										</Button>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-8 w-8 text-destructive"
+											onclick={() => handleDeleteCatalog(item)}
+										>
+											<Trash2 class="w-4 h-4" />
+										</Button>
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
+			{/if}
+		</Tabs.Content>
+	</Tabs.Root>
 </div>
 
 <!-- Create/Edit Dialog -->
@@ -1010,6 +1204,85 @@
 		</DialogHeader>
 		<DialogFooter>
 			<Button onclick={() => (showSuccessDialog = false)}>ตกลง</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Activity Catalog Create/Edit Dialog -->
+<Dialog bind:open={showCatalogDialog}>
+	<DialogContent class="sm:max-w-[500px]">
+		<DialogHeader>
+			<DialogTitle>{editingCatalog ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม'}</DialogTitle>
+			<DialogDescription>กำหนดข้อมูลกิจกรรมในคลังกลาง</DialogDescription>
+		</DialogHeader>
+
+		<div class="space-y-3 py-2">
+			<div class="space-y-1">
+				<Label>ชื่อกิจกรรม <span class="text-destructive">*</span></Label>
+				<Input bind:value={catalogName} placeholder="เช่น ลูกเสือ / เนตรนารี, ชุมนุม ม.ต้น" />
+			</div>
+
+			<div class="grid grid-cols-2 gap-3">
+				<div class="space-y-1">
+					<Label>ประเภท</Label>
+					<Select.Root type="single" bind:value={catalogType}>
+						<Select.Trigger class="w-full">{ACTIVITY_TYPE_LABELS[catalogType]}</Select.Trigger>
+						<Select.Content>
+							{#each Object.entries(ACTIVITY_TYPE_LABELS) as [v, label]}
+								<Select.Item value={v}>{label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="space-y-1">
+					<Label>รูปแบบจัดตาราง</Label>
+					<Select.Root type="single" bind:value={catalogMode}>
+						<Select.Trigger class="w-full">
+							{catalogMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="synchronized">จัดพร้อมกันทุกห้อง</Select.Item>
+							<Select.Item value="independent">แต่ละห้องจัดเอง</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
+			<div class="space-y-1">
+				<Label>คาบ/สัปดาห์</Label>
+				<Input type="number" min={1} max={10} bind:value={catalogPeriods} />
+			</div>
+
+			<div class="space-y-1">
+				<Label>คำอธิบาย</Label>
+				<Textarea bind:value={catalogDesc} rows={2} />
+			</div>
+		</div>
+
+		<DialogFooter>
+			<Button variant="outline" onclick={() => (showCatalogDialog = false)}>ยกเลิก</Button>
+			<Button onclick={handleSaveCatalog} disabled={catalogSubmitting}>
+				{catalogSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Activity Catalog Delete Confirm Dialog -->
+<Dialog bind:open={showCatalogDeleteDialog}>
+	<DialogContent>
+		<DialogHeader>
+			<DialogTitle>ยืนยันลบกิจกรรม</DialogTitle>
+			<DialogDescription>
+				คุณแน่ใจหรือไม่ที่จะลบกิจกรรม <strong>{catalogDeleteTarget?.name}</strong>?
+				การลบจะทำไม่ได้ถ้ากิจกรรมถูกอ้างอิงในหลักสูตรใด ๆ
+			</DialogDescription>
+		</DialogHeader>
+		<DialogFooter>
+			<Button variant="outline" onclick={() => (showCatalogDeleteDialog = false)}>ยกเลิก</Button>
+			<Button variant="destructive" onclick={confirmDeleteCatalog} disabled={catalogDeleting}>
+				{catalogDeleting ? 'กำลังลบ...' : 'ลบ'}
+			</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

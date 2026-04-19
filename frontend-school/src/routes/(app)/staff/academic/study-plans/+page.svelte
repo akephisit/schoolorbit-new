@@ -20,10 +20,12 @@
 		addPlanActivity,
 		updatePlanActivity,
 		deletePlanActivity,
+		listActivityCatalog,
 		type StudyPlan,
 		type StudyPlanVersion,
 		type StudyPlanSubject,
 		type StudyPlanVersionActivity,
+		type ActivityCatalog,
 		type LookupItem,
 		type Subject
 	} from '$lib/api/academic';
@@ -366,13 +368,19 @@
 	let loadingPlanActivities = $state(false);
 	let showPlanActivityDialog = $state(false);
 	let editingPlanActivity = $state<StudyPlanVersionActivity | null>(null);
-	let paName = $state('');
-	let paType = $state<'scout' | 'club' | 'guidance' | 'social' | 'other'>('scout');
-	let paDescription = $state('');
-	let paPeriods = $state(1);
-	let paSchedulingMode = $state<'synchronized' | 'independent'>('synchronized');
+	let activityCatalog = $state<ActivityCatalog[]>([]);
+	let paCatalogId = $state('');
 	let paGradeLevelIds = $state<string[]>([]);
 	let paIsRequired = $state(true);
+
+	async function loadActivityCatalog() {
+		try {
+			const res = await listActivityCatalog();
+			activityCatalog = res.data ?? [];
+		} catch {
+			activityCatalog = [];
+		}
+	}
 
 	const PA_TYPE_LABELS: Record<string, string> = {
 		scout: 'ลูกเสือ / เนตรนารี / ยุวกาชาด',
@@ -400,46 +408,36 @@
 
 	function openCreatePlanActivity() {
 		editingPlanActivity = null;
-		paName = '';
-		paType = 'scout';
-		paDescription = '';
-		paPeriods = 1;
-		paSchedulingMode = 'synchronized';
+		paCatalogId = '';
 		paGradeLevelIds = [];
 		paIsRequired = true;
 		showPlanActivityDialog = true;
+		loadActivityCatalog();
 	}
 
 	function openEditPlanActivity(pa: StudyPlanVersionActivity) {
 		editingPlanActivity = pa;
-		paName = pa.name;
-		paType = pa.activity_type;
-		paDescription = pa.description ?? '';
-		paPeriods = pa.periods_per_week;
-		paSchedulingMode = pa.scheduling_mode;
+		paCatalogId = pa.activity_catalog_id;
 		paGradeLevelIds = pa.allowed_grade_level_ids ?? [];
 		paIsRequired = pa.is_required;
 		showPlanActivityDialog = true;
+		loadActivityCatalog();
 	}
 
 	async function handleSavePlanActivity() {
-		if (!paName.trim()) {
-			toast.error('กรุณาระบุชื่อ');
-			return;
-		}
-
 		const versionId = selectedVersion?.id;
 		if (!versionId) {
 			toast.error('กรุณาเลือก version');
 			return;
 		}
 
+		if (!paCatalogId) {
+			toast.error('กรุณาเลือกกิจกรรมจากคลัง');
+			return;
+		}
+
 		const payload = {
-			activity_type: paType,
-			name: paName.trim(),
-			description: paDescription || undefined,
-			periods_per_week: paPeriods,
-			scheduling_mode: paSchedulingMode,
+			activity_catalog_id: paCatalogId,
 			allowed_grade_level_ids: paGradeLevelIds.length > 0 ? paGradeLevelIds : undefined,
 			is_required: paIsRequired
 		};
@@ -460,7 +458,7 @@
 	}
 
 	async function handleDeletePlanActivity(pa: StudyPlanVersionActivity) {
-		if (!confirm(`ลบกิจกรรม "${pa.name}"?`)) return;
+		if (!confirm(`ลบกิจกรรม "${pa.catalog_name ?? ''}"?`)) return;
 		try {
 			await deletePlanActivity(pa.id);
 			toast.success('ลบแล้ว');
@@ -800,15 +798,17 @@
 								<div class="flex items-center gap-3 px-3 py-2">
 									<div class="flex-1 min-w-0">
 										<div class="flex items-center gap-2 flex-wrap">
-											<Badge variant="secondary">{PA_TYPE_LABELS[pa.activity_type]}</Badge>
-											<span class="font-medium text-sm">{pa.name}</span>
+											<Badge variant="secondary"
+												>{PA_TYPE_LABELS[pa.catalog_activity_type ?? 'other']}</Badge
+											>
+											<span class="font-medium text-sm">{pa.catalog_name}</span>
 											{#if pa.is_required}
 												<Badge variant="outline" class="text-[10px]">บังคับ</Badge>
 											{/if}
 										</div>
 										<div class="text-xs text-muted-foreground mt-1">
-											{pa.periods_per_week} คาบ/สัปดาห์ ·
-											{pa.scheduling_mode === 'independent'
+											{pa.catalog_periods_per_week} คาบ/สัปดาห์ ·
+											{pa.catalog_scheduling_mode === 'independent'
 												? 'แต่ละห้องจัดเอง'
 												: 'จัดพร้อมกันทุกห้อง'}
 										</div>
@@ -1091,55 +1091,33 @@
 	<DialogContent class="sm:max-w-[500px]">
 		<DialogHeader>
 			<DialogTitle>{editingPlanActivity ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม (แม่แบบ)'}</DialogTitle>
-			<DialogDescription>กำหนดข้อมูลกิจกรรมพัฒนาผู้เรียนในหลักสูตร</DialogDescription>
+			<DialogDescription>เลือกกิจกรรมจากคลังมาใช้ในหลักสูตรนี้</DialogDescription>
 		</DialogHeader>
 
 		<div class="space-y-3 py-2">
 			<div class="space-y-1">
-				<Label>ชื่อ <span class="text-destructive">*</span></Label>
-				<Input bind:value={paName} placeholder="เช่น ลูกเสือ / เนตรนารี, ชุมนุม ม.ต้น" />
+				<Label>เลือกกิจกรรมจากคลัง *</Label>
+				<Select.Root type="single" bind:value={paCatalogId}>
+					<Select.Trigger class="w-full">
+						{activityCatalog.find((c) => c.id === paCatalogId)?.name ?? 'เลือกกิจกรรม'}
+					</Select.Trigger>
+					<Select.Content class="max-h-[280px] overflow-y-auto">
+						{#each activityCatalog as c}
+							<Select.Item value={c.id}>
+								{c.name} · {c.activity_type} · {c.periods_per_week} คาบ
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+				<p class="text-xs text-muted-foreground">
+					ถ้าไม่มีกิจกรรมที่ต้องการ ไปเพิ่มที่หน้า
+					<a href="/staff/academic/subjects" class="underline">คลังรายวิชา tab "กิจกรรม"</a>
+				</p>
 			</div>
 
-			<div class="grid grid-cols-2 gap-3">
-				<div class="space-y-1">
-					<Label>ประเภท</Label>
-					<Select.Root type="single" bind:value={paType}>
-						<Select.Trigger class="w-full">{PA_TYPE_LABELS[paType]}</Select.Trigger>
-						<Select.Content>
-							{#each Object.entries(PA_TYPE_LABELS) as [v, label]}
-								<Select.Item value={v}>{label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="space-y-1">
-					<Label>รูปแบบจัดตาราง</Label>
-					<Select.Root type="single" bind:value={paSchedulingMode}>
-						<Select.Trigger class="w-full">
-							{paSchedulingMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="synchronized">จัดพร้อมกันทุกห้อง</Select.Item>
-							<Select.Item value="independent">แต่ละห้องจัดเอง</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-
-			<div class="grid grid-cols-2 gap-3">
-				<div class="space-y-1">
-					<Label>คาบ/สัปดาห์</Label>
-					<Input type="number" min={1} max={10} bind:value={paPeriods} />
-				</div>
-				<div class="space-y-1 flex items-center gap-2 pt-6">
-					<Checkbox bind:checked={paIsRequired} id="pa-required" />
-					<Label for="pa-required" class="cursor-pointer">บังคับ</Label>
-				</div>
-			</div>
-
-			<div class="space-y-1">
-				<Label>คำอธิบาย</Label>
-				<Textarea bind:value={paDescription} rows={2} />
+			<div class="flex items-center gap-2">
+				<Checkbox bind:checked={paIsRequired} id="pa-required" />
+				<Label for="pa-required" class="cursor-pointer">บังคับ</Label>
 			</div>
 		</div>
 
