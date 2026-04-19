@@ -136,65 +136,54 @@ pub async fn assign_courses(
         return Err(AppError::NotFound("Classroom not found".to_string()));
     }
 
-    let mut added_count = 0;
-
-    for subject_id in payload.subject_ids {
-        // Resolve primary from subject_default_instructors (fallback to legacy default_instructor_id)
-        let primary: Option<Uuid> = sqlx::query_scalar(
-            r#"SELECT COALESCE(
-                (SELECT instructor_id FROM subject_default_instructors
-                 WHERE subject_id = $1 AND role = 'primary' LIMIT 1),
-                (SELECT default_instructor_id FROM subjects WHERE id = $1)
-            )"#
-        )
-        .bind(subject_id)
-        .fetch_optional(&pool)
-        .await
-        .ok()
-        .flatten();
-
-        // Insert classroom_course. cc_sync_junction trigger (migration 078) upserts the
-        // primary into classroom_course_instructors automatically.
-        let result = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
-            r#"
+    // Single round-trip for any N subjects:
+    //   CTE 1: insert classroom_courses with primary resolved from subject_default_instructors
+    //          (fallback to legacy subjects.default_instructor_id). The cc_sync_junction trigger
+    //          (migration 078) auto-inserts the primary into classroom_course_instructors.
+    //   CTE 2: copy secondary defaults from subject_default_instructors into the junction.
+    //   SELECT: return the number of newly-inserted courses.
+    let added_count: i64 = sqlx::query_scalar(
+        r#"
+        WITH inserted AS (
             INSERT INTO classroom_courses (
                 classroom_id, academic_semester_id, subject_id, primary_instructor_id
             )
-            VALUES ($1, $2, $3, $4)
+            SELECT $1, $2, s.id,
+                COALESCE(
+                    (SELECT sdi.instructor_id FROM subject_default_instructors sdi
+                     WHERE sdi.subject_id = s.id AND sdi.role = 'primary' LIMIT 1),
+                    s.default_instructor_id
+                )
+            FROM subjects s
+            WHERE s.id = ANY($3)
             ON CONFLICT (classroom_id, academic_semester_id, subject_id) DO NOTHING
-            RETURNING id, primary_instructor_id
-            "#
+            RETURNING id, subject_id
+        ),
+        sec_copy AS (
+            INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
+            SELECT i.id, sdi.instructor_id, sdi.role
+            FROM inserted i
+            JOIN subject_default_instructors sdi
+              ON sdi.subject_id = i.subject_id AND sdi.role = 'secondary'
+            ON CONFLICT (classroom_course_id, instructor_id) DO NOTHING
+            RETURNING 1
         )
-        .bind(payload.classroom_id)
-        .bind(payload.academic_semester_id)
-        .bind(subject_id)
-        .bind(primary)
-        .fetch_optional(&pool)
-        .await;
+        SELECT COUNT(*) FROM inserted
+        "#
+    )
+    .bind(payload.classroom_id)
+    .bind(payload.academic_semester_id)
+    .bind(&payload.subject_ids)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("assign_courses failed: {}", e);
+        AppError::InternalServerError("Failed to assign courses".to_string())
+    })?;
 
-        if let Ok(Some((course_id, _))) = result {
-            added_count += 1;
-
-            // Copy remaining (secondary) default instructors from catalog into junction.
-            // Primary is already inserted by the trigger above.
-            sqlx::query(
-                r#"INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
-                   SELECT $1, sdi.instructor_id, sdi.role
-                   FROM subject_default_instructors sdi
-                   WHERE sdi.subject_id = $2 AND sdi.role = 'secondary'
-                   ON CONFLICT (classroom_course_id, instructor_id) DO NOTHING"#
-            )
-            .bind(course_id)
-            .bind(subject_id)
-            .execute(&pool)
-            .await
-            .ok();
-        }
-    }
-
-    Ok(Json(json!({ 
-        "success": true, 
-        "message": format!("Assigned {} courses", added_count) 
+    Ok(Json(json!({
+        "success": true,
+        "message": format!("Assigned {} courses", added_count)
     })).into_response())
 }
 
