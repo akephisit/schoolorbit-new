@@ -440,25 +440,16 @@ pub async fn add_subjects_to_version(
     let mut tx = pool.begin().await?;
     
     for subject in &req.subjects {
-        // Get subject code
-        let subject_code: (String,) = sqlx::query_as(
-            "SELECT code FROM subjects WHERE id = $1"
-        )
-        .bind(subject.subject_id)
-        .fetch_one(&mut *tx)
-        .await?;
-        
         sqlx::query(
-            "INSERT INTO study_plan_subjects 
-             (study_plan_version_id, grade_level_id, term, subject_id, subject_code, is_required, display_order)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "INSERT INTO study_plan_subjects
+             (study_plan_version_id, grade_level_id, term, subject_id, is_required, display_order)
+             VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (study_plan_version_id, grade_level_id, term, subject_id) DO NOTHING"
         )
         .bind(version_id)
         .bind(subject.grade_level_id)
         .bind(&subject.term)
         .bind(subject.subject_id)
-        .bind(&subject_code.0)
         .bind(subject.is_required.unwrap_or(true))
         .bind(subject.display_order.unwrap_or(0))
         .execute(&mut *tx)
@@ -535,19 +526,21 @@ pub async fn generate_courses_from_plan(
     .await?;
 
     // 3. Resolve subjects from plan for this grade + term, using effective-from versioning:
-    //    for each subject_code in the plan, find the latest version where start_academic_year_id <= target year
+    //    for each subject code in the plan, find the latest version where start_academic_year_id <= target year.
+    //    Code is derived via JOIN through sps.subject_id (originally-added subject) to subjects.code.
     let plan_subjects: Vec<(Uuid, Option<Uuid>)> = sqlx::query_as(
         r#"
-        SELECT DISTINCT ON (sps.subject_code) s.id, s.default_instructor_id
+        SELECT DISTINCT ON (original.code) s.id, s.default_instructor_id
         FROM study_plan_subjects sps
-        JOIN subjects s ON s.code = sps.subject_code
+        JOIN subjects original ON original.id = sps.subject_id
+        JOIN subjects s ON s.code = original.code
         JOIN academic_years ay ON ay.id = s.start_academic_year_id
         JOIN academic_years ay_target ON ay_target.id = $4
         WHERE sps.study_plan_version_id = $1
           AND sps.grade_level_id = $2
           AND sps.term = $3
           AND ay.year <= ay_target.year
-        ORDER BY sps.subject_code, ay.year DESC
+        ORDER BY original.code, ay.year DESC
         "#
     )
     .bind(plan_version_id)

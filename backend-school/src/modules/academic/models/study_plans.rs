@@ -93,7 +93,9 @@ pub struct StudyPlanSubject {
     pub grade_level_id: Uuid,
     pub term: String,
     pub subject_id: Uuid,
-    pub subject_code: String,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_code: Option<String>,  // joined from subjects.code
     pub display_order: i32,
     pub is_required: bool,
     #[sqlx(default)]
