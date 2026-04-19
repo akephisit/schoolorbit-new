@@ -953,6 +953,61 @@ export const updateCourseInstructorRole = async (
 };
 
 // ==========================================
+// Subject Default Instructors (team teaching at catalog level)
+// ครูประจำวิชาใน คลังรายวิชา — auto-copy ไป classroom_course_instructors ตอน assign
+// ==========================================
+
+export interface SubjectDefaultInstructor {
+    id: string;
+    subject_id: string;
+    instructor_id: string;
+    role: 'primary' | 'secondary';
+    instructor_name?: string;
+}
+
+export const listSubjectDefaultInstructors = async (
+    subjectId: string
+): Promise<{ data: SubjectDefaultInstructor[] }> => {
+    return await fetchApi(`/api/academic/subjects/${subjectId}/default-instructors`);
+};
+
+export const batchListSubjectDefaultInstructors = async (
+    subjectIds: string[]
+): Promise<{ data: Record<string, SubjectDefaultInstructor[]> }> => {
+    if (subjectIds.length === 0) return { data: {} };
+    const params = new URLSearchParams({ subject_ids: subjectIds.join(',') });
+    return await fetchApi(`/api/academic/subjects/default-instructors?${params}`);
+};
+
+export const addSubjectDefaultInstructor = async (
+    subjectId: string,
+    instructorId: string,
+    role: 'primary' | 'secondary' = 'secondary'
+) => {
+    return await fetchApi(`/api/academic/subjects/${subjectId}/default-instructors`, {
+        method: 'POST',
+        body: JSON.stringify({ instructor_id: instructorId, role })
+    });
+};
+
+export const removeSubjectDefaultInstructor = async (subjectId: string, instructorId: string) => {
+    return await fetchApi(`/api/academic/subjects/${subjectId}/default-instructors/${instructorId}`, {
+        method: 'DELETE'
+    });
+};
+
+export const updateSubjectDefaultInstructorRole = async (
+    subjectId: string,
+    instructorId: string,
+    role: 'primary' | 'secondary'
+) => {
+    return await fetchApi(`/api/academic/subjects/${subjectId}/default-instructors/${instructorId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ role })
+    });
+};
+
+// ==========================================
 // Study Plan Version Activities (template)
 // ==========================================
 
