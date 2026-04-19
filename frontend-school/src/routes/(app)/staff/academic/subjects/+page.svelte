@@ -92,6 +92,7 @@
 	let catalogItems = $state<ActivityCatalog[]>([]);
 	let catalogLoading = $state(false);
 	let catalogLoaded = $state(false);
+	let showAllCatalogVersions = $state(false);
 	let showCatalogDialog = $state(false);
 	let showCatalogDeleteDialog = $state(false);
 	let editingCatalog = $state<ActivityCatalog | null>(null);
@@ -446,7 +447,7 @@
 	async function loadCatalog() {
 		catalogLoading = true;
 		try {
-			const res = await listActivityCatalog();
+			const res = await listActivityCatalog({ latest_only: !showAllCatalogVersions });
 			catalogItems = res.data ?? [];
 			catalogLoaded = true;
 		} catch {
@@ -454,6 +455,39 @@
 		} finally {
 			catalogLoading = false;
 		}
+	}
+
+	// Version grouping for catalog: name → versions sorted DESC by year (latest first).
+	let catalogVersionsByName = $derived.by(() => {
+		const map = new Map<string, { versions: ActivityCatalog[]; latestId: string }>();
+		for (const c of catalogItems) {
+			const arr = map.get(c.name)?.versions ?? [];
+			arr.push(c);
+			map.set(c.name, { versions: arr, latestId: '' });
+		}
+		for (const [name, info] of map) {
+			info.versions.sort((a, b) => {
+				const ay = academicYears.find((y) => y.id === a.start_academic_year_id)?.year ?? 0;
+				const by = academicYears.find((y) => y.id === b.start_academic_year_id)?.year ?? 0;
+				return by - ay;
+			});
+			info.latestId = info.versions[0]?.id ?? '';
+			map.set(name, info);
+		}
+		return map;
+	});
+
+	function catalogVersionRangeLabel(item: ActivityCatalog): string {
+		const info = catalogVersionsByName.get(item.name);
+		if (!info) return '';
+		const idx = info.versions.findIndex((v) => v.id === item.id);
+		const startYear = academicYears.find((y) => y.id === item.start_academic_year_id)?.year;
+		const nextYear =
+			idx > 0
+				? academicYears.find((y) => y.id === info.versions[idx - 1].start_academic_year_id)?.year
+				: undefined;
+		if (startYear == null) return '';
+		return nextYear != null ? `ปี ${startYear}–${nextYear}` : `ตั้งแต่ปี ${startYear}`;
 	}
 
 	function openCreateCatalog() {
@@ -913,6 +947,19 @@
 		<Tabs.Content value="activities" class="space-y-4 mt-4">
 			<div class="flex justify-between items-center mb-4">
 				<h3 class="font-semibold">คลังกิจกรรมพัฒนาผู้เรียน</h3>
+				<label
+					class="flex items-center gap-2 text-sm cursor-pointer"
+					title="ปกติแสดงเฉพาะ version ล่าสุดของแต่ละกิจกรรม ติ๊กเพื่อดู version เก่าทั้งหมด"
+				>
+					<Checkbox
+						checked={showAllCatalogVersions}
+						onCheckedChange={(v) => {
+							showAllCatalogVersions = !!v;
+							void loadCatalog();
+						}}
+					/>
+					<span>แสดง version เก่าด้วย</span>
+				</label>
 			</div>
 			<p class="text-xs text-muted-foreground mb-3">
 				กิจกรรมที่นี่เป็นคลังกลาง — ใช้อ้างอิงในหลักสูตร (tab "กิจกรรม" ของแต่ละ version)
@@ -946,7 +993,26 @@
 								<Table.Row>
 									<Table.Cell class="font-medium">
 										{item.name}
-										{#if item.start_academic_year_id}
+										{@const vInfo = catalogVersionsByName.get(item.name)}
+										{#if vInfo && vInfo.versions.length > 1}
+											{#if vInfo.latestId === item.id}
+												<Badge
+													variant="default"
+													class="ml-2 text-[10px] h-5"
+													title="เวอร์ชันปัจจุบันของกิจกรรมนี้"
+												>
+													ปัจจุบัน · {catalogVersionRangeLabel(item)}
+												</Badge>
+											{:else}
+												<Badge
+													variant="outline"
+													class="ml-2 text-[10px] h-5 text-muted-foreground"
+													title="เวอร์ชันเก่า"
+												>
+													เก่า · {catalogVersionRangeLabel(item)}
+												</Badge>
+											{/if}
+										{:else if item.start_academic_year_id}
 											{@const year = academicYears.find((y) => y.id === item.start_academic_year_id)}
 											{#if year}
 												<Badge variant="outline" class="ml-2 text-[10px] h-5">

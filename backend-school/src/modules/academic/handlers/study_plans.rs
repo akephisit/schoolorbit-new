@@ -823,10 +823,18 @@ pub async fn generate_activities_from_plan(
 // Activity Catalog CRUD
 // ============================================
 
+#[derive(Debug, serde::Deserialize)]
+pub struct ActivityCatalogFilter {
+    /// When true (default), return only the latest version per `name`.
+    /// Pass false to show all versions (history/management view).
+    pub latest_only: Option<bool>,
+}
+
 /// GET /api/academic/activity-catalog
 pub async fn list_activity_catalog(
     State(state): State<AppState>,
     headers: HeaderMap,
+    axum::extract::Query(filter): axum::extract::Query<ActivityCatalogFilter>,
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
@@ -835,17 +843,26 @@ pub async fn list_activity_catalog(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    // Default: latest version per name (same semantics as subjects `latest_only`)
-    let rows: Vec<ActivityCatalog> = sqlx::query_as(
+    let latest_only = filter.latest_only.unwrap_or(true);
+
+    let sql = if latest_only {
         r#"SELECT DISTINCT ON (ac.name) ac.*
            FROM activity_catalog ac
            JOIN academic_years ay ON ay.id = ac.start_academic_year_id
            WHERE ac.is_active = true
            ORDER BY ac.name, ay.year DESC"#
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    } else {
+        r#"SELECT ac.*
+           FROM activity_catalog ac
+           JOIN academic_years ay ON ay.id = ac.start_academic_year_id
+           WHERE ac.is_active = true
+           ORDER BY ac.name, ay.year DESC"#
+    };
+
+    let rows: Vec<ActivityCatalog> = sqlx::query_as(sql)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(json!({ "success": true, "data": rows })))
 }

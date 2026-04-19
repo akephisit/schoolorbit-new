@@ -1069,8 +1069,14 @@ export interface ActivityCatalog {
     updated_at: string;
 }
 
-export const listActivityCatalog = async (): Promise<{ data: ActivityCatalog[] }> => {
-    return await fetchApi(`/api/academic/activity-catalog`);
+export const listActivityCatalog = async (opts: {
+    /** When true (default), return only the latest version per name. */
+    latest_only?: boolean;
+} = {}): Promise<{ data: ActivityCatalog[] }> => {
+    const params = new URLSearchParams();
+    if (opts.latest_only === false) params.set('latest_only', 'false');
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return await fetchApi(`/api/academic/activity-catalog${qs}`);
 };
 
 export const createActivityCatalog = async (data: {
