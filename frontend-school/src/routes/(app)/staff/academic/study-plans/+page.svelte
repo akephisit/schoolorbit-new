@@ -375,53 +375,85 @@
 	});
 
 	// ==========================================
-	// Unified "Add to Plan" dialog (วิชา + กิจกรรม, multi-select)
+	// Unified "Add to Plan" dialog (2-panel transfer list)
 	// ==========================================
 	let showAddDialog = $state(false);
-	let addGradeLevelIds = $state<string[]>([]); // multi-select grade (applies to all picks)
+
+	// Target (right panel)
+	let addTargetGradeId = $state('');
 	let addTerm = $state('1');
 	let addIsRequired = $state(true);
 
-	// Subject picker state
-	let addGroupFilter = $state(''); // group filter (optional)
-	let selectedSubjectIds = $state<Set<string>>(new Set()); // checked subjects
+	// Filters (left panel)
+	let filterGradeId = $state('');
+	let filterTerm = $state('');
+	let filterGroupId = $state('');
 
-	// Activity picker state
-	let selectedCatalogIds = $state<Set<string>>(new Set()); // checked activities
+	// Pending queue (right panel list)
+	type PendingItem = {
+		type: 'subject' | 'activity';
+		id: string;
+		name: string;
+		code?: string;
+		target_grade_id: string;
+		target_term: string;
+		is_required: boolean;
+	};
+	let pendingQueue = $state<PendingItem[]>([]);
 
-	function toggleSubjectPick(id: string) {
-		const next = new Set(selectedSubjectIds);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		selectedSubjectIds = next;
+	let filteredSubjectsForDialog = $derived.by(() => {
+		return subjects.filter((s) => {
+			if (filterGroupId && s.group_id !== filterGroupId) return false;
+			if (filterTerm && s.term !== filterTerm) return false;
+			if (filterGradeId && !(s.grade_level_ids ?? []).includes(filterGradeId)) return false;
+			return true;
+		});
+	});
+
+	let filteredActivitiesForDialog = $derived.by(() => {
+		return activityCatalog.filter((c) => {
+			if (filterTerm && c.term !== filterTerm) return false;
+			if (filterGradeId && !(c.grade_level_ids ?? []).includes(filterGradeId)) return false;
+			return true;
+		});
+	});
+
+	function isAlreadyAdded(type: 'subject' | 'activity', id: string): boolean {
+		return pendingQueue.some(
+			(q) =>
+				q.type === type &&
+				q.id === id &&
+				q.target_grade_id === addTargetGradeId &&
+				q.target_term === addTerm
+		);
 	}
 
-	function toggleCatalogPick(id: string) {
-		const next = new Set(selectedCatalogIds);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		selectedCatalogIds = next;
-	}
-
-	// Derived: valid grade levels for current version (uses plan.grade_level_ids; empty = all)
-	let unifiedGradeLevels = $derived.by(() => {
-		if (!selectedVersion) return gradeLevels;
-		const plan = plans.find((p) => p.id === selectedVersion!.study_plan_id);
-		if (!plan) return gradeLevels;
-
-		if (plan.grade_level_ids && plan.grade_level_ids.length > 0) {
-			return gradeLevels.filter((g) => plan.grade_level_ids!.includes(g.id));
+	function moveToQueue(type: 'subject' | 'activity', item: Subject | ActivityCatalog) {
+		if (!addTargetGradeId) {
+			toast.error('กรุณาเลือกชั้น');
+			return;
 		}
+		if (isAlreadyAdded(type, item.id)) return;
+		pendingQueue = [
+			...pendingQueue,
+			{
+				type,
+				id: item.id,
+				name:
+					type === 'subject'
+						? ((item as Subject).name_th ?? (item as ActivityCatalog).name)
+						: (item as ActivityCatalog).name,
+				code: type === 'subject' ? (item as Subject).code : undefined,
+				target_grade_id: addTargetGradeId,
+				target_term: addTerm,
+				is_required: addIsRequired
+			}
+		];
+	}
 
-		// empty/undefined = all grade levels
-		return gradeLevels;
-	});
-
-	// Filter subjects by group (uses the already-loaded `subjects` state from initData)
-	let filteredSubjectsInDialog = $derived.by(() => {
-		if (!addGroupFilter) return subjects;
-		return subjects.filter((s) => s.group_id === addGroupFilter);
-	});
+	function removeFromQueue(index: number) {
+		pendingQueue = pendingQueue.filter((_, i) => i !== index);
+	}
 
 	async function loadAllSubjects() {
 		try {
@@ -433,70 +465,56 @@
 	}
 
 	function openAddDialog() {
-		addGradeLevelIds = [];
+		pendingQueue = [];
+		filterGradeId = '';
+		filterTerm = '';
+		filterGroupId = '';
 		addTerm = '1';
 		addIsRequired = true;
-		addGroupFilter = '';
-		selectedSubjectIds = new Set();
-		selectedCatalogIds = new Set();
-		showAddDialog = true;
 
-		// Ensure catalogs are loaded
+		// Pre-fill target grade from plan's first grade_level_id
+		const plan = plans.find((p) => p.id === selectedVersion?.study_plan_id);
+		addTargetGradeId = plan?.grade_level_ids?.[0] ?? (gradeLevels[0]?.id ?? '');
+
 		if (activityCatalog.length === 0) loadActivityCatalog();
 		if (subjects.length === 0) loadAllSubjects();
+
+		showAddDialog = true;
 	}
 
-	async function handleAddDialogSave() {
-		if (!selectedVersion?.id) {
-			toast.error('กรุณาเลือก version');
+	async function handleSave() {
+		if (!selectedVersion?.id) return;
+		if (pendingQueue.length === 0) {
+			toast.error('ไม่มีรายการ');
 			return;
 		}
-		if (addGradeLevelIds.length === 0) {
-			toast.error('กรุณาเลือกระดับชั้น');
-			return;
-		}
-		if (selectedSubjectIds.size === 0 && selectedCatalogIds.size === 0) {
-			toast.error('กรุณาเลือกวิชาหรือกิจกรรมอย่างน้อย 1 รายการ');
-			return;
-		}
-
 		try {
-			// Subjects: addSubjectsToVersion expects array of { subject_id, grade_level_id, term, is_required }
-			if (selectedSubjectIds.size > 0) {
-				const rows: {
-					subject_id: string;
-					grade_level_id: string;
-					term: string;
-					is_required?: boolean;
-				}[] = [];
-				for (const sid of selectedSubjectIds) {
-					for (const gid of addGradeLevelIds) {
-						rows.push({
-							subject_id: sid,
-							grade_level_id: gid,
-							term: addTerm,
-							is_required: addIsRequired
-						});
-					}
-				}
-				await addSubjectsToVersion(selectedVersion.id, rows);
+			const subjectRows = pendingQueue
+				.filter((q) => q.type === 'subject')
+				.map((q) => ({
+					subject_id: q.id,
+					grade_level_id: q.target_grade_id,
+					term: q.target_term,
+					is_required: q.is_required
+				}));
+
+			if (subjectRows.length > 0) {
+				await addSubjectsToVersion(selectedVersion.id, subjectRows);
 			}
 
-			// Activities: addPlanActivity once per catalog item
-			if (selectedCatalogIds.size > 0) {
-				for (const cid of selectedCatalogIds) {
-					await addPlanActivity(selectedVersion.id, {
-						activity_catalog_id: cid,
-						allowed_grade_level_ids: addGradeLevelIds,
-						is_required: addIsRequired
-					});
-				}
+			const activityItems = pendingQueue.filter((q) => q.type === 'activity');
+			for (const a of activityItems) {
+				await addPlanActivity(selectedVersion.id, {
+					activity_catalog_id: a.id,
+					allowed_grade_level_ids: [a.target_grade_id],
+					is_required: a.is_required
+				});
 			}
 
-			toast.success('เพิ่มเข้าหลักสูตรแล้ว');
+			toast.success(`เพิ่มเข้าหลักสูตร ${pendingQueue.length} รายการแล้ว`);
 			showAddDialog = false;
+			pendingQueue = [];
 
-			// Reload
 			await loadPlanSubjects(selectedVersion.id);
 			await loadPlanActivitiesForVersion(selectedVersion.id);
 		} catch {
@@ -1126,130 +1144,247 @@
 	</DialogContent>
 </Dialog>
 
-<!-- Add to Plan Dialog (multi-select subjects + activities) -->
+<!-- Add to Plan Dialog (2-panel transfer list) -->
 <Dialog bind:open={showAddDialog}>
-	<DialogContent class="max-w-3xl max-h-[85vh] overflow-y-auto">
+	<DialogContent class="max-w-5xl max-h-[90vh] overflow-y-auto">
 		<DialogHeader>
 			<DialogTitle>เพิ่มเข้าหลักสูตร</DialogTitle>
-			<DialogDescription>
-				เลือกวิชาและ/หรือกิจกรรมที่จะเพิ่มเข้าหลักสูตรนี้
-			</DialogDescription>
 		</DialogHeader>
 
-		<div class="space-y-4 py-2">
-			<!-- Common fields -->
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-				<div class="space-y-1">
-					<Label>ระดับชั้น <span class="text-destructive">*</span></Label>
-					<div class="flex flex-wrap gap-2">
-						{#each unifiedGradeLevels as gl}
-							<label
-								class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted"
-							>
-								<input
-									type="checkbox"
-									checked={addGradeLevelIds.includes(gl.id)}
-									onchange={(e) => {
-										if ((e.target as HTMLInputElement).checked) {
-											addGradeLevelIds = [...addGradeLevelIds, gl.id];
-										} else {
-											addGradeLevelIds = addGradeLevelIds.filter((id) => id !== gl.id);
-										}
-									}}
-								/>
-								{gl.short_name ?? gl.code}
-							</label>
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+			<!-- LEFT: Catalog (source) -->
+			<div class="space-y-3 border rounded-lg p-3">
+				<h3 class="font-semibold flex items-center gap-2">
+					<BookOpen class="w-4 h-4" /> คลังวิชา
+				</h3>
+
+				<!-- Filters -->
+				<div class="space-y-2 p-2 bg-muted/50 rounded">
+					<div class="space-y-1">
+						<Label class="text-xs">ชั้นที่เปิดสอน (filter)</Label>
+						<Select.Root type="single" bind:value={filterGradeId}>
+							<Select.Trigger class="w-full h-8 text-xs">
+								{gradeLevels.find((g) => g.id === filterGradeId)?.short_name ?? 'ทั้งหมด'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="">ทั้งหมด</Select.Item>
+								{#each gradeLevels as g}
+									<Select.Item value={g.id}>{g.short_name ?? g.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="grid grid-cols-2 gap-2">
+						<div class="space-y-1">
+							<Label class="text-xs">ภาคเรียน</Label>
+							<Select.Root type="single" bind:value={filterTerm}>
+								<Select.Trigger class="w-full h-8 text-xs">
+									{filterTerm === '1'
+										? 'เทอม 1'
+										: filterTerm === '2'
+											? 'เทอม 2'
+											: filterTerm === 'SUMMER'
+												? 'ฤดูร้อน'
+												: 'ทั้งหมด'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="">ทั้งหมด</Select.Item>
+									<Select.Item value="1">เทอม 1</Select.Item>
+									<Select.Item value="2">เทอม 2</Select.Item>
+									<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="space-y-1">
+							<Label class="text-xs">กลุ่มสาระ</Label>
+							<Select.Root type="single" bind:value={filterGroupId}>
+								<Select.Trigger class="w-full h-8 text-xs">
+									{subjectGroups.find((g) => g.id === filterGroupId)?.name_th ?? 'ทุกกลุ่ม'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="">ทุกกลุ่ม</Select.Item>
+									{#each subjectGroups as g}
+										<Select.Item value={g.id}>{g.name_th}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+					</div>
+				</div>
+
+				<!-- Subjects list -->
+				<div>
+					<h4 class="text-xs font-semibold mb-1">วิชา ({filteredSubjectsForDialog.length})</h4>
+					<div class="max-h-[260px] overflow-y-auto divide-y rounded border">
+						{#each filteredSubjectsForDialog as s (s.id)}
+							{@const added = isAlreadyAdded('subject', s.id)}
+							<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+								<span class="flex-1 truncate">
+									<span class="font-medium">{s.code}</span>
+									<span class="text-muted-foreground ml-1">{s.name_th}</span>
+								</span>
+								{#if added}
+									<Badge variant="secondary" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+								{:else}
+									<Button
+										variant="outline"
+										size="icon"
+										class="h-6 w-6"
+										onclick={() => moveToQueue('subject', s)}
+										title="เพิ่มเข้ารายการ"
+									>
+										→
+									</Button>
+								{/if}
+							</div>
+						{:else}
+							<p class="text-xs text-muted-foreground italic text-center py-3">
+								ไม่มีวิชาตามตัวกรอง
+							</p>
 						{/each}
 					</div>
 				</div>
 
-				<div class="space-y-1">
-					<Label>ภาคเรียน</Label>
-					<Select.Root type="single" bind:value={addTerm}>
-						<Select.Trigger class="w-full">
-							{addTerm === '1' ? 'เทอม 1' : addTerm === '2' ? 'เทอม 2' : 'ฤดูร้อน'}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="1">เทอม 1</Select.Item>
-							<Select.Item value="2">เทอม 2</Select.Item>
-							<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
-						</Select.Content>
-					</Select.Root>
+				<!-- Activities list -->
+				<div>
+					<h4 class="text-xs font-semibold mb-1">
+						กิจกรรมพัฒนาผู้เรียน ({filteredActivitiesForDialog.length})
+					</h4>
+					<div class="max-h-[180px] overflow-y-auto divide-y rounded border">
+						{#each filteredActivitiesForDialog as c (c.id)}
+							{@const added = isAlreadyAdded('activity', c.id)}
+							<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+								<span class="flex-1 truncate">{c.name}</span>
+								{#if added}
+									<Badge variant="secondary" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+								{:else}
+									<Button
+										variant="outline"
+										size="icon"
+										class="h-6 w-6"
+										onclick={() => moveToQueue('activity', c)}
+										title="เพิ่มเข้ารายการ"
+									>
+										→
+									</Button>
+								{/if}
+							</div>
+						{:else}
+							<p class="text-xs text-muted-foreground italic text-center py-3">ไม่มีกิจกรรม</p>
+						{/each}
+					</div>
 				</div>
 			</div>
 
-			<!-- Subjects picker -->
-			<div class="border rounded-lg p-3 space-y-2">
-				<div class="flex items-center justify-between">
-					<h4 class="font-semibold text-sm">วิชา ({selectedSubjectIds.size} เลือก)</h4>
-					<Select.Root type="single" bind:value={addGroupFilter}>
-						<Select.Trigger class="w-[200px] h-7 text-xs">
-							{subjectGroups.find((g) => g.id === addGroupFilter)?.name_th ?? 'ทุกกลุ่มสาระ'}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="">ทุกกลุ่มสาระ</Select.Item>
-							{#each subjectGroups as g}
-								<Select.Item value={g.id}>{g.name_th}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="max-h-[200px] overflow-y-auto divide-y rounded border">
-					{#each filteredSubjectsInDialog as s (s.id)}
-						<label
-							class="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-muted text-sm"
-						>
-							<input
-								type="checkbox"
-								checked={selectedSubjectIds.has(s.id)}
-								onchange={() => toggleSubjectPick(s.id)}
-							/>
-							<span class="flex-1 truncate">
-								<span class="font-medium">{s.code}</span>
-								<span class="text-muted-foreground ml-1">{s.name_th}</span>
-							</span>
-							<Badge variant="outline" class="text-[10px]">{s.credit} นก</Badge>
-						</label>
-					{:else}
-						<p class="text-xs text-muted-foreground italic text-center py-3">
-							ไม่มีวิชาในกลุ่มนี้
-						</p>
-					{/each}
-				</div>
-			</div>
+			<!-- RIGHT: Target + Queue -->
+			<div class="space-y-3 border rounded-lg p-3 bg-blue-50/30">
+				<h3 class="font-semibold flex items-center gap-2">
+					<Plus class="w-4 h-4" /> เพิ่มเข้า
+				</h3>
 
-			<!-- Activities picker -->
-			<div class="border rounded-lg p-3 space-y-2">
-				<h4 class="font-semibold text-sm">
-					กิจกรรมพัฒนาผู้เรียน ({selectedCatalogIds.size} เลือก)
-				</h4>
-				<div class="max-h-[180px] overflow-y-auto divide-y rounded border">
-					{#each activityCatalog as c (c.id)}
-						<label
-							class="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-muted text-sm"
-						>
-							<input
-								type="checkbox"
-								checked={selectedCatalogIds.has(c.id)}
-								onchange={() => toggleCatalogPick(c.id)}
-							/>
-							<span class="flex-1 truncate">{c.name}</span>
-							<Badge variant="outline" class="text-[10px]">{c.activity_type}</Badge>
-							<Badge variant="outline" class="text-[10px]">{c.periods_per_week} คาบ</Badge>
-						</label>
-					{:else}
-						<p class="text-xs text-muted-foreground italic text-center py-3">
-							ไม่มีกิจกรรมในคลัง
-						</p>
-					{/each}
+				<!-- Target selectors -->
+				<div class="space-y-2 p-2 bg-background rounded border">
+					<div class="grid grid-cols-2 gap-2">
+						<div class="space-y-1">
+							<Label class="text-xs">ชั้น *</Label>
+							<Select.Root type="single" bind:value={addTargetGradeId}>
+								<Select.Trigger class="w-full h-8 text-xs">
+									{gradeLevels.find((g) => g.id === addTargetGradeId)?.short_name ?? 'เลือกชั้น'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each gradeLevels as g}
+										<Select.Item value={g.id}>{g.short_name ?? g.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="space-y-1">
+							<Label class="text-xs">ภาคเรียน</Label>
+							<Select.Root type="single" bind:value={addTerm}>
+								<Select.Trigger class="w-full h-8 text-xs">
+									{addTerm === '1' ? 'เทอม 1' : addTerm === '2' ? 'เทอม 2' : 'ฤดูร้อน'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="1">เทอม 1</Select.Item>
+									<Select.Item value="2">เทอม 2</Select.Item>
+									<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
+					</div>
+					<div class="flex items-center gap-2">
+						<Checkbox bind:checked={addIsRequired} id="add-required" />
+						<Label for="add-required" class="cursor-pointer text-xs">บังคับ</Label>
+					</div>
 				</div>
-			</div>
 
-			<div class="flex items-center gap-2">
-				<Checkbox bind:checked={addIsRequired} id="add-required" />
-				<Label for="add-required" class="cursor-pointer">
-					บังคับ (apply ให้ทั้งวิชาและกิจกรรมที่เลือก)
-				</Label>
+				<!-- Queue: subjects -->
+				<div>
+					<h4 class="text-xs font-semibold mb-1">
+						วิชาที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'subject').length})
+					</h4>
+					<div class="max-h-[260px] overflow-y-auto divide-y rounded border bg-background">
+						{#each pendingQueue as q, idx}
+							{#if q.type === 'subject'}
+								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+									<span class="flex-1 truncate">
+										<span class="font-medium">{q.code}</span>
+										<span class="text-muted-foreground ml-1">{q.name}</span>
+										<span class="text-[10px] text-blue-600 ml-2">
+											{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name} · เทอม
+											{q.target_term}
+											{#if q.is_required} · บังคับ{/if}
+										</span>
+									</span>
+									<Button
+										variant="outline"
+										size="icon"
+										class="h-6 w-6 text-destructive"
+										onclick={() => removeFromQueue(idx)}
+										title="เอาออก"
+									>
+										←
+									</Button>
+								</div>
+							{/if}
+						{:else}
+							<p class="text-xs text-muted-foreground italic text-center py-3">—</p>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Queue: activities -->
+				<div>
+					<h4 class="text-xs font-semibold mb-1">
+						กิจกรรมที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'activity').length})
+					</h4>
+					<div class="max-h-[180px] overflow-y-auto divide-y rounded border bg-background">
+						{#each pendingQueue as q, idx}
+							{#if q.type === 'activity'}
+								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+									<span class="flex-1 truncate">
+										{q.name}
+										<span class="text-[10px] text-blue-600 ml-2">
+											{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name}
+											{#if q.is_required} · บังคับ{/if}
+										</span>
+									</span>
+									<Button
+										variant="outline"
+										size="icon"
+										class="h-6 w-6 text-destructive"
+										onclick={() => removeFromQueue(idx)}
+										title="เอาออก"
+									>
+										←
+									</Button>
+								</div>
+							{/if}
+						{:else}
+							<p class="text-xs text-muted-foreground italic text-center py-3">—</p>
+						{/each}
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -1260,7 +1395,9 @@
 					showAddDialog = false;
 				}}>ยกเลิก</Button
 			>
-			<Button onclick={handleAddDialogSave}>บันทึก</Button>
+			<Button onclick={handleSave} disabled={pendingQueue.length === 0}>
+				💾 บันทึก {pendingQueue.length} รายการ
+			</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
