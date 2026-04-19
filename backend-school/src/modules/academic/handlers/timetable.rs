@@ -374,9 +374,11 @@ pub async fn create_timetable_entry(
             let sem = payload.academic_semester_id
                 .ok_or_else(|| AppError::BadRequest("academic_semester_id required for activity entry".to_string()))?;
 
-            // Lookup slot name for title
+            // Lookup slot name (from catalog via FK) for title
             let slot_name: Option<String> = sqlx::query_scalar(
-                "SELECT name FROM activity_slots WHERE id = $1"
+                "SELECT ac.name FROM activity_slots s
+                 JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
+                 WHERE s.id = $1"
             )
             .bind(slot_id)
             .fetch_optional(&pool)
