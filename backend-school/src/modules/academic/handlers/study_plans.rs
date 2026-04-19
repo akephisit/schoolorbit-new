@@ -522,81 +522,70 @@ pub async fn generate_courses_from_plan(
     .fetch_one(&mut *tx)
     .await?;
 
-    // 3. Resolve subjects from plan for this grade + term, using effective-from versioning:
-    //    for each subject code in the plan, find the latest version where start_academic_year_id <= target year.
-    //    Code is derived via JOIN through sps.subject_id (originally-added subject) to subjects.code.
-    let plan_subjects: Vec<(Uuid, Option<Uuid>)> = sqlx::query_as(
+    // 3. Resolve plan subjects + insert classroom_courses + copy team — all in one CTE:
+    //    - plan_subjects: for each subject code in plan, pick the latest version effective by target year
+    //    - inserted: INSERT classroom_courses with primary from subject_default_instructors
+    //                (fallback subjects.default_instructor_id). ON CONFLICT DO NOTHING skips existing.
+    //    - sec_copy: copy secondary defaults into classroom_course_instructors junction.
+    //    Returns (total_plan_subjects, added_count) so we can report skipped = total - added.
+    let counts: (i64, i64) = sqlx::query_as(
         r#"
-        SELECT DISTINCT ON (original.code) s.id, s.default_instructor_id
-        FROM study_plan_subjects sps
-        JOIN subjects original ON original.id = sps.subject_id
-        JOIN subjects s ON s.code = original.code
-        JOIN academic_years ay ON ay.id = s.start_academic_year_id
-        JOIN academic_years ay_target ON ay_target.id = $4
-        WHERE sps.study_plan_version_id = $1
-          AND sps.grade_level_id = $2
-          AND sps.term = $3
-          AND ay.year <= ay_target.year
-        ORDER BY original.code, ay.year DESC
+        WITH plan_subjects AS (
+            SELECT DISTINCT ON (original.code) s.id AS subject_id, s.default_instructor_id
+            FROM study_plan_subjects sps
+            JOIN subjects original ON original.id = sps.subject_id
+            JOIN subjects s ON s.code = original.code
+            JOIN academic_years ay ON ay.id = s.start_academic_year_id
+            JOIN academic_years ay_target ON ay_target.id = $4
+            WHERE sps.study_plan_version_id = $1
+              AND sps.grade_level_id = $2
+              AND sps.term = $3
+              AND ay.year <= ay_target.year
+            ORDER BY original.code, ay.year DESC
+        ),
+        inserted AS (
+            INSERT INTO classroom_courses
+                (classroom_id, subject_id, academic_semester_id, settings, primary_instructor_id)
+            SELECT $5, ps.subject_id, $6, '{}'::jsonb,
+                COALESCE(
+                    (SELECT sdi.instructor_id FROM subject_default_instructors sdi
+                     WHERE sdi.subject_id = ps.subject_id AND sdi.role = 'primary' LIMIT 1),
+                    ps.default_instructor_id
+                )
+            FROM plan_subjects ps
+            ON CONFLICT (classroom_id, subject_id, academic_semester_id) DO NOTHING
+            RETURNING id, subject_id
+        ),
+        sec_copy AS (
+            INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
+            SELECT i.id, sdi.instructor_id, sdi.role
+            FROM inserted i
+            JOIN subject_default_instructors sdi
+              ON sdi.subject_id = i.subject_id AND sdi.role = 'secondary'
+            ON CONFLICT (classroom_course_id, instructor_id) DO NOTHING
+            RETURNING 1
+        )
+        SELECT
+            (SELECT COUNT(*) FROM plan_subjects) AS total,
+            (SELECT COUNT(*) FROM inserted) AS added
         "#
     )
     .bind(plan_version_id)
     .bind(grade_level_id)
     .bind(&semester_term)
     .bind(target_academic_year_id)
-    .fetch_all(&mut *tx)
-    .await?;
+    .bind(req.classroom_id)
+    .bind(req.academic_semester_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| {
+        eprintln!("generate_courses_from_plan failed: {}", e);
+        AppError::InternalServerError("Failed to generate courses".to_string())
+    })?;
 
-    let mut added = 0;
-    let mut skipped = 0;
-
-    for (subject_id, default_instructor_id) in plan_subjects {
-        // Check if already exists
-        if req.skip_existing.unwrap_or(true) {
-            let exists: (bool,) = sqlx::query_as(
-                "SELECT EXISTS(
-                    SELECT 1 FROM classroom_courses 
-                    WHERE classroom_id = $1 
-                    AND subject_id = $2 
-                    AND academic_semester_id = $3
-                )"
-            )
-            .bind(req.classroom_id)
-            .bind(subject_id)
-            .bind(req.academic_semester_id)
-            .fetch_one(&mut *tx)
-            .await?;
-            
-            if exists.0 {
-                skipped += 1;
-                continue;
-            }
-        }
-        
-        // Trigger cc_sync_junction (migration 078) upserts the junction + demotes other
-        // primaries automatically when primary_instructor_id is set on INSERT.
-        let inserted: Option<(Uuid,)> = sqlx::query_as(
-            "INSERT INTO classroom_courses
-             (classroom_id, subject_id, academic_semester_id, settings, primary_instructor_id)
-             VALUES ($1, $2, $3, '{}'::jsonb, $4)
-             ON CONFLICT (classroom_id, subject_id, academic_semester_id) DO NOTHING
-             RETURNING id"
-        )
-        .bind(req.classroom_id)
-        .bind(subject_id)
-        .bind(req.academic_semester_id)
-        .bind(default_instructor_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| {
-             eprintln!("Failed to generate course: {}", e);
-             AppError::InternalServerError("Database error".to_string())
-        })?;
-
-        if inserted.is_some() {
-            added += 1;
-        }
-    }
+    let added = counts.1 as i32;
+    let skipped = (counts.0 - counts.1) as i32;
+    let _ = req.skip_existing; // flag retained for API compat; ON CONFLICT always skips
 
     // ============================================
     // Also generate activity_slots from plan's activities for the same semester
