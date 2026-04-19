@@ -307,6 +307,8 @@ export const listSubjects = async (filters: {
     /** Return, for each code, the latest version effective in this year (start_academic_year_id <= target year). */
     active_in_year_id?: string;
     term?: string;
+    /** When true (default on backend), return only the latest version per code. Pass false to show all versions. */
+    latest_only?: boolean;
 } = {}): Promise<{ data: Subject[] }> => {
     const params = new URLSearchParams();
     if (filters.group_id) params.append('group_id', filters.group_id);
@@ -317,6 +319,7 @@ export const listSubjects = async (filters: {
     if (filters.active_in_year_id) params.append('active_in_year_id', filters.active_in_year_id);
     if (filters.start_academic_year_id) params.append('start_academic_year_id', filters.start_academic_year_id);
     if (filters.term) params.append('term', filters.term);
+    if (filters.latest_only !== undefined) params.append('latest_only', String(filters.latest_only));
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return await fetchApi(`/api/academic/subjects${queryString}`);

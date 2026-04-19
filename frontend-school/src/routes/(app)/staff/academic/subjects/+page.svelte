@@ -75,6 +75,7 @@
 	let selectedLevelScope = $state('');
 	let selectedYearFilter = $state('');
 	let selectedYearObj = $derived(academicYears.find((y) => y.id === selectedYearFilter));
+	let showAllVersions = $state(false);
 
 	// Modal States
 	let showDialog = $state(false);
@@ -202,7 +203,8 @@
 				group_id: selectedGroupId || undefined,
 				subject_type: selectedSubjectType || undefined,
 				level_scope: selectedLevelScope || undefined,
-				active_in_year_id: selectedYearFilter || undefined
+				active_in_year_id: selectedYearFilter || undefined,
+				latest_only: !showAllVersions
 			});
 			subjects = subjectsRes.data;
 		} catch (e) {
@@ -335,6 +337,7 @@
 		// Reset year filter back to current academic year (the default)
 		const current = academicYears.find((y) => y.is_current);
 		selectedYearFilter = current?.id ?? academicYears[0]?.id ?? '';
+		showAllVersions = false;
 		loadData();
 	}
 
@@ -348,6 +351,7 @@
 		if (selectedSubjectType) return true;
 		if (selectedLevelScope) return true;
 		if (selectedYearFilter && selectedYearFilter !== defaultYear) return true;
+		if (showAllVersions) return true;
 		return false;
 	});
 
@@ -422,6 +426,21 @@
 			</Select.Root>
 			<p class="text-[10px] text-muted-foreground pl-1">วิชาที่ใช้ในปี</p>
 		</div>
+
+		<!-- Show all versions toggle -->
+		<label
+			class="flex items-center gap-2 text-xs cursor-pointer"
+			title="ปกติแสดงเฉพาะ version ล่าสุดของแต่ละรหัสวิชา ติ๊กเพื่อดู version เก่าทั้งหมด"
+		>
+			<Checkbox
+				checked={showAllVersions}
+				onCheckedChange={(v) => {
+					showAllVersions = !!v;
+					loadData();
+				}}
+			/>
+			<span>แสดง version เก่าด้วย</span>
+		</label>
 
 		<!-- Group Filter -->
 		<div class="w-full md:w-[220px]">
