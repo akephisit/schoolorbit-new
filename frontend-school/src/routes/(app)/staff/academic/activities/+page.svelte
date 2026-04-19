@@ -3,7 +3,6 @@
 	import {
 		getAcademicStructure,
 		listActivitySlots,
-		createActivitySlot,
 		updateActivitySlot,
 		deleteActivitySlot,
 		listActivityGroups,
@@ -260,11 +259,14 @@
 	}
 
 	function openEditSlot(s: ActivitySlot) {
-		slotName = s.name; slotDescription = s.description ?? '';
-		slotActivityType = s.activity_type; slotSemesterId = s.semester_id;
+		// Template fields live in catalog — read-only here. Only registration is editable.
+		slotName = s.name;
+		slotDescription = s.description ?? '';
+		slotActivityType = s.activity_type;
+		slotSemesterId = s.semester_id;
 		slotRegistrationType = s.registration_type;
-		slotPeriodsPerWeek = s.periods_per_week ?? 1;
-		slotSchedulingMode = s.scheduling_mode ?? 'synchronized';
+		slotPeriodsPerWeek = s.periods_per_week;
+		slotSchedulingMode = s.scheduling_mode;
 		slotAllowedGradeLevelIds = s.allowed_grade_level_ids ?? [];
 		isSlotEdit = true; editSlotTarget = s;
 		showSlotDialog = true;
@@ -277,17 +279,6 @@
 	}
 
 	async function handleSaveSlot() {
-		if (!slotName.trim()) { toast.error('กรุณาระบุชื่อ'); return; }
-		// Warn before switching to independent if groups exist
-		if (isSlotEdit && editSlotTarget && slotSchedulingMode === 'independent' && editSlotTarget.scheduling_mode !== 'independent') {
-			const slotGroups = groups.filter((g) => g.slot_id === editSlotTarget!.id);
-			if (slotGroups.length > 0) {
-				switchModeGroupCount = slotGroups.length;
-				switchModeMemberCount = slotGroups.reduce((sum, g) => sum + (g.member_count ?? 0), 0);
-				showSwitchModeDialog = true;
-				return;
-			}
-		}
 		doSaveSlot();
 	}
 
@@ -387,42 +378,18 @@
 	}
 
 	async function doSaveSlot() {
+		if (!isSlotEdit || !editSlotTarget) {
+			toast.error('สร้าง slot ใหม่ต้องทำผ่านหลักสูตร + generate');
+			return;
+		}
 		saving = true;
 		try {
-			if (isSlotEdit && editSlotTarget) {
-				const switchingToIndependent = slotSchedulingMode === 'independent' && editSlotTarget.scheduling_mode !== 'independent';
-				const switchingToSynchronized = slotSchedulingMode === 'synchronized' && editSlotTarget.scheduling_mode !== 'synchronized';
-				const effectiveRegType = slotSchedulingMode === 'independent' ? 'assigned' : slotRegistrationType;
-				await updateActivitySlot(editSlotTarget.id, {
-					name: slotName.trim(),
-					description: slotDescription || undefined,
-					activity_type: slotActivityType as any,
-					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					registration_type: effectiveRegType as any,
-					periods_per_week: slotPeriodsPerWeek,
-					scheduling_mode: slotSchedulingMode,
-				} as any);
-				if (switchingToIndependent) {
-					await removeAllSlotInstructors(editSlotTarget.id);
-				}
-				if (switchingToSynchronized) {
-					await deleteAllSlotClassroomAssignments(editSlotTarget.id);
-					await deleteSlotTimetableEntries(editSlotTarget.id);
-				}
-				toast.success('แก้ไขช่องกิจกรรมแล้ว');
-			} else {
-				await createActivitySlot({
-					name: slotName.trim(),
-					description: slotDescription || undefined,
-					activity_type: slotActivityType,
-					semester_id: slotSemesterId,
-					allowed_grade_level_ids: slotAllowedGradeLevelIds.length > 0 ? slotAllowedGradeLevelIds : undefined,
-					registration_type: (slotSchedulingMode === 'independent' ? 'assigned' : slotRegistrationType) || undefined,
-					periods_per_week: slotPeriodsPerWeek,
-					scheduling_mode: slotSchedulingMode,
-				});
-				toast.success('สร้างช่องกิจกรรมแล้ว');
-			}
+			// Semester-specific fields only. Template (name/type/periods/mode/grade)
+			// lives in activity_catalog — edit at คลังกิจกรรม.
+			await updateActivitySlot(editSlotTarget.id, {
+				registration_type: slotRegistrationType,
+			});
+			toast.success('แก้ไขการลงทะเบียนแล้ว');
 			showSlotDialog = false;
 			await loadData();
 		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { saving = false; }
@@ -508,9 +475,6 @@
 					<FolderInput class="w-4 h-4 mr-1" />
 					Generate จากหลักสูตร
 				</Button>
-				<Button onclick={openCreateSlot}>
-					<Plus class="mr-1 h-4 w-4" />สร้างช่องกิจกรรม
-				</Button>
 			</div>
 		{/if}
 	</div>
@@ -566,9 +530,9 @@
 							<div class="flex items-center gap-2 flex-wrap">
 								<span class="font-semibold">{slot.name}</span>
 								<Badge variant="secondary">{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge>
-								{#if slot.source_plan_activity_id}
+								{#if slot.activity_catalog_id}
 									<Badge variant="outline" class="text-[10px] border-blue-300 text-blue-700">
-										📎 จากหลักสูตร
+										📎 จากคลังกิจกรรม
 									</Badge>
 								{/if}
 								<span class="text-sm text-muted-foreground">{gradeLevelDisplay(slot.allowed_grade_level_ids)}</span>

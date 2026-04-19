@@ -540,7 +540,13 @@
 				await updateActivityCatalog(editingCatalog.id, payload);
 				toast.success('บันทึกแล้ว');
 			} else {
-				await createActivityCatalog(payload);
+				// New catalog entry defaults to current academic year as its version.
+				const currentYear = academicYears.find((y) => y.is_current) || academicYears[0];
+				if (!currentYear) {
+					toast.error('ไม่พบปีการศึกษา — โปรดตั้งปีการศึกษาก่อน');
+					return;
+				}
+				await createActivityCatalog({ ...payload, start_academic_year_id: currentYear.id });
 				toast.success('เพิ่มกิจกรรมแล้ว');
 			}
 			showCatalogDialog = false;

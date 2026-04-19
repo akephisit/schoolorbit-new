@@ -313,7 +313,6 @@
 	function openEditPlanActivity(pa: StudyPlanVersionActivity) {
 		editingPlanActivity = pa;
 		paCatalogId = pa.activity_catalog_id;
-		paGradeLevelIds = pa.allowed_grade_level_ids ?? [];
 		showPlanActivityDialog = true;
 		loadActivityCatalog();
 	}
@@ -330,17 +329,14 @@
 			return;
 		}
 
-		const payload = {
-			activity_catalog_id: paCatalogId,
-			allowed_grade_level_ids: paGradeLevelIds.length > 0 ? paGradeLevelIds : undefined
-		};
-
 		try {
 			if (editingPlanActivity) {
-				await updatePlanActivity(editingPlanActivity.id, payload);
+				// Plan activity update only controls display_order now.
+				// Grade scope comes from catalog → edit at คลังกิจกรรม.
+				await updatePlanActivity(editingPlanActivity.id, {});
 				toast.success('บันทึกแล้ว');
 			} else {
-				await addPlanActivity(versionId, payload);
+				await addPlanActivity(versionId, { activity_catalog_id: paCatalogId });
 				toast.success('เพิ่มกิจกรรมแล้ว');
 			}
 			showPlanActivityDialog = false;
@@ -431,7 +427,7 @@
 		return planActivities.some(
 			(a) =>
 				a.activity_catalog_id === id &&
-				(a.allowed_grade_level_ids ?? []).includes(addTargetGradeId) &&
+				(a.catalog_grade_level_ids ?? []).includes(addTargetGradeId) &&
 				(!a.catalog_term || a.catalog_term === addTerm)
 		);
 	}
@@ -457,7 +453,7 @@
 	let existingActivitiesForTarget = $derived.by(() =>
 		planActivities.filter(
 			(a) =>
-				(a.allowed_grade_level_ids ?? []).includes(addTargetGradeId) &&
+				(a.catalog_grade_level_ids ?? []).includes(addTargetGradeId) &&
 				(!a.catalog_term || a.catalog_term === addTerm)
 		)
 	);
@@ -534,10 +530,7 @@
 
 			const activityItems = pendingQueue.filter((q) => q.type === 'activity');
 			for (const a of activityItems) {
-				await addPlanActivity(selectedVersion.id, {
-					activity_catalog_id: a.id,
-					allowed_grade_level_ids: [a.target_grade_id]
-				});
+				await addPlanActivity(selectedVersion.id, { activity_catalog_id: a.id });
 			}
 
 			toast.success(`เพิ่มเข้าหลักสูตร ${pendingQueue.length} รายการแล้ว`);
@@ -591,7 +584,7 @@
 			result[g.id] = { '1': [], '2': [] };
 		}
 		for (const a of planActivities) {
-			const allowed = a.allowed_grade_level_ids ?? [];
+			const allowed = a.catalog_grade_level_ids ?? [];
 			const at = a.catalog_term;
 			for (const g of planGradeLevels) {
 				if (allowed.length > 0 && !allowed.includes(g.id)) continue;
