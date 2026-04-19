@@ -391,3 +391,96 @@ pub async fn update_course_instructor_role(
       .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(Json(json!({ "success": true })).into_response())
 }
+
+/// Query params for GET /api/academic/planning/plan-subjects
+#[derive(Debug, serde::Deserialize)]
+pub struct PlanSubjectsQuery {
+    pub classroom_id: Uuid,
+    pub semester_id: Uuid,
+}
+
+/// GET /api/academic/planning/plan-subjects?classroom_id&semester_id
+/// Returns the subjects prescribed by the classroom's study plan for the given semester,
+/// resolved with effective-from versioning (same logic as generate_courses_from_plan).
+/// - `has_plan = false` → classroom has no study_plan_version assigned; frontend should
+///   fall back to catalog-wide listing.
+/// - `subjects` matches the Subject shape returned by GET /api/academic/subjects.
+pub async fn list_plan_subjects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PlanSubjectsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    // Fetch classroom + semester in one round-trip
+    let meta: Option<(Option<Uuid>, Uuid, String, Uuid)> = sqlx::query_as(
+        r#"SELECT cr.study_plan_version_id, cr.grade_level_id, s.term, s.academic_year_id
+           FROM class_rooms cr
+           CROSS JOIN academic_semesters s
+           WHERE cr.id = $1 AND s.id = $2"#
+    )
+    .bind(q.classroom_id)
+    .bind(q.semester_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let (plan_version_id, grade_level_id, term, target_year_id) = match meta {
+        Some(v) => v,
+        None => return Err(AppError::NotFound("Classroom or semester not found".to_string())),
+    };
+
+    let plan_version_id = match plan_version_id {
+        Some(id) => id,
+        None => {
+            return Ok(Json(json!({
+                "success": true,
+                "data": { "has_plan": false, "subjects": [] }
+            })).into_response());
+        }
+    };
+
+    // Same shape as Subject in list_subjects (group_name_th, default_instructor_name, grade_level_ids)
+    let subjects = sqlx::query(
+        r#"
+        SELECT DISTINCT ON (original.code)
+            s.*, sg.name_th AS group_name_th,
+            (SELECT COALESCE(array_agg(sgl.grade_level_id), '{}')
+             FROM subject_grade_levels sgl WHERE sgl.subject_id = s.id) AS grade_level_ids,
+            concat(u.first_name, ' ', u.last_name) AS default_instructor_name
+        FROM study_plan_subjects sps
+        JOIN subjects original ON original.id = sps.subject_id
+        JOIN subjects s ON s.code = original.code
+        JOIN academic_years ay ON ay.id = s.start_academic_year_id
+        JOIN academic_years ay_target ON ay_target.id = $4
+        LEFT JOIN subject_groups sg ON sg.id = s.group_id
+        LEFT JOIN users u ON u.id = s.default_instructor_id
+        WHERE sps.study_plan_version_id = $1
+          AND sps.grade_level_id = $2
+          AND sps.term = $3
+          AND ay.year <= ay_target.year
+        ORDER BY original.code, ay.year DESC
+        "#
+    )
+    .bind(plan_version_id)
+    .bind(grade_level_id)
+    .bind(&term)
+    .bind(target_year_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    use crate::modules::academic::models::curriculum::Subject;
+    let mapped: Vec<Subject> = subjects
+        .into_iter()
+        .filter_map(|row| sqlx::FromRow::from_row(&row).ok())
+        .collect();
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "has_plan": true, "subjects": mapped }
+    })).into_response())
+}

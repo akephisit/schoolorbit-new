@@ -50,6 +50,7 @@ pub fn academic_routes() -> Router<AppState> {
                .put(handlers::subjects::update_subject_default_instructor_role))
 
         // Course Planning
+        .route("/planning/plan-subjects", get(handlers::course_planning::list_plan_subjects))
         .route("/planning/courses", get(handlers::course_planning::list_classroom_courses).post(handlers::course_planning::assign_courses))
         .route("/planning/courses/{id}", put(handlers::course_planning::update_course).delete(handlers::course_planning::remove_course))
         // Batch endpoint — MUST be registered BEFORE `/planning/courses/{id}/instructors`
