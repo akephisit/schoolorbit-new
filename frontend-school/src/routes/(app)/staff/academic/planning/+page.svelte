@@ -15,10 +15,14 @@
 		addCourseInstructor,
 		removeCourseInstructor,
 		updateCourseInstructorRole,
+		listClassroomActivities,
+		removeClassroomFromSlot,
+		ACTIVITY_TYPE_LABELS,
 		type AcademicStructureData,
 		type Classroom,
 		type ClassroomCourse,
-		type CourseInstructor
+		type CourseInstructor,
+		type ClassroomActivity
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { toast } from 'svelte-sonner';
@@ -50,6 +54,8 @@
 	// Data
 	let classrooms = $state<Classroom[]>([]);
 	let courses = $state<ClassroomCourse[]>([]);
+	let classroomActivities = $state<ClassroomActivity[]>([]);
+	let loadingActivities = $state(false);
 
 	// Edit Dialog
 	let showEditDialog = $state(false);
@@ -238,6 +244,35 @@
 		}
 	}
 
+	async function fetchClassroomActivities() {
+		if (!selectedClassroomId || !selectedTermId) {
+			classroomActivities = [];
+			return;
+		}
+		try {
+			loadingActivities = true;
+			const res = await listClassroomActivities(selectedClassroomId, selectedTermId);
+			classroomActivities = res.data ?? [];
+		} catch (e) {
+			console.error(e);
+			classroomActivities = [];
+		} finally {
+			loadingActivities = false;
+		}
+	}
+
+	async function handleRemoveClassroomActivity(activity: ClassroomActivity) {
+		if (!selectedClassroomId) return;
+		try {
+			await removeClassroomFromSlot(selectedClassroomId, activity.slot_id);
+			toast.success('ลบแล้ว — ถ้าเป็นห้องสุดท้าย slot จะหายด้วย');
+			await fetchClassroomActivities();
+		} catch (e) {
+			console.error(e);
+			toast.error('ลบไม่สำเร็จ');
+		}
+	}
+
 
 	function openDeleteDialog(course: ClassroomCourse) {
 		deletingCourse = course;
@@ -284,6 +319,7 @@
 			});
 
 			await fetchCourses();
+			await fetchClassroomActivities();
 		} catch (e) {
 			console.error(e);
 			toast.error('สร้างรายวิชาอัตโนมัติไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
@@ -348,8 +384,10 @@
 	$effect(() => {
 		if (selectedClassroomId && selectedTermId) {
 			fetchCourses();
+			fetchClassroomActivities();
 		} else {
 			courses = [];
+			classroomActivities = [];
 		}
 	});
 
@@ -513,7 +551,7 @@
 				</div>
 			</div>
 
-			<div class="bg-card border rounded-lg overflow-hidden">
+			<div class="bg-card border rounded-lg overflow-hidden" data-section="courses">
 				<Table.Root>
 					<Table.Header>
 						<Table.Row>
@@ -626,6 +664,78 @@
 						{/if}
 					</Table.Body>
 				</Table.Root>
+			</div>
+
+			<!-- กิจกรรมพัฒนาผู้เรียน -->
+			<div class="space-y-3 pt-4">
+				<h3 class="text-xl font-semibold">
+					กิจกรรมพัฒนาผู้เรียน
+					<Badge variant="outline" class="ml-2">{classroomActivities.length} กิจกรรม</Badge>
+				</h3>
+				<p class="text-sm text-muted-foreground">
+					ช่องกิจกรรมที่ห้องนี้เข้าร่วม — ลบได้จากห้องนี้
+					(ถ้าเป็นห้องสุดท้าย slot จะถูกลบโดยอัตโนมัติพร้อมกิจกรรม/ตารางสอน)
+				</p>
+
+				<div class="bg-card border rounded-lg overflow-hidden">
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head>ชื่อกิจกรรม</Table.Head>
+								<Table.Head class="w-[140px]">ประเภท</Table.Head>
+								<Table.Head class="w-[120px]">คาบ/สัปดาห์</Table.Head>
+								<Table.Head class="w-[140px]">โหมด</Table.Head>
+								<Table.Head class="text-right w-[160px]">การจัดการ</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#if loadingActivities}
+								<Table.Row>
+									<Table.Cell colspan={5} class="h-20 text-center text-muted-foreground">
+										<Loader2 class="w-5 h-5 animate-spin mx-auto" />
+									</Table.Cell>
+								</Table.Row>
+							{:else if classroomActivities.length === 0}
+								<Table.Row>
+									<Table.Cell colspan={5} class="h-20 text-center text-muted-foreground">
+										ห้องนี้ยังไม่ได้เข้าร่วมกิจกรรมใดในภาคเรียนนี้
+									</Table.Cell>
+								</Table.Row>
+							{:else}
+								{#each classroomActivities as activity}
+									<Table.Row>
+										<Table.Cell class="font-medium">{activity.name}</Table.Cell>
+										<Table.Cell>
+											<Badge
+												variant="secondary"
+												class="bg-green-100 text-green-800 hover:bg-green-100 hover:text-green-800 border-green-200"
+											>
+												{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+											</Badge>
+										</Table.Cell>
+										<Table.Cell>{activity.periods_per_week}</Table.Cell>
+										<Table.Cell class="text-xs text-muted-foreground">
+											{activity.scheduling_mode === 'independent'
+												? 'แต่ละห้องจัดเอง'
+												: 'จัดพร้อมกันทุกห้อง'}
+										</Table.Cell>
+										<Table.Cell class="text-right">
+											<Button
+												variant="outline"
+												size="sm"
+												class="text-destructive hover:bg-destructive/10"
+												onclick={() => handleRemoveClassroomActivity(activity)}
+											>
+												<Trash2 class="w-3 h-3 mr-1" />
+												ลบออกจากห้องนี้
+											</Button>
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							{/if}
+						</Table.Body>
+					</Table.Root>
+				</div>
 			</div>
 		</div>
 	{/if}

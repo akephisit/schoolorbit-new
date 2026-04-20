@@ -583,9 +583,11 @@
 									<Button variant="outline" size="sm" onclick={() => openEditSlot(slot)}>
 										<Settings class="mr-1 h-3 w-3" />ตั้งค่า
 									</Button>
-									<Button variant="outline" size="sm" class="text-destructive" onclick={() => confirmDeleteSlot(slot)}>
-										<Trash2 class="mr-1 h-3 w-3" />ลบช่อง
-									</Button>
+								</div>
+								<div class="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground mb-2">
+									จัดการการเข้าร่วมของห้องเรียนผ่านหน้า
+									<a href="/staff/academic/planning" class="underline hover:text-primary">Course Planning</a>
+									— slot จะถูกลบอัตโนมัติเมื่อไม่มีห้องใดเข้าร่วมแล้ว
 								</div>
 							{/if}
 
