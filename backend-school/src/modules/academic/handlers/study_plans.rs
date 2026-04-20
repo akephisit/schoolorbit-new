@@ -622,15 +622,19 @@ pub async fn generate_courses_from_plan(
             ON CONFLICT (activity_catalog_id, semester_id) DO NOTHING
             RETURNING id, activity_catalog_id
         ),
-        -- For counting: slots that map to resolved (both freshly inserted + pre-existing)
-        all_slots AS (
+        -- Slot ที่มีอยู่แล้วก่อนเรียก (PG modifying CTE ไม่เห็น inserted_slots ที่ INSERT ไป)
+        existing_slots AS (
             SELECT s.id, s.activity_catalog_id
             FROM activity_slots s
             JOIN resolved r ON r.catalog_id = s.activity_catalog_id
             WHERE s.semester_id = $2
         ),
-        -- Add junction row for this classroom if grade matches catalog scope
-        -- (grade_level_ids NULL = ทุกชั้น)
+        -- Union ทั้ง "ใหม่ที่เพิ่ง insert" + "มีอยู่แล้ว" — เพื่อใส่ junction ให้ครบ
+        all_slots AS (
+            SELECT id, activity_catalog_id FROM inserted_slots
+            UNION
+            SELECT id, activity_catalog_id FROM existing_slots
+        ),
         classroom_grade AS (
             SELECT cr.grade_level_id::text AS grade_str
             FROM class_rooms cr
@@ -911,11 +915,17 @@ pub async fn generate_activities_from_plan(
             ON CONFLICT (activity_catalog_id, semester_id) DO NOTHING
             RETURNING id, activity_catalog_id
         ),
-        all_slots AS (
+        -- Slot ที่มีอยู่แล้วก่อนเรียก (PG modifying CTE ไม่เห็น inserted_slots)
+        existing_slots AS (
             SELECT s.id, s.activity_catalog_id
             FROM activity_slots s
             JOIN resolved r ON r.catalog_id = s.activity_catalog_id
             WHERE s.semester_id = $2
+        ),
+        all_slots AS (
+            SELECT id, activity_catalog_id FROM inserted_slots
+            UNION
+            SELECT id, activity_catalog_id FROM existing_slots
         ),
         target_classrooms AS (
             SELECT cr.id, cr.grade_level_id::text AS grade_str
