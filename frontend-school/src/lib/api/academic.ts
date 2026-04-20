@@ -1128,3 +1128,33 @@ export const generateActivitiesFromPlan = async (data: {
     });
 };
 
+// ==========================================
+// Classroom Activities (junction-backed)
+// หน้า Course Planning = source of truth ต่อห้อง
+// ==========================================
+
+export interface ClassroomActivity {
+    slot_id: string;
+    activity_catalog_id: string;
+    name: string;
+    activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
+    periods_per_week: number;
+    scheduling_mode: 'synchronized' | 'independent';
+    is_active: boolean;
+}
+
+export const listClassroomActivities = async (
+    classroomId: string,
+    semesterId: string
+): Promise<{ data: ClassroomActivity[] }> => {
+    const params = new URLSearchParams({ semester_id: semesterId });
+    return await fetchApi(`/api/academic/planning/classrooms/${classroomId}/activities?${params}`);
+};
+
+export const removeClassroomFromSlot = async (classroomId: string, slotId: string) => {
+    return await fetchApi(
+        `/api/academic/planning/classrooms/${classroomId}/activities/${slotId}`,
+        { method: 'DELETE' }
+    );
+};
+
