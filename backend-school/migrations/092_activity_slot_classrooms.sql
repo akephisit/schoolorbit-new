@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS activity_slot_classrooms (
     slot_id UUID NOT NULL REFERENCES activity_slots(id) ON DELETE CASCADE,
     classroom_id UUID NOT NULL REFERENCES class_rooms(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT unique_slot_classroom UNIQUE (slot_id, classroom_id)
+    CONSTRAINT unique_slot_classroom_participation UNIQUE (slot_id, classroom_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_asc_slot ON activity_slot_classrooms(slot_id);
