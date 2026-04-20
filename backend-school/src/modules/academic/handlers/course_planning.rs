@@ -392,3 +392,89 @@ pub async fn update_course_instructor_role(
     Ok(Json(json!({ "success": true })).into_response())
 }
 
+// ==========================================
+// Classroom Activities (กิจกรรมพัฒนาผู้เรียน ต่อห้อง)
+// อ่าน/ลบ การเข้าร่วม slot ผ่าน junction activity_slot_classrooms
+// ==========================================
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct ClassroomActivity {
+    pub slot_id: Uuid,
+    pub activity_catalog_id: Uuid,
+    pub name: String,
+    pub activity_type: String,
+    pub periods_per_week: i32,
+    pub scheduling_mode: String,
+    pub is_active: bool,
+}
+
+#[derive(serde::Deserialize)]
+pub struct ClassroomActivityQuery {
+    pub semester_id: Uuid,
+}
+
+/// GET /api/academic/planning/classrooms/:classroom_id/activities?semester_id=...
+pub async fn list_classroom_activities(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(classroom_id): Path<Uuid>,
+    Query(query): Query<ClassroomActivityQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let rows: Vec<ClassroomActivity> = sqlx::query_as(
+        r#"SELECT s.id AS slot_id,
+                  s.activity_catalog_id,
+                  ac.name,
+                  ac.activity_type,
+                  ac.periods_per_week,
+                  ac.scheduling_mode,
+                  s.is_active
+           FROM activity_slot_classrooms asc_row
+           JOIN activity_slots s ON s.id = asc_row.slot_id
+           JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
+           WHERE asc_row.classroom_id = $1
+             AND s.semester_id = $2
+           ORDER BY ac.activity_type, ac.name"#,
+    )
+    .bind(classroom_id)
+    .bind(query.semester_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("list_classroom_activities error: {e}");
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
+
+    Ok(Json(json!({ "data": rows })).into_response())
+}
+
+/// DELETE /api/academic/planning/classrooms/:classroom_id/activities/:slot_id
+/// ลบห้องออกจาก slot — ถ้าเป็นห้องสุดท้าย trigger จะลบ slot ต่อ
+pub async fn remove_classroom_from_slot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((classroom_id, slot_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    sqlx::query(
+        "DELETE FROM activity_slot_classrooms WHERE classroom_id = $1 AND slot_id = $2"
+    )
+    .bind(classroom_id)
+    .bind(slot_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "success": true })).into_response())
+}
+

@@ -523,30 +523,28 @@ pub async fn generate_courses_from_plan(
     .await?;
 
     // 3. Resolve plan subjects + insert classroom_courses + copy team — all in one CTE:
-    //    - plan_subjects: for each subject code in plan, pick the latest version effective by target year
+    //    - plan_subjects: subject_id pinned ตรงๆ จาก sps (cohort continuity)
+    //      เด็กรุ่นไหน add วิชานี้ลงแผน → อยู่กับ version นั้นตลอดจนจบ
+    //      (แก้ catalog → ไม่กระทบ plan เก่า — snapshot ไว้แล้วใน sps.subject_id)
     //    - inserted: INSERT classroom_courses with primary from subject_default_instructors
     //                (fallback subjects.default_instructor_id). ON CONFLICT DO NOTHING skips existing.
     //    - sec_copy: copy secondary defaults into classroom_course_instructors junction.
     //    Returns (total_plan_subjects, added_count) so we can report skipped = total - added.
+    // target_academic_year_id ใช้ใน activity resolution ด้านล่าง (subject ตอนนี้ pin ตาม sps.subject_id)
     let counts: (i64, i64) = sqlx::query_as(
         r#"
         WITH plan_subjects AS (
-            SELECT DISTINCT ON (original.code) s.id AS subject_id, s.default_instructor_id
+            SELECT sps.subject_id, s.default_instructor_id
             FROM study_plan_subjects sps
-            JOIN subjects original ON original.id = sps.subject_id
-            JOIN subjects s ON s.code = original.code
-            JOIN academic_years ay ON ay.id = s.start_academic_year_id
-            JOIN academic_years ay_target ON ay_target.id = $4
+            JOIN subjects s ON s.id = sps.subject_id
             WHERE sps.study_plan_version_id = $1
               AND sps.grade_level_id = $2
               AND sps.term = $3
-              AND ay.year <= ay_target.year
-            ORDER BY original.code, ay.year DESC
         ),
         inserted AS (
             INSERT INTO classroom_courses
                 (classroom_id, subject_id, academic_semester_id, settings, primary_instructor_id)
-            SELECT $5, ps.subject_id, $6, '{}'::jsonb,
+            SELECT $4, ps.subject_id, $5, '{}'::jsonb,
                 COALESCE(
                     (SELECT sdi.instructor_id FROM subject_default_instructors sdi
                      WHERE sdi.subject_id = ps.subject_id AND sdi.role = 'primary' LIMIT 1),
@@ -573,7 +571,6 @@ pub async fn generate_courses_from_plan(
     .bind(plan_version_id)
     .bind(grade_level_id)
     .bind(&semester_term)
-    .bind(target_academic_year_id)
     .bind(req.classroom_id)
     .bind(req.academic_semester_id)
     .fetch_one(&mut *tx)
@@ -588,34 +585,78 @@ pub async fn generate_courses_from_plan(
     let _ = req.skip_existing; // flag retained for API compat; ON CONFLICT always skips
 
     // ============================================
-    // Generate activity_slots from plan — share 1 slot per (catalog, semester)
-    // across all plans. INSERT ... ON CONFLICT DO NOTHING gives us the skipped count.
+    // Generate activity_slots from plan — share 1 slot per (catalog_name, semester)
+    // across all plans (resolve to latest catalog version effective by target year).
+    // Junction activity_slot_classrooms → บันทึกว่า "ห้องนี้" เข้าร่วม slot ไหน
+    // (insert เฉพาะถ้าชั้นห้องตรงกับ catalog.grade_level_ids หรือ catalog = ทุกชั้น)
     // ============================================
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
 
     let activity_counts: (i64, i64) = sqlx::query_as(
         r#"
         WITH plan_acts AS (
-            SELECT DISTINCT sva.activity_catalog_id
+            SELECT DISTINCT sva.activity_catalog_id AS src_catalog_id
             FROM study_plan_version_activities sva
             WHERE sva.study_plan_version_id = $1
         ),
-        inserted AS (
+        -- Resolve to latest version per name effective by target year
+        resolved AS (
+            SELECT DISTINCT ON (src.name)
+                src.name AS catalog_name,
+                latest.id AS catalog_id,
+                latest.grade_level_ids
+            FROM plan_acts pa
+            JOIN activity_catalog src ON src.id = pa.src_catalog_id
+            JOIN activity_catalog latest ON latest.name = src.name
+            JOIN academic_years ay ON ay.id = latest.start_academic_year_id
+            JOIN academic_years ay_target ON ay_target.id = $4
+            WHERE latest.is_active = true
+              AND ay.year <= ay_target.year
+            ORDER BY src.name, ay.year DESC
+        ),
+        inserted_slots AS (
             INSERT INTO activity_slots
                 (activity_catalog_id, semester_id, registration_type, created_by)
-            SELECT pa.activity_catalog_id, $2, 'assigned', $3
-            FROM plan_acts pa
+            SELECT r.catalog_id, $2, 'assigned', $3
+            FROM resolved r
             ON CONFLICT (activity_catalog_id, semester_id) DO NOTHING
-            RETURNING id
+            RETURNING id, activity_catalog_id
+        ),
+        -- For counting: slots that map to resolved (both freshly inserted + pre-existing)
+        all_slots AS (
+            SELECT s.id, s.activity_catalog_id
+            FROM activity_slots s
+            JOIN resolved r ON r.catalog_id = s.activity_catalog_id
+            WHERE s.semester_id = $2
+        ),
+        -- Add junction row for this classroom if grade matches catalog scope
+        -- (grade_level_ids NULL = ทุกชั้น)
+        classroom_grade AS (
+            SELECT cr.grade_level_id::text AS grade_str
+            FROM class_rooms cr
+            WHERE cr.id = $5
+        ),
+        inserted_junction AS (
+            INSERT INTO activity_slot_classrooms (slot_id, classroom_id)
+            SELECT s.id, $5
+            FROM all_slots s
+            JOIN resolved r ON r.catalog_id = s.activity_catalog_id
+            LEFT JOIN classroom_grade cg ON true
+            WHERE r.grade_level_ids IS NULL
+               OR r.grade_level_ids ? cg.grade_str
+            ON CONFLICT (slot_id, classroom_id) DO NOTHING
+            RETURNING 1
         )
         SELECT
-            (SELECT COUNT(*) FROM plan_acts) AS total,
-            (SELECT COUNT(*) FROM inserted) AS added
+            (SELECT COUNT(*) FROM resolved) AS total,
+            (SELECT COUNT(*) FROM inserted_slots) AS added
         "#
     )
     .bind(plan_version_id)
     .bind(req.academic_semester_id)
     .bind(user_id)
+    .bind(target_academic_year_id)
+    .bind(req.classroom_id)
     .fetch_one(&mut *tx)
     .await
     .unwrap_or((0, 0));
@@ -753,6 +794,11 @@ pub async fn update_plan_activity(
 }
 
 /// DELETE /api/academic/study-plan-activities/:id
+/// Removing a plan activity cascades to current/future slot junction rows:
+///   - find sva's catalog name + plan
+///   - remove junction rows where classroom uses this plan AND slot's catalog name matches
+///     AND semester end_date >= today (current + future terms; historical untouched)
+///   - trigger auto-deletes empty slots
 pub async fn delete_plan_activity(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -765,10 +811,49 @@ pub async fn delete_plan_activity(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
+    // Capture context before delete: catalog name + plan version
+    let context: Option<(String, Uuid)> = sqlx::query_as(
+        r#"SELECT ac.name, sva.study_plan_version_id
+           FROM study_plan_version_activities sva
+           JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
+           WHERE sva.id = $1"#
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let mut tx = pool.begin().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     sqlx::query("DELETE FROM study_plan_version_activities WHERE id = $1")
         .bind(id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if let Some((catalog_name, plan_id)) = context {
+        // Remove junction rows only for current + future semesters
+        // Trigger asc_cleanup_empty_slot will drop empty slots (cascade timetable, groups, etc.)
+        sqlx::query(
+            r#"DELETE FROM activity_slot_classrooms asc_row
+               USING activity_slots s, activity_catalog ac, academic_semesters sem, class_rooms cr
+               WHERE asc_row.slot_id = s.id
+                 AND s.activity_catalog_id = ac.id
+                 AND s.semester_id = sem.id
+                 AND asc_row.classroom_id = cr.id
+                 AND ac.name = $1
+                 AND cr.study_plan_version_id = $2
+                 AND sem.end_date >= CURRENT_DATE"#
+        )
+        .bind(&catalog_name)
+        .bind(plan_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    tx.commit().await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(json!({ "success": true })))
@@ -790,26 +875,68 @@ pub async fn generate_activities_from_plan(
 
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
 
-    // Single CTE: distinct catalogs in plan → insert slot keyed on (catalog_id, semester_id).
-    // ON CONFLICT DO NOTHING — pre-existing slots are skipped (idempotent).
+    // Generate slots + junction rows for all classrooms using this plan in target semester.
+    // Slots share 1 per (resolved_catalog, semester) — resolve to latest version by target year.
+    // Junction: insert 1 row per (slot, classroom) where classroom grade matches catalog scope.
     let counts: (i64, i64) = sqlx::query_as(
         r#"
-        WITH plan_cats AS (
-            SELECT DISTINCT sva.activity_catalog_id
+        WITH target_year AS (
+            SELECT academic_year_id FROM academic_semesters WHERE id = $2
+        ),
+        plan_acts AS (
+            SELECT DISTINCT sva.activity_catalog_id AS src_catalog_id
             FROM study_plan_version_activities sva
             WHERE sva.study_plan_version_id = $1
         ),
-        inserted AS (
+        resolved AS (
+            SELECT DISTINCT ON (src.name)
+                src.name AS catalog_name,
+                latest.id AS catalog_id,
+                latest.grade_level_ids
+            FROM plan_acts pa
+            JOIN activity_catalog src ON src.id = pa.src_catalog_id
+            JOIN activity_catalog latest ON latest.name = src.name
+            JOIN academic_years ay ON ay.id = latest.start_academic_year_id
+            JOIN target_year ty ON true
+            JOIN academic_years ay_target ON ay_target.id = ty.academic_year_id
+            WHERE latest.is_active = true
+              AND ay.year <= ay_target.year
+            ORDER BY src.name, ay.year DESC
+        ),
+        inserted_slots AS (
             INSERT INTO activity_slots
                 (activity_catalog_id, semester_id, registration_type, created_by)
-            SELECT pc.activity_catalog_id, $2, 'assigned', $3
-            FROM plan_cats pc
+            SELECT r.catalog_id, $2, 'assigned', $3
+            FROM resolved r
             ON CONFLICT (activity_catalog_id, semester_id) DO NOTHING
-            RETURNING id
+            RETURNING id, activity_catalog_id
+        ),
+        all_slots AS (
+            SELECT s.id, s.activity_catalog_id
+            FROM activity_slots s
+            JOIN resolved r ON r.catalog_id = s.activity_catalog_id
+            WHERE s.semester_id = $2
+        ),
+        target_classrooms AS (
+            SELECT cr.id, cr.grade_level_id::text AS grade_str
+            FROM class_rooms cr
+            JOIN target_year ty ON ty.academic_year_id = cr.academic_year_id
+            WHERE cr.study_plan_version_id = $1
+        ),
+        inserted_junction AS (
+            INSERT INTO activity_slot_classrooms (slot_id, classroom_id)
+            SELECT s.id, tc.id
+            FROM all_slots s
+            JOIN resolved r ON r.catalog_id = s.activity_catalog_id
+            CROSS JOIN target_classrooms tc
+            WHERE r.grade_level_ids IS NULL
+               OR r.grade_level_ids ? tc.grade_str
+            ON CONFLICT (slot_id, classroom_id) DO NOTHING
+            RETURNING 1
         )
         SELECT
-            (SELECT COUNT(*) FROM plan_cats) AS total,
-            (SELECT COUNT(*) FROM inserted) AS added
+            (SELECT COUNT(*) FROM resolved) AS total,
+            (SELECT COUNT(*) FROM inserted_slots) AS added
         "#
     )
     .bind(req.study_plan_version_id)

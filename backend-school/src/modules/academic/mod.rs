@@ -62,6 +62,12 @@ pub fn academic_routes() -> Router<AppState> {
                axum::routing::delete(handlers::course_planning::remove_course_instructor)
                .put(handlers::course_planning::update_course_instructor_role))
 
+        // Classroom Activities (junction-backed) — source of truth ต่อห้อง
+        .route("/planning/classrooms/{classroom_id}/activities",
+               get(handlers::course_planning::list_classroom_activities))
+        .route("/planning/classrooms/{classroom_id}/activities/{slot_id}",
+               axum::routing::delete(handlers::course_planning::remove_classroom_from_slot))
+
         // Timetable: Periods
         .route("/periods", get(handlers::timetable::list_periods).post(handlers::timetable::create_period))
         .route("/periods/{id}", put(handlers::timetable::update_period).delete(handlers::timetable::delete_period))
