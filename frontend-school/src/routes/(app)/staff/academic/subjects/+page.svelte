@@ -924,23 +924,26 @@
 		<Table.Root>
 			<Table.Header>
 				<Table.Row>
-					<Table.Head class="w-[120px]">รหัสวิชา</Table.Head>
+					<Table.Head class="w-[130px]">รหัสวิชา</Table.Head>
 					<Table.Head>ชื่อรายวิชา</Table.Head>
-					<Table.Head>กลุ่มสาระฯ</Table.Head>
-					<Table.Head class="text-center w-[120px]">หน่วยกิต</Table.Head>
-					<Table.Head class="text-right w-[100px]">จัดการ</Table.Head>
+					<Table.Head class="w-[120px]">กลุ่มสาระฯ</Table.Head>
+					<Table.Head class="w-[120px]">ชั้น</Table.Head>
+					<Table.Head class="text-center w-[90px]">ภาคเรียน</Table.Head>
+					<Table.Head class="text-center w-[100px]">หน่วยกิต</Table.Head>
+					<Table.Head class="w-[140px]">ครูผู้สอน</Table.Head>
+					<Table.Head class="text-right w-[120px]">จัดการ</Table.Head>
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
 				{#if loading}
 					<Table.Row>
-						<Table.Cell colspan={5} class="text-center h-24 text-muted-foreground">
+						<Table.Cell colspan={8} class="text-center h-24 text-muted-foreground">
 							กำลังโหลดข้อมูล...
 						</Table.Cell>
 					</Table.Row>
 				{:else if subjects.length === 0}
 					<Table.Row>
-						<Table.Cell colspan={5} class="h-48">
+						<Table.Cell colspan={8} class="h-48">
 							<div class="flex flex-col items-center justify-center gap-3 py-6 text-center">
 								{#if hasActiveFilters}
 									<Inbox class="w-10 h-10 text-muted-foreground/60" />
@@ -973,7 +976,7 @@
 								)?.name
 							: undefined}
 						<Table.Row>
-							<Table.Cell class="font-medium align-top">
+							<Table.Cell class="font-medium align-middle">
 								<div class="font-bold text-primary">{subject.code}</div>
 								<div class="flex flex-wrap items-center gap-1 mt-1">
 									{#if totalVersions > 1}
@@ -1010,13 +1013,13 @@
 									{/if}
 								</div>
 							</Table.Cell>
-							<Table.Cell>
+							<Table.Cell class="align-middle">
 								<div class="font-medium">{subject.name_th}</div>
 								{#if subject.name_en}
 									<div class="text-xs text-muted-foreground">{subject.name_en}</div>
 								{/if}
 							</Table.Cell>
-							<Table.Cell>
+							<Table.Cell class="align-middle">
 								{#if subject.group_name_th}
 									<Badge variant="secondary" class="font-normal whitespace-nowrap">
 										{subject.group_name_th}
@@ -1025,13 +1028,49 @@
 									<span class="text-muted-foreground">-</span>
 								{/if}
 							</Table.Cell>
-							<Table.Cell class="text-center">
+							<Table.Cell class="align-middle">
+								{#if subject.grade_level_ids && subject.grade_level_ids.length > 0}
+									<div class="flex flex-wrap gap-0.5">
+										{#each subject.grade_level_ids as gid}
+											{@const gl = gradeLevels.find((l) => l.id === gid)}
+											{#if gl}
+												<Badge variant="outline" class="text-[10px] px-1 py-0 h-auto font-normal">
+													{gl.short_name ?? gl.code}
+												</Badge>
+											{/if}
+										{/each}
+									</div>
+								{:else}
+									<span class="text-xs text-muted-foreground">ทุกระดับ</span>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-center align-middle">
+								{#if subject.term === '1'}
+									<Badge variant="outline" class="text-[10px] font-normal">เทอม 1</Badge>
+								{:else if subject.term === '2'}
+									<Badge variant="outline" class="text-[10px] font-normal">เทอม 2</Badge>
+								{:else if subject.term === 'SUMMER'}
+									<Badge variant="outline" class="text-[10px] font-normal">ซัมเมอร์</Badge>
+								{:else}
+									<span class="text-xs text-muted-foreground">ทุกเทอม</span>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-center align-middle">
 								<div class="font-bold">{subject.credit} นก.</div>
 								<div class="text-xs text-muted-foreground">
 									{subject.hours_per_semester || '-'} ชม./เทอม
 								</div>
 							</Table.Cell>
-							<Table.Cell class="text-right">
+							<Table.Cell class="align-middle">
+								{#if subject.default_instructor_name}
+									<div class="text-sm truncate" title={subject.default_instructor_name}>
+										{subject.default_instructor_name}
+									</div>
+								{:else}
+									<span class="text-xs text-muted-foreground">ไม่ระบุ</span>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-right align-middle">
 								<div class="flex justify-end gap-1">
 									<Button
 										onclick={() => handleOpenEdit(subject)}
