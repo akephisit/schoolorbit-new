@@ -402,6 +402,11 @@
 		});
 	});
 
+	let filteredBasicSubjects = $derived(filteredSubjectsForDialog.filter((s) => s.type === 'BASIC'));
+	let filteredAdditionalSubjects = $derived(
+		filteredSubjectsForDialog.filter((s) => s.type === 'ADDITIONAL')
+	);
+
 	let filteredActivitiesForDialog = $derived.by(() => {
 		return activityCatalog.filter((c) => {
 			// term=null ใน catalog = "ทุกเทอม" → match ทุกค่า filter
@@ -1244,74 +1249,119 @@
 					</div>
 				</div>
 
-				<!-- Subjects list -->
-				<div>
-					<h4 class="text-xs font-semibold mb-1">วิชา ({filteredSubjectsForDialog.length})</h4>
-					<div class="max-h-[400px] overflow-y-auto divide-y rounded border">
-						{#each filteredSubjectsForDialog as s (s.id)}
-							{@const inPlan = isInPlan('subject', s.id)}
-							{@const inQueue = isInQueue('subject', s.id)}
-							<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
-								<span class="flex-1 truncate">
-									<span class="font-medium">{s.code}</span>
-									<span class="text-muted-foreground ml-1">{s.name_th}</span>
-								</span>
-								{#if inPlan}
-									<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
-								{:else if inQueue}
-									<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
-								{:else}
-									<Button
-										variant="outline"
-										size="icon"
-										class="h-6 w-6"
-										onclick={() => moveToQueue('subject', s)}
-										title="เพิ่มเข้ารายการ"
-									>
-										→
-									</Button>
-								{/if}
-							</div>
-						{:else}
-							<p class="text-xs text-muted-foreground italic text-center py-3">
-								ไม่มีวิชาตามตัวกรอง
-							</p>
-						{/each}
-					</div>
-				</div>
+				<!-- Tabs: พื้นฐาน / เพิ่มเติม / กิจกรรม -->
+				<Tabs.Root value="basic" class="w-full">
+					<Tabs.List class="grid w-full grid-cols-3 h-9">
+						<Tabs.Trigger value="basic" class="text-xs">
+							พื้นฐาน ({filteredBasicSubjects.length})
+						</Tabs.Trigger>
+						<Tabs.Trigger value="additional" class="text-xs">
+							เพิ่มเติม ({filteredAdditionalSubjects.length})
+						</Tabs.Trigger>
+						<Tabs.Trigger value="activity" class="text-xs">
+							กิจกรรม ({filteredActivitiesForDialog.length})
+						</Tabs.Trigger>
+					</Tabs.List>
 
-				<!-- Activities list -->
-				<div>
-					<h4 class="text-xs font-semibold mb-1">
-						กิจกรรมพัฒนาผู้เรียน ({filteredActivitiesForDialog.length})
-					</h4>
-					<div class="max-h-[220px] overflow-y-auto divide-y rounded border">
-						{#each filteredActivitiesForDialog as c (c.id)}
-							{@const inPlan = isInPlan('activity', c.id)}
-							{@const inQueue = isInQueue('activity', c.id)}
-							<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
-								<span class="flex-1 truncate">{c.name}</span>
-								{#if inPlan}
-									<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
-								{:else if inQueue}
-									<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
-								{:else}
-									<Button
-										variant="outline"
-										size="icon"
-										class="h-6 w-6"
-										onclick={() => moveToQueue('activity', c)}
-										title="เพิ่มเข้ารายการ"
-									>
-										→
-									</Button>
-								{/if}
-							</div>
-						{:else}
-							<p class="text-xs text-muted-foreground italic text-center py-3">ไม่มีกิจกรรม</p>
-						{/each}
-					</div>
-				</div>
+					<Tabs.Content value="basic" class="mt-2">
+						<div class="max-h-[480px] overflow-y-auto divide-y rounded border">
+							{#each filteredBasicSubjects as s (s.id)}
+								{@const inPlan = isInPlan('subject', s.id)}
+								{@const inQueue = isInQueue('subject', s.id)}
+								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+									<span class="flex-1 truncate">
+										<span class="font-medium">{s.code}</span>
+										<span class="text-muted-foreground ml-1">{s.name_th}</span>
+									</span>
+									{#if inPlan}
+										<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
+									{:else if inQueue}
+										<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+									{:else}
+										<Button
+											variant="outline"
+											size="icon"
+											class="h-6 w-6"
+											onclick={() => moveToQueue('subject', s)}
+											title="เพิ่มเข้ารายการ"
+										>
+											→
+										</Button>
+									{/if}
+								</div>
+							{:else}
+								<p class="text-xs text-muted-foreground italic text-center py-3">
+									ไม่มีวิชาพื้นฐานตามตัวกรอง
+								</p>
+							{/each}
+						</div>
+					</Tabs.Content>
+
+					<Tabs.Content value="additional" class="mt-2">
+						<div class="max-h-[480px] overflow-y-auto divide-y rounded border">
+							{#each filteredAdditionalSubjects as s (s.id)}
+								{@const inPlan = isInPlan('subject', s.id)}
+								{@const inQueue = isInQueue('subject', s.id)}
+								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+									<span class="flex-1 truncate">
+										<span class="font-medium">{s.code}</span>
+										<span class="text-muted-foreground ml-1">{s.name_th}</span>
+									</span>
+									{#if inPlan}
+										<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
+									{:else if inQueue}
+										<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+									{:else}
+										<Button
+											variant="outline"
+											size="icon"
+											class="h-6 w-6"
+											onclick={() => moveToQueue('subject', s)}
+											title="เพิ่มเข้ารายการ"
+										>
+											→
+										</Button>
+									{/if}
+								</div>
+							{:else}
+								<p class="text-xs text-muted-foreground italic text-center py-3">
+									ไม่มีวิชาเพิ่มเติมตามตัวกรอง
+								</p>
+							{/each}
+						</div>
+					</Tabs.Content>
+
+					<Tabs.Content value="activity" class="mt-2">
+						<div class="max-h-[480px] overflow-y-auto divide-y rounded border">
+							{#each filteredActivitiesForDialog as c (c.id)}
+								{@const inPlan = isInPlan('activity', c.id)}
+								{@const inQueue = isInQueue('activity', c.id)}
+								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+									<span class="flex-1 truncate">{c.name}</span>
+									{#if inPlan}
+										<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
+									{:else if inQueue}
+										<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+									{:else}
+										<Button
+											variant="outline"
+											size="icon"
+											class="h-6 w-6"
+											onclick={() => moveToQueue('activity', c)}
+											title="เพิ่มเข้ารายการ"
+										>
+											→
+										</Button>
+									{/if}
+								</div>
+							{:else}
+								<p class="text-xs text-muted-foreground italic text-center py-3">
+									ไม่มีกิจกรรมตามตัวกรอง
+								</p>
+							{/each}
+						</div>
+					</Tabs.Content>
+				</Tabs.Root>
 			</div>
 
 			<!-- RIGHT: Target + Queue -->
