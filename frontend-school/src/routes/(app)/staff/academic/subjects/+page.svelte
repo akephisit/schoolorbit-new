@@ -983,8 +983,8 @@
 							: undefined}
 						<Table.Row>
 							<Table.Cell class="font-medium align-middle">
-								<div class="font-bold text-primary">{subject.code}</div>
-								<div class="flex flex-wrap items-center gap-1 mt-1">
+								<div class="flex items-center gap-1.5 flex-wrap">
+									<span class="font-bold text-primary">{subject.code}</span>
 									{#if totalVersions > 1}
 										{#if isLatestVersion}
 											<Badge
@@ -1001,21 +1001,9 @@
 													? `เวอร์ชันล่าสุดคือ ${latestYearName}`
 													: 'มีเวอร์ชันที่ใหม่กว่านี้อยู่'}
 											>
-												เก่า · {versionRangeLabel(subject)}
+												เก่า
 											</Badge>
 										{/if}
-										<Badge
-											variant="secondary"
-											class="text-[10px] px-1.5 py-0 h-auto font-normal"
-											title="มี {totalVersions} เวอร์ชันของรหัสวิชานี้ที่โหลดอยู่"
-										>
-											{totalVersions} versions
-										</Badge>
-									{/if}
-									{#if subject.type !== 'BASIC'}
-										<Badge variant="outline" class="text-[10px] px-1 py-0 h-auto">
-											{subject.type}
-										</Badge>
 									{/if}
 								</div>
 							</Table.Cell>
