@@ -329,16 +329,10 @@
 			return;
 		}
 
+		if (!editingPlanActivity) return;
 		try {
-			if (editingPlanActivity) {
-				// Plan activity update only controls display_order now.
-				// Grade scope comes from catalog → edit at คลังกิจกรรม.
-				await updatePlanActivity(editingPlanActivity.id, {});
-				toast.success('บันทึกแล้ว');
-			} else {
-				await addPlanActivity(versionId, { activity_catalog_id: paCatalogId });
-				toast.success('เพิ่มกิจกรรมแล้ว');
-			}
+			await updatePlanActivity(editingPlanActivity.id, {});
+			toast.success('บันทึกแล้ว');
 			showPlanActivityDialog = false;
 			await loadPlanActivitiesForVersion(versionId);
 		} catch {
@@ -429,7 +423,7 @@
 		return planActivities.some(
 			(a) =>
 				a.activity_catalog_id === id &&
-				(a.catalog_grade_level_ids ?? []).includes(addTargetGradeId) &&
+				a.grade_level_id === addTargetGradeId &&
 				(!a.term || a.term === addTerm)
 		);
 	}
@@ -454,9 +448,7 @@
 
 	let existingActivitiesForTarget = $derived.by(() =>
 		planActivities.filter(
-			(a) =>
-				(a.catalog_grade_level_ids ?? []).includes(addTargetGradeId) &&
-				(!a.term || a.term === addTerm)
+			(a) => a.grade_level_id === addTargetGradeId && (!a.term || a.term === addTerm)
 		)
 	);
 
@@ -532,9 +524,10 @@
 
 			const activityItems = pendingQueue.filter((q) => q.type === 'activity');
 			for (const a of activityItems) {
-				// Pin the term in the plan at the term user selected when adding.
+				// Pin grade + term ตามที่ user เลือกใน dialog (pattern C: 1 row per grade)
 				await addPlanActivity(selectedVersion.id, {
 					activity_catalog_id: a.id,
+					grade_level_id: a.target_grade_id,
 					term: a.target_term || null
 				});
 			}
@@ -590,16 +583,13 @@
 			result[g.id] = { '1': [], '2': [] };
 		}
 		for (const a of planActivities) {
-			const allowed = a.catalog_grade_level_ids ?? [];
 			const at = a.term;
-			for (const g of planGradeLevels) {
-				if (allowed.length > 0 && !allowed.includes(g.id)) continue;
-				if (at === null || at === undefined || at === '') {
-					result[g.id]['1'].push(a);
-					result[g.id]['2'].push(a);
-				} else if (at === '1' || at === '2') {
-					result[g.id][at].push(a);
-				}
+			if (!result[a.grade_level_id]) continue;
+			if (at === null || at === undefined || at === '') {
+				result[a.grade_level_id]['1'].push(a);
+				result[a.grade_level_id]['2'].push(a);
+			} else if (at === '1' || at === '2') {
+				result[a.grade_level_id][at].push(a);
 			}
 		}
 		return result;

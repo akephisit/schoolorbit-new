@@ -637,9 +637,12 @@ pub async fn generate_courses_from_plan(
     let activity_counts: (i64, i64) = sqlx::query_as(
         r#"
         WITH plan_acts AS (
+            -- เฉพาะ sva ที่ grade_level_id ตรงกับห้องที่ generate (pattern C)
             SELECT DISTINCT sva.activity_catalog_id AS src_catalog_id
             FROM study_plan_version_activities sva
+            JOIN class_rooms cr ON cr.id = $5
             WHERE sva.study_plan_version_id = $1
+              AND sva.grade_level_id = cr.grade_level_id
         ),
         -- Resolve to latest version per name effective by target year
         resolved AS (
@@ -807,24 +810,27 @@ pub async fn add_plan_activity(
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Snapshot term from catalog at insert time (user can override via req.term).
-    // `req.term` is Option<String> — None = take from catalog, Some = explicit override.
+    // 1 row per (plan, grade, term, catalog) — match pattern sps.
     let row: StudyPlanVersionActivity = sqlx::query_as(
         r#"INSERT INTO study_plan_version_activities
-            (study_plan_version_id, activity_catalog_id, term, display_order)
-           SELECT $1, ac.id,
-               COALESCE($4, ac.term),  -- user-supplied overrides catalog snapshot
+            (study_plan_version_id, activity_catalog_id, grade_level_id, term, display_order)
+           SELECT $1, ac.id, $5,
+               COALESCE($4, ac.term),
                COALESCE($3, 0)
            FROM activity_catalog ac
            WHERE ac.id = $2
+           ON CONFLICT (study_plan_version_id, grade_level_id, term, activity_catalog_id) DO NOTHING
            RETURNING *"#
     )
     .bind(version_id)
     .bind(req.activity_catalog_id)
     .bind(req.display_order)
     .bind(&req.term)
-    .fetch_one(&pool)
+    .bind(req.grade_level_id)
+    .fetch_optional(&pool)
     .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?
+    .ok_or_else(|| AppError::BadRequest("กิจกรรมนี้อยู่ในหลักสูตรสำหรับชั้น+เทอมนี้แล้ว".to_string()))?;
 
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": row }))))
 }
@@ -881,9 +887,9 @@ pub async fn delete_plan_activity(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    // Capture context before delete: catalog name + plan version
-    let context: Option<(String, Uuid)> = sqlx::query_as(
-        r#"SELECT ac.name, sva.study_plan_version_id
+    // Capture context before delete: catalog name + plan version + grade (pattern C)
+    let context: Option<(String, Uuid, Uuid)> = sqlx::query_as(
+        r#"SELECT ac.name, sva.study_plan_version_id, sva.grade_level_id
            FROM study_plan_version_activities sva
            JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
            WHERE sva.id = $1"#
@@ -902,9 +908,9 @@ pub async fn delete_plan_activity(
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    if let Some((catalog_name, plan_id)) = context {
+    if let Some((catalog_name, plan_id, grade_id)) = context {
         // Remove junction rows only for current + future semesters
-        // Trigger asc_cleanup_empty_slot will drop empty slots (cascade timetable, groups, etc.)
+        // Scope: classroom must match plan + grade (not all classrooms of plan)
         sqlx::query(
             r#"DELETE FROM activity_slot_classrooms asc_row
                USING activity_slots s, activity_catalog ac, academic_semesters sem, class_rooms cr
@@ -914,10 +920,12 @@ pub async fn delete_plan_activity(
                  AND asc_row.classroom_id = cr.id
                  AND ac.name = $1
                  AND cr.study_plan_version_id = $2
+                 AND cr.grade_level_id = $3
                  AND sem.end_date >= CURRENT_DATE"#
         )
         .bind(&catalog_name)
         .bind(plan_id)
+        .bind(grade_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
@@ -1003,10 +1011,16 @@ pub async fn generate_activities_from_plan(
             INSERT INTO activity_slot_classrooms (slot_id, classroom_id)
             SELECT s.id, tc.id
             FROM all_slots s
-            JOIN resolved r ON r.catalog_id = s.activity_catalog_id
+            JOIN activity_catalog ac_slot ON ac_slot.id = s.activity_catalog_id
             CROSS JOIN target_classrooms tc
-            WHERE r.grade_level_ids IS NULL
-               OR r.grade_level_ids ? tc.grade_str
+            -- ห้องเข้าร่วม slot เมื่อ plan กำหนดกิจกรรมนี้ให้กับ grade ของห้อง (pattern C)
+            WHERE EXISTS (
+                SELECT 1 FROM study_plan_version_activities sva
+                JOIN activity_catalog sva_ac ON sva_ac.id = sva.activity_catalog_id
+                WHERE sva.study_plan_version_id = $1
+                  AND sva_ac.name = ac_slot.name  -- same catalog family (resolve handles version)
+                  AND sva.grade_level_id::text = tc.grade_str
+            )
             ON CONFLICT (slot_id, classroom_id) DO NOTHING
             RETURNING 1
         ),

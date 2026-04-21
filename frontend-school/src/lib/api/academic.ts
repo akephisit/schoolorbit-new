@@ -1015,13 +1015,15 @@ export interface StudyPlanVersionActivity {
     id: string;
     study_plan_version_id: string;
     activity_catalog_id: string;
+    /** ระดับชั้นที่ plan กำหนด (pattern C — 1 row per grade) */
+    grade_level_id: string;
     /** Pinned term in this plan (snapshot จาก catalog ตอน add). null = ทุกเทอม. */
     term?: string | null;
     display_order: number;
     created_at: string;
     updated_at: string;
 
-    // Joined from catalog (grade scope comes from catalog — no plan override)
+    // Joined from catalog (for display)
     catalog_name?: string;
     catalog_activity_type?: string;
     catalog_description?: string;
@@ -1037,6 +1039,7 @@ export const listPlanActivities = async (versionId: string): Promise<{ data: Stu
 
 export const addPlanActivity = async (versionId: string, data: {
     activity_catalog_id: string;
+    grade_level_id: string;
     /** Override term. Omit to snapshot from catalog.term at insert time. */
     term?: string | null;
     display_order?: number;

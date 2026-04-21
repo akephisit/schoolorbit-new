@@ -192,6 +192,8 @@ pub struct StudyPlanVersionActivity {
     pub id: Uuid,
     pub study_plan_version_id: Uuid,
     pub activity_catalog_id: Uuid,
+    /// ระดับชั้นที่ plan กำหนดให้กิจกรรมนี้ใช้ (1 row ต่อ grade — pattern เดียวกับ sps)
+    pub grade_level_id: Uuid,
     /// Snapshot from activity_catalog.term at add time. null = ทุกเทอม.
     /// Pinned in the plan — editing catalog term does NOT change existing plan rows.
     pub term: Option<String>,
@@ -226,6 +228,8 @@ pub struct StudyPlanVersionActivity {
 #[derive(Debug, Deserialize)]
 pub struct CreatePlanActivityRequest {
     pub activity_catalog_id: Uuid,
+    /// ระดับชั้นที่จะเพิ่ม — required (1 row ต่อ grade)
+    pub grade_level_id: Uuid,
     /// Override term for this plan. Omit to snapshot from catalog.term at insert time.
     pub term: Option<String>,
     pub display_order: Option<i32>,
