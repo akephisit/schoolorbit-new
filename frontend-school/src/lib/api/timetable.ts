@@ -209,7 +209,37 @@ export interface UpdateTimetableEntryRequest {
     period_id?: string;
     room_id?: string;
     note?: string;
+    /** Replace entry's content (drag-from-sidebar-onto-occupied flow) */
+    classroom_course_id?: string;
+    activity_slot_id?: string;
 }
+
+export interface MoveValidityCell {
+    day_of_week: string;
+    period_id: string;
+    /** "empty" | "occupied" | "source" */
+    state: 'empty' | 'occupied' | 'source';
+    /** If occupied: id of entry that will be the swap partner. null otherwise. */
+    target_entry_id: string | null;
+    valid: boolean;
+    reason: string;
+}
+
+export const swapTimetableEntries = async (entryAId: string, entryBId: string) => {
+    return await fetchApi('/api/academic/timetable/swap', {
+        method: 'POST',
+        body: JSON.stringify({ entry_a_id: entryAId, entry_b_id: entryBId })
+    });
+};
+
+export const validateTimetableMoves = async (
+    entryId: string
+): Promise<{ data: MoveValidityCell[] }> => {
+    return await fetchApi('/api/academic/timetable/validate-moves', {
+        method: 'POST',
+        body: JSON.stringify({ entry_id: entryId })
+    });
+};
 
 export const createTimetableEntry = async (data: CreateTimetableEntryRequest) => {
     const response = await fetch(`${BACKEND_URL}/api/academic/timetable`, {
