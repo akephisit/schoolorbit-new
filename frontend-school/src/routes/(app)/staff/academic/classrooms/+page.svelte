@@ -24,7 +24,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { Loader2, Plus, Users, School, Pencil, Trash2 } from 'lucide-svelte';
+	import * as Popover from '$lib/components/ui/popover';
+	import * as Command from '$lib/components/ui/command';
+	import { Loader2, Plus, Users, School, Pencil, Trash2, ChevronsUpDown, Check } from 'lucide-svelte';
 
 	type AdvisorRow = { user_id: string; role: 'primary' | 'secondary' };
 
@@ -78,6 +80,7 @@
 	// Add-advisor row (shared between create + edit dialogs via flag)
 	let addStaffId = $state('');
 	let addRole = $state<'primary' | 'secondary'>('primary');
+	let staffPickerOpen = $state(false);
 
 	function resetAddRow(list: AdvisorRow[]) {
 		addStaffId = '';
@@ -247,18 +250,41 @@
 	<div class="space-y-2">
 		<Label>ครูที่ปรึกษา</Label>
 		<div class="flex gap-2">
-			<Select.Root type="single" bind:value={addStaffId}>
-				<Select.Trigger class="flex-1">
-					{addStaffId ? staffName(addStaffId) : '- เลือกครู -'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each staffList.filter((s) => !list.some((a) => a.user_id === s.id)) as staff}
-						<Select.Item value={staff.id}>
-							{staff.title ?? ''}{staff.name}
-						</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+			<Popover.Root bind:open={staffPickerOpen}>
+				<Popover.Trigger class="flex-1">
+					<Button
+						variant="outline"
+						role="combobox"
+						aria-expanded={staffPickerOpen}
+						class="w-full justify-between font-normal"
+					>
+						<span class="truncate">
+							{addStaffId ? staffName(addStaffId) : 'เลือกครู'}
+						</span>
+						<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+					</Button>
+				</Popover.Trigger>
+				<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+					<Command.Root>
+						<Command.Input placeholder="ค้นหาครู..." />
+						<Command.Empty>ไม่พบครู</Command.Empty>
+						<Command.Group class="max-h-[280px] overflow-y-auto">
+							{#each staffList.filter((s) => !list.some((a) => a.user_id === s.id)) as staff}
+								<Command.Item
+									value={`${staff.title ?? ''}${staff.name}`}
+									onSelect={() => {
+										addStaffId = staff.id;
+										staffPickerOpen = false;
+									}}
+								>
+									<Check class="mr-2 h-4 w-4 {addStaffId === staff.id ? 'opacity-100' : 'opacity-0'}" />
+									{staff.title ?? ''}{staff.name}
+								</Command.Item>
+							{/each}
+						</Command.Group>
+					</Command.Root>
+				</Popover.Content>
+			</Popover.Root>
 			<Select.Root type="single" bind:value={addRole}>
 				<Select.Trigger class="w-[120px]">
 					{addRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
