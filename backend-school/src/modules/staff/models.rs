@@ -231,41 +231,6 @@ pub struct AddDepartmentMemberRequest {
 }
 
 // ===================================================================
-// Teaching Assignment (การมอบหมายการสอน)
-// ===================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct TeachingAssignment {
-    pub id: Uuid,
-    pub teacher_id: Uuid,
-    pub class_id: Uuid,
-    pub subject: String,
-    pub grade_level: Option<String>,
-    pub hours_per_week: Option<f64>,
-    pub teacher_type: String,
-    pub is_homeroom_teacher: bool,
-    pub academic_year: String,
-    pub semester: String,
-    pub started_at: NaiveDate,
-    pub ended_at: Option<NaiveDate>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateTeachingAssignmentRequest {
-    pub teacher_id: Uuid,
-    pub class_id: Uuid,
-    pub subject: String,
-    pub grade_level: Option<String>,
-    pub hours_per_week: Option<f64>,
-    pub teacher_type: Option<String>,
-    pub is_homeroom_teacher: Option<bool>,
-    pub academic_year: String,
-    pub semester: String,
-}
-
-// ===================================================================
 // Staff Info (ข้อมูลเฉพาะบุคลากร)
 // ===================================================================
 
@@ -322,17 +287,31 @@ pub struct DepartmentResponse {
     pub org_type: Option<String>,
 }
 
+/// วิชาที่ครูสอน — ดึงจาก classroom_courses (+ classroom_course_instructors)
+/// Source of truth: ระบบ Course Planning ที่ assign วิชาให้ห้อง
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TeachingAssignmentResponse {
-    pub id: Uuid,
-    pub subject: String,
-    pub grade_level: Option<String>,
-    pub class_code: Option<String>,
-    pub class_name: Option<String>,
-    pub is_homeroom_teacher: bool,
-    pub hours_per_week: Option<f64>,
-    pub academic_year: String,
-    pub semester: String,
+pub struct TeachingCourseItem {
+    pub classroom_course_id: Uuid,
+    pub subject_code: String,
+    pub subject_name: String,
+    pub hours_per_semester: Option<i32>,
+    pub classroom_name: String,
+    pub classroom_code: String,
+    pub academic_year: i32,
+    pub academic_year_label: String,
+    pub term: String,
+    pub role: String, // 'primary' | 'secondary'
+}
+
+/// ห้องที่ครูเป็นครูที่ปรึกษา — ดึงจาก classroom_advisors
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvisorClassroomItem {
+    pub classroom_id: Uuid,
+    pub classroom_name: String,
+    pub classroom_code: String,
+    pub academic_year: i32,
+    pub academic_year_label: String,
+    pub role: String, // 'primary' | 'secondary'
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -365,9 +344,12 @@ pub struct StaffProfileResponse {
     // Departments
     pub departments: Vec<DepartmentResponse>,
     
-    // Teaching assignments
-    pub teaching_assignments: Vec<TeachingAssignmentResponse>,
-    
+    // วิชาที่สอน (จาก classroom_courses)
+    pub teaching_courses: Vec<TeachingCourseItem>,
+
+    // ห้องที่เป็นครูที่ปรึกษา (จาก classroom_advisors)
+    pub advisor_classrooms: Vec<AdvisorClassroomItem>,
+
     // Permissions
     pub permissions: Vec<String>,
 }

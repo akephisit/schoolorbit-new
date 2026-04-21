@@ -37,11 +37,6 @@ pub async fn cleanup_test_data(pool: &PgPool) {
         .await
         .ok();
     
-    sqlx::query("DELETE FROM teaching_assignments")
-        .execute(pool)
-        .await
-        .ok();
-    
     sqlx::query("DELETE FROM users WHERE email LIKE '%test%'")
         .execute(pool)
         .await

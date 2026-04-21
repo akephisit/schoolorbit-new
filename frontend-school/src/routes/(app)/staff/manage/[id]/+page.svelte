@@ -357,47 +357,99 @@
 					{/if}
 				</div>
 
-				<!-- Teaching Assignments Card -->
+				<!-- หน้าที่ทางวิชาการ: ครูที่ปรึกษา + วิชาที่สอน -->
 				<div class="bg-card border border-border rounded-lg p-6">
 					<h3 class="font-semibold text-foreground mb-4 flex items-center gap-2">
 						<BookOpen class="w-5 h-5" />
-						วิชาที่สอน
+						หน้าที่ทางวิชาการ
 					</h3>
-					{#if staff.teaching_assignments.length > 0}
-						<div class="space-y-3">
-							{#each staff.teaching_assignments as assignment (assignment.id)}
-								<div class="px-4 py-3 rounded-lg bg-muted/50 border border-border">
-									<div class="flex items-start justify-between">
-										<div>
-											<p class="font-medium text-foreground">{assignment.subject}</p>
-											<p class="text-sm text-muted-foreground mt-1">
-												{#if assignment.class_name}
-													{assignment.class_name}
-													{#if assignment.grade_level}
-														• {assignment.grade_level}
-													{/if}
-												{:else if assignment.grade_level}
-													{assignment.grade_level}
-												{/if}
-												{#if assignment.hours_per_week}
-													• {assignment.hours_per_week} ชม./สัปดาห์
-												{/if}
-											</p>
-											<p class="text-xs text-muted-foreground mt-1">
-												ปีการศึกษา {assignment.academic_year} เทอม {assignment.semester}
-											</p>
+
+					{#if staff.advisor_classrooms.length === 0 && staff.teaching_courses.length === 0}
+						<p class="text-muted-foreground">ยังไม่มีข้อมูลการสอน/ครูที่ปรึกษา</p>
+					{:else}
+						<!-- Group โดย academic_year (desc) — รวมทั้ง advisor + teaching -->
+						{@const yearGroups = (() => {
+							const map = new Map<
+								number,
+								{
+									label: string;
+									advisors: typeof staff.advisor_classrooms;
+									courses: typeof staff.teaching_courses;
+								}
+							>();
+							for (const a of staff.advisor_classrooms) {
+								if (!map.has(a.academic_year)) {
+									map.set(a.academic_year, {
+										label: a.academic_year_label,
+										advisors: [],
+										courses: []
+									});
+								}
+								map.get(a.academic_year)!.advisors.push(a);
+							}
+							for (const c of staff.teaching_courses) {
+								if (!map.has(c.academic_year)) {
+									map.set(c.academic_year, {
+										label: c.academic_year_label,
+										advisors: [],
+										courses: []
+									});
+								}
+								map.get(c.academic_year)!.courses.push(c);
+							}
+							return Array.from(map.entries()).sort((a, b) => b[0] - a[0]);
+						})()}
+
+						<div class="space-y-5">
+							{#each yearGroups as [year, g] (year)}
+								<div>
+									<div class="text-sm font-semibold text-muted-foreground mb-2">{g.label}</div>
+
+									{#if g.advisors.length > 0}
+										<div class="mb-2 flex flex-wrap gap-1.5">
+											<span class="text-xs text-muted-foreground self-center">ครูที่ปรึกษา:</span>
+											{#each g.advisors as a}
+												<span
+													class="text-xs px-2 py-0.5 rounded-full {a.role === 'primary'
+														? 'bg-primary/10 text-primary'
+														: 'bg-secondary text-secondary-foreground'}"
+												>
+													{a.role === 'primary' ? '⭐ ' : ''}{a.classroom_name}
+												</span>
+											{/each}
 										</div>
-										{#if assignment.is_homeroom_teacher}
-											<span class="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
-												ครูที่ปรึกษา
-											</span>
-										{/if}
-									</div>
+									{/if}
+
+									{#if g.courses.length > 0}
+										<div class="space-y-2">
+											{#each g.courses as c (c.classroom_course_id + '-' + c.role)}
+												<div class="px-3 py-2 rounded-lg bg-muted/50 border border-border flex items-start justify-between">
+													<div>
+														<p class="font-medium text-foreground text-sm">
+															{c.subject_name}
+															<span class="text-xs text-muted-foreground">({c.subject_code})</span>
+														</p>
+														<p class="text-xs text-muted-foreground mt-0.5">
+															{c.classroom_name} • เทอม {c.term}
+															{#if c.hours_per_semester}
+																• {c.hours_per_semester} ชม./เทอม
+															{/if}
+														</p>
+													</div>
+													<span
+														class="text-xs px-2 py-0.5 rounded-full shrink-0 {c.role === 'primary'
+															? 'bg-primary/10 text-primary'
+															: 'bg-secondary text-secondary-foreground'}"
+													>
+														{c.role === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
+													</span>
+												</div>
+											{/each}
+										</div>
+									{/if}
 								</div>
 							{/each}
 						</div>
-					{:else}
-						<p class="text-muted-foreground">ยังไม่มีวิชาที่สอน</p>
 					{/if}
 				</div>
 			</div>

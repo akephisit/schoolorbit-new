@@ -47,16 +47,28 @@ export interface DepartmentResponse {
 	responsibilities?: string;
 }
 
-export interface TeachingAssignmentResponse {
-	id: string;
-	subject: string;
-	grade_level?: string;
-	class_code?: string;
-	class_name?: string;
-	is_homeroom_teacher: boolean;
-	hours_per_week?: number;
-	academic_year: string;
-	semester: string;
+/** วิชาที่ครูสอน — ดึงจาก classroom_courses (Course Planning) */
+export interface TeachingCourseItem {
+	classroom_course_id: string;
+	subject_code: string;
+	subject_name: string;
+	hours_per_semester?: number;
+	classroom_name: string;
+	classroom_code: string;
+	academic_year: number;
+	academic_year_label: string;
+	term: string;
+	role: 'primary' | 'secondary';
+}
+
+/** ห้องที่ครูเป็นครูที่ปรึกษา — ดึงจาก classroom_advisors */
+export interface AdvisorClassroomItem {
+	classroom_id: string;
+	classroom_name: string;
+	classroom_code: string;
+	academic_year: number;
+	academic_year_label: string;
+	role: 'primary' | 'secondary';
 }
 
 export interface StaffInfoResponse {
@@ -88,7 +100,8 @@ export interface StaffProfileResponse {
 	roles: RoleResponse[];
 	primary_role?: RoleResponse;
 	departments: DepartmentResponse[];
-	teaching_assignments: TeachingAssignmentResponse[];
+	teaching_courses: TeachingCourseItem[];
+	advisor_classrooms: AdvisorClassroomItem[];
 	permissions: string[];
 }
 

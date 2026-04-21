@@ -73,16 +73,27 @@ struct DepartmentRow {
 }
 
 #[derive(Debug, FromRow)]
-struct TeachingRow {
-    id: Uuid,
-    subject: String,
-    grade_level: Option<String>,
-    hours_per_week: Option<f64>,
-    is_homeroom_teacher: bool,
-    academic_year: String,
-    semester: String,
-    class_code: Option<String>,
-    class_name: Option<String>,
+struct TeachingCourseRow {
+    classroom_course_id: Uuid,
+    subject_code: String,
+    subject_name: String,
+    hours_per_semester: Option<i32>,
+    classroom_name: String,
+    classroom_code: String,
+    academic_year: i32,
+    academic_year_label: String,
+    term: String,
+    role: String,
+}
+
+#[derive(Debug, FromRow)]
+struct AdvisorClassroomRow {
+    classroom_id: Uuid,
+    classroom_name: String,
+    classroom_code: String,
+    academic_year: i32,
+    academic_year_label: String,
+    role: String,
 }
 
 // ===================================================================
@@ -416,30 +427,85 @@ pub async fn get_staff_profile(
     })
     .collect();
 
-    // Get teaching assignments
-    let teaching_assignments = sqlx::query_as::<_, TeachingRow>(
-        "SELECT ta.id, ta.subject, ta.grade_level, ta.hours_per_week, ta.is_homeroom_teacher,
-                ta.academic_year, ta.semester, c.code as class_code, c.name as class_name
-         FROM teaching_assignments ta
-         LEFT JOIN classes c ON ta.class_id = c.id
-         WHERE ta.teacher_id = $1 AND ta.ended_at IS NULL
-         ORDER BY ta.grade_level, ta.subject",
+    // วิชาที่สอน — union ระหว่าง classroom_courses.primary_instructor_id (single primary)
+    // กับ classroom_course_instructors junction (team teaching). UNION de-dupes.
+    let teaching_courses = sqlx::query_as::<_, TeachingCourseRow>(
+        r#"WITH teacher_cc AS (
+            SELECT cc.id AS classroom_course_id,
+                   cc.subject_id, cc.classroom_id, cc.academic_semester_id,
+                   'primary'::text AS role
+            FROM classroom_courses cc
+            WHERE cc.primary_instructor_id = $1
+            UNION
+            SELECT cc.id AS classroom_course_id,
+                   cc.subject_id, cc.classroom_id, cc.academic_semester_id,
+                   cci.role
+            FROM classroom_course_instructors cci
+            JOIN classroom_courses cc ON cc.id = cci.classroom_course_id
+            WHERE cci.instructor_id = $1
+        )
+        SELECT tc.classroom_course_id,
+               s.code AS subject_code,
+               s.name_th AS subject_name,
+               s.hours_per_semester,
+               cr.name AS classroom_name,
+               cr.code AS classroom_code,
+               ay.year AS academic_year,
+               ay.name AS academic_year_label,
+               sem.term,
+               tc.role
+        FROM teacher_cc tc
+        JOIN subjects s ON s.id = tc.subject_id
+        JOIN class_rooms cr ON cr.id = tc.classroom_id
+        JOIN academic_semesters sem ON sem.id = tc.academic_semester_id
+        JOIN academic_years ay ON ay.id = sem.academic_year_id
+        ORDER BY ay.year DESC, sem.term ASC, s.code ASC"#,
     )
     .bind(staff_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default()
     .into_iter()
-    .map(|row| TeachingAssignmentResponse {
-        id: row.id,
-        subject: row.subject,
-        grade_level: row.grade_level,
-        class_code: row.class_code,
-        class_name: row.class_name,
-        is_homeroom_teacher: row.is_homeroom_teacher,
-        hours_per_week: row.hours_per_week,
-        academic_year: row.academic_year,
-        semester: row.semester,
+    .map(|r| TeachingCourseItem {
+        classroom_course_id: r.classroom_course_id,
+        subject_code: r.subject_code,
+        subject_name: r.subject_name,
+        hours_per_semester: r.hours_per_semester,
+        classroom_name: r.classroom_name,
+        classroom_code: r.classroom_code,
+        academic_year: r.academic_year,
+        academic_year_label: r.academic_year_label,
+        term: r.term,
+        role: r.role,
+    })
+    .collect();
+
+    // ห้องที่เป็นครูที่ปรึกษา — จาก classroom_advisors
+    let advisor_classrooms = sqlx::query_as::<_, AdvisorClassroomRow>(
+        r#"SELECT cr.id AS classroom_id,
+                  cr.name AS classroom_name,
+                  cr.code AS classroom_code,
+                  ay.year AS academic_year,
+                  ay.name AS academic_year_label,
+                  ca.role
+           FROM classroom_advisors ca
+           JOIN class_rooms cr ON cr.id = ca.classroom_id
+           JOIN academic_years ay ON ay.id = cr.academic_year_id
+           WHERE ca.user_id = $1
+           ORDER BY ay.year DESC, cr.name ASC"#,
+    )
+    .bind(staff_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|r| AdvisorClassroomItem {
+        classroom_id: r.classroom_id,
+        classroom_name: r.classroom_name,
+        classroom_code: r.classroom_code,
+        academic_year: r.academic_year,
+        academic_year_label: r.academic_year_label,
+        role: r.role,
     })
     .collect();
 
@@ -469,7 +535,8 @@ pub async fn get_staff_profile(
         }),
         roles,
         departments,
-        teaching_assignments,
+        teaching_courses,
+        advisor_classrooms,
         permissions: vec![],
     };
 

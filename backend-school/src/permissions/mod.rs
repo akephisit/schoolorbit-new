@@ -158,7 +158,7 @@ pub fn has_permission(user_permissions: &[String], required: &str) -> bool {
 /// 
 /// # Note
 /// This is a simplified version. Full implementation requires:
-/// - teaching_assignments table for checking class ownership
+/// - classroom_course_instructors / classroom_advisors for checking class ownership
 /// - department_members table for department checks
 /// 
 /// For now, scope checking is basic:
