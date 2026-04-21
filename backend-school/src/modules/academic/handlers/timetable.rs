@@ -956,8 +956,12 @@ pub async fn update_timetable_entry(
     .await
     .map_err(|e| {
         eprintln!("Failed to update entry: {}", e);
-        if e.to_string().contains("unique_entry_per_slot") {
+        let msg = e.to_string();
+        if msg.contains("unique_entry_per_slot") {
             AppError::BadRequest("This slot is already occupied".to_string())
+        } else if msg.contains("instructor double-book") || msg.contains("ไม่สามารถย้าย") {
+            // Trigger-raised RAISE EXCEPTION surfaces as Rust string
+            AppError::BadRequest(msg.split("ERROR:").last().unwrap_or(&msg).trim().to_string())
         } else {
             AppError::InternalServerError("Failed to update entry".to_string())
         }
