@@ -374,6 +374,23 @@ pub async fn create_timetable_entry(
             let sem = payload.academic_semester_id
                 .ok_or_else(|| AppError::BadRequest("academic_semester_id required for activity entry".to_string()))?;
 
+            // Validate: classroom must participate in this slot via activity_slot_classrooms junction.
+            // Admin adds participation through Course Planning page — not here.
+            let participates: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM activity_slot_classrooms
+                 WHERE slot_id = $1 AND classroom_id = $2)"
+            )
+            .bind(slot_id)
+            .bind(cls)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
+            if !participates {
+                return Err(AppError::BadRequest(
+                    "ห้องนี้ไม่ได้อยู่ในกิจกรรมนี้ — เพิ่มห้องที่ Course Planning ก่อน".to_string()
+                ));
+            }
+
             // Lookup slot name (from catalog via FK) for title
             let slot_name: Option<String> = sqlx::query_scalar(
                 "SELECT ac.name FROM activity_slots s
@@ -879,6 +896,33 @@ pub async fn create_batch_timetable_entries(
     }
 
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+
+    // Validate: ถ้าเป็น batch สำหรับ activity slot → ทุก classroom ต้องอยู่ใน junction
+    // (admin จัดการ participation ผ่านหน้า Course Planning)
+    if let Some(slot_id) = payload.activity_slot_id {
+        let non_participating: Vec<(String,)> = sqlx::query_as(
+            r#"SELECT cr.name
+               FROM class_rooms cr
+               WHERE cr.id = ANY($1)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM activity_slot_classrooms
+                     WHERE slot_id = $2 AND classroom_id = cr.id
+                 )"#
+        )
+        .bind(&payload.classroom_ids)
+        .bind(slot_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+
+        if !non_participating.is_empty() {
+            let names: Vec<String> = non_participating.into_iter().map(|(n,)| n).collect();
+            return Err(AppError::BadRequest(format!(
+                "ห้องต่อไปนี้ยังไม่ได้อยู่ในกิจกรรม: {} — เพิ่มห้องที่ Course Planning ก่อน",
+                names.join(", ")
+            )));
+        }
+    }
 
     // Pre-validate conflicts (unless force mode)
     if !payload.force.unwrap_or(false) {
