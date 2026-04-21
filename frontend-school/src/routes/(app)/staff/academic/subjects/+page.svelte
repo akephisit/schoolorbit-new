@@ -982,7 +982,7 @@
 								)?.name
 							: undefined}
 						<Table.Row>
-							<Table.Cell class="font-medium align-top">
+							<Table.Cell class="font-medium align-middle">
 								<div class="font-bold text-primary">{subject.code}</div>
 								<div class="flex flex-wrap items-center gap-1 mt-1">
 									{#if totalVersions > 1}
@@ -1019,13 +1019,13 @@
 									{/if}
 								</div>
 							</Table.Cell>
-							<Table.Cell class="align-top">
+							<Table.Cell class="align-middle">
 								<div class="font-medium">{subject.name_th}</div>
 								{#if subject.name_en}
 									<div class="text-xs text-muted-foreground">{subject.name_en}</div>
 								{/if}
 							</Table.Cell>
-							<Table.Cell class="align-top">
+							<Table.Cell class="align-middle">
 								{#if subject.group_name_th}
 									<Badge variant="secondary" class="font-normal whitespace-nowrap">
 										{subject.group_name_th}
@@ -1034,7 +1034,7 @@
 									<span class="text-muted-foreground">-</span>
 								{/if}
 							</Table.Cell>
-							<Table.Cell class="align-top">
+							<Table.Cell class="align-middle">
 								{#if subject.grade_level_ids && subject.grade_level_ids.length > 0}
 									<div class="flex flex-wrap gap-0.5">
 										{#each subject.grade_level_ids as gid}
@@ -1050,7 +1050,7 @@
 									<span class="text-xs text-muted-foreground">ทุกระดับ</span>
 								{/if}
 							</Table.Cell>
-							<Table.Cell class="text-center align-top">
+							<Table.Cell class="text-center align-middle">
 								{#if subject.term === '1'}
 									<Badge variant="outline" class="text-[10px] font-normal">เทอม 1</Badge>
 								{:else if subject.term === '2'}
@@ -1061,13 +1061,13 @@
 									<span class="text-xs text-muted-foreground">ทุกเทอม</span>
 								{/if}
 							</Table.Cell>
-							<Table.Cell class="text-center align-top">
+							<Table.Cell class="text-center align-middle">
 								<div class="font-bold">{subject.credit} นก.</div>
 								<div class="text-xs text-muted-foreground">
 									{subject.hours_per_semester || '-'} ชม./เทอม
 								</div>
 							</Table.Cell>
-							<Table.Cell class="align-top">
+							<Table.Cell class="align-middle">
 								{#if subject.default_instructor_name}
 									<div class="text-sm truncate" title={subject.default_instructor_name}>
 										{subject.default_instructor_name}
@@ -1076,7 +1076,7 @@
 									<span class="text-xs text-muted-foreground">ไม่ระบุ</span>
 								{/if}
 							</Table.Cell>
-							<Table.Cell class="text-right align-top">
+							<Table.Cell class="text-right align-middle">
 								<div class="flex justify-end gap-1">
 									<Button
 										onclick={() => handleOpenEdit(subject)}
