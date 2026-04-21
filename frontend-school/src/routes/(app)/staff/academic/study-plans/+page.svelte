@@ -401,7 +401,8 @@
 	let filteredSubjectsForDialog = $derived.by(() => {
 		return subjects.filter((s) => {
 			if (filterGroupId && s.group_id !== filterGroupId) return false;
-			if (filterTerm && s.term !== filterTerm) return false;
+			// term=null/empty ใน catalog = "ทุกเทอม" → match ทุกค่า filter
+			if (filterTerm && s.term && s.term !== filterTerm) return false;
 			if (filterGradeId && !(s.grade_level_ids ?? []).includes(filterGradeId)) return false;
 			return true;
 		});
@@ -409,7 +410,8 @@
 
 	let filteredActivitiesForDialog = $derived.by(() => {
 		return activityCatalog.filter((c) => {
-			if (filterTerm && c.term !== filterTerm) return false;
+			// term=null ใน catalog = "ทุกเทอม" → match ทุกค่า filter
+			if (filterTerm && c.term && c.term !== filterTerm) return false;
 			if (filterGradeId && !(c.grade_level_ids ?? []).includes(filterGradeId)) return false;
 			return true;
 		});
