@@ -14,7 +14,9 @@
 		deleteBatchTimetableEntries,
 		removeEntryInstructor,
 		restoreInstructorToSlot,
-		hideInstructorFromSlot
+		hideInstructorFromSlot,
+		swapTimetableEntries,
+		validateTimetableMoves
 	} from '$lib/api/timetable';
 	import {
 		lookupAcademicYears,
@@ -502,6 +504,10 @@
 	// Availability State
 	let occupiedSlots = $state<Set<string>>(new Set()); // Format: "DAY_PERIODID"
 
+	// Drag validity map: key "DAY|PERIODID" → cell state (from POST /timetable/validate-moves)
+	// Populated on drag start for MOVE type; cleared on drag end.
+	let moveValidityMap = $state<Map<string, import('$lib/api/timetable').MoveValidityCell>>(new Map());
+
 	function getSlotKey(day: string, periodId: string) {
 		return `${day}_${periodId}`;
 	}
@@ -661,6 +667,21 @@
 			fetchInstructorConflicts(courseToCheck);
 		}
 
+		// Precompute drop validity for MOVE drags (colorize cells 🟢🔵🔴)
+		if (type === 'MOVE' && draggedEntryId) {
+			validateTimetableMoves(draggedEntryId)
+				.then((res) => {
+					const m = new Map<string, import('$lib/api/timetable').MoveValidityCell>();
+					for (const c of res.data ?? []) {
+						m.set(`${c.day_of_week}|${c.period_id}`, c);
+					}
+					moveValidityMap = m;
+				})
+				.catch(() => {
+					moveValidityMap = new Map();
+				});
+		}
+
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = type === 'NEW' ? 'copy' : 'move';
 			event.dataTransfer.setData(
@@ -709,6 +730,7 @@
 		draggedEntryId = null;
 		currentDragTarget = null;
 		occupiedSlots = new Set();
+		moveValidityMap = new Map();
 	}
 
 	function handleDragOver(event: DragEvent) {
@@ -724,10 +746,61 @@
 		if (!draggedCourse) return;
 
 		const existingEntry = getEntryForSlot(day, periodId);
-		if (existingEntry) {
-			toast.error('ช่องนี้มีรายการอยู่แล้ว');
-			// Do not end drag yet if we want to retry? No, valid end if failed.
-			// But let's call standard end.
+
+		// Case A: MOVE drag (from table) onto occupied → SWAP
+		if (existingEntry && dragType === 'MOVE' && draggedEntryId && existingEntry.id !== draggedEntryId) {
+			const validity = moveValidityMap.get(`${day}|${periodId}`);
+			if (validity && !validity.valid) {
+				toast.error(validity.reason || 'สลับไม่ได้');
+				handleDragEnd();
+				return;
+			}
+			try {
+				submitting = true;
+				await swapTimetableEntries(draggedEntryId, existingEntry.id);
+				toast.success('สลับคาบเรียบร้อย');
+				await loadTimetable();
+				if ($authStore.user) {
+					sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+				}
+			} catch (e: any) {
+				toast.error(e.message || 'สลับไม่สำเร็จ');
+			} finally {
+				submitting = false;
+				handleDragEnd();
+			}
+			return;
+		}
+
+		// Case B: NEW drag (from sidebar) onto occupied → REPLACE
+		if (existingEntry && dragType === 'NEW') {
+			try {
+				submitting = true;
+				const payload: any = {};
+				if (draggedCourse._isActivity) {
+					payload.activity_slot_id = draggedCourse.activity_slot_id;
+					payload.classroom_course_id = null;
+				} else {
+					payload.classroom_course_id = draggedCourse.id;
+					payload.activity_slot_id = null;
+				}
+				await updateTimetableEntry(existingEntry.id, payload);
+				toast.success('แทนที่รายการเดิมแล้ว');
+				await loadTimetable();
+				if ($authStore.user) {
+					sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+				}
+			} catch (e: any) {
+				toast.error(e.message || 'แทนที่ไม่สำเร็จ');
+			} finally {
+				submitting = false;
+				handleDragEnd();
+			}
+			return;
+		}
+
+		// Case C: dropping onto own source — no-op
+		if (existingEntry && existingEntry.id === draggedEntryId) {
 			handleDragEnd();
 			return;
 		}
@@ -1989,15 +2062,28 @@
 								{@const remoteDrag = !entry ? getRemoteDragHover(day.value, period.id) : null}
 
 								<!-- Drop Zone -->
+								{@const validity = draggedCourse && dragType === 'MOVE'
+									? moveValidityMap.get(`${day.value}|${period.id}`)
+									: null}
+								{@const validityClass = !validity
+									? ''
+									: validity.state === 'source'
+										? 'opacity-60'
+										: validity.state === 'empty' && validity.valid
+											? 'bg-green-50/40 ring-1 ring-inset ring-green-400/60'
+											: validity.state === 'occupied' && validity.valid
+												? 'ring-1 ring-inset ring-blue-400/70 bg-blue-50/30'
+												: 'bg-red-50/40 ring-1 ring-inset ring-red-300/60 cursor-not-allowed'}
 								<div
 									class="flex-1 border-r border-b min-w-[100px] relative transition-colors {isOccupied
 										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
-										: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied
+										: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied && !validity
 										? 'bg-blue-50/30'
-										: ''} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
+										: ''} {validityClass} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
 									style={remoteDrag ? `--tw-ring-color: ${remoteDrag.user.color}40; background-color: ${remoteDrag.user.color}10;` : ''}
 									data-day={day.value}
 									data-period={period.id}
+									title={validity && !validity.valid ? validity.reason : ''}
 									ondragover={handleDragOver}
 									ondrop={(e) => handleDrop(e, day.value, period.id)}
 									role="application"
@@ -2018,6 +2104,12 @@
 											>
 												{remoteDrag.user.name}
 											</span>
+										</div>
+									{/if}
+									{#if entry && validity && validity.state === 'occupied' && validity.valid}
+										<!-- Swap indicator overlay -->
+										<div class="absolute top-0.5 right-0.5 z-10 bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded font-bold pointer-events-none">
+											⇄ สลับ
 										</div>
 									{/if}
 									{#if entry}
