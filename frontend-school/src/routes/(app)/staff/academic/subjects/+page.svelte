@@ -115,7 +115,9 @@
 	let isNewCatalogVersion = $state(false);
 
 	// Catalog default instructors (ครูประจำกิจกรรม — auto-copy ตอน Wand2)
-	let catalogTeam = $state<CatalogDefaultInstructor[]>([]);
+	// Local-state draft: edit mode → direct API (has catalog id), other modes → submit atomically with create.
+	type CatalogTeamRow = { instructor_id: string; role: 'primary' | 'secondary'; instructor_name?: string };
+	let catalogTeam = $state<CatalogTeamRow[]>([]);
 	let catalogTeamLoading = $state(false);
 	let catalogTeamAddInstructorId = $state('');
 	let catalogTeamAddRole = $state<'primary' | 'secondary'>('secondary');
@@ -124,7 +126,11 @@
 		catalogTeamLoading = true;
 		try {
 			const res = await listCatalogDefaultInstructors(catalogId);
-			catalogTeam = res.data ?? [];
+			catalogTeam = (res.data ?? []).map((r) => ({
+				instructor_id: r.instructor_id,
+				role: r.role,
+				instructor_name: r.instructor_name
+			}));
 		} catch {
 			catalogTeam = [];
 		} finally {
@@ -132,40 +138,74 @@
 		}
 	}
 
+	function resetCatalogTeam() {
+		catalogTeam = [];
+		catalogTeamAddInstructorId = '';
+		catalogTeamAddRole = 'secondary';
+	}
+
 	async function handleAddCatalogTeam() {
-		if (!editingCatalog || !catalogTeamAddInstructorId) return;
+		if (!catalogTeamAddInstructorId) return;
 		if (catalogTeam.some((t) => t.instructor_id === catalogTeamAddInstructorId)) {
 			toast.error('ครูคนนี้อยู่ในทีมแล้ว');
 			return;
 		}
-		try {
-			await addCatalogDefaultInstructor(editingCatalog.id, catalogTeamAddInstructorId, catalogTeamAddRole);
-			catalogTeamAddInstructorId = '';
-			catalogTeamAddRole = 'secondary';
-			await loadCatalogTeam(editingCatalog.id);
-		} catch (e) {
-			toast.error('เพิ่มครูไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		// Edit mode (has id) → persist immediately; create/new-version → local draft
+		if (editingCatalog) {
+			try {
+				await addCatalogDefaultInstructor(editingCatalog.id, catalogTeamAddInstructorId, catalogTeamAddRole);
+				await loadCatalogTeam(editingCatalog.id);
+			} catch (e) {
+				toast.error('เพิ่มครูไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+				return;
+			}
+		} else {
+			// Local draft — demote others if adding primary (mirror trigger behavior)
+			let next = catalogTeam;
+			if (catalogTeamAddRole === 'primary') {
+				next = catalogTeam.map((t) =>
+					t.role === 'primary' ? { ...t, role: 'secondary' as const } : t
+				);
+			}
+			const name = staffList.find((s) => s.id === catalogTeamAddInstructorId)?.name;
+			catalogTeam = [
+				...next,
+				{ instructor_id: catalogTeamAddInstructorId, role: catalogTeamAddRole, instructor_name: name }
+			];
 		}
+		catalogTeamAddInstructorId = '';
+		catalogTeamAddRole = 'secondary';
 	}
 
 	async function handleRemoveCatalogTeam(instructorId: string) {
-		if (!editingCatalog) return;
-		try {
-			await removeCatalogDefaultInstructor(editingCatalog.id, instructorId);
-			await loadCatalogTeam(editingCatalog.id);
-		} catch (e) {
-			toast.error('ลบไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		if (editingCatalog) {
+			try {
+				await removeCatalogDefaultInstructor(editingCatalog.id, instructorId);
+				await loadCatalogTeam(editingCatalog.id);
+			} catch (e) {
+				toast.error('ลบไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+			}
+		} else {
+			catalogTeam = catalogTeam.filter((t) => t.instructor_id !== instructorId);
 		}
 	}
 
 	async function handleToggleCatalogTeamRole(instructorId: string, currentRole: 'primary' | 'secondary') {
-		if (!editingCatalog) return;
-		const next = currentRole === 'primary' ? 'secondary' : 'primary';
-		try {
-			await updateCatalogDefaultInstructorRole(editingCatalog.id, instructorId, next);
-			await loadCatalogTeam(editingCatalog.id);
-		} catch (e) {
-			toast.error('เปลี่ยน role ไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		const next: 'primary' | 'secondary' = currentRole === 'primary' ? 'secondary' : 'primary';
+		if (editingCatalog) {
+			try {
+				await updateCatalogDefaultInstructorRole(editingCatalog.id, instructorId, next);
+				await loadCatalogTeam(editingCatalog.id);
+			} catch (e) {
+				toast.error('เปลี่ยน role ไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+			}
+		} else {
+			// Local draft — demote others if promoting to primary
+			catalogTeam = catalogTeam.map((t) => {
+				if (t.instructor_id === instructorId) return { ...t, role: next };
+				if (next === 'primary' && t.role === 'primary') return { ...t, role: 'secondary' as const };
+				return t;
+			});
 		}
 	}
 
@@ -562,11 +602,12 @@
 		catalogStartYearId = (academicYears.find((y) => y.is_current) ?? academicYears[0])?.id ?? '';
 		isNewCatalogVersion = false;
 		showCatalogDialog = true;
+		resetCatalogTeam();
 	}
 
-	function openNewCatalogVersion(item: ActivityCatalog) {
+	async function openNewCatalogVersion(item: ActivityCatalog) {
 		// Create new version of existing catalog entry (same name, later start year).
-		// Pattern mirrors handleOpenNewVersion for subjects.
+		// Pattern mirrors handleOpenNewVersion for subjects. Carries team from source version.
 		const cur = academicYears.find((y) => y.id === item.start_academic_year_id);
 		const sorted = [...academicYears].sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
 		const next = cur
@@ -584,6 +625,19 @@
 		catalogStartYearId = next?.id ?? '';
 		isNewCatalogVersion = true;
 		showCatalogDialog = true;
+		resetCatalogTeam();
+
+		// Carry team from source version into local draft (admin can tweak before save)
+		try {
+			const res = await listCatalogDefaultInstructors(item.id);
+			catalogTeam = (res.data ?? []).map((r) => ({
+				instructor_id: r.instructor_id,
+				role: r.role,
+				instructor_name: r.instructor_name
+			}));
+		} catch {
+			// non-fatal
+		}
 	}
 
 	function openUnifiedAdd() {
@@ -604,6 +658,7 @@
 		catalogGradeLevelIds = [];
 		catalogStartYearId = (academicYears.find((y) => y.is_current) ?? academicYears[0])?.id ?? '';
 		isNewCatalogVersion = false;
+		resetCatalogTeam();
 
 		// Default to the tab the user is currently looking at for a nicer UX.
 		unifiedAddType = activeTab === 'activities' ? 'activity' : 'subject';
@@ -672,7 +727,13 @@
 					toast.error('กรุณาเลือกปีเริ่มใช้');
 					return;
 				}
-				await createActivityCatalog({ ...payload, start_academic_year_id: catalogStartYearId });
+				await createActivityCatalog({
+					...payload,
+					start_academic_year_id: catalogStartYearId,
+					default_instructors: catalogTeam.length > 0
+						? catalogTeam.map((t) => ({ instructor_id: t.instructor_id, role: t.role }))
+						: undefined
+				});
 				toast.success(isNewCatalogVersion ? 'สร้าง version ใหม่แล้ว' : 'เพิ่มกิจกรรมแล้ว');
 			}
 			showCatalogDialog = false;
@@ -1730,16 +1791,20 @@
 			</div>
 
 			<!-- Default Team Instructors (auto-copy ตอน Wand2 สร้าง slot) -->
-			{#if editingCatalog && !isNewCatalogVersion}
-				<div class="space-y-1">
-					<Label
-						class="flex items-center gap-1"
-						title="ครูเริ่มต้นของกิจกรรมนี้ — Wand2 จะ copy ให้อัตโนมัติ
+			<div class="space-y-1">
+				<Label
+					class="flex items-center gap-1"
+					title="ครูเริ่มต้นของกิจกรรมนี้ — Wand2 จะ copy ให้อัตโนมัติ
  (synchronized: ครูของ slot; independent: primary = default ของทุกห้อง, แก้ต่อห้องได้ที่ Activities)"
-					>
-						ครูประจำกิจกรรม (ทีมเริ่มต้น)
-						<Info class="w-3 h-3 text-muted-foreground" />
-					</Label>
+				>
+					ครูประจำกิจกรรม (ทีมเริ่มต้น)
+					<Info class="w-3 h-3 text-muted-foreground" />
+					{#if isNewCatalogVersion}
+						<span class="text-[10px] text-muted-foreground">
+							(carry จาก version เก่า — แก้ได้)
+						</span>
+					{/if}
+				</Label>
 					<div class="flex gap-2">
 						<Select.Root type="single" bind:value={catalogTeamAddInstructorId}>
 							<Select.Trigger class="flex-1 truncate">
@@ -1780,7 +1845,7 @@
 						</p>
 					{:else}
 						<div class="flex flex-wrap gap-1.5">
-							{#each catalogTeam as t (t.id)}
+							{#each catalogTeam as t (t.instructor_id)}
 								<Badge
 									variant={t.role === 'primary' ? 'default' : 'secondary'}
 									class="gap-1 pr-1"
@@ -1812,14 +1877,9 @@
 							{:else}
 								· Synchronized: ทุกคน copy เข้า slot เป็นครูรวม
 							{/if}
-						</p>
-					{/if}
-				</div>
-			{:else if !editingCatalog}
-				<p class="text-[11px] text-muted-foreground">
-					บันทึกกิจกรรมก่อน แล้วกลับมาแก้ไขเพื่อเพิ่มครูเริ่มต้น
-				</p>
-			{/if}
+					</p>
+				{/if}
+			</div>
 		</div>
 
 		<DialogFooter>
