@@ -1122,6 +1122,9 @@ pub async fn create_activity_catalog(
     let allowed = req.grade_level_ids
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
     let row: ActivityCatalog = sqlx::query_as(
         r#"INSERT INTO activity_catalog
                (name, start_academic_year_id, activity_type, description,
@@ -1137,9 +1140,31 @@ pub async fn create_activity_catalog(
     .bind(&req.scheduling_mode)
     .bind(&req.term)
     .bind(&allowed)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    // Insert team atomically if provided (used by create + "new version" flows)
+    if let Some(team) = &req.default_instructors {
+        for t in team {
+            if t.role != "primary" && t.role != "secondary" {
+                return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+            }
+            sqlx::query(
+                "INSERT INTO activity_catalog_default_instructors (catalog_id, instructor_id, role)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (catalog_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
+            )
+            .bind(row.id)
+            .bind(t.instructor_id)
+            .bind(&t.role)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
+        }
+    }
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": row }))))
 }

@@ -266,6 +266,12 @@ pub struct ActivityCatalog {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CatalogDefaultInstructorInput {
+    pub instructor_id: Uuid,
+    pub role: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateCatalogRequest {
     pub name: String,
     pub start_academic_year_id: Uuid,
@@ -275,6 +281,10 @@ pub struct CreateCatalogRequest {
     pub scheduling_mode: Option<String>,
     pub term: Option<String>,
     pub grade_level_ids: Option<Vec<Uuid>>,
+    /// Default instructor team to insert atomically with catalog creation.
+    /// Used by "create" and "create new version" flows so admin doesn't need
+    /// a second save step after catalog creation.
+    pub default_instructors: Option<Vec<CatalogDefaultInstructorInput>>,
 }
 
 #[derive(Debug, Deserialize)]
