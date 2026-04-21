@@ -391,6 +391,32 @@ pub async fn create_timetable_entry(
                 ));
             }
 
+            // Validate: must have instructor before scheduling.
+            // Independent mode → activity_slot_classroom_assignments per classroom
+            // Synchronized mode → activity_slot_instructors at slot level
+            let has_instructor: bool = sqlx::query_scalar(
+                r#"SELECT CASE
+                     WHEN ac.scheduling_mode = 'independent' THEN
+                         EXISTS(SELECT 1 FROM activity_slot_classroom_assignments
+                                WHERE slot_id = $1 AND classroom_id = $2)
+                     ELSE
+                         EXISTS(SELECT 1 FROM activity_slot_instructors WHERE slot_id = $1)
+                   END
+                   FROM activity_slots s
+                   JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
+                   WHERE s.id = $1"#
+            )
+            .bind(slot_id)
+            .bind(cls)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
+            if !has_instructor {
+                return Err(AppError::BadRequest(
+                    "กิจกรรมนี้ยังไม่ได้กำหนดครูผู้สอน — เพิ่มครูที่หน้า Activities ก่อน".to_string()
+                ));
+            }
+
             // Lookup slot name (from catalog via FK) for title
             let slot_name: Option<String> = sqlx::query_scalar(
                 "SELECT ac.name FROM activity_slots s
@@ -919,6 +945,38 @@ pub async fn create_batch_timetable_entries(
             let names: Vec<String> = non_participating.into_iter().map(|(n,)| n).collect();
             return Err(AppError::BadRequest(format!(
                 "ห้องต่อไปนี้ยังไม่ได้อยู่ในกิจกรรม: {} — เพิ่มห้องที่ Course Planning ก่อน",
+                names.join(", ")
+            )));
+        }
+
+        // Also validate: all classrooms must have instructor.
+        // Independent → check per-classroom in activity_slot_classroom_assignments
+        // Synchronized → check slot-level activity_slot_instructors
+        let missing_teacher: Vec<(String,)> = sqlx::query_as(
+            r#"SELECT cr.name
+               FROM class_rooms cr, activity_slots s
+               JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
+               WHERE s.id = $2
+                 AND cr.id = ANY($1)
+                 AND CASE
+                       WHEN ac.scheduling_mode = 'independent' THEN
+                           NOT EXISTS(SELECT 1 FROM activity_slot_classroom_assignments
+                                      WHERE slot_id = $2 AND classroom_id = cr.id)
+                       ELSE
+                           NOT EXISTS(SELECT 1 FROM activity_slot_instructors
+                                      WHERE slot_id = $2)
+                     END"#
+        )
+        .bind(&payload.classroom_ids)
+        .bind(slot_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+
+        if !missing_teacher.is_empty() {
+            let names: Vec<String> = missing_teacher.into_iter().map(|(n,)| n).collect();
+            return Err(AppError::BadRequest(format!(
+                "กิจกรรมนี้ยังไม่ได้กำหนดครูผู้สอน (กระทบ: {}) — เพิ่มครูที่หน้า Activities ก่อน",
                 names.join(", ")
             )));
         }
