@@ -488,10 +488,10 @@
 		showDeleteDialog = true;
 	}
 
-	async function handleSubmit() {
+	async function handleSubmit(): Promise<boolean> {
 		if (!currentSubject.code || !currentSubject.name_th) {
 			toast.error('กรุณากรอกรหัสวิชาและชื่อวิชาให้ครบถ้วน');
-			return;
+			return false;
 		}
 
 		submitting = true;
@@ -529,6 +529,7 @@
 			}
 			showDialog = false;
 			await loadData();
+			return true;
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : '';
 			// รหัสวิชาซ้ำ → toast ชัดเจน (backend คืน "รหัสวิชา X ... มีอยู่ในระบบแล้ว")
@@ -537,6 +538,7 @@
 			} else {
 				toast.error('บันทึกไม่สำเร็จ' + (msg ? ': ' + msg : ''));
 			}
+			return false;
 		} finally {
 			submitting = false;
 		}
@@ -682,21 +684,9 @@
 	}
 
 	async function handleUnifiedSave() {
-		if (unifiedAddType === 'subject') {
-			// handleSubmit closes showDialog on success (which we don't open here),
-			// but either way after it resolves we close the unified dialog.
-			// handleSubmit catches errors internally with alert(), so we mirror behavior:
-			// only close if validation/save didn't fail.
-			const before = subjects.length;
-			await handleSubmit();
-			// If a new subject was saved, subjects will have been reloaded with >= previous length.
-			// Use a simpler signal: if showDialog is false AND not submitting, assume success.
-			if (!submitting) showUnifiedAddDialog = false;
-			void before;
-		} else {
-			await handleSaveCatalog();
-			if (!catalogSubmitting) showUnifiedAddDialog = false;
-		}
+		// Close dialog only on success — error/validation ค้าง dialog ให้ admin แก้ต่อ
+		const ok = unifiedAddType === 'subject' ? await handleSubmit() : await handleSaveCatalog();
+		if (ok) showUnifiedAddDialog = false;
 	}
 
 	function openEditCatalog(item: ActivityCatalog) {
@@ -717,10 +707,10 @@
 		void loadCatalogTeam(item.id);
 	}
 
-	async function handleSaveCatalog() {
+	async function handleSaveCatalog(): Promise<boolean> {
 		if (!catalogName.trim()) {
 			toast.error('กรุณาระบุชื่อกิจกรรม');
-			return;
+			return false;
 		}
 
 		catalogSubmitting = true;
@@ -741,7 +731,7 @@
 			} else {
 				if (!catalogStartYearId) {
 					toast.error('กรุณาเลือกปีเริ่มใช้');
-					return;
+					return false;
 				}
 				await createActivityCatalog({
 					...payload,
@@ -754,8 +744,15 @@
 			}
 			showCatalogDialog = false;
 			await loadCatalog();
+			return true;
 		} catch (e) {
-			toast.error('บันทึกไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+			const msg = e instanceof Error ? e.message : '';
+			if (msg.includes('มีอยู่ในระบบแล้ว') || msg.includes('duplicate')) {
+				toast.error(msg || 'ชื่อกิจกรรมซ้ำ', { duration: 5000 });
+			} else {
+				toast.error('บันทึกไม่สำเร็จ' + (msg ? ': ' + msg : ''));
+			}
+			return false;
 		} finally {
 			catalogSubmitting = false;
 		}
