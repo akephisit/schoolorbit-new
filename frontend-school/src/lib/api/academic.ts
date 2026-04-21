@@ -1114,6 +1114,53 @@ export const deleteActivityCatalog = async (id: string) => {
     return await fetchApi(`/api/academic/activity-catalog/${id}`, { method: 'DELETE' });
 };
 
+// ==========================================
+// Activity Catalog Default Instructors (team default ต่อ catalog version)
+// Pattern เดียวกับ SubjectDefaultInstructor
+// ==========================================
+
+export interface CatalogDefaultInstructor {
+    id: string;
+    catalog_id: string;
+    instructor_id: string;
+    role: 'primary' | 'secondary';
+    instructor_name?: string;
+}
+
+export const listCatalogDefaultInstructors = async (
+    catalogId: string
+): Promise<{ data: CatalogDefaultInstructor[] }> => {
+    return await fetchApi(`/api/academic/activity-catalog/${catalogId}/default-instructors`);
+};
+
+export const addCatalogDefaultInstructor = async (
+    catalogId: string,
+    instructorId: string,
+    role: 'primary' | 'secondary' = 'secondary'
+) => {
+    return await fetchApi(`/api/academic/activity-catalog/${catalogId}/default-instructors`, {
+        method: 'POST',
+        body: JSON.stringify({ instructor_id: instructorId, role })
+    });
+};
+
+export const removeCatalogDefaultInstructor = async (catalogId: string, instructorId: string) => {
+    return await fetchApi(`/api/academic/activity-catalog/${catalogId}/default-instructors/${instructorId}`, {
+        method: 'DELETE'
+    });
+};
+
+export const updateCatalogDefaultInstructorRole = async (
+    catalogId: string,
+    instructorId: string,
+    role: 'primary' | 'secondary'
+) => {
+    return await fetchApi(`/api/academic/activity-catalog/${catalogId}/default-instructors/${instructorId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ role })
+    });
+};
+
 export const deletePlanActivity = async (id: string) => {
     return await fetchApi(`/api/academic/study-plan-activities/${id}`, {
         method: 'DELETE'
