@@ -932,7 +932,8 @@ pub async fn update_timetable_entry(
         ).into_response());
     }
 
-    // 4. Update Entry
+    // 4. Update Entry (accept content change via classroom_course_id / activity_slot_id
+    //    for drag-from-sidebar-onto-occupied "replace" flow)
     let updated_entry = sqlx::query_as::<_, TimetableEntry>(
         r#"
         UPDATE academic_timetable_entries SET
@@ -940,6 +941,8 @@ pub async fn update_timetable_entry(
             period_id = COALESCE($3, period_id),
             room_id = COALESCE($4, room_id),
             note = COALESCE($5, note),
+            classroom_course_id = COALESCE($7, classroom_course_id),
+            activity_slot_id = COALESCE($8, activity_slot_id),
             updated_at = NOW(),
             updated_by = $6
         WHERE id = $1
@@ -952,6 +955,8 @@ pub async fn update_timetable_entry(
     .bind(payload.room_id)
     .bind(payload.note)
     .bind(user_id)
+    .bind(payload.classroom_course_id)
+    .bind(payload.activity_slot_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -1550,4 +1555,487 @@ pub async fn hide_instructor_from_slot_entries(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(Json(json!({ "success": true, "deleted": affected.rows_affected() })).into_response())
+}
+
+// ============================================
+// Swap + Validate-Moves (drag-drop UX enhancements)
+// ============================================
+
+/// POST /api/academic/timetable/swap
+/// Atomically swap day+period of two timetable entries. classroom_id and room_id stay put.
+/// Validates both entries don't conflict at their new positions.
+pub async fn swap_timetable_entries(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<SwapTimetableEntriesRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    // Fetch both entries' current day/period/room
+    let entries: Vec<(Uuid, String, Uuid, Option<Uuid>, Uuid, Uuid)> = sqlx::query_as(
+        r#"SELECT id, day_of_week, period_id, room_id, classroom_id, academic_semester_id
+           FROM academic_timetable_entries
+           WHERE id = ANY($1) AND is_active = true"#
+    )
+    .bind(&[body.entry_a_id, body.entry_b_id])
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if entries.len() != 2 {
+        return Err(AppError::NotFound("Entry not found or inactive".to_string()));
+    }
+
+    let (a, b) = if entries[0].0 == body.entry_a_id {
+        (&entries[0], &entries[1])
+    } else {
+        (&entries[1], &entries[0])
+    };
+
+    // Helper tuples: (id, day, period, room, classroom, semester)
+    let (a_id, a_day, a_period, a_room, a_classroom, _a_sem) = a.clone();
+    let (b_id, b_day, b_period, b_room, b_classroom, _b_sem) = b.clone();
+
+    // Validate: each entry's classroom must be free at new position (excluding swap partner)
+    let a_target_conflict: Option<(String,)> = sqlx::query_as(
+        r#"SELECT cr.name FROM academic_timetable_entries te
+           JOIN class_rooms cr ON cr.id = te.classroom_id
+           WHERE te.classroom_id = $1 AND te.day_of_week = $2 AND te.period_id = $3
+             AND te.is_active = true AND te.id NOT IN ($4, $5)
+           LIMIT 1"#
+    )
+    .bind(a_classroom)
+    .bind(&b_day)
+    .bind(b_period)
+    .bind(a_id)
+    .bind(b_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    if let Some((name,)) = a_target_conflict {
+        return Err(AppError::BadRequest(format!(
+            "ห้อง {} ไม่ว่างที่ตำแหน่งปลายทางของ entry A", name
+        )));
+    }
+
+    let b_target_conflict: Option<(String,)> = sqlx::query_as(
+        r#"SELECT cr.name FROM academic_timetable_entries te
+           JOIN class_rooms cr ON cr.id = te.classroom_id
+           WHERE te.classroom_id = $1 AND te.day_of_week = $2 AND te.period_id = $3
+             AND te.is_active = true AND te.id NOT IN ($4, $5)
+           LIMIT 1"#
+    )
+    .bind(b_classroom)
+    .bind(&a_day)
+    .bind(a_period)
+    .bind(a_id)
+    .bind(b_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    if let Some((name,)) = b_target_conflict {
+        return Err(AppError::BadRequest(format!(
+            "ห้อง {} ไม่ว่างที่ตำแหน่งปลายทางของ entry B", name
+        )));
+    }
+
+    // Room conflict (if rooms set): each room must be free at new position (excluding each other)
+    if let Some(a_room_id) = a_room {
+        let conflict: Option<(String,)> = sqlx::query_as(
+            r#"SELECT r.code FROM academic_timetable_entries te
+               JOIN rooms r ON r.id = te.room_id
+               WHERE te.room_id = $1 AND te.day_of_week = $2 AND te.period_id = $3
+                 AND te.is_active = true AND te.id NOT IN ($4, $5)
+               LIMIT 1"#
+        )
+        .bind(a_room_id)
+        .bind(&b_day)
+        .bind(b_period)
+        .bind(a_id)
+        .bind(b_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap_or(None);
+        if let Some((code,)) = conflict {
+            return Err(AppError::BadRequest(format!(
+                "ห้อง {} ถูกใช้ที่ตำแหน่งปลายทางของ entry A", code
+            )));
+        }
+    }
+    if let Some(b_room_id) = b_room {
+        let conflict: Option<(String,)> = sqlx::query_as(
+            r#"SELECT r.code FROM academic_timetable_entries te
+               JOIN rooms r ON r.id = te.room_id
+               WHERE te.room_id = $1 AND te.day_of_week = $2 AND te.period_id = $3
+                 AND te.is_active = true AND te.id NOT IN ($4, $5)
+               LIMIT 1"#
+        )
+        .bind(b_room_id)
+        .bind(&a_day)
+        .bind(a_period)
+        .bind(a_id)
+        .bind(b_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap_or(None);
+        if let Some((code,)) = conflict {
+            return Err(AppError::BadRequest(format!(
+                "ห้อง {} ถูกใช้ที่ตำแหน่งปลายทางของ entry B", code
+            )));
+        }
+    }
+
+    // Instructor conflict: each entry's instructors must be free at new position (excluding partner)
+    let a_instr_conflict: Option<(String,)> = sqlx::query_as(
+        r#"SELECT concat(u.first_name, ' ', u.last_name)
+           FROM timetable_entry_instructors tei_self
+           JOIN users u ON u.id = tei_self.instructor_id
+           WHERE tei_self.entry_id = $1
+             AND EXISTS (
+                 SELECT 1 FROM timetable_entry_instructors tei_other
+                 JOIN academic_timetable_entries te_other ON te_other.id = tei_other.entry_id
+                 WHERE tei_other.instructor_id = tei_self.instructor_id
+                   AND te_other.day_of_week = $2 AND te_other.period_id = $3
+                   AND te_other.is_active = true
+                   AND te_other.id NOT IN ($1, $4)
+             )
+           LIMIT 1"#
+    )
+    .bind(a_id)
+    .bind(&b_day)
+    .bind(b_period)
+    .bind(b_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    if let Some((name,)) = a_instr_conflict {
+        return Err(AppError::BadRequest(format!(
+            "ครู {} จะติดคาบที่ตำแหน่งปลายทางของ entry A", name
+        )));
+    }
+
+    let b_instr_conflict: Option<(String,)> = sqlx::query_as(
+        r#"SELECT concat(u.first_name, ' ', u.last_name)
+           FROM timetable_entry_instructors tei_self
+           JOIN users u ON u.id = tei_self.instructor_id
+           WHERE tei_self.entry_id = $1
+             AND EXISTS (
+                 SELECT 1 FROM timetable_entry_instructors tei_other
+                 JOIN academic_timetable_entries te_other ON te_other.id = tei_other.entry_id
+                 WHERE tei_other.instructor_id = tei_self.instructor_id
+                   AND te_other.day_of_week = $2 AND te_other.period_id = $3
+                   AND te_other.is_active = true
+                   AND te_other.id NOT IN ($1, $4)
+             )
+           LIMIT 1"#
+    )
+    .bind(b_id)
+    .bind(&a_day)
+    .bind(a_period)
+    .bind(a_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    if let Some((name,)) = b_instr_conflict {
+        return Err(AppError::BadRequest(format!(
+            "ครู {} จะติดคาบที่ตำแหน่งปลายทางของ entry B", name
+        )));
+    }
+
+    // Perform swap in 3 steps to bypass trigger race (see migration 097 notes):
+    //   1. Deactivate A (trigger returns early when NOT NEW.is_active)
+    //   2. Move B to A's original position
+    //   3. Reactivate A at B's original position
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    sqlx::query("UPDATE academic_timetable_entries SET is_active = false WHERE id = $1")
+        .bind(a_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(format!("swap step 1: {}", e)))?;
+
+    sqlx::query(
+        "UPDATE academic_timetable_entries SET day_of_week = $1, period_id = $2, updated_at = NOW() WHERE id = $3"
+    )
+    .bind(&a_day)
+    .bind(a_period)
+    .bind(b_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("swap step 2: {}", e)))?;
+
+    sqlx::query(
+        "UPDATE academic_timetable_entries SET day_of_week = $1, period_id = $2, is_active = true, updated_at = NOW() WHERE id = $3"
+    )
+    .bind(&b_day)
+    .bind(b_period)
+    .bind(a_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("swap step 3: {}", e)))?;
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Broadcast realtime refresh
+    let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+    let event = TimetableEvent::TableRefresh {
+        user_id: user_id.unwrap_or_default()
+    };
+    let _ = state.websocket_manager
+        .get_or_create_room(subdomain, entries[0].5)
+        .send(event);
+
+    Ok(Json(json!({ "success": true, "message": "Swapped" })).into_response())
+}
+
+/// POST /api/academic/timetable/validate-moves
+/// For given entry_id, compute validity of moving to every (day, period) cell in that entry's semester.
+/// Returns map so frontend can colorize drop targets before release.
+pub async fn validate_timetable_moves(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ValidateMovesRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    // Fetch source entry details
+    let src: Option<(String, Uuid, Uuid, Option<Uuid>, Uuid, Uuid)> = sqlx::query_as(
+        r#"SELECT day_of_week, period_id, classroom_id, room_id, academic_semester_id, id
+           FROM academic_timetable_entries WHERE id = $1 AND is_active = true"#
+    )
+    .bind(body.entry_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let (src_day, src_period, src_classroom, src_room, src_semester, _) = match src {
+        Some(v) => v,
+        None => return Err(AppError::NotFound("Entry not found".to_string())),
+    };
+
+    // Fetch all relevant entries in the same semester
+    let all_entries: Vec<(Uuid, String, Uuid, Uuid, Option<Uuid>)> = sqlx::query_as(
+        r#"SELECT id, day_of_week, period_id, classroom_id, room_id
+           FROM academic_timetable_entries
+           WHERE academic_semester_id = $1 AND is_active = true"#
+    )
+    .bind(src_semester)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Source entry's instructors
+    let src_instructors: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT instructor_id FROM timetable_entry_instructors WHERE entry_id = $1"
+    )
+    .bind(body.entry_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // For each other entry, get its instructors (for swap conflict checks)
+    let other_ids: Vec<Uuid> = all_entries.iter().map(|e| e.0).collect();
+    let other_instructors_flat: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        "SELECT entry_id, instructor_id FROM timetable_entry_instructors WHERE entry_id = ANY($1)"
+    )
+    .bind(&other_ids)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // Group instructors by entry
+    use std::collections::HashMap;
+    let mut by_entry: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for (eid, iid) in &other_instructors_flat {
+        by_entry.entry(*eid).or_default().push(*iid);
+    }
+
+    // Build a map: (day, period) → existing entries there
+    let mut cell_entries: HashMap<(String, Uuid), Vec<&(Uuid, String, Uuid, Uuid, Option<Uuid>)>> = HashMap::new();
+    for e in &all_entries {
+        cell_entries.entry((e.1.clone(), e.2)).or_default().push(e);
+    }
+
+    // Fetch all periods for this semester's year (for iteration). Assume all days of week.
+    let periods: Vec<(Uuid,)> = sqlx::query_as(
+        r#"SELECT p.id FROM academic_periods p
+           JOIN academic_semesters sem ON sem.academic_year_id = p.academic_year_id
+           WHERE sem.id = $1
+           ORDER BY p.order_index"#
+    )
+    .bind(src_semester)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+    let mut cells: Vec<MoveValidityCell> = Vec::new();
+
+    for day in days.iter() {
+        for (pid,) in &periods {
+            let key = (day.to_string(), *pid);
+
+            // Source itself
+            if *day == src_day && *pid == src_period {
+                cells.push(MoveValidityCell {
+                    day_of_week: day.to_string(),
+                    period_id: *pid,
+                    state: "source".to_string(),
+                    target_entry_id: None,
+                    valid: false,
+                    reason: String::new(),
+                });
+                continue;
+            }
+
+            let occupants: Vec<&(Uuid, String, Uuid, Uuid, Option<Uuid>)> =
+                cell_entries.get(&key).cloned().unwrap_or_default();
+
+            // Entries other than source at this cell
+            let others: Vec<&(Uuid, String, Uuid, Uuid, Option<Uuid>)> =
+                occupants.iter().filter(|e| e.0 != body.entry_id).copied().collect();
+
+            if others.is_empty() {
+                // Empty cell — check move validity (instructor/room conflicts of source at new pos)
+                let mut valid = true;
+                let mut reason = String::new();
+
+                // Classroom conflict: source's classroom mustn't have another entry at this cell
+                if all_entries.iter().any(|e| e.0 != body.entry_id && e.3 == src_classroom && e.1 == *day && e.2 == *pid) {
+                    valid = false;
+                    reason = "ห้องเรียนมี entry อื่น".to_string();
+                }
+
+                // Instructor conflict
+                if valid {
+                    for iid in &src_instructors {
+                        if all_entries.iter().any(|e| {
+                            e.0 != body.entry_id
+                                && e.1 == *day
+                                && e.2 == *pid
+                                && by_entry.get(&e.0).map_or(false, |ids| ids.contains(iid))
+                        }) {
+                            valid = false;
+                            reason = "ครูติดคาบ".to_string();
+                            break;
+                        }
+                    }
+                }
+
+                // Room conflict
+                if valid {
+                    if let Some(r) = src_room {
+                        if all_entries.iter().any(|e| e.0 != body.entry_id && e.4 == Some(r) && e.1 == *day && e.2 == *pid) {
+                            valid = false;
+                            reason = "ห้องถูกใช้".to_string();
+                        }
+                    }
+                }
+
+                cells.push(MoveValidityCell {
+                    day_of_week: day.to_string(),
+                    period_id: *pid,
+                    state: "empty".to_string(),
+                    target_entry_id: None,
+                    valid,
+                    reason,
+                });
+            } else {
+                // Occupied — potential swap target (pick first other entry)
+                let target = others[0];
+                let target_id = target.0;
+
+                // Swap: source → target's position, target → source's position
+                // Validate source at target's pos + target at source's pos (pairwise, excluding each other)
+                let mut valid = true;
+                let mut reason = String::new();
+
+                // Classroom: source's classroom at target pos — mustn't have 3rd entry
+                if all_entries.iter().any(|e| e.0 != body.entry_id && e.0 != target_id && e.3 == src_classroom && e.1 == *day && e.2 == *pid) {
+                    valid = false;
+                    reason = format!("ห้องของต้นทางถูกใช้ที่คาบนี้");
+                }
+                // Classroom: target's classroom at source pos — mustn't have 3rd entry
+                if valid && all_entries.iter().any(|e| e.0 != body.entry_id && e.0 != target_id && e.3 == target.3 && e.1 == src_day && e.2 == src_period) {
+                    valid = false;
+                    reason = format!("ห้องของปลายทางถูกใช้ที่คาบต้นทาง");
+                }
+
+                // Instructor conflicts pairwise
+                if valid {
+                    for iid in &src_instructors {
+                        if all_entries.iter().any(|e| {
+                            e.0 != body.entry_id
+                                && e.0 != target_id
+                                && e.1 == *day
+                                && e.2 == *pid
+                                && by_entry.get(&e.0).map_or(false, |ids| ids.contains(iid))
+                        }) {
+                            valid = false;
+                            reason = "ครูต้นทางติดคาบปลายทาง".to_string();
+                            break;
+                        }
+                    }
+                }
+                if valid {
+                    let target_instr: Vec<Uuid> = by_entry.get(&target_id).cloned().unwrap_or_default();
+                    for iid in &target_instr {
+                        if all_entries.iter().any(|e| {
+                            e.0 != body.entry_id
+                                && e.0 != target_id
+                                && e.1 == src_day
+                                && e.2 == src_period
+                                && by_entry.get(&e.0).map_or(false, |ids| ids.contains(iid))
+                        }) {
+                            valid = false;
+                            reason = "ครูปลายทางติดคาบต้นทาง".to_string();
+                            break;
+                        }
+                    }
+                }
+
+                // Room conflicts (if either has room set)
+                if valid {
+                    if let Some(r) = src_room {
+                        if all_entries.iter().any(|e| e.0 != body.entry_id && e.0 != target_id && e.4 == Some(r) && e.1 == *day && e.2 == *pid) {
+                            valid = false;
+                            reason = "ห้องต้นทางถูกใช้ที่คาบปลายทาง".to_string();
+                        }
+                    }
+                }
+                if valid {
+                    if let Some(r) = target.4 {
+                        if all_entries.iter().any(|e| e.0 != body.entry_id && e.0 != target_id && e.4 == Some(r) && e.1 == src_day && e.2 == src_period) {
+                            valid = false;
+                            reason = "ห้องปลายทางถูกใช้ที่คาบต้นทาง".to_string();
+                        }
+                    }
+                }
+
+                cells.push(MoveValidityCell {
+                    day_of_week: day.to_string(),
+                    period_id: *pid,
+                    state: "occupied".to_string(),
+                    target_entry_id: Some(target_id),
+                    valid,
+                    reason,
+                });
+            }
+        }
+    }
+
+    Ok(Json(json!({ "data": cells })).into_response())
 }

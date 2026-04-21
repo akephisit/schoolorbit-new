@@ -143,6 +143,33 @@ pub struct UpdateTimetableEntryRequest {
     pub period_id: Option<Uuid>,
     pub room_id: Option<Uuid>,
     pub note: Option<String>,
+    /// Change what this entry teaches (replace content) — used by drag-from-sidebar-onto-occupied flow
+    pub classroom_course_id: Option<Uuid>,
+    pub activity_slot_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SwapTimetableEntriesRequest {
+    pub entry_a_id: Uuid,
+    pub entry_b_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ValidateMovesRequest {
+    pub entry_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MoveValidityCell {
+    pub day_of_week: String,
+    pub period_id: Uuid,
+    /// "empty" | "occupied" | "source"
+    pub state: String,
+    /// Target entry id if occupied (for swap). None if empty/source.
+    pub target_entry_id: Option<Uuid>,
+    pub valid: bool,
+    /// Human-readable reason if !valid, or empty string
+    pub reason: String,
 }
 
 #[derive(Debug, Deserialize)]

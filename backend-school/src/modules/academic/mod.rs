@@ -75,6 +75,8 @@ pub fn academic_routes() -> Router<AppState> {
         // Timetable: Entries
         .route("/timetable", get(handlers::timetable::list_timetable_entries).post(handlers::timetable::create_timetable_entry))
         .route("/timetable/batch", post(handlers::timetable::create_batch_timetable_entries).delete(handlers::timetable::delete_batch_timetable_entries))
+        .route("/timetable/swap", post(handlers::timetable::swap_timetable_entries))
+        .route("/timetable/validate-moves", post(handlers::timetable::validate_timetable_moves))
         .route("/timetable/{id}", axum::routing::put(handlers::timetable::update_timetable_entry).delete(handlers::timetable::delete_timetable_entry))
         .route("/timetable/{id}/my-activity", get(handlers::timetable::get_my_activity_for_entry))
         .route("/timetable/{id}/instructors", post(handlers::timetable::add_entry_instructor))
