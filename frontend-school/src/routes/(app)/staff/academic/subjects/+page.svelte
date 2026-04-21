@@ -981,8 +981,9 @@
 									(y) => y.id === vInfo.versions[0]?.start_academic_year_id
 								)?.name
 							: undefined}
+						{@const hasCodeBadges = totalVersions > 1 || subject.type !== 'BASIC'}
 						<Table.Row>
-							<Table.Cell class="font-medium align-middle">
+							<Table.Cell class="font-medium {hasCodeBadges ? 'align-middle' : 'align-top'}">
 								<div class="font-bold text-primary">{subject.code}</div>
 								<div class="flex flex-wrap items-center gap-1 mt-1">
 									{#if totalVersions > 1}
