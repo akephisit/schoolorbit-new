@@ -118,6 +118,13 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/activity-catalog/{id}",
                put(handlers::study_plans::update_activity_catalog)
                .delete(handlers::study_plans::delete_activity_catalog))
+        // Activity Catalog Default Instructors (team default ต่อ catalog version)
+        .route("/activity-catalog/{id}/default-instructors",
+               get(handlers::study_plans::list_catalog_default_instructors)
+               .post(handlers::study_plans::add_catalog_default_instructor))
+        .route("/activity-catalog/{id}/default-instructors/{uid}",
+               axum::routing::delete(handlers::study_plans::remove_catalog_default_instructor)
+               .put(handlers::study_plans::update_catalog_default_instructor_role))
         
         // Auto-Scheduling
         .route("/scheduling/auto-schedule", post(handlers::scheduling::auto_schedule_timetable))

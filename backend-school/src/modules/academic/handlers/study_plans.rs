@@ -692,6 +692,30 @@ pub async fn generate_courses_from_plan(
                OR r.grade_level_ids ? cg.grade_str
             ON CONFLICT (slot_id, classroom_id) DO NOTHING
             RETURNING 1
+        ),
+        -- Auto-copy team defaults จาก activity_catalog_default_instructors:
+        --   synchronized mode → activity_slot_instructors (slot-level, ทุก role)
+        copy_sync_instructors AS (
+            INSERT INTO activity_slot_instructors (slot_id, user_id)
+            SELECT s.id, acdi.instructor_id
+            FROM all_slots s
+            JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
+            JOIN activity_catalog_default_instructors acdi ON acdi.catalog_id = s.activity_catalog_id
+            WHERE ac.scheduling_mode = 'synchronized'
+            ON CONFLICT (slot_id, user_id) DO NOTHING
+            RETURNING 1
+        ),
+        --   independent mode → activity_slot_classroom_assignments (primary ใช้เป็น default ของห้องนี้)
+        copy_independent_instructor AS (
+            INSERT INTO activity_slot_classroom_assignments (slot_id, classroom_id, instructor_id)
+            SELECT s.id, $5, acdi.instructor_id
+            FROM all_slots s
+            JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
+            JOIN activity_catalog_default_instructors acdi
+              ON acdi.catalog_id = s.activity_catalog_id AND acdi.role = 'primary'
+            WHERE ac.scheduling_mode = 'independent'
+            ON CONFLICT (slot_id, classroom_id) DO NOTHING
+            RETURNING 1
         )
         SELECT
             (SELECT COUNT(*) FROM resolved) AS total,
@@ -985,6 +1009,31 @@ pub async fn generate_activities_from_plan(
                OR r.grade_level_ids ? tc.grade_str
             ON CONFLICT (slot_id, classroom_id) DO NOTHING
             RETURNING 1
+        ),
+        -- Auto-copy team defaults จาก catalog
+        copy_sync_instructors AS (
+            INSERT INTO activity_slot_instructors (slot_id, user_id)
+            SELECT s.id, acdi.instructor_id
+            FROM all_slots s
+            JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
+            JOIN activity_catalog_default_instructors acdi ON acdi.catalog_id = s.activity_catalog_id
+            WHERE ac.scheduling_mode = 'synchronized'
+            ON CONFLICT (slot_id, user_id) DO NOTHING
+            RETURNING 1
+        ),
+        copy_independent_instructor AS (
+            INSERT INTO activity_slot_classroom_assignments (slot_id, classroom_id, instructor_id)
+            SELECT s.id, tc.id, acdi.instructor_id
+            FROM all_slots s
+            JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
+            JOIN activity_catalog_default_instructors acdi
+              ON acdi.catalog_id = s.activity_catalog_id AND acdi.role = 'primary'
+            CROSS JOIN target_classrooms tc
+            JOIN resolved r ON r.catalog_id = s.activity_catalog_id
+            WHERE ac.scheduling_mode = 'independent'
+              AND (r.grade_level_ids IS NULL OR r.grade_level_ids ? tc.grade_str)
+            ON CONFLICT (slot_id, classroom_id) DO NOTHING
+            RETURNING 1
         )
         SELECT
             (SELECT COUNT(*) FROM resolved) AS total,
@@ -1167,6 +1216,165 @@ pub async fn delete_activity_catalog(
                 e.to_string()
             }
         ))?;
+
+    Ok(Json(json!({ "success": true })))
+}
+
+// ============================================
+// Activity Catalog Default Instructors CRUD
+// Pattern: mirror subjects default_instructors handlers
+// ============================================
+
+/// GET /api/academic/activity-catalog/:id/default-instructors
+pub async fn list_catalog_default_instructors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(catalog_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let rows: Vec<CatalogDefaultInstructor> = sqlx::query_as(
+        r#"SELECT acdi.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
+           FROM activity_catalog_default_instructors acdi
+           JOIN users u ON u.id = acdi.instructor_id
+           WHERE acdi.catalog_id = $1
+           ORDER BY acdi.role, acdi.created_at"#
+    )
+    .bind(catalog_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "data": rows })))
+}
+
+/// POST /api/academic/activity-catalog/:id/default-instructors
+pub async fn add_catalog_default_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(catalog_id): Path<Uuid>,
+    Json(body): Json<AddCatalogDefaultInstructorRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    let role = body.role.unwrap_or_else(|| "secondary".to_string());
+    if role != "primary" && role != "secondary" {
+        return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+    }
+
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    // Demote any existing primary if this one is primary
+    if role == "primary" {
+        sqlx::query(
+            "UPDATE activity_catalog_default_instructors SET role = 'secondary'
+             WHERE catalog_id = $1 AND instructor_id <> $2 AND role = 'primary'"
+        )
+        .bind(catalog_id)
+        .bind(body.instructor_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    sqlx::query(
+        "INSERT INTO activity_catalog_default_instructors (catalog_id, instructor_id, role)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (catalog_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
+    )
+    .bind(catalog_id)
+    .bind(body.instructor_id)
+    .bind(&role)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    Ok(Json(json!({ "success": true })))
+}
+
+/// DELETE /api/academic/activity-catalog/:id/default-instructors/:uid
+pub async fn remove_catalog_default_instructor(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((catalog_id, instructor_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    sqlx::query(
+        "DELETE FROM activity_catalog_default_instructors WHERE catalog_id = $1 AND instructor_id = $2"
+    )
+    .bind(catalog_id)
+    .bind(instructor_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "success": true })))
+}
+
+/// PUT /api/academic/activity-catalog/:id/default-instructors/:uid
+pub async fn update_catalog_default_instructor_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((catalog_id, instructor_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<UpdateCatalogDefaultInstructorRoleRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+
+    if body.role != "primary" && body.role != "secondary" {
+        return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+    }
+
+    let mut tx = pool.begin().await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    if body.role == "primary" {
+        sqlx::query(
+            "UPDATE activity_catalog_default_instructors SET role = 'secondary'
+             WHERE catalog_id = $1 AND instructor_id <> $2 AND role = 'primary'"
+        )
+        .bind(catalog_id)
+        .bind(instructor_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    sqlx::query(
+        "UPDATE activity_catalog_default_instructors SET role = $3
+         WHERE catalog_id = $1 AND instructor_id = $2"
+    )
+    .bind(catalog_id)
+    .bind(instructor_id)
+    .bind(&body.role)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok(Json(json!({ "success": true })))
 }

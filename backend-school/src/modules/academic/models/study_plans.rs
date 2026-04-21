@@ -288,3 +288,31 @@ pub struct UpdateCatalogRequest {
     pub term: Option<String>,
     pub grade_level_ids: Option<Vec<Uuid>>,
 }
+
+// ==========================================
+// Activity Catalog Default Instructors (pattern = subject_default_instructors)
+// ==========================================
+
+#[derive(Debug, serde::Serialize, Deserialize, sqlx::FromRow)]
+pub struct CatalogDefaultInstructor {
+    pub id: Uuid,
+    pub catalog_id: Uuid,
+    pub instructor_id: Uuid,
+    pub role: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub instructor_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddCatalogDefaultInstructorRequest {
+    pub instructor_id: Uuid,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateCatalogDefaultInstructorRoleRequest {
+    pub role: String,
+}
