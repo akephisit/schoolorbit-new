@@ -1070,17 +1070,24 @@
 			.map((course) => {
 				const scheduled = courseCounts.get(course.id) || 0;
 				const credit = course.subject_credit || 0;
-				const hours = course.subject_hours || 0;
-				// Default 20 weeks per semester
-				// Priority: Hours > Credit > Default
+				const hours = course.subject_hours;
+				// Explicit 0 = วิชานี้ไม่ต้องจัดตาราง (เก็บคะแนนอย่างเดียว) → maxPeriods = 0
+				// null/undefined → fallback คำนวณจาก credit
+				// >0 → คำนวณจาก hours/20
 				const maxPeriods =
-					hours > 0 ? Math.ceil(hours / 20) : credit > 0 ? Math.ceil(credit * 2) : 3;
+					hours === 0
+						? 0
+						: hours && hours > 0
+							? Math.ceil(hours / 20)
+							: credit > 0
+								? Math.ceil(credit * 2)
+								: 3;
 
 				return {
 					...course,
 					scheduled_count: scheduled,
 					max_periods: maxPeriods,
-					is_completed: scheduled >= maxPeriods
+					is_completed: maxPeriods === 0 || scheduled >= maxPeriods
 				};
 			})
 			.filter((c) => !c.is_completed)

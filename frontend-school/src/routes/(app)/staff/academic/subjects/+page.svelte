@@ -1070,7 +1070,13 @@
 							<Table.Cell class="text-center align-middle">
 								<div class="font-bold">{subject.credit} นก.</div>
 								<div class="text-xs text-muted-foreground">
-									{subject.hours_per_semester || '-'} ชม./เทอม
+									{#if subject.hours_per_semester === 0}
+										<span title="ไม่ต้องจัดตารางสอน (เก็บคะแนนอย่างเดียว)">ไม่จัด</span>
+									{:else if subject.hours_per_semester}
+										{subject.hours_per_semester} ชม./เทอม
+									{:else}
+										-
+									{/if}
 								</div>
 							</Table.Cell>
 							<Table.Cell class="align-middle">
@@ -1590,7 +1596,7 @@
 						<Label
 							for="subject-hours"
 							class="flex items-center gap-1"
-							title="จำนวนคาบเรียนรวมต่อภาคเรียน (เช่น 40 = 40 คาบ/เทอม)"
+							title="จำนวนคาบเรียนรวมต่อภาคเรียน (เช่น 40 = 40 คาบ/เทอม). ใส่ 0 = ไม่ต้องจัดตารางสอน (เก็บคะแนนอย่างเดียว)"
 						>
 							คาบ/ภาค (Hours per semester)
 							<Info class="w-3 h-3 text-muted-foreground" />
@@ -1598,8 +1604,12 @@
 						<Input
 							id="subject-hours"
 							type="number"
+							min={0}
 							bind:value={currentSubject.hours_per_semester}
 						/>
+						<p class="text-[10px] text-muted-foreground">
+							ใส่ <b>0</b> = ไม่ต้องจัดตารางสอน (วิชาเก็บคะแนนอย่างเดียว เช่น IS, PBL)
+						</p>
 					</div>
 				</div>
 			</section>
