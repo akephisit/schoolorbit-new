@@ -825,8 +825,66 @@ pub async fn update_timetable_entry(
         academic_semester_id: Some(existing_entry.academic_semester_id),
     };
 
-    // 3. Validate conflicts (BUT need to exclude current entry ID)
-    // Unified instructor conflict check via junction (excluding current entry)
+    // 3. Validate conflicts (excluding current entry ID)
+    let mut conflict_list: Vec<serde_json::Value> = Vec::new();
+
+    // 3a. Classroom conflict — same classroom, day, period (exclude self)
+    let classroom_conflict: Option<(String,)> = sqlx::query_as(
+        r#"SELECT cr.name
+           FROM academic_timetable_entries te
+           JOIN class_rooms cr ON cr.id = te.classroom_id
+           WHERE te.classroom_id = $1
+             AND te.day_of_week = $2
+             AND te.period_id = $3
+             AND te.is_active = true
+             AND te.id <> $4
+           LIMIT 1"#
+    )
+    .bind(existing_entry.classroom_id)
+    .bind(&validation_payload.day_of_week)
+    .bind(validation_payload.period_id)
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    if let Some((cr_name,)) = classroom_conflict {
+        conflict_list.push(json!({
+            "conflict_type": "CLASSROOM_CONFLICT",
+            "message": format!("{} มีตารางในคาบนี้อยู่แล้ว", cr_name)
+        }));
+    }
+
+    // 3b. Room conflict — same room, day, period (exclude self)
+    if let Some(room_id) = validation_payload.room_id {
+        let room_conflict: Option<(String,)> = sqlx::query_as(
+            r#"SELECT r.code
+               FROM academic_timetable_entries te
+               JOIN rooms r ON r.id = te.room_id
+               WHERE te.room_id = $1
+                 AND te.day_of_week = $2
+                 AND te.period_id = $3
+                 AND te.is_active = true
+                 AND te.id <> $4
+               LIMIT 1"#
+        )
+        .bind(room_id)
+        .bind(&validation_payload.day_of_week)
+        .bind(validation_payload.period_id)
+        .bind(id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap_or(None);
+
+        if let Some((room_code,)) = room_conflict {
+            conflict_list.push(json!({
+                "conflict_type": "ROOM_CONFLICT",
+                "message": format!("ห้อง {} มีการใช้งานในคาบนี้อยู่แล้ว", room_code)
+            }));
+        }
+    }
+
+    // 3c. Instructor conflict via junction (exclude self)
     let candidate_instructors: Vec<Uuid> = sqlx::query_scalar(
         "SELECT instructor_id FROM timetable_entry_instructors WHERE entry_id = $1"
     )
@@ -855,24 +913,23 @@ pub async fn update_timetable_entry(
         .await
         .unwrap_or_default();
 
-        if !conflict_instructors.is_empty() {
-            let conflict_list: Vec<serde_json::Value> = conflict_instructors
-                .iter()
-                .map(|(name,)| json!({
-                    "conflict_type": "INSTRUCTOR_CONFLICT",
-                    "message": format!("{} มีสอนในคาบนี้อยู่แล้ว", name)
-                }))
-                .collect();
-
-            return Ok((
-                StatusCode::CONFLICT,
-                Json(json!({
-                    "success": false,
-                    "message": "Instructor conflict detected",
-                    "conflicts": conflict_list
-                }))
-            ).into_response());
+        for (name,) in &conflict_instructors {
+            conflict_list.push(json!({
+                "conflict_type": "INSTRUCTOR_CONFLICT",
+                "message": format!("{} มีสอนในคาบนี้อยู่แล้ว", name)
+            }));
         }
+    }
+
+    if !conflict_list.is_empty() {
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(json!({
+                "success": false,
+                "message": "Conflict detected",
+                "conflicts": conflict_list
+            }))
+        ).into_response());
     }
 
     // 4. Update Entry
@@ -905,6 +962,15 @@ pub async fn update_timetable_entry(
             AppError::InternalServerError("Failed to update entry".to_string())
         }
     })?;
+
+    // Broadcast realtime refresh
+    let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    let event = TimetableEvent::TableRefresh {
+        user_id: user_id.unwrap_or_default()
+    };
+    let _ = state.websocket_manager
+        .get_or_create_room(subdomain, existing_entry.academic_semester_id)
+        .send(event);
 
     Ok(Json(json!({ "success": true, "data": updated_entry })).into_response())
 }
