@@ -1096,6 +1096,8 @@ export const createActivityCatalog = async (data: {
     scheduling_mode?: string;
     term?: string;
     grade_level_ids?: string[];
+    /** Default team to insert atomically with catalog creation. */
+    default_instructors?: { instructor_id: string; role: 'primary' | 'secondary' }[];
 }) => {
     return await fetchApi(`/api/academic/activity-catalog`, {
         method: 'POST',
