@@ -114,6 +114,10 @@
 	let catalogStartYearId = $state('');
 	let isNewCatalogVersion = $state(false);
 
+	// Open state for staff-picker popovers — shared across main+unified dialogs (only 1 dialog open at a time)
+	let pickerOpenSubjectTeam = $state(false);
+	let pickerOpenCatalogTeam = $state(false);
+
 	// Catalog default instructors (ครูประจำกิจกรรม — auto-copy ตอน Wand2)
 	// Local-state draft: edit mode → direct API (has catalog id), other modes → submit atomically with create.
 	type CatalogTeamRow = { instructor_id: string; role: 'primary' | 'secondary'; instructor_name?: string };
@@ -1510,19 +1514,44 @@
 						<Info class="w-3 h-3 text-muted-foreground" />
 					</Label>
 					<div class="flex gap-2">
-						<Select.Root type="single" bind:value={teamAddInstructorId}>
-							<Select.Trigger class="flex-1 truncate">
-								{(() => {
-									const st = staffList.find((s) => s.id === teamAddInstructorId);
-									return st ? st.name : 'เลือกครู';
-								})()}
-							</Select.Trigger>
-							<Select.Content class="max-h-[300px]">
-								{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff}
-									<Select.Item value={staff.id}>{staff.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+						<Popover.Root bind:open={pickerOpenSubjectTeam}>
+							<Popover.Trigger class="flex-1">
+								<Button
+									variant="outline"
+									role="combobox"
+									aria-expanded={pickerOpenSubjectTeam}
+									class="w-full justify-between font-normal"
+								>
+									<span class="truncate">
+										{(() => {
+											const st = staffList.find((s) => s.id === teamAddInstructorId);
+											return st ? st.name : 'เลือกครู';
+										})()}
+									</span>
+									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+								</Button>
+							</Popover.Trigger>
+							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+								<Command.Root>
+									<Command.Input placeholder="ค้นหาครู..." />
+									<Command.Empty>ไม่พบครู</Command.Empty>
+									<Command.Group class="max-h-[280px] overflow-y-auto">
+										{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff}
+											<Command.Item
+												value={staff.name}
+												onSelect={() => {
+													teamAddInstructorId = staff.id;
+													pickerOpenSubjectTeam = false;
+												}}
+											>
+												<Check class="mr-2 h-4 w-4 {teamAddInstructorId === staff.id ? 'opacity-100' : 'opacity-0'}" />
+												{staff.name}
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
 						<Select.Root type="single" bind:value={teamAddRole}>
 							<Select.Trigger class="w-[130px]">
 								{teamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
@@ -1867,19 +1896,44 @@
 					{/if}
 				</Label>
 					<div class="flex gap-2">
-						<Select.Root type="single" bind:value={catalogTeamAddInstructorId}>
-							<Select.Trigger class="flex-1 truncate">
-								{(() => {
-									const st = staffList.find((s) => s.id === catalogTeamAddInstructorId);
-									return st ? st.name : 'เลือกครู';
-								})()}
-							</Select.Trigger>
-							<Select.Content class="max-h-[300px]">
-								{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff}
-									<Select.Item value={staff.id}>{staff.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+						<Popover.Root bind:open={pickerOpenCatalogTeam}>
+							<Popover.Trigger class="flex-1">
+								<Button
+									variant="outline"
+									role="combobox"
+									aria-expanded={pickerOpenCatalogTeam}
+									class="w-full justify-between font-normal"
+								>
+									<span class="truncate">
+										{(() => {
+											const st = staffList.find((s) => s.id === catalogTeamAddInstructorId);
+											return st ? st.name : 'เลือกครู';
+										})()}
+									</span>
+									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+								</Button>
+							</Popover.Trigger>
+							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+								<Command.Root>
+									<Command.Input placeholder="ค้นหาครู..." />
+									<Command.Empty>ไม่พบครู</Command.Empty>
+									<Command.Group class="max-h-[280px] overflow-y-auto">
+										{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff}
+											<Command.Item
+												value={staff.name}
+												onSelect={() => {
+													catalogTeamAddInstructorId = staff.id;
+													pickerOpenCatalogTeam = false;
+												}}
+											>
+												<Check class="mr-2 h-4 w-4 {catalogTeamAddInstructorId === staff.id ? 'opacity-100' : 'opacity-0'}" />
+												{staff.name}
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
 						<Select.Root type="single" bind:value={catalogTeamAddRole}>
 							<Select.Trigger class="w-[130px]">
 								{catalogTeamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
@@ -2192,19 +2246,44 @@
 							<Info class="w-3 h-3 text-muted-foreground" />
 						</Label>
 						<div class="flex gap-2">
-							<Select.Root type="single" bind:value={teamAddInstructorId}>
-								<Select.Trigger class="flex-1 truncate">
-									{(() => {
-										const st = staffList.find((s) => s.id === teamAddInstructorId);
-										return st ? st.name : 'เลือกครู';
-									})()}
-								</Select.Trigger>
-								<Select.Content class="max-h-[300px]">
-									{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff}
-										<Select.Item value={staff.id}>{staff.name}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+							<Popover.Root bind:open={pickerOpenSubjectTeam}>
+								<Popover.Trigger class="flex-1">
+									<Button
+										variant="outline"
+										role="combobox"
+										aria-expanded={pickerOpenSubjectTeam}
+										class="w-full justify-between font-normal"
+									>
+										<span class="truncate">
+											{(() => {
+												const st = staffList.find((s) => s.id === teamAddInstructorId);
+												return st ? st.name : 'เลือกครู';
+											})()}
+										</span>
+										<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+									</Button>
+								</Popover.Trigger>
+								<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+									<Command.Root>
+										<Command.Input placeholder="ค้นหาครู..." />
+										<Command.Empty>ไม่พบครู</Command.Empty>
+										<Command.Group class="max-h-[280px] overflow-y-auto">
+											{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff}
+												<Command.Item
+													value={staff.name}
+													onSelect={() => {
+														teamAddInstructorId = staff.id;
+														pickerOpenSubjectTeam = false;
+													}}
+												>
+													<Check class="mr-2 h-4 w-4 {teamAddInstructorId === staff.id ? 'opacity-100' : 'opacity-0'}" />
+													{staff.name}
+												</Command.Item>
+											{/each}
+										</Command.Group>
+									</Command.Root>
+								</Popover.Content>
+							</Popover.Root>
 							<Select.Root type="single" bind:value={teamAddRole}>
 								<Select.Trigger class="w-[130px]">
 									{teamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
@@ -2448,19 +2527,44 @@
 						<Info class="w-3 h-3 text-muted-foreground" />
 					</Label>
 					<div class="flex gap-2">
-						<Select.Root type="single" bind:value={catalogTeamAddInstructorId}>
-							<Select.Trigger class="flex-1 truncate">
-								{(() => {
-									const st = staffList.find((s) => s.id === catalogTeamAddInstructorId);
-									return st ? st.name : 'เลือกครู';
-								})()}
-							</Select.Trigger>
-							<Select.Content class="max-h-[300px]">
-								{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff}
-									<Select.Item value={staff.id}>{staff.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+						<Popover.Root bind:open={pickerOpenCatalogTeam}>
+							<Popover.Trigger class="flex-1">
+								<Button
+									variant="outline"
+									role="combobox"
+									aria-expanded={pickerOpenCatalogTeam}
+									class="w-full justify-between font-normal"
+								>
+									<span class="truncate">
+										{(() => {
+											const st = staffList.find((s) => s.id === catalogTeamAddInstructorId);
+											return st ? st.name : 'เลือกครู';
+										})()}
+									</span>
+									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+								</Button>
+							</Popover.Trigger>
+							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+								<Command.Root>
+									<Command.Input placeholder="ค้นหาครู..." />
+									<Command.Empty>ไม่พบครู</Command.Empty>
+									<Command.Group class="max-h-[280px] overflow-y-auto">
+										{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff}
+											<Command.Item
+												value={staff.name}
+												onSelect={() => {
+													catalogTeamAddInstructorId = staff.id;
+													pickerOpenCatalogTeam = false;
+												}}
+											>
+												<Check class="mr-2 h-4 w-4 {catalogTeamAddInstructorId === staff.id ? 'opacity-100' : 'opacity-0'}" />
+												{staff.name}
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
 						<Select.Root type="single" bind:value={catalogTeamAddRole}>
 							<Select.Trigger class="w-[130px]">
 								{catalogTeamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
