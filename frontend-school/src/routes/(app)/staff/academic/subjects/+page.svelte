@@ -2375,6 +2375,90 @@
 					<Label>คำอธิบาย</Label>
 					<Textarea bind:value={catalogDesc} rows={2} />
 				</div>
+
+				<!-- Default Team Instructors (auto-copy ตอน Wand2 สร้าง slot) -->
+				<div class="space-y-1">
+					<Label
+						class="flex items-center gap-1"
+						title="ครูเริ่มต้นของกิจกรรมนี้ — Wand2 จะ copy ให้อัตโนมัติ
+ (synchronized: ครูของ slot; independent: primary = default ของทุกห้อง, แก้ต่อห้องได้ที่ Activities)"
+					>
+						ครูประจำกิจกรรม (ทีมเริ่มต้น)
+						<Info class="w-3 h-3 text-muted-foreground" />
+					</Label>
+					<div class="flex gap-2">
+						<Select.Root type="single" bind:value={catalogTeamAddInstructorId}>
+							<Select.Trigger class="flex-1 truncate">
+								{(() => {
+									const st = staffList.find((s) => s.id === catalogTeamAddInstructorId);
+									return st ? st.name : 'เลือกครู';
+								})()}
+							</Select.Trigger>
+							<Select.Content class="max-h-[300px]">
+								{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff}
+									<Select.Item value={staff.id}>{staff.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<Select.Root type="single" bind:value={catalogTeamAddRole}>
+							<Select.Trigger class="w-[130px]">
+								{catalogTeamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="primary">ครูหลัก</Select.Item>
+								<Select.Item value="secondary">ครูร่วม</Select.Item>
+							</Select.Content>
+						</Select.Root>
+						<Button
+							type="button"
+							variant="outline"
+							onclick={handleAddCatalogTeam}
+							disabled={!catalogTeamAddInstructorId}
+						>
+							เพิ่ม
+						</Button>
+					</div>
+					{#if catalogTeam.length === 0}
+						<p class="text-[11px] text-muted-foreground">
+							ยังไม่มีครู — เพิ่มเพื่อให้ระบบ copy ให้อัตโนมัติตอนสร้าง slot
+						</p>
+					{:else}
+						<div class="flex flex-wrap gap-1.5">
+							{#each catalogTeam as t (t.instructor_id)}
+								<Badge
+									variant={t.role === 'primary' ? 'default' : 'secondary'}
+									class="gap-1 pr-1"
+								>
+									<button
+										type="button"
+										class="cursor-pointer hover:underline"
+										onclick={() => handleToggleCatalogTeamRole(t.instructor_id, t.role)}
+										title="คลิกเพื่อสลับ ครูหลัก ↔ ครูร่วม"
+									>
+										{t.role === 'primary' ? '⭐' : ''}
+										{t.instructor_name ?? t.instructor_id}
+									</button>
+									<button
+										type="button"
+										class="ml-1 rounded hover:bg-destructive/20 p-0.5"
+										onclick={() => handleRemoveCatalogTeam(t.instructor_id)}
+										aria-label="ลบ"
+									>
+										<Trash2 class="h-3 w-3" />
+									</button>
+								</Badge>
+							{/each}
+						</div>
+						<p class="text-[10px] text-muted-foreground">
+							⭐ = ครูหลัก · คลิกชื่อสลับ role
+							{#if catalogMode === 'independent'}
+								· Independent: primary = default ของทุกห้อง (แก้ต่อห้องได้ที่ Activities)
+							{:else}
+								· Synchronized: ทุกคน copy เข้า slot เป็นครูรวม
+							{/if}
+						</p>
+					{/if}
+				</div>
 			</div>
 		{/if}
 
