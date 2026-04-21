@@ -462,10 +462,14 @@ pub async fn add_subjects_to_version(
     })))
 }
 
+/// DELETE /api/academic/study-plan-subjects/:id
+/// Cascade เดียวกับ delete_plan_activity:
+///   - ลบ classroom_courses ของห้องที่ใช้ plan นั้น + วิชาตัวนั้น + term ตรงกัน
+///   - scope: เทอมปัจจุบัน+อนาคต (sem.end_date >= today; historical ไม่แตะ)
 pub async fn delete_study_plan_subject(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(subject_id): Path<Uuid>,
+    Path(sps_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
@@ -473,12 +477,50 @@ pub async fn delete_study_plan_subject(
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
-    
+
+    // Capture context ก่อนลบ: plan_version_id + grade_level_id + term + subject_id
+    let context: Option<(Uuid, Uuid, String, Uuid)> = sqlx::query_as(
+        r#"SELECT study_plan_version_id, grade_level_id, term, subject_id
+           FROM study_plan_subjects WHERE id = $1"#
+    )
+    .bind(sps_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let mut tx = pool.begin().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     sqlx::query("DELETE FROM study_plan_subjects WHERE id = $1")
-        .bind(subject_id)
-        .execute(&pool)
+        .bind(sps_id)
+        .execute(&mut *tx)
         .await?;
-    
+
+    if let Some((plan_id, grade_id, term, subject_id)) = context {
+        // ลบ classroom_courses ของห้องที่ match plan + grade + term + subject (current+future)
+        sqlx::query(
+            r#"DELETE FROM classroom_courses cc
+               USING class_rooms cr, academic_semesters sem
+               WHERE cc.classroom_id = cr.id
+                 AND cc.academic_semester_id = sem.id
+                 AND cr.study_plan_version_id = $1
+                 AND cr.grade_level_id = $2
+                 AND sem.term = $3
+                 AND cc.subject_id = $4
+                 AND sem.end_date >= CURRENT_DATE"#
+        )
+        .bind(plan_id)
+        .bind(grade_id)
+        .bind(&term)
+        .bind(subject_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    tx.commit().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     Ok((StatusCode::OK, Json(json!({"success": true}))))
 }
 
