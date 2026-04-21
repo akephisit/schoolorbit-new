@@ -367,20 +367,17 @@ pub async fn get_staff_profile(
         }
     }
 
-    // Get staff info
-    let staff_info = sqlx::query_as::<_, StaffInfoRow>(
+    // 5 queries ด้านล่างเป็นอิสระต่อกัน (ใช้ staff_id อย่างเดียว) — รันขนาน
+    // ด้วย tokio::join! ได้ total latency = max(แต่ละ query) แทน sum
+    let staff_info_fut = sqlx::query_as::<_, StaffInfoRow>(
         "SELECT education_level, major, university
-         FROM staff_info 
+         FROM staff_info
          WHERE user_id = $1",
     )
     .bind(staff_id)
-    .fetch_optional(&pool)
-    .await
-    .ok()
-    .flatten();
+    .fetch_optional(&pool);
 
-    // Get roles
-    let roles = sqlx::query_as::<_, RoleRow>(
+    let roles_fut = sqlx::query_as::<_, RoleRow>(
         "SELECT r.id, r.code, r.name, r.name_en, r.user_type, r.level, ur.is_primary
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
@@ -388,23 +385,9 @@ pub async fn get_staff_profile(
          ORDER BY ur.is_primary DESC, r.level DESC",
     )
     .bind(staff_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .map(|row| RoleResponse {
-        id: row.id,
-        code: row.code,
-        name: row.name,
-        name_en: row.name_en,
-        user_type: row.user_type,
-        level: row.level,
-        is_primary: Some(row.is_primary),
-    })
-    .collect();
+    .fetch_all(&pool);
 
-    // Get departments
-    let departments = sqlx::query_as::<_, DepartmentRow>(
+    let departments_fut = sqlx::query_as::<_, DepartmentRow>(
         "SELECT d.id, d.code, d.name, d.category, d.org_type, dm.position, dm.is_primary_department
          FROM department_members dm
          JOIN departments d ON dm.department_id = d.id
@@ -412,24 +395,11 @@ pub async fn get_staff_profile(
          ORDER BY dm.is_primary_department DESC",
     )
     .bind(staff_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .map(|row| DepartmentResponse {
-        id: row.id,
-        code: row.code,
-        name: row.name,
-        position: Some(row.position),
-        is_primary_department: Some(row.is_primary_department),
-        category: row.category,
-        org_type: row.org_type,
-    })
-    .collect();
+    .fetch_all(&pool);
 
-    // วิชาที่สอน — union ระหว่าง classroom_courses.primary_instructor_id (single primary)
+    // วิชาที่สอน — union ระหว่าง classroom_courses.primary_instructor_id
     // กับ classroom_course_instructors junction (team teaching). UNION de-dupes.
-    let teaching_courses = sqlx::query_as::<_, TeachingCourseRow>(
+    let teaching_fut = sqlx::query_as::<_, TeachingCourseRow>(
         r#"WITH teacher_cc AS (
             SELECT cc.id AS classroom_course_id,
                    cc.subject_id, cc.classroom_id, cc.academic_semester_id,
@@ -462,26 +432,9 @@ pub async fn get_staff_profile(
         ORDER BY ay.year DESC, sem.term ASC, s.code ASC"#,
     )
     .bind(staff_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .map(|r| TeachingCourseItem {
-        classroom_course_id: r.classroom_course_id,
-        subject_code: r.subject_code,
-        subject_name: r.subject_name,
-        hours_per_semester: r.hours_per_semester,
-        classroom_name: r.classroom_name,
-        classroom_code: r.classroom_code,
-        academic_year: r.academic_year,
-        academic_year_label: r.academic_year_label,
-        term: r.term,
-        role: r.role,
-    })
-    .collect();
+    .fetch_all(&pool);
 
-    // ห้องที่เป็นครูที่ปรึกษา — จาก classroom_advisors
-    let advisor_classrooms = sqlx::query_as::<_, AdvisorClassroomRow>(
+    let advisor_fut = sqlx::query_as::<_, AdvisorClassroomRow>(
         r#"SELECT cr.id AS classroom_id,
                   cr.name AS classroom_name,
                   cr.code AS classroom_code,
@@ -495,19 +448,70 @@ pub async fn get_staff_profile(
            ORDER BY ay.year DESC, cr.name ASC"#,
     )
     .bind(staff_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .map(|r| AdvisorClassroomItem {
-        classroom_id: r.classroom_id,
-        classroom_name: r.classroom_name,
-        classroom_code: r.classroom_code,
-        academic_year: r.academic_year,
-        academic_year_label: r.academic_year_label,
-        role: r.role,
-    })
-    .collect();
+    .fetch_all(&pool);
+
+    let (staff_info_res, roles_res, departments_res, teaching_res, advisor_res) =
+        tokio::join!(staff_info_fut, roles_fut, departments_fut, teaching_fut, advisor_fut);
+
+    let staff_info = staff_info_res.ok().flatten();
+
+    let roles: Vec<RoleResponse> = roles_res
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| RoleResponse {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            name_en: row.name_en,
+            user_type: row.user_type,
+            level: row.level,
+            is_primary: Some(row.is_primary),
+        })
+        .collect();
+
+    let departments: Vec<DepartmentResponse> = departments_res
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| DepartmentResponse {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            position: Some(row.position),
+            is_primary_department: Some(row.is_primary_department),
+            category: row.category,
+            org_type: row.org_type,
+        })
+        .collect();
+
+    let teaching_courses: Vec<TeachingCourseItem> = teaching_res
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| TeachingCourseItem {
+            classroom_course_id: r.classroom_course_id,
+            subject_code: r.subject_code,
+            subject_name: r.subject_name,
+            hours_per_semester: r.hours_per_semester,
+            classroom_name: r.classroom_name,
+            classroom_code: r.classroom_code,
+            academic_year: r.academic_year,
+            academic_year_label: r.academic_year_label,
+            term: r.term,
+            role: r.role,
+        })
+        .collect();
+
+    let advisor_classrooms: Vec<AdvisorClassroomItem> = advisor_res
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| AdvisorClassroomItem {
+            classroom_id: r.classroom_id,
+            classroom_name: r.classroom_name,
+            classroom_code: r.classroom_code,
+            academic_year: r.academic_year,
+            academic_year_label: r.academic_year_label,
+            role: r.role,
+        })
+        .collect();
 
     let profile = StaffProfileResponse {
         id: user.id,
