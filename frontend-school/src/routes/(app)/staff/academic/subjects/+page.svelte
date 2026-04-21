@@ -14,11 +14,16 @@
 		updateActivityCatalog,
 		deleteActivityCatalog,
 		listSubjectDefaultInstructors,
+		listCatalogDefaultInstructors,
+		addCatalogDefaultInstructor,
+		removeCatalogDefaultInstructor,
+		updateCatalogDefaultInstructorRole,
 		ACTIVITY_TYPE_LABELS,
 		type Subject,
 		type SubjectGroup,
 		type LookupItem,
-		type ActivityCatalog
+		type ActivityCatalog,
+		type CatalogDefaultInstructor
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
@@ -108,6 +113,61 @@
 	let catalogGradeLevelIds = $state<string[]>([]);
 	let catalogStartYearId = $state('');
 	let isNewCatalogVersion = $state(false);
+
+	// Catalog default instructors (ครูประจำกิจกรรม — auto-copy ตอน Wand2)
+	let catalogTeam = $state<CatalogDefaultInstructor[]>([]);
+	let catalogTeamLoading = $state(false);
+	let catalogTeamAddInstructorId = $state('');
+	let catalogTeamAddRole = $state<'primary' | 'secondary'>('secondary');
+
+	async function loadCatalogTeam(catalogId: string) {
+		catalogTeamLoading = true;
+		try {
+			const res = await listCatalogDefaultInstructors(catalogId);
+			catalogTeam = res.data ?? [];
+		} catch {
+			catalogTeam = [];
+		} finally {
+			catalogTeamLoading = false;
+		}
+	}
+
+	async function handleAddCatalogTeam() {
+		if (!editingCatalog || !catalogTeamAddInstructorId) return;
+		if (catalogTeam.some((t) => t.instructor_id === catalogTeamAddInstructorId)) {
+			toast.error('ครูคนนี้อยู่ในทีมแล้ว');
+			return;
+		}
+		try {
+			await addCatalogDefaultInstructor(editingCatalog.id, catalogTeamAddInstructorId, catalogTeamAddRole);
+			catalogTeamAddInstructorId = '';
+			catalogTeamAddRole = 'secondary';
+			await loadCatalogTeam(editingCatalog.id);
+		} catch (e) {
+			toast.error('เพิ่มครูไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		}
+	}
+
+	async function handleRemoveCatalogTeam(instructorId: string) {
+		if (!editingCatalog) return;
+		try {
+			await removeCatalogDefaultInstructor(editingCatalog.id, instructorId);
+			await loadCatalogTeam(editingCatalog.id);
+		} catch (e) {
+			toast.error('ลบไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		}
+	}
+
+	async function handleToggleCatalogTeamRole(instructorId: string, currentRole: 'primary' | 'secondary') {
+		if (!editingCatalog) return;
+		const next = currentRole === 'primary' ? 'secondary' : 'primary';
+		try {
+			await updateCatalogDefaultInstructorRole(editingCatalog.id, instructorId, next);
+			await loadCatalogTeam(editingCatalog.id);
+		} catch (e) {
+			toast.error('เปลี่ยน role ไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+		}
+	}
 
 	// Modal States
 	let showDialog = $state(false);
@@ -580,6 +640,10 @@
 		catalogStartYearId = item.start_academic_year_id;
 		isNewCatalogVersion = false;
 		showCatalogDialog = true;
+		catalogTeam = [];
+		catalogTeamAddInstructorId = '';
+		catalogTeamAddRole = 'secondary';
+		void loadCatalogTeam(item.id);
 	}
 
 	async function handleSaveCatalog() {
@@ -1664,6 +1728,98 @@
 				<Label>คำอธิบาย</Label>
 				<Textarea bind:value={catalogDesc} rows={2} />
 			</div>
+
+			<!-- Default Team Instructors (auto-copy ตอน Wand2 สร้าง slot) -->
+			{#if editingCatalog && !isNewCatalogVersion}
+				<div class="space-y-1">
+					<Label
+						class="flex items-center gap-1"
+						title="ครูเริ่มต้นของกิจกรรมนี้ — Wand2 จะ copy ให้อัตโนมัติ
+ (synchronized: ครูของ slot; independent: primary = default ของทุกห้อง, แก้ต่อห้องได้ที่ Activities)"
+					>
+						ครูประจำกิจกรรม (ทีมเริ่มต้น)
+						<Info class="w-3 h-3 text-muted-foreground" />
+					</Label>
+					<div class="flex gap-2">
+						<Select.Root type="single" bind:value={catalogTeamAddInstructorId}>
+							<Select.Trigger class="flex-1 truncate">
+								{(() => {
+									const st = staffList.find((s) => s.id === catalogTeamAddInstructorId);
+									return st ? st.name : 'เลือกครู';
+								})()}
+							</Select.Trigger>
+							<Select.Content class="max-h-[300px]">
+								{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff}
+									<Select.Item value={staff.id}>{staff.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<Select.Root type="single" bind:value={catalogTeamAddRole}>
+							<Select.Trigger class="w-[130px]">
+								{catalogTeamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="primary">ครูหลัก</Select.Item>
+								<Select.Item value="secondary">ครูร่วม</Select.Item>
+							</Select.Content>
+						</Select.Root>
+						<Button
+							type="button"
+							variant="outline"
+							onclick={handleAddCatalogTeam}
+							disabled={!catalogTeamAddInstructorId}
+						>
+							เพิ่ม
+						</Button>
+					</div>
+					{#if catalogTeamLoading}
+						<p class="text-[11px] text-muted-foreground">กำลังโหลด...</p>
+					{:else if catalogTeam.length === 0}
+						<p class="text-[11px] text-muted-foreground">
+							ยังไม่มีครู — เพิ่มเพื่อให้ระบบ copy ให้อัตโนมัติตอนสร้าง slot
+						</p>
+					{:else}
+						<div class="flex flex-wrap gap-1.5">
+							{#each catalogTeam as t (t.id)}
+								<Badge
+									variant={t.role === 'primary' ? 'default' : 'secondary'}
+									class="gap-1 pr-1"
+								>
+									<button
+										type="button"
+										class="cursor-pointer hover:underline"
+										onclick={() => handleToggleCatalogTeamRole(t.instructor_id, t.role)}
+										title="คลิกเพื่อสลับ ครูหลัก ↔ ครูร่วม"
+									>
+										{t.role === 'primary' ? '⭐' : ''}
+										{t.instructor_name ?? t.instructor_id}
+									</button>
+									<button
+										type="button"
+										class="ml-1 rounded hover:bg-destructive/20 p-0.5"
+										onclick={() => handleRemoveCatalogTeam(t.instructor_id)}
+										aria-label="ลบ"
+									>
+										<Trash2 class="h-3 w-3" />
+									</button>
+								</Badge>
+							{/each}
+						</div>
+						<p class="text-[10px] text-muted-foreground">
+							⭐ = ครูหลัก · คลิกชื่อสลับ role
+							{#if catalogMode === 'independent'}
+								· Independent: primary จะ copy เป็น default ของทุกห้อง (แก้ต่อห้องได้ที่ Activities)
+							{:else}
+								· Synchronized: ทุกคน copy เข้า slot เป็นครูรวม
+							{/if}
+						</p>
+					{/if}
+				</div>
+			{:else if !editingCatalog}
+				<p class="text-[11px] text-muted-foreground">
+					บันทึกกิจกรรมก่อน แล้วกลับมาแก้ไขเพื่อเพิ่มครูเริ่มต้น
+				</p>
+			{/if}
 		</div>
 
 		<DialogFooter>
