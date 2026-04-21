@@ -52,7 +52,11 @@ pub async fn list_activity_slots(
             ac.grade_level_ids AS allowed_grade_level_ids,
             sem.name AS semester_name,
             COUNT(DISTINCT ag.id) AS group_count,
-            COUNT(DISTINCT agm.id) AS total_members
+            COUNT(DISTINCT agm.id) AS total_members,
+            COALESCE(
+                (SELECT array_agg(classroom_id) FROM activity_slot_classrooms WHERE slot_id = s.id),
+                '{}'::uuid[]
+            ) AS classroom_ids
         FROM activity_slots s
         JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
         LEFT JOIN academic_semesters sem ON sem.id = s.semester_id
@@ -136,7 +140,11 @@ pub async fn update_activity_slot(
             ac.grade_level_ids AS allowed_grade_level_ids,
             NULL::TEXT AS semester_name,
             NULL::BIGINT AS group_count,
-            NULL::BIGINT AS total_members
+            NULL::BIGINT AS total_members,
+            COALESCE(
+                (SELECT array_agg(classroom_id) FROM activity_slot_classrooms WHERE slot_id = upd.id),
+                '{}'::uuid[]
+            ) AS classroom_ids
         FROM upd
         JOIN activity_catalog ac ON ac.id = upd.activity_catalog_id"#,
     )

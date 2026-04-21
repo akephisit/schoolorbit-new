@@ -613,10 +613,12 @@
 							<!-- Classroom Instructor Assignments (independent slots) -->
 							{#if slot.scheduling_mode === 'independent' && $can.has('activity.manage.all')}
 								{@const assignments = slotClassroomAssignmentsMap[slot.id] ?? []}
-								{@const slotClassrooms = classrooms.filter((c) => {
-									if (!slot.allowed_grade_level_ids || slot.allowed_grade_level_ids.length === 0) return true;
-									return slot.allowed_grade_level_ids.includes(c.grade_level_id);
-								})}
+								<!-- แสดงเฉพาะห้องที่เข้าร่วมจริง (junction activity_slot_classrooms),
+								     ไม่ใช่ทุกห้องในระดับชั้นที่ catalog รองรับ —
+								     จัดการการเข้าร่วมผ่านหน้า Course Planning -->
+								{@const slotClassrooms = classrooms.filter((c) =>
+									(slot.classroom_ids ?? []).includes(c.id)
+								)}
 								<div class="space-y-2 pb-3">
 									<Label class="text-xs font-semibold text-muted-foreground">ครูประจำห้อง ({assignments.length}/{slotClassrooms.length} ห้อง)</Label>
 									<div class="border rounded-lg overflow-hidden">

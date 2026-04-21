@@ -642,6 +642,8 @@ export interface ActivitySlot {
     semester_name?: string;
     group_count?: number;
     total_members?: number;
+    /** UUIDs of classrooms participating via activity_slot_classrooms junction */
+    classroom_ids?: string[];
 }
 
 export const ALL_DAYS = [

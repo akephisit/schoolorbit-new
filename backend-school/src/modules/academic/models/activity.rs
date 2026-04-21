@@ -54,6 +54,12 @@ pub struct ActivitySlot {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
     pub total_members: Option<i64>,
+
+    /// UUIDs of classrooms participating in this slot (from activity_slot_classrooms junction).
+    /// Used on the activities page to show only real participants (instead of grade-matched set).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[sqlx(default)]
+    pub classroom_ids: Option<Vec<Uuid>>,
 }
 
 /// Semester-specific fields only. Template fields (name/type/periods/mode/grade)
