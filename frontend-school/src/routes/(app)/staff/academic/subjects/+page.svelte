@@ -120,7 +120,7 @@
 	let catalogTeam = $state<CatalogTeamRow[]>([]);
 	let catalogTeamLoading = $state(false);
 	let catalogTeamAddInstructorId = $state('');
-	let catalogTeamAddRole = $state<'primary' | 'secondary'>('secondary');
+	let catalogTeamAddRole = $state<'primary' | 'secondary'>('primary');
 
 	async function loadCatalogTeam(catalogId: string) {
 		catalogTeamLoading = true;
@@ -131,6 +131,8 @@
 				role: r.role,
 				instructor_name: r.instructor_name
 			}));
+			// Smart default role: already has primary → default next to secondary
+			catalogTeamAddRole = catalogTeam.some((t) => t.role === 'primary') ? 'secondary' : 'primary';
 		} catch {
 			catalogTeam = [];
 		} finally {
@@ -141,7 +143,7 @@
 	function resetCatalogTeam() {
 		catalogTeam = [];
 		catalogTeamAddInstructorId = '';
-		catalogTeamAddRole = 'secondary';
+		catalogTeamAddRole = 'primary';
 	}
 
 	async function handleAddCatalogTeam() {
@@ -174,7 +176,8 @@
 			];
 		}
 		catalogTeamAddInstructorId = '';
-		catalogTeamAddRole = 'secondary';
+		// Smart default: if team already has primary → next is secondary; else primary
+		catalogTeamAddRole = catalogTeam.some((t) => t.role === 'primary') ? 'secondary' : 'primary';
 	}
 
 	async function handleRemoveCatalogTeam(instructorId: string) {
@@ -233,7 +236,7 @@
 	let teamDraft = $state<TeamDraftRow[]>([]);
 	let teamLoading = $state(false);
 	let teamAddInstructorId = $state('');
-	let teamAddRole = $state<'primary' | 'secondary'>('secondary');
+	let teamAddRole = $state<'primary' | 'secondary'>('primary');
 
 	async function hydrateTeamDraftFor(subjectId: string) {
 		teamLoading = true;
@@ -244,6 +247,8 @@
 				role: r.role,
 				instructor_name: r.instructor_name
 			}));
+			// Smart default role after load
+			teamAddRole = teamDraft.some((t) => t.role === 'primary') ? 'secondary' : 'primary';
 		} catch {
 			teamDraft = [];
 		} finally {
@@ -254,7 +259,7 @@
 	function resetTeamDraft() {
 		teamDraft = [];
 		teamAddInstructorId = '';
-		teamAddRole = 'secondary';
+		teamAddRole = 'primary';
 	}
 
 	function addToTeamDraft() {
@@ -271,7 +276,8 @@
 		const name = staffList.find((s) => s.id === teamAddInstructorId)?.name;
 		teamDraft = [...next, { instructor_id: teamAddInstructorId, role: teamAddRole, instructor_name: name }];
 		teamAddInstructorId = '';
-		teamAddRole = 'secondary';
+		// Smart default: if team now has primary → next is secondary; else primary
+		teamAddRole = teamDraft.some((t) => t.role === 'primary') ? 'secondary' : 'primary';
 	}
 
 	function removeFromTeamDraft(instructorId: string) {
@@ -697,7 +703,7 @@
 		showCatalogDialog = true;
 		catalogTeam = [];
 		catalogTeamAddInstructorId = '';
-		catalogTeamAddRole = 'secondary';
+		catalogTeamAddRole = 'primary'; // will adjust to 'secondary' after load if team already has primary
 		void loadCatalogTeam(item.id);
 	}
 
