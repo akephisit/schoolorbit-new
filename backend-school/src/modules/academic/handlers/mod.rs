@@ -484,12 +484,15 @@ pub async fn create_classroom(
     Ok((StatusCode::CREATED, Json(json!({"success": true, "data": classroom}))))
 }
 
-/// Validate advisor list: non-empty roles, max 1 primary, all are staff users
+/// Validate advisor list: valid roles, max 1 primary, all are staff users.
+/// Uses single batched query for staff check (ไม่ loop N+1).
 async fn validate_advisors(
     advisors: &Option<Vec<ClassroomAdvisorInput>>,
     pool: &sqlx::PgPool,
 ) -> Result<Vec<ClassroomAdvisorInput>, AppError> {
     let Some(list) = advisors else { return Ok(vec![]) };
+
+    // Role validation — in-memory, ไม่แตะ DB
     let primary_count = list.iter().filter(|a| a.role == "primary").count();
     if primary_count > 1 {
         return Err(AppError::BadRequest("ครูที่ปรึกษาหลักต้องมีได้ไม่เกิน 1 คน".to_string()));
@@ -498,17 +501,29 @@ async fn validate_advisors(
         if a.role != "primary" && a.role != "secondary" {
             return Err(AppError::BadRequest("role ต้องเป็น 'primary' หรือ 'secondary' เท่านั้น".to_string()));
         }
-        let is_staff: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND user_type = 'staff')"
-        )
-        .bind(a.user_id)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(false);
-        if !is_staff {
-            return Err(AppError::BadRequest("ครูที่ปรึกษาต้องเป็นบุคลากร (Staff)".to_string()));
-        }
     }
+
+    if list.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Dedupe user_ids เพื่อ compare count กับ staff_count ถูก (DB มี unique constraint
+    // คุ้มครองอยู่แล้วแต่ user อาจส่งซ้ำมาก่อนถึง DB)
+    let unique_ids: std::collections::HashSet<Uuid> = list.iter().map(|a| a.user_id).collect();
+    let ids_vec: Vec<Uuid> = unique_ids.iter().copied().collect();
+
+    let staff_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM users WHERE id = ANY($1) AND user_type = 'staff'"
+    )
+    .bind(&ids_vec)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    if staff_count != unique_ids.len() as i64 {
+        return Err(AppError::BadRequest("ครูที่ปรึกษาต้องเป็นบุคลากร (Staff)".to_string()));
+    }
+
     Ok(list.clone())
 }
 
