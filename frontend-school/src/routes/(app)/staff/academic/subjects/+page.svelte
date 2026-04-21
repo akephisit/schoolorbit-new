@@ -486,7 +486,7 @@
 
 	async function handleSubmit() {
 		if (!currentSubject.code || !currentSubject.name_th) {
-			alert('กรุณากรอกรหัสวิชาและชื่อวิชาให้ครบถ้วน');
+			toast.error('กรุณากรอกรหัสวิชาและชื่อวิชาให้ครบถ้วน');
 			return;
 		}
 
@@ -516,17 +516,23 @@
 				role: t.role
 			}));
 
-			console.log('Submitting Subject Payload:', payload);
-
 			if (isEditing && payload.id) {
 				await updateSubject(payload.id, payload as any);
+				toast.success('บันทึกแล้ว');
 			} else {
 				await createSubject(payload as any);
+				toast.success('เพิ่มรายวิชาแล้ว');
 			}
 			showDialog = false;
 			await loadData();
 		} catch (e) {
-			alert('บันทึกไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+			const msg = e instanceof Error ? e.message : '';
+			// รหัสวิชาซ้ำ → toast ชัดเจน (backend คืน "รหัสวิชา X ... มีอยู่ในระบบแล้ว")
+			if (msg.includes('มีอยู่ในระบบแล้ว')) {
+				toast.error(msg, { duration: 5000 });
+			} else {
+				toast.error('บันทึกไม่สำเร็จ' + (msg ? ': ' + msg : ''));
+			}
 		} finally {
 			submitting = false;
 		}
@@ -540,7 +546,7 @@
 			showDeleteDialog = false;
 			await loadData();
 		} catch (e) {
-			alert('ลบไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
+			toast.error('ลบไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
 		} finally {
 			deleting = false;
 		}
