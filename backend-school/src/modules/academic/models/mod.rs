@@ -192,8 +192,6 @@ pub struct Classroom {
     pub academic_year_id: Uuid,
     pub grade_level_id: Uuid,
     pub room_number: Option<String>, // Defines the variant e.g. "1", "2", "EP"
-    pub advisor_id: Option<Uuid>,
-    pub co_advisor_id: Option<Uuid>,
     pub study_plan_version_id: Option<Uuid>, // Added for course generation
     pub capacity: i32,
     pub is_active: bool,
@@ -203,9 +201,11 @@ pub struct Classroom {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub academic_year_label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub advisor_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub student_count: Option<i64>,
+    /// Advisors aggregated from classroom_advisors junction (1 primary + N secondary)
+    #[sqlx(default)]
+    #[serde(default)]
+    pub advisors: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -213,25 +213,30 @@ pub struct ClassroomQuery {
     pub year_id: Option<Uuid>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct ClassroomAdvisorInput {
+    pub user_id: Uuid,
+    pub role: String, // 'primary' | 'secondary'
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateClassroomRequest {
     pub academic_year_id: Uuid,
     pub grade_level_id: Uuid,
     pub room_number: String,
-    pub advisor_id: Option<Uuid>,
-    pub co_advisor_id: Option<Uuid>,
     pub study_plan_version_id: Uuid, // Required - ห้องเรียนทุกห้องต้องใช้หลักสูตร
     pub capacity: Option<i32>,
+    pub advisors: Option<Vec<ClassroomAdvisorInput>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateClassroomRequest {
     pub room_number: Option<String>,
-    pub advisor_id: Option<Uuid>,
-    pub co_advisor_id: Option<Uuid>,
     pub study_plan_version_id: Option<Uuid>,
     pub capacity: Option<i32>,
     pub is_active: Option<bool>,
+    /// If provided, replace advisor list entirely (atomic DELETE + INSERT)
+    pub advisors: Option<Vec<ClassroomAdvisorInput>>,
 }
 
 // ==========================================

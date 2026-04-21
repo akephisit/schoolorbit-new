@@ -24,7 +24,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { Loader2, Layers, Filter, Plus, Users, School, Pencil } from 'lucide-svelte';
+	import { Loader2, Plus, Users, School, Pencil, Trash2 } from 'lucide-svelte';
+
+	type AdvisorRow = { user_id: string; role: 'primary' | 'secondary' };
 
 	let loading = $state(true);
 	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
@@ -33,7 +35,6 @@
 	let activeLevelIds = $state<string[]>([]);
 	let studyPlanVersions = $state<StudyPlanVersion[]>([]);
 
-	// Filter State
 	let selectedYearId = $state('');
 
 	let filteredStudyPlanVersions = $derived(
@@ -50,49 +51,89 @@
 	let showEditDialog = $state(false);
 	let isSubmitting = $state(false);
 
-	// New Classroom Form
+	// Create form
 	let newClassroom = $state({
 		academic_year_id: '',
 		grade_level_id: '',
 		room_number: '',
-		advisor_id: '',
-		co_advisor_id: '',
 		study_plan_version_id: '',
 		capacity: 40
 	});
+	let newAdvisors = $state<AdvisorRow[]>([]);
 
 	$effect(() => {
 		newClassroom.academic_year_id = selectedYearId;
 		newClassroom.study_plan_version_id = '';
 	});
 
-	// Edit Classroom Form
+	// Edit form
 	let editingClassroom = $state({
 		id: '',
 		room_number: '',
-		advisor_id: '',
-		co_advisor_id: '',
 		study_plan_version_id: '',
 		capacity: 40
 	});
+	let editingAdvisors = $state<AdvisorRow[]>([]);
+
+	// Add-advisor row (shared between create + edit dialogs via flag)
+	let addStaffId = $state('');
+	let addRole = $state<'primary' | 'secondary'>('primary');
+
+	function resetAddRow(list: AdvisorRow[]) {
+		addStaffId = '';
+		addRole = list.some((a) => a.role === 'primary') ? 'secondary' : 'primary';
+	}
+
+	function addAdvisor(list: AdvisorRow[]): AdvisorRow[] {
+		if (!addStaffId) return list;
+		if (list.some((a) => a.user_id === addStaffId)) {
+			toast.error('ครูคนนี้อยู่ในรายการแล้ว');
+			return list;
+		}
+		let next = list.slice();
+		// Promoting to primary → demote existing primary to secondary
+		if (addRole === 'primary') {
+			next = next.map((a) => (a.role === 'primary' ? { ...a, role: 'secondary' as const } : a));
+		}
+		next.push({ user_id: addStaffId, role: addRole });
+		resetAddRow(next);
+		return next;
+	}
+
+	function toggleRole(list: AdvisorRow[], userId: string): AdvisorRow[] {
+		const target = list.find((a) => a.user_id === userId);
+		if (!target) return list;
+		const nextRole: 'primary' | 'secondary' = target.role === 'primary' ? 'secondary' : 'primary';
+		return list.map((a) => {
+			if (a.user_id === userId) return { ...a, role: nextRole };
+			if (nextRole === 'primary' && a.role === 'primary') return { ...a, role: 'secondary' as const };
+			return a;
+		});
+	}
+
+	function removeAdvisor(list: AdvisorRow[], userId: string): AdvisorRow[] {
+		return list.filter((a) => a.user_id !== userId);
+	}
+
+	function staffName(id: string): string {
+		const s = staffList.find((x) => x.id === id);
+		return s ? `${s.title ?? ''}${s.name}` : id;
+	}
 
 	async function loadInitData() {
 		try {
 			loading = true;
 			const [structureRes, staffData, versionsRes] = await Promise.all([
 				getAcademicStructure(),
-				lookupStaff(), // Lookup API - only requires authentication
+				lookupStaff(),
 				listStudyPlanVersions({ active_only: true })
 			]);
 			structure = structureRes.data;
 			staffList = staffData;
 			studyPlanVersions = versionsRes.data;
 
-			// Auto-select latest active year
 			const activeYear = structure.years.find((y) => y.is_active) || structure.years[0];
-			if (activeYear) {
-				selectedYearId = activeYear.id;
-			}
+			if (activeYear) selectedYearId = activeYear.id;
 
 			await fetchClassrooms();
 		} catch (error) {
@@ -118,6 +159,19 @@
 		}
 	}
 
+	function handleOpenCreate() {
+		newClassroom = {
+			academic_year_id: selectedYearId,
+			grade_level_id: '',
+			room_number: '',
+			study_plan_version_id: '',
+			capacity: 40
+		};
+		newAdvisors = [];
+		resetAddRow(newAdvisors);
+		showCreateDialog = true;
+	}
+
 	async function handleCreateClassroom() {
 		if (
 			!newClassroom.academic_year_id ||
@@ -131,24 +185,13 @@
 
 		isSubmitting = true;
 		try {
-			// Convert empty strings to undefined for optional fields
-			const payload = {
+			await createClassroom({
 				...newClassroom,
-				advisor_id: newClassroom.advisor_id || undefined,
-				co_advisor_id: newClassroom.co_advisor_id || undefined
-				// study_plan_version_id is required, no need to convert
-			};
-
-			await createClassroom(payload);
+				advisors: newAdvisors
+			});
 			toast.success('สร้างห้องเรียนสำเร็จ');
 			showCreateDialog = false;
 			await fetchClassrooms();
-
-			// Reset pertinent fields (keep year)
-			newClassroom.room_number = '';
-			newClassroom.advisor_id = '';
-			newClassroom.co_advisor_id = '';
-			newClassroom.capacity = 40;
 		} catch (error) {
 			console.error(error);
 			toast.error('สร้างห้องเรียนไม่สำเร็จ (ชื่อห้องซ้ำหรือข้อมูลไม่ถูกต้อง)');
@@ -161,11 +204,11 @@
 		editingClassroom = {
 			id: room.id,
 			room_number: room.room_number || '',
-			advisor_id: room.advisor_id || '',
-			co_advisor_id: room.co_advisor_id || '',
 			study_plan_version_id: room.study_plan_version_id || '',
 			capacity: room.capacity ?? 40
 		};
+		editingAdvisors = (room.advisors ?? []).map((a) => ({ user_id: a.user_id, role: a.role }));
+		resetAddRow(editingAdvisors);
 		showEditDialog = true;
 	}
 
@@ -178,9 +221,9 @@
 		try {
 			await updateClassroom(editingClassroom.id, {
 				room_number: editingClassroom.room_number,
-				advisor_id: editingClassroom.advisor_id || undefined,
 				study_plan_version_id: editingClassroom.study_plan_version_id || undefined,
-				capacity: editingClassroom.capacity
+				capacity: editingClassroom.capacity,
+				advisors: editingAdvisors
 			});
 			toast.success('บันทึกข้อมูลสำเร็จ');
 			showEditDialog = false;
@@ -200,8 +243,75 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
+{#snippet advisorEditor(list: AdvisorRow[], setList: (next: AdvisorRow[]) => void)}
+	<div class="space-y-2">
+		<Label>ครูที่ปรึกษา</Label>
+		<div class="flex gap-2">
+			<Select.Root type="single" bind:value={addStaffId}>
+				<Select.Trigger class="flex-1">
+					{addStaffId ? staffName(addStaffId) : '- เลือกครู -'}
+				</Select.Trigger>
+				<Select.Content>
+					{#each staffList.filter((s) => !list.some((a) => a.user_id === s.id)) as staff}
+						<Select.Item value={staff.id}>
+							{staff.title ?? ''}{staff.name}
+						</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+			<Select.Root type="single" bind:value={addRole}>
+				<Select.Trigger class="w-[120px]">
+					{addRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="primary">ครูหลัก</Select.Item>
+					<Select.Item value="secondary">ครูร่วม</Select.Item>
+				</Select.Content>
+			</Select.Root>
+			<Button
+				type="button"
+				variant="outline"
+				onclick={() => setList(addAdvisor(list))}
+				disabled={!addStaffId}
+			>
+				เพิ่ม
+			</Button>
+		</div>
+
+		{#if list.length === 0}
+			<p class="text-[11px] text-muted-foreground">ยังไม่มีครูที่ปรึกษา</p>
+		{:else}
+			<div class="flex flex-wrap gap-1.5">
+				{#each list as a (a.user_id)}
+					<Badge variant={a.role === 'primary' ? 'default' : 'secondary'} class="gap-1 pr-1">
+						<button
+							type="button"
+							class="cursor-pointer hover:underline"
+							onclick={() => setList(toggleRole(list, a.user_id))}
+							title="คลิกเพื่อสลับ ครูหลัก ↔ ครูร่วม"
+						>
+							{a.role === 'primary' ? '⭐' : ''}
+							{staffName(a.user_id)}
+						</button>
+						<button
+							type="button"
+							class="ml-1 rounded hover:bg-destructive/20 p-0.5"
+							onclick={() => setList(removeAdvisor(list, a.user_id))}
+							aria-label="ลบ"
+						>
+							<Trash2 class="h-3 w-3" />
+						</button>
+					</Badge>
+				{/each}
+			</div>
+			<p class="text-[10px] text-muted-foreground">
+				⭐ = ครูที่ปรึกษาหลัก — คลิกชื่อเพื่อสลับ หลัก ↔ ร่วม
+			</p>
+		{/if}
+	</div>
+{/snippet}
+
 <div class="space-y-6">
-	<!-- Header -->
 	<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 		<div>
 			<h2 class="text-3xl font-bold text-foreground flex items-center gap-2">
@@ -210,13 +320,12 @@
 			</h2>
 			<p class="text-muted-foreground mt-1">สร้างห้องเรียนและกำหนดครูที่ปรึกษา</p>
 		</div>
-		<Button onclick={() => (showCreateDialog = true)} class="flex items-center gap-2">
+		<Button onclick={handleOpenCreate} class="flex items-center gap-2">
 			<Plus class="w-4 h-4" />
 			สร้างห้องเรียนใหม่
 		</Button>
 	</div>
 
-	<!-- Filters -->
 	<Card.Root>
 		<Card.Content class="pt-6">
 			<div class="flex flex-col gap-4 md:flex-row md:items-end">
@@ -231,9 +340,7 @@
 						</Select.Trigger>
 						<Select.Content>
 							{#each structure.years as year}
-								<Select.Item value={year.id}
-									>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</Select.Item
-								>
+								<Select.Item value={year.id}>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -242,7 +349,6 @@
 		</Card.Content>
 	</Card.Root>
 
-	<!-- Content -->
 	{#if loading}
 		<div class="flex h-40 items-center justify-center">
 			<Loader2 class="h-8 w-8 animate-spin text-primary" />
@@ -282,8 +388,14 @@
 								<span class="text-sm">{room.capacity ?? 40} คน</span>
 							</Table.Cell>
 							<Table.Cell>
-								{#if room.advisor_name}
-									{room.advisor_name}
+								{#if room.advisors && room.advisors.length > 0}
+									<div class="flex flex-wrap gap-1">
+										{#each room.advisors as a}
+											<Badge variant={a.role === 'primary' ? 'default' : 'secondary'} class="font-normal">
+												{a.role === 'primary' ? '⭐ ' : ''}{a.name}
+											</Badge>
+										{/each}
+									</div>
 								{:else}
 									<span class="text-muted-foreground text-sm">- ไม่ระบุ -</span>
 								{/if}
@@ -309,7 +421,7 @@
 
 	<!-- Create Dialog -->
 	<Dialog.Root bind:open={showCreateDialog}>
-		<Dialog.Content class="sm:max-w-[500px]">
+		<Dialog.Content class="sm:max-w-[560px]">
 			<Dialog.Header>
 				<Dialog.Title>สร้างห้องเรียนใหม่</Dialog.Title>
 				<Dialog.Description>
@@ -323,8 +435,7 @@
 						<Label>ระดับชั้น <span class="text-red-500">*</span></Label>
 						<Select.Root type="single" bind:value={newClassroom.grade_level_id}>
 							<Select.Trigger class="w-full">
-								{structure.levels.find((l) => l.id === newClassroom.grade_level_id)?.name ||
-									'เลือกชั้น'}
+								{structure.levels.find((l) => l.id === newClassroom.grade_level_id)?.name || 'เลือกชั้น'}
 							</Select.Trigger>
 							<Select.Content>
 								{#each structure.levels.filter((l) => activeLevelIds.includes(l.id)) as level}
@@ -344,34 +455,14 @@
 					<Input type="number" min="1" placeholder="40" bind:value={newClassroom.capacity} />
 				</div>
 
-				<div class="grid gap-2">
-					<Label>ครูที่ปรึกษาหลัก</Label>
-					<Select.Root type="single" bind:value={newClassroom.advisor_id}>
-						<Select.Trigger class="w-full">
-							{(() => {
-								const s = staffList.find((s) => s.id === newClassroom.advisor_id);
-								return s ? `${s.title || ''}${s.name}` : '- ไม่ระบุ -';
-							})()}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="">- ไม่ระบุ -</Select.Item>
-							{#each staffList as staff}
-								<Select.Item value={staff.id}
-									>{staff.title ? `${staff.title}` : ''}{staff.name}</Select.Item
-								>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
+				{@render advisorEditor(newAdvisors, (next) => (newAdvisors = next))}
 
 				<div class="grid gap-2">
 					<Label>หลักสูตรสถานศึกษา (เวอร์ชัน) <span class="text-red-500">*</span></Label>
 					<Select.Root type="single" bind:value={newClassroom.study_plan_version_id}>
 						<Select.Trigger class="w-full">
 							{(() => {
-								const v = filteredStudyPlanVersions.find(
-									(v) => v.id === newClassroom.study_plan_version_id
-								);
+								const v = filteredStudyPlanVersions.find((v) => v.id === newClassroom.study_plan_version_id);
 								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
 							})()}
 						</Select.Trigger>
@@ -398,9 +489,7 @@
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (showCreateDialog = false)}>ยกเลิก</Button>
 				<Button onclick={handleCreateClassroom} disabled={isSubmitting}>
-					{#if isSubmitting}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-					{/if}
+					{#if isSubmitting}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
 					บันทึก
 				</Button>
 			</Dialog.Footer>
@@ -409,7 +498,7 @@
 
 	<!-- Edit Dialog -->
 	<Dialog.Root bind:open={showEditDialog}>
-		<Dialog.Content class="sm:max-w-[500px]">
+		<Dialog.Content class="sm:max-w-[560px]">
 			<Dialog.Header>
 				<Dialog.Title>แก้ไขข้อมูลห้องเรียน</Dialog.Title>
 				<Dialog.Description>แก้ไขหมายเลขห้อง ครูที่ปรึกษา หรือหลักสูตร</Dialog.Description>
@@ -429,34 +518,14 @@
 					<Input type="number" min="1" placeholder="40" bind:value={editingClassroom.capacity} />
 				</div>
 
-				<div class="grid gap-2">
-					<Label>ครูที่ปรึกษาหลัก</Label>
-					<Select.Root type="single" bind:value={editingClassroom.advisor_id}>
-						<Select.Trigger class="w-full">
-							{(() => {
-								const s = staffList.find((s) => s.id === editingClassroom.advisor_id);
-								return s ? `${s.title || ''}${s.name}` : '- ไม่ระบุ -';
-							})()}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="">- ไม่ระบุ -</Select.Item>
-							{#each staffList as staff}
-								<Select.Item value={staff.id}
-									>{staff.title ? `${staff.title}` : ''}{staff.name}</Select.Item
-								>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
+				{@render advisorEditor(editingAdvisors, (next) => (editingAdvisors = next))}
 
 				<div class="grid gap-2">
 					<Label>หลักสูตรสถานศึกษา (เวอร์ชัน) <span class="text-red-500">*</span></Label>
 					<Select.Root type="single" bind:value={editingClassroom.study_plan_version_id}>
 						<Select.Trigger class="w-full">
 							{(() => {
-								const v = filteredStudyPlanVersions.find(
-									(v) => v.id === editingClassroom.study_plan_version_id
-								);
+								const v = filteredStudyPlanVersions.find((v) => v.id === editingClassroom.study_plan_version_id);
 								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
 							})()}
 						</Select.Trigger>
@@ -477,9 +546,7 @@
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (showEditDialog = false)}>ยกเลิก</Button>
 				<Button onclick={handleUpdateClassroom} disabled={isSubmitting}>
-					{#if isSubmitting}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-					{/if}
+					{#if isSubmitting}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
 					บันทึกการแก้ไข
 				</Button>
 			</Dialog.Footer>

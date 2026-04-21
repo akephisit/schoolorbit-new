@@ -40,6 +40,12 @@ export interface AcademicStructureData {
     levels: GradeLevel[];
 }
 
+export interface ClassroomAdvisor {
+    user_id: string;
+    role: 'primary' | 'secondary';
+    name: string;
+}
+
 export interface Classroom {
     id: string;
     code: string;
@@ -47,15 +53,13 @@ export interface Classroom {
     academic_year_id: string;
     grade_level_id: string;
     room_number: string;
-    advisor_id?: string;
-    co_advisor_id?: string;
     study_plan_version_id?: string; // Required - ห้องเรียนทุกห้องต้องใช้หลักสูตร
     capacity?: number;
     is_active: boolean;
     grade_level_name?: string;
     academic_year_label?: string;
-    advisor_name?: string;
     student_count?: number;
+    advisors: ClassroomAdvisor[];
     year?: number; // Optional year for grade levels
 }
 
@@ -184,10 +188,9 @@ export const createClassroom = async (data: {
     academic_year_id: string;
     grade_level_id: string;
     room_number: string;
-    advisor_id?: string;
-    co_advisor_id?: string;
     capacity?: number;
     study_plan_version_id?: string;
+    advisors?: { user_id: string; role: 'primary' | 'secondary' }[];
 }) => {
     return await fetchApi('/api/academic/classrooms', {
         method: 'POST',
@@ -197,11 +200,11 @@ export const createClassroom = async (data: {
 
 export const updateClassroom = async (id: string, data: {
     room_number?: string;
-    advisor_id?: string;
-    co_advisor_id?: string;
     study_plan_version_id?: string;
     capacity?: number;
     is_active?: boolean;
+    /** ส่ง [] = ลบทั้งหมด; ไม่ส่ง = คงเดิม */
+    advisors?: { user_id: string; role: 'primary' | 'secondary' }[];
 }) => {
     return await fetchApi(`/api/academic/classrooms/${id}`, {
         method: 'PUT',
