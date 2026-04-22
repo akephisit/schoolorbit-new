@@ -866,6 +866,18 @@
 
 		const existingEntry = getEntryForSlot(day, periodId);
 
+		// Block drop onto ghost cells — ghost ไม่ใช่คาบของเรา สลับ/แทนที่ = กระทบครูคนอื่น
+		if (
+			existingEntry &&
+			viewMode === 'INSTRUCTOR' &&
+			selectedInstructorId &&
+			!(existingEntry.instructor_ids ?? []).includes(selectedInstructorId)
+		) {
+			toast.error('สลับกับคาบในทีมไม่ได้ — คาบนี้ไม่ใช่คาบของคุณ');
+			handleDragEnd();
+			return;
+		}
+
 		// Case A: MOVE drag (from table) onto occupied → SWAP
 		if (existingEntry && dragType === 'MOVE' && draggedEntryId && existingEntry.id !== draggedEntryId) {
 			const validity = moveValidityMap.get(`${day}|${periodId}`);
