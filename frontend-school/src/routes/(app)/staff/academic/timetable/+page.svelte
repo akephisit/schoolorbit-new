@@ -155,6 +155,8 @@
 
 	// INSTRUCTOR view: toggle "แสดงคาบในทีม" (ghost cells)
 	let showTeamGhosts = $state(false);
+	// Raw entries (รวม ghost เสมอ) ใช้คำนวณ unscheduled ให้เสถียร — ไม่กระพริบเวลา toggle
+	let rawTeamEntries = $state<TimetableEntry[]>([]);
 
 	let popoverInCell = $derived(entryPopoverTarget?.instructor_ids ?? []);
 	let popoverInCellNames = $derived(entryPopoverTarget?.instructor_names ?? []);
@@ -386,13 +388,23 @@
 					academic_semester_id: selectedSemesterId
 				});
 			} else {
+				// มุมมองครู: fetch ด้วย include_team_ghosts=true เสมอ (superset)
+				// แล้ว filter สำหรับแสดง cell ตาม toggle
 				res = await listTimetableEntries({
 					instructor_id: selectedInstructorId,
 					academic_semester_id: selectedSemesterId,
-					include_team_ghosts: showTeamGhosts
+					include_team_ghosts: true
 				});
 			}
-			timetableEntries = res.data;
+			if (viewMode === 'INSTRUCTOR') {
+				rawTeamEntries = res.data;
+				timetableEntries = showTeamGhosts
+					? res.data
+					: res.data.filter((e) => (e.instructor_ids ?? []).includes(selectedInstructorId));
+			} else {
+				rawTeamEntries = [];
+				timetableEntries = res.data;
+			}
 		} catch (e) {
 			toast.error('โหลดตารางสอนไม่สำเร็จ');
 		}
@@ -425,17 +437,21 @@
 		entryPopoverSaving = userId;
 		try {
 			await removeEntryInstructor(entry.id, userId);
-			// Update local state: remove from entry.instructor_ids/names
+			// Update local state on the entry object (shared reference ระหว่าง rawTeamEntries + timetableEntries)
 			const idx = entry.instructor_ids?.indexOf(userId) ?? -1;
 			if (idx >= 0) {
 				entry.instructor_ids = entry.instructor_ids!.filter((i) => i !== userId);
 				entry.instructor_names = entry.instructor_names?.filter((_, i) => i !== idx);
 			}
-			timetableEntries = [...timetableEntries];
-			// ถ้าในมุมมองครู ลบตัวเองและไม่เปิด ghost → คาบจะหายจากตาราง (ต้อง reload)
+			// Trigger reactivity ทั้ง raw + filtered
+			rawTeamEntries = [...rawTeamEntries];
+			timetableEntries =
+				viewMode === 'INSTRUCTOR' && !showTeamGhosts
+					? rawTeamEntries.filter((e) => (e.instructor_ids ?? []).includes(selectedInstructorId))
+					: [...timetableEntries];
+			// ลบตัวเองในมุมมองครู + ghost ปิด → cell หายจาก grid → ปิด popover
 			if (viewMode === 'INSTRUCTOR' && userId === selectedInstructorId && !showTeamGhosts) {
 				entryPopoverOpen = false;
-				await loadTimetable();
 			}
 			toast.success('ลบครูแล้ว');
 		} catch {
@@ -451,13 +467,17 @@
 		entryPopoverSaving = userId;
 		try {
 			await addEntryInstructor(entry.id, userId, role);
-			// Reload entry info via list (lazy — just refetch one entry's team indirectly)
 			entry.instructor_ids = [...(entry.instructor_ids ?? []), userId];
 			const member = entryPopoverTeam.find((t) => t.instructor_id === userId);
 			if (member?.instructor_name) {
 				entry.instructor_names = [...(entry.instructor_names ?? []), member.instructor_name];
 			}
-			timetableEntries = [...timetableEntries];
+			rawTeamEntries = [...rawTeamEntries];
+			// เพิ่มตัวเองในมุมมองครู + ghost ปิด → cell กลายเป็นของตัวเอง → ปรากฏใน grid
+			timetableEntries =
+				viewMode === 'INSTRUCTOR' && !showTeamGhosts
+					? rawTeamEntries.filter((e) => (e.instructor_ids ?? []).includes(selectedInstructorId))
+					: [...timetableEntries];
 			toast.success('เพิ่มครูแล้ว');
 		} catch {
 			toast.error('เพิ่มครูไม่สำเร็จ');
@@ -466,11 +486,13 @@
 		}
 	}
 
-	// เมื่อ toggle ghost mode ใน instructor view → re-load
+	// Toggle ghost — filter frontend จาก rawTeamEntries (ไม่ re-fetch)
 	$effect(() => {
 		void showTeamGhosts;
-		if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
-			loadTimetable();
+		if (viewMode === 'INSTRUCTOR' && rawTeamEntries.length > 0) {
+			timetableEntries = showTeamGhosts
+				? rawTeamEntries
+				: rawTeamEntries.filter((e) => (e.instructor_ids ?? []).includes(selectedInstructorId));
 		}
 	});
 
@@ -499,11 +521,11 @@
 					}
 				}
 			} else {
-				// Regular course / team: remove this instructor from junction
-				if (!selectedInstructorId) return;
+				// Regular course: ลบ entry ทั้งอัน (กระทบครูทุกคน) — ถ้าจะลบแค่ตัวเอง ใช้ × ใน popover
+				if (!confirm('ลบคาบนี้ทั้งอัน? — กระทบครูทุกคนในคาบ\n(ลบเฉพาะตัวเองใช้ × ใน popover)')) return;
 				try {
-					await removeEntryInstructor(entry.id, selectedInstructorId);
-					toast.success('ลบคุณออกจากวิชานี้แล้ว');
+					await deleteTimetableEntry(entry.id);
+					toast.success('ลบคาบแล้ว');
 				} catch (e: any) {
 					toast.error(e.message || 'ลบไม่สำเร็จ');
 					return;
@@ -1155,8 +1177,11 @@
 	}
 
 	let unscheduledCourses = $derived.by(() => {
+		// ในมุมมองครูใช้ rawTeamEntries (รวม ghost) เพื่อให้นับครบทุก cell ของ course
+		// ไม่ได้นับเฉพาะ cell ที่ตัวเองอยู่ใน tei — ป้องกัน drag ซ้ำแล้วเกินคาบ
+		const sourceEntries = viewMode === 'INSTRUCTOR' ? rawTeamEntries : timetableEntries;
 		const courseCounts = new Map<string, number>();
-		timetableEntries.forEach((entry) => {
+		sourceEntries.forEach((entry) => {
 			if (entry.classroom_course_id) {
 				const count = courseCounts.get(entry.classroom_course_id) || 0;
 				courseCounts.set(entry.classroom_course_id, count + 1);
