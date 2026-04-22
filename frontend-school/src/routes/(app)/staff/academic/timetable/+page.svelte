@@ -280,11 +280,10 @@
 		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
 			try {
 				const res = await listActivitySlots({ semester_id: selectedSemesterId });
-				const classroom = classrooms.find((c) => c.id === selectedClassroomId);
-				sidebarActivitySlots = res.data.filter((slot) => {
-					if (!slot.allowed_grade_level_ids || slot.allowed_grade_level_ids.length === 0) return true;
-					return classroom && slot.allowed_grade_level_ids.includes(classroom.grade_level_id);
-				});
+				// ใช้ classroom_ids (actual participation) ไม่ใช่ catalog template
+				sidebarActivitySlots = res.data.filter((slot) =>
+					(slot.classroom_ids ?? []).includes(selectedClassroomId)
+				);
 			} catch (e) {
 				console.error('Failed to load activity slots for sidebar', e);
 			}
@@ -1352,11 +1351,11 @@
 			}
 		}
 
-		// SLOT mode: filter by slot's allowed_grade_level_ids
+		// SLOT mode: filter by ห้องที่เข้าร่วม slot จริง (junction) ไม่ใช่ catalog template
 		if (batchMode === 'SLOT' && batchSlotId) {
 			const slot = activitySlots.find((s) => s.id === batchSlotId);
-			if (slot?.allowed_grade_level_ids && slot.allowed_grade_level_ids.length > 0) {
-				list = list.filter((c) => slot.allowed_grade_level_ids!.includes(c.grade_level_id));
+			if (slot?.classroom_ids) {
+				list = list.filter((c) => slot.classroom_ids!.includes(c.id));
 			}
 		}
 
@@ -2754,11 +2753,11 @@
 
 			<!-- Classrooms Selection -->
 			<div class="border-t pt-4 mt-2">
-				{#if batchMode === 'SLOT' && batchSlotId && activitySlots.find((s) => s.id === batchSlotId)?.allowed_grade_level_ids?.length}
+				{#if batchMode === 'SLOT' && batchSlotId && activitySlots.find((s) => s.id === batchSlotId)?.classroom_ids?.length}
 					<div
 						class="flex items-center gap-2 mb-3 px-3 py-2 bg-emerald-50/50 rounded border border-emerald-100 text-xs text-emerald-700"
 					>
-						<span class="font-bold">Info:</span> แสดงเฉพาะห้องเรียนตามระดับชั้นที่กำหนดใน Activity Slot
+						<span class="font-bold">Info:</span> แสดงเฉพาะห้องเรียนที่เข้าร่วม Activity Slot นี้
 					</div>
 				{:else if !(batchMode === 'COURSE' && batchSubjectId)}
 					<div class="flex items-center gap-2 mb-3">
