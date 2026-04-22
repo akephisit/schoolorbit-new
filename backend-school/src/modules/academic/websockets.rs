@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::collections::VecDeque;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use dashmap::DashMap;
 use uuid::Uuid;
@@ -18,6 +19,12 @@ use crate::AppState;
 
 /// จำนวน event ที่เก็บใน buffer ต่อ room (สำหรับ replay เมื่อ client reconnect)
 const EVENT_BUFFER_SIZE: usize = 200;
+
+/// ลบ room ที่ไม่มี subscriber นานเกินเวลานี้
+const ROOM_IDLE_TTL: Duration = Duration::from_secs(600); // 10 นาที
+
+/// interval ของ cleanup task
+const ROOM_CLEANUP_INTERVAL: Duration = Duration::from_secs(60); // ตรวจทุก 1 นาที
 
 // ==========================================
 // Data Structures
@@ -188,6 +195,8 @@ pub struct WebSocketManager {
     room_seq: DashMap<String, Arc<AtomicU64>>,
     // Room Key -> ring buffer ของ mutation events (ล่าสุด EVENT_BUFFER_SIZE อัน)
     room_buffer: DashMap<String, Arc<Mutex<VecDeque<SeqEvent>>>>,
+    // Room Key -> Instant ที่ว่าง (count=0) ครั้งล่าสุด; None = ยังมี subscriber
+    room_empty_since: DashMap<String, Instant>,
 }
 
 impl WebSocketManager {
@@ -198,7 +207,39 @@ impl WebSocketManager {
             room_drags: DashMap::new(),
             room_seq: DashMap::new(),
             room_buffer: DashMap::new(),
+            room_empty_since: DashMap::new(),
         }
+    }
+
+    /// Spawn background cleanup task — ลบ room ที่ idle > ROOM_IDLE_TTL
+    /// เรียกครั้งเดียวตอน startup (ใน main.rs)
+    pub fn spawn_cleanup_task(self: Arc<Self>) {
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(ROOM_CLEANUP_INTERVAL).await;
+                let now = Instant::now();
+                let mut to_remove: Vec<String> = Vec::new();
+                for entry in self.room_empty_since.iter() {
+                    if now.duration_since(*entry.value()) > ROOM_IDLE_TTL {
+                        // Double-check ไม่มี subscriber ณ ตอนนี้
+                        if let Some(tx) = self.rooms.get(entry.key()) {
+                            if tx.receiver_count() == 0 {
+                                to_remove.push(entry.key().clone());
+                            }
+                        }
+                    }
+                }
+                for key in to_remove {
+                    self.rooms.remove(&key);
+                    self.room_users.remove(&key);
+                    self.room_drags.remove(&key);
+                    self.room_seq.remove(&key);
+                    self.room_buffer.remove(&key);
+                    self.room_empty_since.remove(&key);
+                    eprintln!("[WS cleanup] dropped idle room: {}", key);
+                }
+            }
+        });
     }
 
     fn get_room_key(school_key: String, semester_id: Uuid) -> String {
@@ -261,10 +302,18 @@ impl WebSocketManager {
         self.room_seq.get(&key).map(|c| c.load(Ordering::SeqCst)).unwrap_or(0)
     }
 
-    /// True ถ้ามี subscriber อย่างน้อย 1 คนใน room — ใช้ skip broadcast ตอนไม่มีคนฟัง
+    /// True ถ้ามี subscriber อย่างน้อย 1 คนใน room (ใครก็ได้)
     pub fn has_subscribers(&self, school_key: String, semester_id: Uuid) -> bool {
         let key = Self::get_room_key(school_key, semester_id);
         self.rooms.get(&key).map(|tx| tx.receiver_count() > 0).unwrap_or(false)
+    }
+
+    /// True ถ้ามี subscriber **นอกจากตัว caller** (อย่างน้อย 2 คน)
+    /// ใช้ skip joined re-fetch เมื่อ mutation มาจากคนเดียวที่อยู่ใน room
+    /// (echo กลับให้ตัวเองไม่คุ้ม — client จะ loadTimetable ต่ออยู่แล้ว)
+    pub fn has_other_subscribers(&self, school_key: String, semester_id: Uuid) -> bool {
+        let key = Self::get_room_key(school_key, semester_id);
+        self.rooms.get(&key).map(|tx| tx.receiver_count() > 1).unwrap_or(false)
     }
 
     /// Return events with seq > after_seq, ordered. If buffer doesn't reach back that far,
@@ -296,6 +345,8 @@ impl WebSocketManager {
         if let Some(users) = self.room_users.get(&key) {
             users.insert(user.user_id, user);
         }
+        // มี subscriber เข้ามา — room ไม่ว่างอีกต่อไป
+        self.room_empty_since.remove(&key);
     }
 
     pub fn leave_room(&self, school_key: String, semester_id: Uuid, user_id: Uuid) {
@@ -305,6 +356,12 @@ impl WebSocketManager {
         }
         if let Some(drags) = self.room_drags.get(&key) {
             drags.remove(&user_id);
+        }
+        // ถ้าไม่มี subscriber เหลือ → mark เวลาเริ่มว่าง (cleanup task จะลบในภายหลัง)
+        if let Some(tx) = self.rooms.get(&key) {
+            if tx.receiver_count() == 0 {
+                self.room_empty_since.insert(key, Instant::now());
+            }
         }
     }
 

@@ -632,7 +632,7 @@ pub async fn create_timetable_entry(
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    let has_subs = state.websocket_manager.has_subscribers(subdomain.clone(), entry.academic_semester_id);
+    let has_subs = state.websocket_manager.has_other_subscribers(subdomain.clone(), entry.academic_semester_id);
 
     // Re-fetch joined เฉพาะเมื่อต้อง broadcast (frontend caller เรียก loadTimetable ต่ออยู่แล้ว
     // ไม่ได้พึ่งพา joined fields ใน response)
@@ -1101,7 +1101,7 @@ pub async fn update_timetable_entry(
 
     // Broadcast patch event — re-fetch joined เฉพาะถ้ามี subscriber
     let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    let has_subs = state.websocket_manager.has_subscribers(subdomain.clone(), existing_entry.academic_semester_id);
+    let has_subs = state.websocket_manager.has_other_subscribers(subdomain.clone(), existing_entry.academic_semester_id);
     if has_subs {
         if let Some(full_entry) = fetch_entry_with_joins(&pool, updated_entry.id).await {
             let entry_json = serde_json::to_value(&full_entry).unwrap_or_default();

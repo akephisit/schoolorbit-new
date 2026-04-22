@@ -67,7 +67,9 @@ async fn main() {
     // Create pool manager for tenant databases
     let pool_manager = Arc::new(PoolManager::new());
     let websocket_manager = Arc::new(modules::academic::websockets::WebSocketManager::new());
-    
+    // Spawn periodic cleanup ของ idle WS rooms (ไม่มี subscriber > 10 นาที)
+    websocket_manager.clone().spawn_cleanup_task();
+
     // Notification broadcast channel (capacity 100)
     let (notification_tx, _) = broadcast::channel(100);
 
