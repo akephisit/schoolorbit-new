@@ -722,7 +722,9 @@ pub async fn generate_courses_from_plan(
         )
         SELECT
             (SELECT COUNT(*) FROM resolved) AS total,
-            (SELECT COUNT(*) FROM inserted_slots) AS added
+            -- นับ junction (ห้องเพิ่งเข้าร่วม slot กี่ตัว) แทนจำนวน slot ใหม่
+            -- เพราะ slot อาจมีอยู่แล้วจากห้องก่อนหน้า — แต่ห้องนี้ยัง join ใหม่
+            (SELECT COUNT(*) FROM inserted_junction) AS added
         "#
     )
     .bind(plan_version_id)
