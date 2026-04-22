@@ -947,9 +947,12 @@
 				}
 				const result: any = await updateTimetableEntry(existingEntry.id, payload);
 				if (result?.success === false) {
-					// Backend rejected (409 conflict) — แสดงเหตุผลจริง
-					const msg = result.conflicts?.[0]?.message ?? result.message ?? 'แทนที่ไม่สำเร็จ';
-					toast.error(msg);
+					// Backend rejected — รวบข้อความ conflict ทุกอันเป็นไทยเดียว
+					// ไม่ใช้ result.message ("Conflict detected") เพราะไม่สื่อ
+					const msgs: string[] = (result.conflicts ?? [])
+						.map((c: any) => c.message)
+						.filter(Boolean);
+					toast.error(msgs.length > 0 ? msgs.join(' · ') : 'แทนที่ไม่สำเร็จ');
 				} else {
 					toast.success('แทนที่รายการเดิมแล้ว');
 					await loadTimetable();
@@ -1108,12 +1111,9 @@
 
 	async function handleResponse(res: any, successMessage: string) {
 		if (res.success === false) {
-			toast.error(res.message || 'พบข้อขัดแย้งในตาราง');
-			if (res.conflicts && res.conflicts.length > 0) {
-				res.conflicts.forEach((c: any) => {
-					toast.error(c.message);
-				});
-			}
+			// รวบ conflict messages เป็นไทยเดียว ไม่โชว์ "Conflict detected"
+			const msgs: string[] = (res.conflicts ?? []).map((c: any) => c.message).filter(Boolean);
+			toast.error(msgs.length > 0 ? msgs.join(' · ') : 'พบข้อขัดแย้งในตาราง');
 		} else {
 			await loadTimetable();
 			toast.success(successMessage);
