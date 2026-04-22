@@ -325,9 +325,24 @@ function handleMessage(msg: any) {
             }
             userDrags.set(drags);
 
-            // Set initial seq — จุดเริ่ม tracking
+            // Seq reconciliation — handle restart/reconnect
             if (typeof current_seq === 'number') {
-                lastSeq = current_seq;
+                if (current_seq < lastSeq) {
+                    // Server restart detected — seq counter reset ลง → full reset
+                    console.log('[WS] Server restart detected (seq reset):', lastSeq, '->', current_seq);
+                    lastSeq = current_seq;
+                    refreshTrigger.update((n) => n + 1);
+                } else if (current_seq > lastSeq) {
+                    // Gap — events หายช่วง disconnect หรือระหว่าง API→WS → replay
+                    const semId = lastParams?.semester_id;
+                    if (semId) {
+                        console.log('[WS] Gap detected on StateSync:', lastSeq, '->', current_seq);
+                        triggerReconcile(semId);
+                    } else {
+                        lastSeq = current_seq;
+                    }
+                }
+                // current_seq === lastSeq → no-op
             }
             break;
         }

@@ -218,25 +218,27 @@ impl WebSocketManager {
             loop {
                 tokio::time::sleep(ROOM_CLEANUP_INTERVAL).await;
                 let now = Instant::now();
-                let mut to_remove: Vec<String> = Vec::new();
+                let mut candidates: Vec<String> = Vec::new();
                 for entry in self.room_empty_since.iter() {
                     if now.duration_since(*entry.value()) > ROOM_IDLE_TTL {
-                        // Double-check ไม่มี subscriber ณ ตอนนี้
-                        if let Some(tx) = self.rooms.get(entry.key()) {
-                            if tx.receiver_count() == 0 {
-                                to_remove.push(entry.key().clone());
-                            }
-                        }
+                        candidates.push(entry.key().clone());
                     }
                 }
-                for key in to_remove {
-                    self.rooms.remove(&key);
-                    self.room_users.remove(&key);
-                    self.room_drags.remove(&key);
-                    self.room_seq.remove(&key);
-                    self.room_buffer.remove(&key);
-                    self.room_empty_since.remove(&key);
-                    eprintln!("[WS cleanup] dropped idle room: {}", key);
+                for key in candidates {
+                    // ใช้ DashMap remove_if atomic — remove เฉพาะถ้า count==0
+                    // (ลด race window: ระหว่าง check กับ remove มี entry lock)
+                    let removed = self.rooms.remove_if(&key, |_, tx| tx.receiver_count() == 0);
+                    if removed.is_some() {
+                        self.room_users.remove(&key);
+                        self.room_drags.remove(&key);
+                        self.room_seq.remove(&key);
+                        self.room_buffer.remove(&key);
+                        self.room_empty_since.remove(&key);
+                        eprintln!("[WS cleanup] dropped idle room: {}", key);
+                    } else {
+                        // มีคน subscribe ระหว่างนั้น → clear empty_since, เก็บ room ไว้
+                        self.room_empty_since.remove(&key);
+                    }
                 }
             }
         });
@@ -481,11 +483,31 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
 
     // Spawn a task to handle incoming messages from this client (Broadcast Listener)
     let mut send_task = tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            if let Ok(json) = serde_json::to_string(&msg) {
-                 if sender.send(Message::Text(json.into())).await.is_err() {
-                     break;
-                 }
+        loop {
+            match rx.recv().await {
+                Ok(msg) => {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        if sender.send(Message::Text(json.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    // Client ตามไม่ทัน → miss n events — ส่ง TableRefresh ให้ full-refetch
+                    eprintln!("[WS] client lagged, missed {} events — forcing full refresh", n);
+                    let refresh = SeqEvent {
+                        seq: None,
+                        event: TimetableEvent::TableRefresh { user_id: Uuid::nil() },
+                    };
+                    if let Ok(json) = serde_json::to_string(&refresh) {
+                        if sender.send(Message::Text(json.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
             }
         }
     });
