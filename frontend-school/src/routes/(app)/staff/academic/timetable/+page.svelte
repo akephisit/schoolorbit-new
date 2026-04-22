@@ -945,11 +945,17 @@
 						payload.classroom_id = draggedCourse.classroom_id;
 					}
 				}
-				await updateTimetableEntry(existingEntry.id, payload);
-				toast.success('แทนที่รายการเดิมแล้ว');
-				await loadTimetable();
-				if ($authStore.user) {
-					sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+				const result: any = await updateTimetableEntry(existingEntry.id, payload);
+				if (result?.success === false) {
+					// Backend rejected (409 conflict) — แสดงเหตุผลจริง
+					const msg = result.conflicts?.[0]?.message ?? result.message ?? 'แทนที่ไม่สำเร็จ';
+					toast.error(msg);
+				} else {
+					toast.success('แทนที่รายการเดิมแล้ว');
+					await loadTimetable();
+					if ($authStore.user) {
+						sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
+					}
 				}
 			} catch (e: any) {
 				toast.error(e.message || 'แทนที่ไม่สำเร็จ');
@@ -2256,7 +2262,9 @@
 										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
 										: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied && !validity
 										? 'bg-blue-50/30'
-										: ''} {validityClass} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
+										: ''} {validityClass} {draggedCourse && entry && isOccupied && dragType === 'NEW'
+										? 'ring-2 ring-inset ring-red-500/70'
+										: ''} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
 									style={remoteDrag ? `--tw-ring-color: ${remoteDrag.user.color}40; background-color: ${remoteDrag.user.color}10;` : ''}
 									data-day={day.value}
 									data-period={period.id}
