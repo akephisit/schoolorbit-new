@@ -323,12 +323,12 @@ pub async fn create_activity_group(
         }
     }
 
-    let allowed = body.allowed_grade_level_ids
+    let allowed = body.allowed_classroom_ids
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
     let row: ActivityGroup = sqlx::query_as(
         r#"INSERT INTO activity_groups
-            (slot_id, name, description, instructor_id, max_capacity, allowed_grade_level_ids)
+            (slot_id, name, description, instructor_id, max_capacity, allowed_classroom_ids)
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING *, NULL::TEXT AS instructor_name, NULL::BIGINT AS member_count,
                      NULL::TEXT AS slot_name, NULL::TEXT AS activity_type, NULL::TEXT AS semester_name"#,
@@ -364,7 +364,7 @@ pub async fn update_activity_group(
         }
     }
 
-    let allowed = body.allowed_grade_level_ids.as_ref()
+    let allowed = body.allowed_classroom_ids.as_ref()
         .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
     let row: ActivityGroup = sqlx::query_as(
@@ -375,7 +375,7 @@ pub async fn update_activity_group(
             max_capacity = COALESCE($5, max_capacity),
             registration_open = COALESCE($6, registration_open),
             is_active = COALESCE($7, is_active),
-            allowed_grade_level_ids = COALESCE($8, allowed_grade_level_ids),
+            allowed_classroom_ids = COALESCE($8, allowed_classroom_ids),
             updated_at = NOW()
         WHERE id = $1
         RETURNING *, NULL::TEXT AS instructor_name, NULL::BIGINT AS member_count,
@@ -622,10 +622,9 @@ pub async fn self_enroll(
         }
     }
 
-    // เช็คชั้นที่รับ (group level → slot level)
-    let student_grade: Option<Uuid> = sqlx::query_scalar(
-        r#"SELECT cr.grade_level_id FROM student_class_enrollments sce
-           JOIN class_rooms cr ON cr.id = sce.class_room_id
+    // เช็คห้องที่รับ: ใช้ allowed_classroom_ids ของ group, ถ้า NULL ใช้ activity_slot_classrooms
+    let student_classroom: Option<Uuid> = sqlx::query_scalar(
+        r#"SELECT sce.class_room_id FROM student_class_enrollments sce
            WHERE sce.student_id = $1 AND sce.status = 'active'
            LIMIT 1"#
     )
@@ -634,29 +633,30 @@ pub async fn self_enroll(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    if let Some(grade_id) = student_grade {
-        // ตรวจ group allowed_grade_level_ids ก่อน แล้วค่อย catalog (ผ่าน slot)
-        let allowed: Option<serde_json::Value> = sqlx::query_scalar(
-            r#"SELECT COALESCE(ag.allowed_grade_level_ids, ac.grade_level_ids)
+    if let Some(classroom_id) = student_classroom {
+        // ถ้า group override มีค่า → เช็คกับ override
+        // ถ้า NULL → เช็คกับ slot junction (ทุกห้องที่ slot รับ)
+        let is_allowed: bool = sqlx::query_scalar(
+            r#"SELECT CASE
+                   WHEN ag.allowed_classroom_ids IS NOT NULL
+                     THEN ag.allowed_classroom_ids ? $2::text
+                   ELSE EXISTS(
+                     SELECT 1 FROM activity_slot_classrooms asc2
+                     WHERE asc2.slot_id = ag.slot_id AND asc2.classroom_id = $2
+                   )
+               END
                FROM activity_groups ag
-               LEFT JOIN activity_slots s ON s.id = ag.slot_id
-               LEFT JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
                WHERE ag.id = $1"#
         )
         .bind(group_id)
+        .bind(classroom_id)
         .fetch_optional(&pool)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        .flatten();
+        .unwrap_or(false);
 
-        if let Some(allowed_ids) = allowed {
-            if let Some(arr) = allowed_ids.as_array() {
-                let grade_str = grade_id.to_string();
-                let is_allowed = arr.iter().any(|v| v.as_str() == Some(&grade_str));
-                if !is_allowed {
-                    return Ok(Json(json!({ "error": "ชั้นเรียนของคุณไม่อยู่ในชั้นที่รับ" })).into_response());
-                }
-            }
+        if !is_allowed {
+            return Ok(Json(json!({ "error": "ห้องเรียนของคุณไม่อยู่ในห้องที่รับ" })).into_response());
         }
     }
 

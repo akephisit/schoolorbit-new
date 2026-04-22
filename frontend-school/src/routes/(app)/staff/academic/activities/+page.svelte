@@ -86,7 +86,20 @@
 	let groupDescription = $state('');
 	let groupInstructorId = $state('');
 	let groupMaxCapacity = $state('');
-	let groupAllowedGradeLevelIds = $state<string[]>([]);
+	/** ห้องที่ group รับ. [] = inherit จาก slot (รับทุกห้องใน slot) */
+	let groupAllowedClassroomIds = $state<string[]>([]);
+
+	// ห้องที่อยู่ใน slot ที่ group นี้สังกัด — ใช้ใน dialog
+	let groupSlotClassroomIds = $derived(
+		slots.find((s) => s.id === groupSlotId)?.classroom_ids ?? []
+	);
+	let groupGradesInSlot = $derived([
+		...new Set(
+			groupSlotClassroomIds
+				.map((cid) => classrooms.find((c) => c.id === cid)?.grade_level_id)
+				.filter((g): g is string => !!g)
+		)
+	]);
 
 	// Delete
 	let deleteSlotTarget = $state<ActivitySlot | null>(null);
@@ -310,7 +323,7 @@
 	function openCreateGroup(slotId: string) {
 		groupSlotId = slotId; groupName = ''; groupDescription = '';
 		groupInstructorId = ''; groupMaxCapacity = '';
-		groupAllowedGradeLevelIds = [];
+		groupAllowedClassroomIds = [];
 		isGroupEdit = false; editGroupTarget = null;
 		showGroupDialog = true;
 	}
@@ -321,14 +334,29 @@
 		groupDescription = g.description ?? '';
 		groupInstructorId = g.instructor_id ?? '';
 		groupMaxCapacity = g.max_capacity ? String(g.max_capacity) : '';
-		groupAllowedGradeLevelIds = g.allowed_grade_level_ids ?? [];
+		groupAllowedClassroomIds = g.allowed_classroom_ids ?? [];
 		isGroupEdit = true; editGroupTarget = g;
 		showGroupDialog = true;
 	}
 
-	function toggleGroupGrade(id: string) {
-		groupAllowedGradeLevelIds = groupAllowedGradeLevelIds.includes(id)
-			? groupAllowedGradeLevelIds.filter((x) => x !== id) : [...groupAllowedGradeLevelIds, id];
+	function toggleGroupClassroom(id: string) {
+		groupAllowedClassroomIds = groupAllowedClassroomIds.includes(id)
+			? groupAllowedClassroomIds.filter((x) => x !== id)
+			: [...groupAllowedClassroomIds, id];
+	}
+
+	/** ติ๊กรวมระดับชั้น — เลือก/ยกเลิกทุกห้องของระดับนั้นที่อยู่ใน slot */
+	function toggleGroupGradeAll(gradeId: string, slotClassroomIds: string[]) {
+		const roomsOfGrade = classrooms
+			.filter((c) => c.grade_level_id === gradeId && slotClassroomIds.includes(c.id))
+			.map((c) => c.id);
+		const allSelected = roomsOfGrade.every((id) => groupAllowedClassroomIds.includes(id));
+		if (allSelected) {
+			groupAllowedClassroomIds = groupAllowedClassroomIds.filter((id) => !roomsOfGrade.includes(id));
+		} else {
+			const set = new Set([...groupAllowedClassroomIds, ...roomsOfGrade]);
+			groupAllowedClassroomIds = [...set];
+		}
 	}
 
 	async function handleSaveGroup() {
@@ -340,7 +368,7 @@
 				description: groupDescription || undefined,
 				instructor_id: groupInstructorId || undefined,
 				max_capacity: groupMaxCapacity ? parseInt(groupMaxCapacity) : undefined,
-				allowed_grade_level_ids: groupAllowedGradeLevelIds.length > 0 ? groupAllowedGradeLevelIds : undefined,
+				allowed_classroom_ids: groupAllowedClassroomIds.length > 0 ? groupAllowedClassroomIds : undefined,
 			};
 			if (isGroupEdit && editGroupTarget) {
 				await updateActivityGroup(editGroupTarget.id, payload as any);
@@ -365,13 +393,34 @@
 	// ── Helpers ────────────────────────────────────────
 	function gradeLevelDisplay(ids: string[] | undefined) {
 		if (!ids || ids.length === 0) return 'ทุกระดับชั้น';
-		// Look up in the full school grade_levels list (not just current-year filter) —
-		// a catalog can target grades that don't have classrooms in the selected year.
-		// Drop orphan UUIDs (referenced grades that no longer exist in the lookup).
 		const names = ids
 			.map((id) => structure.levels.find((g) => g.id === id)?.short_name)
 			.filter((n): n is string => !!n);
 		if (names.length === 0) return 'ทุกระดับชั้น';
+		return names.join(', ');
+	}
+
+	/** แสดงระดับชั้น (unique) ที่ได้จากห้องที่อยู่ใน slot/กลุ่ม */
+	function classroomGradesDisplay(classroomIds: string[] | undefined) {
+		if (!classroomIds || classroomIds.length === 0) return 'ยังไม่มีห้อง';
+		const gradeIds = [...new Set(
+			classroomIds
+				.map((cid) => classrooms.find((c) => c.id === cid)?.grade_level_id)
+				.filter((g): g is string => !!g)
+		)];
+		const names = gradeIds
+			.map((id) => structure.levels.find((g) => g.id === id)?.short_name)
+			.filter((n): n is string => !!n);
+		if (names.length === 0) return '—';
+		return names.join(', ');
+	}
+
+	/** แสดงรายห้องสั้นๆ (เช่น "ม.1/1, ม.1/2, ม.2/1") */
+	function classroomListDisplay(classroomIds: string[] | undefined) {
+		if (!classroomIds || classroomIds.length === 0) return '';
+		const names = classroomIds
+			.map((cid) => classrooms.find((c) => c.id === cid)?.name)
+			.filter((n): n is string => !!n);
 		return names.join(', ');
 	}
 	async function confirmSwitchToIndependent() {
@@ -542,7 +591,9 @@
 										📎 จากคลังกิจกรรม
 									</Badge>
 								{/if}
-								<span class="text-sm text-muted-foreground">{gradeLevelDisplay(slot.allowed_grade_level_ids)}</span>
+								<span class="text-sm text-muted-foreground" title={classroomListDisplay(slot.classroom_ids)}>
+									{classroomGradesDisplay(slot.classroom_ids)}
+								</span>
 							</div>
 							<div class="text-sm text-muted-foreground mt-0.5">
 								{slotGroups.length} กิจกรรม
@@ -675,8 +726,8 @@
 													<div class="text-xs text-muted-foreground">
 														{g.instructor_name ?? '—'}
 														· {g.member_count ?? 0}{g.max_capacity ? `/${g.max_capacity}` : ''} คน
-														{#if g.allowed_grade_level_ids && g.allowed_grade_level_ids.length > 0}
-															· {gradeLevelDisplay(g.allowed_grade_level_ids)}
+														{#if g.allowed_classroom_ids && g.allowed_classroom_ids.length > 0}
+															· {classroomListDisplay(g.allowed_classroom_ids)}
 														{/if}
 													</div>
 												</div>
@@ -800,15 +851,61 @@
 				<Input type="number" min="1" placeholder="ไม่จำกัด" bind:value={groupMaxCapacity} />
 			</div>
 			<div class="space-y-1">
-				<Label>ชั้นที่รับ (ว่าง = ตามช่องกิจกรรม)</Label>
-				<div class="flex flex-wrap gap-1.5">
-					{#each yearGradeLevels as level}
-						{@const selected = groupAllowedGradeLevelIds.includes(level.id)}
-						<button type="button"
-							class="rounded border px-2 py-1 text-xs transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
-							onclick={() => toggleGroupGrade(level.id)}>{level.short_name}</button>
-					{/each}
-				</div>
+				<Label>ห้องที่รับ (ว่าง = รับทุกห้องที่ช่องกิจกรรมรับ)</Label>
+				{#if groupSlotClassroomIds.length === 0}
+					<p class="text-xs text-muted-foreground italic">
+						ช่องกิจกรรมนี้ยังไม่มีห้องเข้าร่วม — ไปเพิ่มที่หน้า Course Planning ก่อน
+					</p>
+				{:else}
+					<div class="max-h-[240px] overflow-y-auto rounded border divide-y">
+						{#each groupGradesInSlot as gradeId}
+							{@const grade = structure.levels.find((g) => g.id === gradeId)}
+							{@const roomsOfGrade = classrooms
+								.filter((c) => c.grade_level_id === gradeId && groupSlotClassroomIds.includes(c.id))
+								.sort((a, b) => (a.name > b.name ? 1 : -1))}
+							{@const allSelected = roomsOfGrade.every((r) =>
+								groupAllowedClassroomIds.includes(r.id)
+							)}
+							{@const someSelected = roomsOfGrade.some((r) =>
+								groupAllowedClassroomIds.includes(r.id)
+							)}
+							<div class="p-2">
+								<button
+									type="button"
+									class="flex items-center gap-2 w-full text-left text-sm font-medium hover:bg-accent/50 rounded px-1 py-0.5"
+									onclick={() => toggleGroupGradeAll(gradeId, groupSlotClassroomIds)}
+								>
+									<div class="flex h-4 w-4 items-center justify-center rounded border {allSelected ? 'bg-primary border-primary' : someSelected ? 'bg-primary/40 border-primary' : 'border-input'}">
+										{#if allSelected}
+											<span class="text-primary-foreground text-xs leading-none">✓</span>
+										{:else if someSelected}
+											<span class="text-primary-foreground text-xs leading-none">−</span>
+										{/if}
+									</div>
+									<span>{grade?.short_name ?? '?'}</span>
+									<span class="text-[10px] text-muted-foreground font-normal">
+										(ทั้งระดับ · {roomsOfGrade.length} ห้อง)
+									</span>
+								</button>
+								<div class="pl-6 mt-1 flex flex-wrap gap-1.5">
+									{#each roomsOfGrade as room}
+										{@const selected = groupAllowedClassroomIds.includes(room.id)}
+										<button
+											type="button"
+											class="rounded border px-2 py-0.5 text-xs transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
+											onclick={() => toggleGroupClassroom(room.id)}
+										>
+											{room.name}
+										</button>
+									{/each}
+								</div>
+							</div>
+						{/each}
+					</div>
+					<p class="text-[10px] text-muted-foreground">
+						ติ๊กระดับชั้น = เลือกทุกห้องของระดับนั้น · ติ๊กห้อง = เลือกเฉพาะห้องนั้น
+					</p>
+				{/if}
 			</div>
 			<div class="space-y-1">
 				<Label>คำอธิบาย</Label>

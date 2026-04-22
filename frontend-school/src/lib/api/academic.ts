@@ -785,7 +785,8 @@ export interface ActivityGroup {
     instructor_id?: string;
     max_capacity?: number;
     registration_open: boolean;
-    allowed_grade_level_ids?: string[];
+    /** ห้องที่ group นี้รับ — NULL = รับทุกห้องที่ slot รับ (inherit) */
+    allowed_classroom_ids?: string[];
     is_active: boolean;
     created_at: string;
     // joined
@@ -833,7 +834,7 @@ export const createActivityGroup = async (data: {
     description?: string;
     instructor_id?: string;
     max_capacity?: number;
-    allowed_grade_level_ids?: string[];
+    allowed_classroom_ids?: string[];
 }) => {
     return await fetchApi('/api/academic/activities', {
         method: 'POST',
