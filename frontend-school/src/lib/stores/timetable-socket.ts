@@ -20,8 +20,13 @@ export interface UserPresence {
     context?: UserContext;
 }
 
+export interface UserActivityState {
+    activity_type: string;
+    target?: any;
+}
+
 export type TimetableEvent =
-    | { type: 'StateSync', payload: { users: UserPresence[], drags: Record<string, { course_id?: string, entry_id?: string, info?: DragInfo }>, current_seq: number } }
+    | { type: 'StateSync', payload: { users: UserPresence[], drags: Record<string, { course_id?: string, entry_id?: string, info?: DragInfo }>, activities: Record<string, UserActivityState>, current_seq: number } }
     | { type: 'TableRefresh', payload: { user_id: string } }
     | { type: 'UserJoined', payload: UserPresence }
     | { type: 'UserLeft', payload: { user_id: string } }
@@ -29,6 +34,8 @@ export type TimetableEvent =
     | { type: 'DragStart', payload: { user_id: string, course_id?: string, entry_id?: string, info?: DragInfo } }
     | { type: 'DragEnd', payload: { user_id: string } }
     | { type: 'DragMove', payload: { user_id: string, x: number, y: number, target_day?: string, target_period_id?: string } }
+    | { type: 'UserActivity', payload: { user_id: string, activity_type: string, target?: any } }
+    | { type: 'UserActivityEnd', payload: { user_id: string } }
     // Patch events (new — seq-tracked)
     | { type: 'EntryCreated', payload: { user_id: string, entry: any } }
     | { type: 'EntryUpdated', payload: { user_id: string, entry: any } }
@@ -55,6 +62,8 @@ export const remoteCursors: Writable<Record<string, { x: number, y: number, cont
 export const userDrags: Writable<Record<string, { course_id?: string, entry_id?: string, info?: DragInfo }>> = writable({});
 // Key: user_id -> Current drag position & target cell
 export const dragPositions: Writable<Record<string, { x: number, y: number, target_day?: string, target_period_id?: string }>> = writable({});
+// Key: user_id -> Current dialog activity (room picker, instructor edit, etc.)
+export const remoteActivities: Writable<Record<string, UserActivityState>> = writable({});
 export const refreshTrigger: Writable<number> = writable(0);
 export const isConnected: Writable<boolean> = writable(false);
 /** Patch events ที่ broadcast จาก backend — page subscribe เพื่อ apply ต่อ state
@@ -242,6 +251,7 @@ export function connectTimetableSocket(params: {
             remoteCursors.set({});
             userDrags.set({});
             dragPositions.set({});
+            remoteActivities.set({});
 
             // Auto Reconnect
             if (shouldReconnect) {
@@ -281,6 +291,22 @@ export function sendTimetableEvent(event: TimetableEvent) {
     }
 }
 
+export function sendUserActivity(activityType: string, target?: any) {
+    if (!currentUserId) return;
+    sendTimetableEvent({
+        type: 'UserActivity',
+        payload: { user_id: currentUserId, activity_type: activityType, target },
+    });
+}
+
+export function sendUserActivityEnd() {
+    if (!currentUserId) return;
+    sendTimetableEvent({
+        type: 'UserActivityEnd',
+        payload: { user_id: currentUserId },
+    });
+}
+
 function handleMessage(msg: any) {
     const { type, payload, seq } = msg;
 
@@ -314,7 +340,7 @@ function handleMessage(msg: any) {
 
     switch (type) {
         case 'StateSync': {
-            const { users, drags, current_seq } = payload;
+            const { users, drags, activities, current_seq } = payload;
             // Filter out self
             const others = users.filter((u: UserPresence) => u.user_id !== currentUserId);
             activeUsers.set(others);
@@ -324,6 +350,11 @@ function handleMessage(msg: any) {
                 delete drags[currentUserId];
             }
             userDrags.set(drags);
+
+            // Sync activities
+            const otherActivities = { ...activities };
+            if (currentUserId) delete otherActivities[currentUserId];
+            remoteActivities.set(otherActivities);
 
             // Seq reconciliation — handle restart/reconnect
             if (typeof current_seq === 'number') {
@@ -361,9 +392,8 @@ function handleMessage(msg: any) {
             const { user_id } = payload;
             activeUsers.update(users => users.filter(u => u.user_id !== user_id));
 
-            // Allow cleanup of cursor/drag
+            // Allow cleanup of cursor/drag/activity
             remoteCursors.update(cursors => {
-                // copy and delete
                 const newCursors = { ...cursors };
                 delete newCursors[user_id];
                 return newCursors;
@@ -377,6 +407,30 @@ function handleMessage(msg: any) {
                 const newPos = { ...pos };
                 delete newPos[user_id];
                 return newPos;
+            });
+            remoteActivities.update(acts => {
+                const next = { ...acts };
+                delete next[user_id];
+                return next;
+            });
+            break;
+        }
+        case 'UserActivity': {
+            const { user_id, activity_type, target } = payload;
+            if (user_id === currentUserId) return;
+            remoteActivities.update(acts => ({
+                ...acts,
+                [user_id]: { activity_type, target },
+            }));
+            break;
+        }
+        case 'UserActivityEnd': {
+            const { user_id } = payload;
+            if (user_id === currentUserId) return;
+            remoteActivities.update(acts => {
+                const next = { ...acts };
+                delete next[user_id];
+                return next;
             });
             break;
         }
