@@ -333,7 +333,50 @@ pub async fn list_timetable_entries(
             AppError::InternalServerError("Failed to fetch timetable".to_string())
         })?;
 
-    Ok(Json(json!({ "success": true, "data": entries })).into_response())
+    // current_seq ของ semester — client ใช้เป็นจุดเริ่มต้น tracking patch events
+    let current_seq = if let Some(sem_id) = query.academic_semester_id {
+        let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        state.websocket_manager.current_seq(subdomain, sem_id)
+    } else {
+        0
+    };
+
+    Ok(Json(json!({ "success": true, "data": entries, "current_seq": current_seq })).into_response())
+}
+
+/// GET /api/academic/timetable/replay
+/// Query: semester_id, after_seq
+/// Return: { events: [...], current_seq } หรือ { needs_refetch: true, current_seq }
+#[derive(Debug, serde::Deserialize)]
+pub struct ReplayQuery {
+    pub semester_id: Uuid,
+    pub after_seq: u64,
+}
+
+pub async fn replay_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ReplayQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(response);
+    }
+
+    let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    let current_seq = state.websocket_manager.current_seq(subdomain.clone(), query.semester_id);
+
+    match state.websocket_manager.replay(subdomain, query.semester_id, query.after_seq) {
+        Some(events) => Ok(Json(json!({
+            "events": events,
+            "current_seq": current_seq,
+            "needs_refetch": false,
+        })).into_response()),
+        None => Ok(Json(json!({
+            "needs_refetch": true,
+            "current_seq": current_seq,
+        })).into_response()),
+    }
 }
 
 /// POST /api/academic/timetable
@@ -540,6 +583,16 @@ pub async fn create_timetable_entry(
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
+    // Broadcast: entry เพิ่งสร้าง — ใช้ TableRefresh เพราะ entry ไม่มี joined fields
+    // (frontend จะ re-fetch เพื่อได้ชื่อครู/วิชา/ห้อง ครบ)
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+    let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    state.websocket_manager.broadcast_mutation(
+        subdomain,
+        entry.academic_semester_id,
+        TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+    );
+
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": entry }))).into_response())
 }
 
@@ -577,10 +630,11 @@ pub async fn delete_batch_timetable_entries(
     // Broadcast refresh
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
     let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    let event = TimetableEvent::TableRefresh {
-        user_id: user_id.unwrap_or_default()
-    };
-    let _ = state.websocket_manager.get_or_create_room(subdomain, payload.academic_semester_id).send(event);
+    state.websocket_manager.broadcast_mutation(
+        subdomain,
+        payload.academic_semester_id,
+        TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+    );
 
     Ok(Json(json!({
         "success": true,
@@ -611,8 +665,11 @@ pub async fn delete_timetable_entry(
     if let Some(semester_id) = semester_id {
         let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
         let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
-        let event = TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() };
-        let _ = state.websocket_manager.get_or_create_room(subdomain, semester_id).send(event);
+        state.websocket_manager.broadcast_mutation(
+            subdomain,
+            semester_id,
+            TimetableEvent::EntryDeleted { user_id: user_id.unwrap_or_default(), entry_id: id },
+        );
     }
 
     Ok(Json(json!({ "success": true })).into_response())
@@ -987,14 +1044,14 @@ pub async fn update_timetable_entry(
         }
     })?;
 
-    // Broadcast realtime refresh
+    // Broadcast patch event: EntryUpdated พร้อม full entry
     let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    let event = TimetableEvent::TableRefresh {
-        user_id: user_id.unwrap_or_default()
-    };
-    let _ = state.websocket_manager
-        .get_or_create_room(subdomain, existing_entry.academic_semester_id)
-        .send(event);
+    let entry_json = serde_json::to_value(&updated_entry).unwrap_or_default();
+    state.websocket_manager.broadcast_mutation(
+        subdomain,
+        existing_entry.academic_semester_id,
+        TimetableEvent::EntryUpdated { user_id: user_id.unwrap_or_default(), entry: entry_json },
+    );
 
     Ok(Json(json!({ "success": true, "data": updated_entry })).into_response())
 }
@@ -1339,12 +1396,13 @@ pub async fn create_batch_timetable_entries(
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // Broadcast refresh event
+    // Broadcast refresh event (batch create affects many entries — client full-refetch)
     let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    let event = TimetableEvent::TableRefresh { 
-        user_id: user_id.unwrap_or_default() 
-    };
-    let _ = state.websocket_manager.get_or_create_room(subdomain, payload.academic_semester_id).send(event);
+    state.websocket_manager.broadcast_mutation(
+        subdomain,
+        payload.academic_semester_id,
+        TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+    );
 
     Ok(Json(json!({
         "success": true,
@@ -1472,26 +1530,39 @@ pub async fn add_entry_instructor(
         return Ok(r);
     }
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
-    let role = body.role.unwrap_or_else(|| "primary".to_string());
+    let role = body.role.clone().unwrap_or_else(|| "primary".to_string());
     sqlx::query(
         "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
          VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
     )
     .bind(entry_id)
     .bind(body.instructor_id)
-    .bind(role)
+    .bind(&role)
     .execute(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // Broadcast realtime refresh
+    // Broadcast patch event: EntryInstructorAdded
     let semester_id: Option<Uuid> = sqlx::query_scalar(
         "SELECT academic_semester_id FROM academic_timetable_entries WHERE id = $1"
     ).bind(entry_id).fetch_optional(&pool).await.ok().flatten();
     if let Some(sem_id) = semester_id {
+        let instructor_name: String = sqlx::query_scalar(
+            "SELECT CONCAT(first_name, ' ', last_name) FROM users WHERE id = $1"
+        ).bind(body.instructor_id).fetch_one(&pool).await.unwrap_or_default();
+
         let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let event = TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() };
-        let _ = state.websocket_manager.get_or_create_room(subdomain, sem_id).send(event);
+        state.websocket_manager.broadcast_mutation(
+            subdomain,
+            sem_id,
+            TimetableEvent::EntryInstructorAdded {
+                user_id: user_id.unwrap_or_default(),
+                entry_id,
+                instructor_id: body.instructor_id,
+                instructor_name,
+                role,
+            },
+        );
     }
 
     Ok(Json(json!({ "success": true })).into_response())
@@ -1525,6 +1596,7 @@ pub async fn remove_entry_instructor(
     let remaining: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM timetable_entry_instructors WHERE entry_id = $1"
     ).bind(entry_id).fetch_one(&pool).await.unwrap_or(1);
+    let mut entry_deleted = false;
     if remaining == 0 {
         let is_course: bool = sqlx::query_scalar(
             "SELECT classroom_course_id IS NOT NULL FROM academic_timetable_entries WHERE id = $1"
@@ -1532,14 +1604,23 @@ pub async fn remove_entry_instructor(
         if is_course {
             sqlx::query("DELETE FROM academic_timetable_entries WHERE id = $1")
                 .bind(entry_id).execute(&pool).await.ok();
+            entry_deleted = true;
         }
     }
 
-    // Broadcast realtime refresh
+    // Broadcast patch event: EntryInstructorRemoved (+ entry_deleted flag)
     if let Some(sem_id) = semester_id {
         let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let event = TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() };
-        let _ = state.websocket_manager.get_or_create_room(subdomain, sem_id).send(event);
+        state.websocket_manager.broadcast_mutation(
+            subdomain,
+            sem_id,
+            TimetableEvent::EntryInstructorRemoved {
+                user_id: user_id.unwrap_or_default(),
+                entry_id,
+                instructor_id,
+                entry_deleted,
+            },
+        );
     }
 
     Ok(Json(json!({ "success": true })).into_response())
@@ -1825,15 +1906,14 @@ pub async fn swap_timetable_entries(
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // Broadcast realtime refresh
+    // Broadcast refresh (swap ทำให้ 2 entries เปลี่ยน day+period — client full-refetch ง่ายกว่า)
     let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
-    let event = TimetableEvent::TableRefresh {
-        user_id: user_id.unwrap_or_default()
-    };
-    let _ = state.websocket_manager
-        .get_or_create_room(subdomain, entries[0].5)
-        .send(event);
+    state.websocket_manager.broadcast_mutation(
+        subdomain,
+        entries[0].5,
+        TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+    );
 
     Ok(Json(json!({ "success": true, "message": "Swapped" })).into_response())
 }

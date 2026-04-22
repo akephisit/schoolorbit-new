@@ -19,7 +19,7 @@ use crate::db::school_mapping::get_school_database_url;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::modules::academic::websockets::TimetableEvent;
 
-/// Broadcast realtime refresh ให้ semester ของ course ที่แก้ทีมครู
+/// Broadcast: ทีมครูของ course เปลี่ยน → client re-fetch entries ของ course นั้น
 async fn broadcast_course_refresh(
     state: &AppState,
     headers: &HeaderMap,
@@ -32,8 +32,11 @@ async fn broadcast_course_refresh(
     if let Some(sem_id) = semester_id {
         let user_id = crate::middleware::auth::extract_user_id(headers, pool).await.ok();
         let subdomain = extract_subdomain_from_request(headers).unwrap_or_else(|_| "default".to_string());
-        let event = TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() };
-        let _ = state.websocket_manager.get_or_create_room(subdomain, sem_id).send(event);
+        state.websocket_manager.broadcast_mutation(
+            subdomain,
+            sem_id,
+            TimetableEvent::CourseTeamChanged { user_id: user_id.unwrap_or_default(), course_id },
+        );
     }
 }
 

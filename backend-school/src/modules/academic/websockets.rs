@@ -8,10 +8,16 @@ use axum::{
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::collections::VecDeque;
 use tokio::sync::broadcast;
 use dashmap::DashMap;
 use uuid::Uuid;
 use crate::AppState;
+
+/// จำนวน event ที่เก็บใน buffer ต่อ room (สำหรับ replay เมื่อ client reconnect)
+const EVENT_BUFFER_SIZE: usize = 200;
 
 // ==========================================
 // Data Structures
@@ -43,35 +49,76 @@ pub struct DragInfo {
 #[serde(tag = "type", content = "payload")]
 pub enum TimetableEvent {
     // System
-    StateSync { 
+    StateSync {
         users: Vec<UserPresence>,
-        drags: std::collections::HashMap<Uuid, DragState> // user_id -> drag info
+        drags: std::collections::HashMap<Uuid, DragState>, // user_id -> drag info
+        /// current_seq ณ ตอน snapshot — client ใช้เป็นจุดเริ่มต้น tracking seq
+        current_seq: u64,
     },
 
     // Presence
     UserJoined(UserPresence),
     UserLeft { user_id: Uuid },
-    
-    // Sync Data
+
+    // Sync Data — legacy fallback (client full-fetch เมื่อได้รับ)
     TableRefresh {
-        user_id: Uuid
+        user_id: Uuid,
     },
-    
+
+    // Patch events (client patch state ตรง ไม่ต้อง fetch DB)
+    EntryCreated {
+        user_id: Uuid,
+        entry: serde_json::Value, // TimetableEntry with joined fields
+    },
+    EntryUpdated {
+        user_id: Uuid,
+        entry: serde_json::Value, // Full updated entry with joined fields
+    },
+    EntryDeleted {
+        user_id: Uuid,
+        entry_id: Uuid,
+    },
+    EntriesSwapped {
+        user_id: Uuid,
+        entry_a: serde_json::Value,
+        entry_b: serde_json::Value,
+    },
+    EntryInstructorAdded {
+        user_id: Uuid,
+        entry_id: Uuid,
+        instructor_id: Uuid,
+        instructor_name: String,
+        role: String,
+    },
+    EntryInstructorRemoved {
+        user_id: Uuid,
+        entry_id: Uuid,
+        instructor_id: Uuid,
+        /// true = entry ถูกลบตามไปด้วย (ครูคนสุดท้าย + regular course)
+        entry_deleted: bool,
+    },
+    /// ทีมครูของ course เปลี่ยน (add/remove/update role) — client re-fetch entries
+    /// ของ course นั้นเฉพาะที่เกี่ยวข้อง
+    CourseTeamChanged {
+        user_id: Uuid,
+        course_id: Uuid,
+    },
+
     // Interactions
-    CursorMove { 
-        user_id: Uuid, 
-        x: f64, 
+    CursorMove {
+        user_id: Uuid,
+        x: f64,
         y: f64,
-        context: Option<UserContext> 
+        context: Option<UserContext>
     },
-    
-    DragStart { 
-        user_id: Uuid, 
+
+    DragStart {
+        user_id: Uuid,
         course_id: Option<String>,
         entry_id: Option<String>,
         info: Option<DragInfo>
     },
-    
+
     DragEnd {
         user_id: Uuid
     },
@@ -83,6 +130,32 @@ pub enum TimetableEvent {
         target_day: Option<String>,
         target_period_id: Option<String>,
     },
+}
+
+impl TimetableEvent {
+    /// Event ประเภท mutation (ต้อง seq + buffer). คืน true ถ้าต้อง track
+    pub fn is_mutation(&self) -> bool {
+        matches!(
+            self,
+            TimetableEvent::TableRefresh { .. }
+                | TimetableEvent::EntryCreated { .. }
+                | TimetableEvent::EntryUpdated { .. }
+                | TimetableEvent::EntryDeleted { .. }
+                | TimetableEvent::EntriesSwapped { .. }
+                | TimetableEvent::EntryInstructorAdded { .. }
+                | TimetableEvent::EntryInstructorRemoved { .. }
+                | TimetableEvent::CourseTeamChanged { .. }
+        )
+    }
+}
+
+/// Envelope for broadcast: seq สำหรับ mutation events, None สำหรับ ephemeral/presence
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeqEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
+    #[serde(flatten)]
+    pub event: TimetableEvent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,12 +178,16 @@ pub struct WsParams {
 // ==========================================
 
 pub struct WebSocketManager {
-    // Room Key -> Broadcast Sender
-    rooms: DashMap<String, broadcast::Sender<TimetableEvent>>,
+    // Room Key -> Broadcast Sender (ส่ง SeqEvent ไปทุก subscriber)
+    rooms: DashMap<String, broadcast::Sender<SeqEvent>>,
     // Room Key -> (User ID -> User Presence)
     room_users: DashMap<String, DashMap<Uuid, UserPresence>>,
     // Room Key -> (User ID -> Drag State)
     room_drags: DashMap<String, DashMap<Uuid, DragState>>,
+    // Room Key -> next seq counter (monotonic)
+    room_seq: DashMap<String, Arc<AtomicU64>>,
+    // Room Key -> ring buffer ของ mutation events (ล่าสุด EVENT_BUFFER_SIZE อัน)
+    room_buffer: DashMap<String, Arc<Mutex<VecDeque<SeqEvent>>>>,
 }
 
 impl WebSocketManager {
@@ -119,6 +196,8 @@ impl WebSocketManager {
             rooms: DashMap::new(),
             room_users: DashMap::new(),
             room_drags: DashMap::new(),
+            room_seq: DashMap::new(),
+            room_buffer: DashMap::new(),
         }
     }
 
@@ -126,20 +205,84 @@ impl WebSocketManager {
         format!("{}:{}", school_key, semester_id)
     }
 
-    pub fn get_or_create_room(&self, school_key: String, semester_id: Uuid) -> broadcast::Sender<TimetableEvent> {
+    pub fn get_or_create_room(&self, school_key: String, semester_id: Uuid) -> broadcast::Sender<SeqEvent> {
         let key = Self::get_room_key(school_key, semester_id);
-        
+
         if let Some(sender) = self.rooms.get(&key) {
             return sender.clone();
         }
 
         let (tx, _rx) = broadcast::channel(100);
         self.rooms.insert(key.clone(), tx.clone());
-        // Init state maps if not exist
         self.room_users.entry(key.clone()).or_insert_with(DashMap::new);
-        self.room_drags.entry(key).or_insert_with(DashMap::new);
-        
+        self.room_drags.entry(key.clone()).or_insert_with(DashMap::new);
+        self.room_seq.entry(key.clone()).or_insert_with(|| Arc::new(AtomicU64::new(0)));
+        self.room_buffer.entry(key).or_insert_with(|| Arc::new(Mutex::new(VecDeque::with_capacity(EVENT_BUFFER_SIZE))));
+
         tx
+    }
+
+    /// Broadcast ephemeral event (presence, cursor, drag) — ไม่มี seq ไม่ buffer
+    pub fn broadcast_ephemeral(&self, school_key: String, semester_id: Uuid, event: TimetableEvent) {
+        let tx = self.get_or_create_room(school_key, semester_id);
+        let _ = tx.send(SeqEvent { seq: None, event });
+    }
+
+    /// Broadcast mutation event — assign seq, push buffer, send
+    pub fn broadcast_mutation(&self, school_key: String, semester_id: Uuid, event: TimetableEvent) -> u64 {
+        let key = Self::get_room_key(school_key.clone(), semester_id);
+        // ensure room exists
+        let tx = self.get_or_create_room(school_key, semester_id);
+
+        let seq_counter = self.room_seq.get(&key).map(|v| v.clone());
+        let buffer = self.room_buffer.get(&key).map(|v| v.clone());
+        let seq = match seq_counter {
+            Some(c) => c.fetch_add(1, Ordering::SeqCst) + 1,
+            None => 0,
+        };
+
+        let seq_event = SeqEvent { seq: Some(seq), event };
+
+        if let Some(buf) = buffer {
+            if let Ok(mut guard) = buf.lock() {
+                if guard.len() >= EVENT_BUFFER_SIZE {
+                    guard.pop_front();
+                }
+                guard.push_back(seq_event.clone());
+            }
+        }
+
+        let _ = tx.send(seq_event);
+        seq
+    }
+
+    pub fn current_seq(&self, school_key: String, semester_id: Uuid) -> u64 {
+        let key = Self::get_room_key(school_key, semester_id);
+        self.room_seq.get(&key).map(|c| c.load(Ordering::SeqCst)).unwrap_or(0)
+    }
+
+    /// Return events with seq > after_seq, ordered. If buffer doesn't reach back that far,
+    /// return None (signal caller: client ต้อง full-fetch)
+    pub fn replay(&self, school_key: String, semester_id: Uuid, after_seq: u64) -> Option<Vec<SeqEvent>> {
+        let key = Self::get_room_key(school_key, semester_id);
+        let buffer = self.room_buffer.get(&key)?.clone();
+        let guard = buffer.lock().ok()?;
+
+        // Check ถ้า after_seq น้อยกว่า seq ต่ำสุดใน buffer → ต้อง refetch
+        if let Some(first) = guard.front() {
+            if let Some(first_seq) = first.seq {
+                if after_seq + 1 < first_seq {
+                    return None; // buffer ไม่ถึง — ต้อง full-fetch
+                }
+            }
+        }
+
+        let events: Vec<SeqEvent> = guard
+            .iter()
+            .filter(|e| e.seq.map(|s| s > after_seq).unwrap_or(false))
+            .cloned()
+            .collect();
+        Some(events)
     }
 
     pub fn join_room(&self, school_key: String, semester_id: Uuid, user: UserPresence) {
@@ -250,23 +393,26 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
     // 1. Join Room & Store Presence
     let tx = state.websocket_manager.get_or_create_room(school_key.clone(), params.semester_id);
     let mut rx = tx.subscribe();
-    
+
     state.websocket_manager.join_room(school_key.clone(), params.semester_id, user_presence.clone());
 
-    // 2. Send Initial State Layout (Snapshot) to THIS user only
+    // 2. Send Initial State (with current_seq — client ใช้เป็นจุดเริ่ม tracking)
     let (users, drags) = state.websocket_manager.get_state_snapshot(school_key.clone(), params.semester_id);
-    let sync_event = TimetableEvent::StateSync { users, drags };
+    let current_seq = state.websocket_manager.current_seq(school_key.clone(), params.semester_id);
+    let sync_event = SeqEvent {
+        seq: None,
+        event: TimetableEvent::StateSync { users, drags, current_seq },
+    };
     if let Ok(json) = serde_json::to_string(&sync_event) {
         let _ = sender.send(Message::Text(json.into())).await;
     }
 
     // 3. Broadcast JOIN to others
-    let _ = tx.send(TimetableEvent::UserJoined(user_presence.clone()));
+    let _ = tx.send(SeqEvent { seq: None, event: TimetableEvent::UserJoined(user_presence.clone()) });
 
     // Spawn a task to handle incoming messages from this client (Broadcast Listener)
     let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
-            // Send everything (including echo for consistency in state updates, though client filters echo)
             if let Ok(json) = serde_json::to_string(&msg) {
                  if sender.send(Message::Text(json.into())).await.is_err() {
                      break;
@@ -336,7 +482,17 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
                 }
 
                 if let Some(evt) = valid_event {
-                    let _ = tx.send(evt);
+                    // Relayed client events: TableRefresh = mutation (ต้อง seq + buffer),
+                    // อื่นๆ (CursorMove, DragStart/End/Move) = ephemeral
+                    if evt.is_mutation() {
+                        state.websocket_manager.broadcast_mutation(
+                            school_key.clone(),
+                            params.semester_id,
+                            evt,
+                        );
+                    } else {
+                        let _ = tx.send(SeqEvent { seq: None, event: evt });
+                    }
                 }
             }
         }
@@ -345,7 +501,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
     // Cleanup
     send_task.abort();
     state.websocket_manager.leave_room(school_key.clone(), params.semester_id, params.user_id);
-    let _ = tx.send(TimetableEvent::UserLeft { user_id: params.user_id });
+    let _ = tx.send(SeqEvent { seq: None, event: TimetableEvent::UserLeft { user_id: params.user_id } });
 }
 
 fn generate_color_from_uuid(id: &Uuid) -> String {
