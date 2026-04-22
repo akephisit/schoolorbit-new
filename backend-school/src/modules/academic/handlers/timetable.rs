@@ -1602,27 +1602,29 @@ pub async fn add_entry_instructor(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // Broadcast patch event: EntryInstructorAdded
+    // Broadcast patch event: EntryInstructorAdded — skip instructor_name fetch ถ้าไม่มีคนฟัง
     let semester_id: Option<Uuid> = sqlx::query_scalar(
         "SELECT academic_semester_id FROM academic_timetable_entries WHERE id = $1"
     ).bind(entry_id).fetch_optional(&pool).await.ok().flatten();
     if let Some(sem_id) = semester_id {
-        let instructor_name: String = sqlx::query_scalar(
-            "SELECT CONCAT(first_name, ' ', last_name) FROM users WHERE id = $1"
-        ).bind(body.instructor_id).fetch_one(&pool).await.unwrap_or_default();
-
         let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        state.websocket_manager.broadcast_mutation(
-            subdomain,
-            sem_id,
-            TimetableEvent::EntryInstructorAdded {
-                user_id: user_id.unwrap_or_default(),
-                entry_id,
-                instructor_id: body.instructor_id,
-                instructor_name,
-                role,
-            },
-        );
+        if state.websocket_manager.has_other_subscribers(subdomain.clone(), sem_id) {
+            let instructor_name: String = sqlx::query_scalar(
+                "SELECT CONCAT(first_name, ' ', last_name) FROM users WHERE id = $1"
+            ).bind(body.instructor_id).fetch_one(&pool).await.unwrap_or_default();
+
+            state.websocket_manager.broadcast_mutation(
+                subdomain,
+                sem_id,
+                TimetableEvent::EntryInstructorAdded {
+                    user_id: user_id.unwrap_or_default(),
+                    entry_id,
+                    instructor_id: body.instructor_id,
+                    instructor_name,
+                    role,
+                },
+            );
+        }
     }
 
     Ok(Json(json!({ "success": true })).into_response())

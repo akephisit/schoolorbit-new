@@ -269,8 +269,14 @@ impl WebSocketManager {
         let _ = tx.send(SeqEvent { seq: None, event });
     }
 
-    /// Broadcast mutation event — assign seq, push buffer, send
+    /// Broadcast mutation event — assign seq, push buffer, send.
+    /// Skip ทั้งหมดถ้า receiver_count <= 1 (มีแค่ caller เอง หรือไม่มีใคร) — ประหยัด
+    /// seq ไม่เพิ่ม, buffer ไม่โต, send ไม่เกิด. Return 0 เมื่อ skip
     pub fn broadcast_mutation(&self, school_key: String, semester_id: Uuid, event: TimetableEvent) -> u64 {
+        // Gate: ไม่มี "คนอื่น" ฟัง → skip ทั้ง pipeline
+        if !self.has_other_subscribers(school_key.clone(), semester_id) {
+            return 0;
+        }
         let key = Self::get_room_key(school_key.clone(), semester_id);
         // ensure room exists
         let tx = self.get_or_create_room(school_key, semester_id);
