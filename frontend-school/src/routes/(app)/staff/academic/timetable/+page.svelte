@@ -2197,7 +2197,7 @@
 
 	<!-- Main Content Grid (Workspace = cursor canvas) -->
 	<div
-		class="grid grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[600px] relative"
+		class="grid grid-cols-12 gap-3 h-[calc(100vh-230px)] min-h-[600px] relative"
 		bind:this={workspaceRef}
 		onmousemove={handleMouseMove}
 		ondrag={handleDragMoveOnGrid}
@@ -2205,19 +2205,19 @@
 	>
 		<!-- Left Sidebar: Courses -->
 		<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden">
-			<Card.Header class="py-3 px-4 border-b">
-				<Card.Title class="text-base flex items-center gap-2">
+			<Card.Header class="py-2 px-3 border-b">
+				<Card.Title class="text-sm flex items-center gap-2">
 					<BookOpen class="w-4 h-4" /> รายวิชา
-					<span class="text-xs font-normal text-muted-foreground ml-auto">
-						ลากวิชาไปวางในตาราง
+					<span class="text-[10px] font-normal text-muted-foreground ml-auto">
+						ลากไปวาง
 					</span>
 				</Card.Title>
 			</Card.Header>
-			<div class="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/20">
+			<div class="flex-1 overflow-y-auto p-2 space-y-2 bg-muted/20">
 				{#each unscheduledCourses as course}
 					{@const lockedBy = getDragOwner(undefined, course.id)}
 					<div
-						class="border rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:brightness-95 transition-all group relative {lockedBy
+						class="border rounded-md p-2 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:brightness-95 transition-all group relative {lockedBy
 							? 'opacity-50 pointer-events-none'
 							: ''}"
 						style="background-color: {getSubjectColor(
@@ -2248,32 +2248,32 @@
 							</div>
 						{/if}
 
-						<div class="flex justify-between items-start mb-1">
-							<Badge variant="outline" class="text-xs">{course.subject_code}</Badge>
-							<Badge variant={course.is_completed ? 'secondary' : 'default'} class="text-[10px]">
-								{course.scheduled_count}/{course.max_periods} คาบ
+						<div class="flex justify-between items-start mb-0.5 gap-1">
+							<Badge variant="outline" class="text-[10px] px-1 py-0 leading-tight">{course.subject_code}</Badge>
+							<Badge variant={course.is_completed ? 'secondary' : 'default'} class="text-[10px] px-1 py-0 leading-tight">
+								{course.scheduled_count}/{course.max_periods}
 							</Badge>
 						</div>
-						<h4 class="font-medium text-sm line-clamp-2 leading-tight mb-1">
+						<h4 class="font-medium text-xs line-clamp-2 leading-snug mb-1">
 							{course.subject_name_th || course.title_th || course.title || 'ไม่มีชื่อวิชา'}
 						</h4>
-						<div class="flex flex-col gap-0.5 text-[10px] text-muted-foreground mt-2">
+						<div class="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
 							{#if viewMode === 'CLASSROOM'}
-								<div class="flex items-center gap-1">
-									<Users class="w-3 h-3" />
-									{course.instructor_name || 'ไม่ระบุครู'}
+								<div class="flex items-center gap-1 truncate">
+									<Users class="w-3 h-3 shrink-0" />
+									<span class="truncate">{course.instructor_name || 'ไม่ระบุครู'}</span>
 								</div>
 							{:else}
-								<div class="flex items-center gap-1">
-									<School class="w-3 h-3" />
-									{course.classroom_name || 'ไม่ระบุห้อง'}
+								<div class="flex items-center gap-1 truncate">
+									<School class="w-3 h-3 shrink-0" />
+									<span class="truncate">{course.classroom_name || 'ไม่ระบุห้อง'}</span>
 								</div>
 							{/if}
 							<div>{course.subject_credit} นก.</div>
 						</div>
 
 						<!-- Progress Bar -->
-						<div class="mt-2 h-1 w-full bg-secondary rounded-full overflow-hidden">
+						<div class="mt-1.5 h-1 w-full bg-secondary rounded-full overflow-hidden">
 							<div
 								class="h-full bg-primary transition-all"
 								style="width: {(course.scheduled_count / course.max_periods) * 100}%"
@@ -2382,7 +2382,7 @@
 					<!-- Header Row (Periods) -->
 					<div class="flex sticky top-0 bg-background z-20">
 						<div
-							class="w-24 shrink-0 p-3 border-r border-b font-medium text-sm text-muted-foreground flex items-center justify-center bg-background sticky left-0 z-30"
+							class="w-20 shrink-0 p-3 border-r border-b font-medium text-sm text-muted-foreground flex items-center justify-center bg-background sticky left-0 z-30"
 						>
 							วัน/คาบ
 						</div>
@@ -2398,10 +2398,10 @@
 
 					<!-- Days Rows -->
 					{#each DAYS as day}
-						<div class="flex flex-1 min-h-[100px]">
+						<div class="flex flex-1 min-h-[110px]">
 							<!-- Day Header -->
 							<div
-								class="w-24 shrink-0 border-r border-b bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
+								class="w-20 shrink-0 border-r border-b bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
 							>
 								<!-- Day Indicator Line -->
 								{#if day.value === 'MON'}<div
@@ -2515,7 +2515,7 @@
 										{@const isRemoteLocked = !!remoteActivityEntry}
 										<!-- Timetable Entry Card -->
 										<div
-											class="absolute inset-1 border rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !== 'COURSE' || isGhost || isRemoteLocked
+											class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !== 'COURSE' || isGhost || isRemoteLocked
 												? 'cursor-pointer'
 												: 'cursor-grab active:cursor-grabbing'} {lockedBy
 												? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
@@ -2559,19 +2559,19 @@
 												</div>
 											{/if}
 
-											<div class="font-bold text-blue-900 truncate mb-0.5">
+											<div class="font-bold text-foreground/90 truncate text-sm leading-tight">
 												{entry.subject_code
 													|| entry.title
 													|| (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : '')}
 											</div>
 											<div
-												class="line-clamp-1 text-blue-800 text-[10px] mb-auto"
+												class="line-clamp-1 text-foreground/70 text-[11px] leading-tight mb-auto"
 												title={entry.subject_name_th || entry.title || undefined}
 											>
 												{entry.subject_name_th || entry.title || ''}
 											</div>
 											<div
-												class="mt-1 pt-1 border-t border-blue-200/50 gap-0.5 flex flex-col text-[9px] text-blue-700"
+												class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
 											>
 												{#if viewMode === 'CLASSROOM'}
 													<div class="flex items-center gap-1 truncate">
@@ -2603,12 +2603,12 @@
 												{/if}
 
 												{#if viewMode === 'INSTRUCTOR' && isGhost}
-													<div class="flex items-center gap-1 text-amber-700 text-[9px]">
+													<div class="flex items-center gap-1 text-amber-700 text-[10px]">
 														<span>👻</span>
 														<span>อยู่ในทีม (ยังไม่ได้สอนคาบนี้)</span>
 													</div>
 												{:else if viewMode === 'INSTRUCTOR' && coTeacherCount > 0}
-													<div class="flex items-center gap-1 text-blue-600 text-[9px]" title={entry.instructor_names?.join(', ')}>
+													<div class="flex items-center gap-1 text-foreground/60 text-[10px]" title={entry.instructor_names?.join(', ')}>
 														<Users class="w-3 h-3 shrink-0" />
 														<span>+{coTeacherCount} ครูร่วม</span>
 													</div>
@@ -2616,7 +2616,7 @@
 
 												{#if entry.room_id}
 													<div
-														class="flex items-center gap-1 truncate text-blue-600"
+														class="flex items-center gap-1 truncate text-foreground/60"
 														title={rooms.find((r) => r.id === entry.room_id)?.name_th}
 													>
 														<MapPin class="w-3 h-3 shrink-0" />
