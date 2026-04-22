@@ -960,7 +960,7 @@
 		}
 
 		if (isSlotOccupiedByInstructor(day, periodId)) {
-			toast.error('ครูติดสอนในคาบนี้แล้ว');
+			toast.error(viewMode === 'INSTRUCTOR' ? 'ห้องนี้มีวิชาอื่นในคาบนี้แล้ว' : 'ครูติดสอนในคาบนี้แล้ว');
 			handleDragEnd();
 			return;
 		}
@@ -2420,7 +2420,9 @@
 										<div
 											class="absolute inset-0 flex items-center justify-center p-2 text-center opacity-40 select-none"
 										>
-											<div class="text-xs text-red-500 font-medium">ครูติดสอน</div>
+											<div class="text-xs text-red-500 font-medium">
+											{viewMode === 'INSTRUCTOR' ? 'ห้องนี้ไม่ว่าง' : 'ครูติดสอน'}
+										</div>
 										</div>
 									{:else if draggedCourse}
 										<div
