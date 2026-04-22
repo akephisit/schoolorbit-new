@@ -261,6 +261,12 @@ impl WebSocketManager {
         self.room_seq.get(&key).map(|c| c.load(Ordering::SeqCst)).unwrap_or(0)
     }
 
+    /// True ถ้ามี subscriber อย่างน้อย 1 คนใน room — ใช้ skip broadcast ตอนไม่มีคนฟัง
+    pub fn has_subscribers(&self, school_key: String, semester_id: Uuid) -> bool {
+        let key = Self::get_room_key(school_key, semester_id);
+        self.rooms.get(&key).map(|tx| tx.receiver_count() > 0).unwrap_or(false)
+    }
+
     /// Return events with seq > after_seq, ordered. If buffer doesn't reach back that far,
     /// return None (signal caller: client ต้อง full-fetch)
     pub fn replay(&self, school_key: String, semester_id: Uuid, after_seq: u64) -> Option<Vec<SeqEvent>> {
