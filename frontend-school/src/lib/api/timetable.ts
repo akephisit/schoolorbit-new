@@ -217,6 +217,8 @@ export interface UpdateTimetableEntryRequest {
     /** Replace entry's content (drag-from-sidebar-onto-occupied flow) */
     classroom_course_id?: string;
     activity_slot_id?: string;
+    /** Move entry to different classroom (instructor-view replace ข้ามห้อง) */
+    classroom_id?: string;
 }
 
 export interface MoveValidityCell {

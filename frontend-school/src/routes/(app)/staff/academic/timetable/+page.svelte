@@ -937,6 +937,13 @@
 				} else {
 					payload.classroom_course_id = draggedCourse.id;
 					payload.activity_slot_id = null;
+					// ถ้า replace ข้ามห้อง (instructor view) → update classroom_id ให้ตรง course ใหม่
+					if (
+						draggedCourse.classroom_id &&
+						draggedCourse.classroom_id !== existingEntry.classroom_id
+					) {
+						payload.classroom_id = draggedCourse.classroom_id;
+					}
 				}
 				await updateTimetableEntry(existingEntry.id, payload);
 				toast.success('แทนที่รายการเดิมแล้ว');

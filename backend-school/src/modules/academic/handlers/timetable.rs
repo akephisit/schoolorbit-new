@@ -824,6 +824,7 @@ pub async fn update_timetable_entry(
     .map_err(|_| AppError::NotFound("Entry not found".to_string()))?;
 
     // 2. Prepare mock CreateRequest for validation (using new values or fallback to existing)
+    let target_classroom_id = payload.classroom_id.unwrap_or(existing_entry.classroom_id);
     let validation_payload = CreateTimetableEntryRequest {
         classroom_course_id: existing_entry.classroom_course_id,
         day_of_week: payload.day_of_week.clone().unwrap_or(existing_entry.day_of_week),
@@ -833,14 +834,14 @@ pub async fn update_timetable_entry(
         activity_slot_id: existing_entry.activity_slot_id,
         entry_type: Some(existing_entry.entry_type.clone()),
         title: existing_entry.title.clone(),
-        classroom_id: Some(existing_entry.classroom_id),
+        classroom_id: Some(target_classroom_id),
         academic_semester_id: Some(existing_entry.academic_semester_id),
     };
 
     // 3. Validate conflicts (excluding current entry ID)
     let mut conflict_list: Vec<serde_json::Value> = Vec::new();
 
-    // 3a. Classroom conflict — same classroom, day, period (exclude self)
+    // 3a. Classroom conflict — ใช้ target classroom (ใหม่ถ้าเปลี่ยน)
     let classroom_conflict: Option<(String,)> = sqlx::query_as(
         r#"SELECT cr.name
            FROM academic_timetable_entries te
@@ -852,7 +853,7 @@ pub async fn update_timetable_entry(
              AND te.id <> $4
            LIMIT 1"#
     )
-    .bind(existing_entry.classroom_id)
+    .bind(target_classroom_id)
     .bind(&validation_payload.day_of_week)
     .bind(validation_payload.period_id)
     .bind(id)
@@ -945,7 +946,7 @@ pub async fn update_timetable_entry(
     }
 
     // 4. Update Entry (accept content change via classroom_course_id / activity_slot_id
-    //    for drag-from-sidebar-onto-occupied "replace" flow)
+    //    for drag-from-sidebar-onto-occupied "replace" flow, + classroom_id สำหรับ replace ข้ามห้อง)
     let updated_entry = sqlx::query_as::<_, TimetableEntry>(
         r#"
         UPDATE academic_timetable_entries SET
@@ -955,6 +956,7 @@ pub async fn update_timetable_entry(
             note = COALESCE($5, note),
             classroom_course_id = COALESCE($7, classroom_course_id),
             activity_slot_id = COALESCE($8, activity_slot_id),
+            classroom_id = COALESCE($9, classroom_id),
             updated_at = NOW(),
             updated_by = $6
         WHERE id = $1
@@ -969,6 +971,7 @@ pub async fn update_timetable_entry(
     .bind(user_id)
     .bind(payload.classroom_course_id)
     .bind(payload.activity_slot_id)
+    .bind(payload.classroom_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {

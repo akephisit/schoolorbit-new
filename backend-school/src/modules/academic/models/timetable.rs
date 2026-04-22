@@ -150,6 +150,9 @@ pub struct UpdateTimetableEntryRequest {
     /// Change what this entry teaches (replace content) — used by drag-from-sidebar-onto-occupied flow
     pub classroom_course_id: Option<Uuid>,
     pub activity_slot_id: Option<Uuid>,
+    /// Change which classroom this entry belongs to — used by instructor-view replace ข้ามห้อง
+    /// เพื่อให้ entry.classroom_id ตรงกับ classroom_course.classroom_id
+    pub classroom_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
