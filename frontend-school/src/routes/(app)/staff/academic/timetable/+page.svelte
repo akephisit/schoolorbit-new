@@ -2258,8 +2258,8 @@
 												: 0}
 										<!-- Timetable Entry Card -->
 										<div
-											class="absolute inset-1 border rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !== 'COURSE'
-												? 'cursor-default'
+											class="absolute inset-1 border rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !== 'COURSE' || isGhost
+												? 'cursor-pointer'
 												: 'cursor-grab active:cursor-grabbing'} {lockedBy
 												? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
 													lockedBy.color
@@ -2275,7 +2275,7 @@
 													: entry.subject_code || entry.title || '',
 												entry.entry_type
 											)};"
-											draggable={!lockedBy && entry.entry_type === 'COURSE'}
+											draggable={!lockedBy && entry.entry_type === 'COURSE' && !isGhost}
 											ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
 											ondragend={handleDragEnd}
 											onclick={(e) => {
@@ -2368,16 +2368,18 @@
 												{/if}
 											</div>
 
-											<!-- Delete Button -->
-											<button
-												class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
-												onclick={(e) => {
-													e.stopPropagation();
-													handleDeleteEntry(entry);
-												}}
-											>
-												<Trash2 class="w-3 h-3" />
-											</button>
+											<!-- Delete Button (ghost cells ไม่แสดง — ยังไม่ใช่คาบของเรา) -->
+											{#if !isGhost}
+												<button
+													class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
+													onclick={(e) => {
+														e.stopPropagation();
+														handleDeleteEntry(entry);
+													}}
+												>
+													<Trash2 class="w-3 h-3" />
+												</button>
+											{/if}
 										</div>
 									{:else if isOccupied}
 										<div
