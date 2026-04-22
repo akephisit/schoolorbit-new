@@ -568,6 +568,12 @@
 	}
 
 	async function handleDeleteEntry(entry: TimetableEntry) {
+		// Guard: ถ้ามี user อื่นเปิด dialog ที่ entry นี้ → block
+		const remoteLock = getRemoteActivityForEntry(entry.id);
+		if (remoteLock) {
+			toast.error(`${remoteLock.user.name} กำลัง${activityLabel(remoteLock.activity)}ที่คาบนี้ — ลบไม่ได้`);
+			return;
+		}
 		if (viewMode === 'INSTRUCTOR') {
 			if (entry.activity_slot_id) {
 				const slot = sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id)
@@ -2484,11 +2490,18 @@
 										</div>
 									{/if}
 									{#if remoteActivity}
-										<!-- Remote user dialog activity — แสดงแค่ ring สีบอกว่า lock, label อยู่ที่ cursor -->
+										<!-- Remote user dialog activity — ring lock + badge (ช่วยเห็นเมื่อ cursor ไม่อยู่ใน view) -->
 										<div
 											class="absolute inset-0 ring-2 ring-inset pointer-events-none z-[5] rounded"
 											style="--tw-ring-color: {remoteActivity.user.color}; background-color: {remoteActivity.user.color}1a;"
 										></div>
+										<div
+											class="absolute top-0.5 left-0.5 right-0.5 z-20 flex items-center gap-1 px-1 py-0.5 rounded text-[9px] font-medium shadow-sm pointer-events-none"
+											style="background-color: {remoteActivity.user.color}; color: white;"
+										>
+											<span>⚡</span>
+											<span class="truncate">{remoteActivity.user.name}: {activityLabel(remoteActivity.activity)}</span>
+										</div>
 									{/if}
 									{#if entry}
 										{@const isGhost =
@@ -2499,9 +2512,10 @@
 											viewMode === 'INSTRUCTOR'
 												? Math.max(0, (entry.instructor_ids?.length ?? 0) - 1)
 												: 0}
+										{@const isRemoteLocked = !!remoteActivityEntry}
 										<!-- Timetable Entry Card -->
 										<div
-											class="absolute inset-1 border rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !== 'COURSE' || isGhost
+											class="absolute inset-1 border rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !== 'COURSE' || isGhost || isRemoteLocked
 												? 'cursor-pointer'
 												: 'cursor-grab active:cursor-grabbing'} {lockedBy
 												? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
@@ -2518,7 +2532,7 @@
 													: entry.subject_code || entry.title || '',
 												entry.entry_type
 											)};"
-											draggable={!lockedBy && entry.entry_type === 'COURSE' && !isGhost}
+											draggable={!lockedBy && !isRemoteLocked && entry.entry_type === 'COURSE' && !isGhost}
 											ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
 											ondragend={handleDragEnd}
 											onclick={(e) => {
@@ -2611,8 +2625,8 @@
 												{/if}
 											</div>
 
-											<!-- Delete Button (ghost cells ไม่แสดง — ยังไม่ใช่คาบของเรา) -->
-											{#if !isGhost}
+											<!-- Delete Button (ghost cells + remote-locked ไม่แสดง — ไม่ใช่คาบที่แก้ได้) -->
+											{#if !isGhost && !isRemoteLocked}
 												<button
 													class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
 													onclick={(e) => {
