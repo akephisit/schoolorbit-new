@@ -520,38 +520,39 @@
 			sendUserActivity('room_picker', {
 				day: pendingDropContext.day,
 				period_id: pendingDropContext.periodId,
+				classroom_id: selectedClassroomId || null,
 			});
 		} else {
 			sendUserActivityEnd();
 		}
 	});
 
-	/** หา remote activity ที่ target = slot (day, periodId) ของ view ปัจจุบัน */
+	/** หา remote activity ที่ target = slot (day, periodId, classroom) ของ view ปัจจุบัน */
 	function getRemoteActivityForSlot(day: string, periodId: string) {
-		const myViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
 		for (const [userId, act] of Object.entries($remoteActivities)) {
 			const t = act.target ?? {};
-			const matchesSlot =
-				(act.activity_type === 'room_picker' && t.day === day && t.period_id === periodId);
-			if (!matchesSlot) continue;
+			if (act.activity_type !== 'room_picker') continue;
+			if (t.day !== day || t.period_id !== periodId) continue;
+			// filter classroom: ถ้า activity ระบุ classroom → ต้องตรงกับ classroom view
+			// (ไม่งั้น user ใน ห้อง 1/2 เห็น lock ของ 1/1)
+			if (t.classroom_id && viewMode === 'CLASSROOM' && t.classroom_id !== selectedClassroomId) continue;
 			const user = $activeUsers.find((u) => u.user_id === userId);
 			if (!user) continue;
-			if (user.context?.view_mode !== viewMode || user.context?.view_id !== myViewId) continue;
 			return { user, activity: act };
 		}
 		return null;
 	}
 
-	/** หา remote activity ที่ target = entry_id (instructor_edit) */
+	/** หา remote activity ที่ target = entry_id (instructor_edit)
+	 *  entry_id เป็น global unique — ไม่ต้อง filter context (ถ้าคุณเห็น entry นี้ = ล็อค)
+	 */
 	function getRemoteActivityForEntry(entryId: string) {
-		const myViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
 		for (const [userId, act] of Object.entries($remoteActivities)) {
 			const t = act.target ?? {};
 			const matches = act.activity_type === 'instructor_edit' && t.entry_id === entryId;
 			if (!matches) continue;
 			const user = $activeUsers.find((u) => u.user_id === userId);
 			if (!user) continue;
-			if (user.context?.view_mode !== viewMode || user.context?.view_id !== myViewId) continue;
 			return { user, activity: act };
 		}
 		return null;
@@ -2483,14 +2484,11 @@
 										</div>
 									{/if}
 									{#if remoteActivity}
-										<!-- Remote user dialog activity indicator — locks cell -->
+										<!-- Remote user dialog activity — แสดงแค่ ring สีบอกว่า lock, label อยู่ที่ cursor -->
 										<div
-											class="absolute top-0.5 left-0.5 right-0.5 z-20 flex items-center gap-1 px-1 py-0.5 rounded text-[9px] font-medium shadow-sm pointer-events-none"
-											style="background-color: {remoteActivity.user.color}; color: white;"
-										>
-											<span>⚡</span>
-											<span class="truncate">{remoteActivity.user.name}: {activityLabel(remoteActivity.activity)}</span>
-										</div>
+											class="absolute inset-0 ring-2 ring-inset pointer-events-none z-[5] rounded"
+											style="--tw-ring-color: {remoteActivity.user.color}; background-color: {remoteActivity.user.color}1a;"
+										></div>
 									{/if}
 									{#if entry}
 										{@const isGhost =
