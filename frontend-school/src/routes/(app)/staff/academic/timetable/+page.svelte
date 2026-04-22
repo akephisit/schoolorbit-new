@@ -651,8 +651,11 @@
 				res.data.forEach((entry) => {
 					if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
 
-					const isMyCourse = courses.some((c) => c.id === entry.classroom_course_id);
-					if (isMyCourse) return;
+					// Conflict = entry ที่ viewer ไม่ได้อยู่ใน tei (ครูคนอื่น หรือ ghost ของเราเอง)
+					// เช็คจาก instructor_ids ตรง ๆ ไม่ใช่ "isMyCourse" เพราะ ghost คือ course
+					// ของฉันแต่ฉันไม่อยู่ใน cell นั้น — ไม่ควรวางทับ
+					const iAmOnEntry = (entry.instructor_ids ?? []).includes(selectedInstructorId);
+					if (iAmOnEntry) return;
 
 					conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
 				});
