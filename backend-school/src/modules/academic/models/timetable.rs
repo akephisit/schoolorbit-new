@@ -90,6 +90,10 @@ pub struct TimetableEntry {
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructor_names: Option<Vec<String>>,
+    /// UUID ของครูทุกคนใน cell — parallel กับ instructor_names เรียงตาม role+created_at
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructor_ids: Option<Vec<Uuid>>,
 
     // Keep for backward-compat UI display (first name). Populated from instructor_names[0].
     #[sqlx(default)]
@@ -196,6 +200,9 @@ pub struct TimetableQuery {
     pub academic_semester_id: Option<Uuid>,
     pub day_of_week: Option<String>,
     pub entry_type: Option<String>,
+    /// รวม ghost cells: entries ที่ instructor อยู่ในทีมของ course แต่ไม่ได้อยู่ใน cell นั้น
+    /// ใช้คู่กับ instructor_id เท่านั้น (ไม่มี instructor_id → ignored)
+    pub include_team_ghosts: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

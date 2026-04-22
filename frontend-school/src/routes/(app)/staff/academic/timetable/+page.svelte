@@ -13,6 +13,7 @@
 		createBatchTimetableEntries,
 		deleteBatchTimetableEntries,
 		removeEntryInstructor,
+		addEntryInstructor,
 		restoreInstructorToSlot,
 		hideInstructorFromSlot,
 		swapTimetableEntries,
@@ -22,6 +23,8 @@
 		lookupAcademicYears,
 		listClassrooms,
 		listClassroomCourses,
+		listCourseInstructors,
+		type CourseInstructor,
 		getSchoolDays,
 		type Classroom,
 		getAcademicStructure,
@@ -142,6 +145,24 @@
 
 	// View Mode: 'CLASSROOM' or 'INSTRUCTOR'
 	let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
+
+	// Per-cell instructor editor (Popover dialog)
+	let entryPopoverOpen = $state(false);
+	let entryPopoverTarget = $state<TimetableEntry | null>(null);
+	let entryPopoverTeam = $state<CourseInstructor[]>([]);
+	let entryPopoverLoading = $state(false);
+	let entryPopoverSaving = $state('');
+
+	// INSTRUCTOR view: toggle "แสดงคาบในทีม" (ghost cells)
+	let showTeamGhosts = $state(false);
+
+	let popoverInCell = $derived(entryPopoverTarget?.instructor_ids ?? []);
+	let popoverInCellNames = $derived(entryPopoverTarget?.instructor_names ?? []);
+	let popoverNotInCell = $derived(
+		entryPopoverTeam.filter(
+			(t) => !(entryPopoverTarget?.instructor_ids ?? []).includes(t.instructor_id)
+		)
+	);
 
 	let selectedYearId = $state('');
 	let selectedSemesterId = $state('');
@@ -367,7 +388,8 @@
 			} else {
 				res = await listTimetableEntries({
 					instructor_id: selectedInstructorId,
-					academic_semester_id: selectedSemesterId
+					academic_semester_id: selectedSemesterId,
+					include_team_ghosts: showTeamGhosts
 				});
 			}
 			timetableEntries = res.data;
@@ -375,6 +397,82 @@
 			toast.error('โหลดตารางสอนไม่สำเร็จ');
 		}
 	}
+
+	// ===== Per-cell instructor popover =====
+	async function openEntryPopover(entry: TimetableEntry) {
+		// Only support COURSE entries (activity entries have different instructor logic)
+		if (entry.entry_type !== 'COURSE' || !entry.classroom_course_id) return;
+		entryPopoverTarget = entry;
+		entryPopoverTeam = [];
+		entryPopoverOpen = true;
+		entryPopoverLoading = true;
+		try {
+			const res = await listCourseInstructors(entry.classroom_course_id);
+			entryPopoverTeam = res.data ?? [];
+		} catch {
+			toast.error('โหลดรายชื่อครูไม่สำเร็จ');
+		} finally {
+			entryPopoverLoading = false;
+		}
+	}
+
+	async function handlePopoverRemoveInstructor(userId: string) {
+		if (!entryPopoverTarget) return;
+		const entry = entryPopoverTarget;
+		if (viewMode === 'INSTRUCTOR' && userId === selectedInstructorId) {
+			if (!confirm('ลบตัวเองจากคาบนี้? — คาบจะหายจากตารางของคุณ')) return;
+		}
+		entryPopoverSaving = userId;
+		try {
+			await removeEntryInstructor(entry.id, userId);
+			// Update local state: remove from entry.instructor_ids/names
+			const idx = entry.instructor_ids?.indexOf(userId) ?? -1;
+			if (idx >= 0) {
+				entry.instructor_ids = entry.instructor_ids!.filter((i) => i !== userId);
+				entry.instructor_names = entry.instructor_names?.filter((_, i) => i !== idx);
+			}
+			timetableEntries = [...timetableEntries];
+			// ถ้าในมุมมองครู ลบตัวเองและไม่เปิด ghost → คาบจะหายจากตาราง (ต้อง reload)
+			if (viewMode === 'INSTRUCTOR' && userId === selectedInstructorId && !showTeamGhosts) {
+				entryPopoverOpen = false;
+				await loadTimetable();
+			}
+			toast.success('ลบครูแล้ว');
+		} catch {
+			toast.error('ลบครูไม่สำเร็จ');
+		} finally {
+			entryPopoverSaving = '';
+		}
+	}
+
+	async function handlePopoverAddInstructor(userId: string, role: 'primary' | 'secondary') {
+		if (!entryPopoverTarget) return;
+		const entry = entryPopoverTarget;
+		entryPopoverSaving = userId;
+		try {
+			await addEntryInstructor(entry.id, userId, role);
+			// Reload entry info via list (lazy — just refetch one entry's team indirectly)
+			entry.instructor_ids = [...(entry.instructor_ids ?? []), userId];
+			const member = entryPopoverTeam.find((t) => t.instructor_id === userId);
+			if (member?.instructor_name) {
+				entry.instructor_names = [...(entry.instructor_names ?? []), member.instructor_name];
+			}
+			timetableEntries = [...timetableEntries];
+			toast.success('เพิ่มครูแล้ว');
+		} catch {
+			toast.error('เพิ่มครูไม่สำเร็จ');
+		} finally {
+			entryPopoverSaving = '';
+		}
+	}
+
+	// เมื่อ toggle ghost mode ใน instructor view → re-load
+	$effect(() => {
+		void showTeamGhosts;
+		if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
+			loadTimetable();
+		}
+	});
 
 	async function handleDeleteEntry(entry: TimetableEntry) {
 		if (viewMode === 'INSTRUCTOR') {
@@ -1825,6 +1923,12 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
+				{#if selectedInstructorId}
+					<label class="flex items-center gap-2 text-xs cursor-pointer select-none px-2 py-1 rounded border bg-muted/30 hover:bg-muted transition-colors">
+						<input type="checkbox" bind:checked={showTeamGhosts} class="cursor-pointer" />
+						<span>แสดงคาบในทีม (ghost cells)</span>
+					</label>
+				{/if}
 			{/if}
 		</div>
 	</div>
@@ -2119,6 +2223,14 @@
 										</div>
 									{/if}
 									{#if entry}
+										{@const isGhost =
+											viewMode === 'INSTRUCTOR' &&
+											selectedInstructorId !== '' &&
+											!(entry.instructor_ids ?? []).includes(selectedInstructorId)}
+										{@const coTeacherCount =
+											viewMode === 'INSTRUCTOR'
+												? Math.max(0, (entry.instructor_ids?.length ?? 0) - 1)
+												: 0}
 										<!-- Timetable Entry Card -->
 										<div
 											class="absolute inset-1 border rounded p-2 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !== 'COURSE'
@@ -2126,7 +2238,7 @@
 												: 'cursor-grab active:cursor-grabbing'} {lockedBy
 												? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
 													lockedBy.color
-												: ''}"
+												: ''} {isGhost ? 'opacity-50 border-dashed' : ''}"
 											style="background-color: {getSubjectColor(
 												viewMode === 'INSTRUCTOR'
 													? entry.classroom_name || entry.subject_code || ''
@@ -2141,6 +2253,16 @@
 											draggable={!lockedBy && entry.entry_type === 'COURSE'}
 											ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
 											ondragend={handleDragEnd}
+											onclick={(e) => {
+												if ((e.target as HTMLElement).closest('button')) return;
+												openEntryPopover(entry);
+											}}
+											onkeydown={(e) => {
+												if (e.key === 'Enter' || e.key === ' ') {
+													e.preventDefault();
+													openEntryPopover(entry);
+												}
+											}}
 											role="button"
 											tabindex="0"
 										>
@@ -2195,6 +2317,18 @@
 													<div class="flex items-center gap-1 truncate">
 														<School class="w-3 h-3 shrink-0" />
 														{entry.classroom_name || '-'}
+													</div>
+												{/if}
+
+												{#if viewMode === 'INSTRUCTOR' && isGhost}
+													<div class="flex items-center gap-1 text-amber-700 text-[9px]">
+														<span>👻</span>
+														<span>อยู่ในทีม (ยังไม่ได้สอนคาบนี้)</span>
+													</div>
+												{:else if viewMode === 'INSTRUCTOR' && coTeacherCount > 0}
+													<div class="flex items-center gap-1 text-blue-600 text-[9px]" title={entry.instructor_names?.join(', ')}>
+														<Users class="w-3 h-3 shrink-0" />
+														<span>+{coTeacherCount} ครูร่วม</span>
 													</div>
 												{/if}
 
@@ -2298,6 +2432,96 @@
 			{/each}
 		</div>
 </div>
+
+<!-- Per-cell Instructor Editor Popover -->
+<Dialog.Root bind:open={entryPopoverOpen}>
+	<Dialog.Content class="sm:max-w-[480px]">
+		<Dialog.Header>
+			<Dialog.Title>
+				{#if entryPopoverTarget}
+					{entryPopoverTarget.subject_code ?? ''} {entryPopoverTarget.subject_name_th ?? ''}
+				{:else}
+					แก้ไขครูในคาบนี้
+				{/if}
+			</Dialog.Title>
+			<Dialog.Description>
+				{#if entryPopoverTarget}
+					{entryPopoverTarget.classroom_name} · {entryPopoverTarget.day_of_week} · {entryPopoverTarget.period_name ?? ''}
+				{/if}
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="py-2 space-y-3">
+			{#if entryPopoverLoading}
+				<div class="text-center py-4">
+					<Loader2 class="w-5 h-5 animate-spin mx-auto" />
+				</div>
+			{:else if entryPopoverTarget}
+				<div class="space-y-2">
+					<div class="text-sm font-medium">ครูสอนในคาบนี้</div>
+					{#if popoverInCell.length === 0}
+						<p class="text-xs text-muted-foreground italic">ไม่มีครูในคาบนี้</p>
+					{:else}
+						<div class="flex flex-wrap gap-1.5">
+							{#each popoverInCell as uid, idx}
+								{@const isSelf = viewMode === 'INSTRUCTOR' && uid === selectedInstructorId}
+								<Badge variant={isSelf ? 'default' : 'secondary'} class="gap-1 pr-1">
+									<span>
+										{isSelf ? '👤 ' : ''}{popoverInCellNames[idx] ?? uid}
+										{#if isSelf}<span class="text-[10px] opacity-80">(คุณ)</span>{/if}
+									</span>
+									<button
+										type="button"
+										class="ml-1 rounded hover:bg-destructive/20 p-0.5"
+										onclick={() => handlePopoverRemoveInstructor(uid)}
+										disabled={entryPopoverSaving === uid}
+										aria-label="ลบครู"
+									>
+										{#if entryPopoverSaving === uid}
+											<Loader2 class="h-3 w-3 animate-spin" />
+										{:else}
+											<Trash2 class="h-3 w-3" />
+										{/if}
+									</button>
+								</Badge>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<div class="space-y-2 border-t pt-3">
+					<div class="text-sm font-medium">เพิ่มครูจากทีมวิชา</div>
+					{#if popoverNotInCell.length === 0}
+						<p class="text-xs text-muted-foreground italic">ครูในทีมอยู่ในคาบนี้ครบแล้ว</p>
+					{:else}
+						<div class="flex flex-wrap gap-1.5">
+							{#each popoverNotInCell as t}
+								<Button
+									variant="outline"
+									size="sm"
+									class="h-7 text-xs"
+									onclick={() => handlePopoverAddInstructor(t.instructor_id, t.role)}
+									disabled={entryPopoverSaving === t.instructor_id}
+								>
+									{#if entryPopoverSaving === t.instructor_id}
+										<Loader2 class="h-3 w-3 animate-spin mr-1" />
+									{:else}
+										+
+									{/if}
+									{t.role === 'primary' ? '⭐ ' : ''}{t.instructor_name ?? t.instructor_id}
+								</Button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (entryPopoverOpen = false)}>ปิด</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root bind:open={showRoomModal}>
 	<Dialog.Content class="sm:max-w-[425px]">

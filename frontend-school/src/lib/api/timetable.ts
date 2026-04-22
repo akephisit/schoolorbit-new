@@ -62,6 +62,8 @@ export interface TimetableEntry {
     subject_name_th?: string;
     instructor_name?: string;
     instructor_names?: string[];
+    /** parallel กับ instructor_names — ใช้ลบ/เพิ่มครูรายคน */
+    instructor_ids?: string[];
     classroom_name?: string;
     room_code?: string;
     subject_name_en?: string;
@@ -169,6 +171,8 @@ export const listTimetableEntries = async (filters: {
     academic_semester_id?: string;
     day_of_week?: string;
     entry_type?: string;
+    /** คู่กับ instructor_id: รวม entries ของ course ที่ instructor อยู่ในทีม (รวม ghost cells) */
+    include_team_ghosts?: boolean;
 } = {}): Promise<{ data: TimetableEntry[] }> => {
     const params = new URLSearchParams();
     if (filters.classroom_id) params.append('classroom_id', filters.classroom_id);
@@ -178,6 +182,7 @@ export const listTimetableEntries = async (filters: {
     if (filters.academic_semester_id) params.append('academic_semester_id', filters.academic_semester_id);
     if (filters.day_of_week) params.append('day_of_week', filters.day_of_week);
     if (filters.entry_type) params.append('entry_type', filters.entry_type);
+    if (filters.include_team_ghosts) params.append('include_team_ghosts', 'true');
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return await fetchApi(`/api/academic/timetable${queryString}`);

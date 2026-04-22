@@ -237,6 +237,9 @@ pub async fn list_timetable_entries(
              FROM timetable_entry_instructors tei2
              JOIN users u2 ON u2.id = tei2.instructor_id
              WHERE tei2.entry_id = te.id) AS instructor_names,
+            (SELECT ARRAY_AGG(tei_id.instructor_id ORDER BY tei_id.role, tei_id.created_at)
+             FROM timetable_entry_instructors tei_id
+             WHERE tei_id.entry_id = te.id) AS instructor_ids,
             (SELECT concat(u3.first_name, ' ', u3.last_name)
              FROM timetable_entry_instructors tei3
              JOIN users u3 ON u3.id = tei3.instructor_id
@@ -278,9 +281,18 @@ pub async fn list_timetable_entries(
 
     if let Some(_) = query.instructor_id {
         idx += 1;
-        sql.push_str(&format!(
-            " AND EXISTS (SELECT 1 FROM timetable_entry_instructors tei WHERE tei.entry_id = te.id AND tei.instructor_id = ${idx})"
-        ));
+        if query.include_team_ghosts.unwrap_or(false) {
+            // Ghost mode: entries ของ course ที่ instructor อยู่ในทีม (รวมทั้งที่อยู่ใน tei และที่ไม่อยู่)
+            sql.push_str(&format!(
+                " AND EXISTS (SELECT 1 FROM classroom_course_instructors cci \
+                   WHERE cci.classroom_course_id = te.classroom_course_id AND cci.instructor_id = ${idx})"
+            ));
+        } else {
+            // Normal mode: เฉพาะ cell ที่ instructor ถูก assign
+            sql.push_str(&format!(
+                " AND EXISTS (SELECT 1 FROM timetable_entry_instructors tei WHERE tei.entry_id = te.id AND tei.instructor_id = ${idx})"
+            ));
+        }
     }
 
     if let Some(_) = query.room_id {
