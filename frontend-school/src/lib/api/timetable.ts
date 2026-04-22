@@ -188,6 +188,9 @@ export const listTimetableEntries = async (filters: {
     return await fetchApi(`/api/academic/timetable${queryString}`);
 };
 
+/** Response signature: { data: TimetableEntry[], current_seq: number } */
+export const listTimetableEntriesWithSeq = listTimetableEntries;
+
 export const createBatchTimetableEntries = async (data: CreateBatchTimetableEntriesRequest) => {
     const response = await fetch(`${BACKEND_URL}/api/academic/timetable/batch`, {
         method: 'POST',

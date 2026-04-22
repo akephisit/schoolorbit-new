@@ -84,7 +84,10 @@
 		dragPositions,
 		userDrags,
 		refreshTrigger,
-		isConnected
+		isConnected,
+		lastPatch,
+		setInitialSeq,
+		type TimetablePatch
 	} from '$lib/stores/timetable-socket';
 
 	let { data } = $props();
@@ -405,6 +408,10 @@
 				rawTeamEntries = [];
 				timetableEntries = res.data;
 			}
+			// Sync seq: ตั้งจุดเริ่ม tracking patch events จาก response
+			if (typeof (res as any).current_seq === 'number') {
+				setInitialSeq((res as any).current_seq);
+			}
 		} catch (e) {
 			toast.error('โหลดตารางสอนไม่สำเร็จ');
 		}
@@ -531,9 +538,7 @@
 					return;
 				}
 			}
-			if ($authStore.user) {
-				sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
-			}
+			// Backend broadcasts patch event ให้แล้ว — ไม่ต้องส่ง TableRefresh ซ้ำ
 			loadTimetable();
 			loadSidebarActivitySlots();
 			return;
@@ -569,9 +574,7 @@
 				toast.success('ลบออกจากตารางสำเร็จ');
 			}
 
-			if ($authStore.user) {
-				sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
-			}
+			// Backend broadcasts patch event ให้แล้ว — ไม่ต้องส่ง TableRefresh ซ้ำ
 
 			showDeleteActivityDialog = false;
 			deleteActivityTarget = null;
@@ -1098,9 +1101,7 @@
 			toast.error(e.message || 'บันทึกไม่สำเร็จ');
 		} finally {
 			// Notify others
-			if ($authStore.user) {
-				sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
-			}
+			// Backend broadcasts patch event ให้แล้ว — ไม่ต้องส่ง TableRefresh ซ้ำ
 
 			submitting = false;
 			pendingDropContext = null;
@@ -1737,7 +1738,7 @@
 		});
 	}
 
-	// Auto Refresh Listener
+	// Auto Refresh Listener (fallback: TableRefresh หรือ gap-reconcile-refetch)
 	$effect(() => {
 		if ($refreshTrigger > 0) {
 			console.log('Auto-refreshing timetable...');
@@ -1745,6 +1746,89 @@
 			loadCourses();
 		}
 	});
+
+	// Patch subscriber — apply realtime patches โดยไม่ต้อง fetch DB
+	$effect(() => {
+		const patch = $lastPatch;
+		if (!patch) return;
+		applyPatchToState(patch);
+		lastPatch.set(null);
+	});
+
+	function applyPatchToState(patch: TimetablePatch) {
+		// Helper: อัปเดต entry ใน array ทั้ง timetableEntries + rawTeamEntries
+		const updateEntries = (fn: (arr: TimetableEntry[]) => TimetableEntry[]) => {
+			timetableEntries = fn(timetableEntries);
+			rawTeamEntries = fn(rawTeamEntries);
+		};
+
+		switch (patch.type) {
+			case 'EntryCreated':
+				// create → backend ยังไม่ส่ง full entry (ใช้ TableRefresh) — case นี้ยังไม่เจอในปัจจุบัน
+				// ถ้าจะ patch ต้อง re-fetch เพราะ backend entry ไม่มี joined fields
+				refreshTrigger.update((n) => n + 1);
+				break;
+			case 'EntryUpdated': {
+				const updated = patch.entry;
+				const isRelevant = (e: TimetableEntry) => e.id === updated.id;
+				updateEntries((arr) => {
+					const found = arr.some(isRelevant);
+					if (found) {
+						return arr.map((e) => (isRelevant(e) ? { ...e, ...updated } : e));
+					}
+					// Entry ไม่อยู่ใน state ปัจจุบัน (เช่น view เปลี่ยนไปห้อง/ครูคนอื่น) → ไม่ต้องทำอะไร
+					return arr;
+				});
+				break;
+			}
+			case 'EntryDeleted':
+				updateEntries((arr) => arr.filter((e) => e.id !== patch.entry_id));
+				break;
+			case 'EntriesSwapped':
+				// Swap = 2 entries เปลี่ยน day/period — apply ทั้งคู่
+				updateEntries((arr) =>
+					arr.map((e) => {
+						if (e.id === patch.entry_a.id) return { ...e, ...patch.entry_a };
+						if (e.id === patch.entry_b.id) return { ...e, ...patch.entry_b };
+						return e;
+					})
+				);
+				break;
+			case 'EntryInstructorAdded':
+				updateEntries((arr) =>
+					arr.map((e) => {
+						if (e.id !== patch.entry_id) return e;
+						const ids = [...(e.instructor_ids ?? []), patch.instructor_id];
+						const names = [...(e.instructor_names ?? []), patch.instructor_name];
+						return { ...e, instructor_ids: ids, instructor_names: names };
+					})
+				);
+				break;
+			case 'EntryInstructorRemoved':
+				if (patch.entry_deleted) {
+					updateEntries((arr) => arr.filter((e) => e.id !== patch.entry_id));
+				} else {
+					updateEntries((arr) =>
+						arr.map((e) => {
+							if (e.id !== patch.entry_id) return e;
+							const idx = e.instructor_ids?.indexOf(patch.instructor_id) ?? -1;
+							if (idx < 0) return e;
+							return {
+								...e,
+								instructor_ids: e.instructor_ids!.filter((_, i) => i !== idx),
+								instructor_names: e.instructor_names?.filter((_, i) => i !== idx)
+							};
+						})
+					);
+				}
+				break;
+			case 'CourseTeamChanged':
+				// Team วิชาเปลี่ยน — entries ของ course นั้นทุก cell ต้อง re-fetch เพราะครู array เปลี่ยน
+				// ใช้ TableRefresh fallback
+				refreshTrigger.update((n) => n + 1);
+				break;
+		}
+	}
 
 	function getDragOwner(entryId?: string, courseId?: string) {
 		if (!entryId && !courseId) return null;

@@ -21,15 +21,32 @@ export interface UserPresence {
 }
 
 export type TimetableEvent =
-    | { type: 'StateSync', payload: { users: UserPresence[], drags: Record<string, { course_id?: string, entry_id?: string, info?: DragInfo }> } }
+    | { type: 'StateSync', payload: { users: UserPresence[], drags: Record<string, { course_id?: string, entry_id?: string, info?: DragInfo }>, current_seq: number } }
     | { type: 'TableRefresh', payload: { user_id: string } }
     | { type: 'UserJoined', payload: UserPresence }
     | { type: 'UserLeft', payload: { user_id: string } }
     | { type: 'CursorMove', payload: { user_id: string, x: number, y: number, context?: UserContext } }
-    // Locking
     | { type: 'DragStart', payload: { user_id: string, course_id?: string, entry_id?: string, info?: DragInfo } }
     | { type: 'DragEnd', payload: { user_id: string } }
-    | { type: 'DragMove', payload: { user_id: string, x: number, y: number, target_day?: string, target_period_id?: string } };
+    | { type: 'DragMove', payload: { user_id: string, x: number, y: number, target_day?: string, target_period_id?: string } }
+    // Patch events (new — seq-tracked)
+    | { type: 'EntryCreated', payload: { user_id: string, entry: any } }
+    | { type: 'EntryUpdated', payload: { user_id: string, entry: any } }
+    | { type: 'EntryDeleted', payload: { user_id: string, entry_id: string } }
+    | { type: 'EntriesSwapped', payload: { user_id: string, entry_a: any, entry_b: any } }
+    | { type: 'EntryInstructorAdded', payload: { user_id: string, entry_id: string, instructor_id: string, instructor_name: string, role: string } }
+    | { type: 'EntryInstructorRemoved', payload: { user_id: string, entry_id: string, instructor_id: string, entry_deleted: boolean } }
+    | { type: 'CourseTeamChanged', payload: { user_id: string, course_id: string } };
+
+/** Patch events ที่ page subscribe เพื่อ apply ต่อ state — ไม่ fetch DB ซ้ำ */
+export type TimetablePatch =
+    | { type: 'EntryCreated', entry: any }
+    | { type: 'EntryUpdated', entry: any }
+    | { type: 'EntryDeleted', entry_id: string }
+    | { type: 'EntriesSwapped', entry_a: any, entry_b: any }
+    | { type: 'EntryInstructorAdded', entry_id: string, instructor_id: string, instructor_name: string, role: string }
+    | { type: 'EntryInstructorRemoved', entry_id: string, instructor_id: string, entry_deleted: boolean }
+    | { type: 'CourseTeamChanged', course_id: string };
 
 // Stores
 export const activeUsers: Writable<UserPresence[]> = writable([]);
@@ -40,6 +57,95 @@ export const userDrags: Writable<Record<string, { course_id?: string, entry_id?:
 export const dragPositions: Writable<Record<string, { x: number, y: number, target_day?: string, target_period_id?: string }>> = writable({});
 export const refreshTrigger: Writable<number> = writable(0);
 export const isConnected: Writable<boolean> = writable(false);
+/** Patch events ที่ broadcast จาก backend — page subscribe เพื่อ apply ต่อ state
+ *  reset เป็น null หลัง apply เพื่อ dedupe */
+export const lastPatch: Writable<TimetablePatch | null> = writable(null);
+
+// Seq tracking (ใช้ detect gap + reconcile)
+let lastSeq = 0;
+let reconcileInFlight = false;
+
+export function setInitialSeq(seq: number) {
+    lastSeq = seq;
+}
+
+export function getLastSeq(): number {
+    return lastSeq;
+}
+
+/** Force reconcile: fetch replay หรือ full-fetch, apply, update lastSeq */
+async function triggerReconcile(semesterId: string) {
+    if (reconcileInFlight) return;
+    reconcileInFlight = true;
+    try {
+        let baseUrl = PUBLIC_BACKEND_URL || 'http://localhost:8081';
+        const url = `${baseUrl}/api/academic/timetable/replay?semester_id=${semesterId}&after_seq=${lastSeq}`;
+        const res = await fetch(url, { credentials: 'include' }).catch(() => null);
+        if (!res || !res.ok) {
+            // ล้มเหลว → fallback full-fetch ผ่าน refreshTrigger
+            refreshTrigger.update((n) => n + 1);
+            return;
+        }
+        const data = await res.json();
+        if (data.needs_refetch) {
+            // Buffer หมด → full-fetch
+            lastSeq = data.current_seq ?? 0;
+            refreshTrigger.update((n) => n + 1);
+        } else {
+            // Apply events ตามลำดับ
+            for (const seqEvent of data.events ?? []) {
+                applyPatchFromSeqEvent(seqEvent);
+            }
+            lastSeq = data.current_seq ?? lastSeq;
+        }
+    } finally {
+        reconcileInFlight = false;
+    }
+}
+
+function applyPatchFromSeqEvent(seqEvent: any) {
+    const { type, payload } = seqEvent;
+    if (seqEvent.seq !== undefined && seqEvent.seq !== null) {
+        lastSeq = Math.max(lastSeq, seqEvent.seq);
+    }
+    switch (type) {
+        case 'TableRefresh':
+            refreshTrigger.update((n) => n + 1);
+            break;
+        case 'EntryCreated':
+            lastPatch.set({ type: 'EntryCreated', entry: payload.entry });
+            break;
+        case 'EntryUpdated':
+            lastPatch.set({ type: 'EntryUpdated', entry: payload.entry });
+            break;
+        case 'EntryDeleted':
+            lastPatch.set({ type: 'EntryDeleted', entry_id: payload.entry_id });
+            break;
+        case 'EntriesSwapped':
+            lastPatch.set({ type: 'EntriesSwapped', entry_a: payload.entry_a, entry_b: payload.entry_b });
+            break;
+        case 'EntryInstructorAdded':
+            lastPatch.set({
+                type: 'EntryInstructorAdded',
+                entry_id: payload.entry_id,
+                instructor_id: payload.instructor_id,
+                instructor_name: payload.instructor_name,
+                role: payload.role,
+            });
+            break;
+        case 'EntryInstructorRemoved':
+            lastPatch.set({
+                type: 'EntryInstructorRemoved',
+                entry_id: payload.entry_id,
+                instructor_id: payload.instructor_id,
+                entry_deleted: payload.entry_deleted,
+            });
+            break;
+        case 'CourseTeamChanged':
+            lastPatch.set({ type: 'CourseTeamChanged', course_id: payload.course_id });
+            break;
+    }
+}
 
 let socket: WebSocket | null = null;
 let currentUserId: string | null = null;
@@ -176,11 +282,39 @@ export function sendTimetableEvent(event: TimetableEvent) {
 }
 
 function handleMessage(msg: any) {
-    const { type, payload } = msg;
+    const { type, payload, seq } = msg;
+
+    // Patch events: เช็ค seq + gap detection
+    const isMutation = [
+        'TableRefresh',
+        'EntryCreated',
+        'EntryUpdated',
+        'EntryDeleted',
+        'EntriesSwapped',
+        'EntryInstructorAdded',
+        'EntryInstructorRemoved',
+        'CourseTeamChanged',
+    ].includes(type);
+
+    if (isMutation && typeof seq === 'number') {
+        if (seq <= lastSeq) {
+            // Duplicate หรือ out-of-order เก่า — ignore
+            return;
+        }
+        if (seq > lastSeq + 1 && lastSeq > 0) {
+            // Gap detected — reconcile
+            const semId = lastParams?.semester_id;
+            if (semId) triggerReconcile(semId);
+            return;
+        }
+        // Sequential — apply
+        applyPatchFromSeqEvent(msg);
+        return;
+    }
 
     switch (type) {
         case 'StateSync': {
-            const { users, drags } = payload;
+            const { users, drags, current_seq } = payload;
             // Filter out self
             const others = users.filter((u: UserPresence) => u.user_id !== currentUserId);
             activeUsers.set(others);
@@ -190,6 +324,11 @@ function handleMessage(msg: any) {
                 delete drags[currentUserId];
             }
             userDrags.set(drags);
+
+            // Set initial seq — จุดเริ่ม tracking
+            if (typeof current_seq === 'number') {
+                lastSeq = current_seq;
+            }
             break;
         }
         case 'UserJoined': {
@@ -283,12 +422,6 @@ function handleMessage(msg: any) {
             });
             break;
         }
-        case 'TableRefresh': {
-            const { user_id } = payload;
-            // Always refresh to ensure consistent state across tabs/devices
-            console.log('Received TableRefresh signal');
-            refreshTrigger.update(n => n + 1);
-            break;
-        }
+        // TableRefresh + patch events จัดการใน isMutation branch ด้านบน
     }
 }
