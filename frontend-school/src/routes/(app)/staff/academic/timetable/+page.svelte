@@ -869,7 +869,27 @@
 
 		const existingEntry = getEntryForSlot(day, periodId);
 
-		// Block drop onto ghost cells — ghost ไม่ใช่คาบของเรา สลับ/แทนที่ = กระทบครูคนอื่น
+		// Instructor view: เช็ค hidden ghost ใน rawTeamEntries (sync, ครอบคลุม ghost mode off
+		// ที่ getEntryForSlot return undefined เพราะ filter display)
+		if (viewMode === 'INSTRUCTOR' && draggedCourse) {
+			const draggedClassroomId = draggedCourse.classroom_id;
+			if (draggedClassroomId) {
+				const hiddenEntry = rawTeamEntries.find(
+					(e) =>
+						e.day_of_week === day &&
+						e.period_id === periodId &&
+						e.classroom_id === draggedClassroomId &&
+						e.id !== draggedEntryId
+				);
+				if (hiddenEntry && !(hiddenEntry.instructor_ids ?? []).includes(selectedInstructorId)) {
+					toast.error('ห้องนี้มีวิชาอื่นอยู่ในคาบนี้แล้ว (คุณไม่ได้สอน) — วางทับไม่ได้');
+					handleDragEnd();
+					return;
+				}
+			}
+		}
+
+		// Block drop onto ghost cells ที่ displayed (ghost mode on) — ghost ไม่ใช่คาบของเรา
 		if (
 			existingEntry &&
 			viewMode === 'INSTRUCTOR' &&
