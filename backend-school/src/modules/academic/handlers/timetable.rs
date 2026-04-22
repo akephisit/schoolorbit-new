@@ -20,12 +20,60 @@ use chrono::NaiveTime;
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    
+
     let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-        
+
     state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
+}
+
+/// Fetch 1 entry พร้อม joined fields (subject, classroom, room, period, instructors)
+/// ใช้กับ patch events เพื่อให้ frontend ได้ entry ครบ, patch ได้ทันทีไม่ต้อง re-fetch
+async fn fetch_entry_with_joins(pool: &sqlx::PgPool, entry_id: Uuid) -> Option<TimetableEntry> {
+    sqlx::query_as::<_, TimetableEntry>(
+        r#"
+        SELECT
+            te.*,
+            s.code   AS subject_code,
+            s.name_th AS subject_name_th,
+            (SELECT ARRAY_AGG(concat(u2.first_name, ' ', u2.last_name) ORDER BY tei2.role, tei2.created_at)
+             FROM timetable_entry_instructors tei2
+             JOIN users u2 ON u2.id = tei2.instructor_id
+             WHERE tei2.entry_id = te.id) AS instructor_names,
+            (SELECT ARRAY_AGG(tei_id.instructor_id ORDER BY tei_id.role, tei_id.created_at)
+             FROM timetable_entry_instructors tei_id
+             WHERE tei_id.entry_id = te.id) AS instructor_ids,
+            (SELECT concat(u3.first_name, ' ', u3.last_name)
+             FROM timetable_entry_instructors tei3
+             JOIN users u3 ON u3.id = tei3.instructor_id
+             WHERE tei3.entry_id = te.id
+             ORDER BY tei3.role, tei3.created_at
+             LIMIT 1) AS instructor_name,
+            cr.name  AS classroom_name,
+            r.code   AS room_code,
+            ap.name  AS period_name,
+            ap.start_time,
+            ap.end_time,
+            asl_ac.name AS activity_slot_name,
+            asl_ac.activity_type AS activity_type,
+            asl_ac.scheduling_mode AS activity_scheduling_mode
+        FROM academic_timetable_entries te
+        LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+        LEFT JOIN subjects s ON cc.subject_id = s.id
+        JOIN class_rooms cr ON te.classroom_id = cr.id
+        JOIN academic_periods ap ON te.period_id = ap.id
+        LEFT JOIN rooms r ON te.room_id = r.id
+        LEFT JOIN activity_slots asl ON te.activity_slot_id = asl.id
+        LEFT JOIN activity_catalog asl_ac ON asl.activity_catalog_id = asl_ac.id
+        WHERE te.id = $1
+        "#
+    )
+    .bind(entry_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
 }
 
 // ============================================
@@ -583,17 +631,20 @@ pub async fn create_timetable_entry(
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // Broadcast: entry เพิ่งสร้าง — ใช้ TableRefresh เพราะ entry ไม่มี joined fields
-    // (frontend จะ re-fetch เพื่อได้ชื่อครู/วิชา/ห้อง ครบ)
+    // Re-fetch เต็ม (พร้อม joined fields) สำหรับ broadcast + response
+    let full_entry = fetch_entry_with_joins(&pool, entry.id).await.unwrap_or(entry);
+
+    // Broadcast EntryCreated patch — frontend apply ได้ทันที ไม่ต้อง re-fetch
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
     let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    let entry_json = serde_json::to_value(&full_entry).unwrap_or_default();
     state.websocket_manager.broadcast_mutation(
         subdomain,
-        entry.academic_semester_id,
-        TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+        full_entry.academic_semester_id,
+        TimetableEvent::EntryCreated { user_id: user_id.unwrap_or_default(), entry: entry_json },
     );
 
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": entry }))).into_response())
+    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": full_entry }))).into_response())
 }
 
 /// DELETE /api/academic/timetable/batch
@@ -1044,16 +1095,19 @@ pub async fn update_timetable_entry(
         }
     })?;
 
+    // Re-fetch เต็ม (joined) — broadcast ใช้, response ใช้
+    let full_entry = fetch_entry_with_joins(&pool, updated_entry.id).await.unwrap_or(updated_entry);
+
     // Broadcast patch event: EntryUpdated พร้อม full entry
     let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-    let entry_json = serde_json::to_value(&updated_entry).unwrap_or_default();
+    let entry_json = serde_json::to_value(&full_entry).unwrap_or_default();
     state.websocket_manager.broadcast_mutation(
         subdomain,
         existing_entry.academic_semester_id,
         TimetableEvent::EntryUpdated { user_id: user_id.unwrap_or_default(), entry: entry_json },
     );
 
-    Ok(Json(json!({ "success": true, "data": updated_entry })).into_response())
+    Ok(Json(json!({ "success": true, "data": full_entry })).into_response())
 }
 
 /// POST /api/academic/timetable/batch

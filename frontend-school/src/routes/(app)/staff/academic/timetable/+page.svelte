@@ -1763,11 +1763,27 @@
 		};
 
 		switch (patch.type) {
-			case 'EntryCreated':
-				// create → backend ยังไม่ส่ง full entry (ใช้ TableRefresh) — case นี้ยังไม่เจอในปัจจุบัน
-				// ถ้าจะ patch ต้อง re-fetch เพราะ backend entry ไม่มี joined fields
-				refreshTrigger.update((n) => n + 1);
+			case 'EntryCreated': {
+				// Backend ส่ง entry พร้อม joined fields ครบ — push เข้า state ได้ทันที
+				const created = patch.entry as TimetableEntry;
+				// เฉพาะ entry ที่เกี่ยวกับ view ปัจจุบันถึงจะ push
+				const relevantForClassroom =
+					viewMode === 'CLASSROOM' && created.classroom_id === selectedClassroomId;
+				const relevantForInstructor =
+					viewMode === 'INSTRUCTOR' &&
+					(created.instructor_ids ?? []).includes(selectedInstructorId);
+				if (relevantForClassroom || relevantForInstructor) {
+					timetableEntries = [...timetableEntries, created];
+				}
+				if (viewMode === 'INSTRUCTOR' && (created.instructor_ids ?? []).length > 0) {
+					// Also keep rawTeamEntries in sync (superset includes ghost cells)
+					const teamMembers = courses.some((c) => c.id === created.classroom_course_id);
+					if (teamMembers) {
+						rawTeamEntries = [...rawTeamEntries, created];
+					}
+				}
 				break;
+			}
 			case 'EntryUpdated': {
 				const updated = patch.entry;
 				const isRelevant = (e: TimetableEntry) => e.id === updated.id;
