@@ -1868,11 +1868,21 @@
 	}
 
 	function getRemoteDragHover(day: string, periodId: string) {
+		const myViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
 		for (const [userId, pos] of Object.entries($dragPositions)) {
 			if (pos.target_day === day && pos.target_period_id === periodId) {
 				const user = $activeUsers.find((u) => u.user_id === userId);
 				const drag = $userDrags[userId];
-				if (user && drag) return { user, drag };
+				if (!user || !drag) continue;
+				// แสดง drag hover เฉพาะถ้าอยู่ view เดียวกัน
+				// (คนละห้อง/คนละครู/คนละ mode → ไม่ควรเห็น cursor ของกัน)
+				if (
+					user.context?.view_mode !== viewMode ||
+					user.context?.view_id !== myViewId
+				) {
+					continue;
+				}
+				return { user, drag };
 			}
 		}
 		return null;
