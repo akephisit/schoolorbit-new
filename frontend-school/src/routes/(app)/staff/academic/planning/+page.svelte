@@ -160,40 +160,40 @@
 
 	// Summary Statistics
 	let summaryStats = $derived.by(() => {
+		// ใช้ subject.hours_per_semester จริงจากคลังวิชา (ไม่ประมาณจาก credit)
 		let basicCredit = 0;
 		let basicHours = 0;
 		let additionalCredit = 0;
 		let additionalHours = 0;
-		let activityHours = 0;
 
 		courses.forEach((c) => {
-			const credit = c.subject_credit || 0;
-			const estimatedHours = credit * 40;
+			const credit = c.subject_credit ?? 0;
+			const hours = c.subject_hours ?? 0;
 
 			if (c.subject_type === 'BASIC') {
 				basicCredit += credit;
-				basicHours += estimatedHours;
+				basicHours += hours;
 			} else if (c.subject_type === 'ADDITIONAL') {
 				additionalCredit += credit;
-				additionalHours += estimatedHours;
-			} else if (c.subject_type === 'ACTIVITY') {
-				// Activity hours might need better logic if credit is 0.
-				// Assuming activities have 20-40 hours regardless of credit if we had hours fields.
-				// For now, keep using estimate or if 0 credit, maybe count as 1 unit of activity time?
-				// But sticking to credit-based for consistency with existing logic unless field available.
-				// If credit is 0, let's treat as 20 hours (0.5 equivalent) as fallback for visible stats?
-				// Or just keep 0 if no credit.
-				activityHours += estimatedHours;
+				additionalHours += hours;
 			}
+			// ACTIVITY subject_type ไม่รวมกับวิชา — กิจกรรมพัฒนาผู้เรียนใช้ classroomActivities แยก
 		});
+
+		// กิจกรรมพัฒนาผู้เรียน: นับจำนวน + รวมคาบ/สัปดาห์
+		const activityCount = classroomActivities.length;
+		const activityPeriodsPerWeek = classroomActivities.reduce(
+			(sum, a) => sum + (a.periods_per_week ?? 0),
+			0
+		);
 
 		return {
 			basic: { credit: basicCredit, hours: basicHours },
 			additional: { credit: additionalCredit, hours: additionalHours },
-			activity: { hours: activityHours },
+			activity: { count: activityCount, periods: activityPeriodsPerWeek },
 			total: {
 				credit: basicCredit + additionalCredit,
-				hours: basicHours + additionalHours + activityHours
+				hours: basicHours + additionalHours
 			}
 		};
 	});
@@ -585,7 +585,9 @@
 							{summaryStats.basic.credit.toFixed(1)}
 							<span class="text-xs font-normal text-muted-foreground">นก.</span>
 						</div>
-						<div class="text-xs text-muted-foreground">{summaryStats.basic.hours} ชม.</div>
+						<div class="text-xs text-muted-foreground">
+							{summaryStats.basic.hours} ชม./เทอม
+						</div>
 					</Card.Content>
 				</Card.Root>
 				<Card.Root>
@@ -595,24 +597,31 @@
 							{summaryStats.additional.credit.toFixed(1)}
 							<span class="text-xs font-normal text-muted-foreground">นก.</span>
 						</div>
-						<div class="text-xs text-muted-foreground">{summaryStats.additional.hours} ชม.</div>
+						<div class="text-xs text-muted-foreground">
+							{summaryStats.additional.hours} ชม./เทอม
+						</div>
 					</Card.Content>
 				</Card.Root>
 				<Card.Root>
 					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
-						<h4 class="text-sm font-medium text-muted-foreground mb-1">กิจกรรมฯ</h4>
-						<div class="text-xl font-bold">-</div>
-						<div class="text-xs text-muted-foreground">{summaryStats.activity.hours} ชม.</div>
+						<h4 class="text-sm font-medium text-muted-foreground mb-1">กิจกรรมพัฒนาผู้เรียน</h4>
+						<div class="text-xl font-bold">
+							{summaryStats.activity.count}
+							<span class="text-xs font-normal text-muted-foreground">กิจกรรม</span>
+						</div>
+						<div class="text-xs text-muted-foreground">
+							{summaryStats.activity.periods} คาบ/สัปดาห์
+						</div>
 					</Card.Content>
 				</Card.Root>
 				<Card.Root class="bg-primary/5 border-primary/20">
 					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
-						<h4 class="text-sm font-medium text-primary mb-1">รวมทั้งสิ้น</h4>
+						<h4 class="text-sm font-medium text-primary mb-1">รวมทั้งสิ้น (วิชา)</h4>
 						<div class="text-xl font-bold text-primary">
 							{summaryStats.total.credit.toFixed(1)}
 							<span class="text-xs font-normal opacity-70">นก.</span>
 						</div>
-						<div class="text-xs text-muted-foreground">{summaryStats.total.hours} ชม.</div>
+						<div class="text-xs text-muted-foreground">{summaryStats.total.hours} ชม./เทอม</div>
 					</Card.Content>
 				</Card.Root>
 			</div>
@@ -692,7 +701,17 @@
 											<span class="text-muted-foreground text-xs">-</span>
 										{/if}
 									</Table.Cell>
-									<Table.Cell class="text-center">{course.subject_credit}</Table.Cell>
+									<Table.Cell class="text-center">
+										<div class="text-sm font-medium">
+											{course.subject_credit ?? '-'}
+											<span class="text-xs font-normal text-muted-foreground">นก.</span>
+										</div>
+										{#if course.subject_hours !== undefined && course.subject_hours !== null}
+											<div class="text-[11px] text-muted-foreground">
+												{course.subject_hours} ชม./เทอม
+											</div>
+										{/if}
+									</Table.Cell>
 									<Table.Cell>
 										<div class="flex items-center gap-2 flex-wrap">
 											{#each teamInstructorsMap[course.id] ?? [] as instr}
@@ -804,7 +823,10 @@
 												{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
 											</Badge>
 										</Table.Cell>
-										<Table.Cell>{activity.periods_per_week}</Table.Cell>
+										<Table.Cell>
+											<span class="font-medium">{activity.periods_per_week}</span>
+											<span class="text-xs text-muted-foreground ml-1">คาบ/สัปดาห์</span>
+										</Table.Cell>
 										<Table.Cell class="text-xs text-muted-foreground">
 											{activity.scheduling_mode === 'independent'
 												? 'แต่ละห้องจัดเอง'
