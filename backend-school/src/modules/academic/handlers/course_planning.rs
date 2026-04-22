@@ -73,7 +73,11 @@ pub async fn list_classroom_courses(
 
     if let Some(_) = query.instructor_id {
         idx += 1;
-        sql.push_str(&format!(" AND cc.primary_instructor_id = ${idx}"));
+        // ใช้ junction (รองรับทั้ง primary + secondary) ไม่ filter แค่ primary
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM classroom_course_instructors cci \
+               WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx})"
+        ));
         has_filter = true;
     }
 
@@ -336,6 +340,9 @@ pub async fn add_course_instructor(
     }
     let role = body.role.unwrap_or_else(|| "secondary".to_string());
 
+    let mut tx = pool.begin().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     // Trigger cci_sync_primary (migration 078) demotes any existing primary when a new primary
     // is inserted and refreshes classroom_courses.primary_instructor_id from the junction.
     sqlx::query(
@@ -346,9 +353,28 @@ pub async fn add_course_instructor(
     .bind(course_id)
     .bind(body.instructor_id)
     .bind(&role)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Propagate ไปยัง timetable_entry_instructors ของ entries ที่มีอยู่
+    // ครูที่เพิ่งเข้าทีม → เห็นคาบเดิมของวิชานี้ในตารางของตัวเอง
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         SELECT te.id, $2, $3
+         FROM academic_timetable_entries te
+         WHERE te.classroom_course_id = $1
+         ON CONFLICT (entry_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
+    )
+    .bind(course_id)
+    .bind(body.instructor_id)
+    .bind(&role)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(json!({ "success": true })).into_response())
 }
@@ -363,11 +389,29 @@ pub async fn remove_course_instructor(
     if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
+    let mut tx = pool.begin().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     // Trigger cci_sync_primary (migration 078) refreshes classroom_courses.primary_instructor_id
     // from the remaining junction rows after delete.
     sqlx::query("DELETE FROM classroom_course_instructors WHERE classroom_course_id = $1 AND instructor_id = $2")
-        .bind(course_id).bind(instructor_id).execute(&pool).await
+        .bind(course_id).bind(instructor_id).execute(&mut *tx).await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Propagate: ลบครูออกจาก timetable_entry_instructors ของ entries ทั้งหมดของ course นี้
+    sqlx::query(
+        "DELETE FROM timetable_entry_instructors tei
+         USING academic_timetable_entries te
+         WHERE tei.entry_id = te.id
+           AND te.classroom_course_id = $1
+           AND tei.instructor_id = $2"
+    )
+    .bind(course_id).bind(instructor_id).execute(&mut *tx).await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     Ok(Json(json!({ "success": true })).into_response())
 }
 
@@ -382,13 +426,30 @@ pub async fn update_course_instructor_role(
     if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
+    let mut tx = pool.begin().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     // Trigger cci_sync_primary (migration 078) demotes other primaries and refreshes
     // classroom_courses.primary_instructor_id when role changes to/from 'primary'.
     sqlx::query(
         "UPDATE classroom_course_instructors SET role = $3
          WHERE classroom_course_id = $1 AND instructor_id = $2"
-    ).bind(course_id).bind(instructor_id).bind(&body.role).execute(&pool).await
+    ).bind(course_id).bind(instructor_id).bind(&body.role).execute(&mut *tx).await
       .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Propagate role change → timetable_entry_instructors ของ entries ทั้งหมด
+    sqlx::query(
+        "UPDATE timetable_entry_instructors SET role = $3
+         FROM academic_timetable_entries te
+         WHERE timetable_entry_instructors.entry_id = te.id
+           AND te.classroom_course_id = $1
+           AND timetable_entry_instructors.instructor_id = $2"
+    ).bind(course_id).bind(instructor_id).bind(&body.role).execute(&mut *tx).await
+      .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     Ok(Json(json!({ "success": true })).into_response())
 }
 
