@@ -17,6 +17,25 @@ use crate::AppState;
 use crate::error::AppError;
 use crate::db::school_mapping::get_school_database_url;
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::modules::academic::websockets::TimetableEvent;
+
+/// Broadcast realtime refresh ให้ semester ของ course ที่แก้ทีมครู
+async fn broadcast_course_refresh(
+    state: &AppState,
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    course_id: Uuid,
+) {
+    let semester_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT academic_semester_id FROM classroom_courses WHERE id = $1"
+    ).bind(course_id).fetch_optional(pool).await.ok().flatten();
+    if let Some(sem_id) = semester_id {
+        let user_id = crate::middleware::auth::extract_user_id(headers, pool).await.ok();
+        let subdomain = extract_subdomain_from_request(headers).unwrap_or_else(|_| "default".to_string());
+        let event = TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() };
+        let _ = state.websocket_manager.get_or_create_room(subdomain, sem_id).send(event);
+    }
+}
 
 /// Helper
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
@@ -376,6 +395,8 @@ pub async fn add_course_instructor(
     tx.commit().await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
+    broadcast_course_refresh(&state, &headers, &pool, course_id).await;
+
     Ok(Json(json!({ "success": true })).into_response())
 }
 
@@ -411,6 +432,8 @@ pub async fn remove_course_instructor(
 
     tx.commit().await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    broadcast_course_refresh(&state, &headers, &pool, course_id).await;
 
     Ok(Json(json!({ "success": true })).into_response())
 }
@@ -449,6 +472,8 @@ pub async fn update_course_instructor_role(
 
     tx.commit().await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    broadcast_course_refresh(&state, &headers, &pool, course_id).await;
 
     Ok(Json(json!({ "success": true })).into_response())
 }

@@ -1471,6 +1471,7 @@ pub async fn add_entry_instructor(
     if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
     let role = body.role.unwrap_or_else(|| "primary".to_string());
     sqlx::query(
         "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
@@ -1482,6 +1483,17 @@ pub async fn add_entry_instructor(
     .execute(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Broadcast realtime refresh
+    let semester_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT academic_semester_id FROM academic_timetable_entries WHERE id = $1"
+    ).bind(entry_id).fetch_optional(&pool).await.ok().flatten();
+    if let Some(sem_id) = semester_id {
+        let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        let event = TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() };
+        let _ = state.websocket_manager.get_or_create_room(subdomain, sem_id).send(event);
+    }
+
     Ok(Json(json!({ "success": true })).into_response())
 }
 
@@ -1495,6 +1507,13 @@ pub async fn remove_entry_instructor(
     if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
         return Ok(r);
     }
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+
+    // Capture semester before potential cascade delete
+    let semester_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT academic_semester_id FROM academic_timetable_entries WHERE id = $1"
+    ).bind(entry_id).fetch_optional(&pool).await.ok().flatten();
+
     sqlx::query("DELETE FROM timetable_entry_instructors WHERE entry_id = $1 AND instructor_id = $2")
         .bind(entry_id)
         .bind(instructor_id)
@@ -1514,6 +1533,13 @@ pub async fn remove_entry_instructor(
             sqlx::query("DELETE FROM academic_timetable_entries WHERE id = $1")
                 .bind(entry_id).execute(&pool).await.ok();
         }
+    }
+
+    // Broadcast realtime refresh
+    if let Some(sem_id) = semester_id {
+        let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        let event = TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() };
+        let _ = state.websocket_manager.get_or_create_room(subdomain, sem_id).send(event);
     }
 
     Ok(Json(json!({ "success": true })).into_response())
