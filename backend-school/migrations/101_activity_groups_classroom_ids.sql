@@ -18,7 +18,7 @@ WITH expanded AS (
     SELECT ag.id AS group_id,
            jsonb_agg(DISTINCT asc_row.classroom_id::text) AS classroom_ids
     FROM activity_groups ag
-    JOIN activity_slot_classrooms asc_row ON asc_row.slot_id = ag.activity_slot_id
+    JOIN activity_slot_classrooms asc_row ON asc_row.slot_id = ag.slot_id
     JOIN class_rooms cr ON cr.id = asc_row.classroom_id
     WHERE ag.allowed_grade_level_ids IS NOT NULL
       AND jsonb_array_length(ag.allowed_grade_level_ids) > 0
