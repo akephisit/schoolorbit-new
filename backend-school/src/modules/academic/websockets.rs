@@ -187,8 +187,9 @@ pub struct WsParams {
 pub struct WebSocketManager {
     // Room Key -> Broadcast Sender (ส่ง SeqEvent ไปทุก subscriber)
     rooms: DashMap<String, broadcast::Sender<SeqEvent>>,
-    // Room Key -> (User ID -> User Presence)
-    room_users: DashMap<String, DashMap<Uuid, UserPresence>>,
+    // Room Key -> (User ID -> (Presence, tab/connection count))
+    // count > 0 = user มีอย่างน้อย 1 tab เปิดอยู่
+    room_users: DashMap<String, DashMap<Uuid, (UserPresence, usize)>>,
     // Room Key -> (User ID -> Drag State)
     room_drags: DashMap<String, DashMap<Uuid, DragState>>,
     // Room Key -> next seq counter (monotonic)
@@ -348,22 +349,49 @@ impl WebSocketManager {
         Some(events)
     }
 
-    pub fn join_room(&self, school_key: String, semester_id: Uuid, user: UserPresence) {
+    /// Join room — เพิ่ม count ของ user_id นั้น. Return true ถ้าเป็น "first tab" ของ user
+    /// (caller ใช้ตัดสินใจว่าจะ broadcast UserJoined หรือไม่)
+    pub fn join_room(&self, school_key: String, semester_id: Uuid, user: UserPresence) -> bool {
         let key = Self::get_room_key(school_key, semester_id);
+        let mut is_first = false;
         if let Some(users) = self.room_users.get(&key) {
-            users.insert(user.user_id, user);
+            users.entry(user.user_id)
+                .and_modify(|(presence, count)| {
+                    *presence = user.clone(); // refresh presence (ชื่อ/สี อัปเดต)
+                    *count += 1;
+                })
+                .or_insert_with(|| { is_first = true; (user, 1) });
         }
         // มี subscriber เข้ามา — room ไม่ว่างอีกต่อไป
         self.room_empty_since.remove(&key);
+        is_first
     }
 
-    pub fn leave_room(&self, school_key: String, semester_id: Uuid, user_id: Uuid) {
+    /// Leave room — ลด count. Return true ถ้าเป็น "last tab" ของ user
+    /// (caller ใช้ตัดสินใจว่าจะ broadcast UserLeft หรือไม่)
+    pub fn leave_room(&self, school_key: String, semester_id: Uuid, user_id: Uuid) -> bool {
         let key = Self::get_room_key(school_key, semester_id);
+        let mut is_last = false;
         if let Some(users) = self.room_users.get(&key) {
-            users.remove(&user_id);
+            let mut should_remove = false;
+            if let Some(mut entry) = users.get_mut(&user_id) {
+                let (_, count) = entry.value_mut();
+                if *count <= 1 {
+                    should_remove = true;
+                    is_last = true;
+                } else {
+                    *count -= 1;
+                }
+            }
+            if should_remove {
+                users.remove(&user_id);
+            }
         }
-        if let Some(drags) = self.room_drags.get(&key) {
-            drags.remove(&user_id);
+        // Drag state ล้างเมื่อ tab สุดท้ายออกเท่านั้น
+        if is_last {
+            if let Some(drags) = self.room_drags.get(&key) {
+                drags.remove(&user_id);
+            }
         }
         // ถ้าไม่มี subscriber เหลือ → mark เวลาเริ่มว่าง (cleanup task จะลบในภายหลัง)
         if let Some(tx) = self.rooms.get(&key) {
@@ -371,6 +399,7 @@ impl WebSocketManager {
                 self.room_empty_since.insert(key, Instant::now());
             }
         }
+        is_last
     }
 
     pub fn update_drag(&self, school_key: String, semester_id: Uuid, user_id: Uuid, drag: Option<DragState>) {
@@ -387,23 +416,23 @@ impl WebSocketManager {
     pub fn update_context(&self, school_key: String, semester_id: Uuid, user_id: Uuid, context: Option<UserContext>) {
          let key = Self::get_room_key(school_key, semester_id);
          if let Some(users) = self.room_users.get(&key) {
-             if let Some(mut user) = users.get_mut(&user_id) {
-                 user.context = context;
+             if let Some(mut entry) = users.get_mut(&user_id) {
+                 entry.value_mut().0.context = context;
              }
          }
     }
 
     pub fn get_state_snapshot(&self, school_key: String, semester_id: Uuid) -> (Vec<UserPresence>, std::collections::HashMap<Uuid, DragState>) {
         let key = Self::get_room_key(school_key, semester_id);
-        
+
         let users = self.room_users.get(&key)
-            .map(|m| m.iter().map(|kv| kv.value().clone()).collect())
+            .map(|m| m.iter().map(|kv| kv.value().0.clone()).collect())
             .unwrap_or_default();
-            
+
         let drags = self.room_drags.get(&key)
             .map(|m| m.iter().map(|kv| (*kv.key(), kv.value().clone())).collect())
             .unwrap_or_default();
-            
+
         (users, drags)
     }
 }
@@ -465,7 +494,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
     let tx = state.websocket_manager.get_or_create_room(school_key.clone(), params.semester_id);
     let mut rx = tx.subscribe();
 
-    state.websocket_manager.join_room(school_key.clone(), params.semester_id, user_presence.clone());
+    let is_first_tab = state.websocket_manager.join_room(school_key.clone(), params.semester_id, user_presence.clone());
 
     // 2. Send Initial State (with current_seq — client ใช้เป็นจุดเริ่ม tracking)
     let (users, drags) = state.websocket_manager.get_state_snapshot(school_key.clone(), params.semester_id);
@@ -478,8 +507,10 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
         let _ = sender.send(Message::Text(json.into())).await;
     }
 
-    // 3. Broadcast JOIN to others
-    let _ = tx.send(SeqEvent { seq: None, event: TimetableEvent::UserJoined(user_presence.clone()) });
+    // 3. Broadcast UserJoined เฉพาะถ้าเป็น tab แรกของ user (tab ที่ 2+ ไม่ส่ง — user เดิม)
+    if is_first_tab {
+        let _ = tx.send(SeqEvent { seq: None, event: TimetableEvent::UserJoined(user_presence.clone()) });
+    }
 
     // Spawn a task to handle incoming messages from this client (Broadcast Listener)
     let mut send_task = tokio::spawn(async move {
@@ -591,8 +622,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
 
     // Cleanup
     send_task.abort();
-    state.websocket_manager.leave_room(school_key.clone(), params.semester_id, params.user_id);
-    let _ = tx.send(SeqEvent { seq: None, event: TimetableEvent::UserLeft { user_id: params.user_id } });
+    let is_last_tab = state.websocket_manager.leave_room(school_key.clone(), params.semester_id, params.user_id);
+    // Broadcast UserLeft เฉพาะถ้าเป็น tab สุดท้ายของ user
+    if is_last_tab {
+        let _ = tx.send(SeqEvent { seq: None, event: TimetableEvent::UserLeft { user_id: params.user_id } });
+    }
 }
 
 fn generate_color_from_uuid(id: &Uuid) -> String {
