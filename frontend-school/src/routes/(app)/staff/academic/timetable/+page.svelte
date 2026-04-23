@@ -2381,7 +2381,7 @@
 						</span>
 					</div>
 					<div class="overflow-y-auto p-3 space-y-2 max-h-[200px]">
-						{#each unscheduledActivities as activity (activity.id)}
+						{#each unscheduledActivities as activity (activity.id + ':' + (activity._classroom_id ?? ''))}
 							{#if activity.is_draggable}
 								<!-- Independent: draggable -->
 								<div
