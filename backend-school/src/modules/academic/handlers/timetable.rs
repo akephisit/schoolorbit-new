@@ -1860,7 +1860,7 @@ pub async fn swap_timetable_entries(
     }
 
     // Fetch both entries' current day/period/room
-    let entries: Vec<(Uuid, String, Uuid, Option<Uuid>, Uuid, Uuid)> = sqlx::query_as(
+    let entries: Vec<(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>, Uuid)> = sqlx::query_as(
         r#"SELECT id, day_of_week, period_id, room_id, classroom_id, academic_semester_id
            FROM academic_timetable_entries
            WHERE id = ANY($1) AND is_active = true"#
@@ -2095,7 +2095,7 @@ pub async fn validate_timetable_moves(
     }
 
     // Fetch source entry details
-    let src: Option<(String, Uuid, Uuid, Option<Uuid>, Uuid, Uuid)> = sqlx::query_as(
+    let src: Option<(String, Uuid, Option<Uuid>, Option<Uuid>, Uuid, Uuid)> = sqlx::query_as(
         r#"SELECT day_of_week, period_id, classroom_id, room_id, academic_semester_id, id
            FROM academic_timetable_entries WHERE id = $1 AND is_active = true"#
     )
@@ -2110,7 +2110,7 @@ pub async fn validate_timetable_moves(
     };
 
     // Fetch all relevant entries in the same semester
-    let all_entries: Vec<(Uuid, String, Uuid, Uuid, Option<Uuid>)> = sqlx::query_as(
+    let all_entries: Vec<(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
         r#"SELECT id, day_of_week, period_id, classroom_id, room_id
            FROM academic_timetable_entries
            WHERE academic_semester_id = $1 AND is_active = true"#
@@ -2147,7 +2147,7 @@ pub async fn validate_timetable_moves(
     }
 
     // Build a map: (day, period) → existing entries there
-    let mut cell_entries: HashMap<(String, Uuid), Vec<&(Uuid, String, Uuid, Uuid, Option<Uuid>)>> = HashMap::new();
+    let mut cell_entries: HashMap<(String, Uuid), Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)>> = HashMap::new();
     for e in &all_entries {
         cell_entries.entry((e.1.clone(), e.2)).or_default().push(e);
     }
@@ -2184,11 +2184,11 @@ pub async fn validate_timetable_moves(
                 continue;
             }
 
-            let occupants: Vec<&(Uuid, String, Uuid, Uuid, Option<Uuid>)> =
+            let occupants: Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)> =
                 cell_entries.get(&key).cloned().unwrap_or_default();
 
             // Entries other than source at this cell
-            let others: Vec<&(Uuid, String, Uuid, Uuid, Option<Uuid>)> =
+            let others: Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)> =
                 occupants.iter().filter(|e| e.0 != body.entry_id).copied().collect();
 
             if others.is_empty() {
