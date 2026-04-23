@@ -902,6 +902,47 @@
 		}
 	}
 
+	function createDragFrame(code: string, bgColor: string, borderColor: string) {
+		const div = document.createElement('div');
+		div.style.cssText = `
+			position: fixed;
+			top: -1000px;
+			left: -1000px;
+			width: 120px;
+			height: 70px;
+			border: 2px solid ${borderColor};
+			border-radius: 6px;
+			background: transparent;
+			box-sizing: border-box;
+			padding: 4px 6px;
+			display: flex;
+			align-items: flex-start;
+			justify-content: flex-start;
+			font-family: system-ui, -apple-system, sans-serif;
+			transform: rotate(-2deg);
+		`;
+		if (code) {
+			const pill = document.createElement('div');
+			pill.style.cssText = `
+				background: ${bgColor};
+				border: 1px solid ${borderColor};
+				color: #1e293b;
+				font-size: 11px;
+				font-weight: 700;
+				padding: 1px 6px;
+				border-radius: 4px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				max-width: 100%;
+			`;
+			pill.textContent = code;
+			div.appendChild(pill);
+		}
+		document.body.appendChild(div);
+		return div;
+	}
+
 	function handleActivityDragStart(
 		event: DragEvent,
 		activity: (typeof unscheduledActivities)[number]
@@ -927,7 +968,13 @@
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = 'copy';
 			event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'NEW', id: activity.id }));
-			// ใช้ browser native ghost (translucent copy ของ card ที่ลาก) → ไม่บัง hover popup
+			// Frame-only drag ghost (โปร่งตรงกลาง → popup ทะลุเห็นได้)
+			const code = ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type;
+			const bgColor = getSubjectColor(code, 'ACTIVITY');
+			const borderColor = getSubjectBorderColor(code, 'ACTIVITY');
+			const dragElement = createDragFrame(code, bgColor, borderColor);
+			event.dataTransfer.setDragImage(dragElement, 60, 35);
+			setTimeout(() => document.body.removeChild(dragElement), 0);
 		}
 
 		// Notify others
@@ -1003,7 +1050,14 @@
 				})
 			);
 
-			// ใช้ browser native ghost — ไม่ setDragImage เพราะ custom image บัง hover popup
+			// Frame-only drag ghost — สี/ขนาดตาม subject theme, กลางโปร่ง → popup ทะลุได้
+			const code = courseToCheck!.subject_code || courseToCheck!.title || 'วิชา';
+			const entryType = (courseToCheck as unknown as { entry_type?: string }).entry_type;
+			const bgColor = getSubjectColor(code, entryType);
+			const borderColor = getSubjectBorderColor(code, entryType);
+			const dragElement = createDragFrame(code, bgColor, borderColor);
+			event.dataTransfer.setDragImage(dragElement, 60, 35);
+			setTimeout(() => document.body.removeChild(dragElement), 0);
 		}
 
 		// Notify others
@@ -2891,7 +2945,7 @@
 		{#if hoverConflicts.length > 0}
 			<div
 				class="fixed z-[10000] pointer-events-none bg-white border border-red-300 rounded-md shadow-lg p-2 text-xs max-w-xs space-y-1"
-				style="top: {hoverDragCell.y + 14}px; left: {hoverDragCell.x + 14}px;"
+				style="top: {hoverDragCell.y + 45}px; left: {hoverDragCell.x + 68}px;"
 			>
 				{#each hoverConflicts as c, i (i)}
 					<div class="flex items-start gap-1.5 text-red-700">
