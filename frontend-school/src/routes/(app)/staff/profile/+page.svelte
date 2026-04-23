@@ -15,7 +15,6 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Avatar } from '$lib/components/ui/avatar';
 	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
 	import {
 		ArrowLeft,
@@ -56,7 +55,7 @@
 	// Read-only data - ข้อมูลที่แสดงผลเฉยๆ แก้ไม่ได้
 	let readOnlyData = $derived({
 		id: profile?.id || user?.id || '',
-        username: profile?.username || user?.username || '',
+		username: profile?.username || user?.username || '',
 		national_id: profile?.nationalId || user?.nationalId || '',
 		first_name: profile?.firstName || user?.firstName || '',
 		last_name: profile?.lastName || user?.lastName || '',
@@ -225,7 +224,6 @@
 									}
 								}}
 								onerror={(err: string) => toast.error(err)}
-								maxSizeMB={5}
 							/>
 						</div>
 

@@ -5,7 +5,6 @@
 	import { Pencil, Camera, Trash2, UserCircle, LoaderCircle } from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import ImageCropper from './ImageCropper.svelte';
-	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 	import heic2any from 'heic2any';
 	import Compressor from 'compressorjs';
@@ -23,7 +22,7 @@
 	let {
 		currentImage = null,
 		disabled = false,
-		maxSizeMB = 5,
+		maxSizeMB = 10,
 		onsuccess,
 		onerror,
 		helper,
@@ -61,9 +60,8 @@
 				return;
 			}
 
-			// Validate initial size (Allow up to 50MB for processing)
-			if (file.size > 50 * 1024 * 1024) {
-				toast.error(`ไฟล์ต้นฉบับต้องไม่เกิน 50MB`);
+			if (file.size > maxSizeMB * 1024 * 1024) {
+				toast.error(`ไฟล์ต้นฉบับต้องไม่เกิน ${maxSizeMB}MB`);
 				return;
 			}
 
@@ -230,7 +228,7 @@
 		{@render helper()}
 	{:else}
 		<p class="text-center text-sm text-muted-foreground mt-2">
-			รองรับ: JPG, PNG, WebP, HEIC (สูงสุด 50MB)
+			รองรับ: JPG, PNG, WebP, HEIC (สูงสุด {maxSizeMB}MB)
 		</p>
 	{/if}
 
@@ -238,7 +236,6 @@
 	<ImageCropper
 		bind:open={showCropper}
 		imageSrc={tempImageSrc}
-		aspect={1}
 		onCropComplete={handleCropComplete}
 	/>
 </div>

@@ -12,11 +12,14 @@
 	interface Props {
 		open: boolean;
 		imageSrc: string | null;
-		aspect?: number;
 		onCropComplete: (croppedImage: Blob) => void;
 	}
 
-	let { open = $bindable(false), imageSrc = null, aspect = 1, onCropComplete }: Props = $props();
+	let {
+		open = $bindable(false),
+		imageSrc = null,
+		onCropComplete
+	}: Props = $props();
 
 	// State
 	let zoom = $state(1); // 1 = fits container (base scale)
