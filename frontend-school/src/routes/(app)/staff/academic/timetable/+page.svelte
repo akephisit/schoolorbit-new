@@ -1688,7 +1688,7 @@
 	// Batch Assign State
 	let showBatchModal = $state(false);
 	let batchClassrooms = $state<string[]>([]);
-	let batchDay = $state('MON');
+	let batchDays = $state<string[]>(['MON']);
 	let batchPeriodIds = $state<string[]>([]);
 	let batchType = $state('ACTIVITY');
 	let batchTitle = $state('');
@@ -1782,6 +1782,10 @@
 			toast.error('กรุณาเลือกคาบเวลาอย่างน้อย 1 คาบ');
 			return;
 		}
+		if (batchDays.length === 0) {
+			toast.error('กรุณาเลือกวันอย่างน้อย 1 วัน');
+			return;
+		}
 
 		// Validate based on mode
 		if (batchMode === 'TEXT' && !batchTitle) {
@@ -1807,23 +1811,32 @@
 				slotIdToSend = batchSlotId;
 			}
 
-			const res = await createBatchTimetableEntries({
-				classroom_ids: batchClassrooms,
-				day_of_week: batchDay,
-				period_ids: batchPeriodIds,
-				academic_semester_id: selectedSemesterId,
-				entry_type: entryTypeToSend as 'ACTIVITY' | 'BREAK' | 'HOMEROOM',
-				title: titleToSend,
-				room_id: batchRoomId === 'none' ? undefined : batchRoomId,
-				force: batchForce,
-				activity_slot_id: slotIdToSend
-			});
-
-			if (res.success === false && res.conflicts) {
-				toast.error(res.message || 'พบรายการที่ชนกัน');
-				for (const c of res.conflicts) {
-					toast.error(c.message);
+			// ยิงทีละวัน (backend รับวันเดียวต่อ call) รวมผลทุกวัน
+			const allConflicts: { message: string }[] = [];
+			for (const day of batchDays) {
+				const res = await createBatchTimetableEntries({
+					classroom_ids: batchClassrooms,
+					day_of_week: day,
+					period_ids: batchPeriodIds,
+					academic_semester_id: selectedSemesterId,
+					entry_type: entryTypeToSend as 'ACTIVITY' | 'BREAK' | 'HOMEROOM',
+					title: titleToSend,
+					room_id: batchRoomId === 'none' ? undefined : batchRoomId,
+					force: batchForce,
+					activity_slot_id: slotIdToSend
+				});
+				if (res.success === false && res.conflicts) {
+					allConflicts.push(
+						...res.conflicts.map((c: ConflictInfo) => ({
+							message: `${DAYS.find((d) => d.value === day)?.label || day}: ${c.message}`
+						}))
+					);
 				}
+			}
+
+			if (allConflicts.length > 0) {
+				toast.error('พบรายการที่ชนกัน');
+				for (const c of allConflicts) toast.error(c.message);
 				submitting = false;
 				return;
 			}
@@ -2698,17 +2711,27 @@
 												</div>
 											{/if}
 
-											<div class="font-bold text-foreground/90 truncate text-sm leading-tight">
-												{entry.subject_code ||
-													entry.title ||
-													(entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : '')}
-											</div>
-											<div
-												class="line-clamp-1 text-foreground/70 text-[11px] leading-tight mb-auto"
-												title={entry.subject_name_th || entry.title || undefined}
-											>
-												{entry.subject_name_th || entry.title || ''}
-											</div>
+											{#if entry.subject_code}
+												<div
+													class="font-bold text-foreground/90 truncate text-sm leading-tight"
+												>
+													{entry.subject_code}
+												</div>
+												<div
+													class="line-clamp-1 text-foreground/70 text-[11px] leading-tight mb-auto"
+													title={entry.subject_name_th || undefined}
+												>
+													{entry.subject_name_th || ''}
+												</div>
+											{:else}
+												<!-- TEXT-batch / activity: full title (รองรับหลายบรรทัดจาก textarea) -->
+												<div
+													class="font-bold text-foreground/90 text-sm leading-tight whitespace-pre-line line-clamp-3 mb-auto"
+													title={entry.title || undefined}
+												>
+													{entry.title || (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : '')}
+												</div>
+											{/if}
 											<div
 												class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
 											>
@@ -3329,15 +3352,18 @@
 			</div>
 
 			{#if batchMode === 'TEXT'}
-				<div class="grid grid-cols-4 items-center gap-4">
-					<Label.Root class="text-right">ชื่อกิจกรรม</Label.Root>
+				<div class="grid grid-cols-4 items-start gap-4">
+					<Label.Root class="text-right mt-2">ชื่อกิจกรรม</Label.Root>
 					<div class="col-span-3">
-						<input
-							type="text"
-							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+						<textarea
+							rows="2"
+							class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y min-h-[60px]"
 							bind:value={batchTitle}
-							placeholder="เช่น ประชุมระดับ, กิจกรรมพัฒนาผู้เรียน"
-						/>
+							placeholder="เช่น ประชุมระดับ, กิจกรรมพัฒนาผู้เรียน&#10;ขึ้นบรรทัดใหม่ได้ (Enter)"
+						></textarea>
+						<p class="text-[10px] text-muted-foreground mt-1">
+							พิมพ์หลายบรรทัดได้ (เช่น "พักกลางวัน\nรับประทานอาหาร")
+						</p>
 					</div>
 				</div>
 
@@ -3418,19 +3444,32 @@
 				</div>
 			{/if}
 
-			<div class="grid grid-cols-4 items-center gap-4">
-				<Label.Root class="text-right">วัน</Label.Root>
-				<div class="col-span-3">
-					<Select.Root type="single" bind:value={batchDay}>
-						<Select.Trigger class="w-full">
-							{DAYS.find((d) => d.value === batchDay)?.label}
-						</Select.Trigger>
-						<Select.Content>
-							{#each DAYS as day (day.value)}
-								<Select.Item value={day.value}>{day.label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+			<div class="grid grid-cols-4 items-start gap-4">
+				<Label.Root class="text-right mt-1">วัน ({batchDays.length})</Label.Root>
+				<div class="col-span-3 flex flex-wrap gap-1.5">
+					{#each DAYS.slice(0, 5) as day (day.value)}
+						<label
+							class="flex items-center gap-1.5 px-2.5 py-1 rounded border cursor-pointer text-sm transition-colors {batchDays.includes(
+								day.value
+							)
+								? 'border-primary bg-primary/10 text-primary font-medium'
+								: 'bg-background hover:bg-muted/50'}"
+						>
+							<input
+								type="checkbox"
+								checked={batchDays.includes(day.value)}
+								onchange={() => {
+									if (batchDays.includes(day.value)) {
+										batchDays = batchDays.filter((d) => d !== day.value);
+									} else {
+										batchDays = [...batchDays, day.value];
+									}
+								}}
+								class="rounded"
+							/>
+							<span>{day.label}</span>
+						</label>
+					{/each}
 				</div>
 			</div>
 
