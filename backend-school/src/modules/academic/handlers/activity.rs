@@ -921,14 +921,32 @@ pub async fn add_slot_instructor(
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or_else(|| AppError::BadRequest("user_id required".to_string()))?;
 
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     sqlx::query(
         "INSERT INTO activity_slot_instructors (slot_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
     )
     .bind(slot_id)
     .bind(user_id)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Propagate ไป timetable_entry_instructors ของ entry synchronized slot นี้ (ทุกห้องที่ร่วม)
+    sqlx::query(
+        r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+           SELECT te.id, $2, 'primary'
+           FROM academic_timetable_entries te
+           WHERE te.activity_slot_id = $1
+           ON CONFLICT (entry_id, instructor_id) DO NOTHING"#,
+    )
+    .bind(slot_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(json!({ "message": "เพิ่มครูแล้ว" })).into_response())
 }
@@ -945,12 +963,30 @@ pub async fn remove_slot_instructor(
         return Ok(r);
     }
 
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     sqlx::query("DELETE FROM activity_slot_instructors WHERE slot_id = $1 AND user_id = $2")
         .bind(slot_id)
         .bind(user_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Propagate: ลบครูรายนี้ออกจาก entry ทุกคาบของ slot นี้
+    sqlx::query(
+        r#"DELETE FROM timetable_entry_instructors tei
+           USING academic_timetable_entries te
+           WHERE tei.entry_id = te.id
+             AND te.activity_slot_id = $1
+             AND tei.instructor_id = $2"#,
+    )
+    .bind(slot_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(json!({ "message": "ลบครูแล้ว" })).into_response())
 }
@@ -1009,11 +1045,27 @@ pub async fn remove_all_slot_instructors(
         return Ok(r);
     }
 
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     let result = sqlx::query("DELETE FROM activity_slot_instructors WHERE slot_id = $1")
         .bind(slot_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Propagate: ลบครูทั้งหมดออกจาก entry ของ slot นี้
+    sqlx::query(
+        r#"DELETE FROM timetable_entry_instructors tei
+           USING academic_timetable_entries te
+           WHERE tei.entry_id = te.id
+             AND te.activity_slot_id = $1"#,
+    )
+    .bind(slot_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(json!({ "message": "ลบครูทั้งหมดแล้ว", "deleted_count": result.rows_affected() })).into_response())
 }
@@ -1085,6 +1137,34 @@ pub async fn batch_upsert_slot_classroom_assignments(
             eprintln!("upsert_slot_classroom_assignment error: {e}");
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
+
+        // Propagate ไป timetable_entry_instructors ของ entry ที่มีอยู่ (independent: 1 ครู/ห้อง)
+        sqlx::query(
+            r#"DELETE FROM timetable_entry_instructors tei
+               USING academic_timetable_entries te
+               WHERE tei.entry_id = te.id
+                 AND te.activity_slot_id = $1
+                 AND te.classroom_id = $2"#,
+        )
+        .bind(slot_id)
+        .bind(a.classroom_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+        sqlx::query(
+            r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+               SELECT te.id, $3, 'primary'
+               FROM academic_timetable_entries te
+               WHERE te.activity_slot_id = $1 AND te.classroom_id = $2
+               ON CONFLICT (entry_id, instructor_id) DO NOTHING"#,
+        )
+        .bind(slot_id)
+        .bind(a.classroom_id)
+        .bind(a.instructor_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
@@ -1104,11 +1184,27 @@ pub async fn delete_all_slot_classroom_assignments(
         return Ok(r);
     }
 
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     let result = sqlx::query("DELETE FROM activity_slot_classroom_assignments WHERE slot_id = $1")
         .bind(slot_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Propagate: ลบครูออกจาก entry ทุกห้องใน slot นี้
+    sqlx::query(
+        r#"DELETE FROM timetable_entry_instructors tei
+           USING academic_timetable_entries te
+           WHERE tei.entry_id = te.id
+             AND te.activity_slot_id = $1"#,
+    )
+    .bind(slot_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(json!({ "message": "ลบครูประจำห้องทั้งหมดแล้ว", "deleted_count": result.rows_affected() })).into_response())
 }
@@ -1125,12 +1221,34 @@ pub async fn delete_slot_classroom_assignment(
         return Ok(r);
     }
 
-    sqlx::query("DELETE FROM activity_slot_classroom_assignments WHERE id = $1 AND slot_id = $2")
-        .bind(assignment_id)
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Delete + คืน classroom_id เพื่อ propagate ต่อ
+    let classroom_id: Option<Uuid> = sqlx::query_scalar(
+        "DELETE FROM activity_slot_classroom_assignments WHERE id = $1 AND slot_id = $2 RETURNING classroom_id"
+    )
+    .bind(assignment_id)
+    .bind(slot_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if let Some(cls_id) = classroom_id {
+        sqlx::query(
+            r#"DELETE FROM timetable_entry_instructors tei
+               USING academic_timetable_entries te
+               WHERE tei.entry_id = te.id
+                 AND te.activity_slot_id = $1
+                 AND te.classroom_id = $2"#,
+        )
         .bind(slot_id)
-        .execute(&pool)
+        .bind(cls_id)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(json!({ "message": "ลบสำเร็จ" })).into_response())
 }
