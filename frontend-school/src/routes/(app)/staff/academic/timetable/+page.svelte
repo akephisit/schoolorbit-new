@@ -1418,85 +1418,75 @@
 
 		try {
 			isExporting = true;
-			let successCount = 0;
-			let failCount = 0;
 
-			const total = exportTargetIds.length;
+			const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
+			const yearObj = academicYears.find((y) => y.id === selectedYearId);
+			const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
+			const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
 
-			// Loop through each target
-			for (let i = 0; i < total; i++) {
-				const id = exportTargetIds[i];
-				try {
-					// Fetch Data
-					let entries: TimetableEntry[] = [];
-					let targetName = '';
+			// fetch entries ของทุก target พร้อมกัน แล้วรวมเป็น pages เดียวสำหรับ PDF
+			const pagePromises = exportTargetIds.map(async (id) => {
+				let entries: TimetableEntry[] = [];
+				let title = '';
 
-					if (exportType === 'CLASSROOM') {
-						const room = classrooms.find((c) => c.id === id);
-						if (!room) continue;
-						targetName = `ห้อง ${room.name}`;
-						const res = await listTimetableEntries({
-							classroom_id: id,
-							academic_semester_id: selectedSemesterId
-						});
-						entries = res.data;
-					} else {
-						const teacher = instructors.find((inst) => inst.id === id);
-						if (!teacher) continue;
-						targetName = teacher.name.startsWith('ครู') ? teacher.name : `ครู${teacher.name}`;
-						const res = await listTimetableEntries({
-							instructor_id: id,
-							academic_semester_id: selectedSemesterId
-						});
-						entries = res.data;
-					}
-
-					// Prepare PDF Metadata
-					const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
-					const yearObj = academicYears.find((y) => y.id === selectedYearId);
-					const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
-
-					let title = '';
-					if (exportType === 'CLASSROOM') {
-						// Assuming room.name is something like "ม.4/1" or "4/1"
-						// User request: "ตารางเรียน ชั้นมัธยมศึกษาปีที่ 4/1"
-						// We will use "ชั้น" + targetName (which is "ห้อง ...")
-						// Wait, targetName was constructed as `ห้อง ${room.name}`.
-						// Let's reconstruct cleanly.
-						const room = classrooms.find((c) => c.id === id);
-						let roomName = room ? room.name : '';
-
-						// Expand abbreviated prefixes
-						if (roomName.startsWith('ม.')) roomName = roomName.replace('ม.', 'มัธยมศึกษาปีที่ ');
-						else if (roomName.startsWith('ป.'))
-							roomName = roomName.replace('ป.', 'ประถมศึกษาปีที่ ');
-						else if (roomName.startsWith('อ.')) roomName = roomName.replace('อ.', 'อนุบาลปีที่ ');
-						else if (/^\d/.test(roomName)) roomName = `มัธยมศึกษาปีที่ ${roomName}`; // Fallback for plain "4/1"
-
-						title = `ตารางเรียน ชั้น${roomName}`;
-					} else {
-						title = `ตารางสอน ${targetName}`;
-					}
-					const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
-
-					// Generate PDF
-					await generateTimetablePDF(title, subTitle, periods, entries, exportType);
-					successCount++;
-
-					// Small delay to prevent browser choking/blocking multiple downloads
-					if (i < total - 1) await new Promise((r) => setTimeout(r, 500));
-				} catch (err) {
-					console.error(`Failed to export ${id}`, err);
-					failCount++;
+				if (exportType === 'CLASSROOM') {
+					const room = classrooms.find((c) => c.id === id);
+					if (!room) return null;
+					let roomName = room.name;
+					if (roomName.startsWith('ม.')) roomName = roomName.replace('ม.', 'มัธยมศึกษาปีที่ ');
+					else if (roomName.startsWith('ป.'))
+						roomName = roomName.replace('ป.', 'ประถมศึกษาปีที่ ');
+					else if (roomName.startsWith('อ.')) roomName = roomName.replace('อ.', 'อนุบาลปีที่ ');
+					else if (/^\d/.test(roomName)) roomName = `มัธยมศึกษาปีที่ ${roomName}`;
+					title = `ตารางเรียน ชั้น${roomName}`;
+					const res = await listTimetableEntries({
+						classroom_id: id,
+						academic_semester_id: selectedSemesterId
+					});
+					entries = res.data;
+				} else {
+					const teacher = instructors.find((inst) => inst.id === id);
+					if (!teacher) return null;
+					const targetName = teacher.name.startsWith('ครู') ? teacher.name : `ครู${teacher.name}`;
+					title = `ตารางสอน ${targetName}`;
+					const res = await listTimetableEntries({
+						instructor_id: id,
+						academic_semester_id: selectedSemesterId
+					});
+					entries = res.data;
 				}
+
+				return {
+					title,
+					subTitle,
+					periods,
+					timetableEntries: entries,
+					viewMode: exportType
+				};
+			});
+
+			const results = await Promise.all(pagePromises);
+			const pages = results.filter((p): p is NonNullable<typeof p> => p !== null);
+
+			if (pages.length === 0) {
+				toast.error('ไม่พบข้อมูลสำหรับรายการที่เลือก');
+				return;
 			}
 
-			if (failCount === 0) {
-				toast.success(`ดาวน์โหลดเสร็จสิ้น ${successCount} รายการ`);
-				showExportModal = false;
-			} else {
-				toast.warning(`ดาวน์โหลดสำเร็จ ${successCount} รายการ, ล้มเหลว ${failCount} รายการ`);
-			}
+			// ตั้งชื่อไฟล์: ถ้าหน้าเดียวใช้ title, หลายหน้าใช้ชื่อรวม
+			const fileName =
+				pages.length === 1
+					? pages[0].title
+					: `${exportType === 'CLASSROOM' ? 'ตารางเรียน' : 'ตารางสอน'}_รวม_${pages.length}รายการ_${yearName}_ภาค${semesterName}`;
+
+			await generateTimetablePDF(pages, fileName);
+
+			toast.success(
+				pages.length === 1
+					? 'ดาวน์โหลดเสร็จสิ้น'
+					: `ดาวน์โหลดไฟล์รวม ${pages.length} รายการเสร็จสิ้น`
+			);
+			showExportModal = false;
 		} catch (e: unknown) {
 			toast.error('เกิดข้อผิดพลาดในการดาวน์โหลด');
 			console.error(e);

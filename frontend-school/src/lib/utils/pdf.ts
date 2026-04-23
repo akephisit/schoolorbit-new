@@ -48,34 +48,22 @@ const DAYS = [
 	{ value: 'SUN', label: 'อาทิตย์', color: '#F3F4F6' }
 ];
 
-export const generateTimetablePDF = async (
-	title: string,
-	subTitle: string,
-	periods: PdfPeriod[],
-	timetableEntries: TimetableEntry[],
-	viewMode: 'CLASSROOM' | 'INSTRUCTOR' = 'CLASSROOM'
-) => {
-	// 1. Dynamic import pdfmake (avoid bundling ~1.5MB in initial load)
-	const pdfMakeModule = await import('pdfmake/build/pdfmake');
-	const pdfMake = pdfMakeModule.default;
+export interface TimetablePage {
+	title: string;
+	subTitle: string;
+	periods: PdfPeriod[];
+	timetableEntries: TimetableEntry[];
+	viewMode?: 'CLASSROOM' | 'INSTRUCTOR';
+}
 
-	const fonts = {
-		Sarabun: {
-			normal: window.location.origin + '/fonts/Sarabun-Regular.ttf',
-			bold: window.location.origin + '/fonts/Sarabun-Bold.ttf',
-			italics: window.location.origin + '/fonts/Sarabun-Regular.ttf',
-			bolditalics: window.location.origin + '/fonts/Sarabun-Bold.ttf'
-		}
-	};
-	pdfMake.fonts = fonts;
-
+function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
+	const { title, subTitle, periods, timetableEntries, viewMode = 'CLASSROOM' } = page;
 	const tableBody: TableCell[][] = [];
 
-	// 2.1 Header Row
+	// Header Row
 	const headerRow: TableCell[] = [
 		{ text: 'วัน / เวลา', bold: true, alignment: 'center', fillColor: '#f3f4f6', margin: [0, 5] }
 	];
-
 	periods.forEach((p) => {
 		headerRow.push({
 			text: [
@@ -93,25 +81,22 @@ export const generateTimetablePDF = async (
 	});
 	tableBody.push(headerRow);
 
-	// 2.2 Data Rows (MON - FRI)
+	// Data Rows (MON - FRI)
 	DAYS.slice(0, 5).forEach((day) => {
 		const row: TableCell[] = [];
 
-		// Day Header Column
 		row.push({
 			text: day.label,
 			bold: true,
 			alignment: 'center',
 			fillColor: day.color,
 			fontSize: 12,
-			margin: [0, 15] // Try to center vertically approx
+			margin: [0, 15]
 		});
 
-		// Period Columns
 		periods.forEach((p) => {
 			const entry = getEntry(timetableEntries, day.value, p.id);
 			if (entry) {
-				// Build Content Stack
 				const stack: Content[] = [];
 
 				if (entry.entry_type === 'COURSE') {
@@ -124,7 +109,6 @@ export const generateTimetablePDF = async (
 						}
 					);
 				} else {
-					// Custom Activity / Break / Homeroom
 					stack.push({
 						text: entry.title || 'กิจกรรม',
 						bold: true,
@@ -134,9 +118,7 @@ export const generateTimetablePDF = async (
 					});
 				}
 
-				// Contextual Info based on View Mode
 				if (viewMode === 'CLASSROOM') {
-					// For Student: Show Teacher
 					if (
 						entry.instructor_name &&
 						entry.instructor_name.trim() &&
@@ -144,28 +126,20 @@ export const generateTimetablePDF = async (
 					) {
 						const rawName = entry.instructor_name.trim();
 						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
-
-						stack.push({
-							text: teacherName,
-							fontSize: 8,
-							color: '#4b5563',
-							margin: [0, 1]
-						});
+						stack.push({ text: teacherName, fontSize: 8, color: '#4b5563', margin: [0, 1] });
 					}
 				} else {
-					// For Instructor: Show Class
 					if (entry.classroom_name) {
 						stack.push({
 							text: entry.classroom_name,
 							fontSize: 9,
-							color: '#d97706', // Amber for distinction
+							color: '#d97706',
 							bold: true,
 							margin: [0, 1]
 						});
 					}
 				}
 
-				// Room (Always show if available)
 				if (entry.room_code) {
 					stack.push({
 						text: `ห้อง ${entry.room_code}`,
@@ -173,18 +147,10 @@ export const generateTimetablePDF = async (
 						background: '#f3f4f6',
 						color: '#1f2937',
 						margin: [0, 2]
-						// emulate padding with leading/trailing spaces if needed, but background works on text block
 					});
-				} else if (viewMode === 'CLASSROOM' && entry.classroom_name && !entry.instructor_name) {
-					// Fallback for classroom view if absolutely no other info, maybe show class name?
-					// Actually better to leave blank if no room to avoid confusion "Is M.1/1 a room?"
 				}
 
-				row.push({
-					stack: stack,
-					alignment: 'center',
-					margin: [2, 5]
-				});
+				row.push({ stack, alignment: 'center', margin: [2, 5] });
 			} else {
 				row.push({ text: '' });
 			}
@@ -193,49 +159,61 @@ export const generateTimetablePDF = async (
 		tableBody.push(row);
 	});
 
-	// 3. Define Document
-	const docDefinition: TDocumentDefinitions = {
-		pageSize: 'A4',
-		pageOrientation: 'landscape',
-		content: [
-			{ text: title, style: 'header', alignment: 'center', margin: [0, 0, 0, 5] },
-			{ text: subTitle, style: 'subheader', alignment: 'center', margin: [0, 0, 0, 20] },
-			{
-				table: {
-					headerRows: 1,
-					widths: ['auto', ...periods.map(() => '*')], // 'auto' for Day, '*' for equal periods
-					body: tableBody
-				},
-				layout: tableLayout
-			},
-			{
-				columns: [
-					{ text: `ข้อมูล ณ วันที่ ${new Date().toLocaleDateString('th-TH')}`, style: 'footer' },
-					{ text: 'SchoolOrbit TimeTable', style: 'footer', alignment: 'right' }
-				],
-				margin: [0, 10, 0, 0]
-			}
-		],
-		styles: {
-			header: {
-				fontSize: 18,
-				bold: true,
-				color: '#1e3a8a'
-			},
-			subheader: {
-				fontSize: 14,
-				color: '#4b5563'
-			},
-			footer: {
-				fontSize: 8,
-				color: '#9ca3af'
-			}
+	return [
+		{
+			text: title,
+			style: 'header',
+			alignment: 'center',
+			margin: [0, 0, 0, 5],
+			...(isFirst ? {} : { pageBreak: 'before' })
 		},
-		defaultStyle: {
-			font: 'Sarabun'
+		{ text: subTitle, style: 'subheader', alignment: 'center', margin: [0, 0, 0, 20] },
+		{
+			table: {
+				headerRows: 1,
+				widths: ['auto', ...periods.map(() => '*')],
+				body: tableBody
+			},
+			layout: tableLayout
+		},
+		{
+			columns: [
+				{ text: `ข้อมูล ณ วันที่ ${new Date().toLocaleDateString('th-TH')}`, style: 'footer' },
+				{ text: 'SchoolOrbit TimeTable', style: 'footer', alignment: 'right' }
+			],
+			margin: [0, 10, 0, 0]
+		}
+	];
+}
+
+export const generateTimetablePDF = async (pages: TimetablePage[], fileName?: string) => {
+	if (pages.length === 0) return;
+
+	const pdfMakeModule = await import('pdfmake/build/pdfmake');
+	const pdfMake = pdfMakeModule.default;
+
+	pdfMake.fonts = {
+		Sarabun: {
+			normal: window.location.origin + '/fonts/Sarabun-Regular.ttf',
+			bold: window.location.origin + '/fonts/Sarabun-Bold.ttf',
+			italics: window.location.origin + '/fonts/Sarabun-Regular.ttf',
+			bolditalics: window.location.origin + '/fonts/Sarabun-Bold.ttf'
 		}
 	};
 
-	// 4. Download
-	pdfMake.createPdf(docDefinition).download(`${title}.pdf`);
+	const content: Content[] = pages.flatMap((page, i) => buildPageContent(page, i === 0));
+
+	const docDefinition: TDocumentDefinitions = {
+		pageSize: 'A4',
+		pageOrientation: 'landscape',
+		content,
+		styles: {
+			header: { fontSize: 18, bold: true, color: '#1e3a8a' },
+			subheader: { fontSize: 14, color: '#4b5563' },
+			footer: { fontSize: 8, color: '#9ca3af' }
+		},
+		defaultStyle: { font: 'Sarabun' }
+	};
+
+	pdfMake.createPdf(docDefinition).download(`${fileName ?? pages[0].title}.pdf`);
 };
