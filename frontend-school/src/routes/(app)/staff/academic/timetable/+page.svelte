@@ -857,8 +857,16 @@
 		};
 		draggedEntryId = null;
 
-		// Lookup instructor for this classroom from assignments → show conflict highlights
-		if (activity.scheduling_mode === 'independent' && classroomId) {
+		// แสดง conflict highlights ตาม viewMode (เหมือน drag วิชาปกติ)
+		if (viewMode === 'INSTRUCTOR' && classroomId) {
+			// โหมดครู → highlight คาบที่ "ห้องปลายทาง" ติดอยู่แล้ว (แต่เราไม่อยู่ใน tei)
+			fetchInstructorConflicts({ id: activity.id, classroom_id: classroomId });
+		} else if (
+			viewMode === 'CLASSROOM' &&
+			activity.scheduling_mode === 'independent' &&
+			classroomId
+		) {
+			// โหมดห้องเรียน → lookup ครูประจำห้องของ slot นี้ → highlight คาบที่ครูคนนั้นติดอยู่ที่อื่น
 			listSlotClassroomAssignments(activity.id)
 				.then((res) => {
 					const assignment = (res.data ?? []).find((a) => a.classroom_id === classroomId);
