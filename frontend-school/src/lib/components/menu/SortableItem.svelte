@@ -17,8 +17,8 @@
 
 	let { item, onEdit, onDelete, onDragStart, onDragEnter, onDragEnd }: Props = $props();
 
-    // Visual state for generic dragging feedback if needed, 
-    // but usually parent handles ordering visually.
+	// Visual state for generic dragging feedback if needed,
+	// but usually parent handles ordering visually.
 </script>
 
 <div

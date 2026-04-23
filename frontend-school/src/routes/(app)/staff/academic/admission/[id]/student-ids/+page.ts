@@ -1,5 +1,5 @@
 export const load = async () => {
-    return {
-        title: 'กำหนดเลขประจำตัว'
-    };
+	return {
+		title: 'กำหนดเลขประจำตัว'
+	};
 };

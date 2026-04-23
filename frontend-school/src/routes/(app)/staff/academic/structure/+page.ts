@@ -3,18 +3,18 @@
  */
 
 export const _meta = {
-    menu: {
-        title: 'โครงสร้างวิชาการ',
-        icon: 'Framer',
-        group: 'academic',
-        order: 10,
-        user_type: 'staff',
-        permission: 'academic_structure.read.all'
-    }
+	menu: {
+		title: 'โครงสร้างวิชาการ',
+		icon: 'Framer',
+		group: 'academic',
+		order: 10,
+		user_type: 'staff',
+		permission: 'academic_structure.read.all'
+	}
 };
 
 export const load = async () => {
-    return {
-        title: _meta.menu.title
-    };
+	return {
+		title: _meta.menu.title
+	};
 };

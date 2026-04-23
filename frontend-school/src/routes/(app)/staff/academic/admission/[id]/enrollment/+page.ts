@@ -3,7 +3,7 @@
  */
 
 export const load = async () => {
-    return {
-        title: 'รับมอบตัว'
-    };
+	return {
+		title: 'รับมอบตัว'
+	};
 };

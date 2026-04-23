@@ -1,5 +1,5 @@
 export const load = async () => {
-    return {
-        title: 'จัดห้องสอบ'
-    };
+	return {
+		title: 'จัดห้องสอบ'
+	};
 };

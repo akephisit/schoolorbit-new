@@ -3,18 +3,18 @@
  */
 
 export const _meta = {
-    menu: {
-        title: 'จัดห้องเรียน',
-        icon: 'Users',
-        group: 'academic',
-        order: 30,
-        user_type: 'staff',
-        permission: 'academic_enrollment.read.all'
-    }
+	menu: {
+		title: 'จัดห้องเรียน',
+		icon: 'Users',
+		group: 'academic',
+		order: 30,
+		user_type: 'staff',
+		permission: 'academic_enrollment.read.all'
+	}
 };
 
 export const load = async () => {
-    return {
-        title: _meta.menu.title
-    };
+	return {
+		title: _meta.menu.title
+	};
 };

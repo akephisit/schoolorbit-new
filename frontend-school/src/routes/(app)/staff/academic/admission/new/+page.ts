@@ -3,7 +3,7 @@
  */
 
 export const load = async () => {
-    return {
-        title: 'สร้างรอบรับสมัครใหม่'
-    };
+	return {
+		title: 'สร้างรอบรับสมัครใหม่'
+	};
 };
