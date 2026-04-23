@@ -380,13 +380,23 @@ pub async fn add_course_instructor(
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     // Propagate ไปยัง timetable_entry_instructors ของ entries ที่มีอยู่
-    // ครูที่เพิ่งเข้าทีม → เห็นคาบเดิมของวิชานี้ในตารางของตัวเอง
+    // ครูที่เพิ่งเข้าทีม → ได้เข้า tei เฉพาะคาบที่ยังว่าง (ไม่ชนกับคาบที่สอนอยู่แล้วที่อื่น)
+    // คาบที่ชน → ยังเป็น ghost (ครูอยู่ในทีมของ course แต่ไม่อยู่ใน tei) ให้ครูมาเลือกเองว่า
+    // จะสลับมาสอนคาบนี้ไหม
     sqlx::query(
-        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-         SELECT te.id, $2, $3
-         FROM academic_timetable_entries te
-         WHERE te.classroom_course_id = $1
-         ON CONFLICT (entry_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
+        r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+           SELECT te.id, $2, $3
+           FROM academic_timetable_entries te
+           WHERE te.classroom_course_id = $1
+             AND NOT EXISTS (
+                 SELECT 1 FROM academic_timetable_entries te2
+                 JOIN timetable_entry_instructors tei2 ON tei2.entry_id = te2.id
+                 WHERE tei2.instructor_id = $2
+                   AND te2.day_of_week = te.day_of_week
+                   AND te2.period_id = te.period_id
+                   AND te2.id <> te.id
+             )
+           ON CONFLICT (entry_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"#
     )
     .bind(course_id)
     .bind(body.instructor_id)

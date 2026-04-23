@@ -932,12 +932,21 @@ pub async fn add_slot_instructor(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // Propagate ไป timetable_entry_instructors ของ entry synchronized slot นี้ (ทุกห้องที่ร่วม)
+    // Propagate ไป timetable_entry_instructors ของ entry synchronized slot นี้
+    // ข้ามคาบที่ครูติดสอนอยู่ที่อื่นแล้ว (ghost — ให้ครูตัดสินใจเอง)
     sqlx::query(
         r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
            SELECT te.id, $2, 'primary'
            FROM academic_timetable_entries te
            WHERE te.activity_slot_id = $1
+             AND NOT EXISTS (
+                 SELECT 1 FROM academic_timetable_entries te2
+                 JOIN timetable_entry_instructors tei2 ON tei2.entry_id = te2.id
+                 WHERE tei2.instructor_id = $2
+                   AND te2.day_of_week = te.day_of_week
+                   AND te2.period_id = te.period_id
+                   AND te2.id <> te.id
+             )
            ON CONFLICT (entry_id, instructor_id) DO NOTHING"#,
     )
     .bind(slot_id)
