@@ -3618,22 +3618,67 @@
 				</div>
 			</div>
 
-			<!-- Targets Selection (ห้องเรียน / ครู อิสระ — เลือกได้ฝั่งใดฝั่งหนึ่งหรือทั้งคู่) -->
+			<!-- Targets Selection -->
 			<div class="border-t pt-3 mt-1 space-y-3">
-				<p class="text-[11px] text-muted-foreground -mb-1">
-					เลือก <b>ห้องเรียน</b> ให้กิจกรรมขึ้นในตารางนักเรียน / เลือก <b>ครู</b>
-					ให้ขึ้นในตารางครู (เลือกทั้งคู่ได้ — event จะผูกครูทุกคนที่เลือกในทุกห้อง)
-				</p>
-
-				<!-- ห้องเรียน -->
-				<div>
-					{#if batchMode === 'SLOT' && batchSlotId && activitySlots.find((s) => s.id === batchSlotId)?.classroom_ids?.length}
-						<div
-							class="flex items-center gap-2 mb-2 px-3 py-1.5 bg-emerald-50/50 rounded border border-emerald-100 text-xs text-emerald-700"
-						>
-							<span class="font-bold">Info:</span> แสดงเฉพาะห้องเรียนที่เข้าร่วม Activity Slot นี้
+				{#if batchMode === 'SLOT' && batchSlotId}
+					<!-- SLOT mode: ใช้ข้อมูลจาก slot ทั้งห้องและครู (read-only summary) -->
+					<div class="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
+						<p class="text-[11px] text-emerald-800">
+							ใช้ข้อมูลจาก slot ตรงๆ — แก้จำนวนห้อง/ครูในหน้า
+							<a
+								href={resolve('/staff/academic/activities')}
+								target="_blank"
+								class="underline font-medium">Activities</a
+							>
+						</p>
+						<div class="text-xs">
+							<span class="font-semibold text-emerald-700">
+								<School class="inline w-3 h-3 mb-0.5" /> ห้องเรียน ({batchClassrooms.length})
+							</span>
+							<div class="flex flex-wrap gap-1 mt-1">
+								{#if batchClassrooms.length === 0}
+									<span class="text-muted-foreground italic">
+										slot นี้ยังไม่มีห้อง — เพิ่มในหน้า Activities ก่อน
+									</span>
+								{:else}
+									{#each batchClassrooms as cid (cid)}
+										{@const cr = classrooms.find((c) => c.id === cid)}
+										<span class="bg-white border border-emerald-300 rounded px-1.5 py-0.5">
+											{cr?.name || cid.slice(0, 8)}
+										</span>
+									{/each}
+								{/if}
+							</div>
 						</div>
-					{:else}
+						<div class="text-xs">
+							<span class="font-semibold text-emerald-700">
+								<Users class="inline w-3 h-3 mb-0.5" /> ครู ({batchInstructors.length})
+							</span>
+							<div class="flex flex-wrap gap-1 mt-1">
+								{#if batchInstructors.length === 0}
+									<span class="text-muted-foreground italic">
+										slot นี้ยังไม่มีครู — เพิ่มในหน้า Activities ก่อน
+									</span>
+								{:else}
+									{#each batchInstructors as iid (iid)}
+										{@const ins = instructors.find((i) => i.id === iid)}
+										<span class="bg-white border border-emerald-300 rounded px-1.5 py-0.5">
+											{ins?.name || iid.slice(0, 8)}
+										</span>
+									{/each}
+								{/if}
+							</div>
+						</div>
+					</div>
+				{:else}
+					<!-- TEXT mode: เลือก ห้อง / ครู อิสระ -->
+					<p class="text-[11px] text-muted-foreground -mb-1">
+						เลือก <b>ห้องเรียน</b> ให้กิจกรรมขึ้นในตารางนักเรียน / เลือก <b>ครู</b>
+						ให้ขึ้นในตารางครู (เลือกทั้งคู่ได้ — event จะผูกครูทุกคนที่เลือกในทุกห้อง)
+					</p>
+
+					<!-- ห้องเรียน -->
+					<div>
 						<div class="flex items-center gap-2 mb-2">
 							<Label.Root class="text-xs">กรองชั้น:</Label.Root>
 							<select
@@ -3648,98 +3693,93 @@
 								{/each}
 							</select>
 						</div>
-					{/if}
 
-					<div class="flex justify-between items-center mb-1">
-						<Label.Root class="text-xs">ห้องเรียน ({batchClassrooms.length})</Label.Root>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 text-xs"
-							onclick={selectAllBatchClassrooms}
+						<div class="flex justify-between items-center mb-1">
+							<Label.Root class="text-xs">ห้องเรียน ({batchClassrooms.length})</Label.Root>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-6 text-xs"
+								onclick={selectAllBatchClassrooms}
+							>
+								เลือกทั้งหมด
+							</Button>
+						</div>
+						<div
+							class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-3 gap-1"
 						>
-							เลือกทั้งหมด
-						</Button>
+							{#each filteredBatchClassroomsList as classroom (classroom.id)}
+								<label
+									class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
+								>
+									<Checkbox
+										checked={batchClassrooms.includes(classroom.id)}
+										onCheckedChange={() => toggleBatchClassroom(classroom.id)}
+									/>
+									<span class="truncate">{classroom.name}</span>
+								</label>
+							{:else}
+								<div
+									class="col-span-3 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
+								>
+									<School class="w-6 h-6 mb-1 opacity-20" />
+									<span class="text-xs">ไม่พบห้องเรียน</span>
+								</div>
+							{/each}
+						</div>
 					</div>
-					<div
-						class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-3 gap-1"
-					>
-						{#each filteredBatchClassroomsList as classroom (classroom.id)}
-							<label
-								class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
-							>
-								<Checkbox
-									checked={batchClassrooms.includes(classroom.id)}
-									onCheckedChange={() => toggleBatchClassroom(classroom.id)}
-								/>
-								<span class="truncate">{classroom.name}</span>
-							</label>
-						{:else}
-							<div
-								class="col-span-3 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
-							>
-								<School class="w-6 h-6 mb-1 opacity-20" />
-								<span class="text-xs">ไม่พบห้องเรียน</span>
-							</div>
-						{/each}
-					</div>
-				</div>
 
-				<!-- ครู (ใน SLOT mode — pre-populated จาก slot; แก้ได้) -->
-				<div>
-					<div class="flex justify-between items-center mb-1">
-						<Label.Root class="text-xs">
-							ครู ({batchInstructors.length})
-							{#if batchMode === 'SLOT' && batchSlotId}
-								<span class="text-[10px] text-emerald-700 font-normal ml-1">
-									· auto จาก slot
-								</span>
-							{/if}
-						</Label.Root>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 text-xs"
-							onclick={() => {
-								if (batchInstructors.length === instructors.length) {
-									batchInstructors = [];
-								} else {
-									batchInstructors = instructors.map((i) => i.id);
-								}
-							}}
+					<!-- ครู -->
+					<div>
+						<div class="flex justify-between items-center mb-1">
+							<Label.Root class="text-xs">ครู ({batchInstructors.length})</Label.Root>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-6 text-xs"
+								onclick={() => {
+									if (batchInstructors.length === instructors.length) {
+										batchInstructors = [];
+									} else {
+										batchInstructors = instructors.map((i) => i.id);
+									}
+								}}
+							>
+								{batchInstructors.length === instructors.length ? 'ล้าง' : 'เลือกทั้งหมด'}
+							</Button>
+						</div>
+						<div
+							class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-2 gap-1"
 						>
-							{batchInstructors.length === instructors.length ? 'ล้าง' : 'เลือกทั้งหมด'}
-						</Button>
+							{#each instructors as instructor (instructor.id)}
+								<label
+									class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
+								>
+									<Checkbox
+										checked={batchInstructors.includes(instructor.id)}
+										onCheckedChange={() => {
+											if (batchInstructors.includes(instructor.id)) {
+												batchInstructors = batchInstructors.filter(
+													(i) => i !== instructor.id
+												);
+											} else {
+												batchInstructors = [...batchInstructors, instructor.id];
+											}
+										}}
+									/>
+									<span class="truncate">{instructor.name}</span>
+								</label>
+							{:else}
+								<div
+									class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
+								>
+									<Users class="w-6 h-6 mb-1 opacity-20" />
+									<span class="text-xs">ไม่พบครู</span>
+								</div>
+							{/each}
+						</div>
 					</div>
-					<div
-						class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-2 gap-1"
-					>
-						{#each instructors as instructor (instructor.id)}
-							<label
-								class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
-							>
-								<Checkbox
-									checked={batchInstructors.includes(instructor.id)}
-									onCheckedChange={() => {
-										if (batchInstructors.includes(instructor.id)) {
-											batchInstructors = batchInstructors.filter((i) => i !== instructor.id);
-										} else {
-											batchInstructors = [...batchInstructors, instructor.id];
-										}
-									}}
-								/>
-								<span class="truncate">{instructor.name}</span>
-							</label>
-						{:else}
-							<div
-								class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
-							>
-								<Users class="w-6 h-6 mb-1 opacity-20" />
-								<span class="text-xs">ไม่พบครู</span>
-							</div>
-						{/each}
-					</div>
-				</div>
+				{/if}
 			</div>
 			<div class="border-t pt-3 mt-1">
 
