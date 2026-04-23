@@ -330,10 +330,16 @@ pub async fn list_timetable_entries(
     if let Some(_) = query.instructor_id {
         idx += 1;
         if query.include_team_ghosts.unwrap_or(false) {
-            // Ghost mode: entries ของ course ที่ instructor อยู่ในทีม (รวมทั้งที่อยู่ใน tei และที่ไม่อยู่)
+            // Ghost mode: entries ที่ instructor อยู่ในทีม
+            //   COURSE    → match ผ่าน classroom_course_instructors (team-level; รวม ghost cell
+            //              ที่คนอื่นสอนจริงใน tei แต่ user อยู่ในทีมของ course)
+            //   ACTIVITY  → match ผ่าน timetable_entry_instructors (tei populate จาก
+            //              activity_slot_classroom_assignments/activity_slot_instructors แล้ว)
             sql.push_str(&format!(
-                " AND EXISTS (SELECT 1 FROM classroom_course_instructors cci \
-                   WHERE cci.classroom_course_id = te.classroom_course_id AND cci.instructor_id = ${idx})"
+                " AND (EXISTS (SELECT 1 FROM classroom_course_instructors cci \
+                       WHERE cci.classroom_course_id = te.classroom_course_id AND cci.instructor_id = ${idx}) \
+                    OR EXISTS (SELECT 1 FROM timetable_entry_instructors tei \
+                       WHERE tei.entry_id = te.id AND tei.instructor_id = ${idx}))"
             ));
         } else {
             // Normal mode: เฉพาะ cell ที่ instructor ถูก assign
