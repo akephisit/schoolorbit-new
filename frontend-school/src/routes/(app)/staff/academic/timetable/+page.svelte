@@ -2057,54 +2057,72 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="h-full flex flex-col space-y-4" role="application">
-	<div class="flex items-start justify-between gap-4">
-		<div class="flex flex-col gap-2">
-			<h2 class="text-3xl font-bold flex items-center gap-2">
-				<CalendarDays class="w-8 h-8" />
+<div class="h-full flex flex-col space-y-2" role="application">
+	<!-- Row 1: Title + View Mode + Status + Avatars + Actions -->
+	<div class="flex items-center justify-between gap-3 flex-wrap">
+		<div class="flex items-center gap-3">
+			<h2 class="text-xl font-bold flex items-center gap-2">
+				<CalendarDays class="w-5 h-5" />
 				จัดตารางสอน
 			</h2>
-			<p class="text-muted-foreground">
-				ลากวิชาจากด้านซ้าย มาวางในช่องตารางด้านขวา (ระบบจะตรวจสอบการชนอัตโนมัติ)
-			</p>
+
+			<div class="flex bg-muted p-1 rounded-lg transition-colors">
+				<button
+					class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
+					'CLASSROOM'
+						? 'bg-background shadow-sm text-foreground'
+						: 'text-muted-foreground hover:text-foreground'}"
+					onclick={() => {
+						viewMode = 'CLASSROOM';
+						courses = [];
+						timetableEntries = [];
+					}}
+				>
+					<School class="w-4 h-4" /> ห้องเรียน
+				</button>
+				<button
+					class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
+					'INSTRUCTOR'
+						? 'bg-background shadow-sm text-foreground'
+						: 'text-muted-foreground hover:text-foreground'}"
+					onclick={() => {
+						viewMode = 'INSTRUCTOR';
+						courses = [];
+						timetableEntries = [];
+					}}
+				>
+					<Users class="w-4 h-4" /> ครูผู้สอน
+				</button>
+			</div>
 		</div>
 
-		<!-- Status Indicator -->
-		<div
-			class="flex items-center gap-3 bg-white/50 backdrop-blur px-3 py-1.5 rounded-full border shadow-sm"
-		>
-			<div class="flex items-center gap-2">
-				<div
-					class="w-2.5 h-2.5 rounded-full {$isConnected
-						? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
-						: 'bg-red-500'}"
-				></div>
-				<span class="text-xs font-semibold text-muted-foreground">
-					{$isConnected ? `Online (${$activeUsers.length})` : 'Offline'}
-				</span>
-			</div>
-
-			<div class="w-px h-4 bg-border mx-1"></div>
-
-			<!-- Quick Actions -->
-			<Button
-				variant="ghost"
-				size="sm"
-				class="h-7 text-xs gap-1.5"
-				onclick={() => {
-					goto(resolve('/staff/academic/timetable/scheduling/auto-schedule'));
-				}}
-			>
-				<Zap class="w-3.5 h-3.5 text-orange-500" />
-				จัดตารางสอนอัตโนมัติ
-			</Button>
+		<div class="flex items-center gap-2 flex-wrap">
+			<Tooltip.Provider>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<div
+							class="flex items-center gap-1.5 px-2 py-1 rounded-full border bg-white/50 backdrop-blur shadow-sm"
+						>
+							<div
+								class="w-2 h-2 rounded-full {$isConnected
+									? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]'
+									: 'bg-red-500'}"
+							></div>
+							<span class="text-xs font-medium text-muted-foreground">
+								{$isConnected ? $activeUsers.length : 'Offline'}
+							</span>
+						</div>
+					</Tooltip.Trigger>
+					<Tooltip.Content>
+						{$isConnected ? `ออนไลน์ ${$activeUsers.length} คน` : 'ไม่ได้เชื่อมต่อ'}
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 
 			{#if $isConnected && $activeUsers.length > 0}
-				<div class="w-px h-4 bg-border mx-1"></div>
 				<Tooltip.Provider>
 					<div class="flex -space-x-1.5">
 						{#each $activeUsers.slice(0, 4) as user (user.user_id + (user.context?.view_id || ''))}
-							<!-- Interactive Avatar -->
 							<Tooltip.Root>
 								<Tooltip.Trigger>
 									<button
@@ -2156,130 +2174,133 @@
 					</div>
 				</Tooltip.Provider>
 			{/if}
+
+			<div class="w-px h-5 bg-border mx-1"></div>
+
+			<Tooltip.Provider>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={() => {
+								goto(resolve('/staff/academic/timetable/scheduling/auto-schedule'));
+							}}
+						>
+							<Zap class="w-4 h-4 mr-1.5 text-orange-500" />
+							Auto
+						</Button>
+					</Tooltip.Trigger>
+					<Tooltip.Content>จัดตารางสอนอัตโนมัติ</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
+
+			<Tooltip.Provider>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<Button variant="outline" size="sm" onclick={() => (showBatchModal = true)}>
+							<PlusCircle class="w-4 h-4 mr-1.5" /> Batch
+						</Button>
+					</Tooltip.Trigger>
+					<Tooltip.Content>เพิ่มกิจกรรมพิเศษ (Batch)</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
+
+			<Tooltip.Provider>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={handleExportPDF}
+							disabled={isExporting}
+						>
+							{#if isExporting}
+								<Loader2 class="w-4 h-4 mr-1.5 animate-spin" />
+							{:else}
+								<Download class="w-4 h-4 mr-1.5" />
+							{/if}
+							PDF
+						</Button>
+					</Tooltip.Trigger>
+					<Tooltip.Content>ดาวน์โหลด PDF</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 		</div>
 	</div>
 
-	<!-- Filters & View Mode -->
-	<div class="flex flex-col gap-4">
-		<!-- View Mode Switcher & Tools -->
-		<div class="flex items-center justify-between">
-			<div class="flex bg-muted p-1 rounded-lg w-fit transition-colors">
-				<button
-					class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
-					'CLASSROOM'
-						? 'bg-background shadow-sm text-foreground'
-						: 'text-muted-foreground hover:text-foreground'}"
-					onclick={() => {
-						viewMode = 'CLASSROOM';
-						courses = [];
-						timetableEntries = [];
-					}}
-				>
-					<School class="w-4 h-4" /> ห้องเรียน
-				</button>
-				<button
-					class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
-					'INSTRUCTOR'
-						? 'bg-background shadow-sm text-foreground'
-						: 'text-muted-foreground hover:text-foreground'}"
-					onclick={() => {
-						viewMode = 'INSTRUCTOR';
-						courses = [];
-						timetableEntries = [];
-					}}
-				>
-					<Users class="w-4 h-4" /> ครูผู้สอน
-				</button>
-			</div>
+	<!-- Row 2: Filters -->
+	<div class="flex items-center gap-2 flex-wrap">
+		<div class="w-[180px]">
+			<Select.Root type="single" bind:value={selectedYearId}>
+				<Select.Trigger class="w-full h-9">
+					{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+				</Select.Trigger>
+				<Select.Content>
+					{#each academicYears as year (year.id)}
+						<Select.Item value={year.id}>{year.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
 
-			<div class="flex items-center gap-2">
-				<Button variant="outline" size="sm" onclick={() => (showBatchModal = true)}>
-					<PlusCircle class="w-4 h-4 mr-2" /> เพิ่มกิจกรรมพิเศษ (Batch)
-				</Button>
-
-				<Button variant="outline" size="sm" onclick={handleExportPDF} disabled={isExporting}>
-					{#if isExporting}
-						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+		<div class="w-[180px]">
+			<Select.Root type="single" bind:value={selectedSemesterId}>
+				<Select.Trigger class="w-full h-9">
+					{#if selectedSemesterId && semesters.find((s) => s.id === selectedSemesterId)}
+						ภาคเรียนที่ {semesters.find((s) => s.id === selectedSemesterId)?.term}
 					{:else}
-						<Download class="w-4 h-4 mr-2" />
+						เลือกภาคเรียน
 					{/if}
-					ดาวน์โหลด PDF
-				</Button>
-			</div>
+				</Select.Trigger>
+				<Select.Content>
+					{#each semesters as term (term.id)}
+						<Select.Item value={term.id}>ภาคเรียนที่ {term.term}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 		</div>
 
-		<div class="flex items-center gap-4 flex-wrap">
-			<div class="w-[200px]">
-				<Select.Root type="single" bind:value={selectedYearId}>
-					<Select.Trigger class="w-full">
-						{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+		{#if viewMode === 'CLASSROOM'}
+			<div class="w-[220px]">
+				<Select.Root type="single" bind:value={selectedClassroomId}>
+					<Select.Trigger class="w-full h-9">
+						{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
 					</Select.Trigger>
-					<Select.Content>
-						{#each academicYears as year (year.id)}
-							<Select.Item value={year.id}>{year.name}</Select.Item>
+					<Select.Content class="max-h-[300px] overflow-y-auto">
+						{#each classrooms as classroom (classroom.id)}
+							<Select.Item value={classroom.id}>{classroom.name}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
 			</div>
-
-			<div class="w-[200px]">
-				<Select.Root type="single" bind:value={selectedSemesterId}>
-					<Select.Trigger class="w-full">
-						{#if selectedSemesterId && semesters.find((s) => s.id === selectedSemesterId)}
-							ภาคเรียนที่ {semesters.find((s) => s.id === selectedSemesterId)?.term}
-						{:else}
-							เลือกภาคเรียน
-						{/if}
+		{:else}
+			<div class="w-[220px]">
+				<Select.Root type="single" bind:value={selectedInstructorId}>
+					<Select.Trigger class="w-full h-9">
+						{instructors.find((i) => i.id === selectedInstructorId)?.name || 'เลือกครูผู้สอน'}
 					</Select.Trigger>
-					<Select.Content>
-						{#each semesters as term (term.id)}
-							<Select.Item value={term.id}>ภาคเรียนที่ {term.term}</Select.Item>
+					<Select.Content class="max-h-[300px] overflow-y-auto">
+						{#each instructors as instructor (instructor.id)}
+							<Select.Item value={instructor.id}>{instructor.name}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
 			</div>
-
-			{#if viewMode === 'CLASSROOM'}
-				<div class="w-[250px]">
-					<Select.Root type="single" bind:value={selectedClassroomId}>
-						<Select.Trigger class="w-full">
-							{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
-						</Select.Trigger>
-						<Select.Content class="max-h-[300px] overflow-y-auto">
-							{#each classrooms as classroom (classroom.id)}
-								<Select.Item value={classroom.id}>{classroom.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			{:else}
-				<div class="w-[250px]">
-					<Select.Root type="single" bind:value={selectedInstructorId}>
-						<Select.Trigger class="w-full">
-							{instructors.find((i) => i.id === selectedInstructorId)?.name || 'เลือกครูผู้สอน'}
-						</Select.Trigger>
-						<Select.Content class="max-h-[300px] overflow-y-auto">
-							{#each instructors as instructor (instructor.id)}
-								<Select.Item value={instructor.id}>{instructor.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				{#if selectedInstructorId}
-					<label
-						class="flex items-center gap-2 text-xs cursor-pointer select-none px-2 py-1 rounded border bg-muted/30 hover:bg-muted transition-colors"
-					>
-						<input type="checkbox" bind:checked={showTeamGhosts} class="cursor-pointer" />
-						<span>แสดงคาบในทีม (ghost cells)</span>
-					</label>
-				{/if}
+			{#if selectedInstructorId}
+				<label
+					class="flex items-center gap-2 text-xs cursor-pointer select-none px-2 py-1 rounded border bg-muted/30 hover:bg-muted transition-colors"
+				>
+					<input type="checkbox" bind:checked={showTeamGhosts} class="cursor-pointer" />
+					<span>แสดงคาบในทีม (ghost cells)</span>
+				</label>
 			{/if}
-		</div>
+		{/if}
 	</div>
 
 	<!-- Main Content Grid (Workspace = cursor canvas) -->
 	<div
-		class="grid grid-cols-12 gap-3 h-[calc(100vh-230px)] min-h-[600px] relative"
+		class="grid grid-cols-12 gap-3 flex-1 min-h-0 relative"
 		bind:this={workspaceRef}
 		onmousemove={handleMouseMove}
 		ondrag={handleDragMoveOnGrid}
@@ -2491,7 +2512,7 @@
 
 					<!-- Days Rows -->
 					{#each DAYS as day (day.value)}
-						<div class="flex flex-1 min-h-[110px]">
+						<div class="flex flex-1 min-h-[70px]">
 							<!-- Day Header -->
 							<div
 								class="w-20 shrink-0 border-r border-b bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
