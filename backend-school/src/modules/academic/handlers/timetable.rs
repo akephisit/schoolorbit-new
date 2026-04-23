@@ -1380,7 +1380,8 @@ pub async fn create_batch_timetable_entries(
     let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     // UUID ร่วมของ entries ทุกตัวใน batch นี้ (ใช้สำหรับ "ลบทั้งกลุ่ม")
-    let batch_uuid = Uuid::new_v4();
+    // รับจาก payload ถ้า frontend กำหนดเอง (กรณียิงหลาย call ให้อยู่ในกลุ่มเดียว)
+    let batch_uuid = payload.batch_id.unwrap_or_else(Uuid::new_v4);
 
     // Semantic: "ของใครของมัน" — classroom entries กับ instructor entries เป็นคนละ event
     // ไม่ cross-link (ห้องเลือก → entry ห้อง (ไม่มี tei จาก payload.instructor_ids);

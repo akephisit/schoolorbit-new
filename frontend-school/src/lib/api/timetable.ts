@@ -116,6 +116,8 @@ export interface CreateBatchTimetableEntriesRequest {
 	 * classroom_ids ว่าง + instructor_ids มี → teacher-only event (classroom_id = NULL)
 	 */
 	instructor_ids?: string[];
+	/** ถ้าระบุ — backend ใช้ค่านี้แทนการ gen ใหม่ (ให้หลาย batch call มี batch_id ร่วมกัน) */
+	batch_id?: string;
 }
 
 export interface ConflictInfo {

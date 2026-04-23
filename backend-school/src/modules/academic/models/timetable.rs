@@ -201,6 +201,9 @@ pub struct CreateBatchTimetableEntriesRequest {
     /// - ถ้า classroom_ids มี + instructor_ids มี → attach ครูเหล่านี้เพิ่มเติมใน tei ของแต่ละ entry
     #[serde(default)]
     pub instructor_ids: Vec<Uuid>,
+    /// Optional: frontend สามารถส่ง batch_id ที่ share ข้าม multiple batch calls ได้
+    /// (เช่น ยิงทีละวัน ให้ทุก entry มาอยู่ในกลุ่มเดียวกัน) ถ้าไม่ส่ง backend gen ใหม่
+    pub batch_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

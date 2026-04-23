@@ -1849,6 +1849,9 @@
 			}
 
 			// ยิงทีละวัน (backend รับวันเดียวต่อ call) รวมผลทุกวัน
+			// Generate batch_id ที่ frontend → ทุกวัน/ทุกคาบ/ทุกห้อง/ทุกครู อยู่ใน batch เดียวกัน
+			// ("ลบทั้งกลุ่ม" จะลบครบทุก cell ที่สร้างพร้อมกันในการกดบันทึกครั้งเดียวนี้)
+			const sharedBatchId = crypto.randomUUID();
 			const allConflicts: { message: string }[] = [];
 			for (const day of batchDays) {
 				const res = await createBatchTimetableEntries({
@@ -1861,7 +1864,8 @@
 					title: titleToSend,
 					room_id: batchRoomId === 'none' ? undefined : batchRoomId,
 					force: batchForce,
-					activity_slot_id: slotIdToSend
+					activity_slot_id: slotIdToSend,
+					batch_id: sharedBatchId
 				});
 				if (res.success === false && res.conflicts) {
 					allConflicts.push(
