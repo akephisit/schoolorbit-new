@@ -699,13 +699,21 @@ export async function portalCheck(nationalId: string, dateOfBirth: string) {
 	return res.data;
 }
 
-export async function portalGetStatus(nationalId: string, dateOfBirth: string): Promise<unknown> {
-	const res = await apiClient.post('/api/admission/portal/status', {
+export interface PortalStatusResult {
+	application?: AdmissionApplication;
+	documents?: ApplicationDocument[];
+}
+
+export async function portalGetStatus(
+	nationalId: string,
+	dateOfBirth: string
+): Promise<PortalStatusResult> {
+	const res = await apiClient.post<PortalStatusResult>('/api/admission/portal/status', {
 		nationalId,
 		dateOfBirth
 	});
 	if (!res.success) throw new Error(res.error);
-	return res.data;
+	return res.data ?? {};
 }
 
 export async function portalGetExamSeat(

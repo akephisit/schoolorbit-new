@@ -57,7 +57,6 @@
 </script>
 
 {#if href}
-	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve, @typescript-eslint/no-explicit-any -->
 	<a
 		bind:this={ref}
 		data-slot="button"

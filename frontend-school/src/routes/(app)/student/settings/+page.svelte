@@ -47,14 +47,11 @@
 
 	onMount(() => {
 		// Check if iOS
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
 		// Check if already installed
 		isStandalone =
-			window.matchMedia('(display-mode: standalone)').matches ||
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			(navigator as any).standalone === true;
+			window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 	});
 
 	async function handleInstallPWA() {

@@ -11,6 +11,16 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	interface Window {
+		// IE-specific — used to exclude IE from iOS user-agent detection
+		MSStream?: unknown;
+	}
+
+	interface Navigator {
+		// Safari iOS non-standard — true when PWA is launched from home screen
+		standalone?: boolean;
+	}
 }
 
 export {};

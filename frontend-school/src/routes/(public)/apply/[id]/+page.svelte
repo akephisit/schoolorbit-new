@@ -371,8 +371,7 @@
 			tracks = info.tracks;
 
 			if (isEditMode && authNid && authDob) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- portalGetStatus returns a dynamic shape not reflected in its typed return
-				const statusData = (await portalGetStatus(authNid, authDob)) as any;
+				const statusData = await portalGetStatus(authNid, authDob);
 				if (statusData?.application) {
 					const app = statusData.application;
 					trackId = app.admissionTrackId || '';

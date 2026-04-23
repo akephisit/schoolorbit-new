@@ -54,5 +54,13 @@ export default defineConfig(
 			'svelte/no-navigation-without-resolve': 'off',
 			'@typescript-eslint/no-unused-vars': 'off'
 		}
+	},
+	{
+		files: ['**/login/+page.svelte'],
+		rules: {
+			// redirectUrl ใน login มาจาก sessionStorage (runtime string)
+			// ไม่สามารถใช้ resolve() แบบ typed ได้ตรงๆ
+			'svelte/no-navigation-without-resolve': 'off'
+		}
 	}
 );

@@ -45,7 +45,6 @@
 
 			if (redirectUrl) {
 				sessionStorage.removeItem('redirectAfterLogin');
-				// eslint-disable-next-line svelte/no-navigation-without-resolve
 				await goto(redirectUrl, { replaceState: true });
 			} else if (user?.user_type === 'parent') {
 				await goto(resolve('/parent'), { replaceState: true });
@@ -87,7 +86,6 @@
 
 			// Redirect to intended URL or default dashboard
 			if (redirectUrl) {
-				// eslint-disable-next-line svelte/no-navigation-without-resolve
 				await goto(redirectUrl, { invalidateAll: true });
 			} else if (user.user_type === 'parent') {
 				await goto(resolve('/parent'), { invalidateAll: true });

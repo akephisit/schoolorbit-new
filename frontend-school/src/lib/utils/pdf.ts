@@ -1,4 +1,9 @@
-import type { TDocumentDefinitions, CustomTableLayout } from 'pdfmake/interfaces';
+import type {
+	TDocumentDefinitions,
+	CustomTableLayout,
+	TableCell,
+	Content
+} from 'pdfmake/interfaces';
 import type { TimetableEntry } from '$lib/api/timetable';
 
 interface PdfPeriod {
@@ -64,12 +69,10 @@ export const generateTimetablePDF = async (
 	};
 	pdfMake.fonts = fonts;
 
-	// 2. Build Table Body
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- pdfmake Content union is too narrow for our cell shapes; simpler to treat as any[] here
-	const tableBody: any[][] = [];
+	const tableBody: TableCell[][] = [];
 
 	// 2.1 Header Row
-	const headerRow = [
+	const headerRow: TableCell[] = [
 		{ text: 'วัน / เวลา', bold: true, alignment: 'center', fillColor: '#f3f4f6', margin: [0, 5] }
 	];
 
@@ -86,15 +89,13 @@ export const generateTimetablePDF = async (
 			alignment: 'center',
 			fillColor: '#f3f4f6',
 			margin: [0, 2]
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- pdfmake nested text Content type mismatch with widened header row element type
-		} as any);
+		});
 	});
 	tableBody.push(headerRow);
 
 	// 2.2 Data Rows (MON - FRI)
 	DAYS.slice(0, 5).forEach((day) => {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- pdfmake Content union is too narrow for our cell shapes
-		const row: any[] = [];
+		const row: TableCell[] = [];
 
 		// Day Header Column
 		row.push({
@@ -111,8 +112,7 @@ export const generateTimetablePDF = async (
 			const entry = getEntry(timetableEntries, day.value, p.id);
 			if (entry) {
 				// Build Content Stack
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- pdfmake Content union is too narrow for our cell shapes
-				const stack: any[] = [];
+				const stack: Content[] = [];
 
 				if (entry.entry_type === 'COURSE') {
 					stack.push(
