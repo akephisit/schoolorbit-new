@@ -43,8 +43,6 @@
 		type RoomLookupItem,
 		lookupStaff,
 		type StaffLookupItem,
-		lookupSubjects,
-		type LookupItem,
 		lookupGradeLevels,
 		type GradeLevelLookupItem
 	} from '$lib/api/lookup';
@@ -1697,10 +1695,7 @@
 	let batchRoomId = $state('none');
 
 	// Batch Mode State
-	let batchMode = $state<'TEXT' | 'COURSE' | 'SLOT'>('TEXT');
-	let subjectOptions = $state<LookupItem[]>([]);
-	let batchSubjectId = $state('');
-	let loadingSubjects = $state(false);
+	let batchMode = $state<'TEXT' | 'SLOT'>('TEXT');
 
 	// Activity Slot mode
 	let activitySlots = $state<ActivitySlot[]>([]);
@@ -1721,23 +1716,6 @@
 		}
 	}
 
-	async function ensureSubjectsLoaded() {
-		if (subjectOptions.length > 0) return;
-		loadingSubjects = true;
-		try {
-			subjectOptions = await lookupSubjects({
-				limit: 500,
-				activeOnly: true,
-				subjectType: 'ACTIVITY'
-			});
-		} catch (e) {
-			console.error(e);
-			toast.error('โหลดรายวิชาไม่สำเร็จ');
-		} finally {
-			loadingSubjects = false;
-		}
-	}
-
 	// Filter & Override State
 	let batchGradeLevels = $state<GradeLevelLookupItem[]>([]);
 	let batchGradeFilterId = $state('all');
@@ -1753,50 +1731,10 @@
 		}
 	}
 
-	// Plan Validation State
-	let validBatchClassroomIds = $state<Set<string> | null>(null);
-	let loadingBatchValidClassrooms = $state(false);
-
-	$effect(() => {
-		const currentSubject = batchSubjectId;
-		// Only run validation if Modal is open to save resources
-		if (showBatchModal && batchMode === 'COURSE' && currentSubject && selectedSemesterId) {
-			loadingBatchValidClassrooms = true;
-			validBatchClassroomIds = new Set();
-
-			// Check which classrooms have this subject in their plan
-			listClassroomCourses({ subjectId: currentSubject, semesterId: selectedSemesterId })
-				.then((res) => {
-					if (batchSubjectId !== currentSubject) return; // Stale check
-					const ids = new Set(res.data.map((c: ClassroomCourse) => c.classroom_id));
-					validBatchClassroomIds = ids;
-				})
-				.catch((err) => {
-					console.error(err);
-					toast.error('ตรวจสอบแผนการเรียนไม่สำเร็จ');
-				})
-				.finally(() => {
-					if (batchSubjectId === currentSubject) loadingBatchValidClassrooms = false;
-				});
-		} else if (batchMode !== 'COURSE' || !batchSubjectId) {
-			validBatchClassroomIds = null;
-		}
-	});
-
 	let filteredBatchClassroomsList = $derived.by(() => {
 		let list = classrooms;
 
-		// Priority: Course Plan Validation
-		if (batchMode === 'COURSE' && batchSubjectId) {
-			const validSet = validBatchClassroomIds;
-			if (validSet) {
-				list = list.filter((c) => validSet.has(c.id));
-			} else {
-				list = [];
-			}
-		}
-
-		// SLOT mode: filter by ห้องที่เข้าร่วม slot จริง (junction) ไม่ใช่ catalog template
+		// SLOT mode: filter เฉพาะห้องที่เข้าร่วม slot จริง (junction) ไม่ใช่ catalog template
 		if (batchMode === 'SLOT' && batchSlotId) {
 			const slot = activitySlots.find((s) => s.id === batchSlotId);
 			if (slot?.classroom_ids) {
@@ -1804,7 +1742,6 @@
 			}
 		}
 
-		// Apply Manual Filter (Intersection with Plan)
 		if (batchGradeFilterId !== 'all') {
 			list = list.filter((c) => c.grade_level_id === batchGradeFilterId);
 		}
@@ -1851,10 +1788,6 @@
 			toast.error('กรุณาระบุชื่อกิจกรรม');
 			return;
 		}
-		if (batchMode === 'COURSE' && !batchSubjectId) {
-			toast.error('กรุณาเลือกรายวิชา');
-			return;
-		}
 		if (batchMode === 'SLOT' && !batchSlotId) {
 			toast.error('กรุณาเลือก Activity Slot');
 			return;
@@ -1865,15 +1798,9 @@
 
 			let titleToSend = batchTitle;
 			let entryTypeToSend = batchType;
-			let subjectIdToSend = undefined;
 			let slotIdToSend: string | undefined = undefined;
 
-			if (batchMode === 'COURSE') {
-				const subj = subjectOptions.find((s) => s.id === batchSubjectId);
-				titleToSend = subj?.name || '';
-				entryTypeToSend = 'ACTIVITY';
-				subjectIdToSend = batchSubjectId;
-			} else if (batchMode === 'SLOT') {
+			if (batchMode === 'SLOT') {
 				const slot = activitySlots.find((s) => s.id === batchSlotId);
 				titleToSend = slot?.name || '';
 				entryTypeToSend = 'ACTIVITY';
@@ -1888,7 +1815,6 @@
 				entry_type: entryTypeToSend as 'ACTIVITY' | 'BREAK' | 'HOMEROOM',
 				title: titleToSend,
 				room_id: batchRoomId === 'none' ? undefined : batchRoomId,
-				subject_id: subjectIdToSend,
 				force: batchForce,
 				activity_slot_id: slotIdToSend
 			});
@@ -1907,7 +1833,6 @@
 
 			// Reset fields
 			batchTitle = '';
-			batchSubjectId = '';
 			batchSlotId = '';
 
 			// Reload if current view is affected
@@ -3370,7 +3295,7 @@
 <!-- Batch Assign Modal -->
 
 <Dialog.Root bind:open={showBatchModal}>
-	<Dialog.Content class="sm:max-w-[600px]">
+	<Dialog.Content class="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden">
 		<Dialog.Header>
 			<Dialog.Title>เพิ่มกิจกรรมพิเศษ (Batch)</Dialog.Title>
 			<Dialog.Description>
@@ -3378,7 +3303,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="grid gap-4 py-4">
+		<div class="grid gap-3 py-3 overflow-y-auto flex-1 pr-2">
 			<!-- Mode Selection -->
 			<div class="grid grid-cols-4 items-center gap-4">
 				<Label.Root class="text-right">รูปแบบ</Label.Root>
@@ -3389,16 +3314,6 @@
 						onclick={() => (batchMode = 'TEXT')}
 					>
 						ระบุชื่อเอง
-					</Button>
-					<Button
-						variant={batchMode === 'COURSE' ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => {
-							batchMode = 'COURSE';
-							ensureSubjectsLoaded();
-						}}
-					>
-						เลือกจากรายวิชา
 					</Button>
 					<Button
 						variant={batchMode === 'SLOT' ? 'default' : 'outline'}
@@ -3501,51 +3416,6 @@
 						</p>
 					</div>
 				</div>
-			{:else}
-				<div class="grid grid-cols-4 items-center gap-4">
-					<Label.Root class="text-right">รายวิชา</Label.Root>
-					<div class="col-span-3">
-						{#if loadingSubjects}
-							<div class="text-sm text-muted-foreground flex items-center gap-2">
-								<Loader2 class="w-3 h-3 animate-spin" /> กำลังโหลด...
-							</div>
-						{:else}
-							<Select.Root type="single" bind:value={batchSubjectId}>
-								<Select.Trigger class="w-full h-auto py-2">
-									<div class="flex flex-col items-start gap-0.5 text-left overflow-hidden">
-										<span class="truncate block w-full"
-											>{subjectOptions.find((s) => s.id === batchSubjectId)?.name ||
-												'เลือกรายวิชา'}</span
-										>
-										{#if batchSubjectId && subjectOptions.find((s) => s.id === batchSubjectId)?.code}
-											<span class="text-xs text-muted-foreground">
-												{subjectOptions.find((s) => s.id === batchSubjectId)?.code}
-											</span>
-										{/if}
-									</div>
-								</Select.Trigger>
-								<Select.Content class="max-h-[300px] w-[350px] overflow-y-auto">
-									{#each subjectOptions as subj (subj.id)}
-										<Select.Item
-											value={subj.id}
-											label={subj.name}
-											class="flex flex-col items-start py-2 border-b last:border-0"
-										>
-											<span class="font-medium text-sm">{subj.name}</span>
-											{#if subj.code}
-												<span class="text-xs text-muted-foreground">{subj.code}</span>
-											{/if}
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						{/if}
-						<p class="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
-							*ระบบจะค้นหา <b>"โครงสร้างรายวิชา"</b> ของแต่ละห้องเรียนให้โดยอัตโนมัติ <br />
-							(หากห้องใดไม่ได้ลงทะเบียนวิชานี้ในโครงสร้าง ระบบจะข้ามไปหรือสร้างเป็นกิจกรรมแทน)
-						</p>
-					</div>
-				</div>
 			{/if}
 
 			<div class="grid grid-cols-4 items-center gap-4">
@@ -3626,7 +3496,7 @@
 					>
 						<span class="font-bold">Info:</span> แสดงเฉพาะห้องเรียนที่เข้าร่วม Activity Slot นี้
 					</div>
-				{:else if !(batchMode === 'COURSE' && batchSubjectId)}
+				{:else}
 					<div class="flex items-center gap-2 mb-3">
 						<Label.Root>กรองระดับชั้น:</Label.Root>
 						<select
@@ -3641,12 +3511,6 @@
 							{/each}
 						</select>
 					</div>
-				{:else}
-					<div
-						class="flex items-center gap-2 mb-3 px-3 py-2 bg-blue-50/50 rounded border border-blue-100 text-xs text-blue-700"
-					>
-						<span class="font-bold">Info:</span> ระบบแสดงเฉพาะห้องเรียนที่มีวิชานี้ในแผนการเรียน
-					</div>
 				{/if}
 
 				<div class="flex justify-between items-center mb-2">
@@ -3656,38 +3520,30 @@
 					</Button>
 				</div>
 				<div
-					class="border rounded-md max-h-[200px] min-h-[100px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-2"
+					class="border rounded-md max-h-[180px] min-h-[100px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-2"
 				>
-					{#if loadingBatchValidClassrooms}
-						<div
-							class="col-span-2 flex items-center justify-center py-8 text-muted-foreground text-sm"
-						>
-							<Loader2 class="w-4 h-4 mr-2 animate-spin" /> กำลังตรวจสอบแผนการเรียน...
+					{#each filteredBatchClassroomsList as classroom (classroom.id)}
+						<div class="flex items-center space-x-2 bg-background p-1.5 rounded border shadow-sm">
+							<Checkbox
+								id="batch-class-{classroom.id}"
+								checked={batchClassrooms.includes(classroom.id)}
+								onCheckedChange={() => toggleBatchClassroom(classroom.id)}
+							/>
+							<label
+								for="batch-class-{classroom.id}"
+								class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+							>
+								{classroom.name}
+							</label>
 						</div>
 					{:else}
-						{#each filteredBatchClassroomsList as classroom (classroom.id)}
-							<div class="flex items-center space-x-2 bg-background p-1.5 rounded border shadow-sm">
-								<Checkbox
-									id="batch-class-{classroom.id}"
-									checked={batchClassrooms.includes(classroom.id)}
-									onCheckedChange={() => toggleBatchClassroom(classroom.id)}
-								/>
-								<label
-									for="batch-class-{classroom.id}"
-									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
-								>
-									{classroom.name}
-								</label>
-							</div>
-						{:else}
-							<div
-								class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-4 opacity-70"
-							>
-								<School class="w-8 h-8 mb-2 opacity-20" />
-								<span class="text-xs">ไม่พบห้องเรียนที่มีวิชานี้ในแผนการเรียน</span>
-							</div>
-						{/each}
-					{/if}
+						<div
+							class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-4 opacity-70"
+						>
+							<School class="w-8 h-8 mb-2 opacity-20" />
+							<span class="text-xs">ไม่พบห้องเรียน</span>
+						</div>
+					{/each}
 				</div>
 
 				<!-- Override Option -->
