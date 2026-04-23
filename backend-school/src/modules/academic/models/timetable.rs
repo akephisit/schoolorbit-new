@@ -192,6 +192,11 @@ pub struct CreateBatchTimetableEntriesRequest {
     pub subject_id: Option<Uuid>,
     pub force: Option<bool>,
     pub activity_slot_id: Option<Uuid>,
+    /// ครูที่ติดคาบด้วย event นี้ (attach ไปที่ tei)
+    /// - ถ้า classroom_ids ว่าง + instructor_ids มี → teacher-only (classroom_id = NULL)
+    /// - ถ้า classroom_ids มี + instructor_ids มี → attach ครูเหล่านี้เพิ่มเติมใน tei ของแต่ละ entry
+    #[serde(default)]
+    pub instructor_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

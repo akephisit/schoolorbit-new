@@ -1688,6 +1688,7 @@
 	// Batch Assign State
 	let showBatchModal = $state(false);
 	let batchClassrooms = $state<string[]>([]);
+	let batchInstructors = $state<string[]>([]);
 	let batchDays = $state<string[]>(['MON']);
 	let batchPeriodIds = $state<string[]>([]);
 	let batchType = $state('ACTIVITY');
@@ -1774,8 +1775,8 @@
 	}
 
 	async function handleBatchSubmit() {
-		if (batchClassrooms.length === 0) {
-			toast.error('กรุณาเลือกห้องเรียนอย่างน้อย 1 ห้อง');
+		if (batchClassrooms.length === 0 && batchInstructors.length === 0) {
+			toast.error('กรุณาเลือกห้องเรียน หรือ ครู อย่างน้อย 1 อย่าง');
 			return;
 		}
 		if (batchPeriodIds.length === 0) {
@@ -1816,6 +1817,7 @@
 			for (const day of batchDays) {
 				const res = await createBatchTimetableEntries({
 					classroom_ids: batchClassrooms,
+					instructor_ids: batchInstructors,
 					day_of_week: day,
 					period_ids: batchPeriodIds,
 					academic_semester_id: selectedSemesterId,
@@ -1847,13 +1849,18 @@
 			// Reset fields
 			batchTitle = '';
 			batchSlotId = '';
+			batchInstructors = [];
 
 			// Reload if current view is affected
-			if (
+			const classroomAffected =
 				viewMode === 'CLASSROOM' &&
 				selectedClassroomId &&
-				batchClassrooms.includes(selectedClassroomId)
-			) {
+				batchClassrooms.includes(selectedClassroomId);
+			const instructorAffected =
+				viewMode === 'INSTRUCTOR' &&
+				selectedInstructorId &&
+				batchInstructors.includes(selectedInstructorId);
+			if (classroomAffected || instructorAffected) {
 				loadTimetable();
 			}
 		} catch (e: unknown) {
@@ -3527,63 +3534,123 @@
 				</div>
 			</div>
 
-			<!-- Classrooms Selection -->
-			<div class="border-t pt-4 mt-2">
-				{#if batchMode === 'SLOT' && batchSlotId && activitySlots.find((s) => s.id === batchSlotId)?.classroom_ids?.length}
-					<div
-						class="flex items-center gap-2 mb-3 px-3 py-2 bg-emerald-50/50 rounded border border-emerald-100 text-xs text-emerald-700"
-					>
-						<span class="font-bold">Info:</span> แสดงเฉพาะห้องเรียนที่เข้าร่วม Activity Slot นี้
-					</div>
-				{:else}
-					<div class="flex items-center gap-2 mb-3">
-						<Label.Root>กรองระดับชั้น:</Label.Root>
-						<select
-							class="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-							value={batchGradeFilterId}
-							onchange={(e) => (batchGradeFilterId = e.currentTarget.value)}
-							onmouseenter={loadBatchGradeLevels}
-						>
-							<option value="all">ทุกระดับชั้น ({classrooms.length} ห้อง)</option>
-							{#each batchGradeLevels as gl (gl.id)}
-								<option value={gl.id}>{gl.name}</option>
-							{/each}
-						</select>
-					</div>
-				{/if}
+			<!-- Targets Selection (ห้องเรียน / ครู อิสระ — เลือกได้ฝั่งใดฝั่งหนึ่งหรือทั้งคู่) -->
+			<div class="border-t pt-3 mt-1 space-y-3">
+				<p class="text-[11px] text-muted-foreground -mb-1">
+					เลือก <b>ห้องเรียน</b> ให้กิจกรรมขึ้นในตารางนักเรียน / เลือก <b>ครู</b>
+					ให้ขึ้นในตารางครู (เลือกทั้งคู่ได้ — event จะผูกครูทุกคนที่เลือกในทุกห้อง)
+				</p>
 
-				<div class="flex justify-between items-center mb-2">
-					<Label.Root>เลือกห้องที่ต้องการ ({batchClassrooms.length})</Label.Root>
-					<Button variant="ghost" size="sm" class="h-6 text-xs" onclick={selectAllBatchClassrooms}>
-						เลือกทั้งหมด
-					</Button>
-				</div>
-				<div
-					class="border rounded-md max-h-[180px] min-h-[100px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-2"
-				>
-					{#each filteredBatchClassroomsList as classroom (classroom.id)}
-						<div class="flex items-center space-x-2 bg-background p-1.5 rounded border shadow-sm">
-							<Checkbox
-								id="batch-class-{classroom.id}"
-								checked={batchClassrooms.includes(classroom.id)}
-								onCheckedChange={() => toggleBatchClassroom(classroom.id)}
-							/>
-							<label
-								for="batch-class-{classroom.id}"
-								class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
-							>
-								{classroom.name}
-							</label>
+				<!-- ห้องเรียน -->
+				<div>
+					{#if batchMode === 'SLOT' && batchSlotId && activitySlots.find((s) => s.id === batchSlotId)?.classroom_ids?.length}
+						<div
+							class="flex items-center gap-2 mb-2 px-3 py-1.5 bg-emerald-50/50 rounded border border-emerald-100 text-xs text-emerald-700"
+						>
+							<span class="font-bold">Info:</span> แสดงเฉพาะห้องเรียนที่เข้าร่วม Activity Slot นี้
 						</div>
 					{:else}
-						<div
-							class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-4 opacity-70"
-						>
-							<School class="w-8 h-8 mb-2 opacity-20" />
-							<span class="text-xs">ไม่พบห้องเรียน</span>
+						<div class="flex items-center gap-2 mb-2">
+							<Label.Root class="text-xs">กรองชั้น:</Label.Root>
+							<select
+								class="flex h-7 w-full items-center justify-between rounded-md border border-input bg-background px-2 py-0.5 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+								value={batchGradeFilterId}
+								onchange={(e) => (batchGradeFilterId = e.currentTarget.value)}
+								onmouseenter={loadBatchGradeLevels}
+							>
+								<option value="all">ทุกระดับ ({classrooms.length})</option>
+								{#each batchGradeLevels as gl (gl.id)}
+									<option value={gl.id}>{gl.name}</option>
+								{/each}
+							</select>
 						</div>
-					{/each}
+					{/if}
+
+					<div class="flex justify-between items-center mb-1">
+						<Label.Root class="text-xs">ห้องเรียน ({batchClassrooms.length})</Label.Root>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 text-xs"
+							onclick={selectAllBatchClassrooms}
+						>
+							เลือกทั้งหมด
+						</Button>
+					</div>
+					<div
+						class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-3 gap-1"
+					>
+						{#each filteredBatchClassroomsList as classroom (classroom.id)}
+							<label
+								class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
+							>
+								<Checkbox
+									checked={batchClassrooms.includes(classroom.id)}
+									onCheckedChange={() => toggleBatchClassroom(classroom.id)}
+								/>
+								<span class="truncate">{classroom.name}</span>
+							</label>
+						{:else}
+							<div
+								class="col-span-3 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
+							>
+								<School class="w-6 h-6 mb-1 opacity-20" />
+								<span class="text-xs">ไม่พบห้องเรียน</span>
+							</div>
+						{/each}
+					</div>
 				</div>
+
+				<!-- ครู -->
+				<div>
+					<div class="flex justify-between items-center mb-1">
+						<Label.Root class="text-xs">ครู ({batchInstructors.length})</Label.Root>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 text-xs"
+							onclick={() => {
+								if (batchInstructors.length === instructors.length) {
+									batchInstructors = [];
+								} else {
+									batchInstructors = instructors.map((i) => i.id);
+								}
+							}}
+						>
+							{batchInstructors.length === instructors.length ? 'ล้าง' : 'เลือกทั้งหมด'}
+						</Button>
+					</div>
+					<div
+						class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-2 gap-1"
+					>
+						{#each instructors as instructor (instructor.id)}
+							<label
+								class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
+							>
+								<Checkbox
+									checked={batchInstructors.includes(instructor.id)}
+									onCheckedChange={() => {
+										if (batchInstructors.includes(instructor.id)) {
+											batchInstructors = batchInstructors.filter((i) => i !== instructor.id);
+										} else {
+											batchInstructors = [...batchInstructors, instructor.id];
+										}
+									}}
+								/>
+								<span class="truncate">{instructor.name}</span>
+							</label>
+						{:else}
+							<div
+								class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
+							>
+								<Users class="w-6 h-6 mb-1 opacity-20" />
+								<span class="text-xs">ไม่พบครู</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			</div>
+			<div class="border-t pt-3 mt-1">
 
 				<!-- Override Option -->
 				<div

@@ -110,6 +110,10 @@ export interface CreateBatchTimetableEntriesRequest {
 	subject_id?: string;
 	force?: boolean;
 	activity_slot_id?: string;
+	/** ครูที่ติดคาบด้วย event นี้ (attach ไป tei).
+	 * classroom_ids ว่าง + instructor_ids มี → teacher-only event (classroom_id = NULL)
+	 */
+	instructor_ids?: string[];
 }
 
 export interface ConflictInfo {
