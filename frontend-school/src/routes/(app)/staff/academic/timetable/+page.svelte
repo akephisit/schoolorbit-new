@@ -13,6 +13,7 @@
 		listPeriods,
 		createBatchTimetableEntries,
 		deleteBatchTimetableEntries,
+		deleteBatchGroup,
 		removeEntryInstructor,
 		addEntryInstructor,
 		restoreInstructorToSlot,
@@ -173,6 +174,8 @@
 	// Delete activity dialog (synchronized: ask single vs batch)
 	let showDeleteActivityDialog = $state(false);
 	let deleteActivityTarget = $state<TimetableEntry | null>(null);
+	let showDeleteBatchDialog = $state(false);
+	let deleteBatchTarget = $state<TimetableEntry | null>(null);
 
 	// View Mode: 'CLASSROOM' or 'INSTRUCTOR'
 	let viewMode = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
@@ -623,6 +626,13 @@
 			);
 			return;
 		}
+
+		// ถ้า entry มาจาก batch (มี batch_id) → ถามว่าจะลบเฉพาะคาบนี้ หรือ ลบทั้งกลุ่ม batch
+		if (entry.batch_id) {
+			deleteBatchTarget = entry;
+			showDeleteBatchDialog = true;
+			return;
+		}
 		if (viewMode === 'INSTRUCTOR') {
 			if (entry.activity_slot_id) {
 				const slot =
@@ -679,6 +689,32 @@
 			}
 		} else {
 			await doDeleteEntry(entry.id, false);
+		}
+	}
+
+	async function doDeleteBatchGroup() {
+		if (!deleteBatchTarget?.batch_id) return;
+		try {
+			const res = await deleteBatchGroup(deleteBatchTarget.batch_id);
+			toast.success(`ลบทั้งกลุ่มสำเร็จ (${res.deleted_count} คาบ)`);
+			showDeleteBatchDialog = false;
+			deleteBatchTarget = null;
+			loadTimetable();
+		} catch (e: unknown) {
+			toast.error((e instanceof Error ? e.message : String(e)) || 'ลบไม่สำเร็จ');
+		}
+	}
+
+	async function doDeleteBatchSingle() {
+		if (!deleteBatchTarget) return;
+		try {
+			await deleteTimetableEntry(deleteBatchTarget.id);
+			toast.success('ลบเฉพาะคาบนี้แล้ว');
+			showDeleteBatchDialog = false;
+			deleteBatchTarget = null;
+			loadTimetable();
+		} catch (e: unknown) {
+			toast.error((e instanceof Error ? e.message : String(e)) || 'ลบไม่สำเร็จ');
 		}
 	}
 
@@ -3176,6 +3212,35 @@
 </Dialog.Root>
 
 <!-- Delete Activity Dialog (synchronized: single vs batch) -->
+<!-- Delete Batch Group Dialog (entry ที่มาจาก /timetable/batch) -->
+<Dialog.Root bind:open={showDeleteBatchDialog}>
+	<Dialog.Content class="max-w-sm">
+		<Dialog.Header>
+			<Dialog.Title>ลบคาบที่สร้างจาก Batch</Dialog.Title>
+			<Dialog.Description>
+				<span class="font-medium text-foreground">{deleteBatchTarget?.title || 'กิจกรรม'}</span>
+				<br />
+				คาบนี้ถูกสร้างพร้อมกับคาบอื่นจาก Batch เดียวกัน — ลบแบบไหนดี?
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="flex flex-col gap-2 py-2">
+			<Button variant="outline" onclick={doDeleteBatchSingle}>ลบแค่คาบนี้</Button>
+			<Button variant="destructive" onclick={doDeleteBatchGroup}>
+				ลบทั้งหมดที่สร้างพร้อมกัน
+			</Button>
+		</div>
+		<Dialog.Footer>
+			<Button
+				variant="ghost"
+				onclick={() => {
+					showDeleteBatchDialog = false;
+					deleteBatchTarget = null;
+				}}>ยกเลิก</Button
+			>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
 <Dialog.Root bind:open={showDeleteActivityDialog}>
 	<Dialog.Content class="max-w-sm">
 		<Dialog.Header>

@@ -68,9 +68,13 @@ pub struct TimetableEntry {
 
     pub entry_type: String, // COURSE, BREAK, ACTIVITY, HOMEROOM
     pub title: Option<String>,
-    pub classroom_id: Uuid,
+    pub classroom_id: Option<Uuid>,
     pub academic_semester_id: Uuid,
     pub activity_slot_id: Option<Uuid>,
+    /// UUID ของ batch ที่สร้าง entry นี้; NULL = สร้างแยก
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_id: Option<Uuid>,
 
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

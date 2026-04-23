@@ -50,7 +50,7 @@ export interface TimetableEntry {
 	// New fields
 	entry_type: 'COURSE' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM';
 	title?: string;
-	classroom_id: string;
+	classroom_id?: string;
 	academic_semester_id: string;
 
 	// Activity slot link
@@ -72,6 +72,8 @@ export interface TimetableEntry {
 	end_time?: string;
 	activity_slot_name?: string;
 	activity_type?: string;
+	/** UUID ของ batch ที่สร้าง entry นี้ (ถ้าสร้างจาก /timetable/batch); NULL = สร้างเดี่ยว */
+	batch_id?: string;
 }
 
 export interface CreatePeriodRequest {
@@ -317,6 +319,12 @@ export const updateTimetableEntry = async (id: string, data: UpdateTimetableEntr
 
 export const deleteTimetableEntry = async (id: string) => {
 	return await fetchApi(`/api/academic/timetable/${id}`, { method: 'DELETE' });
+};
+
+export const deleteBatchGroup = async (
+	batchId: string
+): Promise<{ success: boolean; deleted_count: number }> => {
+	return await fetchApi(`/api/academic/timetable/batch-group/${batchId}`, { method: 'DELETE' });
 };
 
 export const deleteBatchTimetableEntries = async (data: {

@@ -736,6 +736,53 @@ pub async fn delete_timetable_entry(
     Ok(Json(json!({ "success": true })).into_response())
 }
 
+/// DELETE /api/academic/timetable/batch-group/{batch_id}
+/// ลบทุก entries ที่มี batch_id ตรงกัน (ใช้กับ entries ที่สร้างผ่าน /timetable/batch)
+pub async fn delete_batch_group(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(batch_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(response);
+    }
+
+    // Grab semester_id ก่อนลบ เพื่อ broadcast
+    let semester_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT academic_semester_id FROM academic_timetable_entries WHERE batch_id = $1 LIMIT 1"
+    )
+    .bind(batch_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    let result = sqlx::query("DELETE FROM academic_timetable_entries WHERE batch_id = $1")
+        .bind(batch_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to delete batch group {}: {}", batch_id, e);
+            AppError::InternalServerError("Failed to delete batch group".to_string())
+        })?;
+
+    if let Some(sid) = semester_id {
+        let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+        state.websocket_manager.broadcast_mutation(
+            subdomain,
+            sid,
+            TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+        );
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "deleted_count": result.rows_affected()
+    })).into_response())
+}
+
 // ============================================
 // Conflict Detection Logic
 // ============================================
@@ -942,7 +989,7 @@ pub async fn update_timetable_entry(
     .map_err(|_| AppError::NotFound("Entry not found".to_string()))?;
 
     // 2. Prepare mock CreateRequest for validation (using new values or fallback to existing)
-    let target_classroom_id = payload.classroom_id.unwrap_or(existing_entry.classroom_id);
+    let target_classroom_id: Option<Uuid> = payload.classroom_id.or(existing_entry.classroom_id);
     let validation_payload = CreateTimetableEntryRequest {
         classroom_course_id: existing_entry.classroom_course_id,
         day_of_week: payload.day_of_week.clone().unwrap_or(existing_entry.day_of_week),
@@ -952,7 +999,7 @@ pub async fn update_timetable_entry(
         activity_slot_id: existing_entry.activity_slot_id,
         entry_type: Some(existing_entry.entry_type.clone()),
         title: existing_entry.title.clone(),
-        classroom_id: Some(target_classroom_id),
+        classroom_id: target_classroom_id,
         academic_semester_id: Some(existing_entry.academic_semester_id),
     };
 
@@ -1332,20 +1379,22 @@ pub async fn create_batch_timetable_entries(
 
     let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // ถ้า classroom_ids ว่าง → teacher-only (ใช้ [None] เพื่อ loop 1 รอบ classroom_id = NULL)
-    let classroom_targets: Vec<Option<Uuid>> = if payload.classroom_ids.is_empty() {
-        vec![None]
-    } else {
-        payload.classroom_ids.iter().map(|id| Some(*id)).collect()
-    };
+    // UUID ร่วมของ entries ทุกตัวใน batch นี้ (ใช้สำหรับ "ลบทั้งกลุ่ม")
+    let batch_uuid = Uuid::new_v4();
 
-    for classroom_id_opt in &classroom_targets {
+    // Semantic: "ของใครของมัน" — classroom entries กับ instructor entries เป็นคนละ event
+    // ไม่ cross-link (ห้องเลือก → entry ห้อง (ไม่มี tei จาก payload.instructor_ids);
+    // ครูเลือก → entry ครู (classroom_id=NULL, 1 tei))
+    // ยกเว้น COURSE/SLOT mode → tei derived จาก source เดิม + ห้องได้ tei แบบปกติ
+
+    // === CLASSROOM entries ===
+    for classroom_id in &payload.classroom_ids {
         let mut entry_type = payload.entry_type.clone();
         let mut classroom_course_id: Option<Uuid> = None;
         let mut title = payload.title.clone();
 
-        // If subject_id is provided, try to find matching course mapping (only when we have a classroom)
-        if let (Some(subject_id), Some(classroom_id)) = (payload.subject_id, classroom_id_opt) {
+        // If subject_id provided → resolve classroom_course for this classroom
+        if let Some(subject_id) = payload.subject_id {
             let course_info: Option<(Uuid, String)> = sqlx::query_as(
                "SELECT cc.id, s.name_th FROM classroom_courses cc
                 JOIN subjects s ON cc.subject_id = s.id
@@ -1365,75 +1414,48 @@ pub async fn create_batch_timetable_entries(
         }
 
         for period_id in &payload.period_ids {
-            // FORCE OVERRIDE LOGIC
             if payload.force.unwrap_or(false) {
-                // 1. Clear slot for this classroom (skip ถ้า teacher-only)
-                if let Some(classroom_id) = classroom_id_opt {
-                    let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE classroom_id = $1 AND day_of_week = $2 AND period_id = $3")
-                        .bind(classroom_id)
+                let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE classroom_id = $1 AND day_of_week = $2 AND period_id = $3")
+                    .bind(classroom_id)
+                    .bind(&payload.day_of_week)
+                    .bind(period_id)
+                    .execute(&mut *tx)
+                    .await;
+
+                if let Some(rid) = payload.room_id {
+                    let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE room_id = $1 AND day_of_week = $2 AND period_id = $3")
+                        .bind(rid)
                         .bind(&payload.day_of_week)
                         .bind(period_id)
                         .execute(&mut *tx)
                         .await;
                 }
 
-                // 2. Clear slot for target room (if specified)
-                if let Some(rid) = payload.room_id {
-                     let _ = sqlx::query("DELETE FROM academic_timetable_entries WHERE room_id = $1 AND day_of_week = $2 AND period_id = $3")
-                    .bind(rid)
-                    .bind(&payload.day_of_week)
-                    .bind(period_id)
-                    .execute(&mut *tx)
-                    .await;
-                }
-
-                // 3. Clear slot for instructor(s) — ครู derived จาก course + payload.instructor_ids
-                let mut clear_instructors: Vec<Uuid> = if let Some(cc_id) = classroom_course_id {
-                    sqlx::query_scalar(
+                // Clear instructor slot — derived จาก course (ถ้ามี)
+                if let Some(cc_id) = classroom_course_id {
+                    let cci: Vec<Uuid> = sqlx::query_scalar(
                         "SELECT instructor_id FROM classroom_course_instructors WHERE classroom_course_id = $1"
-                    )
-                    .bind(cc_id)
-                    .fetch_all(&mut *tx)
-                    .await
-                    .unwrap_or_default()
-                } else { Vec::new() };
-                for id in &payload.instructor_ids {
-                    if !clear_instructors.contains(id) { clear_instructors.push(*id); }
-                }
-
-                if !clear_instructors.is_empty() {
-                    let _ = sqlx::query(r#"
-                        DELETE FROM academic_timetable_entries
-                        WHERE id IN (
-                            SELECT te.id FROM academic_timetable_entries te
-                            JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
-                            WHERE tei.instructor_id = ANY($1)
-                              AND te.day_of_week = $2
-                              AND te.period_id = $3
-                        )
-                    "#)
-                    .bind(&clear_instructors)
-                    .bind(&payload.day_of_week)
-                    .bind(period_id)
-                    .execute(&mut *tx)
-                    .await;
+                    ).bind(cc_id).fetch_all(&mut *tx).await.unwrap_or_default();
+                    if !cci.is_empty() {
+                        let _ = sqlx::query(r#"DELETE FROM academic_timetable_entries
+                            WHERE id IN (SELECT te.id FROM academic_timetable_entries te
+                                JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
+                                WHERE tei.instructor_id = ANY($1) AND te.day_of_week = $2 AND te.period_id = $3)"#)
+                            .bind(&cci).bind(&payload.day_of_week).bind(period_id).execute(&mut *tx).await;
+                    }
                 }
             }
 
             let inserted_id: Option<Uuid> = sqlx::query_scalar(
-                r#"
-                INSERT INTO academic_timetable_entries (
+                r#"INSERT INTO academic_timetable_entries (
                     id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
                     entry_type, title, is_active, created_by, updated_by,
-                    classroom_course_id, note, activity_slot_id
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9, $10, $11, $12)
-                ON CONFLICT DO NOTHING
-                RETURNING id
-                "#
+                    classroom_course_id, note, activity_slot_id, batch_id
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9, $10, $11, $12, $13)
+                ON CONFLICT DO NOTHING RETURNING id"#
             )
             .bind(Uuid::new_v4())
-            .bind(*classroom_id_opt)
+            .bind(classroom_id)
             .bind(payload.academic_semester_id)
             .bind(&payload.day_of_week)
             .bind(period_id)
@@ -1444,15 +1466,15 @@ pub async fn create_batch_timetable_entries(
             .bind(classroom_course_id)
             .bind(&payload.note)
             .bind(payload.activity_slot_id)
-            .fetch_optional(&mut *tx)
-            .await
+            .bind(batch_uuid)
+            .fetch_optional(&mut *tx).await
             .map_err(|e| {
-                eprintln!("Failed to batch insert (classroom={:?}): {}", classroom_id_opt, e);
+                eprintln!("Failed batch INSERT (classroom={}): {}", classroom_id, e);
                 AppError::InternalServerError("Failed to batch create entries".to_string())
             })?;
 
             if let Some(new_entry_id) = inserted_id {
-                // TEI: จาก course / slot (เดิม)
+                // TEI จาก course / slot เท่านั้น (ไม่รวม payload.instructor_ids — แยก event)
                 if let Some(cc_id) = classroom_course_id {
                     sqlx::query(
                         "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
@@ -1465,15 +1487,13 @@ pub async fn create_batch_timetable_entries(
                         "SELECT ac.scheduling_mode FROM activity_slots s JOIN activity_catalog ac ON ac.id = s.activity_catalog_id WHERE s.id = $1"
                     ).bind(slot_id).fetch_optional(&mut *tx).await.ok().flatten();
                     if mode.as_deref() == Some("independent") {
-                        if let Some(classroom_id) = classroom_id_opt {
-                            sqlx::query(
-                                "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-                                 SELECT $1, instructor_id, 'primary'
-                                 FROM activity_slot_classroom_assignments
-                                 WHERE slot_id = $2 AND classroom_id = $3 ON CONFLICT DO NOTHING"
-                            ).bind(new_entry_id).bind(slot_id).bind(classroom_id).execute(&mut *tx).await
-                              .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-                        }
+                        sqlx::query(
+                            "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                             SELECT $1, instructor_id, 'primary'
+                             FROM activity_slot_classroom_assignments
+                             WHERE slot_id = $2 AND classroom_id = $3 ON CONFLICT DO NOTHING"
+                        ).bind(new_entry_id).bind(slot_id).bind(classroom_id).execute(&mut *tx).await
+                          .map_err(|e| AppError::InternalServerError(e.to_string()))?;
                     } else {
                         sqlx::query(
                             "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
@@ -1483,16 +1503,53 @@ pub async fn create_batch_timetable_entries(
                           .map_err(|e| AppError::InternalServerError(e.to_string()))?;
                     }
                 }
+            }
+        }
+    }
 
-                // TEI: เพิ่มครูที่ user เลือกเอง (payload.instructor_ids) — union กับ derived
-                if !payload.instructor_ids.is_empty() {
-                    sqlx::query(
-                        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-                         SELECT $1, UNNEST($2::uuid[]), 'primary'
-                         ON CONFLICT DO NOTHING"
-                    ).bind(new_entry_id).bind(&payload.instructor_ids).execute(&mut *tx).await
-                      .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-                }
+    // === INSTRUCTOR entries (teacher-only, แต่ละครูเป็น event ของตัวเอง) ===
+    for instructor_id in &payload.instructor_ids {
+        for period_id in &payload.period_ids {
+            if payload.force.unwrap_or(false) {
+                // Clear teacher's slot (tei-based)
+                let _ = sqlx::query(r#"DELETE FROM academic_timetable_entries
+                    WHERE id IN (SELECT te.id FROM academic_timetable_entries te
+                        JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
+                        WHERE tei.instructor_id = $1 AND te.day_of_week = $2 AND te.period_id = $3)"#)
+                    .bind(instructor_id).bind(&payload.day_of_week).bind(period_id).execute(&mut *tx).await;
+            }
+
+            let new_entry_id = Uuid::new_v4();
+            let inserted: Option<Uuid> = sqlx::query_scalar(
+                r#"INSERT INTO academic_timetable_entries (
+                    id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
+                    entry_type, title, is_active, created_by, updated_by,
+                    classroom_course_id, note, activity_slot_id, batch_id
+                ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, true, $8, $8, NULL, $9, NULL, $10)
+                ON CONFLICT DO NOTHING RETURNING id"#
+            )
+            .bind(new_entry_id)
+            .bind(payload.academic_semester_id)
+            .bind(&payload.day_of_week)
+            .bind(period_id)
+            .bind(payload.room_id)
+            .bind(&payload.entry_type)
+            .bind(&payload.title)
+            .bind(user_id)
+            .bind(&payload.note)
+            .bind(batch_uuid)
+            .fetch_optional(&mut *tx).await
+            .map_err(|e| {
+                eprintln!("Failed batch INSERT (instructor={}): {}", instructor_id, e);
+                AppError::InternalServerError("Failed to batch create entries".to_string())
+            })?;
+
+            if let Some(eid) = inserted {
+                sqlx::query(
+                    "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                     VALUES ($1, $2, 'primary') ON CONFLICT DO NOTHING"
+                ).bind(eid).bind(instructor_id).execute(&mut *tx).await
+                  .map_err(|e| AppError::InternalServerError(e.to_string()))?;
             }
         }
     }
