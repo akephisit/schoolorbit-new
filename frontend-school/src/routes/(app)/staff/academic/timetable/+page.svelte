@@ -1170,6 +1170,13 @@
 			return;
 		}
 
+		// Block: ห้ามวาง/สลับทับ entry ที่สร้างจาก batch (TEXT/SLOT-sync — pinned)
+		if (existingEntry?.batch_id) {
+			toast.error('คาบนี้สร้างจาก Batch — ย้าย/สลับไม่ได้ (ลบแล้ว batch ใหม่แทน)');
+			handleDragEnd();
+			return;
+		}
+
 		// Instructor view: เช็ค hidden ghost ใน rawTeamEntries (sync, ครอบคลุม ghost mode off
 		// ที่ getEntryForSlot return undefined เพราะ filter display)
 		if (viewMode === 'INSTRUCTOR' && draggedCourse) {
@@ -1744,10 +1751,12 @@
 		loadingSlots = true;
 		try {
 			const res = await listActivitySlots({ semester_id: selectedSemesterId });
-			activitySlots = res.data;
+			// Batch รองรับเฉพาะ synchronized (ต้องตรงกันทุกห้อง)
+			// Independent → ลากทีละห้องจาก sidebar ไม่ใช่ batch
+			activitySlots = res.data.filter((s) => s.scheduling_mode === 'synchronized');
 		} catch (e) {
 			console.error(e);
-			toast.error('โหลดข้อมูล Activity Slot ไม่สำเร็���');
+			toast.error('โหลดข้อมูล Activity Slot ไม่สำเร็จ');
 		} finally {
 			loadingSlots = false;
 		}
@@ -3499,8 +3508,9 @@
 							</Select.Root>
 						{/if}
 						<p class="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
-							*เลือก Activity Slot จากระบบกิจกรรมพัฒนาผู้เรียน<br />
-							นักเรียนจะกดดูกิจกรรมที่ตัวเองลงทะเบียนได้จากตารางเรียน
+							*Batch รองรับเฉพาะ <b>Synchronized</b> (ทุกห้องตรงกัน) —
+							Independent ให้ลากทีละห้องจาก sidebar<br />
+							นักเรียนกดดูกิจกรรมที่ตัวเองลงทะเบียนได้จากตารางเรียน
 						</p>
 					</div>
 				</div>

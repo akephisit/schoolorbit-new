@@ -988,6 +988,13 @@ pub async fn update_timetable_entry(
     .await
     .map_err(|_| AppError::NotFound("Entry not found".to_string()))?;
 
+    // Block: ถ้า entry สร้างจาก batch (pinned) → ไม่ให้ update/move/replace
+    if existing_entry.batch_id.is_some() {
+        return Err(AppError::BadRequest(
+            "คาบที่สร้างจาก Batch ไม่สามารถย้าย/เปลี่ยนเนื้อหาได้ (ลบก่อนแล้ว batch ใหม่แทน)".to_string(),
+        ));
+    }
+
     // 2. Prepare mock CreateRequest for validation (using new values or fallback to existing)
     let target_classroom_id: Option<Uuid> = payload.classroom_id.or(existing_entry.classroom_id);
     let validation_payload = CreateTimetableEntryRequest {
@@ -1878,9 +1885,9 @@ pub async fn swap_timetable_entries(
         return Ok(r);
     }
 
-    // Fetch both entries' current day/period/room
-    let entries: Vec<(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>, Uuid)> = sqlx::query_as(
-        r#"SELECT id, day_of_week, period_id, room_id, classroom_id, academic_semester_id
+    // Fetch both entries' current day/period/room (+ batch_id เพื่อเช็ก pinned)
+    let entries: Vec<(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>, Uuid, Option<Uuid>)> = sqlx::query_as(
+        r#"SELECT id, day_of_week, period_id, room_id, classroom_id, academic_semester_id, batch_id
            FROM academic_timetable_entries
            WHERE id = ANY($1) AND is_active = true"#
     )
@@ -1893,6 +1900,13 @@ pub async fn swap_timetable_entries(
         return Err(AppError::NotFound("Entry not found or inactive".to_string()));
     }
 
+    // Block: ถ้า entry ใด entry หนึ่งสร้างจาก batch (pinned) → ไม่ให้สลับ
+    if entries.iter().any(|e| e.6.is_some()) {
+        return Err(AppError::BadRequest(
+            "คาบที่สร้างจาก Batch ไม่สามารถสลับได้ (ลบก่อนแล้ว batch ใหม่แทน)".to_string(),
+        ));
+    }
+
     let (a, b) = if entries[0].0 == body.entry_a_id {
         (&entries[0], &entries[1])
     } else {
@@ -1900,8 +1914,8 @@ pub async fn swap_timetable_entries(
     };
 
     // Helper tuples: (id, day, period, room, classroom, semester)
-    let (a_id, a_day, a_period, a_room, a_classroom, _a_sem) = a.clone();
-    let (b_id, b_day, b_period, b_room, b_classroom, _b_sem) = b.clone();
+    let (a_id, a_day, a_period, a_room, a_classroom, _a_sem, _a_batch) = a.clone();
+    let (b_id, b_day, b_period, b_room, b_classroom, _b_sem, _b_batch) = b.clone();
 
     // Validate: each entry's classroom must be free at new position (excluding swap partner)
     let a_target_conflict: Option<(String,)> = sqlx::query_as(
