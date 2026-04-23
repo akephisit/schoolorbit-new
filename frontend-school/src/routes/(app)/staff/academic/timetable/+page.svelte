@@ -758,6 +758,11 @@
 	}
 	let slotConflicts = new SvelteMap<string, SlotConflict[]>();
 
+	// Floating conflict popup ตอน drag hover (native title tooltip ใช้ไม่ได้ระหว่าง drag)
+	let hoverDragCell = $state<{ day: string; periodId: string; x: number; y: number } | null>(
+		null
+	);
+
 	// Drag validity map: key "DAY|PERIODID" → cell state (from POST /timetable/validate-moves)
 	// Populated on drag start for MOVE type; cleared on drag end.
 	let moveValidityMap = $state<Map<string, import('$lib/api/timetable').MoveValidityCell>>(
@@ -1060,13 +1065,20 @@
 		draggedCourse = null;
 		draggedEntryId = null;
 		slotConflicts.clear();
+		hoverDragCell = null;
 		moveValidityMap = new Map();
 	}
 
-	function handleDragOver(event: DragEvent) {
+	function handleDragOver(event: DragEvent, day?: string, periodId?: string) {
 		event.preventDefault();
 		if (event.dataTransfer) {
 			event.dataTransfer.dropEffect = dragType === 'NEW' ? 'copy' : 'move';
+		}
+		// Track cell ที่ cursor hover ระหว่าง drag เพื่อแสดง floating popup
+		if (day && periodId && draggedCourse && slotConflicts.has(getSlotKey(day, periodId))) {
+			hoverDragCell = { day, periodId, x: event.clientX, y: event.clientY };
+		} else {
+			hoverDragCell = null;
 		}
 	}
 
@@ -2620,7 +2632,7 @@
 									data-day={day.value}
 									data-period={period.id}
 									title={validity && !validity.valid ? validity.reason : ''}
-									ondragover={handleDragOver}
+									ondragover={(e) => handleDragOver(e, day.value, period.id)}
 									ondrop={(e) => handleDrop(e, day.value, period.id)}
 									role="application"
 								>
@@ -2899,6 +2911,52 @@
 			</div>
 		</Card.Root>
 	</div>
+
+	<!-- Floating Conflict Popup (ระหว่าง drag — native title ใช้ไม่ได้ใน drag state) -->
+	{#if hoverDragCell && draggedCourse}
+		{@const hoverConflicts =
+			slotConflicts.get(getSlotKey(hoverDragCell.day, hoverDragCell.periodId)) ?? []}
+		{#if hoverConflicts.length > 0}
+			<div
+				class="fixed z-[10000] pointer-events-none bg-white border border-red-300 rounded-md shadow-lg p-2 text-xs max-w-xs space-y-1"
+				style="top: {hoverDragCell.y + 14}px; left: {hoverDragCell.x + 14}px;"
+			>
+				{#each hoverConflicts as c, i (i)}
+					<div class="flex items-start gap-1.5 text-red-700">
+						{#if c.kind === 'classroom'}
+							<BookOpen class="w-3.5 h-3.5 shrink-0 mt-0.5" />
+							<div class="flex-1 leading-tight">
+								<div class="font-semibold">ห้องติด: {c.subject_code}</div>
+								{#if c.subject_name}
+									<div class="text-red-600/80">{c.subject_name}</div>
+								{/if}
+								{#if c.classroom_name || c.room_code}
+									<div class="text-red-500/70 text-[10px]">
+										{c.classroom_name}{#if c.room_code}
+											· ห้อง {c.room_code}{/if}
+									</div>
+								{/if}
+							</div>
+						{:else}
+							<Users class="w-3.5 h-3.5 shrink-0 mt-0.5" />
+							<div class="flex-1 leading-tight">
+								<div class="font-semibold">{c.teacher_name} ติด: {c.subject_code}</div>
+								{#if c.subject_name}
+									<div class="text-red-600/80">{c.subject_name}</div>
+								{/if}
+								{#if c.classroom_name || c.room_code}
+									<div class="text-red-500/70 text-[10px]">
+										{c.classroom_name}{#if c.room_code}
+											· ห้อง {c.room_code}{/if}
+									</div>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+	{/if}
 
 	<!-- GHOST UI OVERLAY (fixed, clipped to workspace via clip-path) -->
 	<div
