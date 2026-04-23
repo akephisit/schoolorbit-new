@@ -13,8 +13,7 @@
 	let error = $state<string | null>(null);
 
 	function goToStudent(id: string) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
-		goto(resolve(`/parent/student/${id}` as any));
+		goto(resolve(`/parent/student/${id}`));
 	}
 
 	onMount(async () => {

@@ -24,8 +24,7 @@
 	let jobId = $derived(params.jobId);
 
 	function goToSchedulingJobs() {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- route doesn't have a typed page file
-		goto(resolve('/staff/academic/timetable/scheduling/jobs' as any));
+		goto(resolve('/staff/academic/timetable/scheduling/jobs'));
 	}
 
 	let job = $state<SchedulingJobResponse | null>(null);

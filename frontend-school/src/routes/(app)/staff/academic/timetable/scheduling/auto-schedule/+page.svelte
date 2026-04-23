@@ -137,8 +137,7 @@
 
 			if (res.data?.job_id) {
 				toast.success('เริ่มจัดตารางอัตโนมัติแล้ว');
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic route interpolation
-				goto(resolve(`/staff/academic/timetable/scheduling/jobs/${res.data.job_id}` as any));
+				goto(resolve(`/staff/academic/timetable/scheduling/jobs/${res.data.job_id}`));
 			}
 		} catch (error: unknown) {
 			console.error('Auto-schedule error:', error);

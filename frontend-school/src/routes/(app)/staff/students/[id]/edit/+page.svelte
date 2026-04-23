@@ -90,9 +90,7 @@
 	async function handleSave() {
 		saving = true;
 		try {
-			// Extract editable fields (exclude grade_level and class_room)
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
-			const { grade_level, class_room, ...updateData } = formData;
+			const { grade_level: _gradeLevel, class_room: _classRoom, ...updateData } = formData;
 
 			await updateStudent(studentId, {
 				...updateData,

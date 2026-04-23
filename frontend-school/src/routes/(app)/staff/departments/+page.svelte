@@ -98,8 +98,7 @@
 	}
 
 	function goToDept(id: string) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
-		goto(resolve(`/staff/departments/${id}` as any));
+		goto(resolve(`/staff/departments/${id}`));
 	}
 
 	function handlePermission(dept: Department) {

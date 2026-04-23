@@ -322,8 +322,7 @@
 			if (result.success) {
 				toast.success('บันทึกข้อมูลสำเร็จ');
 				setTimeout(async () => {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					await goto(resolve(`/staff/${staffId}` as any), { invalidateAll: true });
+					await goto(resolve(`/staff/manage/${staffId}`), { invalidateAll: true });
 				}, 1500);
 			} else {
 				toast.error(result.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');

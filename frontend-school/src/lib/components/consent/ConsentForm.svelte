@@ -25,10 +25,6 @@
 		showSkipButton = false
 	}: Props = $props();
 
-	// /privacy-policy route not yet defined in app — SvelteKit typed route dynamic interpolation.
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route: /privacy-policy has no +page.svelte
-	const privacyPolicyUrl = resolve('/privacy-policy' as any);
-
 	// State
 	let consentTypes = $state<ConsentType[]>([]);
 	let selectedConsents = $state<Set<string>>(new Set());
@@ -258,7 +254,7 @@
 				<p class="text-sm text-muted-foreground text-center">
 					การให้ความยินยอมนี้ถือว่าท่านได้อ่านและเข้าใจ
 					<a
-						href={privacyPolicyUrl}
+						href={resolve('/privacy-policy')}
 						target="_blank"
 						class="text-primary underline hover:no-underline"
 					>

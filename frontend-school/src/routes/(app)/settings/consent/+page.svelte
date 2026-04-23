@@ -19,10 +19,6 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import { th } from 'date-fns/locale';
 
-	// /privacy-policy route not yet defined in app — SvelteKit typed route dynamic interpolation.
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route: /privacy-policy has no +page.svelte
-	const privacyPolicyUrl = resolve('/privacy-policy' as any);
-
 	// State
 	let status = $state<UserConsentStatus | null>(null);
 	let loading = $state(true);
@@ -319,7 +315,7 @@
 			<Card.Content class="p-4">
 				<p class="text-sm text-muted-foreground text-center">
 					อ่านเพิ่มเติมที่
-					<a href={privacyPolicyUrl} class="text-primary underline hover:no-underline">
+					<a href={resolve('/privacy-policy')} class="text-primary underline hover:no-underline">
 						นโยบายความเป็นส่วนตัว
 					</a>
 					หรือติดต่อเจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล (DPO)

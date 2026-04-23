@@ -23,8 +23,7 @@
 	let { data } = $props();
 
 	function goToAdmissionRound(id: string) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
-		goto(resolve(`/staff/academic/admission/${id}` as any));
+		goto(resolve(`/staff/academic/admission/${id}`));
 	}
 
 	let years: AcademicYearLookupItem[] = $state([]);

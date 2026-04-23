@@ -15,11 +15,7 @@
 		onCropComplete: (croppedImage: Blob) => void;
 	}
 
-	let {
-		open = $bindable(false),
-		imageSrc = null,
-		onCropComplete
-	}: Props = $props();
+	let { open = $bindable(false), imageSrc = null, onCropComplete }: Props = $props();
 
 	// State
 	let zoom = $state(1); // 1 = fits container (base scale)

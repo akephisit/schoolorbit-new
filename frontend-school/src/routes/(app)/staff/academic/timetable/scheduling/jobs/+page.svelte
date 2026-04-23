@@ -129,8 +129,7 @@
 	}
 
 	function goToJob(id: string) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic route interpolation
-		goto(resolve(`/staff/academic/timetable/scheduling/jobs/${id}` as any));
+		goto(resolve(`/staff/academic/timetable/scheduling/jobs/${id}`));
 	}
 
 	$effect(() => {

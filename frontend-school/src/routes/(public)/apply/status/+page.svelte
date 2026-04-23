@@ -68,8 +68,7 @@
 		if (portalData?.application?.admissionRoundId) {
 			sessionStorage.setItem('admissionEditNid', nationalId);
 			sessionStorage.setItem('admissionEditDob', dateOfBirth);
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic route interpolation
-			goto(resolve(`/apply/${portalData.application.admissionRoundId}?edit=true` as any));
+			goto(resolve(`/apply/${portalData.application.admissionRoundId}?edit=true`));
 		}
 	}
 

@@ -27,8 +27,7 @@
 	let permissionDepartment = $state<Department | null>(null);
 
 	function goToSubjectGroup(id: string) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
-		goto(resolve(`/staff/academic/subject-groups/${id}` as any));
+		goto(resolve(`/staff/academic/subject-groups/${id}`));
 	}
 
 	function handlePermission(dept: Department, e: MouseEvent) {

@@ -58,8 +58,7 @@
 	let appId = $derived(params.appId);
 
 	function goToApp(rId: string, aId: string) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
-		goto(resolve(`/staff/academic/admission/${rId}/applications/${aId}` as any));
+		goto(resolve(`/staff/academic/admission/${rId}/applications/${aId}`));
 	}
 
 	let application: AdmissionApplication | null = $state(null);
