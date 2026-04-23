@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import {
 		getApplication,
 		listTracks,
@@ -56,6 +57,11 @@
 	let roundId = $derived(params.id);
 	let appId = $derived(params.appId);
 
+	function goToApp(rId: string, aId: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
+		goto(resolve(`/staff/academic/admission/${rId}/applications/${aId}` as any));
+	}
+
 	let application: AdmissionApplication | null = $state(null);
 	let documents: ApplicationDocument[] = $state([]);
 	let loading = $state(true);
@@ -85,7 +91,11 @@
 		pendingDelete?: boolean;
 	};
 	let docSlots = $state<Record<string, DocSlot>>({});
-	let cropTarget = $state<{ docType: string; imageUrl: string; initialCorners?: [CropPoint, CropPoint, CropPoint, CropPoint] } | null>(null);
+	let cropTarget = $state<{
+		docType: string;
+		imageUrl: string;
+		initialCorners?: [CropPoint, CropPoint, CropPoint, CropPoint];
+	} | null>(null);
 	let cropperOpen = $state(false);
 	let fileInputRefs = $state<Record<string, HTMLInputElement>>({});
 
@@ -221,10 +231,16 @@
 				docSlots[docType] = { ...slot, uploading: true };
 				const result = await staffUploadDocument(application.id, docType, slot.blob);
 				documents = [
-					...documents.filter(d => d.docType !== docType),
-					{ id: result.id, applicationId: application.id, fileId: result.fileId,
-					  docType: result.docType, fileUrl: result.fileUrl,
-					  fileSize: result.fileSize, createdAt: new Date().toISOString() }
+					...documents.filter((d) => d.docType !== docType),
+					{
+						id: result.id,
+						applicationId: application.id,
+						fileId: result.fileId,
+						docType: result.docType,
+						fileUrl: result.fileUrl,
+						fileSize: result.fileSize,
+						createdAt: new Date().toISOString()
+					}
 				];
 				docSlots[docType] = { preview: result.fileUrl, uploading: false };
 			}
@@ -233,8 +249,9 @@
 			for (const [docType, slot] of Object.entries(docSlots)) {
 				if (!slot.pendingDelete) continue;
 				await staffDeleteDocument(application.id, docType);
-				documents = documents.filter(d => d.docType !== docType);
-				const { [docType]: _, ...rest } = docSlots;
+				documents = documents.filter((d) => d.docType !== docType);
+				const rest = { ...docSlots };
+				delete rest[docType];
 				docSlots = rest;
 			}
 
@@ -286,7 +303,7 @@
 			preview: URL.createObjectURL(blob),
 			savedCorners: corners,
 			uploading: false,
-			pendingDelete: false,
+			pendingDelete: false
 		};
 	}
 
@@ -299,20 +316,26 @@
 	}
 
 	function handleDeleteDoc(docType: string) {
-		const existingDoc = documents.find(d => d.docType === docType);
+		const existingDoc = documents.find((d) => d.docType === docType);
 		const slot = docSlots[docType];
 
 		// If only a pending blob (not yet on server) → just clear the slot
 		if (!existingDoc) {
 			if (slot?.preview?.startsWith('blob:')) URL.revokeObjectURL(slot.preview);
-			const { [docType]: _, ...rest } = docSlots;
+			const rest = { ...docSlots };
+			delete rest[docType];
 			docSlots = rest;
 			return;
 		}
 
 		// Has a server document → mark pendingDelete, clear preview
 		if (slot?.preview?.startsWith('blob:')) URL.revokeObjectURL(slot.preview);
-		docSlots[docType] = { ...(slot ?? { uploading: false }), pendingDelete: true, preview: undefined, blob: undefined };
+		docSlots[docType] = {
+			...(slot ?? { uploading: false }),
+			pendingDelete: true,
+			preview: undefined,
+			blob: undefined
+		};
 	}
 
 	function openLightboxUrl(url: string, docType: string) {
@@ -331,7 +354,20 @@
 
 	function formatThaiDateFull(dateStr: string) {
 		const date = new Date(dateStr);
-		const months = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+		const months = [
+			'มกราคม',
+			'กุมภาพันธ์',
+			'มีนาคม',
+			'เมษายน',
+			'พฤษภาคม',
+			'มิถุนายน',
+			'กรกฎาคม',
+			'สิงหาคม',
+			'กันยายน',
+			'ตุลาคม',
+			'พฤศจิกายน',
+			'ธันวาคม'
+		];
 		return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear() + 543}`;
 	}
 
@@ -341,39 +377,43 @@
 	}
 
 	function formatHomeAddress(app: AdmissionApplication): string {
-		return [
-			app.homeHouseNo,
-			app.homeMoo ? `หมู่ ${app.homeMoo}` : '',
-			app.homeSoi ? `ซ.${app.homeSoi}` : '',
-			app.homeRoad ? `ถ.${app.homeRoad}` : '',
-			app.addressLine,
-			app.subDistrict ? `ต.${app.subDistrict}` : '',
-			app.district ? `อ.${app.district}` : '',
-			app.province ? `จ.${app.province}` : '',
-			app.postalCode
-		].filter(Boolean).join(' ').trim() || '-';
+		return (
+			[
+				app.homeHouseNo,
+				app.homeMoo ? `หมู่ ${app.homeMoo}` : '',
+				app.homeSoi ? `ซ.${app.homeSoi}` : '',
+				app.homeRoad ? `ถ.${app.homeRoad}` : '',
+				app.addressLine,
+				app.subDistrict ? `ต.${app.subDistrict}` : '',
+				app.district ? `อ.${app.district}` : '',
+				app.province ? `จ.${app.province}` : '',
+				app.postalCode
+			]
+				.filter(Boolean)
+				.join(' ')
+				.trim() || '-'
+		);
 	}
 
 	function formatCurrentAddress(app: AdmissionApplication): string {
-		return [
-			app.currentHouseNo,
-			app.currentMoo ? `หมู่ ${app.currentMoo}` : '',
-			app.currentSoi ? `ซ.${app.currentSoi}` : '',
-			app.currentRoad ? `ถ.${app.currentRoad}` : '',
-			app.currentSubDistrict ? `ต.${app.currentSubDistrict}` : '',
-			app.currentDistrict ? `อ.${app.currentDistrict}` : '',
-			app.currentProvince ? `จ.${app.currentProvince}` : '',
-			app.currentPostalCode
-		].filter(Boolean).join(' ').trim() || '-';
+		return (
+			[
+				app.currentHouseNo,
+				app.currentMoo ? `หมู่ ${app.currentMoo}` : '',
+				app.currentSoi ? `ซ.${app.currentSoi}` : '',
+				app.currentRoad ? `ถ.${app.currentRoad}` : '',
+				app.currentSubDistrict ? `ต.${app.currentSubDistrict}` : '',
+				app.currentDistrict ? `อ.${app.currentDistrict}` : '',
+				app.currentProvince ? `จ.${app.currentProvince}` : '',
+				app.currentPostalCode
+			]
+				.filter(Boolean)
+				.join(' ')
+				.trim() || '-'
+		);
 	}
 
 	// Lightbox controls
-	function openLightbox(doc: ApplicationDocument) {
-		lightboxDoc = doc;
-		lbZoom = 1;
-		lbPan = { x: 0, y: 0 };
-	}
-
 	function closeLightbox() {
 		lightboxDoc = null;
 	}
@@ -394,7 +434,10 @@
 
 	function onLbMouseMove(e: MouseEvent) {
 		if (!lbDragging) return;
-		lbPan = { x: lbDragStart.px + e.clientX - lbDragStart.mx, y: lbDragStart.py + e.clientY - lbDragStart.my };
+		lbPan = {
+			x: lbDragStart.px + e.clientX - lbDragStart.mx,
+			y: lbDragStart.py + e.clientY - lbDragStart.my
+		};
 	}
 
 	function onLbMouseUp() {
@@ -409,8 +452,12 @@
 	const STUDENT_TITLES = ['เด็กชาย', 'เด็กหญิง', 'นาย', 'นางสาว'];
 
 	const PARENT_STATUS_OPTIONS = [
-		'อยู่ร่วมกัน', 'แยกกันอยู่', 'หย่าร้าง',
-		'บิดาเสียชีวิต', 'มารดาเสียชีวิต', 'อื่นๆ'
+		'อยู่ร่วมกัน',
+		'แยกกันอยู่',
+		'หย่าร้าง',
+		'บิดาเสียชีวิต',
+		'มารดาเสียชีวิต',
+		'อื่นๆ'
 	];
 
 	const PREVIOUS_GRADE_OPTIONS = [
@@ -421,9 +468,11 @@
 	];
 
 	function toggleEditParentStatus(val: string) {
-		const current = editData.parentStatus as string[] ?? [];
+		const current = (editData.parentStatus as string[]) ?? [];
 		if (current.includes(val)) {
-			editData.parentStatus = current.filter((s: string) => s !== val) as unknown as typeof editData.parentStatus;
+			editData.parentStatus = current.filter(
+				(s: string) => s !== val
+			) as unknown as typeof editData.parentStatus;
 		} else {
 			editData.parentStatus = [...current, val] as unknown as typeof editData.parentStatus;
 		}
@@ -440,7 +489,7 @@
 
 	$effect(() => {
 		// Run on mount and whenever appId changes (goto() navigation)
-		appId;
+		void appId;
 		loadApp();
 		editMode = false;
 		editData = {};
@@ -466,18 +515,20 @@
 					size="icon"
 					class="h-8 w-8"
 					disabled={!prevId}
-					onclick={() => prevId && goto(`/staff/academic/admission/${roundId}/applications/${prevId}`)}
+					onclick={() => prevId && goToApp(String(roundId), String(prevId))}
 					title="ผู้สมัครก่อนหน้า"
 				>
 					<ChevronLeft class="w-4 h-4" />
 				</Button>
-				<span class="text-sm text-muted-foreground px-1 tabular-nums">{navIdx + 1} / {navIds.length}</span>
+				<span class="text-sm text-muted-foreground px-1 tabular-nums"
+					>{navIdx + 1} / {navIds.length}</span
+				>
 				<Button
 					variant="outline"
 					size="icon"
 					class="h-8 w-8"
 					disabled={!nextId}
-					onclick={() => nextId && goto(`/staff/academic/admission/${roundId}/applications/${nextId}`)}
+					onclick={() => nextId && goToApp(String(roundId), String(nextId))}
 					title="ผู้สมัครคนถัดไป"
 				>
 					<ChevronRight class="w-4 h-4" />
@@ -494,7 +545,9 @@
 						<X class="w-4 h-4 mr-1" /> ยกเลิก
 					</Button>
 					<Button size="sm" onclick={handleSave} disabled={saving}>
-						{#if saving}<LoaderCircle class="w-4 h-4 mr-1 animate-spin" />{:else}<Save class="w-4 h-4 mr-1" />{/if}
+						{#if saving}<LoaderCircle class="w-4 h-4 mr-1 animate-spin" />{:else}<Save
+								class="w-4 h-4 mr-1"
+							/>{/if}
 						{saving ? 'กำลังบันทึก...' : 'บันทึก'}
 					</Button>
 				</div>
@@ -516,7 +569,6 @@
 		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 			<!-- ข้อมูลหลัก (ซ้าย) -->
 			<div class="lg:col-span-2 space-y-6">
-
 				<!-- ข้อมูลส่วนตัว -->
 				<Card.Root>
 					<Card.Header>
@@ -539,9 +591,11 @@
 								<p class="text-xs text-muted-foreground mb-1">คำนำหน้า</p>
 								{#if editMode}
 									<Select.Root type="single" bind:value={editData.title}>
-										<Select.Trigger class="h-8 text-sm">{editData.title || '-- เลือก --'}</Select.Trigger>
+										<Select.Trigger class="h-8 text-sm"
+											>{editData.title || '-- เลือก --'}</Select.Trigger
+										>
 										<Select.Content>
-											{#each STUDENT_TITLES as t}
+											{#each STUDENT_TITLES as t (t)}
 												<Select.Item value={t}>{t}</Select.Item>
 											{/each}
 										</Select.Content>
@@ -554,14 +608,26 @@
 								<p class="text-xs text-muted-foreground mb-1">เพศ</p>
 								{#if editMode}
 									<Select.Root type="single" bind:value={editData.gender}>
-										<Select.Trigger class="h-8 text-sm">{editData.gender === 'Male' ? 'ชาย' : editData.gender === 'Female' ? 'หญิง' : '-- เลือก --'}</Select.Trigger>
+										<Select.Trigger class="h-8 text-sm"
+											>{editData.gender === 'Male'
+												? 'ชาย'
+												: editData.gender === 'Female'
+													? 'หญิง'
+													: '-- เลือก --'}</Select.Trigger
+										>
 										<Select.Content>
 											<Select.Item value="Male">ชาย</Select.Item>
 											<Select.Item value="Female">หญิง</Select.Item>
 										</Select.Content>
 									</Select.Root>
 								{:else}
-									<p class="font-medium">{application.gender === 'Male' ? 'ชาย' : application.gender === 'Female' ? 'หญิง' : '-'}</p>
+									<p class="font-medium">
+										{application.gender === 'Male'
+											? 'ชาย'
+											: application.gender === 'Female'
+												? 'หญิง'
+												: '-'}
+									</p>
 								{/if}
 							</div>
 							<div>
@@ -585,7 +651,9 @@
 								{#if editMode}
 									<DatePicker bind:value={editData.dateOfBirth} />
 								{:else}
-									<p class="font-medium">{application.dateOfBirth ? formatThaiDateFull(application.dateOfBirth) : '-'}</p>
+									<p class="font-medium">
+										{application.dateOfBirth ? formatThaiDateFull(application.dateOfBirth) : '-'}
+									</p>
 								{/if}
 							</div>
 							<div>
@@ -642,18 +710,65 @@
 					<Separator />
 					<Card.Content class="pt-6 space-y-5">
 						<div>
-							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">ที่อยู่ตามทะเบียนบ้าน</p>
+							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+								ที่อยู่ตามทะเบียนบ้าน
+							</p>
 							{#if editMode}
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div><Label class="text-xs">บ้านเลขที่</Label><Input bind:value={editData.homeHouseNo} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">หมู่</Label><Input bind:value={editData.homeMoo} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">ซอย</Label><Input bind:value={editData.homeSoi} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">ถนน</Label><Input bind:value={editData.homeRoad} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">ตำบล/แขวง</Label><Input bind:value={editData.subDistrict} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">อำเภอ/เขต</Label><Input bind:value={editData.district} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">จังหวัด</Label><Input bind:value={editData.province} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">รหัสไปรษณีย์</Label><Input bind:value={editData.postalCode} class="h-8 text-sm mt-0.5" /></div>
-									<div class="col-span-full"><Label class="text-xs">โทรศัพท์บ้าน</Label><Input bind:value={editData.homePhone} class="h-8 text-sm mt-0.5" /></div>
+									<div>
+										<Label class="text-xs">บ้านเลขที่</Label><Input
+											bind:value={editData.homeHouseNo}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">หมู่</Label><Input
+											bind:value={editData.homeMoo}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">ซอย</Label><Input
+											bind:value={editData.homeSoi}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">ถนน</Label><Input
+											bind:value={editData.homeRoad}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">ตำบล/แขวง</Label><Input
+											bind:value={editData.subDistrict}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">อำเภอ/เขต</Label><Input
+											bind:value={editData.district}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">จังหวัด</Label><Input
+											bind:value={editData.province}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">รหัสไปรษณีย์</Label><Input
+											bind:value={editData.postalCode}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div class="col-span-full">
+										<Label class="text-xs">โทรศัพท์บ้าน</Label><Input
+											bind:value={editData.homePhone}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
 								</div>
 							{:else}
 								<p class="font-medium leading-relaxed">{formatHomeAddress(application)}</p>
@@ -665,34 +780,84 @@
 						<Separator />
 						<div>
 							<div class="flex items-center justify-between mb-2">
-								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">ที่อยู่ปัจจุบัน</p>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+									ที่อยู่ปัจจุบัน
+								</p>
 								{#if editMode}
-									<Button size="sm" variant="ghost" class="h-7 text-xs" onclick={copyHomeAddressToCurrent}>
+									<Button
+										size="sm"
+										variant="ghost"
+										class="h-7 text-xs"
+										onclick={copyHomeAddressToCurrent}
+									>
 										<Copy class="w-3 h-3 mr-1" /> คัดลอกจากทะเบียนบ้าน
 									</Button>
 								{/if}
 							</div>
 							{#if editMode}
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div><Label class="text-xs">บ้านเลขที่</Label><Input bind:value={editData.currentHouseNo} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">หมู่</Label><Input bind:value={editData.currentMoo} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">ซอย</Label><Input bind:value={editData.currentSoi} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">ถนน</Label><Input bind:value={editData.currentRoad} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">ตำบล/แขวง</Label><Input bind:value={editData.currentSubDistrict} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">อำเภอ/เขต</Label><Input bind:value={editData.currentDistrict} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">จังหวัด</Label><Input bind:value={editData.currentProvince} class="h-8 text-sm mt-0.5" /></div>
-									<div><Label class="text-xs">รหัสไปรษณีย์</Label><Input bind:value={editData.currentPostalCode} class="h-8 text-sm mt-0.5" /></div>
-									<div class="col-span-full"><Label class="text-xs">โทรศัพท์</Label><Input bind:value={editData.currentPhone} class="h-8 text-sm mt-0.5" /></div>
+									<div>
+										<Label class="text-xs">บ้านเลขที่</Label><Input
+											bind:value={editData.currentHouseNo}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">หมู่</Label><Input
+											bind:value={editData.currentMoo}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">ซอย</Label><Input
+											bind:value={editData.currentSoi}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">ถนน</Label><Input
+											bind:value={editData.currentRoad}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">ตำบล/แขวง</Label><Input
+											bind:value={editData.currentSubDistrict}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">อำเภอ/เขต</Label><Input
+											bind:value={editData.currentDistrict}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">จังหวัด</Label><Input
+											bind:value={editData.currentProvince}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div>
+										<Label class="text-xs">รหัสไปรษณีย์</Label><Input
+											bind:value={editData.currentPostalCode}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
+									<div class="col-span-full">
+										<Label class="text-xs">โทรศัพท์</Label><Input
+											bind:value={editData.currentPhone}
+											class="h-8 text-sm mt-0.5"
+										/>
+									</div>
 								</div>
-							{:else}
-								{#if application.currentHouseNo || application.currentSubDistrict || application.currentProvince}
-									<p class="font-medium leading-relaxed">{formatCurrentAddress(application)}</p>
-									{#if application.currentPhone}
-										<p class="text-sm text-muted-foreground mt-1">โทร. {application.currentPhone}</p>
-									{/if}
-								{:else}
-									<p class="text-sm text-muted-foreground">ไม่มีข้อมูล</p>
+							{:else if application.currentHouseNo || application.currentSubDistrict || application.currentProvince}
+								<p class="font-medium leading-relaxed">{formatCurrentAddress(application)}</p>
+								{#if application.currentPhone}
+									<p class="text-sm text-muted-foreground mt-1">โทร. {application.currentPhone}</p>
 								{/if}
+							{:else}
+								<p class="text-sm text-muted-foreground">ไม่มีข้อมูล</p>
 							{/if}
 						</div>
 					</Card.Content>
@@ -728,9 +893,11 @@
 								<p class="text-xs text-muted-foreground mb-1">ระดับชั้น</p>
 								{#if editMode}
 									<Select.Root type="single" bind:value={editData.previousGrade}>
-										<Select.Trigger class="h-8 text-sm">{editData.previousGrade || '-- เลือกระดับชั้น --'}</Select.Trigger>
+										<Select.Trigger class="h-8 text-sm"
+											>{editData.previousGrade || '-- เลือกระดับชั้น --'}</Select.Trigger
+										>
 										<Select.Content>
-											{#each PREVIOUS_GRADE_OPTIONS as g}
+											{#each PREVIOUS_GRADE_OPTIONS as g (g)}
 												<Select.Item value={g}>{g}</Select.Item>
 											{/each}
 										</Select.Content>
@@ -750,9 +917,18 @@
 							<div>
 								<p class="text-xs text-muted-foreground mb-1">เกรดเฉลี่ยสะสม (GPA)</p>
 								{#if editMode}
-									<Input type="number" step="0.01" min="0" max="4" bind:value={editData.previousGpa} class="h-8 text-sm" />
+									<Input
+										type="number"
+										step="0.01"
+										min="0"
+										max="4"
+										bind:value={editData.previousGpa}
+										class="h-8 text-sm"
+									/>
 								{:else}
-									<p class="font-medium">{application.previousGpa ? application.previousGpa.toFixed(2) : '-'}</p>
+									<p class="font-medium">
+										{application.previousGpa ? application.previousGpa.toFixed(2) : '-'}
+									</p>
 								{/if}
 							</div>
 						</div>
@@ -772,28 +948,39 @@
 							<div>
 								<p class="text-xs text-muted-foreground mb-1">สถานภาพครอบครัว</p>
 								<div class="flex flex-wrap gap-2">
-									{#each PARENT_STATUS_OPTIONS as opt}
+									{#each PARENT_STATUS_OPTIONS as opt (opt)}
 										<button
 											type="button"
 											onclick={() => toggleEditParentStatus(opt)}
-											class="px-3 py-1.5 rounded-full text-sm border transition-all {(editData.parentStatus as string[] ?? []).includes(opt) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/50'}"
+											class="px-3 py-1.5 rounded-full text-sm border transition-all {(
+												(editData.parentStatus as string[]) ?? []
+											).includes(opt)
+												? 'bg-primary text-primary-foreground border-primary'
+												: 'bg-background border-border hover:border-primary/50'}"
 										>
 											{opt}
 										</button>
 									{/each}
 								</div>
-								{#if (editData.parentStatus as string[] ?? []).includes('อื่นๆ')}
-									<Input bind:value={editData.parentStatusOther} placeholder="ระบุ..." class="max-w-xs mt-2" />
+								{#if ((editData.parentStatus as string[]) ?? []).includes('อื่นๆ')}
+									<Input
+										bind:value={editData.parentStatusOther}
+										placeholder="ระบุ..."
+										class="max-w-xs mt-2"
+									/>
 								{/if}
 							</div>
 							<div>
 								<p class="text-xs text-muted-foreground mb-1">ผู้ปกครองเป็น</p>
 								<div class="flex flex-wrap gap-2">
-									{#each [['father', 'บิดา'], ['mother', 'มารดา'], ['other', 'บุคคลอื่น']] as [val, label]}
+									{#each [['father', 'บิดา'], ['mother', 'มารดา'], ['other', 'บุคคลอื่น']] as [val, label] (val)}
 										<button
 											type="button"
-											onclick={() => editData.guardianIs = val as typeof editData.guardianIs}
-											class="px-3 py-1.5 rounded-full text-sm border transition-all {editData.guardianIs === val ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/50'}"
+											onclick={() => (editData.guardianIs = val as typeof editData.guardianIs)}
+											class="px-3 py-1.5 rounded-full text-sm border transition-all {editData.guardianIs ===
+											val
+												? 'bg-primary text-primary-foreground border-primary'
+												: 'bg-background border-border hover:border-primary/50'}"
 										>
 											{label}
 										</button>
@@ -806,7 +993,8 @@
 								<p class="text-xs text-muted-foreground mb-1">สถานภาพครอบครัว</p>
 								<p class="font-medium">
 									{application.parentStatus.join(', ')}
-									{#if application.parentStatusOther} — {application.parentStatusOther}{/if}
+									{#if application.parentStatusOther}
+										— {application.parentStatusOther}{/if}
 								</p>
 							</div>
 							<Separator />
@@ -814,7 +1002,9 @@
 
 						<!-- บิดา -->
 						<div>
-							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">บิดา</p>
+							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+								บิดา
+							</p>
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
 								<div>
 									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
@@ -863,7 +1053,9 @@
 
 						<!-- มารดา -->
 						<div>
-							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">มารดา</p>
+							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+								มารดา
+							</p>
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
 								<div>
 									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
@@ -980,10 +1172,12 @@
 					<Separator />
 					<Card.Content class="pt-6">
 						<div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-							{#each Object.entries(DOC_TYPE_LABELS) as [docType, info]}
-								{@const existingDoc = documents.find(d => d.docType === docType)}
+							{#each Object.entries(DOC_TYPE_LABELS) as [docType, info] (docType)}
+								{@const existingDoc = documents.find((d) => d.docType === docType)}
 								{@const slot = docSlots[docType]}
-								{@const previewUrl = slot?.pendingDelete ? undefined : (slot?.preview ?? existingDoc?.fileUrl)}
+								{@const previewUrl = slot?.pendingDelete
+									? undefined
+									: (slot?.preview ?? existingDoc?.fileUrl)}
 								<div class="flex flex-col gap-2">
 									<!-- Thumbnail -->
 									<button
@@ -992,15 +1186,23 @@
 										onclick={() => previewUrl && openLightboxUrl(previewUrl, docType)}
 										disabled={!previewUrl}
 									>
-										<div class="aspect-[3/4] rounded-lg overflow-hidden border bg-muted relative {previewUrl ? 'group-hover:ring-2 group-hover:ring-primary transition-all' : ''}">
+										<div
+											class="aspect-[3/4] rounded-lg overflow-hidden border bg-muted relative {previewUrl
+												? 'group-hover:ring-2 group-hover:ring-primary transition-all'
+												: ''}"
+										>
 											{#if slot?.uploading}
 												<div class="w-full h-full flex items-center justify-center">
 													<LoaderCircle class="w-6 h-6 animate-spin text-primary" />
 												</div>
 											{:else if previewUrl}
 												<img src={previewUrl} alt={info.label} class="w-full h-full object-cover" />
-												<div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-													<ZoomIn class="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+												<div
+													class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center"
+												>
+													<ZoomIn
+														class="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg"
+													/>
 												</div>
 											{:else}
 												<div class="w-full h-full flex items-center justify-center">
@@ -1083,7 +1285,10 @@
 									{#if tracks.length > 1}
 										<button
 											class="text-muted-foreground hover:text-foreground"
-											onclick={() => { editingTrack = true; selectedNewTrackId = application?.admissionTrackId ?? ''; }}
+											onclick={() => {
+												editingTrack = true;
+												selectedNewTrackId = application?.admissionTrackId ?? '';
+											}}
 										>
 											<Pencil class="w-3.5 h-3.5" />
 										</button>
@@ -1102,11 +1307,24 @@
 										</Select.Content>
 									</Select.Root>
 									<div class="flex gap-1.5">
-										<Button size="sm" class="h-7 text-xs" disabled={savingTrack || selectedNewTrackId === application.admissionTrackId} onclick={handleSaveTrack}>
+										<Button
+											size="sm"
+											class="h-7 text-xs"
+											disabled={savingTrack || selectedNewTrackId === application.admissionTrackId}
+											onclick={handleSaveTrack}
+										>
 											{#if savingTrack}<LoaderCircle class="w-3 h-3 animate-spin mr-1" />{/if}
 											บันทึก
 										</Button>
-										<Button size="sm" variant="ghost" class="h-7 text-xs" onclick={() => { editingTrack = false; selectedNewTrackId = ''; }}>
+										<Button
+											size="sm"
+											variant="ghost"
+											class="h-7 text-xs"
+											onclick={() => {
+												editingTrack = false;
+												selectedNewTrackId = '';
+											}}
+										>
 											ยกเลิก
 										</Button>
 									</div>
@@ -1122,7 +1340,10 @@
 					</Card.Header>
 					<Card.Content class="pt-6 space-y-6">
 						<div>
-							<Badge variant={statusVariant[application.status] ?? 'outline'} class="text-sm px-3 py-1">
+							<Badge
+								variant={statusVariant[application.status] ?? 'outline'}
+								class="text-sm px-3 py-1"
+							>
 								{applicationStatusLabel[application.status] ?? application.status}
 							</Badge>
 						</div>
@@ -1138,7 +1359,9 @@
 						</div>
 
 						{#if application.status === 'rejected' && application.rejectionReason}
-							<div class="bg-destructive/10 text-destructive p-4 rounded-md text-sm border border-destructive/20">
+							<div
+								class="bg-destructive/10 text-destructive p-4 rounded-md text-sm border border-destructive/20"
+							>
 								<p class="font-semibold mb-1">เหตุผลที่ปฏิเสธ:</p>
 								<p>{application.rejectionReason}</p>
 							</div>
@@ -1150,7 +1373,9 @@
 								<Button
 									variant="outline"
 									class="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
-									onclick={() => { showRejectDialog = true; }}
+									onclick={() => {
+										showRejectDialog = true;
+									}}
 								>
 									<X class="w-4 h-4 mr-1" /> ไม่อนุมัติ
 								</Button>
@@ -1165,7 +1390,9 @@
 							<Button
 								variant="outline"
 								class="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
-								onclick={() => { showUnverifyDialog = true; }}
+								onclick={() => {
+									showUnverifyDialog = true;
+								}}
 							>
 								<RotateCcw class="w-4 h-4 mr-1" /> ยกเลิกการอนุมัติ
 							</Button>
@@ -1181,16 +1408,27 @@
 				<Dialog.Header>
 					<Dialog.Title>ปฏิเสธใบสมัคร</Dialog.Title>
 					<Dialog.Description>
-						กรุณาระบุเหตุผลที่ปฏิเสธใบสมัครของ <strong>{application.firstName} {application.lastName}</strong>
+						กรุณาระบุเหตุผลที่ปฏิเสธใบสมัครของ <strong
+							>{application.firstName} {application.lastName}</strong
+						>
 					</Dialog.Description>
 				</Dialog.Header>
 				<div class="space-y-2 py-2">
 					<Label for="reject-reason">เหตุผล <span class="text-destructive">*</span></Label>
-					<Textarea id="reject-reason" bind:value={rejectReason} placeholder="เช่น เอกสารไม่ครบถ้วน..." rows={3} />
+					<Textarea
+						id="reject-reason"
+						bind:value={rejectReason}
+						placeholder="เช่น เอกสารไม่ครบถ้วน..."
+						rows={3}
+					/>
 				</div>
 				<Dialog.Footer>
 					<Button variant="outline" onclick={() => (showRejectDialog = false)}>ยกเลิก</Button>
-					<Button variant="destructive" onclick={handleRejectConfirm} disabled={rejecting || !rejectReason.trim()}>
+					<Button
+						variant="destructive"
+						onclick={handleRejectConfirm}
+						disabled={rejecting || !rejectReason.trim()}
+					>
 						{#if rejecting}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
 						{rejecting ? 'กำลังดำเนินการ...' : 'ยืนยันการปฏิเสธ'}
 					</Button>
@@ -1204,8 +1442,9 @@
 				<Dialog.Header>
 					<Dialog.Title>ยกเลิกการอนุมัติ</Dialog.Title>
 					<Dialog.Description>
-						ยืนยันการยกเลิกการอนุมัติใบสมัครของ <strong>{application.firstName} {application.lastName}</strong>?
-						ใบสมัครจะกลับสู่สถานะ "รอตรวจสอบ"
+						ยืนยันการยกเลิกการอนุมัติใบสมัครของ <strong
+							>{application.firstName} {application.lastName}</strong
+						>? ใบสมัครจะกลับสู่สถานะ "รอตรวจสอบ"
 					</Dialog.Description>
 				</Dialog.Header>
 				<Dialog.Footer>
@@ -1219,7 +1458,9 @@
 		</Dialog.Root>
 	{:else}
 		<Card.Root>
-			<Card.Content class="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+			<Card.Content
+				class="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3"
+			>
 				<FileText class="w-10 h-10 opacity-30" />
 				<p>ไม่พบข้อมูลใบสมัคร</p>
 			</Card.Content>
@@ -1239,19 +1480,19 @@
 
 <!-- Lightbox -->
 {#if lightboxDoc}
-	<div
-		class="fixed inset-0 z-50 bg-black/90 flex flex-col"
-		role="dialog"
-		aria-modal="true"
-	>
+	<div class="fixed inset-0 z-50 bg-black/90 flex flex-col" role="dialog" aria-modal="true">
 		<!-- Header bar -->
 		<div class="flex items-center justify-between px-4 py-3 bg-black/60 shrink-0">
-			<p class="text-white text-sm font-medium">{DOC_TYPE_LABELS[lightboxDoc.docType]?.label ?? lightboxDoc.docType}</p>
+			<p class="text-white text-sm font-medium">
+				{DOC_TYPE_LABELS[lightboxDoc.docType]?.label ?? lightboxDoc.docType}
+			</p>
 			<div class="flex items-center gap-3">
 				<button
 					type="button"
 					class="text-white/70 hover:text-white transition-colors"
-					onclick={() => { lbZoom = Math.max(0.5, lbZoom - 0.5); }}
+					onclick={() => {
+						lbZoom = Math.max(0.5, lbZoom - 0.5);
+					}}
 					title="ย่อ"
 				>
 					<ZoomOut class="w-5 h-5" />
@@ -1260,7 +1501,9 @@
 				<button
 					type="button"
 					class="text-white/70 hover:text-white transition-colors"
-					onclick={() => { lbZoom = Math.min(8, lbZoom + 0.5); }}
+					onclick={() => {
+						lbZoom = Math.min(8, lbZoom + 0.5);
+					}}
 					title="ขยาย"
 				>
 					<ZoomIn class="w-5 h-5" />
@@ -1289,7 +1532,9 @@
 					src={lightboxDoc.fileUrl}
 					alt={DOC_TYPE_LABELS[lightboxDoc.docType]?.label ?? lightboxDoc.docType}
 					class="max-w-none pointer-events-none select-none"
-					style="transform: translate({lbPan.x}px, {lbPan.y}px) scale({lbZoom}); transition: {lbDragging ? 'none' : 'transform 0.1s ease'}; max-height: 80vh; max-width: 90vw;"
+					style="transform: translate({lbPan.x}px, {lbPan.y}px) scale({lbZoom}); transition: {lbDragging
+						? 'none'
+						: 'transform 0.1s ease'}; max-height: 80vh; max-width: 90vw;"
 					draggable="false"
 				/>
 			{/if}

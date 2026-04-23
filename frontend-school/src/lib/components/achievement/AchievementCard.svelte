@@ -11,7 +11,6 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { cn } from '$lib/utils';
 
 	export let achievement: Achievement;
 	export let readonly: boolean = false;

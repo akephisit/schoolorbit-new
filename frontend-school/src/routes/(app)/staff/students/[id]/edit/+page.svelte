@@ -11,20 +11,19 @@
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, Edit, Save, X, Trash2 } from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
-	import { DatePicker } from '$lib/components/ui/date-picker';
 	import {
 		getStudent,
 		updateStudent,
 		deleteStudent,
 		addParentToStudent,
-		removeParentFromStudent
+		removeParentFromStudent,
+		type Student
 	} from '$lib/api/students';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Checkbox } from '$lib/components/ui/checkbox';
 
 	let { params }: PageProps = $props();
 	let studentId = $derived(params.id);
-	let student = $state<any>(null);
+	let student = $state<Student | null>(null);
 	let loading = $state(true);
 	let editing = $state(false);
 	let saving = $state(false);
@@ -92,6 +91,7 @@
 		saving = true;
 		try {
 			// Extract editable fields (exclude grade_level and class_room)
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
 			const { grade_level, class_room, ...updateData } = formData;
 
 			await updateStudent(studentId, {
@@ -112,16 +112,18 @@
 
 	function handleCancel() {
 		// Reset to original values
-		formData = {
-			email: student.email || '',
-			first_name: student.first_name || '',
-			last_name: student.last_name || '',
-			phone: student.phone || '',
-			address: student.address || '',
-			grade_level: student.grade_level || '',
-			class_room: student.class_room || '',
-			student_number: student.student_number || null
-		};
+		if (student) {
+			formData = {
+				email: student.email || '',
+				first_name: student.first_name || '',
+				last_name: student.last_name || '',
+				phone: student.phone || '',
+				address: student.address || '',
+				grade_level: student.grade_level || '',
+				class_room: student.class_room || '',
+				student_number: student.student_number || null
+			};
+		}
 		editing = false;
 	}
 
@@ -245,7 +247,7 @@
 	{#if loading}
 		<Card class="p-6">
 			<div class="space-y-4">
-				{#each Array(6) as _}
+				{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
 					<div class="animate-pulse">
 						<div class="h-4 bg-muted rounded w-1/4 mb-2"></div>
 						<div class="h-10 bg-muted rounded"></div>
@@ -497,7 +499,7 @@
 
 			{#if student.parents && student.parents.length > 0}
 				<div class="space-y-4">
-					{#each student.parents as parent}
+					{#each student.parents as parent (parent.id)}
 						<div class="p-4 border rounded-lg bg-muted/10 relative">
 							{#if editing}
 								<Button

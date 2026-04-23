@@ -39,7 +39,7 @@
 		updateAchievement,
 		deleteAchievement
 	} from '$lib/api/achievement';
-	import type { Achievement } from '$lib/types/achievement';
+	import type { Achievement, AchievementListFilter } from '$lib/types/achievement';
 	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -97,7 +97,7 @@
 		try {
 			loading = true;
 
-			const filter: any = {};
+			const filter: AchievementListFilter = {};
 			if (activeTab === 'own') {
 				filter.user_id = userId;
 			}
@@ -158,25 +158,25 @@
 		showDialog = true;
 	}
 
-	async function handleSave(payload: any) {
+	async function handleSave(payload: Partial<Achievement>) {
 		// If create mode and canCreateAll -> payload.user_id might be set to selected user
 		// If edit mode -> payload.id exists
 
 		let res;
 		if (payload.id) {
 			res = await updateAchievement(payload.id, {
-				title: payload.title,
+				title: payload.title ?? '',
 				description: payload.description,
-				achievement_date: payload.achievement_date,
+				achievement_date: payload.achievement_date ?? '',
 				image_path: payload.image_path
 				// user_id is generally not updatable via this specific simple DTO but let's check
 			});
 		} else {
 			res = await createAchievement({
 				user_id: payload.user_id || userId,
-				title: payload.title,
+				title: payload.title ?? '',
 				description: payload.description,
-				achievement_date: payload.achievement_date,
+				achievement_date: payload.achievement_date ?? '',
 				image_path: payload.image_path
 			});
 		}

@@ -12,7 +12,6 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Separator } from '$lib/components/ui/separator';
 	import { toast } from 'svelte-sonner';
 	import {
 		ClipboardList,

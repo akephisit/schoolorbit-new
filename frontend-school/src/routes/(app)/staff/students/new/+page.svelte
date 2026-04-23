@@ -98,7 +98,8 @@
 		loading = true;
 
 		try {
-			const { confirmPassword, ...payload } = formData;
+			const payload = { ...formData };
+			delete (payload as Partial<typeof formData>).confirmPassword;
 
 			// Clean up payload - convert empty strings to undefined for optional fields
 			const cleanedPayload = {
@@ -183,8 +184,9 @@
 
 				<div class="p-4 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm">
 					<strong>หมายเหตุ:</strong> หลังจากสร้างข้อมูลนักเรียนเสร็จแล้ว กรุณาไปที่เมนู
-					<a href="/staff/academic/enrollments" class="underline font-semibold hover:text-blue-900"
-						>จัดห้องเรียน (Enrollment)</a
+					<a
+						href={resolve('/staff/academic/enrollments')}
+						class="underline font-semibold hover:text-blue-900">จัดห้องเรียน (Enrollment)</a
 					>
 					เพื่อเพิ่มนักเรียนเข้าห้องเรียนในปีการศึกษาปัจจุบัน
 				</div>
@@ -399,7 +401,7 @@
 
 			{#if formData.parent_enabled}
 				<div class="space-y-6">
-					{#each formData.parents as parent, i}
+					{#each formData.parents as parent, i (i)}
 						<div class="p-4 border rounded-lg relative bg-muted/30">
 							{#if i > 0}
 								<Button

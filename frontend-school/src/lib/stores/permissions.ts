@@ -4,7 +4,7 @@
  * - Provides easy-to-use API via `can` store
  * - No separate API call needed
  */
-import { writable, derived, get } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 import type { Writable, Readable } from 'svelte/store';
 
 // Internal state
@@ -88,7 +88,7 @@ export function setPermissions(permissions: string[] | undefined): void {
  * Now just extracts permissions from authStore
  * @deprecated Use setPermissions() with user.permissions instead
  */
-export async function loadUserPermissions(userId: string, force = false): Promise<void> {
+export async function loadUserPermissions(userId: string): Promise<void> {
 	// This function is deprecated but kept for compatibility
 	// Permissions should come from authStore.user.permissions
 	// which is populated by /api/auth/me

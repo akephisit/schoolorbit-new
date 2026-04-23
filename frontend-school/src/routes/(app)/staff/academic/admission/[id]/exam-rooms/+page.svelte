@@ -39,9 +39,7 @@
 		Copy,
 		Settings,
 		RefreshCw,
-		Pencil,
-		Check,
-		DoorOpen
+		Check
 	} from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
@@ -88,14 +86,9 @@
 		if (!id) return;
 		loading = true;
 		try {
-			const [roundData, examRoomsData, configData, facilityData, allRoundsData] =
-				await Promise.all([
-					getRound(id),
-					listExamRooms(id),
-					getExamConfig(id),
-					listRooms({}),
-					listRounds()
-				]);
+			const [roundData, examRoomsData, configData, facilityData, allRoundsData] = await Promise.all(
+				[getRound(id), listExamRooms(id), getExamConfig(id), listRooms({}), listRounds()]
+			);
 			round = roundData;
 			examRooms = examRoomsData.rooms;
 			totalCapacity = examRoomsData.totalCapacity;
@@ -138,11 +131,20 @@
 		addingRoom = true;
 		try {
 			if (addRoomMode === 'facility') {
-				if (!selectedFacilityRoomId) { toast.error('กรุณาเลือกห้อง'); return; }
+				if (!selectedFacilityRoomId) {
+					toast.error('กรุณาเลือกห้อง');
+					return;
+				}
 				await addExamRoom(id, { roomId: selectedFacilityRoomId });
 			} else {
-				if (!customRoomName.trim()) { toast.error('กรุณาระบุชื่อห้อง'); return; }
-				await addExamRoom(id, { customName: customRoomName.trim(), capacityOverride: customRoomCapacity });
+				if (!customRoomName.trim()) {
+					toast.error('กรุณาระบุชื่อห้อง');
+					return;
+				}
+				await addExamRoom(id, {
+					customName: customRoomName.trim(),
+					capacityOverride: customRoomCapacity
+				});
 			}
 			toast.success('เพิ่มห้องสอบแล้ว');
 			showAddRoomDialog = false;
@@ -186,7 +188,10 @@
 	}
 
 	async function handleCopyFromRound() {
-		if (!id || !copyFromRoundId) { toast.error('กรุณาเลือกรอบที่ต้องการ copy'); return; }
+		if (!id || !copyFromRoundId) {
+			toast.error('กรุณาเลือกรอบที่ต้องการ copy');
+			return;
+		}
 		copying = true;
 		try {
 			const result = await copyExamRoomsFromRound(id, copyFromRoundId);
@@ -237,40 +242,6 @@
 
 	// ===== PDF/XLSX Download helpers =====
 
-	let pdfMakeReady: any = null;
-	async function getPdfMake() {
-		if (pdfMakeReady) return pdfMakeReady;
-		const pdfMakeModule = await import('pdfmake/build/pdfmake');
-		const pdfMake = (pdfMakeModule as any).default || pdfMakeModule;
-		const toBase64 = (buf: ArrayBuffer) => {
-			const bytes = new Uint8Array(buf);
-			let binary = '';
-			for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-			return btoa(binary);
-		};
-		const [regularBuf, boldBuf] = await Promise.all([
-			fetch('/fonts/Sarabun-Regular.ttf').then((r) => r.arrayBuffer()),
-			fetch('/fonts/Sarabun-Bold.ttf').then((r) => r.arrayBuffer())
-		]);
-		const regularB64 = toBase64(regularBuf);
-		const boldB64 = toBase64(boldBuf);
-		// pdfmake 0.3.x API
-		pdfMake.addVirtualFileSystem({
-			'Sarabun-Regular.ttf': regularB64,
-			'Sarabun-Bold.ttf': boldB64
-		});
-		pdfMake.addFonts({
-			Sarabun: {
-				normal: 'Sarabun-Regular.ttf',
-				bold: 'Sarabun-Bold.ttf',
-				italics: 'Sarabun-Regular.ttf',
-				bolditalics: 'Sarabun-Bold.ttf'
-			}
-		});
-		pdfMakeReady = pdfMake;
-		return pdfMake;
-	}
-
 	function printRoom(group: ExamRoomGroup) {
 		const w = window.open('', '_blank');
 		if (!w) return;
@@ -304,7 +275,7 @@
 				<tbody>${rows}</tbody>
 			</table>
 			<p style="margin-top:12px;color:#666">รวม ${group.seats.length} คน</p>
-			<script>window.onload=function(){window.print()}<\/script>
+			<script>window.onload=function(){window.print()}</${'script'}>
 		</body></html>`);
 		w.document.close();
 	}
@@ -359,7 +330,7 @@
 			<meta charset="utf-8"><title>บัตรสอบ</title>
 			<style>body{padding:16px}@media print{@page{margin:8mm}}</style>
 		</head><body>${cards}
-			<script>window.onload=function(){window.print()}<\/script>
+			<script>window.onload=function(){window.print()}</${'script'}>
 		</body></html>`);
 		w.document.close();
 	}
@@ -396,7 +367,9 @@
 		random: 'สุ่ม'
 	};
 
-	onMount(() => { loadAll(); });
+	onMount(() => {
+		loadAll();
+	});
 </script>
 
 <svelte:head>
@@ -427,15 +400,22 @@
 			<nav class="flex gap-1">
 				<button
 					class="flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors
-						{activeTab === 'setup' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+						{activeTab === 'setup'
+						? 'border-primary text-primary'
+						: 'border-transparent text-muted-foreground hover:text-foreground'}"
 					onclick={() => (activeTab = 'setup')}
 				>
 					<Settings class="h-4 w-4" /> ตั้งค่าห้องสอบ
 				</button>
 				<button
 					class="flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors
-						{activeTab === 'seats' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}"
-					onclick={() => { activeTab = 'seats'; if (seatGroups.length === 0) loadSeats(); }}
+						{activeTab === 'seats'
+						? 'border-primary text-primary'
+						: 'border-transparent text-muted-foreground hover:text-foreground'}"
+					onclick={() => {
+						activeTab = 'seats';
+						if (seatGroups.length === 0) loadSeats();
+					}}
 				>
 					<ClipboardList class="h-4 w-4" /> ผลจัดที่นั่ง
 					{#if totalAssigned > 0}
@@ -448,7 +428,6 @@
 		<!-- ===== Tab: Setup ===== -->
 		{#if activeTab === 'setup'}
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-
 				<!-- Left: Room list -->
 				<div class="space-y-3 lg:col-span-2">
 					<div class="flex items-center justify-between">
@@ -482,21 +461,33 @@
 									{#each examRooms as room (room.id)}
 										<Table.Row>
 											<Table.Cell class="font-medium">{room.roomName}</Table.Cell>
-											<Table.Cell class="text-muted-foreground text-sm">{room.buildingName ?? '—'}</Table.Cell>
+											<Table.Cell class="text-muted-foreground text-sm"
+												>{room.buildingName ?? '—'}</Table.Cell
+											>
 											<Table.Cell class="text-center">
 												{#if editingCapacityId === room.id}
 													<div class="flex items-center justify-center gap-1">
-														<Input type="number" min="1" class="h-7 w-16 text-center text-xs"
+														<Input
+															type="number"
+															min="1"
+															class="h-7 w-16 text-center text-xs"
 															bind:value={editingCapacityValue}
-															onkeydown={(e) => e.key === 'Enter' && saveCapacity(room.id)} />
-														<Button size="icon" variant="ghost" class="h-7 w-7"
-															onclick={() => saveCapacity(room.id)}>
+															onkeydown={(e) => e.key === 'Enter' && saveCapacity(room.id)}
+														/>
+														<Button
+															size="icon"
+															variant="ghost"
+															class="h-7 w-7"
+															onclick={() => saveCapacity(room.id)}
+														>
 															<Check class="h-3.5 w-3.5 text-green-600" />
 														</Button>
 													</div>
 												{:else}
-													<button class="hover:text-primary hover:underline underline-offset-2"
-														onclick={() => startEditCapacity(room)}>
+													<button
+														class="hover:text-primary hover:underline underline-offset-2"
+														onclick={() => startEditCapacity(room)}
+													>
 														{room.capacity}
 													</button>
 												{/if}
@@ -509,8 +500,12 @@
 												{/if}
 											</Table.Cell>
 											<Table.Cell>
-												<Button variant="ghost" size="icon" class="h-7 w-7 text-red-400 hover:text-red-600"
-													onclick={() => handleRemoveRoom(room.id)}>
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-7 w-7 text-red-400 hover:text-red-600"
+													onclick={() => handleRemoveRoom(room.id)}
+												>
 													<Trash2 class="h-3.5 w-3.5" />
 												</Button>
 											</Table.Cell>
@@ -537,7 +532,8 @@
 								<Select.Root
 									type="single"
 									value={examConfig.examIdType ?? 'application_number'}
-									onValueChange={(v) => (examConfig = { ...examConfig, examIdType: v as ExamConfig['examIdType'] })}
+									onValueChange={(v) =>
+										(examConfig = { ...examConfig, examIdType: v as ExamConfig['examIdType'] })}
 								>
 									<Select.Trigger class="w-full">
 										{examIdTypeLabel[examConfig.examIdType ?? 'application_number']}
@@ -562,7 +558,8 @@
 								<Select.Root
 									type="single"
 									value={examConfig.sortOrder ?? 'by_application'}
-									onValueChange={(v) => (examConfig = { ...examConfig, sortOrder: v as ExamConfig['sortOrder'] })}
+									onValueChange={(v) =>
+										(examConfig = { ...examConfig, sortOrder: v as ExamConfig['sortOrder'] })}
 								>
 									<Select.Trigger class="w-full">
 										{sortOrderLabel[examConfig.sortOrder ?? 'by_application']}
@@ -575,7 +572,13 @@
 								</Select.Root>
 							</div>
 
-							<Button size="sm" variant="outline" class="w-full" onclick={handleSaveConfig} disabled={savingConfig}>
+							<Button
+								size="sm"
+								variant="outline"
+								class="w-full"
+								onclick={handleSaveConfig}
+								disabled={savingConfig}
+							>
 								{#if savingConfig}<Loader2 class="mr-1.5 h-3.5 w-3.5 animate-spin" />{/if}
 								บันทึก config
 							</Button>
@@ -604,8 +607,13 @@
 									{/each}
 								</Select.Content>
 							</Select.Root>
-							<Button size="sm" variant="outline" class="w-full"
-								onclick={handleCopyFromRound} disabled={copying || !copyFromRoundId}>
+							<Button
+								size="sm"
+								variant="outline"
+								class="w-full"
+								onclick={handleCopyFromRound}
+								disabled={copying || !copyFromRoundId}
+							>
 								{#if copying}<Loader2 class="mr-1.5 h-3.5 w-3.5 animate-spin" />{/if}
 								Copy ห้องสอบ (แทนที่ของเดิม)
 							</Button>
@@ -614,15 +622,28 @@
 
 					<!-- Assign buttons -->
 					<div class="flex gap-2">
-						<Button class="flex-1" size="lg"
+						<Button
+							class="flex-1"
+							size="lg"
 							disabled={examRooms.length === 0}
-							onclick={() => { assignMode = 'full'; showAssignDialog = true; }}>
+							onclick={() => {
+								assignMode = 'full';
+								showAssignDialog = true;
+							}}
+						>
 							<RefreshCw class="mr-2 h-4 w-4" />
 							จัดใหม่ทั้งหมด
 						</Button>
 						{#if totalAssigned > 0}
-							<Button class="flex-1" size="lg" variant="outline"
-								onclick={() => { assignMode = 'append'; showAssignDialog = true; }}>
+							<Button
+								class="flex-1"
+								size="lg"
+								variant="outline"
+								onclick={() => {
+									assignMode = 'append';
+									showAssignDialog = true;
+								}}
+							>
 								<Plus class="mr-2 h-4 w-4" />
 								เพิ่มคนใหม่
 							</Button>
@@ -634,7 +655,7 @@
 				</div>
 			</div>
 
-		<!-- ===== Tab: Seats ===== -->
+			<!-- ===== Tab: Seats ===== -->
 		{:else}
 			<div class="space-y-4">
 				{#if seatGroups.length === 0}
@@ -695,7 +716,9 @@
 									<Table.Body>
 										{#each group.seats as seat (seat.applicationId)}
 											<Table.Row>
-												<Table.Cell class="font-mono text-sm">{seat.examId ?? seat.applicationNumber ?? '—'}</Table.Cell>
+												<Table.Cell class="font-mono text-sm"
+													>{seat.examId ?? seat.applicationNumber ?? '—'}</Table.Cell
+												>
 												<Table.Cell class="text-center font-medium">{seat.seatNumber}</Table.Cell>
 												<Table.Cell>{seat.fullName}</Table.Cell>
 												<Table.Cell class="font-mono text-sm">{seat.nationalId}</Table.Cell>
@@ -726,12 +749,18 @@
 
 		<div class="space-y-4 py-2">
 			<div class="flex gap-2">
-				<Button size="sm" variant={addRoomMode === 'facility' ? 'default' : 'outline'}
-					onclick={() => (addRoomMode = 'facility')}>
+				<Button
+					size="sm"
+					variant={addRoomMode === 'facility' ? 'default' : 'outline'}
+					onclick={() => (addRoomMode = 'facility')}
+				>
 					เลือกจากอาคาร
 				</Button>
-				<Button size="sm" variant={addRoomMode === 'custom' ? 'default' : 'outline'}
-					onclick={() => (addRoomMode = 'custom')}>
+				<Button
+					size="sm"
+					variant={addRoomMode === 'custom' ? 'default' : 'outline'}
+					onclick={() => (addRoomMode = 'custom')}
+				>
 					เพิ่มเอง
 				</Button>
 			</div>
@@ -739,8 +768,11 @@
 			{#if addRoomMode === 'facility'}
 				<div class="space-y-1.5">
 					<p class="text-sm font-medium">เลือกห้อง</p>
-					<Select.Root type="single" value={selectedFacilityRoomId}
-						onValueChange={(v) => (selectedFacilityRoomId = v)}>
+					<Select.Root
+						type="single"
+						value={selectedFacilityRoomId}
+						onValueChange={(v) => (selectedFacilityRoomId = v)}
+					>
 						<Select.Trigger class="w-full">
 							{#if selectedFacilityRoomId}
 								{facilityRooms.find((r) => r.id === selectedFacilityRoomId)?.name_th ?? '—'}
@@ -798,9 +830,18 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="rounded-md bg-muted px-4 py-3 text-sm space-y-1">
-			<p>รูปแบบเลขประจำตัวสอบ: <strong>{examIdTypeLabel[examConfig.examIdType ?? 'application_number']}</strong></p>
-			<p>ลำดับรายชื่อ: <strong>{sortOrderLabel[examConfig.sortOrder ?? 'by_application']}</strong></p>
-			<p>ห้องสอบ: <strong>{examRooms.length} ห้อง</strong> · ความจุรวม <strong>{totalCapacity} ที่นั่ง</strong></p>
+			<p>
+				รูปแบบเลขประจำตัวสอบ: <strong
+					>{examIdTypeLabel[examConfig.examIdType ?? 'application_number']}</strong
+				>
+			</p>
+			<p>
+				ลำดับรายชื่อ: <strong>{sortOrderLabel[examConfig.sortOrder ?? 'by_application']}</strong>
+			</p>
+			<p>
+				ห้องสอบ: <strong>{examRooms.length} ห้อง</strong> · ความจุรวม
+				<strong>{totalCapacity} ที่นั่ง</strong>
+			</p>
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (showAssignDialog = false)}>ยกเลิก</Button>

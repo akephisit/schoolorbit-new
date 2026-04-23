@@ -127,7 +127,7 @@ sw.addEventListener('push', (event) => {
 			const options: NotificationOptions = {
 				body: data.body,
 				icon: '/icon-192.png',
-				// @ts-ignore
+				// @ts-expect-error vibrate is not in NotificationOptions typing
 				vibrate: [200, 100, 200, 100, 200],
 				tag: 'push-notification-v1',
 				renotify: true,
@@ -138,9 +138,7 @@ sw.addEventListener('push', (event) => {
 				}
 			};
 
-			event.waitUntil(
-				sw.registration.showNotification(data.title, options)
-			);
+			event.waitUntil(sw.registration.showNotification(data.title, options));
 		} catch (e) {
 			console.error('Error parsing push data', e);
 		}
@@ -153,7 +151,7 @@ sw.addEventListener('notificationclick', (event) => {
 	if (event.action === 'open' || !event.action) {
 		const link = event.notification.data.link;
 		event.waitUntil(
-			sw.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+			sw.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
 				for (let i = 0; i < windowClients.length; i++) {
 					const client = windowClients[i];
 					if (client.url === link && 'focus' in client) {

@@ -6,31 +6,30 @@ const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 
 // Helper for VAPID key conversion
 function urlBase64ToUint8Array(base64String: string) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
+	const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+	const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+	const rawData = window.atob(base64);
+	const outputArray = new Uint8Array(rawData.length);
+	for (let i = 0; i < rawData.length; ++i) {
+		outputArray[i] = rawData.charCodeAt(i);
+	}
+	return outputArray;
 }
 
-
 export interface Notification {
-    id: string;
-    title: string;
-    message: string;
-    type_: 'info' | 'success' | 'warning' | 'error';
-    link?: string;
-    read_at?: string;
-    created_at: string;
+	id: string;
+	title: string;
+	message: string;
+	type_: 'info' | 'success' | 'warning' | 'error';
+	link?: string;
+	read_at?: string;
+	created_at: string;
 }
 
 export interface NotificationState {
-    notifications: Notification[];
-    unreadCount: number;
-    loading: boolean;
+	notifications: Notification[];
+	unreadCount: number;
+	loading: boolean;
 }
 
 let eventSource: EventSource | null = null;
@@ -38,249 +37,244 @@ let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = 3000; // ms, doubles on each failure up to 60s
 
 function createNotificationStore() {
-    const { subscribe, set, update } = writable<NotificationState>({
-        notifications: [],
-        unreadCount: 0,
-        loading: false
-    });
+	const { subscribe, set, update } = writable<NotificationState>({
+		notifications: [],
+		unreadCount: 0,
+		loading: false
+	});
 
-    return {
-        subscribe,
+	return {
+		subscribe,
 
-        async fetchNotifications(limit = 10) {
-            update(s => ({ ...s, loading: true }));
-            try {
-                const res = await fetch(`${BACKEND_URL}/api/notifications?limit=${limit}`, {
-                    credentials: 'include'
-                });
+		async fetchNotifications(limit = 10) {
+			update((s) => ({ ...s, loading: true }));
+			try {
+				const res = await fetch(`${BACKEND_URL}/api/notifications?limit=${limit}`, {
+					credentials: 'include'
+				});
 
-                if (res.ok) {
-                    const data = await res.json();
-                    set({
-                        notifications: data.data,
-                        unreadCount: data.unread_count,
-                        loading: false
-                    });
-                }
-            } catch (err) {
-                console.error('Failed to fetch notifications', err);
-                update(s => ({ ...s, loading: false }));
-            }
-        },
+				if (res.ok) {
+					const data = await res.json();
+					set({
+						notifications: data.data,
+						unreadCount: data.unread_count,
+						loading: false
+					});
+				}
+			} catch (err) {
+				console.error('Failed to fetch notifications', err);
+				update((s) => ({ ...s, loading: false }));
+			}
+		},
 
-        initSSE() {
-            if (typeof EventSource === 'undefined') return;
-            // 0 = CONNECTING, 1 = OPEN
-            if (eventSource && (eventSource.readyState === 1 || eventSource.readyState === 0)) return;
+		initSSE() {
+			if (typeof EventSource === 'undefined') return;
+			// 0 = CONNECTING, 1 = OPEN
+			if (eventSource && (eventSource.readyState === 1 || eventSource.readyState === 0)) return;
 
-            // Clear any pending reconnect before creating a new connection
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-                reconnectTimeout = null;
-            }
+			// Clear any pending reconnect before creating a new connection
+			if (reconnectTimeout) {
+				clearTimeout(reconnectTimeout);
+				reconnectTimeout = null;
+			}
 
-            eventSource = new EventSource(`${BACKEND_URL}/api/notifications/stream`, {
-                withCredentials: true
-            });
+			eventSource = new EventSource(`${BACKEND_URL}/api/notifications/stream`, {
+				withCredentials: true
+			});
 
-            eventSource.onopen = () => {
-                console.log('✅ SSE Connected');
-                reconnectDelay = 3000; // reset backoff on successful connect
-            };
+			eventSource.onopen = () => {
+				console.log('✅ SSE Connected');
+				reconnectDelay = 3000; // reset backoff on successful connect
+			};
 
-            eventSource.onmessage = (event) => {
-                try {
-                    const newNotif: Notification = JSON.parse(event.data);
+			eventSource.onmessage = (event) => {
+				try {
+					const newNotif: Notification = JSON.parse(event.data);
 
-                    update(s => {
-                        // Avoid duplicates
-                        if (s.notifications.some(n => n.id === newNotif.id)) return s;
+					update((s) => {
+						// Avoid duplicates
+						if (s.notifications.some((n) => n.id === newNotif.id)) return s;
 
-                        return {
-                            ...s,
-                            notifications: [newNotif, ...s.notifications],
-                            unreadCount: s.unreadCount + 1
-                        };
-                    });
+						return {
+							...s,
+							notifications: [newNotif, ...s.notifications],
+							unreadCount: s.unreadCount + 1
+						};
+					});
 
-                    // Show toast
-                    toast.success(newNotif.title, {
-                        description: newNotif.message,
-                        duration: 5000,
-                        action: {
-                            label: 'ดู',
-                            onClick: () => {
-                                if (newNotif.link) window.location.href = newNotif.link;
-                            }
-                        }
-                    });
+					// Show toast
+					toast.success(newNotif.title, {
+						description: newNotif.message,
+						duration: 5000,
+						action: {
+							label: 'ดู',
+							onClick: () => {
+								if (newNotif.link) window.location.href = newNotif.link;
+							}
+						}
+					});
+				} catch (e) {
+					console.error('Failed to parse SSE message', e);
+				}
+			};
 
-                } catch (e) {
-                    console.error('Failed to parse SSE message', e);
-                }
-            };
+			eventSource.onerror = () => {
+				if (!eventSource) return;
 
-            eventSource.onerror = () => {
-                if (!eventSource) return;
+				if (eventSource.readyState === 0) {
+					// Browser is actively trying to reconnect (network blip)
+					console.log('🔄 SSE Reconnecting...');
+				} else {
+					// readyState === 2 (CLOSED) — server closed or HTTP error (e.g. 401)
+					// Browser will NOT auto-retry; we must do it manually
+					console.log(`🔄 SSE closed, retrying in ${reconnectDelay / 1000}s...`);
+					eventSource.close();
+					eventSource = null;
 
-                if (eventSource.readyState === 0) {
-                    // Browser is actively trying to reconnect (network blip)
-                    console.log('🔄 SSE Reconnecting...');
-                } else {
-                    // readyState === 2 (CLOSED) — server closed or HTTP error (e.g. 401)
-                    // Browser will NOT auto-retry; we must do it manually
-                    console.log(`🔄 SSE closed, retrying in ${reconnectDelay / 1000}s...`);
-                    eventSource.close();
-                    eventSource = null;
+					reconnectTimeout = setTimeout(() => {
+						reconnectDelay = Math.min(reconnectDelay * 2, 60000);
+						this.initSSE();
+					}, reconnectDelay);
+				}
+			};
+		},
 
-                    reconnectTimeout = setTimeout(() => {
-                        reconnectDelay = Math.min(reconnectDelay * 2, 60000);
-                        this.initSSE();
-                    }, reconnectDelay);
-                }
-            };
-        },
+		closeSSE() {
+			if (reconnectTimeout) {
+				clearTimeout(reconnectTimeout);
+				reconnectTimeout = null;
+			}
+			if (eventSource) {
+				eventSource.close();
+				eventSource = null;
+			}
+			reconnectDelay = 3000;
+		},
 
-        closeSSE() {
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-                reconnectTimeout = null;
-            }
-            if (eventSource) {
-                eventSource.close();
-                eventSource = null;
-            }
-            reconnectDelay = 3000;
-        },
+		async markAsRead(id: string) {
+			try {
+				// Optimistic update
+				update((s) => {
+					const notifs = s.notifications.map((n) =>
+						n.id === id ? { ...n, read_at: new Date().toISOString() } : n
+					);
+					const unread = notifs.filter((n) => !n.read_at).length;
+					return { ...s, notifications: notifs, unreadCount: unread };
+				});
 
-        async markAsRead(id: string) {
-            try {
-                // Optimistic update
-                update(s => {
-                    const notifs = s.notifications.map(n =>
-                        n.id === id ? { ...n, read_at: new Date().toISOString() } : n
-                    );
-                    const unread = notifs.filter(n => !n.read_at).length;
-                    return { ...s, notifications: notifs, unreadCount: unread };
-                });
+				await fetch(`${BACKEND_URL}/api/notifications/${id}/read`, {
+					method: 'POST',
+					credentials: 'include'
+				});
+			} catch (err) {
+				console.error('Failed to mark as read', err);
+			}
+		},
 
-                await fetch(`${BACKEND_URL}/api/notifications/${id}/read`, {
-                    method: 'POST',
-                    credentials: 'include'
-                });
-            } catch (err) {
-                console.error('Failed to mark as read', err);
-            }
-        },
+		async markAllAsRead() {
+			try {
+				// Optimistic update
+				update((s) => {
+					const notifs = s.notifications.map((n) => ({ ...n, read_at: new Date().toISOString() }));
+					return { ...s, notifications: notifs, unreadCount: 0 };
+				});
 
-        async markAllAsRead() {
-            try {
-                // Optimistic update
-                update(s => {
-                    const notifs = s.notifications.map(n => ({ ...n, read_at: new Date().toISOString() }));
-                    return { ...s, notifications: notifs, unreadCount: 0 };
-                });
+				await fetch(`${BACKEND_URL}/api/notifications/read-all`, {
+					method: 'POST',
+					credentials: 'include'
+				});
 
-                await fetch(`${BACKEND_URL}/api/notifications/read-all`, {
-                    method: 'POST',
-                    credentials: 'include'
-                });
+				toast.success('อ่านทั้งหมดแล้ว');
+			} catch (err) {
+				console.error('Failed to mark all as read', err);
+			}
+		},
 
-                toast.success('อ่านทั้งหมดแล้ว');
-            } catch (err) {
-                console.error('Failed to mark all as read', err);
-            }
-        },
+		async unsubscribe() {
+			try {
+				const registration = await navigator.serviceWorker.ready;
+				const subscription = await registration.pushManager.getSubscription();
+				if (subscription) {
+					await subscription.unsubscribe();
+					console.log('Unsubscribed from push');
+				}
+				return true;
+			} catch (err) {
+				console.error('Failed to unsubscribe', err);
+				return false;
+			}
+		},
 
-        async unsubscribe() {
-            try {
-                const registration = await navigator.serviceWorker.ready;
-                const subscription = await registration.pushManager.getSubscription();
-                if (subscription) {
-                    await subscription.unsubscribe();
-                    console.log('Unsubscribed from push');
-                }
-                return true;
-            } catch (err) {
-                console.error('Failed to unsubscribe', err);
-                return false;
-            }
-        },
+		async subscribeToPush(force = false) {
+			if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+				console.warn('Push messaging is not supported');
+				return false;
+			}
 
-        async subscribeToPush(force = false) {
-            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-                console.warn('Push messaging is not supported');
-                return false;
-            }
+			try {
+				// Register Standard SvelteKit Service Worker
+				const registration = await navigator.serviceWorker.register('/service-worker.js');
+				await navigator.serviceWorker.ready;
 
-            try {
-                // Register Standard SvelteKit Service Worker
-                const registration = await navigator.serviceWorker.register('/service-worker.js');
-                await navigator.serviceWorker.ready;
+				// Check existing subscription
+				let subscription = await registration.pushManager.getSubscription();
 
-                // Check existing subscription
-                let subscription = await registration.pushManager.getSubscription();
+				// If force update or no subscription, ensure clean state
+				if (force && subscription) {
+					await subscription.unsubscribe();
+					subscription = null;
+				}
 
-                // If force update or no subscription, ensure clean state
-                if (force && subscription) {
-                    await subscription.unsubscribe();
-                    subscription = null;
-                }
+				if (!subscription) {
+					const permission = await Notification.requestPermission();
+					if (permission !== 'granted') {
+						console.warn('Notification permission denied');
+						return false;
+					}
 
-                if (!subscription) {
-                    const permission = await Notification.requestPermission();
-                    if (permission !== 'granted') {
-                        console.warn('Notification permission denied');
-                        return false;
-                    }
+					subscription = await registration.pushManager.subscribe({
+						userVisibleOnly: true,
+						applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+					});
+				}
 
-                    subscription = await registration.pushManager.subscribe({
-                        userVisibleOnly: true,
-                        applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
-                    });
-                }
+				// ... (rest same logic to send backend)
 
-                // ... (rest same logic to send backend)
+				const p256dh = subscription.getKey('p256dh');
+				const auth = subscription.getKey('auth');
 
-                const p256dh = subscription.getKey('p256dh');
-                const auth = subscription.getKey('auth');
+				if (!p256dh || !auth) return false;
 
-                if (!p256dh || !auth) return false;
+				function arrayBufferToUrlSafeBase64(buffer: ArrayBuffer): string {
+					let binary = '';
+					const bytes = new Uint8Array(buffer);
+					for (let i = 0; i < bytes.byteLength; i++) {
+						binary += String.fromCharCode(bytes[i]);
+					}
+					return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+				}
 
-                function arrayBufferToUrlSafeBase64(buffer: ArrayBuffer): string {
-                    let binary = '';
-                    const bytes = new Uint8Array(buffer);
-                    for (let i = 0; i < bytes.byteLength; i++) {
-                        binary += String.fromCharCode(bytes[i]);
-                    }
-                    return window.btoa(binary)
-                        .replace(/\+/g, '-')
-                        .replace(/\//g, '_')
-                        .replace(/=+$/, '');
-                }
+				const body = {
+					endpoint: subscription.endpoint,
+					p256dh: arrayBufferToUrlSafeBase64(p256dh),
+					auth: arrayBufferToUrlSafeBase64(auth)
+				};
 
-                const body = {
-                    endpoint: subscription.endpoint,
-                    p256dh: arrayBufferToUrlSafeBase64(p256dh),
-                    auth: arrayBufferToUrlSafeBase64(auth)
-                };
+				await fetch(`${BACKEND_URL}/api/notifications/subscribe`, {
+					method: 'POST',
+					body: JSON.stringify(body),
+					headers: { 'Content-Type': 'application/json' },
+					credentials: 'include'
+				});
 
-                await fetch(`${BACKEND_URL}/api/notifications/subscribe`, {
-                    method: 'POST',
-                    body: JSON.stringify(body),
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include'
-                });
-
-                console.log('✅ Push Notification Subscribed (Synced to Backend)');
-                return true;
-
-            } catch (err) {
-                console.error('Failed to subscribe to push', err);
-                return false;
-            }
-        }
-    };
+				console.log('✅ Push Notification Subscribed (Synced to Backend)');
+				return true;
+			} catch (err) {
+				console.error('Failed to subscribe to push', err);
+				return false;
+			}
+		}
+	};
 }
 
 export const notificationStore = createNotificationStore();

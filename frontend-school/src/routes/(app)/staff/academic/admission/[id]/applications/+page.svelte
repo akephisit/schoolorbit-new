@@ -8,8 +8,7 @@
 		deleteApplication,
 		unverifyApplication,
 		type ApplicationListItem,
-		applicationStatusLabel,
-		applicationStatusColor
+		applicationStatusLabel
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -21,7 +20,18 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Search, Check, X, Eye, Users, Filter, LoaderCircle, Trash2, RotateCcw } from 'lucide-svelte';
+	import {
+		ArrowLeft,
+		Search,
+		Check,
+		X,
+		Eye,
+		Users,
+		Filter,
+		LoaderCircle,
+		Trash2,
+		RotateCcw
+	} from 'lucide-svelte';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 
 	let { data, params }: PageProps = $props();
@@ -34,9 +44,7 @@
 	let dateFilter = $state('');
 
 	const displayedApps = $derived(
-		dateFilter
-			? applications.filter((a) => a.createdAt?.slice(0, 10) === dateFilter)
-			: applications
+		dateFilter ? applications.filter((a) => a.createdAt?.slice(0, 10) === dateFilter) : applications
 	);
 
 	let showRejectDialog = $state(false);
@@ -82,7 +90,7 @@
 		try {
 			await verifyApplication(app.id);
 			toast.success(`ยืนยัน ${app.fullName} แล้ว`);
-			applications = applications.map(a => a.id === app.id ? { ...a, status: 'verified' } : a);
+			applications = applications.map((a) => (a.id === app.id ? { ...a, status: 'verified' } : a));
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ยืนยันไม่สำเร็จ');
 		}
@@ -94,7 +102,9 @@
 		try {
 			await rejectApplication(rejectingApp.id, rejectReason);
 			toast.success('ปฏิเสธใบสมัครแล้ว');
-			applications = applications.map(a => a.id === rejectingApp!.id ? { ...a, status: 'rejected' } : a);
+			applications = applications.map((a) =>
+				a.id === rejectingApp!.id ? { ...a, status: 'rejected' } : a
+			);
 			showRejectDialog = false;
 			rejectingApp = null;
 			rejectReason = '';
@@ -111,7 +121,7 @@
 		try {
 			await deleteApplication(deletingApp.id);
 			toast.success(`ลบใบสมัครของ ${deletingApp.fullName} แล้ว`);
-			applications = applications.filter(a => a.id !== deletingApp!.id);
+			applications = applications.filter((a) => a.id !== deletingApp!.id);
 			showDeleteDialog = false;
 			deletingApp = null;
 		} catch (e) {
@@ -127,7 +137,9 @@
 		try {
 			await unverifyApplication(unverifyingApp.id);
 			toast.success(`ยกเลิกการอนุมัติ ${unverifyingApp.fullName} แล้ว`);
-			applications = applications.map(a => a.id === unverifyingApp!.id ? { ...a, status: 'submitted' } : a);
+			applications = applications.map((a) =>
+				a.id === unverifyingApp!.id ? { ...a, status: 'submitted' } : a
+			);
 			showUnverifyDialog = false;
 			unverifyingApp = null;
 		} catch (e) {
@@ -191,7 +203,13 @@
 				<div class="flex items-center gap-1.5 flex-1 sm:flex-none sm:w-48">
 					<DatePicker bind:value={dateFilter} placeholder="กรองตามวันที่" class="w-full" />
 					{#if dateFilter}
-						<Button variant="ghost" size="icon" class="h-9 w-9 shrink-0" onclick={() => (dateFilter = '')} title="ล้างวันที่">
+						<Button
+							variant="ghost"
+							size="icon"
+							class="h-9 w-9 shrink-0"
+							onclick={() => (dateFilter = '')}
+							title="ล้างวันที่"
+						>
 							<X class="w-3.5 h-3.5" />
 						</Button>
 					{/if}
@@ -220,98 +238,106 @@
 	{:else}
 		<Card.Root>
 			<div class="overflow-x-auto">
-			<Table.Root>
-				<Table.Header>
-					<Table.Row>
-						<Table.Head class="w-24">เลขที่</Table.Head>
-						<Table.Head>ชื่อ-สกุล</Table.Head>
-						<Table.Head>เลขบัตร</Table.Head>
-						<Table.Head>สาย</Table.Head>
-						<Table.Head>สถานะ</Table.Head>
-						<Table.Head class="text-right">จัดการ</Table.Head>
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#each displayedApps as app (app.id)}
+				<Table.Root>
+					<Table.Header>
 						<Table.Row>
-							<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-							<Table.Cell>
-								<p class="font-medium">{app.fullName}</p>
-								<p class="text-xs text-muted-foreground">{app.phone ?? ''}</p>
-							</Table.Cell>
-							<Table.Cell class="font-mono text-xs text-muted-foreground"
-								>{app.nationalId}</Table.Cell
-							>
-							<Table.Cell class="text-sm">{app.trackName ?? '-'}</Table.Cell>
-							<Table.Cell>
-								<Badge variant={statusVariant[app.status] ?? 'outline'}>
-									{applicationStatusLabel[app.status] ?? app.status}
-								</Badge>
-							</Table.Cell>
-							<Table.Cell class="text-right">
-								<div class="flex justify-end gap-1">
-									<Button
-										href="/staff/academic/admission/{id}/applications/{app.id}"
-										variant="ghost"
-										size="icon"
-										class="h-8 w-8"
-										onclick={() => saveNavContext(displayedApps)}
-									>
-										<Eye class="w-3.5 h-3.5" />
-									</Button>
-									{#if app.status === 'submitted'}
+							<Table.Head class="w-24">เลขที่</Table.Head>
+							<Table.Head>ชื่อ-สกุล</Table.Head>
+							<Table.Head>เลขบัตร</Table.Head>
+							<Table.Head>สาย</Table.Head>
+							<Table.Head>สถานะ</Table.Head>
+							<Table.Head class="text-right">จัดการ</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each displayedApps as app (app.id)}
+							<Table.Row>
+								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
+								<Table.Cell>
+									<p class="font-medium">{app.fullName}</p>
+									<p class="text-xs text-muted-foreground">{app.phone ?? ''}</p>
+								</Table.Cell>
+								<Table.Cell class="font-mono text-xs text-muted-foreground"
+									>{app.nationalId}</Table.Cell
+								>
+								<Table.Cell class="text-sm">{app.trackName ?? '-'}</Table.Cell>
+								<Table.Cell>
+									<Badge variant={statusVariant[app.status] ?? 'outline'}>
+										{applicationStatusLabel[app.status] ?? app.status}
+									</Badge>
+								</Table.Cell>
+								<Table.Cell class="text-right">
+									<div class="flex justify-end gap-1">
 										<Button
+											href="/staff/academic/admission/{id}/applications/{app.id}"
 											variant="ghost"
 											size="icon"
-											class="h-8 w-8 text-green-600 hover:text-green-700"
-											onclick={() => handleVerify(app)}
-											title="อนุมัติ"
+											class="h-8 w-8"
+											onclick={() => saveNavContext(displayedApps)}
 										>
-											<Check class="w-3.5 h-3.5" />
+											<Eye class="w-3.5 h-3.5" />
 										</Button>
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-8 w-8 text-destructive hover:text-destructive"
-											onclick={() => {
-												rejectingApp = app;
-												showRejectDialog = true;
-											}}
-											title="ไม่อนุมัติ"
-										>
-											<X class="w-3.5 h-3.5" />
-										</Button>
-									{/if}
-									{#if app.status === 'verified'}
+										{#if app.status === 'submitted'}
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-8 w-8 text-green-600 hover:text-green-700"
+												onclick={() => handleVerify(app)}
+												title="อนุมัติ"
+											>
+												<Check class="w-3.5 h-3.5" />
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-8 w-8 text-destructive hover:text-destructive"
+												onclick={() => {
+													rejectingApp = app;
+													showRejectDialog = true;
+												}}
+												title="ไม่อนุมัติ"
+											>
+												<X class="w-3.5 h-3.5" />
+											</Button>
+										{/if}
+										{#if app.status === 'verified'}
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-8 w-8 text-muted-foreground hover:text-destructive"
+												onclick={() => {
+													unverifyingApp = app;
+													showUnverifyDialog = true;
+												}}
+												title="ยกเลิกการอนุมัติ"
+											>
+												<RotateCcw class="w-3.5 h-3.5" />
+											</Button>
+										{/if}
 										<Button
 											variant="ghost"
 											size="icon"
 											class="h-8 w-8 text-muted-foreground hover:text-destructive"
-											onclick={() => { unverifyingApp = app; showUnverifyDialog = true; }}
-											title="ยกเลิกการอนุมัติ"
+											onclick={() => {
+												deletingApp = app;
+												showDeleteDialog = true;
+											}}
+											title="ลบใบสมัคร"
 										>
-											<RotateCcw class="w-3.5 h-3.5" />
+											<Trash2 class="w-3.5 h-3.5" />
 										</Button>
-									{/if}
-								<Button
-									variant="ghost"
-									size="icon"
-									class="h-8 w-8 text-muted-foreground hover:text-destructive"
-									onclick={() => { deletingApp = app; showDeleteDialog = true; }}
-									title="ลบใบสมัคร"
-								>
-									<Trash2 class="w-3.5 h-3.5" />
-								</Button>
-								</div>
-							</Table.Cell>
-						</Table.Row>
-					{/each}
-				</Table.Body>
-			</Table.Root>
+									</div>
+								</Table.Cell>
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
 			</div>
 
 			<div class="px-4 py-3 border-t border-border">
-				<p class="text-xs text-muted-foreground">แสดง {displayedApps.length} จาก {applications.length} รายการ</p>
+				<p class="text-xs text-muted-foreground">
+					แสดง {displayedApps.length} จาก {applications.length} รายการ
+				</p>
 			</div>
 		</Card.Root>
 	{/if}

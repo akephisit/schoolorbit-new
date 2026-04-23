@@ -66,7 +66,7 @@
 	let submitting = $state(false);
 
 	// Editing
-	let editingItem = $state<any>(null); // Building or Room
+	let editingItem = $state<Building | Room | null>(null);
 	let deleteTarget = $state<{ type: 'building' | 'room'; id: string; name: string } | null>(null);
 
 	// Initial Data
@@ -81,7 +81,7 @@
 			]);
 			buildings = bRes.data;
 			rooms = rRes.data;
-		} catch (e) {
+		} catch {
 			toast.error('โหลดข้อมูลไม่สำเร็จ');
 		} finally {
 			loading = false;
@@ -123,7 +123,7 @@
 			}
 			showBuildingDialog = false;
 			loadData();
-		} catch (e) {
+		} catch {
 			toast.error('บันทึกไม่สำเร็จ');
 		} finally {
 			submitting = false;
@@ -158,7 +158,7 @@
 			}
 			showRoomDialog = false;
 			refreshRooms();
-		} catch (e) {
+		} catch {
 			toast.error('บันทึกไม่สำเร็จ');
 		} finally {
 			submitting = false;
@@ -179,7 +179,7 @@
 				refreshRooms();
 			}
 			showDeleteDialog = false;
-		} catch (e) {
+		} catch {
 			toast.error('ลบไม่สำเร็จ (อาจมีข้อมูลเชื่อมโยง)');
 		} finally {
 			submitting = false;
@@ -203,7 +203,7 @@
 		editingItem = r;
 		showRoomDialog = true;
 	}
-	function confirmDelete(type: 'building' | 'room', item: any) {
+	function confirmDelete(type: 'building' | 'room', item: Building | Room) {
 		deleteTarget = {
 			type,
 			id: item.id,
@@ -219,14 +219,20 @@
 	$effect(() => {
 		if (showRoomDialog) {
 			if (editingItem) {
-				formBuildingId = editingItem.building_id || '';
-				formRoomType = editingItem.room_type || 'GENERAL';
+				const room = editingItem as Room;
+				formBuildingId = room.building_id || '';
+				formRoomType = room.room_type || 'GENERAL';
 			} else {
 				formBuildingId = (selectedBuildingFilter !== 'all' ? selectedBuildingFilter : '') || '';
 				formRoomType = 'GENERAL';
 			}
 		}
 	});
+
+	// Narrowed Room reference for use in Room dialog template
+	let editingRoom = $derived(
+		editingItem && 'room_type' in editingItem ? (editingItem as Room) : null
+	);
 
 	onMount(loadData);
 </script>
@@ -288,7 +294,7 @@
 								></Table.Row
 							>
 						{:else}
-							{#each buildings as b}
+							{#each buildings as b (b.id)}
 								<Table.Row>
 									<Table.Cell class="font-mono text-xs">{b.code || '-'}</Table.Cell>
 									<Table.Cell>
@@ -335,7 +341,7 @@
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="all">ทุกอาคาร</Select.Item>
-							{#each buildings as b}
+							{#each buildings as b (b.id)}
 								<Select.Item value={b.id}>{b.name_th}</Select.Item>
 							{/each}
 						</Select.Content>
@@ -383,7 +389,7 @@
 								></Table.Row
 							>
 						{:else}
-							{#each rooms as r}
+							{#each rooms as r (r.id)}
 								<Table.Row>
 									<Table.Cell class="font-bold">{r.code || '-'}</Table.Cell>
 									<Table.Cell>
@@ -480,7 +486,7 @@
 								{buildings.find((b) => b.id === formBuildingId)?.name_th || 'เลือกอาคาร'}
 							</Select.Trigger>
 							<Select.Content>
-								{#each buildings as b}
+								{#each buildings as b (b.id)}
 									<Select.Item value={b.id}>{b.name_th}</Select.Item>
 								{/each}
 							</Select.Content>
@@ -494,7 +500,7 @@
 								{ROOM_TYPES.find((t) => t.value === formRoomType)?.label}
 							</Select.Trigger>
 							<Select.Content>
-								{#each ROOM_TYPES as t}
+								{#each ROOM_TYPES as t (t.value)}
 									<Select.Item value={t.value}>{t.label}</Select.Item>
 								{/each}
 							</Select.Content>
@@ -522,14 +528,14 @@
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-2">
 						<Label>ชั้น</Label>
-						<Input type="number" name="floor" value={editingItem?.floor?.toString() || ''} />
+						<Input type="number" name="floor" value={editingRoom?.floor?.toString() || ''} />
 					</div>
 					<div class="space-y-2">
 						<Label>ความจุ (คน)</Label>
 						<Input
 							type="number"
 							name="capacity"
-							value={editingItem?.capacity?.toString() || '40'}
+							value={editingRoom?.capacity?.toString() || '40'}
 						/>
 					</div>
 				</div>

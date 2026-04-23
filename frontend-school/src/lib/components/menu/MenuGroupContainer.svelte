@@ -10,27 +10,26 @@
 		children: Snippet;
 		itemCount?: number;
 		class?: string;
-        // Group Drag Events
-        onDragStart?: (e: DragEvent, group: MenuGroup) => void;
-        onDragEnter?: (e: DragEvent, group: MenuGroup) => void;
-        // Drop on Group (for items)
-        onDragOver?: (e: DragEvent) => void;
-        onDrop?: (e: DragEvent, group: MenuGroup) => void;
-        draggable?: boolean;
+		// Group Drag Events
+		onDragStart?: (e: DragEvent, group: MenuGroup) => void;
+		onDragEnter?: (e: DragEvent, group: MenuGroup) => void;
+		// Drop on Group (for items)
+		onDragOver?: (e: DragEvent) => void;
+		onDrop?: (e: DragEvent, group: MenuGroup) => void;
+		draggable?: boolean;
 	}
 
-	let { 
-        data: group, 
-        children, 
-        itemCount = 0, 
-        class: className,
-        onDragStart,
-        onDragEnter,
-        onDragOver,
-        onDrop,
-        draggable = true
-    }: Props = $props(); 
-
+	let {
+		data: group,
+		children,
+		itemCount = 0,
+		class: className,
+		onDragStart,
+		onDragEnter,
+		onDragOver,
+		onDrop,
+		draggable = true
+	}: Props = $props();
 </script>
 
 <div

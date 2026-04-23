@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 	import {
 		getRound,
@@ -23,8 +24,7 @@
 		type AdmissionTrack,
 		type AdmissionExamSubject,
 		type ReportConfig,
-		roundStatusLabel,
-		roundStatusColor
+		roundStatusLabel
 	} from '$lib/api/admission';
 	import { listStudyPlans } from '$lib/api/academic';
 	import SchoolCombobox from '$lib/components/ui/SchoolCombobox.svelte';
@@ -94,7 +94,11 @@
 	let savingSubject = $state(false);
 
 	// Report config
-	let reportConfig: ReportConfig = $state({ reportMode: null, zone: { schools: [] }, institution: { ownSchool: '' } });
+	let reportConfig: ReportConfig = $state({
+		reportMode: null,
+		zone: { schools: [] },
+		institution: { ownSchool: '' }
+	});
 	let savingReportConfig = $state(false);
 	let allRounds: AdmissionRound[] = $state([]);
 
@@ -105,7 +109,7 @@
 	};
 
 	let copyableRounds = $derived(
-		allRounds.filter(r => r.id !== id && r.reportConfig?.reportMode != null)
+		allRounds.filter((r) => r.id !== id && r.reportConfig?.reportMode != null)
 	);
 
 	const statusFlow: AdmissionRound['status'][] = [
@@ -158,7 +162,10 @@
 		try {
 			await updateSelectionSettings(round.id, { showScores: !current });
 			toast.success(!current ? 'เปิดแสดงคะแนนบน portal แล้ว' : 'ซ่อนคะแนนบน portal แล้ว');
-			round = { ...round, selectionSettings: { method: '', ...(round.selectionSettings ?? {}), showScores: !current } };
+			round = {
+				...round,
+				selectionSettings: { method: '', ...(round.selectionSettings ?? {}), showScores: !current }
+			};
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'อัปเดตไม่สำเร็จ');
 		} finally {
@@ -170,7 +177,12 @@
 		if (!id) return;
 		loading = true;
 		try {
-			const [r, t, s, allR] = await Promise.all([getRound(id), listTracks(id), listSubjects(id), listRounds()]);
+			const [r, t, s, allR] = await Promise.all([
+				getRound(id),
+				listTracks(id),
+				listSubjects(id),
+				listRounds()
+			]);
 			round = r;
 			tracks = t;
 			subjects = s;
@@ -208,7 +220,7 @@
 		try {
 			await deleteRound(round.id);
 			toast.success('ลบรอบรับสมัครแล้ว');
-			goto('/staff/academic/admission');
+			goto(resolve('/staff/academic/admission'));
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
 		} finally {
@@ -455,9 +467,11 @@
 					<div class="flex flex-col gap-1.5">
 						<p class="text-xs text-muted-foreground font-medium">เปลี่ยนสถานะ:</p>
 						<div class="flex flex-wrap gap-1">
-							{#each statusFlow as s}
+							{#each statusFlow as s (s)}
 								<button
-									onclick={() => { if (round?.status !== s) pendingStatus = s; }}
+									onclick={() => {
+										if (round?.status !== s) pendingStatus = s;
+									}}
 									class="text-xs px-2 py-1 rounded border transition-colors {round.status === s
 										? 'border-primary bg-primary text-primary-foreground'
 										: 'border-border hover:bg-accent'}"
@@ -859,127 +873,138 @@
 			</Card.Root>
 		</div>
 
-	<!-- Report Config Card -->
-	<Card.Root>
-		<Card.Header class="pb-3">
-			<div class="flex items-start justify-between gap-2">
-				<div>
-					<Card.Title class="flex items-center gap-2 text-base">
-						<BarChart2 class="w-4 h-4" /> การรายงาน
-					</Card.Title>
-					<Card.Description>ตั้งค่าการแบ่งกลุ่มผู้สมัครสำหรับรายงานสถิติ</Card.Description>
-				</div>
-				{#if copyableRounds.length > 0}
-					<Select.Root
-						type="single"
-						onValueChange={(roundId) => {
-							const src = copyableRounds.find(r => r.id === roundId);
-							if (src) copyConfigFromRound(src);
-						}}
-					>
-						<Select.Trigger class="h-8 text-xs gap-1.5 w-auto shrink-0">
-							<Copy class="w-3.5 h-3.5" /> คัดลอกจากรอบอื่น
-						</Select.Trigger>
-						<Select.Content>
-							{#each copyableRounds as r (r.id)}
-								<Select.Item value={r.id}>
-									<span>{r.name}</span>
-									<span class="ml-2 text-xs text-muted-foreground">
-										({reportModeLabel[r.reportConfig!.reportMode!]}{#if r.reportConfig?.zone?.schools?.length} · {r.reportConfig.zone.schools.length} โรงเรียน{/if})
-									</span>
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				{/if}
-			</div>
-		</Card.Header>
-		<Card.Content class="space-y-4">
-			<!-- Mode selector -->
-			<div class="space-y-1.5">
-				<Label>ประเภทรายงาน</Label>
-				<Select.Root
-					type="single"
-					value={reportConfig.reportMode ?? 'none'}
-					onValueChange={(v) => {
-						const mode = v === 'none' ? null : (v as ReportConfig['reportMode']);
-					reportConfig = {
-						...reportConfig,
-						reportMode: mode,
-						zone: reportConfig.zone ?? { schools: [] },
-						institution: reportConfig.institution ?? { ownSchool: '' }
-					};
-					}}
-				>
-					<Select.Trigger class="w-full max-w-xs">
-						{#if reportConfig.reportMode === null}ปิด (ไม่ใช้)
-						{:else if reportConfig.reportMode === 'zone'}เขตพื้นที่บริการ
-						{:else if reportConfig.reportMode === 'institution'}สถานศึกษาเดิม
-						{:else}ทั้งสองประเภท{/if}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="none">ปิด (ไม่ใช้)</Select.Item>
-						<Select.Item value="zone">เขตพื้นที่บริการ</Select.Item>
-						<Select.Item value="institution">สถานศึกษาเดิม</Select.Item>
-						<Select.Item value="both">ทั้งสองประเภท</Select.Item>
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			{#if reportConfig.reportMode === 'zone' || reportConfig.reportMode === 'both'}
-				<!-- Zone schools -->
-				<div class="space-y-2">
-					<Label>โรงเรียนในเขตพื้นที่บริการ</Label>
-					<div class="max-w-sm">
-						<SchoolCombobox
-							value=""
-							onProvinceSelect={() => {}}
-							onSelect={(name) => addZoneSchool(name)}
-						/>
+		<!-- Report Config Card -->
+		<Card.Root>
+			<Card.Header class="pb-3">
+				<div class="flex items-start justify-between gap-2">
+					<div>
+						<Card.Title class="flex items-center gap-2 text-base">
+							<BarChart2 class="w-4 h-4" /> การรายงาน
+						</Card.Title>
+						<Card.Description>ตั้งค่าการแบ่งกลุ่มผู้สมัครสำหรับรายงานสถิติ</Card.Description>
 					</div>
-					{#if (reportConfig.zone?.schools ?? []).length > 0}
-						<div class="flex flex-wrap gap-1.5 mt-1">
-							{#each reportConfig.zone?.schools ?? [] as school (school)}
-								<span class="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-									{school}
-									<button onclick={() => removeZoneSchool(school)} class="hover:text-destructive">
-										<X class="w-3 h-3" />
-									</button>
-								</span>
-							{/each}
-						</div>
+					{#if copyableRounds.length > 0}
+						<Select.Root
+							type="single"
+							onValueChange={(roundId) => {
+								const src = copyableRounds.find((r) => r.id === roundId);
+								if (src) copyConfigFromRound(src);
+							}}
+						>
+							<Select.Trigger class="h-8 text-xs gap-1.5 w-auto shrink-0">
+								<Copy class="w-3.5 h-3.5" /> คัดลอกจากรอบอื่น
+							</Select.Trigger>
+							<Select.Content>
+								{#each copyableRounds as r (r.id)}
+									<Select.Item value={r.id}>
+										<span>{r.name}</span>
+										<span class="ml-2 text-xs text-muted-foreground">
+											({reportModeLabel[
+												r.reportConfig!.reportMode!
+											]}{#if r.reportConfig?.zone?.schools?.length}
+												· {r.reportConfig.zone.schools.length} โรงเรียน{/if})
+										</span>
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					{/if}
 				</div>
-			{/if}
-
-			{#if reportConfig.reportMode === 'institution' || reportConfig.reportMode === 'both'}
-				<!-- Own school -->
+			</Card.Header>
+			<Card.Content class="space-y-4">
+				<!-- Mode selector -->
 				<div class="space-y-1.5">
-					<Label>ชื่อโรงเรียนตนเอง</Label>
-					<div class="max-w-sm">
-						<SchoolCombobox
-							bind:value={reportConfig.institution!.ownSchool}
-							onProvinceSelect={() => {}}
-						/>
-					</div>
+					<Label>ประเภทรายงาน</Label>
+					<Select.Root
+						type="single"
+						value={reportConfig.reportMode ?? 'none'}
+						onValueChange={(v) => {
+							const mode = v === 'none' ? null : (v as ReportConfig['reportMode']);
+							reportConfig = {
+								...reportConfig,
+								reportMode: mode,
+								zone: reportConfig.zone ?? { schools: [] },
+								institution: reportConfig.institution ?? { ownSchool: '' }
+							};
+						}}
+					>
+						<Select.Trigger class="w-full max-w-xs">
+							{#if reportConfig.reportMode === null}ปิด (ไม่ใช้)
+							{:else if reportConfig.reportMode === 'zone'}เขตพื้นที่บริการ
+							{:else if reportConfig.reportMode === 'institution'}สถานศึกษาเดิม
+							{:else}ทั้งสองประเภท{/if}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="none">ปิด (ไม่ใช้)</Select.Item>
+							<Select.Item value="zone">เขตพื้นที่บริการ</Select.Item>
+							<Select.Item value="institution">สถานศึกษาเดิม</Select.Item>
+							<Select.Item value="both">ทั้งสองประเภท</Select.Item>
+						</Select.Content>
+					</Select.Root>
 				</div>
-			{/if}
 
-			<Button onclick={saveReportConfig} disabled={savingReportConfig} size="sm" class="gap-1.5">
-				{#if savingReportConfig}<Loader2 class="w-3.5 h-3.5 animate-spin" />{/if}
-				บันทึกการตั้งค่า
-			</Button>
-		</Card.Content>
-	</Card.Root>
+				{#if reportConfig.reportMode === 'zone' || reportConfig.reportMode === 'both'}
+					<!-- Zone schools -->
+					<div class="space-y-2">
+						<Label>โรงเรียนในเขตพื้นที่บริการ</Label>
+						<div class="max-w-sm">
+							<SchoolCombobox
+								value=""
+								onProvinceSelect={() => {}}
+								onSelect={(name) => addZoneSchool(name)}
+							/>
+						</div>
+						{#if (reportConfig.zone?.schools ?? []).length > 0}
+							<div class="flex flex-wrap gap-1.5 mt-1">
+								{#each reportConfig.zone?.schools ?? [] as school (school)}
+									<span
+										class="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full"
+									>
+										{school}
+										<button onclick={() => removeZoneSchool(school)} class="hover:text-destructive">
+											<X class="w-3 h-3" />
+										</button>
+									</span>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				{#if reportConfig.reportMode === 'institution' || reportConfig.reportMode === 'both'}
+					<!-- Own school -->
+					<div class="space-y-1.5">
+						<Label>ชื่อโรงเรียนตนเอง</Label>
+						<div class="max-w-sm">
+							<SchoolCombobox
+								bind:value={reportConfig.institution!.ownSchool}
+								onProvinceSelect={() => {}}
+							/>
+						</div>
+					</div>
+				{/if}
+
+				<Button onclick={saveReportConfig} disabled={savingReportConfig} size="sm" class="gap-1.5">
+					{#if savingReportConfig}<Loader2 class="w-3.5 h-3.5 animate-spin" />{/if}
+					บันทึกการตั้งค่า
+				</Button>
+			</Card.Content>
+		</Card.Root>
 	</div>
 
 	<!-- Delete Track Dialog -->
-	<Dialog.Root open={deletingTrackTarget !== null} onOpenChange={(o) => { if (!o) deletingTrackTarget = null; }}>
+	<Dialog.Root
+		open={deletingTrackTarget !== null}
+		onOpenChange={(o) => {
+			if (!o) deletingTrackTarget = null;
+		}}
+	>
 		<Dialog.Content>
 			<Dialog.Header>
 				<Dialog.Title>ยืนยันการลบสายการเรียน</Dialog.Title>
 				<Dialog.Description>
-					ลบสาย <strong>{deletingTrackTarget?.name}</strong>? ข้อมูลใบสมัครและคะแนนที่เกี่ยวข้องกับสายนี้อาจถูกลบด้วย
+					ลบสาย <strong>{deletingTrackTarget?.name}</strong>?
+					ข้อมูลใบสมัครและคะแนนที่เกี่ยวข้องกับสายนี้อาจถูกลบด้วย
 				</Dialog.Description>
 			</Dialog.Header>
 			<Dialog.Footer>
@@ -999,12 +1024,18 @@
 	</Dialog.Root>
 
 	<!-- Delete Subject Dialog -->
-	<Dialog.Root open={deletingSubjectTarget !== null} onOpenChange={(o) => { if (!o) deletingSubjectTarget = null; }}>
+	<Dialog.Root
+		open={deletingSubjectTarget !== null}
+		onOpenChange={(o) => {
+			if (!o) deletingSubjectTarget = null;
+		}}
+	>
 		<Dialog.Content>
 			<Dialog.Header>
 				<Dialog.Title>ยืนยันการลบวิชา</Dialog.Title>
 				<Dialog.Description>
-					ลบวิชา <strong>{deletingSubjectTarget?.name}</strong>? คะแนนของผู้สมัครทุกคนในวิชานี้จะถูกลบด้วย
+					ลบวิชา <strong>{deletingSubjectTarget?.name}</strong>?
+					คะแนนของผู้สมัครทุกคนในวิชานี้จะถูกลบด้วย
 				</Dialog.Description>
 			</Dialog.Header>
 			<Dialog.Footer>
@@ -1049,12 +1080,18 @@
 	</Dialog.Root>
 
 	<!-- Confirm Status Change Dialog -->
-	<Dialog.Root open={pendingStatus !== null} onOpenChange={(o) => { if (!o) pendingStatus = null; }}>
+	<Dialog.Root
+		open={pendingStatus !== null}
+		onOpenChange={(o) => {
+			if (!o) pendingStatus = null;
+		}}
+	>
 		<Dialog.Content>
 			<Dialog.Header>
 				<Dialog.Title>ยืนยันการเปลี่ยนสถานะ</Dialog.Title>
 				<Dialog.Description>
-					เปลี่ยนสถานะรอบเป็น <strong>{pendingStatus ? roundStatusLabel[pendingStatus] : ''}</strong>?
+					เปลี่ยนสถานะรอบเป็น <strong>{pendingStatus ? roundStatusLabel[pendingStatus] : ''}</strong
+					>?
 				</Dialog.Description>
 			</Dialog.Header>
 			<Dialog.Footer>

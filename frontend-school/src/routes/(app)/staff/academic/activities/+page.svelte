@@ -13,7 +13,6 @@
 		listSlotInstructors,
 		addSlotInstructor,
 		removeSlotInstructor,
-		removeAllSlotInstructors,
 		ACTIVITY_TYPE_LABELS,
 		type SlotInstructor,
 		type ActivitySlot,
@@ -22,7 +21,6 @@
 		type Classroom,
 		listSlotClassroomAssignments,
 		batchUpsertSlotClassroomAssignments,
-		deleteAllSlotClassroomAssignments,
 		deleteAllSlotGroups,
 		deleteSlotTimetableEntries,
 		type SlotClassroomAssignment,
@@ -30,6 +28,7 @@
 		generateActivitiesFromPlan,
 		type StudyPlanVersion
 	} from '$lib/api/academic';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -38,11 +37,26 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import * as Popover from '$lib/components/ui/popover';
 	import { toast } from 'svelte-sonner';
-	import { Users, Plus, Pencil, Trash2, Check, ChevronsUpDown, UserCog, ChevronDown, ChevronRight, Settings, FolderInput } from 'lucide-svelte';
+	import {
+		Users,
+		Plus,
+		Pencil,
+		Trash2,
+		UserCog,
+		ChevronDown,
+		ChevronRight,
+		Settings,
+		FolderInput
+	} from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+
+	function goToActivityGroup(id: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
+		goto(resolve(`/staff/academic/activities/${id}` as any));
+	}
 
 	// ── State ──────────────────────────────────────────
 	let loading = $state(true);
@@ -62,7 +76,7 @@
 	let filterType = $state('');
 
 	// Expanded slots
-	let expandedSlots = $state<Set<string>>(new Set());
+	let expandedSlots = new SvelteSet<string>();
 
 	// Slot Dialog
 	let showSlotDialog = $state(false);
@@ -71,7 +85,6 @@
 	let slotName = $state('');
 	let slotDescription = $state('');
 	let slotActivityType = $state('club');
-	let slotSemesterId = $state('');
 	let slotRegistrationType = $state('assigned');
 	let slotPeriodsPerWeek = $state(1);
 	let slotSchedulingMode = $state<'synchronized' | 'independent'>('synchronized');
@@ -116,7 +129,6 @@
 	let planVersions = $state<StudyPlanVersion[]>([]);
 	let generating = $state(false);
 
-
 	// ── Computed ───────────────────────────────────────
 	let filteredSlots = $derived(
 		slots.filter((s) => {
@@ -135,18 +147,6 @@
 
 	let currentSemesterName = $derived(
 		structure.semesters.find((s) => s.id === filterSemesterId)?.name ?? 'เลือกภาคเรียน'
-	);
-
-	// ชั้นที่เปิดสอนในปีนี้ (จาก classrooms)
-	let yearGradeLevels = $derived.by(() => {
-		const gradeIds = [...new Set(classrooms.map((c) => c.grade_level_id))];
-		return structure.levels
-			.filter((l) => gradeIds.includes(l.id))
-			.sort((a, b) => (a.code > b.code ? 1 : -1));
-	});
-
-	let slotSemesterName = $derived(
-		structure.semesters.find((s) => s.id === slotSemesterId)?.name ?? 'เลือก...'
 	);
 
 	// ── Load ───────────────────────────────────────────
@@ -186,20 +186,33 @@
 		]);
 		slots = slotsRes.data ?? [];
 		groups = groupsRes.data ?? [];
-		expandedSlots = new Set(slots.map((s) => s.id));
+		expandedSlots.clear();
+		for (const s of slots) expandedSlots.add(s.id);
 		// Load slot instructors
 		const instrMap: Record<string, SlotInstructor[]> = {};
-		await Promise.all(slots.map(async (s) => {
-			try { instrMap[s.id] = (await listSlotInstructors(s.id)).data ?? []; }
-			catch { instrMap[s.id] = []; }
-		}));
+		await Promise.all(
+			slots.map(async (s) => {
+				try {
+					instrMap[s.id] = (await listSlotInstructors(s.id)).data ?? [];
+				} catch {
+					instrMap[s.id] = [];
+				}
+			})
+		);
 		slotInstructorsMap = instrMap;
 		// Load classroom assignments for independent slots
 		const assignMap: Record<string, SlotClassroomAssignment[]> = {};
-		await Promise.all(slots.filter((s) => s.scheduling_mode === 'independent').map(async (s) => {
-			try { assignMap[s.id] = (await listSlotClassroomAssignments(s.id)).data ?? []; }
-			catch { assignMap[s.id] = []; }
-		}));
+		await Promise.all(
+			slots
+				.filter((s) => s.scheduling_mode === 'independent')
+				.map(async (s) => {
+					try {
+						assignMap[s.id] = (await listSlotClassroomAssignments(s.id)).data ?? [];
+					} catch {
+						assignMap[s.id] = [];
+					}
+				})
+		);
 		slotClassroomAssignmentsMap = assignMap;
 	}
 
@@ -225,9 +238,8 @@
 	}
 
 	function toggleSlot(id: string) {
-		const next = new Set(expandedSlots);
-		if (next.has(id)) next.delete(id); else next.add(id);
-		expandedSlots = next;
+		if (expandedSlots.has(id)) expandedSlots.delete(id);
+		else expandedSlots.add(id);
 	}
 
 	// ── Generate from Plan ────────────────────────────
@@ -235,7 +247,9 @@
 		try {
 			const res = await listStudyPlanVersions();
 			planVersions = res.data ?? [];
-		} catch { planVersions = []; }
+		} catch {
+			planVersions = [];
+		}
 		generateVersionId = '';
 		showGenerateDialog = true;
 	}
@@ -262,33 +276,18 @@
 	}
 
 	// ── Slot Dialog ───────────────────────────────────
-	function openCreateSlot() {
-		slotName = ''; slotDescription = ''; slotActivityType = 'club';
-		slotSemesterId = filterSemesterId; slotRegistrationType = 'assigned';
-		slotPeriodsPerWeek = 1; slotSchedulingMode = 'synchronized';
-		slotAllowedGradeLevelIds = [];
-		isSlotEdit = false; editSlotTarget = null;
-		showSlotDialog = true;
-	}
-
 	function openEditSlot(s: ActivitySlot) {
 		// Template fields live in catalog — read-only here. Only registration is editable.
 		slotName = s.name;
 		slotDescription = s.description ?? '';
 		slotActivityType = s.activity_type;
-		slotSemesterId = s.semester_id;
 		slotRegistrationType = s.registration_type;
 		slotPeriodsPerWeek = s.periods_per_week;
 		slotSchedulingMode = s.scheduling_mode;
 		slotAllowedGradeLevelIds = s.allowed_grade_level_ids ?? [];
-		isSlotEdit = true; editSlotTarget = s;
+		isSlotEdit = true;
+		editSlotTarget = s;
 		showSlotDialog = true;
-	}
-
-
-	function toggleSlotGrade(id: string) {
-		slotAllowedGradeLevelIds = slotAllowedGradeLevelIds.includes(id)
-			? slotAllowedGradeLevelIds.filter((x) => x !== id) : [...slotAllowedGradeLevelIds, id];
 	}
 
 	async function handleSaveSlot() {
@@ -296,18 +295,17 @@
 	}
 
 	async function handleToggleTeacherReg(slot: ActivitySlot) {
-		await updateActivitySlot(slot.id, { teacher_reg_open: !slot.teacher_reg_open } as any);
+		await updateActivitySlot(slot.id, { teacher_reg_open: !slot.teacher_reg_open });
 		await loadData();
 		toast.success(slot.teacher_reg_open ? 'ปิดลงทะเบียนครูแล้ว' : 'เปิดลงทะเบียนครูแล้ว');
 	}
 
 	async function handleToggleStudentReg(slot: ActivitySlot) {
-		await updateActivitySlot(slot.id, { student_reg_open: !slot.student_reg_open } as any);
+		await updateActivitySlot(slot.id, { student_reg_open: !slot.student_reg_open });
 		await loadData();
 		toast.success(slot.student_reg_open ? 'ปิดลงทะเบียนนักเรียนแล้ว' : 'เปิดลงทะเบียนนักเรียนแล้ว');
 	}
 
-	function confirmDeleteSlot(s: ActivitySlot) { deleteSlotTarget = s; showDeleteSlotDialog = true; }
 	async function handleDeleteSlot() {
 		if (!deleteSlotTarget) return;
 		try {
@@ -316,15 +314,21 @@
 			toast.success('ลบแล้ว');
 			showDeleteSlotDialog = false;
 			await loadData();
-		} catch { toast.error('เกิดข้อผิดพลาด'); }
+		} catch {
+			toast.error('เกิดข้อผิดพลาด');
+		}
 	}
 
 	// ── Group Dialog ──────────────────────────────────
 	function openCreateGroup(slotId: string) {
-		groupSlotId = slotId; groupName = ''; groupDescription = '';
-		groupInstructorId = ''; groupMaxCapacity = '';
+		groupSlotId = slotId;
+		groupName = '';
+		groupDescription = '';
+		groupInstructorId = '';
+		groupMaxCapacity = '';
 		groupAllowedClassroomIds = [];
-		isGroupEdit = false; editGroupTarget = null;
+		isGroupEdit = false;
+		editGroupTarget = null;
 		showGroupDialog = true;
 	}
 
@@ -335,7 +339,8 @@
 		groupInstructorId = g.instructor_id ?? '';
 		groupMaxCapacity = g.max_capacity ? String(g.max_capacity) : '';
 		groupAllowedClassroomIds = g.allowed_classroom_ids ?? [];
-		isGroupEdit = true; editGroupTarget = g;
+		isGroupEdit = true;
+		editGroupTarget = g;
 		showGroupDialog = true;
 	}
 
@@ -352,7 +357,9 @@
 			.map((c) => c.id);
 		const allSelected = roomsOfGrade.every((id) => groupAllowedClassroomIds.includes(id));
 		if (allSelected) {
-			groupAllowedClassroomIds = groupAllowedClassroomIds.filter((id) => !roomsOfGrade.includes(id));
+			groupAllowedClassroomIds = groupAllowedClassroomIds.filter(
+				(id) => !roomsOfGrade.includes(id)
+			);
 		} else {
 			const set = new Set([...groupAllowedClassroomIds, ...roomsOfGrade]);
 			groupAllowedClassroomIds = [...set];
@@ -360,7 +367,10 @@
 	}
 
 	async function handleSaveGroup() {
-		if (!groupName.trim()) { toast.error('กรุณาระบุชื่อ'); return; }
+		if (!groupName.trim()) {
+			toast.error('กรุณาระบุชื่อ');
+			return;
+		}
 		saving = true;
 		try {
 			const payload = {
@@ -368,10 +378,11 @@
 				description: groupDescription || undefined,
 				instructor_id: groupInstructorId || undefined,
 				max_capacity: groupMaxCapacity ? parseInt(groupMaxCapacity) : undefined,
-				allowed_classroom_ids: groupAllowedClassroomIds.length > 0 ? groupAllowedClassroomIds : undefined,
+				allowed_classroom_ids:
+					groupAllowedClassroomIds.length > 0 ? groupAllowedClassroomIds : undefined
 			};
 			if (isGroupEdit && editGroupTarget) {
-				await updateActivityGroup(editGroupTarget.id, payload as any);
+				await updateActivityGroup(editGroupTarget.id, payload);
 				toast.success('แก้ไขกิจกรรมแล้ว');
 			} else {
 				await createActivityGroup({ slot_id: groupSlotId, ...payload });
@@ -379,15 +390,28 @@
 			}
 			showGroupDialog = false;
 			await loadData();
-		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { saving = false; }
+		} catch {
+			toast.error('เกิดข้อผิดพลาด');
+		} finally {
+			saving = false;
+		}
 	}
 
-	function confirmDeleteGroup(g: ActivityGroup) { deleteGroupTarget = g; showDeleteGroupDialog = true; }
+	function confirmDeleteGroup(g: ActivityGroup) {
+		deleteGroupTarget = g;
+		showDeleteGroupDialog = true;
+	}
 
 	async function handleDeleteGroup() {
 		if (!deleteGroupTarget) return;
-		try { await deleteActivityGroup(deleteGroupTarget.id); toast.success('ลบแล้ว'); showDeleteGroupDialog = false; await loadData(); }
-		catch { toast.error('เกิดข้อผิดพลาด'); }
+		try {
+			await deleteActivityGroup(deleteGroupTarget.id);
+			toast.success('ลบแล้ว');
+			showDeleteGroupDialog = false;
+			await loadData();
+		} catch {
+			toast.error('เกิดข้อผิดพลาด');
+		}
 	}
 
 	// ── Helpers ────────────────────────────────────────
@@ -403,11 +427,13 @@
 	/** แสดงระดับชั้น (unique) ที่ได้จากห้องที่อยู่ใน slot/กลุ่ม */
 	function classroomGradesDisplay(classroomIds: string[] | undefined) {
 		if (!classroomIds || classroomIds.length === 0) return 'ยังไม่มีห้อง';
-		const gradeIds = [...new Set(
-			classroomIds
-				.map((cid) => classrooms.find((c) => c.id === cid)?.grade_level_id)
-				.filter((g): g is string => !!g)
-		)];
+		const gradeIds = [
+			...new Set(
+				classroomIds
+					.map((cid) => classrooms.find((c) => c.id === cid)?.grade_level_id)
+					.filter((g): g is string => !!g)
+			)
+		];
 		const names = gradeIds
 			.map((id) => structure.levels.find((g) => g.id === id)?.short_name)
 			.filter((n): n is string => !!n);
@@ -429,7 +455,10 @@
 		try {
 			await deleteAllSlotGroups(editSlotTarget.id);
 			await deleteSlotTimetableEntries(editSlotTarget.id);
-		} catch { toast.error('ลบข้อมูลไม่สำเร็จ'); return; }
+		} catch {
+			toast.error('ลบข้อมูลไม่สำเร็จ');
+			return;
+		}
 		doSaveSlot();
 	}
 
@@ -443,30 +472,33 @@
 			// Semester-specific fields only. Template (name/type/periods/mode/grade)
 			// lives in activity_catalog — edit at คลังกิจกรรม.
 			await updateActivitySlot(editSlotTarget.id, {
-				registration_type: slotRegistrationType,
+				registration_type: slotRegistrationType
 			});
 			toast.success('แก้ไขการลงทะเบียนแล้ว');
 			showSlotDialog = false;
 			await loadData();
-		} catch { toast.error('เกิดข้อผิดพลาด'); } finally { saving = false; }
+		} catch {
+			toast.error('เกิดข้อผิดพลาด');
+		} finally {
+			saving = false;
+		}
 	}
 
-	async function handleAssignClassroomInstructor(slotId: string, classroomId: string, instructorId: string) {
+	async function handleAssignClassroomInstructor(
+		slotId: string,
+		classroomId: string,
+		instructorId: string
+	) {
 		try {
-			await batchUpsertSlotClassroomAssignments(slotId, [{ classroom_id: classroomId, instructor_id: instructorId }]);
+			await batchUpsertSlotClassroomAssignments(slotId, [
+				{ classroom_id: classroomId, instructor_id: instructorId }
+			]);
 			slotClassroomAssignmentsMap[slotId] = (await listSlotClassroomAssignments(slotId)).data ?? [];
 			slotClassroomAssignmentsMap = { ...slotClassroomAssignmentsMap };
 			toast.success('กำหนดครูแล้ว');
-		} catch { toast.error('เกิดข้อผิดพลาด'); }
-	}
-
-	async function handleAddSlotInstructor(slotId: string, userId: string) {
-		try {
-			await addSlotInstructor(slotId, userId);
-			toast.success('เพิ่มครูแล้ว');
-			slotInstructorsMap[slotId] = (await listSlotInstructors(slotId)).data ?? [];
-			slotInstructorsMap = { ...slotInstructorsMap };
-		} catch { toast.error('เกิดข้อผิดพลาด'); }
+		} catch {
+			toast.error('เกิดข้อผิดพลาด');
+		}
 	}
 
 	async function handleRemoveSlotInstructor(slotId: string, userId: string) {
@@ -475,7 +507,9 @@
 			toast.success('ลบครูแล้ว');
 			slotInstructorsMap[slotId] = (await listSlotInstructors(slotId)).data ?? [];
 			slotInstructorsMap = { ...slotInstructorsMap };
-		} catch { toast.error('เกิดข้อผิดพลาด'); }
+		} catch {
+			toast.error('เกิดข้อผิดพลาด');
+		}
 	}
 
 	// Slot instructor dialog
@@ -487,30 +521,43 @@
 
 	let slotInstructorCandidates = $derived(
 		staffList.filter((s) => {
-			if ((slotInstructorsMap[slotInstructorSlotId] ?? []).some((i) => i.user_id === s.id)) return false;
-			if (slotInstructorSearch && !s.name.toLowerCase().includes(slotInstructorSearch.toLowerCase())) return false;
+			if ((slotInstructorsMap[slotInstructorSlotId] ?? []).some((i) => i.user_id === s.id))
+				return false;
+			if (
+				slotInstructorSearch &&
+				!s.name.toLowerCase().includes(slotInstructorSearch.toLowerCase())
+			)
+				return false;
 			return true;
 		})
 	);
 
 	function toggleSlotInstructor(id: string) {
 		slotInstructorSelectedIds = slotInstructorSelectedIds.includes(id)
-			? slotInstructorSelectedIds.filter((x) => x !== id) : [...slotInstructorSelectedIds, id];
+			? slotInstructorSelectedIds.filter((x) => x !== id)
+			: [...slotInstructorSelectedIds, id];
 	}
 
 	async function handleAddSlotInstructorsBatch() {
-		if (!slotInstructorSelectedIds.length) { toast.error('กรุณาเลือกครู'); return; }
+		if (!slotInstructorSelectedIds.length) {
+			toast.error('กรุณาเลือกครู');
+			return;
+		}
 		addingSlotInstructors = true;
 		try {
 			for (const userId of slotInstructorSelectedIds) {
 				await addSlotInstructor(slotInstructorSlotId, userId);
 			}
 			toast.success(`เพิ่มครู ${slotInstructorSelectedIds.length} คนแล้ว`);
-			slotInstructorsMap[slotInstructorSlotId] = (await listSlotInstructors(slotInstructorSlotId)).data ?? [];
+			slotInstructorsMap[slotInstructorSlotId] =
+				(await listSlotInstructors(slotInstructorSlotId)).data ?? [];
 			slotInstructorsMap = { ...slotInstructorsMap };
 			showSlotInstructorDialog = false;
-		} catch { toast.error('เกิดข้อผิดพลาด'); }
-		finally { addingSlotInstructors = false; }
+		} catch {
+			toast.error('เกิดข้อผิดพลาด');
+		} finally {
+			addingSlotInstructors = false;
+		}
 	}
 </script>
 
@@ -540,7 +587,7 @@
 		<Select.Root type="single" bind:value={filterYearId}>
 			<Select.Trigger class="w-52">{currentYearName}</Select.Trigger>
 			<Select.Content>
-				{#each structure.years as y}
+				{#each structure.years as y (y.id)}
 					<Select.Item value={y.id}>{y.name}</Select.Item>
 				{/each}
 			</Select.Content>
@@ -549,7 +596,7 @@
 		<Select.Root type="single" bind:value={filterSemesterId}>
 			<Select.Trigger class="w-48">{currentSemesterName}</Select.Trigger>
 			<Select.Content>
-				{#each yearSemesters as s}
+				{#each yearSemesters as s (s.id)}
 					<Select.Item value={s.id}>{s.name}</Select.Item>
 				{/each}
 			</Select.Content>
@@ -561,7 +608,7 @@
 			</Select.Trigger>
 			<Select.Content>
 				<Select.Item value="">ทุกประเภท</Select.Item>
-				{#each Object.entries(ACTIVITY_TYPE_LABELS) as [val, label]}
+				{#each Object.entries(ACTIVITY_TYPE_LABELS) as [val, label] (val)}
 					<Select.Item value={val}>{label}</Select.Item>
 				{/each}
 			</Select.Content>
@@ -575,32 +622,45 @@
 		<p class="text-muted-foreground text-sm">ไม่พบช่องกิจกรรม</p>
 	{:else}
 		<div class="space-y-3">
-			{#each filteredSlots as slot}
+			{#each filteredSlots as slot (slot.id)}
 				{@const slotGroups = groupsForSlot(slot.id)}
 				{@const expanded = expandedSlots.has(slot.id)}
 				<div class="rounded-lg border bg-card">
 					<!-- Slot Header -->
-					<button type="button" class="w-full flex items-center gap-3 p-4 text-left hover:bg-accent/50 transition-colors" onclick={() => toggleSlot(slot.id)}>
-						{#if expanded}<ChevronDown class="h-4 w-4 shrink-0" />{:else}<ChevronRight class="h-4 w-4 shrink-0" />{/if}
+					<button
+						type="button"
+						class="w-full flex items-center gap-3 p-4 text-left hover:bg-accent/50 transition-colors"
+						onclick={() => toggleSlot(slot.id)}
+					>
+						{#if expanded}<ChevronDown class="h-4 w-4 shrink-0" />{:else}<ChevronRight
+								class="h-4 w-4 shrink-0"
+							/>{/if}
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-2 flex-wrap">
 								<span class="font-semibold">{slot.name}</span>
-								<Badge variant="secondary">{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge>
+								<Badge variant="secondary"
+									>{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge
+								>
 								{#if slot.activity_catalog_id}
 									<Badge variant="outline" class="text-[10px] border-blue-300 text-blue-700">
 										📎 จากคลังกิจกรรม
 									</Badge>
 								{/if}
-								<span class="text-sm text-muted-foreground" title={classroomListDisplay(slot.classroom_ids)}>
+								<span
+									class="text-sm text-muted-foreground"
+									title={classroomListDisplay(slot.classroom_ids)}
+								>
 									{classroomGradesDisplay(slot.classroom_ids)}
 								</span>
 							</div>
 							<div class="text-sm text-muted-foreground mt-0.5">
-								{slotGroups.length} กิจกรรม
-								· {(slotInstructorsMap[slot.id] ?? []).length} ครู
-								· {slot.registration_type === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}
-								· {slot.periods_per_week} คาบ/สัปดาห์
-								· {slot.scheduling_mode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
+								{slotGroups.length} กิจกรรม · {(slotInstructorsMap[slot.id] ?? []).length} ครู · {slot.registration_type ===
+								'self'
+									? 'นักเรียนเลือกเอง'
+									: 'ครู/admin จัดสรร'}
+								· {slot.periods_per_week} คาบ/สัปดาห์ · {slot.scheduling_mode === 'independent'
+									? 'แต่ละห้องจัดเอง'
+									: 'จัดพร้อมกันทุกห้อง'}
 							</div>
 						</div>
 						<div class="flex items-center gap-2 shrink-0">
@@ -622,11 +682,19 @@
 							{#if $can.has('activity.manage.all')}
 								<div class="flex flex-wrap gap-2 py-3">
 									{#if slot.scheduling_mode !== 'independent'}
-										<Button variant="outline" size="sm" onclick={() => handleToggleTeacherReg(slot)}>
+										<Button
+											variant="outline"
+											size="sm"
+											onclick={() => handleToggleTeacherReg(slot)}
+										>
 											{slot.teacher_reg_open ? 'ปิดลงทะเบียนครู' : 'เปิดลงทะเบียนครู'}
 										</Button>
 										{#if slot.registration_type === 'self'}
-											<Button variant="outline" size="sm" onclick={() => handleToggleStudentReg(slot)}>
+											<Button
+												variant="outline"
+												size="sm"
+												onclick={() => handleToggleStudentReg(slot)}
+											>
 												{slot.student_reg_open ? 'ปิดลงทะเบียนนักเรียน' : 'เปิดลงทะเบียนนักเรียน'}
 											</Button>
 										{/if}
@@ -635,9 +703,13 @@
 										<Settings class="mr-1 h-3 w-3" />ตั้งค่า
 									</Button>
 								</div>
-								<div class="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground mb-2">
+								<div
+									class="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground mb-2"
+								>
 									จัดการการเข้าร่วมของห้องเรียนผ่านหน้า
-									<a href="/staff/academic/planning" class="underline hover:text-primary">Course Planning</a>
+									<a href={resolve('/staff/academic/planning')} class="underline hover:text-primary"
+										>Course Planning</a
+									>
 									— slot จะถูกลบอัตโนมัติเมื่อไม่มีห้องใดเข้าร่วมแล้ว
 								</div>
 							{/if}
@@ -646,15 +718,32 @@
 							{#if $can.has('activity.manage.all') && slot.scheduling_mode !== 'independent'}
 								{@const instrList = slotInstructorsMap[slot.id] ?? []}
 								<div class="space-y-1 pb-3">
-									<Label class="text-xs font-semibold text-muted-foreground">ครูผู้สอน ({instrList.length} คน)</Label>
+									<Label class="text-xs font-semibold text-muted-foreground"
+										>ครูผู้สอน ({instrList.length} คน)</Label
+									>
 									<div class="flex flex-wrap gap-1.5">
-										{#each instrList as instr}
+										{#each instrList as instr (instr.user_id)}
 											<Badge variant="secondary" class="gap-1">
 												{instr.instructor_name ?? '—'}
-												<button type="button" class="ml-0.5 hover:text-destructive" onclick={() => handleRemoveSlotInstructor(slot.id, instr.user_id)}>×</button>
+												<button
+													type="button"
+													class="ml-0.5 hover:text-destructive"
+													onclick={() => handleRemoveSlotInstructor(slot.id, instr.user_id)}
+													>×</button
+												>
 											</Badge>
 										{/each}
-										<Button variant="outline" size="sm" class="h-6 text-xs" onclick={() => { slotInstructorSlotId = slot.id; slotInstructorSelectedIds = []; slotInstructorSearch = ''; showSlotInstructorDialog = true; }}>
+										<Button
+											variant="outline"
+											size="sm"
+											class="h-6 text-xs"
+											onclick={() => {
+												slotInstructorSlotId = slot.id;
+												slotInstructorSelectedIds = [];
+												slotInstructorSearch = '';
+												showSlotInstructorDialog = true;
+											}}
+										>
 											<Plus class="h-3 w-3 mr-1" />เพิ่มครู
 										</Button>
 									</div>
@@ -671,7 +760,9 @@
 									(slot.classroom_ids ?? []).includes(c.id)
 								)}
 								<div class="space-y-2 pb-3">
-									<Label class="text-xs font-semibold text-muted-foreground">ครูประจำห้อง ({assignments.length}/{slotClassrooms.length} ห้อง)</Label>
+									<Label class="text-xs font-semibold text-muted-foreground"
+										>ครูประจำห้อง ({assignments.length}/{slotClassrooms.length} ห้อง)</Label
+									>
 									<div class="border rounded-lg overflow-hidden">
 										<table class="w-full text-sm">
 											<thead>
@@ -681,22 +772,26 @@
 												</tr>
 											</thead>
 											<tbody>
-												{#each slotClassrooms as classroom}
-													{@const existing = assignments.find((a) => a.classroom_id === classroom.id)}
+												{#each slotClassrooms as classroom (classroom.id)}
+													{@const existing = assignments.find(
+														(a) => a.classroom_id === classroom.id
+													)}
 													<tr class="border-t hover:bg-accent/30">
 														<td class="px-3 py-1.5 text-xs">{classroom.name}</td>
 														<td class="px-3 py-1">
-															<Select.Root type="single"
+															<Select.Root
+																type="single"
 																value={existing?.instructor_id ?? ''}
 																onValueChange={(val) => {
-																	if (val) handleAssignClassroomInstructor(slot.id, classroom.id, val);
+																	if (val)
+																		handleAssignClassroomInstructor(slot.id, classroom.id, val);
 																}}
 															>
 																<Select.Trigger class="h-7 text-xs w-full max-w-[200px]">
 																	{existing?.instructor_name ?? 'เลือกครู'}
 																</Select.Trigger>
 																<Select.Content class="max-h-[200px] overflow-y-auto">
-																	{#each staffList as staff}
+																	{#each staffList as staff (staff.id)}
 																		<Select.Item value={staff.id}>{staff.name}</Select.Item>
 																	{/each}
 																</Select.Content>
@@ -712,14 +807,16 @@
 
 							{#if slot.scheduling_mode === 'independent'}
 								<!-- Independent: ไม่ต้องสร้างกลุ่ม -->
-								<p class="text-sm text-muted-foreground py-2">กิจกรรมแบบอิสระ — เรียนตามห้อง ไม่ต้องสร้างกลุ่ม</p>
+								<p class="text-sm text-muted-foreground py-2">
+									กิจกรรมแบบอิสระ — เรียนตามห้อง ไม่ต้องสร้างกลุ่ม
+								</p>
 							{:else}
 								<!-- Groups List -->
 								{#if slotGroups.length === 0}
 									<p class="text-sm text-muted-foreground py-2">ยังไม่มีกิจกรรมในช่องนี้</p>
 								{:else}
 									<div class="divide-y rounded border">
-										{#each slotGroups as g}
+										{#each slotGroups as g (g.id)}
 											<div class="flex items-center gap-3 px-3 py-2">
 												<div class="flex-1 min-w-0">
 													<div class="font-medium text-sm">{g.name}</div>
@@ -732,16 +829,30 @@
 													</div>
 												</div>
 												<div class="flex gap-1 shrink-0">
-													<Button variant="ghost" size="icon" title="จัดการสมาชิก" onclick={() => goto(`/staff/academic/activities/${g.id}`)}>
+													<Button
+														variant="ghost"
+														size="icon"
+														title="จัดการสมาชิก"
+														onclick={() => goToActivityGroup(String(g.id))}
+													>
 														<UserCog class="h-4 w-4" />
 													</Button>
 													{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
-														<Button variant="ghost" size="icon" title="แก้ไข" onclick={() => openEditGroup(g)}>
+														<Button
+															variant="ghost"
+															size="icon"
+															title="แก้ไข"
+															onclick={() => openEditGroup(g)}
+														>
 															<Pencil class="h-3 w-3" />
 														</Button>
 													{/if}
 													{#if $can.has('activity.manage.all')}
-														<Button variant="ghost" size="icon" onclick={() => confirmDeleteGroup(g)}>
+														<Button
+															variant="ghost"
+															size="icon"
+															onclick={() => confirmDeleteGroup(g)}
+														>
 															<Trash2 class="h-3 w-3 text-destructive" />
 														</Button>
 													{/if}
@@ -753,7 +864,12 @@
 
 								<!-- Add Group Button -->
 								{#if $can.has('activity.manage.all') || ($can.has('activity.manage.own') && slot.teacher_reg_open)}
-									<Button variant="outline" size="sm" class="mt-3" onclick={() => openCreateGroup(slot.id)}>
+									<Button
+										variant="outline"
+										size="sm"
+										class="mt-3"
+										onclick={() => openCreateGroup(slot.id)}
+									>
 										<Plus class="mr-1 h-3 w-3" />สร้างกิจกรรม
 									</Button>
 								{/if}
@@ -775,7 +891,9 @@
 
 		<div class="rounded-md border bg-muted/50 px-3 py-2 text-xs">
 			📎 ช่องนี้สร้างจากคลังกิจกรรม — <b>ชื่อ / ประเภท / คาบ / โหมด / ระดับชั้น</b> แก้ที่
-			<a href="/staff/academic/subjects" class="underline hover:text-primary">คลังรายวิชา → tab กิจกรรม</a>
+			<a href={resolve('/staff/academic/subjects')} class="underline hover:text-primary"
+				>คลังรายวิชา → tab กิจกรรม</a
+			>
 		</div>
 
 		<div class="space-y-3 py-2">
@@ -783,7 +901,9 @@
 			<div class="rounded-md border p-3 space-y-2 bg-background">
 				<div class="flex items-center gap-2 text-sm">
 					<span class="font-semibold">{slotName}</span>
-					<Badge variant="secondary">{ACTIVITY_TYPE_LABELS[slotActivityType] ?? slotActivityType}</Badge>
+					<Badge variant="secondary"
+						>{ACTIVITY_TYPE_LABELS[slotActivityType] ?? slotActivityType}</Badge
+					>
 				</div>
 				<div class="text-xs text-muted-foreground space-y-1">
 					<div>
@@ -791,7 +911,8 @@
 						{gradeLevelDisplay(slotAllowedGradeLevelIds)}
 					</div>
 					<div>
-						<span class="text-foreground">คาบ/สัปดาห์:</span> {slotPeriodsPerWeek}
+						<span class="text-foreground">คาบ/สัปดาห์:</span>
+						{slotPeriodsPerWeek}
 						· <span class="text-foreground">โหมด:</span>
 						{slotSchedulingMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
 					</div>
@@ -806,7 +927,11 @@
 				<div class="space-y-1">
 					<Label>การรับสมาชิก</Label>
 					<Select.Root type="single" bind:value={slotRegistrationType}>
-						<Select.Trigger class="w-full">{slotRegistrationType === 'self' ? 'นักเรียนเลือกเอง' : 'ครู/admin จัดสรร'}</Select.Trigger>
+						<Select.Trigger class="w-full"
+							>{slotRegistrationType === 'self'
+								? 'นักเรียนเลือกเอง'
+								: 'ครู/admin จัดสรร'}</Select.Trigger
+						>
 						<Select.Content>
 							<Select.Item value="assigned">ครู/admin จัดสรร</Select.Item>
 							<Select.Item value="self">นักเรียนเลือกเอง</Select.Item>
@@ -816,8 +941,15 @@
 			{/if}
 		</div>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => { showSlotDialog = false; }}>ยกเลิก</Button>
-			<Button onclick={handleSaveSlot} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</Button>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showSlotDialog = false;
+				}}>ยกเลิก</Button
+			>
+			<Button onclick={handleSaveSlot} disabled={saving}
+				>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</Button
+			>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -837,11 +969,13 @@
 				<Label>ครูผู้ดูแล (หลัก)</Label>
 				<Select.Root type="single" bind:value={groupInstructorId}>
 					<Select.Trigger class="w-full">
-						{groupInstructorId ? staffList.find((s) => s.id === groupInstructorId)?.name ?? 'เลือก...' : 'ไม่ระบุ'}
+						{groupInstructorId
+							? (staffList.find((s) => s.id === groupInstructorId)?.name ?? 'เลือก...')
+							: 'ไม่ระบุ'}
 					</Select.Trigger>
 					<Select.Content class="max-h-56 overflow-y-auto">
 						<Select.Item value="">ไม่ระบุ</Select.Item>
-						{#each staffList as s}<Select.Item value={s.id}>{s.name}</Select.Item>{/each}
+						{#each staffList as s (s.id)}<Select.Item value={s.id}>{s.name}</Select.Item>{/each}
 					</Select.Content>
 				</Select.Root>
 				<p class="text-xs text-muted-foreground">ครูผู้ช่วยเพิ่มได้ในหน้าจัดการสมาชิก</p>
@@ -858,7 +992,7 @@
 					</p>
 				{:else}
 					<div class="max-h-[240px] overflow-y-auto rounded border divide-y">
-						{#each groupGradesInSlot as gradeId}
+						{#each groupGradesInSlot as gradeId (gradeId)}
 							{@const grade = structure.levels.find((g) => g.id === gradeId)}
 							{@const roomsOfGrade = classrooms
 								.filter((c) => c.grade_level_id === gradeId && groupSlotClassroomIds.includes(c.id))
@@ -875,7 +1009,13 @@
 									class="flex items-center gap-2 w-full text-left text-sm font-medium hover:bg-accent/50 rounded px-1 py-0.5"
 									onclick={() => toggleGroupGradeAll(gradeId, groupSlotClassroomIds)}
 								>
-									<div class="flex h-4 w-4 items-center justify-center rounded border {allSelected ? 'bg-primary border-primary' : someSelected ? 'bg-primary/40 border-primary' : 'border-input'}">
+									<div
+										class="flex h-4 w-4 items-center justify-center rounded border {allSelected
+											? 'bg-primary border-primary'
+											: someSelected
+												? 'bg-primary/40 border-primary'
+												: 'border-input'}"
+									>
 										{#if allSelected}
 											<span class="text-primary-foreground text-xs leading-none">✓</span>
 										{:else if someSelected}
@@ -888,11 +1028,13 @@
 									</span>
 								</button>
 								<div class="pl-6 mt-1 flex flex-wrap gap-1.5">
-									{#each roomsOfGrade as room}
+									{#each roomsOfGrade as room (room.id)}
 										{@const selected = groupAllowedClassroomIds.includes(room.id)}
 										<button
 											type="button"
-											class="rounded border px-2 py-0.5 text-xs transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
+											class="rounded border px-2 py-0.5 text-xs transition-colors {selected
+												? 'bg-primary text-primary-foreground border-primary'
+												: 'bg-background hover:bg-accent border-input'}"
 											onclick={() => toggleGroupClassroom(room.id)}
 										>
 											{room.name}
@@ -913,8 +1055,15 @@
 			</div>
 		</div>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => { showGroupDialog = false; }}>ยกเลิก</Button>
-			<Button onclick={handleSaveGroup} disabled={saving}>{saving ? 'กำลังบันทึก...' : isGroupEdit ? 'บันทึก' : 'สร้าง'}</Button>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showGroupDialog = false;
+				}}>ยกเลิก</Button
+			>
+			<Button onclick={handleSaveGroup} disabled={saving}
+				>{saving ? 'กำลังบันทึก...' : isGroupEdit ? 'บันทึก' : 'สร้าง'}</Button
+			>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -924,17 +1073,28 @@
 	<Dialog.Content class="max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>เพิ่มครูผู้สอน</Dialog.Title>
-			<Dialog.Description>เลือกครูที่จะสอนในช่องกิจกรรมนี้{#if slotInstructorSelectedIds.length > 0} · เลือก {slotInstructorSelectedIds.length} คน{/if}</Dialog.Description>
+			<Dialog.Description
+				>เลือกครูที่จะสอนในช่องกิจกรรมนี้{#if slotInstructorSelectedIds.length > 0}
+					· เลือก {slotInstructorSelectedIds.length} คน{/if}</Dialog.Description
+			>
 		</Dialog.Header>
 		<div class="space-y-3 py-2">
 			<div class="relative">
 				<Input class="pl-8" placeholder="ค้นหาครู..." bind:value={slotInstructorSearch} />
 			</div>
 			<div class="max-h-64 overflow-y-auto divide-y rounded border">
-				{#each slotInstructorCandidates as s}
+				{#each slotInstructorCandidates as s (s.id)}
 					{@const checked = slotInstructorSelectedIds.includes(s.id)}
-					<button type="button" class="flex w-full items-center gap-3 px-3 py-2 text-sm hover:bg-accent text-left" onclick={() => toggleSlotInstructor(s.id)}>
-						<div class="flex h-4 w-4 items-center justify-center rounded border {checked ? 'bg-primary border-primary' : 'border-input'}">
+					<button
+						type="button"
+						class="flex w-full items-center gap-3 px-3 py-2 text-sm hover:bg-accent text-left"
+						onclick={() => toggleSlotInstructor(s.id)}
+					>
+						<div
+							class="flex h-4 w-4 items-center justify-center rounded border {checked
+								? 'bg-primary border-primary'
+								: 'border-input'}"
+						>
 							{#if checked}<span class="text-primary-foreground text-xs">✓</span>{/if}
 						</div>
 						<span>{s.name}</span>
@@ -945,8 +1105,16 @@
 			</div>
 		</div>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => { showSlotInstructorDialog = false; }}>ยกเลิก</Button>
-			<Button onclick={handleAddSlotInstructorsBatch} disabled={addingSlotInstructors || !slotInstructorSelectedIds.length}>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showSlotInstructorDialog = false;
+				}}>ยกเลิก</Button
+			>
+			<Button
+				onclick={handleAddSlotInstructorsBatch}
+				disabled={addingSlotInstructors || !slotInstructorSelectedIds.length}
+			>
 				{addingSlotInstructors ? 'กำลังเพิ่ม...' : `เพิ่ม ${slotInstructorSelectedIds.length} คน`}
 			</Button>
 		</Dialog.Footer>
@@ -959,16 +1127,22 @@
 		<Dialog.Header>
 			<Dialog.Title>ยืนยันการลบ</Dialog.Title>
 			<Dialog.Description>
-				ลบช่อง "<strong>{deleteSlotTarget?.name}</strong>"
-				รวมถึงกิจกรรม สมาชิก และรายการในตารางสอนทั้งหมด?
+				ลบช่อง "<strong>{deleteSlotTarget?.name}</strong>" รวมถึงกิจกรรม สมาชิก
+				และรายการในตารางสอนทั้งหมด?
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="rounded-md border bg-amber-50 text-amber-900 px-3 py-2 text-xs">
-			⚠️ ช่องนี้มาจากคลังกิจกรรมในหลักสูตร — หากลบแล้วกด "สร้างอัตโนมัติ" ที่หน้า planning ก็จะถูกสร้างกลับมา
+			⚠️ ช่องนี้มาจากคลังกิจกรรมในหลักสูตร — หากลบแล้วกด "สร้างอัตโนมัติ" ที่หน้า planning
+			ก็จะถูกสร้างกลับมา
 			<br />หากต้องการปิดแค่ภาคเรียนนี้ โปรดถอนออกจากหลักสูตรแทน
 		</div>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => { showDeleteSlotDialog = false; }}>ยกเลิก</Button>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showDeleteSlotDialog = false;
+				}}>ยกเลิก</Button
+			>
 			<Button variant="destructive" onclick={handleDeleteSlot}>ลบต่อไป</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
@@ -979,10 +1153,17 @@
 	<Dialog.Content class="max-w-sm">
 		<Dialog.Header>
 			<Dialog.Title>ยืนยันการลบ</Dialog.Title>
-			<Dialog.Description>ลบกิจกรรม "<strong>{deleteGroupTarget?.name}</strong>"?</Dialog.Description>
+			<Dialog.Description
+				>ลบกิจกรรม "<strong>{deleteGroupTarget?.name}</strong>"?</Dialog.Description
+			>
 		</Dialog.Header>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => { showDeleteGroupDialog = false; }}>ยกเลิก</Button>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showDeleteGroupDialog = false;
+				}}>ยกเลิก</Button
+			>
 			<Button variant="destructive" onclick={handleDeleteGroup}>ลบ</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
@@ -994,8 +1175,7 @@
 		<Dialog.Header>
 			<Dialog.Title>Generate กิจกรรมจากหลักสูตร</Dialog.Title>
 			<Dialog.Description>
-				สร้าง activity slots ตามแม่แบบในหลักสูตรสำหรับภาคเรียนที่เลือก
-				(ข้ามกิจกรรมที่มีอยู่แล้ว)
+				สร้าง activity slots ตามแม่แบบในหลักสูตรสำหรับภาคเรียนที่เลือก (ข้ามกิจกรรมที่มีอยู่แล้ว)
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -1007,7 +1187,7 @@
 						{planVersions.find((v) => v.id === generateVersionId)?.version_name ?? 'เลือกหลักสูตร'}
 					</Select.Trigger>
 					<Select.Content>
-						{#each planVersions as v}
+						{#each planVersions as v (v.id)}
 							<Select.Item value={v.id}>{v.version_name}</Select.Item>
 						{/each}
 					</Select.Content>
@@ -1016,7 +1196,12 @@
 		</div>
 
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => { showGenerateDialog = false; }}>ยกเลิก</Button>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showGenerateDialog = false;
+				}}>ยกเลิก</Button
+			>
 			<Button onclick={handleGenerate} disabled={generating || !generateVersionId}>
 				{generating ? 'กำลังสร้าง...' : 'Generate'}
 			</Button>
@@ -1038,7 +1223,12 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => { showSwitchModeDialog = false; }}>ยกเลิก</Button>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showSwitchModeDialog = false;
+				}}>ยกเลิก</Button
+			>
 			<Button variant="destructive" onclick={confirmSwitchToIndependent}>ลบและเปลี่ยน</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

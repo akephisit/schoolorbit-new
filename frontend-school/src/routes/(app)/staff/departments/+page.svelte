@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { listDepartments, updateDepartment } from '$lib/api/staff';
 	import type { Department } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
@@ -95,6 +97,11 @@
 		showDialog = true;
 	}
 
+	function goToDept(id: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
+		goto(resolve(`/staff/departments/${id}` as any));
+	}
+
 	function handlePermission(dept: Department) {
 		permissionDepartment = dept;
 		showPermissionDialog = true;
@@ -109,7 +116,7 @@
 		e.dataTransfer.setData('text/plain', deptId);
 	}
 
-	function handleDragEnd(_e: DragEvent) {
+	function handleDragEnd() {
 		draggedDeptId = null;
 		dragOverDeptId = null;
 	}
@@ -123,10 +130,6 @@
 		if (draggedDeptId === deptId) return;
 
 		dragOverDeptId = deptId;
-	}
-
-	function handleDragLeave(_e: DragEvent) {
-		// e.stopPropagation();
 	}
 
 	async function handleDrop(e: DragEvent, targetParentId: string | null) {
@@ -163,8 +166,10 @@
 			} else {
 				toast.error('ย้ายฝ่ายไม่สำเร็จ: ' + result.error, { id: loadingToast });
 			}
-		} catch (err: any) {
-			toast.error('เกิดข้อผิดพลาด: ' + err.message, { id: loadingToast });
+		} catch (err: unknown) {
+			toast.error('เกิดข้อผิดพลาด: ' + (err instanceof Error ? err.message : String(err)), {
+				id: loadingToast
+			});
 		}
 	}
 
@@ -273,7 +278,9 @@
 									<Briefcase class="w-5 h-5 text-blue-500" />
 								{/if}
 								<h3 class="font-bold text-lg text-foreground">
-									<a href="/staff/departments/{root.id}" class="hover:underline">{root.name}</a>
+									<button onclick={() => goToDept(root.id)} class="hover:underline cursor-pointer"
+										>{root.name}</button
+									>
 								</h3>
 							</div>
 							{#if root.name_en}<p class="text-xs text-muted-foreground ml-7">
@@ -318,8 +325,9 @@
 										></div>
 										<div class="flex flex-col truncate">
 											<span class="font-medium truncate text-sm">
-												<a href="/staff/departments/{dept.id}" class="hover:underline"
-													>{dept.name}</a
+												<button
+													onclick={() => goToDept(dept.id)}
+													class="hover:underline cursor-pointer">{dept.name}</button
 												>
 											</span>
 											<span class="text-[10px] text-muted-foreground flex gap-2">

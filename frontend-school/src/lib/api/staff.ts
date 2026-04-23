@@ -609,7 +609,9 @@ export async function listDelegatablePermissions(
 	return response.json();
 }
 
-export async function listDelegations(departmentId: string): Promise<ApiResponse<DelegationItem[]>> {
+export async function listDelegations(
+	departmentId: string
+): Promise<ApiResponse<DelegationItem[]>> {
 	const response = await fetch(`${API_BASE_URL}/api/departments/${departmentId}/delegations`, {
 		method: 'GET',
 		credentials: 'include',
@@ -710,10 +712,7 @@ export async function updateDeptMember(
 	return response.json();
 }
 
-export async function removeDeptMember(
-	deptId: string,
-	userId: string
-): Promise<ApiResponse<void>> {
+export async function removeDeptMember(deptId: string, userId: string): Promise<ApiResponse<void>> {
 	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members/${userId}`, {
 		method: 'DELETE',
 		credentials: 'include',

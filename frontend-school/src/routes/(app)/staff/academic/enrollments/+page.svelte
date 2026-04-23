@@ -9,7 +9,6 @@
 		getEnrollments,
 		enrollStudents,
 		removeEnrollment,
-		updateEnrollmentNumber,
 		autoAssignClassNumbers,
 		type AcademicStructureData,
 		type Classroom,
@@ -34,7 +33,6 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
-	let loading = $state(true);
 	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
 	let classrooms = $state<Classroom[]>([]);
 
@@ -80,8 +78,6 @@
 		} catch (error) {
 			console.error(error);
 			toast.error('ไม่สามารถโหลดข้อมูลโครงสร้างได้');
-		} finally {
-			loading = false;
 		}
 	}
 
@@ -203,25 +199,6 @@
 		}
 	}
 
-	async function handleClassNumberChange(enrollmentId: string, value: string) {
-		try {
-			const classNumber = value.trim() === '' ? null : parseInt(value);
-			await updateEnrollmentNumber(enrollmentId, classNumber);
-			// Optionally show success toast - but might be too noisy for rapid entry
-			// toast.success('อัปเดตเลขที่เรียบร้อย');
-
-			// Update local state
-			enrollments = enrollments.map((e) =>
-				e.id === enrollmentId ? { ...e, class_number: classNumber } : e
-			);
-		} catch (error) {
-			console.error(error);
-			toast.error('ไม่สามารถอัปเดตเลขที่ได้');
-			// Revert on error by re-fetching
-			await fetchEnrollments();
-		}
-	}
-
 	function openAutoNumberDialog() {
 		showAutoNumberDialog = true;
 		selectedSortMethod = 'student_code';
@@ -277,7 +254,7 @@
 							{/if}
 						</Select.Trigger>
 						<Select.Content>
-							{#each structure.years as year}
+							{#each structure.years as year (year.id)}
 								<Select.Item value={year.id}
 									>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</Select.Item
 								>
@@ -299,7 +276,7 @@
 								: 'เลือกห้องเรียน'}
 						</Select.Trigger>
 						<Select.Content>
-							{#each classrooms as room}
+							{#each classrooms as room (room.id)}
 								<Select.Item value={room.id}>{room.grade_level_name} - {room.name}</Select.Item>
 							{/each}
 						</Select.Content>
@@ -357,7 +334,7 @@
 						</Table.Row>
 					</Table.Header>
 					<Table.Body>
-						{#each enrollments as item, i}
+						{#each enrollments as item, i (item.id)}
 							<Table.Row>
 								<Table.Cell>{i + 1}</Table.Cell>
 								<Table.Cell class="font-mono font-medium text-center">
@@ -435,7 +412,7 @@
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
-							{#each studentCandidates as student}
+							{#each studentCandidates as student (student.id)}
 								{#if !student.class_room}
 									<Table.Row
 										class="cursor-pointer hover:bg-muted/50"

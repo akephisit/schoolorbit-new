@@ -31,7 +31,19 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, GraduationCap, Trophy, Check, CheckCircle2, LoaderCircle, RotateCcw, Trash2, GripVertical, Layers, Columns2 } from 'lucide-svelte';
+	import {
+		ArrowLeft,
+		GraduationCap,
+		Trophy,
+		Check,
+		CheckCircle2,
+		LoaderCircle,
+		RotateCcw,
+		Trash2,
+		GripVertical,
+		Layers,
+		Columns2
+	} from 'lucide-svelte';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -89,7 +101,9 @@
 		const rooms = globalRanking?.rooms ?? [];
 		if (roomOrderForGlobal.length === 0) return rooms;
 		const orderMap = new Map(roomOrderForGlobal.map((r, i) => [r.roomId, i]));
-		return [...rooms].sort((a, b) => (orderMap.get(a.roomId) ?? 999) - (orderMap.get(b.roomId) ?? 999));
+		return [...rooms].sort(
+			(a, b) => (orderMap.get(a.roomId) ?? 999) - (orderMap.get(b.roomId) ?? 999)
+		);
 	});
 
 	async function loadBase() {
@@ -103,7 +117,10 @@
 			selectedSubjectIdsByTrack = saved.subjectsByTrack;
 		}
 		if (saved?.methodByTrack) {
-			roomAssignmentMethodByTrack = saved.methodByTrack as Record<string, 'sequential' | 'round_robin'>;
+			roomAssignmentMethodByTrack = saved.methodByTrack as Record<
+				string,
+				'sequential' | 'round_robin'
+			>;
 		}
 		if (saved?.assignmentMode === 'global') {
 			assignmentMode = 'global';
@@ -189,7 +206,12 @@
 		let failed = 0;
 		for (const track of tracks) {
 			try {
-				await assignRooms(id, track.id, selectedSubjectIdsByTrack[track.id] ?? subjects.map((s) => s.id), roomAssignmentMethodByTrack[track.id] ?? 'sequential');
+				await assignRooms(
+					id,
+					track.id,
+					selectedSubjectIdsByTrack[track.id] ?? subjects.map((s) => s.id),
+					roomAssignmentMethodByTrack[track.id] ?? 'sequential'
+				);
 				assignAllProgress = { ...assignAllProgress, done: assignAllProgress.done + 1 };
 			} catch {
 				failed++;
@@ -210,7 +232,11 @@
 		if (!id) return;
 		assigningGlobal = true;
 		try {
-			await assignRoomsGlobal(id, 'sequential', roomOrderForGlobal.map((r) => r.roomId));
+			await assignRoomsGlobal(
+				id,
+				'sequential',
+				roomOrderForGlobal.map((r) => r.roomId)
+			);
 			toast.success('จัดห้องรวมทุกสายสำเร็จ!');
 			assigned = false;
 			globalViewTab = 'all';
@@ -281,7 +307,11 @@
 			// อัปเดต assignedRoomId ของคนที่ย้าย
 			const appsAfterMove = globalRanking.applications.map((a) =>
 				a.applicationId === appId
-					? { ...a, assignedRoomId: targetRoomId, assignedRoom: targetRoom?.roomName ?? targetRoomId }
+					? {
+							...a,
+							assignedRoomId: targetRoomId,
+							assignedRoom: targetRoom?.roomName ?? targetRoomId
+						}
 					: a
 			);
 			// recalculate rankInRoom สำหรับห้องเก่าและห้องใหม่
@@ -293,18 +323,20 @@
 				return { ...a, rankInRoom: roomRankCounters[a.assignedRoomId] };
 			});
 			const rooms = globalRanking.rooms.map((r) => {
-				if (r.roomId === oldRoomId) return {
-					...r,
-					studentCount: Math.max(0, r.studentCount - 1),
-					maleCount: isMale ? Math.max(0, r.maleCount - 1) : r.maleCount,
-					femaleCount: isFemale ? Math.max(0, r.femaleCount - 1) : r.femaleCount,
-				};
-				if (r.roomId === targetRoomId) return {
-					...r,
-					studentCount: r.studentCount + 1,
-					maleCount: isMale ? r.maleCount + 1 : r.maleCount,
-					femaleCount: isFemale ? r.femaleCount + 1 : r.femaleCount,
-				};
+				if (r.roomId === oldRoomId)
+					return {
+						...r,
+						studentCount: Math.max(0, r.studentCount - 1),
+						maleCount: isMale ? Math.max(0, r.maleCount - 1) : r.maleCount,
+						femaleCount: isFemale ? Math.max(0, r.femaleCount - 1) : r.femaleCount
+					};
+				if (r.roomId === targetRoomId)
+					return {
+						...r,
+						studentCount: r.studentCount + 1,
+						maleCount: isMale ? r.maleCount + 1 : r.maleCount,
+						femaleCount: isFemale ? r.femaleCount + 1 : r.femaleCount
+					};
 				return r;
 			});
 			globalRanking = { ...globalRanking, applications: apps, rooms };
@@ -349,22 +381,28 @@
 			const targetRoom = ranking.rooms.find((r) => r.roomId === targetRoomId);
 			const apps = ranking.applications.map((a) =>
 				a.applicationId === appId
-					? { ...a, assignedRoomId: targetRoomId, assignedRoom: targetRoom?.roomName ?? targetRoomId }
+					? {
+							...a,
+							assignedRoomId: targetRoomId,
+							assignedRoom: targetRoom?.roomName ?? targetRoomId
+						}
 					: a
 			);
 			const rooms = ranking.rooms.map((r) => {
-				if (r.roomId === oldRoomId) return {
-					...r,
-					studentCount: Math.max(0, r.studentCount - 1),
-					maleCount: isMale ? Math.max(0, r.maleCount - 1) : r.maleCount,
-					femaleCount: isFemale ? Math.max(0, r.femaleCount - 1) : r.femaleCount,
-				};
-				if (r.roomId === targetRoomId) return {
-					...r,
-					studentCount: r.studentCount + 1,
-					maleCount: isMale ? r.maleCount + 1 : r.maleCount,
-					femaleCount: isFemale ? r.femaleCount + 1 : r.femaleCount,
-				};
+				if (r.roomId === oldRoomId)
+					return {
+						...r,
+						studentCount: Math.max(0, r.studentCount - 1),
+						maleCount: isMale ? Math.max(0, r.maleCount - 1) : r.maleCount,
+						femaleCount: isFemale ? Math.max(0, r.femaleCount - 1) : r.femaleCount
+					};
+				if (r.roomId === targetRoomId)
+					return {
+						...r,
+						studentCount: r.studentCount + 1,
+						maleCount: isMale ? r.maleCount + 1 : r.maleCount,
+						femaleCount: isFemale ? r.femaleCount + 1 : r.femaleCount
+					};
 				return r;
 			});
 			ranking = { ...ranking, applications: apps, rooms };
@@ -386,7 +424,7 @@
 			saveSettingsTimer = setTimeout(() => {
 				updateSelectionSettings(id, {
 					subjectsByTrack: capturedSubjects,
-					methodByTrack: capturedMethods,
+					methodByTrack: capturedMethods
 				}).catch(() => {});
 			}, 500);
 		}
@@ -417,7 +455,9 @@
 	<Card.Root>
 		<Card.Content class="pt-4 pb-4 space-y-3">
 			<div class="flex items-center justify-between">
-				<p class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">โหมดจัดห้อง</p>
+				<p class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+					โหมดจัดห้อง
+				</p>
 				<Button
 					variant="ghost"
 					size="sm"
@@ -436,22 +476,40 @@
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 				<button
 					onclick={() => switchMode('per_track')}
-					class="flex items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors {assignmentMode === 'per_track' ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/40'}"
+					class="flex items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors {assignmentMode ===
+					'per_track'
+						? 'border-primary bg-primary/5'
+						: 'border-border hover:border-muted-foreground/40'}"
 				>
-					<Columns2 class="w-5 h-5 mt-0.5 shrink-0 {assignmentMode === 'per_track' ? 'text-primary' : 'text-muted-foreground'}" />
+					<Columns2
+						class="w-5 h-5 mt-0.5 shrink-0 {assignmentMode === 'per_track'
+							? 'text-primary'
+							: 'text-muted-foreground'}"
+					/>
 					<div>
 						<p class="font-semibold text-sm">แยกตามสาย</p>
-						<p class="text-xs text-muted-foreground mt-0.5">แต่ละสายคัดเลือกและจัดห้องเองแยกกัน ใช้วิชาและเกณฑ์ของแต่ละสาย</p>
+						<p class="text-xs text-muted-foreground mt-0.5">
+							แต่ละสายคัดเลือกและจัดห้องเองแยกกัน ใช้วิชาและเกณฑ์ของแต่ละสาย
+						</p>
 					</div>
 				</button>
 				<button
 					onclick={() => switchMode('global')}
-					class="flex items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors {assignmentMode === 'global' ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/40'}"
+					class="flex items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors {assignmentMode ===
+					'global'
+						? 'border-primary bg-primary/5'
+						: 'border-border hover:border-muted-foreground/40'}"
 				>
-					<Layers class="w-5 h-5 mt-0.5 shrink-0 {assignmentMode === 'global' ? 'text-primary' : 'text-muted-foreground'}" />
+					<Layers
+						class="w-5 h-5 mt-0.5 shrink-0 {assignmentMode === 'global'
+							? 'text-primary'
+							: 'text-muted-foreground'}"
+					/>
 					<div>
 						<p class="font-semibold text-sm">รวมทุกคน</p>
-						<p class="text-xs text-muted-foreground mt-0.5">นำคะแนนทุกคนทุกสายมาเรียงรวมกัน แล้วจัดลงห้องทั้งหมดโดยไม่แยกสาย</p>
+						<p class="text-xs text-muted-foreground mt-0.5">
+							นำคะแนนทุกคนทุกสายมาเรียงรวมกัน แล้วจัดลงห้องทั้งหมดโดยไม่แยกสาย
+						</p>
 					</div>
 				</button>
 			</div>
@@ -469,12 +527,18 @@
 						<Button
 							variant={selectedTrack === track.id ? 'default' : 'outline'}
 							size="sm"
-							onclick={() => { selectedTrack = track.id; }}
+							onclick={() => {
+								selectedTrack = track.id;
+							}}
 							class="gap-1.5"
 						>
 							{track.name}
 							{#if assignedTracks.has(track.id)}
-								<CheckCircle2 class="w-3.5 h-3.5 {selectedTrack === track.id ? 'text-white/80' : 'text-green-500'}" />
+								<CheckCircle2
+									class="w-3.5 h-3.5 {selectedTrack === track.id
+										? 'text-white/80'
+										: 'text-green-500'}"
+								/>
 							{/if}
 						</Button>
 					{/each}
@@ -515,9 +579,7 @@
 											selectedSubjectIdsByTrack[selectedTrack] ?? subjects.map((x) => x.id);
 										selectedSubjectIdsByTrack = {
 											...selectedSubjectIdsByTrack,
-											[selectedTrack]: v
-												? [...current, s.id]
-												: current.filter((x) => x !== s.id)
+											[selectedTrack]: v ? [...current, s.id] : current.filter((x) => x !== s.id)
 										};
 									}}
 								/>
@@ -542,7 +604,10 @@
 				<RadioGroup.Root
 					value={currentMethod}
 					onValueChange={(v) => {
-						roomAssignmentMethodByTrack = { ...roomAssignmentMethodByTrack, [selectedTrack]: v as 'sequential' | 'round_robin' };
+						roomAssignmentMethodByTrack = {
+							...roomAssignmentMethodByTrack,
+							[selectedTrack]: v as 'sequential' | 'round_robin'
+						};
 					}}
 					class="flex flex-wrap gap-4"
 				>
@@ -557,7 +622,9 @@
 						<RadioGroup.Item value="round_robin" id="method-rr-{selectedTrack}" />
 						<Label for="method-rr-{selectedTrack}" class="font-normal cursor-pointer">
 							กระจายเฉลี่ย (round-robin)
-							<span class="text-xs text-muted-foreground">(สลับห้องตามลำดับ ทุกห้องได้คนคะแนนสูง-ต่ำปนกัน)</span>
+							<span class="text-xs text-muted-foreground"
+								>(สลับห้องตามลำดับ ทุกห้องได้คนคะแนนสูง-ต่ำปนกัน)</span
+							>
 						</Label>
 					</div>
 				</RadioGroup.Root>
@@ -605,7 +672,6 @@
 						<Badge variant="secondary">{acceptedApps.length} คน</Badge>
 					</Card.Title>
 					<div class="flex gap-2">
-
 						{#if assigned}
 							<span class="flex items-center gap-1.5 text-sm text-green-600 font-medium px-2">
 								<CheckCircle2 class="w-4 h-4" /> จัดห้องแล้ว
@@ -628,160 +694,6 @@
 				</Card.Header>
 
 				<div class="overflow-x-auto">
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head class="w-16 text-center">อันดับคัด</Table.Head>
-							<Table.Head>เลขที่ใบสมัคร</Table.Head>
-							<Table.Head>ชื่อ-สกุล</Table.Head>
-							<Table.Head class="text-center">คะแนนคัด</Table.Head>
-							<Table.Head class="text-center">คะแนนรวม</Table.Head>
-							<Table.Head class="text-center">อันดับในห้อง</Table.Head>
-							<Table.Head class="text-center">ห้องที่ได้</Table.Head>
-							<Table.Head>ย้ายสาย</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#each acceptedApps as app (app.applicationId)}
-							<Table.Row class={app.isTrackOverridden ? 'bg-orange-50/50' : ''}>
-								<Table.Cell class="text-center">
-									<span
-										class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.selectionRank === 1 ? 'bg-yellow-100 text-yellow-700' : app.selectionRank <= 3 ? 'bg-gray-100 text-gray-700' : 'text-muted-foreground'}"
-									>
-										{app.selectionRank}
-									</span>
-								</Table.Cell>
-								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-								<Table.Cell class="font-medium">
-									{app.fullName}
-									{#if app.isTrackOverridden && app.originalTrackName}
-										<span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
-											ย้ายมาจาก {app.originalTrackName}
-										</span>
-									{/if}
-								</Table.Cell>
-								<Table.Cell class="text-center font-semibold text-blue-600">
-									{app.selectionScore.toFixed(1)}
-								</Table.Cell>
-								<Table.Cell class="text-center font-semibold text-primary">
-									{app.totalScore.toFixed(1)}
-								</Table.Cell>
-								<Table.Cell class="text-center">
-									{#if app.finalRank != null}
-										<span class="text-sm font-medium">{app.finalRank}</span>
-									{:else}
-										<span class="text-xs text-muted-foreground">-</span>
-									{/if}
-								</Table.Cell>
-								<Table.Cell class="text-center">
-									{#if ranking?.rooms && ranking.rooms.length > 0 && app.roomSaved}
-										<div class="flex items-center justify-center gap-1.5 flex-wrap">
-											<Badge variant="outline">{app.assignedRoom}</Badge>
-											<Select.Root
-												type="single"
-												value={moveTargetRoomId[app.applicationId] ?? ''}
-												onValueChange={(v) => {
-													moveTargetRoomId = { ...moveTargetRoomId, [app.applicationId]: v };
-												}}
-											>
-												<Select.Trigger class="h-6 text-xs w-20 px-2">
-													{ranking.rooms.find((r) => r.roomId === moveTargetRoomId[app.applicationId])?.roomName ?? 'ย้าย'}
-												</Select.Trigger>
-												<Select.Content>
-													{#each ranking.rooms.filter((r) => r.roomName !== app.assignedRoom) as room (room.roomId)}
-														<Select.Item value={room.roomId}>{room.roomName}</Select.Item>
-													{/each}
-												</Select.Content>
-											</Select.Root>
-											{#if moveTargetRoomId[app.applicationId]}
-												<Button
-													size="sm"
-													class="h-6 text-xs px-2"
-													disabled={movingRoom[app.applicationId]}
-													onclick={() => moveRoom(app.applicationId)}
-												>
-													{#if movingRoom[app.applicationId]}
-														<LoaderCircle class="w-3 h-3 animate-spin" />
-													{:else}
-														ย้าย
-													{/if}
-												</Button>
-											{/if}
-										</div>
-									{:else if app.assignedRoom}
-										<Badge variant="outline">{app.assignedRoom}</Badge>
-									{:else}
-										<span class="text-xs text-muted-foreground">ยังไม่จัดห้อง</span>
-									{/if}
-								</Table.Cell>
-								<Table.Cell>
-									<div class="flex gap-2 items-center flex-wrap">
-										{#if app.isTrackOverridden}
-											<Button
-												size="sm"
-												variant="ghost"
-												class="h-8 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 gap-1"
-												disabled={reverting[app.applicationId]}
-												onclick={() => revertTrack(app.applicationId)}
-												title="ย้อนกลับสายที่สมัคร"
-											>
-												{#if reverting[app.applicationId]}
-													<LoaderCircle class="w-3 h-3 animate-spin" />
-												{:else}
-													<RotateCcw class="w-3 h-3" />
-													ย้อนกลับ
-												{/if}
-											</Button>
-										{/if}
-										<Select.Root
-											type="single"
-											value={moveTargetTrackId[app.applicationId] ?? ''}
-											onValueChange={(v) => {
-												moveTargetTrackId = { ...moveTargetTrackId, [app.applicationId]: v };
-											}}
-										>
-											<Select.Trigger class="h-8 text-xs w-36">
-												{otherTracks.find((t) => t.id === moveTargetTrackId[app.applicationId])?.name ?? 'เลือกสาย'}
-											</Select.Trigger>
-											<Select.Content>
-												{#each otherTracks as t (t.id)}
-													<Select.Item value={t.id}>{t.name}</Select.Item>
-												{/each}
-											</Select.Content>
-										</Select.Root>
-										<Button
-											size="sm"
-											class="h-8 text-xs"
-											disabled={!moveTargetTrackId[app.applicationId] || moving[app.applicationId]}
-											onclick={() => moveToTrack(app.applicationId)}
-										>
-											{#if moving[app.applicationId]}
-												<LoaderCircle class="w-3 h-3 animate-spin" />
-											{:else}
-												ย้าย
-											{/if}
-										</Button>
-									</div>
-								</Table.Cell>
-							</Table.Row>
-						{/each}
-					</Table.Body>
-				</Table.Root>
-				</div>
-			</Card.Root>
-
-			<!-- Overflow -->
-			{#if overflowApps.length > 0}
-				<Card.Root class="border-orange-200">
-					<Card.Header class="pb-3">
-						<Card.Title class="text-orange-600">
-							เกินโควต้า ({overflowApps.length} คน)
-						</Card.Title>
-						<p class="text-xs text-muted-foreground">
-							นักเรียนกลุ่มนี้ไม่ผ่านการคัดเลือก สามารถย้ายไปสายอื่นได้
-						</p>
-					</Card.Header>
-					<div class="overflow-x-auto">
 					<Table.Root>
 						<Table.Header>
 							<Table.Row>
@@ -790,29 +702,92 @@
 								<Table.Head>ชื่อ-สกุล</Table.Head>
 								<Table.Head class="text-center">คะแนนคัด</Table.Head>
 								<Table.Head class="text-center">คะแนนรวม</Table.Head>
+								<Table.Head class="text-center">อันดับในห้อง</Table.Head>
+								<Table.Head class="text-center">ห้องที่ได้</Table.Head>
 								<Table.Head>ย้ายสาย</Table.Head>
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
-							{#each overflowApps as app (app.applicationId)}
-								<Table.Row class="bg-orange-50">
-									<Table.Cell class="text-center text-muted-foreground text-sm">
-										{app.selectionRank}
+							{#each acceptedApps as app (app.applicationId)}
+								<Table.Row class={app.isTrackOverridden ? 'bg-orange-50/50' : ''}>
+									<Table.Cell class="text-center">
+										<span
+											class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.selectionRank ===
+											1
+												? 'bg-yellow-100 text-yellow-700'
+												: app.selectionRank <= 3
+													? 'bg-gray-100 text-gray-700'
+													: 'text-muted-foreground'}"
+										>
+											{app.selectionRank}
+										</span>
 									</Table.Cell>
 									<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
 									<Table.Cell class="font-medium">
 										{app.fullName}
 										{#if app.isTrackOverridden && app.originalTrackName}
-											<span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-orange-200 px-2 py-0.5 text-xs font-medium text-orange-800">
+											<span
+												class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700"
+											>
 												ย้ายมาจาก {app.originalTrackName}
 											</span>
 										{/if}
 									</Table.Cell>
-									<Table.Cell class="text-center text-blue-600 font-semibold">
+									<Table.Cell class="text-center font-semibold text-blue-600">
 										{app.selectionScore.toFixed(1)}
 									</Table.Cell>
-									<Table.Cell class="text-center font-semibold">
+									<Table.Cell class="text-center font-semibold text-primary">
 										{app.totalScore.toFixed(1)}
+									</Table.Cell>
+									<Table.Cell class="text-center">
+										{#if app.finalRank != null}
+											<span class="text-sm font-medium">{app.finalRank}</span>
+										{:else}
+											<span class="text-xs text-muted-foreground">-</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-center">
+										{#if ranking?.rooms && ranking.rooms.length > 0 && app.roomSaved}
+											<div class="flex items-center justify-center gap-1.5 flex-wrap">
+												<Badge variant="outline">{app.assignedRoom}</Badge>
+												<Select.Root
+													type="single"
+													value={moveTargetRoomId[app.applicationId] ?? ''}
+													onValueChange={(v) => {
+														moveTargetRoomId = { ...moveTargetRoomId, [app.applicationId]: v };
+													}}
+												>
+													<Select.Trigger class="h-6 text-xs w-20 px-2">
+														{ranking.rooms.find(
+															(r) => r.roomId === moveTargetRoomId[app.applicationId]
+														)?.roomName ?? 'ย้าย'}
+													</Select.Trigger>
+													<Select.Content>
+														{#each ranking.rooms.filter((r) => r.roomName !== app.assignedRoom) as room (room.roomId)}
+															<Select.Item value={room.roomId}>{room.roomName}</Select.Item>
+														{/each}
+													</Select.Content>
+												</Select.Root>
+												{#if moveTargetRoomId[app.applicationId]}
+													<Button
+														size="sm"
+														class="h-6 text-xs px-2"
+														disabled={movingRoom[app.applicationId]}
+														onclick={() => moveRoom(app.applicationId)}
+													>
+														{#if movingRoom[app.applicationId]}
+															<LoaderCircle class="w-3 h-3 animate-spin" />
+														{:else}
+															ย้าย
+														{/if}
+													</Button>
+												{/if}
+											</div>
+										{:else if app.assignedRoom}
+											<Badge variant="outline">{app.assignedRoom}</Badge>
+										{:else}
+											<span class="text-xs text-muted-foreground">ยังไม่จัดห้อง</span>
+										{/if}
 									</Table.Cell>
 									<Table.Cell>
 										<div class="flex gap-2 items-center flex-wrap">
@@ -820,7 +795,7 @@
 												<Button
 													size="sm"
 													variant="ghost"
-													class="h-8 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-100 gap-1"
+													class="h-8 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 gap-1"
 													disabled={reverting[app.applicationId]}
 													onclick={() => revertTrack(app.applicationId)}
 													title="ย้อนกลับสายที่สมัคร"
@@ -841,7 +816,8 @@
 												}}
 											>
 												<Select.Trigger class="h-8 text-xs w-36">
-													{otherTracks.find((t) => t.id === moveTargetTrackId[app.applicationId])?.name ?? 'เลือกสาย'}
+													{otherTracks.find((t) => t.id === moveTargetTrackId[app.applicationId])
+														?.name ?? 'เลือกสาย'}
 												</Select.Trigger>
 												<Select.Content>
 													{#each otherTracks as t (t.id)}
@@ -852,7 +828,8 @@
 											<Button
 												size="sm"
 												class="h-8 text-xs"
-												disabled={!moveTargetTrackId[app.applicationId] || moving[app.applicationId]}
+												disabled={!moveTargetTrackId[app.applicationId] ||
+													moving[app.applicationId]}
 												onclick={() => moveToTrack(app.applicationId)}
 											>
 												{#if moving[app.applicationId]}
@@ -867,12 +844,117 @@
 							{/each}
 						</Table.Body>
 					</Table.Root>
+				</div>
+			</Card.Root>
+
+			<!-- Overflow -->
+			{#if overflowApps.length > 0}
+				<Card.Root class="border-orange-200">
+					<Card.Header class="pb-3">
+						<Card.Title class="text-orange-600">
+							เกินโควต้า ({overflowApps.length} คน)
+						</Card.Title>
+						<p class="text-xs text-muted-foreground">
+							นักเรียนกลุ่มนี้ไม่ผ่านการคัดเลือก สามารถย้ายไปสายอื่นได้
+						</p>
+					</Card.Header>
+					<div class="overflow-x-auto">
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head class="w-16 text-center">อันดับคัด</Table.Head>
+									<Table.Head>เลขที่ใบสมัคร</Table.Head>
+									<Table.Head>ชื่อ-สกุล</Table.Head>
+									<Table.Head class="text-center">คะแนนคัด</Table.Head>
+									<Table.Head class="text-center">คะแนนรวม</Table.Head>
+									<Table.Head>ย้ายสาย</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each overflowApps as app (app.applicationId)}
+									<Table.Row class="bg-orange-50">
+										<Table.Cell class="text-center text-muted-foreground text-sm">
+											{app.selectionRank}
+										</Table.Cell>
+										<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell
+										>
+										<Table.Cell class="font-medium">
+											{app.fullName}
+											{#if app.isTrackOverridden && app.originalTrackName}
+												<span
+													class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-orange-200 px-2 py-0.5 text-xs font-medium text-orange-800"
+												>
+													ย้ายมาจาก {app.originalTrackName}
+												</span>
+											{/if}
+										</Table.Cell>
+										<Table.Cell class="text-center text-blue-600 font-semibold">
+											{app.selectionScore.toFixed(1)}
+										</Table.Cell>
+										<Table.Cell class="text-center font-semibold">
+											{app.totalScore.toFixed(1)}
+										</Table.Cell>
+										<Table.Cell>
+											<div class="flex gap-2 items-center flex-wrap">
+												{#if app.isTrackOverridden}
+													<Button
+														size="sm"
+														variant="ghost"
+														class="h-8 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-100 gap-1"
+														disabled={reverting[app.applicationId]}
+														onclick={() => revertTrack(app.applicationId)}
+														title="ย้อนกลับสายที่สมัคร"
+													>
+														{#if reverting[app.applicationId]}
+															<LoaderCircle class="w-3 h-3 animate-spin" />
+														{:else}
+															<RotateCcw class="w-3 h-3" />
+															ย้อนกลับ
+														{/if}
+													</Button>
+												{/if}
+												<Select.Root
+													type="single"
+													value={moveTargetTrackId[app.applicationId] ?? ''}
+													onValueChange={(v) => {
+														moveTargetTrackId = { ...moveTargetTrackId, [app.applicationId]: v };
+													}}
+												>
+													<Select.Trigger class="h-8 text-xs w-36">
+														{otherTracks.find((t) => t.id === moveTargetTrackId[app.applicationId])
+															?.name ?? 'เลือกสาย'}
+													</Select.Trigger>
+													<Select.Content>
+														{#each otherTracks as t (t.id)}
+															<Select.Item value={t.id}>{t.name}</Select.Item>
+														{/each}
+													</Select.Content>
+												</Select.Root>
+												<Button
+													size="sm"
+													class="h-8 text-xs"
+													disabled={!moveTargetTrackId[app.applicationId] ||
+														moving[app.applicationId]}
+													onclick={() => moveToTrack(app.applicationId)}
+												>
+													{#if moving[app.applicationId]}
+														<LoaderCircle class="w-3 h-3 animate-spin" />
+													{:else}
+														ย้าย
+													{/if}
+												</Button>
+											</div>
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
 					</div>
 				</Card.Root>
 			{/if}
 		{/if}
 
-	<!-- ========== โหมด: รวมทุกคน ========== -->
+		<!-- ========== โหมด: รวมทุกคน ========== -->
 	{:else}
 		<!-- DnD Room Ordering -->
 		<Card.Root>
@@ -880,7 +962,9 @@
 				<div class="flex items-center justify-between">
 					<div>
 						<p class="text-sm font-medium">ลำดับห้อง</p>
-						<p class="text-xs text-muted-foreground">ลาก-วางเพื่อกำหนดว่าห้องไหนได้นักเรียนคะแนนสูงก่อน</p>
+						<p class="text-xs text-muted-foreground">
+							ลาก-วางเพื่อกำหนดว่าห้องไหนได้นักเรียนคะแนนสูงก่อน
+						</p>
 					</div>
 					<Button
 						onclick={() => (showAssignGlobalDialog = true)}
@@ -909,7 +993,9 @@
 							<div
 								role="listitem"
 								draggable={true}
-								ondragstart={() => { dragIndex = i; }}
+								ondragstart={() => {
+									dragIndex = i;
+								}}
 								ondragenter={() => {
 									if (dragIndex === null || dragIndex === i) return;
 									const newOrder = [...roomOrderForGlobal];
@@ -918,9 +1004,14 @@
 									roomOrderForGlobal = newOrder;
 									dragIndex = i;
 								}}
-								ondragend={() => { dragIndex = null; }}
+								ondragend={() => {
+									dragIndex = null;
+								}}
 								ondragover={(e) => e.preventDefault()}
-								class="flex items-center gap-3 rounded-lg border bg-background px-3 py-2.5 transition-opacity {dragIndex === i ? 'opacity-50' : ''} cursor-grab active:cursor-grabbing touch-none"
+								class="flex items-center gap-3 rounded-lg border bg-background px-3 py-2.5 transition-opacity {dragIndex ===
+								i
+									? 'opacity-50'
+									: ''} cursor-grab active:cursor-grabbing touch-none"
 								style="touch-action: none;"
 							>
 								<GripVertical class="w-4 h-4 text-muted-foreground shrink-0" />
@@ -953,14 +1044,16 @@
 								{#if room.studentCount > 0}
 									<p class="text-sm font-medium {isOver ? 'text-red-600' : ''}">
 										{room.studentCount} / {room.capacity} คน
-										{#if isOver}<span class="text-xs">(เกิน {room.studentCount - room.capacity})</span>{/if}
+										{#if isOver}<span class="text-xs"
+												>(เกิน {room.studentCount - room.capacity})</span
+											>{/if}
 									</p>
 									<p class="text-xs text-muted-foreground">
-									ชาย {room.maleCount} · หญิง {room.femaleCount}
-									{#if room.studentCount - room.maleCount - room.femaleCount > 0}
-										· ไม่ระบุ {room.studentCount - room.maleCount - room.femaleCount}
-									{/if}
-								</p>
+										ชาย {room.maleCount} · หญิง {room.femaleCount}
+										{#if room.studentCount - room.maleCount - room.femaleCount > 0}
+											· ไม่ระบุ {room.studentCount - room.maleCount - room.femaleCount}
+										{/if}
+									</p>
 								{:else}
 									<p class="text-xs text-muted-foreground">รับ {room.capacity} คน</p>
 								{/if}
@@ -985,7 +1078,9 @@
 						variant={globalViewTab === room.roomId ? 'default' : 'outline'}
 						size="sm"
 						onclick={() => (globalViewTab = room.roomId)}
-						class={isOver && globalViewTab !== room.roomId ? 'border-red-300 text-red-600 hover:bg-red-50' : ''}
+						class={isOver && globalViewTab !== room.roomId
+							? 'border-red-300 text-red-600 hover:bg-red-50'
+							: ''}
 					>
 						{room.roomName} ({room.studentCount}/{room.capacity}){isOver ? ' ⚠' : ''}
 					</Button>
@@ -995,7 +1090,9 @@
 						variant={globalViewTab === 'overflow' ? 'destructive' : 'outline'}
 						size="sm"
 						onclick={() => (globalViewTab = 'overflow')}
-						class={globalViewTab !== 'overflow' ? 'border-orange-300 text-orange-600 hover:bg-orange-50' : ''}
+						class={globalViewTab !== 'overflow'
+							? 'border-orange-300 text-orange-600 hover:bg-orange-50'
+							: ''}
 					>
 						เกินโควต้า ({globalOverflow.length})
 					</Button>
@@ -1006,7 +1103,14 @@
 			{#snippet appRow(app: (typeof globalAccepted)[0], isOrange: boolean)}
 				<Table.Row class={isOrange ? 'bg-orange-50' : ''}>
 					<Table.Cell class="text-center">
-						<span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.globalRank === 1 ? 'bg-yellow-100 text-yellow-700' : app.globalRank <= 3 ? 'bg-gray-100 text-gray-700' : 'text-muted-foreground'}">
+						<span
+							class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {app.globalRank ===
+							1
+								? 'bg-yellow-100 text-yellow-700'
+								: app.globalRank <= 3
+									? 'bg-gray-100 text-gray-700'
+									: 'text-muted-foreground'}"
+						>
 							{app.globalRank}
 						</span>
 					</Table.Cell>
@@ -1017,8 +1121,12 @@
 					{/if}
 					<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
 					<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
-					<Table.Cell class="text-sm text-muted-foreground">{app.originalTrackName ?? '-'}</Table.Cell>
-					<Table.Cell class="text-center font-semibold text-primary">{app.totalScore.toFixed(1)}</Table.Cell>
+					<Table.Cell class="text-sm text-muted-foreground"
+						>{app.originalTrackName ?? '-'}</Table.Cell
+					>
+					<Table.Cell class="text-center font-semibold text-primary"
+						>{app.totalScore.toFixed(1)}</Table.Cell
+					>
 					{#if globalViewTab !== 'overflow'}
 						<Table.Cell class="text-center">
 							{#if app.assignedRoom}
@@ -1038,12 +1146,17 @@
 										}}
 									>
 										<Select.Trigger class="h-6 text-xs w-24 px-2">
-											{globalRanking.rooms.find((r) => r.roomId === moveTargetRoomId[app.applicationId])?.roomName ?? 'ย้าย'}
+											{globalRanking.rooms.find(
+												(r) => r.roomId === moveTargetRoomId[app.applicationId]
+											)?.roomName ?? 'ย้าย'}
 										</Select.Trigger>
 										<Select.Content>
 											{#each globalRanking.rooms.filter((r) => r.roomName !== app.assignedRoom) as room (room.roomId)}
 												<Select.Item value={room.roomId}>
-													{room.roomName} ({room.studentCount}/{room.capacity}){room.studentCount >= room.capacity ? ' ⚠' : ''}
+													{room.roomName} ({room.studentCount}/{room.capacity}){room.studentCount >=
+													room.capacity
+														? ' ⚠'
+														: ''}
 												</Select.Item>
 											{/each}
 										</Select.Content>
@@ -1069,11 +1182,26 @@
 				</Table.Row>
 			{/snippet}
 			{@const isRoomTab = globalViewTab !== 'all' && globalViewTab !== 'overflow'}
-			{@const currentRoom = isRoomTab ? globalRanking.rooms.find((r) => r.roomId === globalViewTab) : null}
-			{@const roomStudents = isRoomTab ? globalAccepted.filter((a) => a.assignedRoomId === globalViewTab).sort((a, b) => a.globalRank - b.globalRank) : []}
-			{@const roomNormal = isRoomTab ? roomStudents.slice(0, currentRoom?.capacity ?? roomStudents.length) : []}
-			{@const roomOver = isRoomTab ? roomStudents.slice(currentRoom?.capacity ?? roomStudents.length) : []}
-			{@const tabApps = globalViewTab === 'overflow' ? globalOverflow : globalViewTab === 'all' ? globalAccepted : roomNormal}
+			{@const currentRoom = isRoomTab
+				? globalRanking.rooms.find((r) => r.roomId === globalViewTab)
+				: null}
+			{@const roomStudents = isRoomTab
+				? globalAccepted
+						.filter((a) => a.assignedRoomId === globalViewTab)
+						.sort((a, b) => a.globalRank - b.globalRank)
+				: []}
+			{@const roomNormal = isRoomTab
+				? roomStudents.slice(0, currentRoom?.capacity ?? roomStudents.length)
+				: []}
+			{@const roomOver = isRoomTab
+				? roomStudents.slice(currentRoom?.capacity ?? roomStudents.length)
+				: []}
+			{@const tabApps =
+				globalViewTab === 'overflow'
+					? globalOverflow
+					: globalViewTab === 'all'
+						? globalAccepted
+						: roomNormal}
 			<Card.Root class={globalViewTab === 'overflow' ? 'border-orange-200' : ''}>
 				<Card.Header class="pb-3">
 					<Card.Title class="flex items-center gap-2">
@@ -1088,39 +1216,44 @@
 					</Card.Title>
 				</Card.Header>
 				<div class="overflow-x-auto">
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head class="w-16 text-center">อันดับรวม</Table.Head>
-							{#if globalViewTab !== 'all' && globalViewTab !== 'overflow'}
-								<Table.Head class="w-14 text-center">อันดับในห้อง</Table.Head>
-							{/if}
-							<Table.Head>เลขที่ใบสมัคร</Table.Head>
-							<Table.Head>ชื่อ-สกุล</Table.Head>
-							<Table.Head>สายที่สมัคร</Table.Head>
-							<Table.Head class="text-center">คะแนนรวม</Table.Head>
-							{#if globalViewTab !== 'overflow'}
-								<Table.Head class="text-center">ห้องที่ได้</Table.Head>
-								<Table.Head>ย้ายห้อง</Table.Head>
-							{/if}
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#each tabApps as app (app.applicationId)}
-							{@render appRow(app, globalViewTab === 'overflow')}
-						{/each}
-						{#if isRoomTab && roomOver.length > 0}
+					<Table.Root>
+						<Table.Header>
 							<Table.Row>
-								<Table.Cell colspan={globalViewTab !== 'all' && globalViewTab !== 'overflow' ? 8 : 7} class="bg-orange-100 py-1.5 px-4">
-									<span class="text-xs font-semibold text-orange-700">เกินโควต้าห้องนี้ ({roomOver.length} คน) — ย้ายไปห้องอื่น</span>
-								</Table.Cell>
+								<Table.Head class="w-16 text-center">อันดับรวม</Table.Head>
+								{#if globalViewTab !== 'all' && globalViewTab !== 'overflow'}
+									<Table.Head class="w-14 text-center">อันดับในห้อง</Table.Head>
+								{/if}
+								<Table.Head>เลขที่ใบสมัคร</Table.Head>
+								<Table.Head>ชื่อ-สกุล</Table.Head>
+								<Table.Head>สายที่สมัคร</Table.Head>
+								<Table.Head class="text-center">คะแนนรวม</Table.Head>
+								{#if globalViewTab !== 'overflow'}
+									<Table.Head class="text-center">ห้องที่ได้</Table.Head>
+									<Table.Head>ย้ายห้อง</Table.Head>
+								{/if}
 							</Table.Row>
-							{#each roomOver as app (app.applicationId)}
-								{@render appRow(app, true)}
+						</Table.Header>
+						<Table.Body>
+							{#each tabApps as app (app.applicationId)}
+								{@render appRow(app, globalViewTab === 'overflow')}
 							{/each}
-						{/if}
-					</Table.Body>
-				</Table.Root>
+							{#if isRoomTab && roomOver.length > 0}
+								<Table.Row>
+									<Table.Cell
+										colspan={globalViewTab !== 'all' && globalViewTab !== 'overflow' ? 8 : 7}
+										class="bg-orange-100 py-1.5 px-4"
+									>
+										<span class="text-xs font-semibold text-orange-700"
+											>เกินโควต้าห้องนี้ ({roomOver.length} คน) — ย้ายไปห้องอื่น</span
+										>
+									</Table.Cell>
+								</Table.Row>
+								{#each roomOver as app (app.applicationId)}
+									{@render appRow(app, true)}
+								{/each}
+							{/if}
+						</Table.Body>
+					</Table.Root>
 				</div>
 			</Card.Root>
 		{/if}
@@ -1150,8 +1283,7 @@
 		<Dialog.Header>
 			<Dialog.Title>ยืนยันการจัดห้องทุกสาย</Dialog.Title>
 			<Dialog.Description>
-				จะจัดห้องให้ทุกสาย ({tracks.length} สาย) พร้อมกัน แต่ละสายใช้วิชาและวิธีจัดห้องของตัวเอง
-				ผลจัดห้องเดิมของทุกสายจะถูกแทนที่
+				จะจัดห้องให้ทุกสาย ({tracks.length} สาย) พร้อมกัน แต่ละสายใช้วิชาและวิธีจัดห้องของตัวเอง ผลจัดห้องเดิมของทุกสายจะถูกแทนที่
 				<strong class="text-orange-600">รวมถึงการย้ายห้องที่ปรับด้วยมือ</strong>
 				ต้องการดำเนินการต่อหรือไม่?
 			</Dialog.Description>
@@ -1193,7 +1325,13 @@
 		</Dialog.Header>
 		<Dialog.Footer class="flex-col sm:flex-row gap-2">
 			<Button variant="outline" onclick={() => (showResetAllDialog = false)}>ยกเลิก</Button>
-			<Button variant="destructive" onclick={() => { showResetAllDialog = false; handleResetAll(); }}>ล้างทั้งหมด</Button>
+			<Button
+				variant="destructive"
+				onclick={() => {
+					showResetAllDialog = false;
+					handleResetAll();
+				}}>ล้างทั้งหมด</Button
+			>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

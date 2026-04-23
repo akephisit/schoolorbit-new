@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
@@ -15,7 +16,7 @@
 				กำหนดข้อจำกัดและความต้องการของครูและรายวิชา เพื่อให้ระบบจัดตารางได้เหมาะสมที่สุด
 			</p>
 		</div>
-		<a href="/staff/academic/timetable/scheduling/auto-schedule">
+		<a href={resolve('/staff/academic/timetable/scheduling/auto-schedule')}>
 			<Button>
 				ถัดไป: จัดตารางอัตโนมัติ
 				<ArrowRight class="ml-2 h-4 w-4" />

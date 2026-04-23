@@ -11,7 +11,7 @@
 		updatePeriod,
 		deletePeriod
 	} from '$lib/api/timetable';
-	import { lookupAcademicYears } from '$lib/api/academic';
+	import { lookupAcademicYears, type LookupItem } from '$lib/api/academic';
 
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -27,7 +27,7 @@
 	// State
 	let loading = $state(true);
 	let periods = $state<AcademicPeriod[]>([]);
-	let academicYears = $state<any[]>([]);
+	let academicYears = $state<LookupItem[]>([]);
 	let selectedYearId = $state('');
 
 	// Dialogs
@@ -56,7 +56,7 @@
 			if (selectedYearId) {
 				await loadPeriods();
 			}
-		} catch (e) {
+		} catch {
 			toast.error('โหลดข้อมูลไม่สำเร็จ');
 		} finally {
 			loading = false;
@@ -68,7 +68,7 @@
 		try {
 			const res = await listPeriods({ academic_year_id: selectedYearId });
 			periods = res.data;
-		} catch (e) {
+		} catch {
 			toast.error('โหลดคาบเวลาไม่สำเร็จ');
 		}
 	}
@@ -97,8 +97,8 @@
 			}
 			showPeriodDialog = false;
 			loadPeriods();
-		} catch (e: any) {
-			toast.error(e.message || 'บันทึกไม่สำเร็จ');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
 		} finally {
 			submitting = false;
 		}
@@ -112,8 +112,8 @@
 			toast.success('ลบคาบเวลาสำเร็จ');
 			showDeleteDialog = false;
 			loadPeriods();
-		} catch (e: any) {
-			toast.error(e.message || 'ลบไม่สำเร็จ (อาจมีข้อมูลตารางสอนเชื่อมโยง)');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ (อาจมีข้อมูลตารางสอนเชื่อมโยง)');
 		} finally {
 			submitting = false;
 		}
@@ -175,7 +175,7 @@
 					{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
 				</Select.Trigger>
 				<Select.Content>
-					{#each academicYears as year}
+					{#each academicYears as year (year.id)}
 						<Select.Item value={year.id}>{year.name}</Select.Item>
 					{/each}
 				</Select.Content>
@@ -216,7 +216,7 @@
 						</Table.Cell></Table.Row
 					>
 				{:else}
-					{#each periods as p}
+					{#each periods as p (p.id)}
 						<Table.Row>
 							<Table.Cell class="font-bold text-center">{p.order_index}</Table.Cell>
 							<Table.Cell class="font-medium">{p.name}</Table.Cell>

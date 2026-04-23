@@ -54,7 +54,7 @@
 
 	// Permissions
 	let permissionsByModule = $state<PermissionsByModule>({});
-	let selectedPermissions = $state(new SvelteSet<string>());
+	let selectedPermissions = new SvelteSet<string>();
 
 	onMount(async () => {
 		await loadPermissions();
@@ -69,7 +69,8 @@
 			const response = await roleAPI.getRole(roleId);
 			if (response.success && response.data) {
 				role = response.data;
-				selectedPermissions = new SvelteSet(role.permissions || []);
+				selectedPermissions.clear();
+				for (const p of role.permissions || []) selectedPermissions.add(p);
 			} else {
 				toast.error('ไม่สามารถโหลดข้อมูล role ได้');
 				goto(resolve('/staff/roles'));
@@ -97,27 +98,23 @@
 	}
 
 	function togglePermission(code: string) {
-		const newSet = new SvelteSet(selectedPermissions);
-		if (newSet.has(code)) {
-			newSet.delete(code);
+		if (selectedPermissions.has(code)) {
+			selectedPermissions.delete(code);
 		} else {
-			newSet.add(code);
+			selectedPermissions.add(code);
 		}
-		selectedPermissions = newSet;
 		// Note: Parent module state is automatically reflected via isModuleFullySelected and isModulePartiallySelected
 	}
 
 	function toggleModule(module: string) {
 		const modulePermissions = permissionsByModule[module] || [];
-		const newSet = new SvelteSet(selectedPermissions);
-		const allSelected = modulePermissions.every((p) => newSet.has(p.code));
+		const allSelected = modulePermissions.every((p) => selectedPermissions.has(p.code));
 
 		if (allSelected) {
-			modulePermissions.forEach((p) => newSet.delete(p.code));
+			modulePermissions.forEach((p) => selectedPermissions.delete(p.code));
 		} else {
-			modulePermissions.forEach((p) => newSet.add(p.code));
+			modulePermissions.forEach((p) => selectedPermissions.add(p.code));
 		}
-		selectedPermissions = newSet;
 	}
 
 	function isModuleFullySelected(module: string): boolean {

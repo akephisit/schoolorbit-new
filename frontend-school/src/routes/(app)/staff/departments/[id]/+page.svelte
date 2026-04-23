@@ -1,28 +1,39 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import {
-        getDepartment,
-        listDepartments,
-        listDelegations,
-        listDelegatablePermissions,
-        createDelegation,
-        revokeDelegation,
-        listDeptMembers,
-        type Department,
-        type DelegationItem,
-        type DelegatablePermission,
-        type DeptMemberItem
-    } from '$lib/api/staff';
+		getDepartment,
+		listDepartments,
+		listDelegations,
+		listDelegatablePermissions,
+		createDelegation,
+		revokeDelegation,
+		listDeptMembers,
+		type Department,
+		type DelegationItem,
+		type DelegatablePermission,
+		type DeptMemberItem,
+		type CreateDelegationBody
+	} from '$lib/api/staff';
 	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import DeptMembersSection from '$lib/components/staff/DeptMembersSection.svelte';
 	import {
-        Building2, ArrowLeft, Phone, Mail, MapPin,
-        Briefcase, GraduationCap, Shield, Plus, Trash2
-    } from 'lucide-svelte';
+		Building2,
+		ArrowLeft,
+		Phone,
+		Mail,
+		MapPin,
+		Briefcase,
+		GraduationCap,
+		Shield,
+		Plus,
+		Trash2
+	} from 'lucide-svelte';
 
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
@@ -45,7 +56,7 @@
 	let delegateError = $state('');
 
 	async function loadData() {
-        if (!deptId) return;
+		if (!deptId) return;
 		try {
 			loading = true;
 			const [deptRes, membersRes, allDeptsRes] = await Promise.all([
@@ -56,19 +67,19 @@
 			if (deptRes.success && deptRes.data) {
 				department = deptRes.data;
 			} else {
-                throw new Error(deptRes.error || 'Department not found');
-            }
+				throw new Error(deptRes.error || 'Department not found');
+			}
 			if (membersRes.success && membersRes.data) {
 				deptMembers = membersRes.data;
 			}
 			if (allDeptsRes.success && allDeptsRes.data) {
 				allDepartments = allDeptsRes.data;
 				childDepts = allDeptsRes.data
-					.filter(d => d.parent_department_id === deptId)
+					.filter((d) => d.parent_department_id === deptId)
 					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 			}
-		} catch (e: any) {
-			error = e.message || 'Error loading data';
+		} catch (e: unknown) {
+			error = (e instanceof Error ? e.message : String(e)) || 'Error loading data';
 		} finally {
 			loading = false;
 		}
@@ -84,10 +95,15 @@
 		if (permRes.success && permRes.data) delegatablePerms = permRes.data;
 	}
 
+	function goToChildDept(id: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
+		goto(resolve(`/staff/departments/${id}` as any));
+	}
+
 	async function handleRevoke(delegationId: string) {
 		const res = await revokeDelegation(delegationId);
 		if (res.success) {
-			delegations = delegations.filter(d => d.id !== delegationId);
+			delegations = delegations.filter((d) => d.id !== delegationId);
 		}
 	}
 
@@ -96,14 +112,15 @@
 		delegateSubmitting = true;
 		delegateError = '';
 		try {
-			const body: Record<string, string> = {
+			const body: CreateDelegationBody = {
 				to_user_id: delegateForm.to_user_id,
 				permission_id: delegateForm.permission_id
 			};
 			if (delegateForm.reason) body.reason = delegateForm.reason;
-			if (delegateForm.expires_at) body.expires_at = new Date(delegateForm.expires_at).toISOString();
+			if (delegateForm.expires_at)
+				body.expires_at = new Date(delegateForm.expires_at).toISOString();
 
-			const res = await createDelegation(deptId, body as any);
+			const res = await createDelegation(deptId, body);
 			if (res.success) {
 				showDelegateDialog = false;
 				delegateForm = { to_user_id: '', permission_id: '', reason: '', expires_at: '' };
@@ -235,40 +252,40 @@
 				</div>
 
 				<!-- Child Departments (ฝ่ายย่อย) -->
-			{#if $can.hasAny('roles.assign.all', '*')}
-				<div class="bg-card border border-border rounded-lg p-6 space-y-4">
-					<div class="flex items-center justify-between">
-						<h2 class="text-lg font-semibold flex items-center gap-2">
-							<Building2 class="w-5 h-5" />
-							ฝ่ายย่อย
-						</h2>
-						<Button size="sm" onclick={() => (showAddChildDialog = true)}>
-							<Plus class="w-4 h-4 mr-1" />
-							เพิ่มฝ่าย
-						</Button>
-					</div>
-					{#if childDepts.length === 0}
-						<p class="text-sm text-muted-foreground text-center py-4">ยังไม่มีฝ่ายย่อย</p>
-					{:else}
-						<div class="divide-y divide-border">
-							{#each childDepts as child}
-								<a
-									href="/staff/departments/{child.id}"
-									class="flex items-center justify-between py-3 hover:text-primary transition-colors"
-								>
-									<div>
-										<p class="text-sm font-medium">{child.name}</p>
-										<p class="text-xs text-muted-foreground font-mono">{child.code}</p>
-									</div>
-									<Briefcase class="w-4 h-4 text-muted-foreground" />
-								</a>
-							{/each}
+				{#if $can.hasAny('roles.assign.all', '*')}
+					<div class="bg-card border border-border rounded-lg p-6 space-y-4">
+						<div class="flex items-center justify-between">
+							<h2 class="text-lg font-semibold flex items-center gap-2">
+								<Building2 class="w-5 h-5" />
+								ฝ่ายย่อย
+							</h2>
+							<Button size="sm" onclick={() => (showAddChildDialog = true)}>
+								<Plus class="w-4 h-4 mr-1" />
+								เพิ่มฝ่าย
+							</Button>
 						</div>
-					{/if}
-				</div>
-			{/if}
+						{#if childDepts.length === 0}
+							<p class="text-sm text-muted-foreground text-center py-4">ยังไม่มีฝ่ายย่อย</p>
+						{:else}
+							<div class="divide-y divide-border">
+								{#each childDepts as child (child.id)}
+									<button
+										onclick={() => goToChildDept(child.id)}
+										class="flex w-full items-center justify-between py-3 hover:text-primary transition-colors"
+									>
+										<div class="text-left">
+											<p class="text-sm font-medium">{child.name}</p>
+											<p class="text-xs text-muted-foreground font-mono">{child.code}</p>
+										</div>
+										<Briefcase class="w-4 h-4 text-muted-foreground" />
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
 
-			<!-- Delegation Section (heads only) -->
+				<!-- Delegation Section (heads only) -->
 				{#if $can.has('dept_work.approve.department')}
 					<div class="bg-card border border-border rounded-lg p-6 space-y-4">
 						<div class="flex items-center justify-between">
@@ -286,11 +303,13 @@
 							<p class="text-muted-foreground text-sm text-center py-4">ยังไม่มีการมอบหมายสิทธิ์</p>
 						{:else}
 							<div class="divide-y divide-border">
-								{#each delegations as d}
+								{#each delegations as d (d.id)}
 									<div class="py-3 flex items-start justify-between gap-4">
 										<div class="space-y-0.5">
 											<p class="text-sm font-medium">{d.to_user_name}</p>
-											<p class="text-xs text-muted-foreground">{d.permission_name} <span class="font-mono">({d.permission_code})</span></p>
+											<p class="text-xs text-muted-foreground">
+												{d.permission_name} <span class="font-mono">({d.permission_code})</span>
+											</p>
 											{#if d.reason}
 												<p class="text-xs text-muted-foreground">เหตุผล: {d.reason}</p>
 											{/if}
@@ -335,7 +354,9 @@
 <!-- Delegate Permission Dialog -->
 {#if showDelegateDialog}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-		<div class="bg-background border border-border rounded-xl shadow-lg w-full max-w-md p-6 space-y-4">
+		<div
+			class="bg-background border border-border rounded-xl shadow-lg w-full max-w-md p-6 space-y-4"
+		>
 			<h3 class="text-lg font-semibold">มอบหมายสิทธิ์</h3>
 
 			{#if delegateError}
@@ -351,7 +372,7 @@
 						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 					>
 						<option value="">-- เลือกสมาชิก --</option>
-						{#each deptMembers as m}
+						{#each deptMembers as m (m.user_id + '-' + m.department_id)}
 							<option value={m.user_id}>{m.name}</option>
 						{/each}
 					</select>
@@ -365,14 +386,16 @@
 						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 					>
 						<option value="">-- เลือกสิทธิ์ --</option>
-						{#each delegatablePerms as p}
+						{#each delegatablePerms as p (p.id)}
 							<option value={p.id}>{p.name} ({p.code})</option>
 						{/each}
 					</select>
 				</div>
 
 				<div class="space-y-1">
-					<label for="delegate-reason" class="text-sm font-medium">เหตุผล <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label>
+					<label for="delegate-reason" class="text-sm font-medium"
+						>เหตุผล <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label
+					>
 					<input
 						id="delegate-reason"
 						type="text"
@@ -383,7 +406,9 @@
 				</div>
 
 				<div class="space-y-1">
-					<label for="delegate-expires" class="text-sm font-medium">วันหมดอายุ <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label>
+					<label for="delegate-expires" class="text-sm font-medium"
+						>วันหมดอายุ <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label
+					>
 					<input
 						id="delegate-expires"
 						type="date"

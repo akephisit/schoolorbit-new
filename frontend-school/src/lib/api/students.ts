@@ -7,6 +7,19 @@ import { PUBLIC_BACKEND_URL } from '$env/static/public';
 
 const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 
+export interface StudentParent {
+	id: string;
+	title?: string;
+	first_name: string;
+	last_name: string;
+	phone: string;
+	relationship: string;
+	national_id?: string;
+	email?: string;
+	is_primary?: boolean;
+	username?: string;
+}
+
 export interface Student {
 	id: string;
 	national_id?: string;
@@ -28,6 +41,7 @@ export interface Student {
 	allergies?: string;
 	medical_conditions?: string;
 	status: string;
+	parents?: StudentParent[];
 }
 
 export interface StudentListItem {

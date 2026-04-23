@@ -92,7 +92,7 @@
 			await saveYearLevelConfig(configYear.id, configLevelIds);
 			await updateAcademicYear(configYear.id, {
 				school_days: configSchoolDays.join(',')
-			} as any);
+			});
 			toast.success(`บันทึกการตั้งค่าสำหรับ ${configYear.name} เรียบร้อย`);
 			showConfigDialog = false;
 			await loadData();
@@ -414,7 +414,7 @@
 								</Table.Row>
 							</Table.Header>
 							<Table.Body>
-								{#each structure.years as year}
+								{#each structure.years as year (year.id)}
 									<Table.Row>
 										<Table.Cell class="font-medium">
 											{year.name}
@@ -425,7 +425,12 @@
 											).toLocaleDateString('th-TH')}
 										</Table.Cell>
 										<Table.Cell class="text-sm text-muted-foreground">
-											{(year.school_days || 'MON,TUE,WED,THU,FRI').split(',').map((d) => ALL_DAYS.find((x) => x.value === d.trim())?.shortLabel ?? d.trim()).join(' ')}
+											{(year.school_days || 'MON,TUE,WED,THU,FRI')
+												.split(',')
+												.map(
+													(d) => ALL_DAYS.find((x) => x.value === d.trim())?.shortLabel ?? d.trim()
+												)
+												.join(' ')}
 										</Table.Cell>
 										<Table.Cell>
 											{#if year.is_active}
@@ -491,7 +496,7 @@
 				</Card.Header>
 				<Card.Content>
 					<div class="space-y-2">
-						{#each structure.levels as level}
+						{#each structure.levels as level (level.id)}
 							<div
 								class="flex items-center justify-between rounded-md border p-3 hover:bg-muted/50"
 							>
@@ -608,7 +613,7 @@
 								'เลือกประเภท'}
 						</Select.Trigger>
 						<Select.Content>
-							{#each levelTypeOptions as opt}
+							{#each levelTypeOptions as opt (opt.value)}
 								<Select.Item value={opt.value}>{opt.label}</Select.Item>
 							{/each}
 						</Select.Content>
@@ -621,7 +626,7 @@
 							{`ปีที่ ${newLevel.year}`}
 						</Select.Trigger>
 						<Select.Content>
-							{#each Array.from( { length: getMaxYears(newLevel.level_type) }, (_, i) => String(i + 1) ) as yr}
+							{#each Array.from( { length: getMaxYears(newLevel.level_type) }, (_, i) => String(i + 1) ) as yr (yr)}
 								<Select.Item value={yr}>ปีที่ {yr}</Select.Item>
 							{/each}
 						</Select.Content>
@@ -715,11 +720,13 @@
 				<div class="space-y-2">
 					<Label class="text-sm font-semibold">วันที่เรียน</Label>
 					<div class="flex flex-wrap gap-2">
-						{#each ALL_DAYS as d}
+						{#each ALL_DAYS as d (d.value)}
 							{@const selected = configSchoolDays.includes(d.value)}
 							<button
 								type="button"
-								class="rounded-md border px-3 py-1.5 text-sm transition-colors {selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-accent border-input'}"
+								class="rounded-md border px-3 py-1.5 text-sm transition-colors {selected
+									? 'bg-primary text-primary-foreground border-primary'
+									: 'bg-background hover:bg-accent border-input'}"
 								onclick={() => toggleConfigDay(d.value)}
 							>
 								{d.label}
@@ -731,27 +738,27 @@
 				<!-- ชั้นเรียน -->
 				<div class="space-y-2">
 					<Label class="text-sm font-semibold">ชั้นเรียนที่เปิดสอน</Label>
-				{#if !configYear}
-					<div class="flex justify-center p-4"><Loader2 class="animate-spin" /></div>
-				{:else}
-					<div class="grid grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto pr-2">
-						{#each structure.levels as level}
-							<div
-								class="flex items-center space-x-2 border p-2 rounded-md hover:bg-muted/50 transition-colors"
-							>
-								<Checkbox
-									id={`level-${level.id}`}
-									checked={configLevelIds.includes(level.id)}
-									onCheckedChange={(c) => toggleConfigLevel(level.id, c === true)}
-								/>
-								<Label for={`level-${level.id}`} class="cursor-pointer flex-1 user-select-none">
-									<span class="font-bold">{level.short_name}</span>
-									<span class="text-muted-foreground text-xs ml-1">({level.name})</span>
-								</Label>
-							</div>
-						{/each}
-					</div>
-				{/if}
+					{#if !configYear}
+						<div class="flex justify-center p-4"><Loader2 class="animate-spin" /></div>
+					{:else}
+						<div class="grid grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto pr-2">
+							{#each structure.levels as level (level.id)}
+								<div
+									class="flex items-center space-x-2 border p-2 rounded-md hover:bg-muted/50 transition-colors"
+								>
+									<Checkbox
+										id={`level-${level.id}`}
+										checked={configLevelIds.includes(level.id)}
+										onCheckedChange={(c) => toggleConfigLevel(level.id, c === true)}
+									/>
+									<Label for={`level-${level.id}`} class="cursor-pointer flex-1 user-select-none">
+										<span class="font-bold">{level.short_name}</span>
+										<span class="text-muted-foreground text-xs ml-1">({level.name})</span>
+									</Label>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			</div>
 
@@ -793,7 +800,7 @@
 						</Table.Row>
 					</Table.Header>
 					<Table.Body>
-						{#each displayedSemesters as sem}
+						{#each displayedSemesters as sem (sem.id)}
 							<Table.Row>
 								<Table.Cell class="font-bold">{sem.term}</Table.Cell>
 								<Table.Cell>{sem.name}</Table.Cell>

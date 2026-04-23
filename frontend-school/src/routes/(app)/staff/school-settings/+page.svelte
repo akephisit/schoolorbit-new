@@ -16,8 +16,8 @@
 	import { getSchoolSettings, updateSchoolSettings, deleteSchoolLogo } from '$lib/api/school';
 	import { apiClient } from '$lib/api/client';
 
-	let logoUrl = $state<string | undefined>(undefined);    // URL สำหรับ preview (จาก backend)
-	let logoPath = $state<string | undefined>(undefined);   // storage_path ที่เก็บใน DB
+	let logoUrl = $state<string | undefined>(undefined); // URL สำหรับ preview (จาก backend)
+	let logoPath = $state<string | undefined>(undefined); // storage_path ที่เก็บใน DB
 	let logoFileId = $state<string | undefined>(undefined); // file ID สำหรับลบ
 	let saving = $state(false);
 	let loading = $state(true);
@@ -29,7 +29,7 @@
 			const s = await getSchoolSettings();
 			logoUrl = s.logoUrl;
 			logoFileId = s.logoFileId;
-		} catch (err) {
+		} catch {
 			toast.error('ไม่สามารถโหลดข้อมูลได้');
 		} finally {
 			loading = false;
@@ -54,7 +54,9 @@
 				form.append('file_type', 'school_logo');
 				form.append('is_public', 'true');
 				const res = await apiClient.postMultipart<never>('/api/files/upload', form);
-				const uploaded = (res as unknown as { file?: { id: string; url: string; storage_path: string } }).file;
+				const uploaded = (
+					res as unknown as { file?: { id: string; url: string; storage_path: string } }
+				).file;
 				if (!res.success || !uploaded) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
 				pathToSave = uploaded.storage_path;
 				logoUrl = uploaded.url;
@@ -108,7 +110,11 @@
 						class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden"
 					>
 						{#if previewUrl ?? logoUrl}
-							<img src={previewUrl ?? logoUrl} alt="school logo" class="w-full h-full object-contain p-1" />
+							<img
+								src={previewUrl ?? logoUrl}
+								alt="school logo"
+								class="w-full h-full object-contain p-1"
+							/>
 						{:else}
 							<ImageOff class="w-8 h-8 text-muted-foreground" />
 						{/if}

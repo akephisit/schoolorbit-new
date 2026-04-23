@@ -3,8 +3,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import * as Card from '$lib/components/ui/card';
-	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import {
 		listInstructorConstraints,
@@ -12,7 +10,7 @@
 		type InstructorConstraintView
 	} from '$lib/api/scheduling';
 	import { lookupRooms, type RoomLookupItem } from '$lib/api/lookup';
-	import { Loader2, Pencil, CalendarClock, Briefcase, User } from 'lucide-svelte';
+	import { Loader2, Pencil, Briefcase } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	// Constants
@@ -98,16 +96,18 @@
 		// Parse Unavailable Slots
 		if (instructor.hard_unavailable_slots && Array.isArray(instructor.hard_unavailable_slots)) {
 			// Example format from DB: [{ day_index: 0, period_index: 0 }, ...]
-			instructor.hard_unavailable_slots.forEach((slot: any) => {
-				if (slot.day_index !== undefined && slot.period_index !== undefined) {
-					if (
-						busyGrid[slot.day_index] &&
-						busyGrid[slot.day_index][slot.period_index] !== undefined
-					) {
-						busyGrid[slot.day_index][slot.period_index] = true;
+			instructor.hard_unavailable_slots.forEach(
+				(slot: { day_index: number; period_index: number }) => {
+					if (slot.day_index !== undefined && slot.period_index !== undefined) {
+						if (
+							busyGrid[slot.day_index] &&
+							busyGrid[slot.day_index][slot.period_index] !== undefined
+						) {
+							busyGrid[slot.day_index][slot.period_index] = true;
+						}
 					}
 				}
-			});
+			);
 		}
 
 		showDialog = true;
@@ -179,7 +179,7 @@
 				</tr>
 			</thead>
 			<tbody class="[&_tr:last-child]:border-0">
-				{#each filteredInstructors as instructor, i}
+				{#each filteredInstructors as instructor, i (instructor.id)}
 					<tr class="border-b transition-colors hover:bg-muted/50">
 						<td class="p-4 align-middle">{i + 1}</td>
 						<td class="p-4 align-middle font-medium">
@@ -249,7 +249,7 @@
 						}}
 					>
 						<option value="">-- เลือกตึก --</option>
-						{#each buildingNames as buildingName}
+						{#each buildingNames as buildingName (buildingName)}
 							<option value={buildingName}>{buildingName}</option>
 						{/each}
 					</select>
@@ -264,7 +264,7 @@
 						disabled={!selectedBuildingName}
 					>
 						<option value="">-- เลือกห้อง --</option>
-						{#each availableRooms as room}
+						{#each availableRooms as room (room.id)}
 							<option value={room.id}>
 								{room.name_th}
 								{#if room.code}
@@ -302,18 +302,18 @@
 						<!-- Header -->
 						<div class="grid grid-cols-[60px_repeat(8,1fr)] gap-1 mb-1">
 							<div class="font-bold text-xs text-center p-2">วัน</div>
-							{#each Array(PERIODS) as _, p}
+							{#each Array.from({ length: PERIODS }, (_, i) => i) as p (p)}
 								<div class="font-bold text-xs text-center p-2 bg-muted rounded">P{p + 1}</div>
 							{/each}
 						</div>
 
 						<!-- Rows -->
-						{#each DAYS as day, d}
+						{#each DAYS as day, d (day)}
 							<div class="grid grid-cols-[60px_repeat(8,1fr)] gap-1 mb-1">
 								<div class="font-bold text-xs flex items-center justify-center bg-muted rounded">
 									{day}
 								</div>
-								{#each Array(PERIODS) as _, p}
+								{#each Array.from({ length: PERIODS }, (_, i) => i) as p (p)}
 									<button
 										class="h-8 rounded border transition-colors text-xs flex items-center justify-center
 											{busyGrid[d] && busyGrid[d][p]

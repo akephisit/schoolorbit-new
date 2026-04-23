@@ -2,7 +2,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { permissionAPI, type PermissionsByModule, type Permission } from '$lib/api/roles';
+	import { permissionAPI, type PermissionsByModule } from '$lib/api/roles';
 	import {
 		getDepartmentPermissions,
 		updateDepartmentPermissions,
@@ -10,6 +10,7 @@
 	} from '$lib/api/staff';
 	import { toast } from 'svelte-sonner';
 	import { LoaderCircle, Shield, Layers } from 'lucide-svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	let {
 		open = $bindable(false),
@@ -22,7 +23,7 @@
 	}>();
 
 	let permissionModules = $state<PermissionsByModule>({});
-	let selectedPermissionIds = $state<Set<string>>(new Set());
+	let selectedPermissionIds = new SvelteSet<string>();
 	let loading = $state(false);
 	let saving = $state(false);
 
@@ -47,7 +48,8 @@
 				permissionModules = permResp.data;
 			}
 
-			selectedPermissionIds = new Set(currentAccess);
+			selectedPermissionIds.clear();
+			for (const id of currentAccess) selectedPermissionIds.add(id);
 		} catch (e) {
 			toast.error('โหลดข้อมูลสิทธิ์ไม่สำเร็จ');
 			console.error(e);
@@ -64,7 +66,7 @@
 			toast.success('บันทึกสิทธิ์การเข้าใช้งานสำเร็จ');
 			open = false;
 			onSuccess?.();
-		} catch (e) {
+		} catch {
 			toast.error('บันทึกไม่สำเร็จ');
 		} finally {
 			saving = false;
@@ -75,12 +77,10 @@
 		const perms = permissionModules[moduleName];
 		if (!perms) return;
 
-		const newSet = new Set(selectedPermissionIds);
 		perms.forEach((p) => {
-			if (select) newSet.add(p.id);
-			else newSet.delete(p.id);
+			if (select) selectedPermissionIds.add(p.id);
+			else selectedPermissionIds.delete(p.id);
 		});
-		selectedPermissionIds = newSet;
 	}
 
 	function isModuleSelected(moduleName: string): boolean {
@@ -97,10 +97,8 @@
 	}
 
 	function togglePermission(permId: string, checked: boolean) {
-		const newSet = new Set(selectedPermissionIds);
-		if (checked) newSet.add(permId);
-		else newSet.delete(permId);
-		selectedPermissionIds = newSet;
+		if (checked) selectedPermissionIds.add(permId);
+		else selectedPermissionIds.delete(permId);
 	}
 </script>
 
@@ -129,7 +127,7 @@
 				</div>
 			{:else}
 				<div class="space-y-6">
-					{#each moduleKeys as module}
+					{#each moduleKeys as module (module)}
 						<div class="border rounded-lg p-4 bg-muted/20">
 							<div class="flex items-center gap-2 mb-3 pb-2 border-b border-border/50">
 								<Checkbox
@@ -142,7 +140,7 @@
 							</div>
 
 							<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pl-7">
-								{#each permissionModules[module] as perm}
+								{#each permissionModules[module] as perm (perm.id)}
 									<div
 										class="flex items-start gap-2 p-2 rounded-md hover:bg-background border border-transparent hover:border-border transition-colors cursor-pointer group focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 										role="button"

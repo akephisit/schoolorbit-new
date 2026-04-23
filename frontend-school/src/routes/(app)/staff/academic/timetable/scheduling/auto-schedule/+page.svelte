@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -10,7 +11,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Loader2, Zap, Settings2, History, CalendarDays } from 'lucide-svelte';
 	import type { UUID } from '$lib/types';
-	import type { Classroom } from '$lib/api/academic';
+	import type { Classroom, AcademicYear, Semester } from '$lib/api/academic';
 	import type { SchedulingAlgorithm, CreateSchedulingJobRequest } from '$lib/api/scheduling';
 	import { listClassrooms, getAcademicStructure } from '$lib/api/academic';
 	import { autoScheduleTimetable } from '$lib/api/scheduling';
@@ -21,8 +22,8 @@
 
 	// Data
 	let classrooms = $state<Classroom[]>([]);
-	let allSemesters = $state<any[]>([]);
-	let allYears = $state<any[]>([]);
+	let allSemesters = $state<Semester[]>([]);
+	let allYears = $state<AcademicYear[]>([]);
 	let selectedSemesterId = $state<UUID | null>(null);
 	let selectedClassroomIds = $state<UUID[]>([]);
 
@@ -84,7 +85,7 @@
 		try {
 			const res = await listClassrooms();
 			classrooms = res.data || [];
-		} catch (error) {
+		} catch {
 			toast.error('โหลดข้อมูลห้องเรียนไม่สำเร็จ');
 		}
 	}
@@ -136,11 +137,14 @@
 
 			if (res.data?.job_id) {
 				toast.success('เริ่มจัดตารางอัตโนมัติแล้ว');
-				goto(`/staff/academic/timetable/scheduling/jobs/${res.data.job_id}`);
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic route interpolation
+				goto(resolve(`/staff/academic/timetable/scheduling/jobs/${res.data.job_id}` as any));
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('Auto-schedule error:', error);
-			toast.error(error.message || 'เกิดข้อผิดพลาดในการจัดตาราง');
+			toast.error(
+				(error instanceof Error ? error.message : String(error)) || 'เกิดข้อผิดพลาดในการจัดตาราง'
+			);
 		} finally {
 			submitting = false;
 		}
@@ -160,12 +164,15 @@
 		<div class="flex gap-2">
 			<Button
 				variant="outline"
-				onclick={() => goto('/staff/academic/timetable/scheduling/constraints')}
+				onclick={() => goto(resolve('/staff/academic/timetable/scheduling/constraints'))}
 			>
 				<Settings2 class="mr-2 h-4 w-4" />
 				ตั้งค่าเงื่อนไข
 			</Button>
-			<Button variant="outline" onclick={() => goto('/staff/academic/timetable/scheduling/jobs')}>
+			<Button
+				variant="outline"
+				onclick={() => goto(resolve('/staff/academic/timetable/scheduling/jobs'))}
+			>
 				<History class="mr-2 h-4 w-4" />
 				ประวัติการจัดตาราง
 			</Button>
@@ -196,7 +203,7 @@
 							</div>
 						</Select.Trigger>
 						<Select.Content>
-							{#each allSemesters as semester}
+							{#each allSemesters as semester (semester.id)}
 								{@const year = allYears.find((y) => y.id === semester.academic_year_id)}
 								{@const yearLabel = year ? year.year : 'N/A'}
 								<Select.Item value={semester.id} label={`${semester.term}/${yearLabel}`}>
@@ -223,7 +230,7 @@
 				</div>
 
 				<div class="grid grid-cols-2 md:grid-cols-4 gap-3 max-h-[400px] overflow-y-auto">
-					{#each classrooms as classroom}
+					{#each classrooms as classroom (classroom.id)}
 						<label
 							class="flex items-center space-x-2 p-3 rounded-lg border cursor-pointer hover:bg-accent transition-colors"
 							class:bg-accent={selectedClassroomIds.includes(classroom.id)}
@@ -330,7 +337,9 @@
 
 			<!-- Submit -->
 			<div class="flex justify-end gap-3">
-				<Button variant="outline" onclick={() => goto('/staff/academic/timetable')}>ยกเลิก</Button>
+				<Button variant="outline" onclick={() => goto(resolve('/staff/academic/timetable'))}
+					>ยกเลิก</Button
+				>
 				<Button
 					onclick={handleSubmit}
 					disabled={submitting || selectedCount === 0}

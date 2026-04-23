@@ -30,15 +30,22 @@
 		return user.primaryRoleName || 'ผู้ใช้งาน';
 	}
 
-	// Get profile and settings URLs based on user type
-	function getProfileUrl(): string {
-		if (!user) return resolve('/staff/profile');
-		return user.user_type === 'student' ? resolve('/student/profile') : resolve('/staff/profile');
+	// Navigate to profile based on user type
+	function goToProfile() {
+		if (!user || user.user_type === 'student') {
+			goto(resolve('/student/profile'));
+		} else {
+			goto(resolve('/staff/profile'));
+		}
 	}
 
-	function getSettingsUrl(): string {
-		if (!user) return resolve('/staff/settings');
-		return user.user_type === 'student' ? resolve('/student/settings') : resolve('/staff/settings');
+	// Navigate to settings based on user type
+	function goToSettings() {
+		if (!user || user.user_type === 'student') {
+			goto(resolve('/student/settings'));
+		} else {
+			goto(resolve('/staff/settings'));
+		}
 	}
 </script>
 
@@ -94,12 +101,12 @@
 
 			<!-- Menu Items -->
 			<DropdownMenu.Group>
-				<DropdownMenu.Item class="cursor-pointer" onclick={() => goto(getProfileUrl())}>
+				<DropdownMenu.Item class="cursor-pointer" onclick={goToProfile}>
 					<UserCircle class="w-4 h-4 mr-2" />
 					<span>โปรไฟล์ของฉัน</span>
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item class="cursor-pointer" onclick={() => goto(getSettingsUrl())}>
+				<DropdownMenu.Item class="cursor-pointer" onclick={goToSettings}>
 					<Settings class="w-4 h-4 mr-2" />
 					<span>การตั้งค่า</span>
 				</DropdownMenu.Item>

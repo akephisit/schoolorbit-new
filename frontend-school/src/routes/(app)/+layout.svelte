@@ -27,9 +27,7 @@
 		}
 
 		// Mobile drag & drop support (Global Init)
-		// @ts-ignore
 		const { polyfill } = await import('mobile-drag-drop');
-		// @ts-ignore
 		const { scrollBehaviourDragImageTranslateOverride } =
 			await import('mobile-drag-drop/scroll-behaviour');
 

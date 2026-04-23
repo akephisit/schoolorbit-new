@@ -27,20 +27,32 @@
 </script>
 
 <svelte:head>
-  <!-- Open Graph -->
-  <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="SchoolOrbit" />
-  <meta property="og:locale" content="th_TH" />
-  <meta property="og:url" content={page.url.href} />
-  <meta property="og:title" content={page.data.title ? `${page.data.title} - SchoolOrbit` : 'SchoolOrbit'} />
-  <meta property="og:description" content={page.data.description ?? 'ระบบจัดการโรงเรียนแบบครบวงจร'} />
-  <meta property="og:image" content={`${page.url.origin}/icon-192.png`} />
+	<!-- Open Graph -->
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content="SchoolOrbit" />
+	<meta property="og:locale" content="th_TH" />
+	<meta property="og:url" content={page.url.href} />
+	<meta
+		property="og:title"
+		content={page.data.title ? `${page.data.title} - SchoolOrbit` : 'SchoolOrbit'}
+	/>
+	<meta
+		property="og:description"
+		content={page.data.description ?? 'ระบบจัดการโรงเรียนแบบครบวงจร'}
+	/>
+	<meta property="og:image" content={`${page.url.origin}/icon-192.png`} />
 
-  <!-- Twitter / X Card -->
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content={page.data.title ? `${page.data.title} - SchoolOrbit` : 'SchoolOrbit'} />
-  <meta name="twitter:description" content={page.data.description ?? 'ระบบจัดการโรงเรียนแบบครบวงจร'} />
-  <meta name="twitter:image" content={`${page.url.origin}/icon-192.png`} />
+	<!-- Twitter / X Card -->
+	<meta name="twitter:card" content="summary" />
+	<meta
+		name="twitter:title"
+		content={page.data.title ? `${page.data.title} - SchoolOrbit` : 'SchoolOrbit'}
+	/>
+	<meta
+		name="twitter:description"
+		content={page.data.description ?? 'ระบบจัดการโรงเรียนแบบครบวงจร'}
+	/>
+	<meta name="twitter:image" content={`${page.url.origin}/icon-192.png`} />
 </svelte:head>
 
 <!-- Sonner Toaster for global notifications -->

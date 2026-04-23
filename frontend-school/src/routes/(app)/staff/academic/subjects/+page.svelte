@@ -22,10 +22,10 @@
 		type Subject,
 		type SubjectGroup,
 		type LookupItem,
-		type ActivityCatalog,
-		type CatalogDefaultInstructor
+		type ActivityCatalog
 	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import {
@@ -66,8 +66,7 @@
 
 	// true = ครูกลุ่มสาระ (manage.department เท่านั้น) — lock group filter
 	let isDeptScope = $derived(
-		$can.has('academic_curriculum.manage.department') &&
-		!$can.has('academic_curriculum.read.all')
+		$can.has('academic_curriculum.manage.department') && !$can.has('academic_curriculum.read.all')
 	);
 
 	// Data States
@@ -77,17 +76,12 @@
 	let academicYears: LookupItem[] = $state([]);
 	let staffList: StaffLookupItem[] = $state([]);
 	let loading = $state(true);
-	let error = $state('');
-
-	// Computed: Current Academic Year
-	let currentAcademicYear = $derived(academicYears.find((y) => y.is_current) || academicYears[0]);
 
 	// Filter States
 	let searchQuery = $state('');
 	let selectedGroupId = $state('');
 	let selectedSubjectType = $state('');
 	let selectedYearFilter = $state('');
-	let selectedYearObj = $derived(academicYears.find((y) => y.id === selectedYearFilter));
 	let showAllVersions = $state(false);
 
 	// Tabs
@@ -120,7 +114,11 @@
 
 	// Catalog default instructors (ครูประจำกิจกรรม — auto-copy ตอน Wand2)
 	// Local-state draft: edit mode → direct API (has catalog id), other modes → submit atomically with create.
-	type CatalogTeamRow = { instructor_id: string; role: 'primary' | 'secondary'; instructor_name?: string };
+	type CatalogTeamRow = {
+		instructor_id: string;
+		role: 'primary' | 'secondary';
+		instructor_name?: string;
+	};
 	let catalogTeam = $state<CatalogTeamRow[]>([]);
 	let catalogTeamLoading = $state(false);
 	let catalogTeamAddInstructorId = $state('');
@@ -159,7 +157,11 @@
 		// Edit mode (has id) → persist immediately; create/new-version → local draft
 		if (editingCatalog) {
 			try {
-				await addCatalogDefaultInstructor(editingCatalog.id, catalogTeamAddInstructorId, catalogTeamAddRole);
+				await addCatalogDefaultInstructor(
+					editingCatalog.id,
+					catalogTeamAddInstructorId,
+					catalogTeamAddRole
+				);
 				await loadCatalogTeam(editingCatalog.id);
 			} catch (e) {
 				toast.error('เพิ่มครูไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
@@ -176,7 +178,11 @@
 			const name = staffList.find((s) => s.id === catalogTeamAddInstructorId)?.name;
 			catalogTeam = [
 				...next,
-				{ instructor_id: catalogTeamAddInstructorId, role: catalogTeamAddRole, instructor_name: name }
+				{
+					instructor_id: catalogTeamAddInstructorId,
+					role: catalogTeamAddRole,
+					instructor_name: name
+				}
 			];
 		}
 		catalogTeamAddInstructorId = '';
@@ -197,7 +203,10 @@
 		}
 	}
 
-	async function handleToggleCatalogTeamRole(instructorId: string, currentRole: 'primary' | 'secondary') {
+	async function handleToggleCatalogTeamRole(
+		instructorId: string,
+		currentRole: 'primary' | 'secondary'
+	) {
 		const next: 'primary' | 'secondary' = currentRole === 'primary' ? 'secondary' : 'primary';
 		if (editingCatalog) {
 			try {
@@ -236,7 +245,11 @@
 	// Subject default instructors (team teaching at catalog level).
 	// We work on a local draft and submit the full team atomically with create/update.
 	// This keeps both create and edit paths consistent and avoids partial saves.
-	type TeamDraftRow = { instructor_id: string; role: 'primary' | 'secondary'; instructor_name?: string };
+	type TeamDraftRow = {
+		instructor_id: string;
+		role: 'primary' | 'secondary';
+		instructor_name?: string;
+	};
 	let teamDraft = $state<TeamDraftRow[]>([]);
 	let teamLoading = $state(false);
 	let teamAddInstructorId = $state('');
@@ -275,10 +288,15 @@
 		// If adding as primary, demote any existing primary locally
 		let next = teamDraft;
 		if (teamAddRole === 'primary') {
-			next = teamDraft.map((t) => (t.role === 'primary' ? { ...t, role: 'secondary' as const } : t));
+			next = teamDraft.map((t) =>
+				t.role === 'primary' ? { ...t, role: 'secondary' as const } : t
+			);
 		}
 		const name = staffList.find((s) => s.id === teamAddInstructorId)?.name;
-		teamDraft = [...next, { instructor_id: teamAddInstructorId, role: teamAddRole, instructor_name: name }];
+		teamDraft = [
+			...next,
+			{ instructor_id: teamAddInstructorId, role: teamAddRole, instructor_name: name }
+		];
 		teamAddInstructorId = '';
 		// Smart default: if team now has primary → next is secondary; else primary
 		teamAddRole = teamDraft.some((t) => t.role === 'primary') ? 'secondary' : 'primary';
@@ -295,7 +313,8 @@
 		teamDraft = teamDraft.map((t) => {
 			if (t.instructor_id === instructorId) return { ...t, role: nextRole };
 			// Demote any other primary when promoting someone else
-			if (nextRole === 'primary' && t.role === 'primary') return { ...t, role: 'secondary' as const };
+			if (nextRole === 'primary' && t.role === 'primary')
+				return { ...t, role: 'secondary' as const };
 			return t;
 		});
 	}
@@ -308,7 +327,7 @@
 		latestId: string;
 	};
 	let versionsByCode = $derived.by(() => {
-		const map = new Map<string, VersionInfo>();
+		const map = new SvelteMap<string, VersionInfo>();
 		// group
 		for (const s of subjects) {
 			const arr = map.get(s.code)?.versions ?? [];
@@ -397,8 +416,8 @@
 				selectedGroupId = subjects[0].group_id;
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการโหลดข้อมูล';
 			console.error(e);
+			toast.error(e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการโหลดข้อมูล');
 		} finally {
 			loading = false;
 		}
@@ -425,18 +444,6 @@
 
 	// Alias for compatibility with existing calls
 	const loadData = loadSubjects;
-
-	function handleOpenCreate() {
-		currentSubject = getInitialSubjectState();
-		// dept-scope: pre-fill and lock group to teacher's own กลุ่มสาระ
-		if (isDeptScope && selectedGroupId) {
-			currentSubject.group_id = selectedGroupId;
-		}
-		isEditing = false;
-		isNewVersion = false;
-		showDialog = true;
-		resetTeamDraft();
-	}
 
 	function handleOpenEdit(subject: Subject) {
 		currentSubject = { ...subject }; // Clone
@@ -502,16 +509,17 @@
 
 			// Helper: Convert empty string to null.
 			// Note: Keep 0 for numbers!
-			const nullify = (val: any) => (val === '' || val === undefined ? null : val);
+			const nullify = <T,>(val: T | '' | undefined): T | null =>
+				val === '' || val === undefined ? null : (val as T);
 
-			payload.group_id = nullify(payload.group_id);
-			payload.start_academic_year_id = nullify(payload.start_academic_year_id);
-			payload.default_instructor_id = nullify(payload.default_instructor_id);
-			payload.description = nullify(payload.description);
-			payload.term = nullify(payload.term);
+			payload.group_id = nullify(payload.group_id) ?? undefined;
+			payload.start_academic_year_id = nullify(payload.start_academic_year_id) ?? '';
+			payload.default_instructor_id = nullify(payload.default_instructor_id) ?? undefined;
+			payload.description = nullify(payload.description) ?? undefined;
+			payload.term = nullify(payload.term) ?? undefined;
 
-			if (payload.credit === ('' as any)) payload.credit = null as any;
-			if (payload.hours_per_semester === ('' as any)) payload.hours_per_semester = null as any;
+			if ((payload.credit as unknown) === '') payload.credit = 0;
+			if ((payload.hours_per_semester as unknown) === '') payload.hours_per_semester = undefined;
 
 			// Attach full team — backend replaces subject_default_instructors atomically.
 			// Empty array clears all defaults. Strip the instructor_name helper before send.
@@ -521,10 +529,10 @@
 			}));
 
 			if (isEditing && payload.id) {
-				await updateSubject(payload.id, payload as any);
+				await updateSubject(payload.id, payload);
 				toast.success('บันทึกแล้ว');
 			} else {
-				await createSubject(payload as any);
+				await createSubject(payload);
 				toast.success('เพิ่มรายวิชาแล้ว');
 			}
 			showDialog = false;
@@ -577,7 +585,7 @@
 
 	// Version grouping for catalog: name → versions sorted DESC by year (latest first).
 	let catalogVersionsByName = $derived.by(() => {
-		const map = new Map<string, { versions: ActivityCatalog[]; latestId: string }>();
+		const map = new SvelteMap<string, { versions: ActivityCatalog[]; latestId: string }>();
 		for (const c of catalogItems) {
 			const arr = map.get(c.name)?.versions ?? [];
 			arr.push(c);
@@ -606,21 +614,6 @@
 				: undefined;
 		if (startYear == null) return '';
 		return nextYear != null ? `ปี ${startYear}–${nextYear}` : `ตั้งแต่ปี ${startYear}`;
-	}
-
-	function openCreateCatalog() {
-		editingCatalog = null;
-		catalogName = '';
-		catalogType = 'scout';
-		catalogDesc = '';
-		catalogPeriods = 1;
-		catalogMode = 'synchronized';
-		catalogTerm = '';
-		catalogGradeLevelIds = [];
-		catalogStartYearId = (academicYears.find((y) => y.is_current) ?? academicYears[0])?.id ?? '';
-		isNewCatalogVersion = false;
-		showCatalogDialog = true;
-		resetCatalogTeam();
 	}
 
 	async function openNewCatalogVersion(item: ActivityCatalog) {
@@ -736,9 +729,10 @@
 				await createActivityCatalog({
 					...payload,
 					start_academic_year_id: catalogStartYearId,
-					default_instructors: catalogTeam.length > 0
-						? catalogTeam.map((t) => ({ instructor_id: t.instructor_id, role: t.role }))
-						: undefined
+					default_instructors:
+						catalogTeam.length > 0
+							? catalogTeam.map((t) => ({ instructor_id: t.instructor_id, role: t.role }))
+							: undefined
 				});
 				toast.success(isNewCatalogVersion ? 'สร้าง version ใหม่แล้ว' : 'เพิ่มกิจกรรมแล้ว');
 			}
@@ -844,287 +838,306 @@
 		</Tabs.List>
 
 		<Tabs.Content value="subjects" class="space-y-4 mt-4">
-	<!-- Filters & Search -->
-	<div
-		class="bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row gap-3 items-end md:items-center flex-wrap"
-	>
-		<!-- Search -->
-		<div class="w-full md:w-[240px] space-y-1">
-			<div class="relative">
-				<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-				<Input
-					type="text"
-					bind:value={searchQuery}
-					onkeydown={(e) => e.key === 'Enter' && loadData()}
-					placeholder="ค้นหารหัสหรือชื่อวิชา..."
-					class="pl-10"
-				/>
-			</div>
-			<p class="text-[10px] text-muted-foreground pl-1">
-				ค้นได้ทั้งรหัสวิชา (เช่น ท21101) และชื่อ
-			</p>
-		</div>
+			<!-- Filters & Search -->
+			<div
+				class="bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row gap-3 items-end md:items-center flex-wrap"
+			>
+				<!-- Search -->
+				<div class="w-full md:w-[240px] space-y-1">
+					<div class="relative">
+						<Search
+							class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
+						/>
+						<Input
+							type="text"
+							bind:value={searchQuery}
+							onkeydown={(e) => e.key === 'Enter' && loadData()}
+							placeholder="ค้นหารหัสหรือชื่อวิชา..."
+							class="pl-10"
+						/>
+					</div>
+					<p class="text-[10px] text-muted-foreground pl-1">
+						ค้นได้ทั้งรหัสวิชา (เช่น ท21101) และชื่อ
+					</p>
+				</div>
 
-		<!-- Year Filter -->
-		<div class="w-full md:w-[200px] space-y-1">
-			<Select.Root type="single" bind:value={selectedYearFilter} onValueChange={() => loadData()}>
-				<Select.Trigger title="แสดงวิชาทุกรหัสที่ 'มีผลบังคับ' ในปีการศึกษาที่เลือก (รวมวิชาที่เริ่มใช้ตั้งแต่ปีก่อนหน้า)">
-					{academicYears.find((y) => y.id === selectedYearFilter)?.name || 'ทุกปีการศึกษา'}
-				</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="">ทุกเวอร์ชัน (ไม่กรองปี)</Select.Item>
-					{#each academicYears as year}
-						<Select.Item value={year.id}
-							>{year.name} {year.is_current ? '(ปัจจุบัน)' : ''}</Select.Item
+				<!-- Year Filter -->
+				<div class="w-full md:w-[200px] space-y-1">
+					<Select.Root
+						type="single"
+						bind:value={selectedYearFilter}
+						onValueChange={() => loadData()}
+					>
+						<Select.Trigger
+							title="แสดงวิชาทุกรหัสที่ 'มีผลบังคับ' ในปีการศึกษาที่เลือก (รวมวิชาที่เริ่มใช้ตั้งแต่ปีก่อนหน้า)"
 						>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-			<p class="text-[10px] text-muted-foreground pl-1">วิชาที่ใช้ในปี</p>
-		</div>
+							{academicYears.find((y) => y.id === selectedYearFilter)?.name || 'ทุกปีการศึกษา'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">ทุกเวอร์ชัน (ไม่กรองปี)</Select.Item>
+							{#each academicYears as year (year.id)}
+								<Select.Item value={year.id}
+									>{year.name} {year.is_current ? '(ปัจจุบัน)' : ''}</Select.Item
+								>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+					<p class="text-[10px] text-muted-foreground pl-1">วิชาที่ใช้ในปี</p>
+				</div>
 
-		<!-- Show all versions toggle -->
-		<label
-			class="flex items-center gap-2 text-xs cursor-pointer"
-			title="ปกติแสดงเฉพาะ version ล่าสุดของแต่ละรหัสวิชา ติ๊กเพื่อดู version เก่าทั้งหมด"
-		>
-			<Checkbox
-				checked={showAllVersions}
-				onCheckedChange={(v) => {
-					showAllVersions = !!v;
-					loadData();
-				}}
-			/>
-			<span>แสดง version เก่าด้วย</span>
-		</label>
+				<!-- Show all versions toggle -->
+				<label
+					class="flex items-center gap-2 text-xs cursor-pointer"
+					title="ปกติแสดงเฉพาะ version ล่าสุดของแต่ละรหัสวิชา ติ๊กเพื่อดู version เก่าทั้งหมด"
+				>
+					<Checkbox
+						checked={showAllVersions}
+						onCheckedChange={(v) => {
+							showAllVersions = !!v;
+							loadData();
+						}}
+					/>
+					<span>แสดง version เก่าด้วย</span>
+				</label>
 
-		<!-- Group Filter -->
-		<div class="w-full md:w-[220px]">
-			<Select.Root type="single" bind:value={selectedGroupId} onValueChange={() => loadData()} disabled={isDeptScope}>
-				<Select.Trigger class="truncate">
-					{groups.find((g) => g.id === selectedGroupId)?.name_th || 'ทุกกลุ่มสาระฯ'}
-				</Select.Trigger>
-				<Select.Content class="max-h-[300px]">
-					<Select.Item value="">ทุกกลุ่มสาระฯ</Select.Item>
-					{#each groups as group}
-						<Select.Item value={group.id}>{group.name_th}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		</div>
+				<!-- Group Filter -->
+				<div class="w-full md:w-[220px]">
+					<Select.Root
+						type="single"
+						bind:value={selectedGroupId}
+						onValueChange={() => loadData()}
+						disabled={isDeptScope}
+					>
+						<Select.Trigger class="truncate">
+							{groups.find((g) => g.id === selectedGroupId)?.name_th || 'ทุกกลุ่มสาระฯ'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[300px]">
+							<Select.Item value="">ทุกกลุ่มสาระฯ</Select.Item>
+							{#each groups as group (group.id)}
+								<Select.Item value={group.id}>{group.name_th}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
 
-		<!-- Type Filter -->
-		<div class="w-full md:w-[150px]">
-			<Select.Root type="single" bind:value={selectedSubjectType} onValueChange={() => loadData()}>
-				<Select.Trigger>
-					{#if selectedSubjectType === 'BASIC'}วิชาพื้นฐาน
-					{:else if selectedSubjectType === 'ADDITIONAL'}วิชาเพิ่มเติม
-					{:else}ทุกประเภท{/if}
-				</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="">ทุกประเภท</Select.Item>
-					<Select.Item value="BASIC">วิชาพื้นฐาน</Select.Item>
-					<Select.Item value="ADDITIONAL">วิชาเพิ่มเติม</Select.Item>
-				</Select.Content>
-			</Select.Root>
-		</div>
+				<!-- Type Filter -->
+				<div class="w-full md:w-[150px]">
+					<Select.Root
+						type="single"
+						bind:value={selectedSubjectType}
+						onValueChange={() => loadData()}
+					>
+						<Select.Trigger>
+							{#if selectedSubjectType === 'BASIC'}วิชาพื้นฐาน
+							{:else if selectedSubjectType === 'ADDITIONAL'}วิชาเพิ่มเติม
+							{:else}ทุกประเภท{/if}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">ทุกประเภท</Select.Item>
+							<Select.Item value="BASIC">วิชาพื้นฐาน</Select.Item>
+							<Select.Item value="ADDITIONAL">วิชาเพิ่มเติม</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
 
-		<Button variant="secondary" onclick={loadData}>ค้นหา</Button>
-	</div>
+				<Button variant="secondary" onclick={loadData}>ค้นหา</Button>
+			</div>
 
-	<!-- List Table -->
-	<div class="bg-card border border-border rounded-lg overflow-hidden">
-		<Table.Root>
-			<Table.Header>
-				<Table.Row>
-					<Table.Head class="w-[130px]">รหัสวิชา</Table.Head>
-					<Table.Head>ชื่อรายวิชา</Table.Head>
-					<Table.Head class="w-[120px]">กลุ่มสาระฯ</Table.Head>
-					<Table.Head class="w-[120px]">ชั้น</Table.Head>
-					<Table.Head class="text-center w-[90px]">ภาคเรียน</Table.Head>
-					<Table.Head class="text-center w-[100px]">หน่วยกิต</Table.Head>
-					<Table.Head class="w-[140px]">ครูผู้สอน</Table.Head>
-					<Table.Head class="text-right w-[120px]">จัดการ</Table.Head>
-				</Table.Row>
-			</Table.Header>
-			<Table.Body>
-				{#if loading}
-					<Table.Row>
-						<Table.Cell colspan={8} class="text-center h-24 text-muted-foreground">
-							กำลังโหลดข้อมูล...
-						</Table.Cell>
-					</Table.Row>
-				{:else if subjects.length === 0}
-					<Table.Row>
-						<Table.Cell colspan={8} class="h-48">
-							<div class="flex flex-col items-center justify-center gap-3 py-6 text-center">
-								{#if hasActiveFilters}
-									<Inbox class="w-10 h-10 text-muted-foreground/60" />
-									<div class="text-muted-foreground">ไม่พบวิชาที่ตรงกับตัวกรอง</div>
-									<Button variant="outline" size="sm" onclick={clearFilters}>
-										ล้างตัวกรอง
-									</Button>
-								{:else}
-									<Inbox class="w-10 h-10 text-muted-foreground/60" />
-									<div class="font-medium">ยังไม่มีวิชาในระบบ</div>
-									<div class="text-xs text-muted-foreground">
-										เริ่มต้นโดยคลิก "+ เพิ่ม" ด้านบน
-									</div>
-									<Button size="sm" onclick={openUnifiedAdd} class="gap-2">
-										<Plus class="w-4 h-4" />
-										เพิ่มรายวิชา
-									</Button>
-								{/if}
-							</div>
-						</Table.Cell>
-					</Table.Row>
-				{:else}
-					{#each subjects as subject (subject.id)}
-						{@const vInfo = versionsByCode.get(subject.code)}
-						{@const totalVersions = vInfo?.versions.length ?? 1}
-						{@const isLatestVersion = vInfo ? vInfo.latestId === subject.id : true}
-						{@const latestYearName = vInfo
-							? academicYears.find(
-									(y) => y.id === vInfo.versions[0]?.start_academic_year_id
-								)?.name
-							: undefined}
+			<!-- List Table -->
+			<div class="bg-card border border-border rounded-lg overflow-hidden">
+				<Table.Root>
+					<Table.Header>
 						<Table.Row>
-							<Table.Cell class="font-medium align-middle">
-								<div class="font-bold text-primary">{subject.code}</div>
-								<div class="flex flex-wrap items-center gap-1 mt-1">
-									{#if totalVersions > 1}
-										{#if isLatestVersion}
-											<Badge
-												class="text-[10px] px-1.5 py-0 h-auto bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
-												title="เวอร์ชันปัจจุบันของรหัสวิชานี้"
-											>
-												ปัจจุบัน
-											</Badge>
+							<Table.Head class="w-[130px]">รหัสวิชา</Table.Head>
+							<Table.Head>ชื่อรายวิชา</Table.Head>
+							<Table.Head class="w-[120px]">กลุ่มสาระฯ</Table.Head>
+							<Table.Head class="w-[120px]">ชั้น</Table.Head>
+							<Table.Head class="text-center w-[90px]">ภาคเรียน</Table.Head>
+							<Table.Head class="text-center w-[100px]">หน่วยกิต</Table.Head>
+							<Table.Head class="w-[140px]">ครูผู้สอน</Table.Head>
+							<Table.Head class="text-right w-[120px]">จัดการ</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#if loading}
+							<Table.Row>
+								<Table.Cell colspan={8} class="text-center h-24 text-muted-foreground">
+									กำลังโหลดข้อมูล...
+								</Table.Cell>
+							</Table.Row>
+						{:else if subjects.length === 0}
+							<Table.Row>
+								<Table.Cell colspan={8} class="h-48">
+									<div class="flex flex-col items-center justify-center gap-3 py-6 text-center">
+										{#if hasActiveFilters}
+											<Inbox class="w-10 h-10 text-muted-foreground/60" />
+											<div class="text-muted-foreground">ไม่พบวิชาที่ตรงกับตัวกรอง</div>
+											<Button variant="outline" size="sm" onclick={clearFilters}>
+												ล้างตัวกรอง
+											</Button>
 										{:else}
-											<Badge
-												variant="outline"
-												class="text-[10px] px-1.5 py-0 h-auto text-muted-foreground"
-												title={latestYearName
-													? `เวอร์ชันล่าสุดคือ ${latestYearName}`
-													: 'มีเวอร์ชันที่ใหม่กว่านี้อยู่'}
-											>
-												เก่า · {versionRangeLabel(subject)}
-											</Badge>
+											<Inbox class="w-10 h-10 text-muted-foreground/60" />
+											<div class="font-medium">ยังไม่มีวิชาในระบบ</div>
+											<div class="text-xs text-muted-foreground">
+												เริ่มต้นโดยคลิก "+ เพิ่ม" ด้านบน
+											</div>
+											<Button size="sm" onclick={openUnifiedAdd} class="gap-2">
+												<Plus class="w-4 h-4" />
+												เพิ่มรายวิชา
+											</Button>
 										{/if}
-										<Badge
-											variant="secondary"
-											class="text-[10px] px-1.5 py-0 h-auto font-normal"
-											title="มี {totalVersions} เวอร์ชันของรหัสวิชานี้ที่โหลดอยู่"
-										>
-											{totalVersions} versions
-										</Badge>
-									{/if}
-									{#if subject.type !== 'BASIC'}
-										<Badge variant="outline" class="text-[10px] px-1 py-0 h-auto">
-											{subject.type}
-										</Badge>
-									{/if}
-								</div>
-							</Table.Cell>
-							<Table.Cell class="align-middle">
-								<div class="font-medium">{subject.name_th}</div>
-								{#if subject.name_en}
-									<div class="text-xs text-muted-foreground">{subject.name_en}</div>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="align-middle">
-								{#if subject.group_name_th}
-									<Badge variant="secondary" class="font-normal whitespace-nowrap">
-										{subject.group_name_th}
-									</Badge>
-								{:else}
-									<span class="text-muted-foreground">-</span>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="align-middle">
-								{#if subject.grade_level_ids && subject.grade_level_ids.length > 0}
-									<div class="flex flex-wrap gap-0.5">
-										{#each subject.grade_level_ids as gid}
-											{@const gl = gradeLevels.find((l) => l.id === gid)}
-											{#if gl}
-												<Badge variant="outline" class="text-[10px] px-1 py-0 h-auto font-normal">
-													{gl.short_name ?? gl.code}
+									</div>
+								</Table.Cell>
+							</Table.Row>
+						{:else}
+							{#each subjects as subject (subject.id)}
+								{@const vInfo = versionsByCode.get(subject.code)}
+								{@const totalVersions = vInfo?.versions.length ?? 1}
+								{@const isLatestVersion = vInfo ? vInfo.latestId === subject.id : true}
+								{@const latestYearName = vInfo
+									? academicYears.find((y) => y.id === vInfo.versions[0]?.start_academic_year_id)
+											?.name
+									: undefined}
+								<Table.Row>
+									<Table.Cell class="font-medium align-middle">
+										<div class="font-bold text-primary">{subject.code}</div>
+										<div class="flex flex-wrap items-center gap-1 mt-1">
+											{#if totalVersions > 1}
+												{#if isLatestVersion}
+													<Badge
+														class="text-[10px] px-1.5 py-0 h-auto bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+														title="เวอร์ชันปัจจุบันของรหัสวิชานี้"
+													>
+														ปัจจุบัน
+													</Badge>
+												{:else}
+													<Badge
+														variant="outline"
+														class="text-[10px] px-1.5 py-0 h-auto text-muted-foreground"
+														title={latestYearName
+															? `เวอร์ชันล่าสุดคือ ${latestYearName}`
+															: 'มีเวอร์ชันที่ใหม่กว่านี้อยู่'}
+													>
+														เก่า · {versionRangeLabel(subject)}
+													</Badge>
+												{/if}
+												<Badge
+													variant="secondary"
+													class="text-[10px] px-1.5 py-0 h-auto font-normal"
+													title="มี {totalVersions} เวอร์ชันของรหัสวิชานี้ที่โหลดอยู่"
+												>
+													{totalVersions} versions
 												</Badge>
 											{/if}
-										{/each}
-									</div>
-								{:else}
-									<span class="text-xs text-muted-foreground">ทุกระดับ</span>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-center align-middle">
-								{#if subject.term === '1'}
-									<Badge variant="outline" class="text-[10px] font-normal">เทอม 1</Badge>
-								{:else if subject.term === '2'}
-									<Badge variant="outline" class="text-[10px] font-normal">เทอม 2</Badge>
-								{:else if subject.term === 'SUMMER'}
-									<Badge variant="outline" class="text-[10px] font-normal">ซัมเมอร์</Badge>
-								{:else}
-									<span class="text-xs text-muted-foreground">ทุกเทอม</span>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-center align-middle">
-								<div class="font-bold">{subject.credit} นก.</div>
-								<div class="text-xs text-muted-foreground">
-									{#if subject.hours_per_semester === 0}
-										<span title="ไม่ต้องจัดตารางสอน (เก็บคะแนนอย่างเดียว)">ไม่จัด</span>
-									{:else if subject.hours_per_semester}
-										{subject.hours_per_semester} ชม./เทอม
-									{:else}
-										-
-									{/if}
-								</div>
-							</Table.Cell>
-							<Table.Cell class="align-middle">
-								{#if subject.default_instructor_name}
-									<div class="text-sm truncate" title={subject.default_instructor_name}>
-										{subject.default_instructor_name}
-									</div>
-								{:else}
-									<span class="text-xs text-muted-foreground">ไม่ระบุ</span>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-right align-middle">
-								<div class="flex justify-end gap-1">
-									<Button
-										onclick={() => handleOpenEdit(subject)}
-										variant="ghost"
-										size="icon"
-										class="h-8 w-8"
-										title="แก้ไขข้อมูลวิชา (กระทบทุกแผน)"
-									>
-										<Pencil class="w-4 h-4" />
-									</Button>
-									<Button
-										onclick={() => handleOpenNewVersion(subject)}
-										variant="ghost"
-										size="icon"
-										class="h-8 w-8"
-										title="สร้าง version ใหม่สำหรับปีการศึกษาอื่น"
-									>
-										<Copy class="w-4 h-4" />
-									</Button>
-									<Button
-										onclick={() => handleOpenDelete(subject)}
-										variant="ghost"
-										size="icon"
-										class="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-									>
-										<Trash2 class="w-4 h-4" />
-									</Button>
-								</div>
-							</Table.Cell>
-						</Table.Row>
-					{/each}
-				{/if}
-			</Table.Body>
-		</Table.Root>
-	</div>
+											{#if subject.type !== 'BASIC'}
+												<Badge variant="outline" class="text-[10px] px-1 py-0 h-auto">
+													{subject.type}
+												</Badge>
+											{/if}
+										</div>
+									</Table.Cell>
+									<Table.Cell class="align-middle">
+										<div class="font-medium">{subject.name_th}</div>
+										{#if subject.name_en}
+											<div class="text-xs text-muted-foreground">{subject.name_en}</div>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="align-middle">
+										{#if subject.group_name_th}
+											<Badge variant="secondary" class="font-normal whitespace-nowrap">
+												{subject.group_name_th}
+											</Badge>
+										{:else}
+											<span class="text-muted-foreground">-</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="align-middle">
+										{#if subject.grade_level_ids && subject.grade_level_ids.length > 0}
+											<div class="flex flex-wrap gap-0.5">
+												{#each subject.grade_level_ids as gid (gid)}
+													{@const gl = gradeLevels.find((l) => l.id === gid)}
+													{#if gl}
+														<Badge
+															variant="outline"
+															class="text-[10px] px-1 py-0 h-auto font-normal"
+														>
+															{gl.short_name ?? gl.code}
+														</Badge>
+													{/if}
+												{/each}
+											</div>
+										{:else}
+											<span class="text-xs text-muted-foreground">ทุกระดับ</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-center align-middle">
+										{#if subject.term === '1'}
+											<Badge variant="outline" class="text-[10px] font-normal">เทอม 1</Badge>
+										{:else if subject.term === '2'}
+											<Badge variant="outline" class="text-[10px] font-normal">เทอม 2</Badge>
+										{:else if subject.term === 'SUMMER'}
+											<Badge variant="outline" class="text-[10px] font-normal">ซัมเมอร์</Badge>
+										{:else}
+											<span class="text-xs text-muted-foreground">ทุกเทอม</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-center align-middle">
+										<div class="font-bold">{subject.credit} นก.</div>
+										<div class="text-xs text-muted-foreground">
+											{#if subject.hours_per_semester === 0}
+												<span title="ไม่ต้องจัดตารางสอน (เก็บคะแนนอย่างเดียว)">ไม่จัด</span>
+											{:else if subject.hours_per_semester}
+												{subject.hours_per_semester} ชม./เทอม
+											{:else}
+												-
+											{/if}
+										</div>
+									</Table.Cell>
+									<Table.Cell class="align-middle">
+										{#if subject.default_instructor_name}
+											<div class="text-sm truncate" title={subject.default_instructor_name}>
+												{subject.default_instructor_name}
+											</div>
+										{:else}
+											<span class="text-xs text-muted-foreground">ไม่ระบุ</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-right align-middle">
+										<div class="flex justify-end gap-1">
+											<Button
+												onclick={() => handleOpenEdit(subject)}
+												variant="ghost"
+												size="icon"
+												class="h-8 w-8"
+												title="แก้ไขข้อมูลวิชา (กระทบทุกแผน)"
+											>
+												<Pencil class="w-4 h-4" />
+											</Button>
+											<Button
+												onclick={() => handleOpenNewVersion(subject)}
+												variant="ghost"
+												size="icon"
+												class="h-8 w-8"
+												title="สร้าง version ใหม่สำหรับปีการศึกษาอื่น"
+											>
+												<Copy class="w-4 h-4" />
+											</Button>
+											<Button
+												onclick={() => handleOpenDelete(subject)}
+												variant="ghost"
+												size="icon"
+												class="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+											>
+												<Trash2 class="w-4 h-4" />
+											</Button>
+										</div>
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						{/if}
+					</Table.Body>
+				</Table.Root>
+			</div>
 		</Tabs.Content>
 
 		<Tabs.Content value="activities" class="space-y-4 mt-4">
@@ -1151,9 +1164,7 @@
 			{#if catalogLoading}
 				<div class="text-center py-6 text-sm text-muted-foreground">กำลังโหลด...</div>
 			{:else if catalogItems.length === 0}
-				<div
-					class="text-center py-6 text-sm text-muted-foreground border rounded-lg border-dashed"
-				>
+				<div class="text-center py-6 text-sm text-muted-foreground border rounded-lg border-dashed">
 					ยังไม่มีกิจกรรม — กดปุ่ม "เพิ่มกิจกรรม"
 				</div>
 			{:else}
@@ -1196,7 +1207,9 @@
 												</Badge>
 											{/if}
 										{:else if item.start_academic_year_id}
-											{@const year = academicYears.find((y) => y.id === item.start_academic_year_id)}
+											{@const year = academicYears.find(
+												(y) => y.id === item.start_academic_year_id
+											)}
 											{#if year}
 												<Badge variant="outline" class="ml-2 text-[10px] h-5">
 													ตั้งแต่ {year.name}
@@ -1208,9 +1221,7 @@
 										<span class="text-xs text-muted-foreground">กิจกรรมพัฒนาผู้เรียน</span>
 									</Table.Cell>
 									<Table.Cell>
-										<Badge variant="secondary"
-											>{ACTIVITY_TYPE_LABELS[item.activity_type]}</Badge
-										>
+										<Badge variant="secondary">{ACTIVITY_TYPE_LABELS[item.activity_type]}</Badge>
 									</Table.Cell>
 									<Table.Cell>
 										{item.term === '1'
@@ -1307,8 +1318,8 @@
 					<div class="font-semibold">⚠ การแก้ไขนี้กระทบทุกแผนที่ใช้วิชานี้</div>
 					<div>• เหมาะสำหรับแก้ typo, ปรับคำอธิบาย, ข้อมูลเล็กน้อย</div>
 					<div>
-						• ถ้าต้องการ<strong>เปลี่ยนข้อมูลตามปีการศึกษา</strong> (เช่น ปรับหน่วยกิต/จำนวนคาบ) → ปิด
-						dialog นี้ แล้วกดปุ่ม <strong>"สร้าง version ใหม่"</strong> ที่แถวของวิชา
+						• ถ้าต้องการ<strong>เปลี่ยนข้อมูลตามปีการศึกษา</strong> (เช่น ปรับหน่วยกิต/จำนวนคาบ) →
+						ปิด dialog นี้ แล้วกดปุ่ม <strong>"สร้าง version ใหม่"</strong> ที่แถวของวิชา
 					</div>
 				</div>
 			{/if}
@@ -1343,7 +1354,7 @@
 							</Select.Trigger>
 							<Select.Content>
 								{#if academicYears.length > 0}
-									{#each academicYears as year}
+									{#each academicYears as year (year.id)}
 										<Select.Item value={year.id}>{year.name}</Select.Item>
 									{/each}
 								{:else}
@@ -1352,7 +1363,9 @@
 							</Select.Content>
 						</Select.Root>
 						{#if isEditing}
-							<p class="text-[10px] text-muted-foreground">แก้ version เดิม — ใช้ "สร้าง version ใหม่" ถ้าอยากแยกปี</p>
+							<p class="text-[10px] text-muted-foreground">
+								แก้ version เดิม — ใช้ "สร้าง version ใหม่" ถ้าอยากแยกปี
+							</p>
 						{/if}
 					</div>
 				</div>
@@ -1406,7 +1419,7 @@
 								{groups.find((g) => g.id === currentSubject.group_id)?.name_th || 'เลือกกลุ่มสาระ'}
 							</Select.Trigger>
 							<Select.Content class="max-h-[300px]">
-								{#each groups as group}
+								{#each groups as group (group.id)}
 									<Select.Item value={group.id}>{group.code} - {group.name_th}</Select.Item>
 								{/each}
 							</Select.Content>
@@ -1451,7 +1464,7 @@
 							<Popover.Content
 								class="w-[--radix-popover-trigger-width] p-1 max-h-[260px] overflow-y-auto"
 							>
-								{#each gradeLevels as level}
+								{#each gradeLevels as level (level.id)}
 									{@const checked = currentSubject.grade_level_ids?.includes(level.id) ?? false}
 									<button
 										type="button"
@@ -1533,7 +1546,7 @@
 									<Command.Input placeholder="ค้นหาครู..." />
 									<Command.Empty>ไม่พบครู</Command.Empty>
 									<Command.Group class="max-h-[280px] overflow-y-auto">
-										{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff}
+										{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff (staff.id)}
 											<Command.Item
 												value={staff.name}
 												onSelect={() => {
@@ -1541,7 +1554,11 @@
 													pickerOpenSubjectTeam = false;
 												}}
 											>
-												<Check class="mr-2 h-4 w-4 {teamAddInstructorId === staff.id ? 'opacity-100' : 'opacity-0'}" />
+												<Check
+													class="mr-2 h-4 w-4 {teamAddInstructorId === staff.id
+														? 'opacity-100'
+														: 'opacity-0'}"
+												/>
 												{staff.name}
 											</Command.Item>
 										{/each}
@@ -1571,15 +1588,13 @@
 						<p class="text-[11px] text-muted-foreground">กำลังโหลด...</p>
 					{:else if teamDraft.length === 0}
 						<p class="text-[11px] text-muted-foreground">
-							ยังไม่มีครู — เลือกและเพิ่มได้ เมื่อบันทึกจะผูกครูทั้งทีมให้ทุกห้องที่เรียนวิชานี้อัตโนมัติ
+							ยังไม่มีครู — เลือกและเพิ่มได้
+							เมื่อบันทึกจะผูกครูทั้งทีมให้ทุกห้องที่เรียนวิชานี้อัตโนมัติ
 						</p>
 					{:else}
 						<div class="flex flex-wrap gap-1.5">
 							{#each teamDraft as t (t.instructor_id)}
-								<Badge
-									variant={t.role === 'primary' ? 'default' : 'secondary'}
-									class="gap-1 pr-1"
-								>
+								<Badge variant={t.role === 'primary' ? 'default' : 'secondary'} class="gap-1 pr-1">
 									<button
 										type="button"
 										class="cursor-pointer hover:underline"
@@ -1766,16 +1781,12 @@
 				</div>
 				<div class="space-y-1">
 					<Label>ปีเริ่มใช้ <span class="text-destructive">*</span></Label>
-					<Select.Root
-						type="single"
-						bind:value={catalogStartYearId}
-						disabled={!!editingCatalog}
-					>
+					<Select.Root type="single" bind:value={catalogStartYearId} disabled={!!editingCatalog}>
 						<Select.Trigger class="w-full">
 							{academicYears.find((y) => y.id === catalogStartYearId)?.name ?? 'เลือกปี'}
 						</Select.Trigger>
 						<Select.Content class="max-h-[300px]">
-							{#each academicYears as year}
+							{#each academicYears as year (year.id)}
 								<Select.Item value={year.id}>
 									{year.name}{year.is_current ? ' (ปัจจุบัน)' : ''}
 								</Select.Item>
@@ -1783,16 +1794,16 @@
 						</Select.Content>
 					</Select.Root>
 					{#if editingCatalog}
-						<p class="text-[10px] text-muted-foreground">แก้ version เดิม — ใช้ "สร้าง version ใหม่" ถ้าอยากแยกปี</p>
+						<p class="text-[10px] text-muted-foreground">
+							แก้ version เดิม — ใช้ "สร้าง version ใหม่" ถ้าอยากแยกปี
+						</p>
 					{/if}
 				</div>
 			</div>
 
 			<div class="space-y-1">
 				<Label>กลุ่มสาระ</Label>
-				<div class="px-3 py-2 border rounded bg-muted text-sm">
-					กิจกรรมพัฒนาผู้เรียน
-				</div>
+				<div class="px-3 py-2 border rounded bg-muted text-sm">กิจกรรมพัฒนาผู้เรียน</div>
 			</div>
 
 			<div class="grid grid-cols-2 gap-3">
@@ -1801,7 +1812,7 @@
 					<Select.Root type="single" bind:value={catalogType}>
 						<Select.Trigger class="w-full">{ACTIVITY_TYPE_LABELS[catalogType]}</Select.Trigger>
 						<Select.Content>
-							{#each Object.entries(ACTIVITY_TYPE_LABELS) as [v, label]}
+							{#each Object.entries(ACTIVITY_TYPE_LABELS) as [v, label] (v)}
 								<Select.Item value={v}>{label}</Select.Item>
 							{/each}
 						</Select.Content>
@@ -1851,7 +1862,7 @@
 			<div class="space-y-1">
 				<Label>ระดับชั้น</Label>
 				<div class="flex flex-wrap gap-2">
-					{#each gradeLevels as gl}
+					{#each gradeLevels as gl (gl.id)}
 						<label
 							class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted"
 						>
@@ -1892,103 +1903,104 @@
 						</span>
 					{/if}
 				</Label>
-					<div class="flex gap-2">
-						<Popover.Root bind:open={pickerOpenCatalogTeam}>
-							<Popover.Trigger class="flex-1">
-								<Button
-									variant="outline"
-									role="combobox"
-									aria-expanded={pickerOpenCatalogTeam}
-									class="w-full justify-between font-normal"
+				<div class="flex gap-2">
+					<Popover.Root bind:open={pickerOpenCatalogTeam}>
+						<Popover.Trigger class="flex-1">
+							<Button
+								variant="outline"
+								role="combobox"
+								aria-expanded={pickerOpenCatalogTeam}
+								class="w-full justify-between font-normal"
+							>
+								<span class="truncate">
+									{(() => {
+										const st = staffList.find((s) => s.id === catalogTeamAddInstructorId);
+										return st ? st.name : 'เลือกครู';
+									})()}
+								</span>
+								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						</Popover.Trigger>
+						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+							<Command.Root>
+								<Command.Input placeholder="ค้นหาครู..." />
+								<Command.Empty>ไม่พบครู</Command.Empty>
+								<Command.Group class="max-h-[280px] overflow-y-auto">
+									{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff (staff.id)}
+										<Command.Item
+											value={staff.name}
+											onSelect={() => {
+												catalogTeamAddInstructorId = staff.id;
+												pickerOpenCatalogTeam = false;
+											}}
+										>
+											<Check
+												class="mr-2 h-4 w-4 {catalogTeamAddInstructorId === staff.id
+													? 'opacity-100'
+													: 'opacity-0'}"
+											/>
+											{staff.name}
+										</Command.Item>
+									{/each}
+								</Command.Group>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
+					<Select.Root type="single" bind:value={catalogTeamAddRole}>
+						<Select.Trigger class="w-[130px]">
+							{catalogTeamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="primary">ครูหลัก</Select.Item>
+							<Select.Item value="secondary">ครูร่วม</Select.Item>
+						</Select.Content>
+					</Select.Root>
+					<Button
+						type="button"
+						variant="outline"
+						onclick={handleAddCatalogTeam}
+						disabled={!catalogTeamAddInstructorId}
+					>
+						เพิ่ม
+					</Button>
+				</div>
+				{#if catalogTeamLoading}
+					<p class="text-[11px] text-muted-foreground">กำลังโหลด...</p>
+				{:else if catalogTeam.length === 0}
+					<p class="text-[11px] text-muted-foreground">
+						ยังไม่มีครู — เพิ่มเพื่อให้ระบบ copy ให้อัตโนมัติตอนสร้าง slot
+					</p>
+				{:else}
+					<div class="flex flex-wrap gap-1.5">
+						{#each catalogTeam as t (t.instructor_id)}
+							<Badge variant={t.role === 'primary' ? 'default' : 'secondary'} class="gap-1 pr-1">
+								<button
+									type="button"
+									class="cursor-pointer hover:underline"
+									onclick={() => handleToggleCatalogTeamRole(t.instructor_id, t.role)}
+									title="คลิกเพื่อสลับ ครูหลัก ↔ ครูร่วม"
 								>
-									<span class="truncate">
-										{(() => {
-											const st = staffList.find((s) => s.id === catalogTeamAddInstructorId);
-											return st ? st.name : 'เลือกครู';
-										})()}
-									</span>
-									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-								</Button>
-							</Popover.Trigger>
-							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-								<Command.Root>
-									<Command.Input placeholder="ค้นหาครู..." />
-									<Command.Empty>ไม่พบครู</Command.Empty>
-									<Command.Group class="max-h-[280px] overflow-y-auto">
-										{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff}
-											<Command.Item
-												value={staff.name}
-												onSelect={() => {
-													catalogTeamAddInstructorId = staff.id;
-													pickerOpenCatalogTeam = false;
-												}}
-											>
-												<Check class="mr-2 h-4 w-4 {catalogTeamAddInstructorId === staff.id ? 'opacity-100' : 'opacity-0'}" />
-												{staff.name}
-											</Command.Item>
-										{/each}
-									</Command.Group>
-								</Command.Root>
-							</Popover.Content>
-						</Popover.Root>
-						<Select.Root type="single" bind:value={catalogTeamAddRole}>
-							<Select.Trigger class="w-[130px]">
-								{catalogTeamAddRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="primary">ครูหลัก</Select.Item>
-								<Select.Item value="secondary">ครูร่วม</Select.Item>
-							</Select.Content>
-						</Select.Root>
-						<Button
-							type="button"
-							variant="outline"
-							onclick={handleAddCatalogTeam}
-							disabled={!catalogTeamAddInstructorId}
-						>
-							เพิ่ม
-						</Button>
+									{t.role === 'primary' ? '⭐' : ''}
+									{t.instructor_name ?? t.instructor_id}
+								</button>
+								<button
+									type="button"
+									class="ml-1 rounded hover:bg-destructive/20 p-0.5"
+									onclick={() => handleRemoveCatalogTeam(t.instructor_id)}
+									aria-label="ลบ"
+								>
+									<Trash2 class="h-3 w-3" />
+								</button>
+							</Badge>
+						{/each}
 					</div>
-					{#if catalogTeamLoading}
-						<p class="text-[11px] text-muted-foreground">กำลังโหลด...</p>
-					{:else if catalogTeam.length === 0}
-						<p class="text-[11px] text-muted-foreground">
-							ยังไม่มีครู — เพิ่มเพื่อให้ระบบ copy ให้อัตโนมัติตอนสร้าง slot
-						</p>
-					{:else}
-						<div class="flex flex-wrap gap-1.5">
-							{#each catalogTeam as t (t.instructor_id)}
-								<Badge
-									variant={t.role === 'primary' ? 'default' : 'secondary'}
-									class="gap-1 pr-1"
-								>
-									<button
-										type="button"
-										class="cursor-pointer hover:underline"
-										onclick={() => handleToggleCatalogTeamRole(t.instructor_id, t.role)}
-										title="คลิกเพื่อสลับ ครูหลัก ↔ ครูร่วม"
-									>
-										{t.role === 'primary' ? '⭐' : ''}
-										{t.instructor_name ?? t.instructor_id}
-									</button>
-									<button
-										type="button"
-										class="ml-1 rounded hover:bg-destructive/20 p-0.5"
-										onclick={() => handleRemoveCatalogTeam(t.instructor_id)}
-										aria-label="ลบ"
-									>
-										<Trash2 class="h-3 w-3" />
-									</button>
-								</Badge>
-							{/each}
-						</div>
-						<p class="text-[10px] text-muted-foreground">
-							⭐ = ครูหลัก · คลิกชื่อสลับ role
-							{#if catalogMode === 'independent'}
-								· Independent: primary จะ copy เป็น default ของทุกห้อง (แก้ต่อห้องได้ที่ Activities)
-							{:else}
-								· Synchronized: ทุกคน copy เข้า slot เป็นครูรวม
-							{/if}
+					<p class="text-[10px] text-muted-foreground">
+						⭐ = ครูหลัก · คลิกชื่อสลับ role
+						{#if catalogMode === 'independent'}
+							· Independent: primary จะ copy เป็น default ของทุกห้อง (แก้ต่อห้องได้ที่ Activities)
+						{:else}
+							· Synchronized: ทุกคน copy เข้า slot เป็นครูรวม
+						{/if}
 					</p>
 				{/if}
 			</div>
@@ -2057,9 +2069,7 @@
 
 					<div class="grid grid-cols-2 gap-4">
 						<div class="space-y-2">
-							<Label for="u-subject-code"
-								>รหัสวิชา <span class="text-destructive">*</span></Label
-							>
+							<Label for="u-subject-code">รหัสวิชา <span class="text-destructive">*</span></Label>
 							<Input
 								id="u-subject-code"
 								bind:value={currentSubject.code}
@@ -2075,7 +2085,7 @@
 								</Select.Trigger>
 								<Select.Content>
 									{#if academicYears.length > 0}
-										{#each academicYears as year}
+										{#each academicYears as year (year.id)}
 											<Select.Item value={year.id}>{year.name}</Select.Item>
 										{/each}
 									{:else}
@@ -2109,9 +2119,7 @@
 
 				<!-- Section: ประเภทและระดับชั้น -->
 				<section class="space-y-4">
-					<h3 class="text-sm font-semibold text-foreground border-b pb-1">
-						ประเภทและระดับชั้น
-					</h3>
+					<h3 class="text-sm font-semibold text-foreground border-b pb-1">ประเภทและระดับชั้น</h3>
 
 					<div class="grid grid-cols-2 gap-4">
 						<div class="space-y-2">
@@ -2143,10 +2151,8 @@
 										'เลือกกลุ่มสาระ'}
 								</Select.Trigger>
 								<Select.Content class="max-h-[300px]">
-									{#each groups as group}
-										<Select.Item value={group.id}
-											>{group.code} - {group.name_th}</Select.Item
-										>
+									{#each groups as group (group.id)}
+										<Select.Item value={group.id}>{group.code} - {group.name_th}</Select.Item>
 									{/each}
 								</Select.Content>
 							</Select.Root>
@@ -2187,9 +2193,8 @@
 								<Popover.Content
 									class="w-[--radix-popover-trigger-width] p-1 max-h-[260px] overflow-y-auto"
 								>
-									{#each gradeLevels as level}
-										{@const checked =
-											currentSubject.grade_level_ids?.includes(level.id) ?? false}
+									{#each gradeLevels as level (level.id)}
+										{@const checked = currentSubject.grade_level_ids?.includes(level.id) ?? false}
 										<button
 											type="button"
 											class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
@@ -2265,7 +2270,7 @@
 										<Command.Input placeholder="ค้นหาครู..." />
 										<Command.Empty>ไม่พบครู</Command.Empty>
 										<Command.Group class="max-h-[280px] overflow-y-auto">
-											{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff}
+											{#each staffList.filter((s) => !teamDraft.some((t) => t.instructor_id === s.id)) as staff (staff.id)}
 												<Command.Item
 													value={staff.name}
 													onSelect={() => {
@@ -2273,7 +2278,11 @@
 														pickerOpenSubjectTeam = false;
 													}}
 												>
-													<Check class="mr-2 h-4 w-4 {teamAddInstructorId === staff.id ? 'opacity-100' : 'opacity-0'}" />
+													<Check
+														class="mr-2 h-4 w-4 {teamAddInstructorId === staff.id
+															? 'opacity-100'
+															: 'opacity-0'}"
+													/>
 													{staff.name}
 												</Command.Item>
 											{/each}
@@ -2412,7 +2421,7 @@
 								{academicYears.find((y) => y.id === catalogStartYearId)?.name ?? 'เลือกปี'}
 							</Select.Trigger>
 							<Select.Content class="max-h-[300px]">
-								{#each academicYears as year}
+								{#each academicYears as year (year.id)}
 									<Select.Item value={year.id}>
 										{year.name}{year.is_current ? ' (ปัจจุบัน)' : ''}
 									</Select.Item>
@@ -2424,20 +2433,16 @@
 
 				<div class="space-y-1">
 					<Label>กลุ่มสาระ</Label>
-					<div class="px-3 py-2 border rounded bg-muted text-sm">
-						กิจกรรมพัฒนาผู้เรียน
-					</div>
+					<div class="px-3 py-2 border rounded bg-muted text-sm">กิจกรรมพัฒนาผู้เรียน</div>
 				</div>
 
 				<div class="grid grid-cols-2 gap-3">
 					<div class="space-y-1">
 						<Label>ประเภท</Label>
 						<Select.Root type="single" bind:value={catalogType}>
-							<Select.Trigger class="w-full"
-								>{ACTIVITY_TYPE_LABELS[catalogType]}</Select.Trigger
-							>
+							<Select.Trigger class="w-full">{ACTIVITY_TYPE_LABELS[catalogType]}</Select.Trigger>
 							<Select.Content>
-								{#each Object.entries(ACTIVITY_TYPE_LABELS) as [v, label]}
+								{#each Object.entries(ACTIVITY_TYPE_LABELS) as [v, label] (v)}
 									<Select.Item value={v}>{label}</Select.Item>
 								{/each}
 							</Select.Content>
@@ -2487,7 +2492,7 @@
 				<div class="space-y-1">
 					<Label>ระดับชั้น</Label>
 					<div class="flex flex-wrap gap-2">
-						{#each gradeLevels as gl}
+						{#each gradeLevels as gl (gl.id)}
 							<label
 								class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted"
 							>
@@ -2546,7 +2551,7 @@
 									<Command.Input placeholder="ค้นหาครู..." />
 									<Command.Empty>ไม่พบครู</Command.Empty>
 									<Command.Group class="max-h-[280px] overflow-y-auto">
-										{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff}
+										{#each staffList.filter((s) => !catalogTeam.some((t) => t.instructor_id === s.id)) as staff (staff.id)}
 											<Command.Item
 												value={staff.name}
 												onSelect={() => {
@@ -2554,7 +2559,11 @@
 													pickerOpenCatalogTeam = false;
 												}}
 											>
-												<Check class="mr-2 h-4 w-4 {catalogTeamAddInstructorId === staff.id ? 'opacity-100' : 'opacity-0'}" />
+												<Check
+													class="mr-2 h-4 w-4 {catalogTeamAddInstructorId === staff.id
+														? 'opacity-100'
+														: 'opacity-0'}"
+												/>
 												{staff.name}
 											</Command.Item>
 										{/each}
@@ -2587,10 +2596,7 @@
 					{:else}
 						<div class="flex flex-wrap gap-1.5">
 							{#each catalogTeam as t (t.instructor_id)}
-								<Badge
-									variant={t.role === 'primary' ? 'default' : 'secondary'}
-									class="gap-1 pr-1"
-								>
+								<Badge variant={t.role === 'primary' ? 'default' : 'secondary'} class="gap-1 pr-1">
 									<button
 										type="button"
 										class="cursor-pointer hover:underline"

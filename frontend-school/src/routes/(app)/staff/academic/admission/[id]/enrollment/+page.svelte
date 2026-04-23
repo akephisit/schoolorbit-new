@@ -12,7 +12,16 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, ClipboardCheck, Check, UserCheck, Loader2, Plus, Trash2, Copy } from 'lucide-svelte';
+	import {
+		ArrowLeft,
+		ClipboardCheck,
+		Check,
+		UserCheck,
+		Loader2,
+		Plus,
+		Trash2,
+		Copy
+	} from 'lucide-svelte';
 
 	interface ParentEntry {
 		title: string;
@@ -108,9 +117,12 @@
 				};
 			}
 			if (fd.guardians && fd.guardians.length > 0) {
-				enrollFormData.guardians = fd.guardians.map(g => ({
-					title: g.title ?? '', firstName: g.firstName ?? '', lastName: g.lastName ?? '',
-					phone: g.phone ?? '', relationship: g.relationship ?? ''
+				enrollFormData.guardians = fd.guardians.map((g) => ({
+					title: g.title ?? '',
+					firstName: g.firstName ?? '',
+					lastName: g.lastName ?? '',
+					phone: g.phone ?? '',
+					relationship: g.relationship ?? ''
 				}));
 			}
 		}
@@ -119,7 +131,10 @@
 	}
 
 	function addGuardian() {
-		enrollFormData.guardians = [...enrollFormData.guardians, { title: '', firstName: '', lastName: '', phone: '', relationship: '' }];
+		enrollFormData.guardians = [
+			...enrollFormData.guardians,
+			{ title: '', firstName: '', lastName: '', phone: '', relationship: '' }
+		];
 	}
 
 	function removeGuardian(index: number) {
@@ -149,8 +164,10 @@
 	let needsForm = $derived(enrollingApp !== null && enrollingApp.preSubmitted === false);
 	let formValid = $derived(() => {
 		if (!needsForm) return true;
-		return enrollFormData.guardians.length > 0 &&
-			enrollFormData.guardians.every(g => g.firstName.trim() !== '' && g.phone.trim() !== '');
+		return (
+			enrollFormData.guardians.length > 0 &&
+			enrollFormData.guardians.every((g) => g.firstName.trim() !== '' && g.phone.trim() !== '')
+		);
 	});
 
 	async function load() {
@@ -259,60 +276,60 @@
 	{:else}
 		<Card.Root>
 			<div class="overflow-x-auto">
-			<Table.Root>
-				<Table.Header>
-					<Table.Row>
-						<Table.Head class="w-24">เลขที่</Table.Head>
-						<Table.Head>ชื่อ</Table.Head>
-						<Table.Head>สาย</Table.Head>
-						<Table.Head>ห้อง</Table.Head>
-						<Table.Head>สถานะ</Table.Head>
-						<Table.Head class="text-right">จัดการ</Table.Head>
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#each list as app (app.id)}
-						<Table.Row class={app.status === 'enrolled' ? 'opacity-60' : ''}>
-							<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-							<Table.Cell>
-								<p class="font-medium text-sm">{app.fullName}</p>
-								<p class="text-xs text-muted-foreground">{app.nationalId}</p>
-							</Table.Cell>
-							<Table.Cell class="text-sm">{app.trackName ?? '-'}</Table.Cell>
-							<Table.Cell class="text-sm">{app.roomName ?? '-'}</Table.Cell>
-							<Table.Cell>
-								<div class="flex flex-col gap-1">
-									{#if app.status === 'enrolled'}
-										<Badge variant="default" class="bg-purple-600 w-fit">มอบตัวแล้ว</Badge>
-									{:else}
-										<Badge variant={app.studentConfirmed ? 'default' : 'secondary'} class="w-fit">
-											{app.studentConfirmed ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน'}
-										</Badge>
-										{#if app.preSubmitted}
-											<Badge variant="outline" class="w-fit text-xs">กรอกฟอร์มแล้ว</Badge>
-										{/if}
-									{/if}
-								</div>
-							</Table.Cell>
-							<Table.Cell class="text-right">
-								{#if app.status !== 'enrolled'}
-									<Button
-										size="sm"
-										onclick={() => openEnrollDialog(app)}
-										class="gap-1 h-7 text-xs"
-									>
-										<Check class="w-3 h-3" /> รับมอบตัว
-									</Button>
-								{:else}
-									<span class="text-xs text-green-600 flex items-center justify-end gap-1">
-										<Check class="w-3 h-3" /> เสร็จสิ้น
-									</span>
-								{/if}
-							</Table.Cell>
+				<Table.Root>
+					<Table.Header>
+						<Table.Row>
+							<Table.Head class="w-24">เลขที่</Table.Head>
+							<Table.Head>ชื่อ</Table.Head>
+							<Table.Head>สาย</Table.Head>
+							<Table.Head>ห้อง</Table.Head>
+							<Table.Head>สถานะ</Table.Head>
+							<Table.Head class="text-right">จัดการ</Table.Head>
 						</Table.Row>
-					{/each}
-				</Table.Body>
-			</Table.Root>
+					</Table.Header>
+					<Table.Body>
+						{#each list as app (app.id)}
+							<Table.Row class={app.status === 'enrolled' ? 'opacity-60' : ''}>
+								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
+								<Table.Cell>
+									<p class="font-medium text-sm">{app.fullName}</p>
+									<p class="text-xs text-muted-foreground">{app.nationalId}</p>
+								</Table.Cell>
+								<Table.Cell class="text-sm">{app.trackName ?? '-'}</Table.Cell>
+								<Table.Cell class="text-sm">{app.roomName ?? '-'}</Table.Cell>
+								<Table.Cell>
+									<div class="flex flex-col gap-1">
+										{#if app.status === 'enrolled'}
+											<Badge variant="default" class="bg-purple-600 w-fit">มอบตัวแล้ว</Badge>
+										{:else}
+											<Badge variant={app.studentConfirmed ? 'default' : 'secondary'} class="w-fit">
+												{app.studentConfirmed ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน'}
+											</Badge>
+											{#if app.preSubmitted}
+												<Badge variant="outline" class="w-fit text-xs">กรอกฟอร์มแล้ว</Badge>
+											{/if}
+										{/if}
+									</div>
+								</Table.Cell>
+								<Table.Cell class="text-right">
+									{#if app.status !== 'enrolled'}
+										<Button
+											size="sm"
+											onclick={() => openEnrollDialog(app)}
+											class="gap-1 h-7 text-xs"
+										>
+											<Check class="w-3 h-3" /> รับมอบตัว
+										</Button>
+									{:else}
+										<span class="text-xs text-green-600 flex items-center justify-end gap-1">
+											<Check class="w-3 h-3" /> เสร็จสิ้น
+										</span>
+									{/if}
+								</Table.Cell>
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
 			</div>
 		</Card.Root>
 	{/if}
@@ -342,7 +359,9 @@
 					placeholder="ระบบจะสร้างให้อัตโนมัติถ้าว่าง"
 				/>
 				{#if enrollingApp?.assignedStudentId}
-					<p class="text-xs text-blue-600">กำหนดไว้ล่วงหน้า: <span class="font-semibold">{enrollingApp.assignedStudentId}</span></p>
+					<p class="text-xs text-blue-600">
+						กำหนดไว้ล่วงหน้า: <span class="font-semibold">{enrollingApp.assignedStudentId}</span>
+					</p>
 				{/if}
 			</div>
 			<div class="text-xs text-muted-foreground bg-muted rounded p-2 space-y-0.5">
@@ -352,7 +371,9 @@
 			{#if enrollingApp?.preSubmitted && enrollingApp?.formData}
 				<!-- แสดงข้อมูลที่นักเรียนกรอกมา (read-only) -->
 				{@const fd = enrollingApp.formData}
-				<div class="border rounded-lg p-3 space-y-3 bg-green-50 dark:bg-green-950/20 border-green-200">
+				<div
+					class="border rounded-lg p-3 space-y-3 bg-green-50 dark:bg-green-950/20 border-green-200"
+				>
 					<p class="text-xs font-medium text-green-700 dark:text-green-400">
 						นักเรียนกรอกข้อมูลมอบตัวแล้ว
 					</p>
@@ -361,33 +382,49 @@
 							<div><span class="text-gray-500">กลุ่มเลือด:</span> {fd.bloodType}</div>
 						{/if}
 						{#if fd.medicalConditions}
-							<div class="col-span-2"><span class="text-gray-500">โรคประจำตัว:</span> {fd.medicalConditions}</div>
+							<div class="col-span-2">
+								<span class="text-gray-500">โรคประจำตัว:</span>
+								{fd.medicalConditions}
+							</div>
 						{/if}
 						{#if fd.allergies}
-							<div class="col-span-2"><span class="text-gray-500">แพ้ยา/อาหาร:</span> {fd.allergies}</div>
+							<div class="col-span-2">
+								<span class="text-gray-500">แพ้ยา/อาหาร:</span>
+								{fd.allergies}
+							</div>
 						{/if}
 					</div>
 					{#if fd.father?.firstName}
 						<div class="text-sm">
-							<span class="text-gray-500">บิดา:</span> {fd.father.title ?? ''}{fd.father.firstName} {fd.father.lastName ?? ''} {fd.father.phone ? `(${fd.father.phone})` : ''}
+							<span class="text-gray-500">บิดา:</span>
+							{fd.father.title ?? ''}{fd.father.firstName}
+							{fd.father.lastName ?? ''}
+							{fd.father.phone ? `(${fd.father.phone})` : ''}
 						</div>
 					{/if}
 					{#if fd.mother?.firstName}
 						<div class="text-sm">
-							<span class="text-gray-500">มารดา:</span> {fd.mother.title ?? ''}{fd.mother.firstName} {fd.mother.lastName ?? ''} {fd.mother.phone ? `(${fd.mother.phone})` : ''}
+							<span class="text-gray-500">มารดา:</span>
+							{fd.mother.title ?? ''}{fd.mother.firstName}
+							{fd.mother.lastName ?? ''}
+							{fd.mother.phone ? `(${fd.mother.phone})` : ''}
 						</div>
 					{/if}
 					{#if fd.guardians && fd.guardians.length > 0}
-						{#each fd.guardians as g, i}
+						{#each fd.guardians as g, i (i)}
 							<div class="text-sm">
-								<span class="text-gray-500">ผู้ปกครอง {i + 1}:</span> {g.title ?? ''}{g.firstName} {g.lastName ?? ''} ({g.phone}) — {g.relationship ?? ''}
+								<span class="text-gray-500">ผู้ปกครอง {i + 1}:</span>
+								{g.title ?? ''}{g.firstName}
+								{g.lastName ?? ''} ({g.phone}) — {g.relationship ?? ''}
 							</div>
 						{/each}
 					{/if}
 				</div>
 			{:else}
 				<!-- ครูกรอกข้อมูลแทน -->
-				<div class="border rounded-lg p-3 space-y-3 bg-amber-50 dark:bg-amber-950/20 border-amber-200">
+				<div
+					class="border rounded-lg p-3 space-y-3 bg-amber-50 dark:bg-amber-950/20 border-amber-200"
+				>
 					<p class="text-xs font-medium text-amber-700 dark:text-amber-400">
 						นักเรียนยังไม่ได้กรอกฟอร์มมอบตัว — กรุณากรอกข้อมูลแทน
 					</p>
@@ -401,7 +438,7 @@
 									{enrollFormData.bloodType || '-- เลือก --'}
 								</Select.Trigger>
 								<Select.Content>
-									{#each ['A', 'B', 'AB', 'O'] as b}
+									{#each ['A', 'B', 'AB', 'O'] as b (b)}
 										<Select.Item value={b}>{b}</Select.Item>
 									{/each}
 								</Select.Content>
@@ -410,11 +447,21 @@
 					</div>
 					<div class="space-y-1">
 						<Label class="text-xs">โรคประจำตัว</Label>
-						<Textarea bind:value={enrollFormData.medicalConditions} rows={2} class="text-sm resize-none" placeholder="ถ้าไม่มีใส่ ไม่มี" />
+						<Textarea
+							bind:value={enrollFormData.medicalConditions}
+							rows={2}
+							class="text-sm resize-none"
+							placeholder="ถ้าไม่มีใส่ ไม่มี"
+						/>
 					</div>
 					<div class="space-y-1">
 						<Label class="text-xs">แพ้ยา / แพ้อาหาร</Label>
-						<Textarea bind:value={enrollFormData.allergies} rows={2} class="text-sm resize-none" placeholder="ถ้าไม่มีใส่ ไม่มี" />
+						<Textarea
+							bind:value={enrollFormData.allergies}
+							rows={2}
+							class="text-sm resize-none"
+							placeholder="ถ้าไม่มีใส่ ไม่มี"
+						/>
 					</div>
 
 					<!-- บิดา -->
@@ -424,7 +471,9 @@
 							<div class="space-y-0.5">
 								<Label class="text-xs text-gray-500">คำนำหน้า</Label>
 								<Select.Root type="single" bind:value={enrollFormData.father.title}>
-									<Select.Trigger class="h-7 text-xs">{enrollFormData.father.title || '--'}</Select.Trigger>
+									<Select.Trigger class="h-7 text-xs"
+										>{enrollFormData.father.title || '--'}</Select.Trigger
+									>
 									<Select.Content>
 										<Select.Item value="นาย">นาย</Select.Item>
 									</Select.Content>
@@ -432,16 +481,28 @@
 							</div>
 							<div class="space-y-0.5">
 								<Label class="text-xs text-gray-500">ชื่อ</Label>
-								<Input bind:value={enrollFormData.father.firstName} class="h-7 text-xs" placeholder="ชื่อ" />
+								<Input
+									bind:value={enrollFormData.father.firstName}
+									class="h-7 text-xs"
+									placeholder="ชื่อ"
+								/>
 							</div>
 							<div class="space-y-0.5">
 								<Label class="text-xs text-gray-500">นามสกุล</Label>
-								<Input bind:value={enrollFormData.father.lastName} class="h-7 text-xs" placeholder="นามสกุล" />
+								<Input
+									bind:value={enrollFormData.father.lastName}
+									class="h-7 text-xs"
+									placeholder="นามสกุล"
+								/>
 							</div>
 						</div>
 						<div class="space-y-0.5">
 							<Label class="text-xs text-gray-500">เบอร์โทร</Label>
-							<Input bind:value={enrollFormData.father.phone} class="h-7 text-xs" placeholder="0XX-XXX-XXXX" />
+							<Input
+								bind:value={enrollFormData.father.phone}
+								class="h-7 text-xs"
+								placeholder="0XX-XXX-XXXX"
+							/>
 						</div>
 					</div>
 
@@ -452,7 +513,9 @@
 							<div class="space-y-0.5">
 								<Label class="text-xs text-gray-500">คำนำหน้า</Label>
 								<Select.Root type="single" bind:value={enrollFormData.mother.title}>
-									<Select.Trigger class="h-7 text-xs">{enrollFormData.mother.title || '--'}</Select.Trigger>
+									<Select.Trigger class="h-7 text-xs"
+										>{enrollFormData.mother.title || '--'}</Select.Trigger
+									>
 									<Select.Content>
 										<Select.Item value="นาง">นาง</Select.Item>
 										<Select.Item value="นางสาว">นางสาว</Select.Item>
@@ -461,24 +524,44 @@
 							</div>
 							<div class="space-y-0.5">
 								<Label class="text-xs text-gray-500">ชื่อ</Label>
-								<Input bind:value={enrollFormData.mother.firstName} class="h-7 text-xs" placeholder="ชื่อ" />
+								<Input
+									bind:value={enrollFormData.mother.firstName}
+									class="h-7 text-xs"
+									placeholder="ชื่อ"
+								/>
 							</div>
 							<div class="space-y-0.5">
 								<Label class="text-xs text-gray-500">นามสกุล</Label>
-								<Input bind:value={enrollFormData.mother.lastName} class="h-7 text-xs" placeholder="นามสกุล" />
+								<Input
+									bind:value={enrollFormData.mother.lastName}
+									class="h-7 text-xs"
+									placeholder="นามสกุล"
+								/>
 							</div>
 						</div>
 						<div class="space-y-0.5">
 							<Label class="text-xs text-gray-500">เบอร์โทร</Label>
-							<Input bind:value={enrollFormData.mother.phone} class="h-7 text-xs" placeholder="0XX-XXX-XXXX" />
+							<Input
+								bind:value={enrollFormData.mother.phone}
+								class="h-7 text-xs"
+								placeholder="0XX-XXX-XXXX"
+							/>
 						</div>
 					</div>
 
 					<!-- ผู้ปกครอง -->
 					<div class="space-y-2">
 						<div class="flex items-center justify-between">
-							<p class="text-xs font-medium text-gray-700">ผู้ปกครอง <span class="text-red-500">*</span></p>
-							<Button type="button" variant="outline" size="sm" onclick={addGuardian} class="h-6 text-xs gap-1">
+							<p class="text-xs font-medium text-gray-700">
+								ผู้ปกครอง <span class="text-red-500">*</span>
+							</p>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onclick={addGuardian}
+								class="h-6 text-xs gap-1"
+							>
 								<Plus class="w-3 h-3" /> เพิ่ม
 							</Button>
 						</div>
@@ -487,18 +570,36 @@
 								กรุณาเพิ่มผู้ปกครองอย่างน้อย 1 คน
 							</p>
 						{/if}
-						{#each enrollFormData.guardians as guardian, i}
+						{#each enrollFormData.guardians as guardian, i (i)}
 							<div class="border border-blue-200 bg-blue-50/30 rounded p-2 space-y-1.5">
 								<div class="flex items-center justify-between">
 									<p class="text-xs font-medium text-blue-700">ผู้ปกครอง {i + 1}</p>
 									<div class="flex gap-0.5">
-										<Button type="button" variant="ghost" size="sm" onclick={() => copyFromFather(i)} class="h-5 text-xs px-1.5 text-gray-500">
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={() => copyFromFather(i)}
+											class="h-5 text-xs px-1.5 text-gray-500"
+										>
 											<Copy class="w-3 h-3 mr-0.5" /> บิดา
 										</Button>
-										<Button type="button" variant="ghost" size="sm" onclick={() => copyFromMother(i)} class="h-5 text-xs px-1.5 text-gray-500">
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={() => copyFromMother(i)}
+											class="h-5 text-xs px-1.5 text-gray-500"
+										>
 											<Copy class="w-3 h-3 mr-0.5" /> มารดา
 										</Button>
-										<Button type="button" variant="ghost" size="sm" onclick={() => removeGuardian(i)} class="h-5 px-1 text-red-400">
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={() => removeGuardian(i)}
+											class="h-5 px-1 text-red-400"
+										>
 											<Trash2 class="w-3 h-3" />
 										</Button>
 									</div>
@@ -509,32 +610,46 @@
 										<Select.Root type="single" bind:value={guardian.title}>
 											<Select.Trigger class="h-7 text-xs">{guardian.title || '--'}</Select.Trigger>
 											<Select.Content>
-												{#each ['นาย', 'นาง', 'นางสาว'] as t}
+												{#each ['นาย', 'นาง', 'นางสาว'] as t (t)}
 													<Select.Item value={t}>{t}</Select.Item>
 												{/each}
 											</Select.Content>
 										</Select.Root>
 									</div>
 									<div class="space-y-0.5">
-										<Label class="text-xs text-gray-500">ชื่อ <span class="text-red-500">*</span></Label>
+										<Label class="text-xs text-gray-500"
+											>ชื่อ <span class="text-red-500">*</span></Label
+										>
 										<Input bind:value={guardian.firstName} class="h-7 text-xs" placeholder="ชื่อ" />
 									</div>
 									<div class="space-y-0.5">
 										<Label class="text-xs text-gray-500">นามสกุล</Label>
-										<Input bind:value={guardian.lastName} class="h-7 text-xs" placeholder="นามสกุล" />
+										<Input
+											bind:value={guardian.lastName}
+											class="h-7 text-xs"
+											placeholder="นามสกุล"
+										/>
 									</div>
 								</div>
 								<div class="grid grid-cols-2 gap-1.5">
 									<div class="space-y-0.5">
-										<Label class="text-xs text-gray-500">เบอร์โทร <span class="text-red-500">*</span></Label>
-										<Input bind:value={guardian.phone} class="h-7 text-xs" placeholder="0XX-XXX-XXXX" />
+										<Label class="text-xs text-gray-500"
+											>เบอร์โทร <span class="text-red-500">*</span></Label
+										>
+										<Input
+											bind:value={guardian.phone}
+											class="h-7 text-xs"
+											placeholder="0XX-XXX-XXXX"
+										/>
 									</div>
 									<div class="space-y-0.5">
 										<Label class="text-xs text-gray-500">ความสัมพันธ์</Label>
 										<Select.Root type="single" bind:value={guardian.relationship}>
-											<Select.Trigger class="h-7 text-xs">{guardian.relationship || '--'}</Select.Trigger>
+											<Select.Trigger class="h-7 text-xs"
+												>{guardian.relationship || '--'}</Select.Trigger
+											>
 											<Select.Content>
-												{#each ['บิดา', 'มารดา', 'ปู่', 'ย่า', 'ตา', 'ยาย', 'ลุง', 'ป้า', 'น้า', 'อา', 'พี่', 'อื่นๆ'] as r}
+												{#each ['บิดา', 'มารดา', 'ปู่', 'ย่า', 'ตา', 'ยาย', 'ลุง', 'ป้า', 'น้า', 'อา', 'พี่', 'อื่นๆ'] as r (r)}
 													<Select.Item value={r}>{r}</Select.Item>
 												{/each}
 											</Select.Content>
@@ -548,7 +663,13 @@
 			{/if}
 		</div>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => { showEnrollDialog = false; resetDialog(); }}>ยกเลิก</Button>
+			<Button
+				variant="outline"
+				onclick={() => {
+					showEnrollDialog = false;
+					resetDialog();
+				}}>ยกเลิก</Button
+			>
 			<Button onclick={handleEnroll} disabled={enrolling || !formValid()}>
 				{#if enrolling}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
 				{enrolling ? 'กำลังสร้าง Account...' : 'ยืนยันมอบตัว'}

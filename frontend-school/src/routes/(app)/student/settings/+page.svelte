@@ -69,8 +69,7 @@
 			if (choiceResult.outcome === 'accepted') {
 				toast.success('ติดตั้งแอปสำเร็จ');
 			}
-		} catch (_) {
-			// eslint-disable-line @typescript-eslint/no-unused-vars
+		} catch {
 			toast.error('ไม่สามารถติดตั้งแอปได้');
 		} finally {
 			pwaStore.setPrompt(null);

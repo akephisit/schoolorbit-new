@@ -432,8 +432,7 @@
 			<!-- Progress Steps -->
 			<div class="mb-8">
 				<div class="flex items-center justify-between">
-					{#each Array(totalSteps) as _, i (i)}
-						<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
+					{#each Array.from({ length: totalSteps }, (_v, i) => i) as i (i)}
 						{@const step = i + 1}
 						{@const Icon = getStepIcon(step)}
 						<div class="flex flex-col items-center flex-1">
@@ -895,7 +894,7 @@
 																<Select.Label class="font-bold text-muted-foreground"
 																	>อื่นๆ</Select.Label
 																>
-																{#each departments.filter((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id)) as orphan}
+																{#each departments.filter((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id)) as orphan (orphan.id)}
 																	<Select.Item value={orphan.id} class="pl-6">
 																		{orphan.name}
 																	</Select.Item>

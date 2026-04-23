@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { listDepartmentsLookup, type Department } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { GraduationCap, ChevronRight, Search, Settings } from 'lucide-svelte';
@@ -23,6 +25,11 @@
 
 	let showPermissionDialog = $state(false);
 	let permissionDepartment = $state<Department | null>(null);
+
+	function goToSubjectGroup(id: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
+		goto(resolve(`/staff/academic/subject-groups/${id}` as any));
+	}
 
 	function handlePermission(dept: Department, e: MouseEvent) {
 		e.preventDefault();
@@ -74,14 +81,19 @@
 		<div class="p-12 text-center text-muted-foreground">ไม่พบกลุ่มสาระ</div>
 	{:else}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-			{#each subjectGroups as group}
-				<a
-					href="/staff/academic/subject-groups/{group.id}"
-					class="bg-card border border-border rounded-lg p-5 hover:border-primary/50 hover:shadow-sm transition-all group"
+			{#each subjectGroups as group (group.id)}
+				<div
+					onclick={() => goToSubjectGroup(group.id)}
+					role="button"
+					tabindex="0"
+					onkeydown={(e) => e.key === 'Enter' && goToSubjectGroup(group.id)}
+					class="bg-card border border-border rounded-lg p-5 hover:border-primary/50 hover:shadow-sm transition-all group cursor-pointer"
 				>
 					<div class="flex items-start justify-between">
 						<div class="flex items-center gap-3">
-							<div class="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center">
+							<div
+								class="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center"
+							>
 								<GraduationCap class="w-5 h-5 text-orange-500" />
 							</div>
 							<div>
@@ -90,24 +102,26 @@
 							</div>
 						</div>
 						<div class="flex items-center gap-1">
-					{#if $can.hasAny('roles.assign.all', '*')}
-						<Button
-							variant="ghost"
-							size="icon"
-							class="h-7 w-7 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-							onclick={(e) => handlePermission(group, e)}
-							title="จัดการสิทธิ์"
-						>
-							<Settings class="w-3.5 h-3.5" />
-						</Button>
-					{/if}
-					<ChevronRight class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors mt-1" />
-				</div>
+							{#if $can.hasAny('roles.assign.all', '*')}
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-7 w-7 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+									onclick={(e) => handlePermission(group, e)}
+									title="จัดการสิทธิ์"
+								>
+									<Settings class="w-3.5 h-3.5" />
+								</Button>
+							{/if}
+							<ChevronRight
+								class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors mt-1"
+							/>
+						</div>
 					</div>
 					{#if group.description}
 						<p class="text-xs text-muted-foreground mt-3 line-clamp-2">{group.description}</p>
 					{/if}
-				</a>
+				</div>
 			{/each}
 		</div>
 	{/if}

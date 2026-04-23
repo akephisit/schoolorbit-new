@@ -10,11 +10,7 @@
 		portalDeleteDocument,
 		DOC_TYPE_LABELS
 	} from '$lib/api/admission';
-	import type {
-		AdmissionRound,
-		AdmissionTrack,
-		ApplicationDocument
-	} from '$lib/api/admission';
+	import type { AdmissionRound, AdmissionTrack, ApplicationDocument } from '$lib/api/admission';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -38,8 +34,6 @@
 		ZoomOut
 	} from 'lucide-svelte';
 	import DocumentCropperModal from '$lib/components/DocumentCropperModal.svelte';
-
-	let { data } = $props();
 
 	let round = $state<AdmissionRound | null>(null);
 	let tracks = $state<AdmissionTrack[]>([]);
@@ -179,7 +173,11 @@
 	let deletingDoc = $state<string | null>(null);
 
 	// Crop modal state
-	let cropTarget = $state<{ docType: string; imageUrl: string; initialCorners?: [CropPoint, CropPoint, CropPoint, CropPoint] } | null>(null);
+	let cropTarget = $state<{
+		docType: string;
+		imageUrl: string;
+		initialCorners?: [CropPoint, CropPoint, CropPoint, CropPoint];
+	} | null>(null);
 	let cropperOpen = $state(false);
 	// Lightbox
 	let lightboxSrc = $state<string | null>(null);
@@ -215,7 +213,10 @@
 
 	function onLbMouseMove(e: MouseEvent) {
 		if (!lbDragging) return;
-		lbPan = { x: lbDragStart.px + e.clientX - lbDragStart.mx, y: lbDragStart.py + e.clientY - lbDragStart.my };
+		lbPan = {
+			x: lbDragStart.px + e.clientX - lbDragStart.mx,
+			y: lbDragStart.py + e.clientY - lbDragStart.my
+		};
 	}
 
 	function onLbMouseUp() {
@@ -237,7 +238,10 @@
 		if (!file) return;
 		input.value = '';
 		// เก็บ original ไว้เผื่อ re-crop
-		uploadedDocs[docType] = { ...(uploadedDocs[docType] ?? { uploading: false }), originalBlob: file };
+		uploadedDocs[docType] = {
+			...(uploadedDocs[docType] ?? { uploading: false }),
+			originalBlob: file
+		};
 		const imageUrl = URL.createObjectURL(file);
 		cropTarget = { docType, imageUrl };
 		cropperOpen = true;
@@ -367,6 +371,7 @@
 			tracks = info.tracks;
 
 			if (isEditMode && authNid && authDob) {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- portalGetStatus returns a dynamic shape not reflected in its typed return
 				const statusData = (await portalGetStatus(authNid, authDob)) as any;
 				if (statusData?.application) {
 					const app = statusData.application;
@@ -409,7 +414,7 @@
 					// Previous school
 					previousSchool = app.previousSchool || '';
 					previousGrade = app.previousGrade || '';
-		previousSchoolProvince = app.previousSchoolProvince || '';
+					previousSchoolProvince = app.previousSchoolProvince || '';
 					previousGpa = app.previousGpa ? app.previousGpa.toString() : '';
 
 					// Family
@@ -480,7 +485,6 @@
 	}
 
 	async function handleSubmit() {
-
 		if (!trackId) {
 			toast.error('กรุณาเลือกสายการเรียน');
 			return;
@@ -493,16 +497,48 @@
 		submitting = true;
 		try {
 			// Concat addressLine for backward compat with enrollment handler
-			const homeAddressLine = [homeHouseNo, homeMoo ? `หมู่ ${homeMoo}` : '', homeSoi ? `ซ.${homeSoi}` : '', homeRoad ? `ถ.${homeRoad}` : '']
-				.filter(Boolean)
-				.join(' ')
-				.trim() || addressLine;
+			const homeAddressLine =
+				[
+					homeHouseNo,
+					homeMoo ? `หมู่ ${homeMoo}` : '',
+					homeSoi ? `ซ.${homeSoi}` : '',
+					homeRoad ? `ถ.${homeRoad}` : ''
+				]
+					.filter(Boolean)
+					.join(' ')
+					.trim() || addressLine;
 
 			const guardianName = buildGuardianName();
-			const guardianPhoneVal = guardianIs === 'father' ? fatherPhone : guardianIs === 'mother' ? motherPhone : guardianPhone;
-			const guardianNationalIdVal = guardianIs === 'father' ? fatherNationalId : guardianIs === 'mother' ? motherNationalId : guardianNationalId;
-			const guardianOccupationVal = guardianIs === 'father' ? fatherOccupation : guardianIs === 'mother' ? motherOccupation : guardianOccupation;
-			const guardianIncomeVal = guardianIs === 'father' ? (fatherIncome ? parseFloat(fatherIncome) : undefined) : guardianIs === 'mother' ? (motherIncome ? parseFloat(motherIncome) : undefined) : (guardianIncome ? parseFloat(guardianIncome) : undefined);
+			const guardianPhoneVal =
+				guardianIs === 'father'
+					? fatherPhone
+					: guardianIs === 'mother'
+						? motherPhone
+						: guardianPhone;
+			const guardianNationalIdVal =
+				guardianIs === 'father'
+					? fatherNationalId
+					: guardianIs === 'mother'
+						? motherNationalId
+						: guardianNationalId;
+			const guardianOccupationVal =
+				guardianIs === 'father'
+					? fatherOccupation
+					: guardianIs === 'mother'
+						? motherOccupation
+						: guardianOccupation;
+			const guardianIncomeVal =
+				guardianIs === 'father'
+					? fatherIncome
+						? parseFloat(fatherIncome)
+						: undefined
+					: guardianIs === 'mother'
+						? motherIncome
+							? parseFloat(motherIncome)
+							: undefined
+						: guardianIncome
+							? parseFloat(guardianIncome)
+							: undefined;
 
 			const payload = {
 				admissionTrackId: trackId,
@@ -544,13 +580,17 @@
 				previousGpa: previousGpa ? parseFloat(previousGpa) : undefined,
 				previousSchoolProvince: previousSchoolProvince || undefined,
 				// Father
-				fatherName: fatherFirstName ? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim() : undefined,
+				fatherName: fatherFirstName
+					? `${fatherTitle}${fatherFirstName} ${fatherLastName}`.trim()
+					: undefined,
 				fatherPhone: fatherPhone || undefined,
 				fatherOccupation: fatherOccupation || undefined,
 				fatherNationalId: fatherNationalId || undefined,
 				fatherIncome: fatherIncome ? parseFloat(fatherIncome) : undefined,
 				// Mother
-				motherName: motherFirstName ? `${motherTitle}${motherFirstName} ${motherLastName}`.trim() : undefined,
+				motherName: motherFirstName
+					? `${motherTitle}${motherFirstName} ${motherLastName}`.trim()
+					: undefined,
 				motherPhone: motherPhone || undefined,
 				motherOccupation: motherOccupation || undefined,
 				motherNationalId: motherNationalId || undefined,
@@ -558,14 +598,16 @@
 				// Guardian
 				guardianName,
 				guardianPhone: guardianPhoneVal || undefined,
-				guardianRelation: guardianIs === 'other' ? (guardianRelation || undefined) : undefined,
+				guardianRelation: guardianIs === 'other' ? guardianRelation || undefined : undefined,
 				guardianNationalId: guardianNationalIdVal || undefined,
 				guardianOccupation: guardianOccupationVal || undefined,
 				guardianIncome: guardianIncomeVal,
 				guardianIs,
 				// Family status
 				parentStatus: parentStatus.length > 0 ? parentStatus : undefined,
-				parentStatusOther: parentStatus.includes('อื่นๆ') ? (parentStatusOther || undefined) : undefined,
+				parentStatusOther: parentStatus.includes('อื่นๆ')
+					? parentStatusOther || undefined
+					: undefined
 			};
 
 			const pendingEntries = Object.entries(uploadedDocs).filter(([, d]) => d.blob);
@@ -586,7 +628,12 @@
 					uploadedDocs[docType] = { ...slot, uploading: true };
 					const file = new File([slot.blob!], `${docType}.jpg`, { type: 'image/jpeg' });
 					const result = await portalUploadTempFile(file, docType, authNid, authDob);
-					uploadedDocs[docType] = { ...slot, uploading: false, blob: undefined, preview: result.fileUrl };
+					uploadedDocs[docType] = {
+						...slot,
+						uploading: false,
+						blob: undefined,
+						preview: result.fileUrl
+					};
 				}
 				// 2. update form data เท่านั้น (docs linked แล้ว)
 				await updateApplication(authNid, authDob, payload);
@@ -637,7 +684,6 @@
 				<LoaderCircle class="w-10 h-10 animate-spin text-blue-500" />
 				<p>กำลังโหลดข้อมูลรอบรับสมัคร...</p>
 			</div>
-
 		{:else if loadError}
 			<div class="flex flex-col items-center justify-center py-24 gap-4 text-center">
 				<CircleAlert class="w-12 h-12 text-red-400" />
@@ -659,8 +705,16 @@
 						ระดับชั้น {round.gradeLevelName} | ปีการศึกษา {round.academicYearName}
 					</p>
 					<p class="text-xs text-gray-400 mt-1">
-						รับสมัคร {new Date(round.applyStartDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
-						– {new Date(round.applyEndDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
+						รับสมัคร {new Date(round.applyStartDate).toLocaleDateString('th-TH', {
+							year: 'numeric',
+							month: 'short',
+							day: 'numeric'
+						})}
+						– {new Date(round.applyEndDate).toLocaleDateString('th-TH', {
+							year: 'numeric',
+							month: 'short',
+							day: 'numeric'
+						})}
 					</p>
 				{/if}
 			</div>
@@ -676,12 +730,20 @@
 							</h2>
 							<p class="text-gray-600">ได้รับข้อมูลใบสมัครของท่านเรียบร้อยแล้ว</p>
 						</div>
-						<div class="flex items-start gap-3 max-w-sm mx-auto bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4 text-sm text-left">
+						<div
+							class="flex items-start gap-3 max-w-sm mx-auto bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4 text-sm text-left"
+						>
 							<CircleAlert class="w-5 h-5 shrink-0 mt-0.5" />
 							{#if !isEditMode}
-								<p>ระบบใช้ <strong>เลขบัตรประชาชน</strong> และ <strong>วัน/เดือน/ปีเกิด (พ.ศ.)</strong> ของผู้สมัครในการตรวจสอบสถานะในภายหลัง</p>
+								<p>
+									ระบบใช้ <strong>เลขบัตรประชาชน</strong> และ
+									<strong>วัน/เดือน/ปีเกิด (พ.ศ.)</strong> ของผู้สมัครในการตรวจสอบสถานะในภายหลัง
+								</p>
 							{:else}
-								<p>ข้อมูลใบสมัครได้รับการแก้ไขและอัปเดตเรียบร้อยแล้ว กรุณารอการตรวจสอบจากฝั่งเจ้าหน้าที่อีกครั้ง</p>
+								<p>
+									ข้อมูลใบสมัครได้รับการแก้ไขและอัปเดตเรียบร้อยแล้ว
+									กรุณารอการตรวจสอบจากฝั่งเจ้าหน้าที่อีกครั้ง
+								</p>
 							{/if}
 						</div>
 						<Button href="/apply" class="gap-2 mt-2">
@@ -689,10 +751,8 @@
 						</Button>
 					</Card.Content>
 				</Card.Root>
-
 			{:else}
 				<div class="space-y-5">
-
 					<!-- ===== Card 1: เลือกสายการเรียน ===== -->
 					<Card.Root class="shadow-sm">
 						<Card.Header class="pb-2">
@@ -702,19 +762,25 @@
 						</Card.Header>
 						<Card.Content>
 							{#if tracks.length === 0}
-								<p class="text-sm text-muted-foreground py-4 text-center">ไม่มีสายการเรียนที่เปิดรับในรอบนี้</p>
+								<p class="text-sm text-muted-foreground py-4 text-center">
+									ไม่มีสายการเรียนที่เปิดรับในรอบนี้
+								</p>
 							{:else}
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									{#each tracks as t}
+									{#each tracks as t (t.id)}
 										<button
 											type="button"
 											onclick={() => (trackId = t.id)}
 											class="text-left border-2 rounded-xl p-4 transition-all
-											{trackId === t.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 bg-card'}"
+											{trackId === t.id
+												? 'border-primary bg-primary/5'
+												: 'border-border hover:border-primary/40 bg-card'}"
 										>
 											<div class="flex items-center gap-2">
-												<div class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
-													{trackId === t.id ? 'border-primary' : 'border-muted-foreground'}">
+												<div
+													class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
+													{trackId === t.id ? 'border-primary' : 'border-muted-foreground'}"
+												>
 													{#if trackId === t.id}
 														<div class="w-2 h-2 rounded-full bg-primary"></div>
 													{/if}
@@ -738,7 +804,9 @@
 						</Card.Header>
 						<Card.Content class="space-y-4">
 							<div class="space-y-2">
-								<Label for="nationalId">เลขประจำตัวประชาชน <span class="text-red-500">*</span></Label>
+								<Label for="nationalId"
+									>เลขประจำตัวประชาชน <span class="text-red-500">*</span></Label
+								>
 								<Input
 									id="nationalId"
 									value={formatNationalId(nationalId)}
@@ -757,7 +825,7 @@
 									<Select.Root type="single" bind:value={title} required>
 										<Select.Trigger>{title || '-- เลือก --'}</Select.Trigger>
 										<Select.Content>
-											{#each STUDENT_TITLES as t}
+											{#each STUDENT_TITLES as t (t)}
 												<Select.Item value={t}>{t}</Select.Item>
 											{/each}
 										</Select.Content>
@@ -777,7 +845,13 @@
 								<div class="space-y-2">
 									<Label>เพศ</Label>
 									<Select.Root type="single" bind:value={gender}>
-										<Select.Trigger>{gender === 'Male' ? 'ชาย' : gender === 'Female' ? 'หญิง' : '-- เลือก --'}</Select.Trigger>
+										<Select.Trigger
+											>{gender === 'Male'
+												? 'ชาย'
+												: gender === 'Female'
+													? 'หญิง'
+													: '-- เลือก --'}</Select.Trigger
+										>
 										<Select.Content>
 											<Select.Item value="Male">ชาย</Select.Item>
 											<Select.Item value="Female">หญิง</Select.Item>
@@ -805,7 +879,11 @@
 							<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 								<div class="space-y-2">
 									<Label for="religion">ศาสนา</Label>
-									<Input id="religion" bind:value={religion} placeholder="พุทธ, คริสต์, อิสลาม..." />
+									<Input
+										id="religion"
+										bind:value={religion}
+										placeholder="พุทธ, คริสต์, อิสลาม..."
+									/>
 								</div>
 								<div class="space-y-2">
 									<Label for="ethnicity">เชื้อชาติ</Label>
@@ -921,7 +999,12 @@
 								</div>
 								<div class="space-y-2">
 									<Label for="currentPhone">โทรศัพท์</Label>
-									<Input id="currentPhone" type="tel" bind:value={currentPhone} placeholder="02XXXXXXX" />
+									<Input
+										id="currentPhone"
+										type="tel"
+										bind:value={currentPhone}
+										placeholder="02XXXXXXX"
+									/>
 								</div>
 							</div>
 						</Card.Content>
@@ -938,7 +1021,9 @@
 								<div class="space-y-2">
 									<Label>ระดับชั้น</Label>
 									<Select.Root type="single" bind:value={previousGrade}>
-										<Select.Trigger class="w-full">{previousGrade || '-- เลือกระดับชั้น --'}</Select.Trigger>
+										<Select.Trigger class="w-full"
+											>{previousGrade || '-- เลือกระดับชั้น --'}</Select.Trigger
+										>
 										<Select.Content>
 											<Select.Item value="อนุบาล 3">อนุบาล 3</Select.Item>
 											<Select.Item value="ประถมศึกษาปีที่ 6">ประถมศึกษาปีที่ 6</Select.Item>
@@ -958,7 +1043,11 @@
 								</div>
 								<div class="space-y-2">
 									<Label for="previousSchoolProvince">จังหวัด</Label>
-									<Input id="previousSchoolProvince" bind:value={previousSchoolProvince} placeholder="จังหวัด..." />
+									<Input
+										id="previousSchoolProvince"
+										bind:value={previousSchoolProvince}
+										placeholder="จังหวัด..."
+									/>
 								</div>
 							</div>
 							<div class="max-w-xs space-y-2">
@@ -982,12 +1071,15 @@
 							<Card.Title class="text-base">5. ข้อมูลครอบครัว</Card.Title>
 						</Card.Header>
 						<Card.Content class="space-y-6">
-
 							<!-- สถานภาพบิดามารดา -->
 							<div class="space-y-3">
-								<p class="text-sm font-semibold">สถานภาพบิดามารดา <span class="font-normal text-muted-foreground">(เลือกได้มากกว่า 1)</span></p>
+								<p class="text-sm font-semibold">
+									สถานภาพบิดามารดา <span class="font-normal text-muted-foreground"
+										>(เลือกได้มากกว่า 1)</span
+									>
+								</p>
 								<div class="flex flex-wrap gap-2">
-									{#each PARENT_STATUS_OPTIONS as opt}
+									{#each PARENT_STATUS_OPTIONS as opt (opt)}
 										<button
 											type="button"
 											onclick={() => toggleParentStatus(opt)}
@@ -1001,11 +1093,7 @@
 									{/each}
 								</div>
 								{#if parentStatus.includes('อื่นๆ')}
-									<Input
-										bind:value={parentStatusOther}
-										placeholder="ระบุ..."
-										class="max-w-xs"
-									/>
+									<Input bind:value={parentStatusOther} placeholder="ระบุ..." class="max-w-xs" />
 								{/if}
 							</div>
 
@@ -1013,14 +1101,16 @@
 
 							<!-- บิดา -->
 							<div class="space-y-3">
-								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">บิดา</p>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+									บิดา
+								</p>
 								<div class="grid grid-cols-12 gap-3">
 									<div class="col-span-12 sm:col-span-3 space-y-2">
 										<Label>คำนำหน้า</Label>
 										<Select.Root type="single" bind:value={fatherTitle}>
 											<Select.Trigger>{fatherTitle || '-- เลือก --'}</Select.Trigger>
 											<Select.Content>
-												{#each MALE_TITLES as t}<Select.Item value={t}>{t}</Select.Item>{/each}
+												{#each MALE_TITLES as t (t)}<Select.Item value={t}>{t}</Select.Item>{/each}
 											</Select.Content>
 										</Select.Root>
 									</div>
@@ -1036,7 +1126,12 @@
 								<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 									<div class="space-y-2">
 										<Label for="fatherNationalId">เลขประชาชน</Label>
-										<Input id="fatherNationalId" bind:value={fatherNationalId} maxlength={13} class="font-mono" />
+										<Input
+											id="fatherNationalId"
+											bind:value={fatherNationalId}
+											maxlength={13}
+											class="font-mono"
+										/>
 									</div>
 									<div class="space-y-2">
 										<Label for="fatherPhone">โทรศัพท์</Label>
@@ -1048,7 +1143,13 @@
 									</div>
 									<div class="space-y-2">
 										<Label for="fatherIncome">รายได้ต่อเดือน (บาท)</Label>
-										<Input id="fatherIncome" type="number" bind:value={fatherIncome} min="0" placeholder="0" />
+										<Input
+											id="fatherIncome"
+											type="number"
+											bind:value={fatherIncome}
+											min="0"
+											placeholder="0"
+										/>
 									</div>
 								</div>
 							</div>
@@ -1057,14 +1158,17 @@
 
 							<!-- มารดา -->
 							<div class="space-y-3">
-								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">มารดา</p>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+									มารดา
+								</p>
 								<div class="grid grid-cols-12 gap-3">
 									<div class="col-span-12 sm:col-span-3 space-y-2">
 										<Label>คำนำหน้า</Label>
 										<Select.Root type="single" bind:value={motherTitle}>
 											<Select.Trigger>{motherTitle || '-- เลือก --'}</Select.Trigger>
 											<Select.Content>
-												{#each FEMALE_TITLES as t}<Select.Item value={t}>{t}</Select.Item>{/each}
+												{#each FEMALE_TITLES as t (t)}<Select.Item value={t}>{t}</Select.Item
+													>{/each}
 											</Select.Content>
 										</Select.Root>
 									</div>
@@ -1080,7 +1184,12 @@
 								<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 									<div class="space-y-2">
 										<Label for="motherNationalId">เลขประชาชน</Label>
-										<Input id="motherNationalId" bind:value={motherNationalId} maxlength={13} class="font-mono" />
+										<Input
+											id="motherNationalId"
+											bind:value={motherNationalId}
+											maxlength={13}
+											class="font-mono"
+										/>
 									</div>
 									<div class="space-y-2">
 										<Label for="motherPhone">โทรศัพท์</Label>
@@ -1092,7 +1201,13 @@
 									</div>
 									<div class="space-y-2">
 										<Label for="motherIncome">รายได้ต่อเดือน (บาท)</Label>
-										<Input id="motherIncome" type="number" bind:value={motherIncome} min="0" placeholder="0" />
+										<Input
+											id="motherIncome"
+											type="number"
+											bind:value={motherIncome}
+											min="0"
+											placeholder="0"
+										/>
 									</div>
 								</div>
 							</div>
@@ -1101,9 +1216,11 @@
 
 							<!-- ผู้ปกครอง -->
 							<div class="space-y-3">
-								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">ผู้ปกครอง</p>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+									ผู้ปกครอง
+								</p>
 								<div class="flex flex-wrap gap-2">
-									{#each [['father', 'บิดา'], ['mother', 'มารดา'], ['other', 'บุคคลอื่น']] as [val, label]}
+									{#each [['father', 'บิดา'], ['mother', 'มารดา'], ['other', 'บุคคลอื่น']] as [val, label], i (i)}
 										<button
 											type="button"
 											onclick={() => (guardianIs = val as 'father' | 'mother' | 'other')}
@@ -1132,27 +1249,40 @@
 											<Select.Root type="single" bind:value={guardianTitle} required>
 												<Select.Trigger>{guardianTitle || '-- เลือก --'}</Select.Trigger>
 												<Select.Content>
-													{#each GUARDIAN_TITLES as t}<Select.Item value={t}>{t}</Select.Item>{/each}
+													{#each GUARDIAN_TITLES as t (t)}<Select.Item value={t}>{t}</Select.Item
+														>{/each}
 												</Select.Content>
 											</Select.Root>
 										</div>
 										<div class="col-span-12 sm:col-span-5 space-y-2">
-											<Label for="guardianFirstName">ชื่อ <span class="text-red-500">*</span></Label>
+											<Label for="guardianFirstName">ชื่อ <span class="text-red-500">*</span></Label
+											>
 											<Input id="guardianFirstName" bind:value={guardianFirstName} required />
 										</div>
 										<div class="col-span-12 sm:col-span-4 space-y-2">
-											<Label for="guardianLastName">นามสกุล <span class="text-red-500">*</span></Label>
+											<Label for="guardianLastName"
+												>นามสกุล <span class="text-red-500">*</span></Label
+											>
 											<Input id="guardianLastName" bind:value={guardianLastName} required />
 										</div>
 									</div>
 									<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 										<div class="space-y-2">
 											<Label for="guardianRelation">ความสัมพันธ์</Label>
-											<Input id="guardianRelation" bind:value={guardianRelation} placeholder="เช่น ปู่, ย่า, ลุง" />
+											<Input
+												id="guardianRelation"
+												bind:value={guardianRelation}
+												placeholder="เช่น ปู่, ย่า, ลุง"
+											/>
 										</div>
 										<div class="space-y-2">
 											<Label for="guardianNationalId">เลขประชาชน</Label>
-											<Input id="guardianNationalId" bind:value={guardianNationalId} maxlength={13} class="font-mono" />
+											<Input
+												id="guardianNationalId"
+												bind:value={guardianNationalId}
+												maxlength={13}
+												class="font-mono"
+											/>
 										</div>
 										<div class="space-y-2">
 											<Label for="guardianPhone">โทรศัพท์</Label>
@@ -1164,7 +1294,13 @@
 										</div>
 										<div class="space-y-2">
 											<Label for="guardianIncome">รายได้ต่อเดือน (บาท)</Label>
-											<Input id="guardianIncome" type="number" bind:value={guardianIncome} min="0" placeholder="0" />
+											<Input
+												id="guardianIncome"
+												type="number"
+												bind:value={guardianIncome}
+												min="0"
+												placeholder="0"
+											/>
 										</div>
 									</div>
 								{/if}
@@ -1176,10 +1312,12 @@
 					<Card.Root class="shadow-sm">
 						<Card.Header class="pb-2">
 							<Card.Title class="text-base">6. เอกสารประกอบการสมัคร</Card.Title>
-							<p class="text-xs text-muted-foreground mt-1">ถ่ายรูปหรือเลือกรูปจากคลัง — สามารถ crop และปรับมุมเอียงได้</p>
+							<p class="text-xs text-muted-foreground mt-1">
+								ถ่ายรูปหรือเลือกรูปจากคลัง — สามารถ crop และปรับมุมเอียงได้
+							</p>
 						</Card.Header>
 						<Card.Content class="space-y-2">
-							{#each DOC_TYPE_ORDER as docType}
+							{#each DOC_TYPE_ORDER as docType (docType)}
 								{@const info = DOC_TYPE_LABELS[docType]}
 								{@const existing = existingDocs.find((d) => d.docType === docType)}
 								{@const newDoc = uploadedDocs[docType]}
@@ -1195,7 +1333,9 @@
 									onchange={(e) => handleDocFileSelected(docType, e)}
 								/>
 
-								<div class="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
+								<div
+									class="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors"
+								>
 									<!-- Thumbnail or icon -->
 									{#if thumbSrc}
 										<button
@@ -1204,7 +1344,11 @@
 											onclick={() => openLightbox(thumbSrc!, info.label)}
 											title="กดดูรูป"
 										>
-											<img src={thumbSrc} alt={info.label} class="w-full h-full object-cover pointer-events-none" />
+											<img
+												src={thumbSrc}
+												alt={info.label}
+												class="w-full h-full object-cover pointer-events-none"
+											/>
 										</button>
 									{:else}
 										<FileText class="w-5 h-5 text-muted-foreground shrink-0" />
@@ -1214,16 +1358,22 @@
 										<p class="text-sm font-medium leading-tight">
 											{info.label}
 											{#if info.required}
-												<span class="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">จำเป็น</span>
+												<span class="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded"
+													>จำเป็น</span
+												>
 											{:else}
-												<span class="ml-1 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">ถ้ามี</span>
+												<span class="ml-1 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded"
+													>ถ้ามี</span
+												>
 											{/if}
 										</p>
 										{#if hasFile}
 											<p class="text-xs text-green-600 truncate mt-0.5">
 												✓ {existing?.originalFilename ?? newDoc?.name ?? 'อัปโหลดแล้ว'}
 												{#if existing?.fileSize || newDoc?.size}
-													<span class="text-muted-foreground">({formatBytes((existing?.fileSize ?? newDoc?.size)!)})</span>
+													<span class="text-muted-foreground"
+														>({formatBytes((existing?.fileSize ?? newDoc?.size)!)})</span
+													>
 												{/if}
 											</p>
 										{/if}
@@ -1303,19 +1453,44 @@
 
 					<!-- Lightbox -->
 					{#if lightboxSrc}
-						<div class="fixed inset-0 z-50 bg-black/90 flex flex-col" role="dialog" aria-modal="true">
+						<div
+							class="fixed inset-0 z-50 bg-black/90 flex flex-col"
+							role="dialog"
+							aria-modal="true"
+						>
 							<!-- Header -->
 							<div class="flex items-center justify-between px-4 py-3 bg-black/60 shrink-0">
 								<p class="text-white text-sm font-medium truncate pr-4">{lightboxLabel}</p>
 								<div class="flex items-center gap-3 shrink-0">
-									<button type="button" class="text-white/70 hover:text-white transition-colors" onclick={() => { lbZoom = Math.max(0.5, lbZoom - 0.5); }} title="ย่อ">
+									<button
+										type="button"
+										class="text-white/70 hover:text-white transition-colors"
+										onclick={() => {
+											lbZoom = Math.max(0.5, lbZoom - 0.5);
+										}}
+										title="ย่อ"
+									>
 										<ZoomOut class="w-5 h-5" />
 									</button>
-									<span class="text-white/60 text-xs w-10 text-center">{Math.round(lbZoom * 100)}%</span>
-									<button type="button" class="text-white/70 hover:text-white transition-colors" onclick={() => { lbZoom = Math.min(8, lbZoom + 0.5); }} title="ขยาย">
+									<span class="text-white/60 text-xs w-10 text-center"
+										>{Math.round(lbZoom * 100)}%</span
+									>
+									<button
+										type="button"
+										class="text-white/70 hover:text-white transition-colors"
+										onclick={() => {
+											lbZoom = Math.min(8, lbZoom + 0.5);
+										}}
+										title="ขยาย"
+									>
 										<ZoomIn class="w-5 h-5" />
 									</button>
-									<button type="button" class="text-white/70 hover:text-white transition-colors ml-2" onclick={closeLightbox} title="ปิด (ESC)">
+									<button
+										type="button"
+										class="text-white/70 hover:text-white transition-colors ml-2"
+										onclick={closeLightbox}
+										title="ปิด (ESC)"
+									>
 										<X class="w-5 h-5" />
 									</button>
 								</div>
@@ -1332,12 +1507,19 @@
 									src={lightboxSrc}
 									alt={lightboxLabel}
 									class="max-w-none pointer-events-none select-none"
-									style="transform: translate({lbPan.x}px, {lbPan.y}px) scale({lbZoom}); transition: {lbDragging ? 'none' : 'transform 0.1s ease'}; max-height: 80vh; max-width: 90vw;"
+									style="transform: translate({lbPan.x}px, {lbPan.y}px) scale({lbZoom}); transition: {lbDragging
+										? 'none'
+										: 'transform 0.1s ease'}; max-height: 80vh; max-width: 90vw;"
 									draggable="false"
 								/>
 							</div>
 							<!-- Backdrop close -->
-							<button type="button" class="absolute inset-0 -z-10 w-full h-full" onclick={closeLightbox} aria-label="ปิด"></button>
+							<button
+								type="button"
+								class="absolute inset-0 -z-10 w-full h-full"
+								onclick={closeLightbox}
+								aria-label="ปิด"
+							></button>
 						</div>
 					{/if}
 
@@ -1346,7 +1528,13 @@
 						<p class="text-xs text-muted-foreground text-center sm:text-left max-w-sm">
 							ข้าพเจ้าขอรับรองว่าข้อมูลที่กรอกทั้งหมดเป็นความจริง
 						</p>
-						<Button type="button" onclick={handleSubmit} size="lg" disabled={submitting} class="w-full sm:w-auto px-10">
+						<Button
+							type="button"
+							onclick={handleSubmit}
+							size="lg"
+							disabled={submitting}
+							class="w-full sm:w-auto px-10"
+						>
 							{#if submitting}
 								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
 								{isEditMode ? 'กำลังบันทึก...' : 'กำลังส่งข้อมูล...'}

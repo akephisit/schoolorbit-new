@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
+	import { SvelteSet } from 'svelte/reactivity';
 	import {
 		listStudyPlans,
 		createStudyPlan,
@@ -47,7 +49,6 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { GraduationCap, Plus, Pencil, Trash2, BookOpen, ListTodo } from 'lucide-svelte';
 
 	let { data } = $props();
@@ -236,7 +237,6 @@
 		}
 	}
 
-
 	// Delete Handlers
 	function handleOpenDelete(type: 'plan' | 'version' | 'subject', id: string, name: string) {
 		deleteTarget = { type, id, name };
@@ -270,12 +270,10 @@
 	// Plan Activities (template)
 	// ==========================================
 	let planActivities = $state<StudyPlanVersionActivity[]>([]);
-	let loadingPlanActivities = $state(false);
 	let showPlanActivityDialog = $state(false);
 	let editingPlanActivity = $state<StudyPlanVersionActivity | null>(null);
 	let activityCatalog = $state<ActivityCatalog[]>([]);
 	let paCatalogId = $state('');
-	let paGradeLevelIds = $state<string[]>([]);
 
 	async function loadActivityCatalog() {
 		try {
@@ -299,14 +297,11 @@
 			planActivities = [];
 			return;
 		}
-		loadingPlanActivities = true;
 		try {
 			const res = await listPlanActivities(versionId);
 			planActivities = res.data ?? [];
 		} catch {
 			planActivities = [];
-		} finally {
-			loadingPlanActivities = false;
 		}
 	}
 
@@ -419,10 +414,7 @@
 	function isInPlan(type: 'subject' | 'activity', id: string): boolean {
 		if (type === 'subject') {
 			return planSubjects.some(
-				(s) =>
-					s.subject_id === id &&
-					s.grade_level_id === addTargetGradeId &&
-					s.term === addTerm
+				(s) => s.subject_id === id && s.grade_level_id === addTargetGradeId && s.term === addTerm
 			);
 		}
 		return planActivities.some(
@@ -688,10 +680,7 @@
 										{#if plan.grade_level_ids && plan.grade_level_ids.length > 0}
 											<Badge variant="secondary" class="text-[10px]">
 												{plan.grade_level_ids.length} ระดับ: {plan.grade_level_ids
-													.map(
-														(id) =>
-															gradeLevels.find((g) => g.id === id)?.short_name ?? ''
-													)
+													.map((id) => gradeLevels.find((g) => g.id === id)?.short_name ?? '')
 													.filter(Boolean)
 													.join(', ')}
 											</Badge>
@@ -993,17 +982,15 @@
 
 										<!-- Grand total per term -->
 										<div class="border-t pt-2 text-sm font-semibold text-right">
-											รวมทั้งหมด: {(tb.credits + ta.credits).toFixed(1)} นก · {tb.hours +
-												ta.hours} ชม · {tact.periods} คาบกิจกรรม
+											รวมทั้งหมด: {(tb.credits + ta.credits).toFixed(1)} นก · {tb.hours + ta.hours} ชม
+											· {tact.periods} คาบกิจกรรม
 										</div>
 									</div>
 								{/each}
 							</div>
 						</div>
 					{:else}
-						<p class="text-center text-muted-foreground py-10">
-							ไม่มีระดับชั้นในแผนการเรียนนี้
-						</p>
+						<p class="text-center text-muted-foreground py-10">ไม่มีระดับชั้นในแผนการเรียนนี้</p>
 					{/each}
 				</div>
 			{:else}
@@ -1045,7 +1032,7 @@
 					<span class="text-xs text-muted-foreground">(เลือกหลายชั้นได้)</span>
 				</Label>
 				<div class="flex flex-wrap gap-2 p-2 border rounded min-h-[48px]">
-					{#each gradeLevels as gl}
+					{#each gradeLevels as gl (gl.id)}
 						{@const checked = (planForm.grade_level_ids ?? []).includes(gl.id)}
 						<label
 							class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted {checked
@@ -1056,7 +1043,7 @@
 								type="checkbox"
 								{checked}
 								onchange={(e) => {
-									const ids = new Set(planForm.grade_level_ids ?? []);
+									const ids = new SvelteSet(planForm.grade_level_ids ?? []);
 									if ((e.target as HTMLInputElement).checked) ids.add(gl.id);
 									else ids.delete(gl.id);
 									planForm.grade_level_ids = [...ids];
@@ -1106,7 +1093,7 @@
 							'เลือกปีการศึกษา'}
 					</Select.Trigger>
 					<Select.Content>
-						{#each academicYears as year}
+						{#each academicYears as year (year.id)}
 							<Select.Item value={year.id}>{year.name}</Select.Item>
 						{/each}
 					</Select.Content>
@@ -1122,7 +1109,7 @@
 					</Select.Trigger>
 					<Select.Content>
 						<Select.Item value="">ไม่ระบุ</Select.Item>
-						{#each academicYears as year}
+						{#each academicYears as year (year.id)}
 							<Select.Item value={year.id}>{year.name}</Select.Item>
 						{/each}
 					</Select.Content>
@@ -1160,7 +1147,7 @@
 						{activityCatalog.find((c) => c.id === paCatalogId)?.name ?? 'เลือกกิจกรรม'}
 					</Select.Trigger>
 					<Select.Content class="max-h-[280px] overflow-y-auto">
-						{#each activityCatalog as c}
+						{#each activityCatalog as c (c.id)}
 							<Select.Item value={c.id}>
 								{c.name} · {c.activity_type} · {c.periods_per_week} คาบ
 							</Select.Item>
@@ -1169,7 +1156,9 @@
 				</Select.Root>
 				<p class="text-xs text-muted-foreground">
 					ถ้าไม่มีกิจกรรมที่ต้องการ ไปเพิ่มที่หน้า
-					<a href="/staff/academic/subjects" class="underline">คลังรายวิชา tab "กิจกรรม"</a>
+					<a href={resolve('/staff/academic/subjects')} class="underline"
+						>คลังรายวิชา tab "กิจกรรม"</a
+					>
 				</p>
 			</div>
 		</div>
@@ -1183,7 +1172,9 @@
 
 <!-- Add to Plan Dialog (2-panel transfer list) -->
 <Dialog bind:open={showAddDialog}>
-	<DialogContent class="max-w-[95vw] sm:max-w-[90vw] lg:max-w-[1400px] max-h-[95vh] overflow-y-auto">
+	<DialogContent
+		class="max-w-[95vw] sm:max-w-[90vw] lg:max-w-[1400px] max-h-[95vh] overflow-y-auto"
+	>
 		<DialogHeader>
 			<DialogTitle>เพิ่มเข้าหลักสูตร</DialogTitle>
 		</DialogHeader>
@@ -1205,7 +1196,7 @@
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="">ทั้งหมด</Select.Item>
-								{#each planGradeLevels as g}
+								{#each planGradeLevels as g (g.id)}
 									<Select.Item value={g.id}>{g.short_name ?? g.name}</Select.Item>
 								{/each}
 							</Select.Content>
@@ -1240,7 +1231,7 @@
 								</Select.Trigger>
 								<Select.Content>
 									<Select.Item value="">ทุกกลุ่ม</Select.Item>
-									{#each subjectGroups as g}
+									{#each subjectGroups as g (g.id)}
 										<Select.Item value={g.id}>{g.name_th}</Select.Item>
 									{/each}
 								</Select.Content>
@@ -1377,10 +1368,11 @@
 							<Label class="text-xs">ชั้น *</Label>
 							<Select.Root type="single" bind:value={addTargetGradeId}>
 								<Select.Trigger class="w-full h-8 text-xs">
-									{planGradeLevels.find((g) => g.id === addTargetGradeId)?.short_name ?? 'เลือกชั้น'}
+									{planGradeLevels.find((g) => g.id === addTargetGradeId)?.short_name ??
+										'เลือกชั้น'}
 								</Select.Trigger>
 								<Select.Content>
-									{#each planGradeLevels as g}
+									{#each planGradeLevels as g (g.id)}
 										<Select.Item value={g.id}>{g.short_name ?? g.name}</Select.Item>
 									{/each}
 								</Select.Content>
@@ -1428,7 +1420,7 @@
 						วิชาที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'subject').length})
 					</h4>
 					<div class="max-h-[400px] overflow-y-auto divide-y rounded border bg-background">
-						{#each pendingQueue as q, idx}
+						{#each pendingQueue as q, idx (idx)}
 							{#if q.type === 'subject'}
 								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
 									<span class="flex-1 truncate">
@@ -1481,7 +1473,7 @@
 						กิจกรรมที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'activity').length})
 					</h4>
 					<div class="max-h-[220px] overflow-y-auto divide-y rounded border bg-background">
-						{#each pendingQueue as q, idx}
+						{#each pendingQueue as q, idx (idx)}
 							{#if q.type === 'activity'}
 								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
 									<span class="flex-1 truncate">

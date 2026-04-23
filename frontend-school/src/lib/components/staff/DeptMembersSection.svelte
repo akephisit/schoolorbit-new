@@ -54,7 +54,10 @@
 	}
 
 	async function searchStaff() {
-		if (staffSearch.length < 2) { staffResults = []; return; }
+		if (staffSearch.length < 2) {
+			staffResults = [];
+			return;
+		}
 		searchLoading = true;
 		const res = await listStaff({ search: staffSearch, page_size: 20 });
 		staffResults = res.data ?? [];
@@ -66,7 +69,8 @@
 		addSubmitting = true;
 		addError = '';
 		// ถ้าเลือกฝ่ายย่อย ให้ add เข้าฝ่ายนั้นแทน
-		const targetDept = (includeChildren && addForm.target_dept_id) ? addForm.target_dept_id : departmentId;
+		const targetDept =
+			includeChildren && addForm.target_dept_id ? addForm.target_dept_id : departmentId;
 		const res = await addDeptMember(targetDept, {
 			user_id: addForm.user_id,
 			position: addForm.position,
@@ -132,7 +136,7 @@
 	// allDepts สำหรับ dropdown: กลุ่มหลัก + ฝ่ายย่อย
 	const deptOptions = $derived([
 		{ id: departmentId, name: 'กลุ่มหลัก (ไม่สังกัดฝ่าย)' },
-		...subDepartments.map(d => ({ id: d.id, name: d.name }))
+		...subDepartments.map((d) => ({ id: d.id, name: d.name }))
 	]);
 </script>
 
@@ -156,10 +160,12 @@
 		<p class="text-muted-foreground text-sm text-center py-4">ยังไม่มีสมาชิก</p>
 	{:else}
 		<div class="divide-y divide-border">
-			{#each members as member}
+			{#each members as member (member.user_id + '-' + member.department_id)}
 				<div class="py-3 flex items-center justify-between gap-3">
 					<div class="flex items-center gap-3 min-w-0">
-						<div class="w-9 h-9 rounded-full bg-muted flex items-center justify-center shrink-0 text-sm font-medium">
+						<div
+							class="w-9 h-9 rounded-full bg-muted flex items-center justify-center shrink-0 text-sm font-medium"
+						>
 							{member.name.charAt(0)}
 						</div>
 						<div class="min-w-0">
@@ -196,7 +202,9 @@
 <!-- Add Member Dialog -->
 {#if showAddDialog}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-		<div class="bg-background border border-border rounded-xl shadow-lg w-full max-w-md p-6 space-y-4">
+		<div
+			class="bg-background border border-border rounded-xl shadow-lg w-full max-w-md p-6 space-y-4"
+		>
 			<h3 class="text-lg font-semibold">เพิ่มสมาชิก</h3>
 
 			{#if addError}
@@ -218,13 +226,21 @@
 						<p class="text-xs text-muted-foreground">กำลังค้นหา...</p>
 					{:else if staffResults.length > 0}
 						<div class="border border-border rounded-md overflow-hidden max-h-48 overflow-y-auto">
-							{#each staffResults as staff}
+							{#each staffResults as staff (staff.id)}
 								<button
 									type="button"
-									class="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors {addForm.user_id === staff.id ? 'bg-primary/10 font-medium' : ''}"
-									onclick={() => { addForm.user_id = staff.id; staffSearch = `${staff.title}${staff.first_name} ${staff.last_name}`; staffResults = []; }}
+									class="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors {addForm.user_id ===
+									staff.id
+										? 'bg-primary/10 font-medium'
+										: ''}"
+									onclick={() => {
+										addForm.user_id = staff.id;
+										staffSearch = `${staff.title}${staff.first_name} ${staff.last_name}`;
+										staffResults = [];
+									}}
 								>
-									{staff.title}{staff.first_name} {staff.last_name}
+									{staff.title}{staff.first_name}
+									{staff.last_name}
 								</button>
 							{/each}
 						</div>
@@ -239,7 +255,7 @@
 							bind:value={addForm.target_dept_id}
 							class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 						>
-							{#each deptOptions as opt}
+							{#each deptOptions as opt (opt.id)}
 								<option value={opt.id}>{opt.name}</option>
 							{/each}
 						</select>
@@ -265,7 +281,13 @@
 			</div>
 
 			<div class="flex justify-end gap-2 pt-2">
-				<Button variant="outline" onclick={() => { showAddDialog = false; addError = ''; }}>ยกเลิก</Button>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showAddDialog = false;
+						addError = '';
+					}}>ยกเลิก</Button
+				>
 				<Button onclick={handleAdd} disabled={addSubmitting || !addForm.user_id}>
 					{addSubmitting ? 'กำลังบันทึก...' : 'เพิ่ม'}
 				</Button>
@@ -277,7 +299,9 @@
 <!-- Edit Dialog -->
 {#if showEditDialog && editingMember}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-		<div class="bg-background border border-border rounded-xl shadow-lg w-full max-w-sm p-6 space-y-4">
+		<div
+			class="bg-background border border-border rounded-xl shadow-lg w-full max-w-sm p-6 space-y-4"
+		>
 			<h3 class="text-lg font-semibold">แก้ไขสมาชิก — {editingMember.name}</h3>
 
 			<div class="space-y-3">
@@ -289,7 +313,7 @@
 							bind:value={editForm.new_department_id}
 							class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 						>
-							{#each deptOptions as opt}
+							{#each deptOptions as opt (opt.id)}
 								<option value={opt.id}>{opt.name}</option>
 							{/each}
 						</select>
@@ -315,7 +339,13 @@
 			</div>
 
 			<div class="flex justify-end gap-2 pt-2">
-				<Button variant="outline" onclick={() => { showEditDialog = false; editingMember = null; }}>ยกเลิก</Button>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showEditDialog = false;
+						editingMember = null;
+					}}>ยกเลิก</Button
+				>
 				<Button onclick={handleEdit} disabled={editSubmitting}>
 					{editSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
 				</Button>

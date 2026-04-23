@@ -2,7 +2,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { X, Download } from 'lucide-svelte';
 	import { fade, slide } from 'svelte/transition';
-	import { pwaStore, type BeforeInstallPromptEvent } from '$lib/stores/pwa';
+	import { pwaStore } from '$lib/stores/pwa';
 
 	let showInstallPrompt = $state(false);
 	let isInstalling = $state(false);

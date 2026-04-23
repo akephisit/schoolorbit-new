@@ -27,8 +27,8 @@
 			} else {
 				throw new Error(res.error || 'ไม่พบกลุ่มสาระ');
 			}
-		} catch (e: any) {
-			error = e.message;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'เกิดข้อผิดพลาด';
 		} finally {
 			loading = false;
 		}
@@ -110,4 +110,4 @@
 	{/if}
 </div>
 
-<DepartmentPermissionDialog bind:open={showPermissionDialog} department={department} />
+<DepartmentPermissionDialog bind:open={showPermissionDialog} {department} />

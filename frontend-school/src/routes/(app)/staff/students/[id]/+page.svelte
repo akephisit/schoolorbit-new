@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
@@ -8,11 +7,11 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, Edit } from 'lucide-svelte';
-	import { getStudent } from '$lib/api/students';
+	import { getStudent, type Student } from '$lib/api/students';
 
 	let { params }: PageProps = $props();
 	let studentId = $derived(params.id);
-	let student = $state<any>(null);
+	let student = $state<Student | null>(null);
 	let loading = $state(true);
 
 	onMount(async () => {
@@ -70,7 +69,7 @@
 	{#if loading}
 		<Card class="p-6">
 			<div class="space-y-4">
-				{#each Array(6) as _}
+				{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
 					<div class="animate-pulse">
 						<div class="h-4 bg-muted rounded w-1/4 mb-2"></div>
 						<div class="h-10 bg-muted rounded"></div>

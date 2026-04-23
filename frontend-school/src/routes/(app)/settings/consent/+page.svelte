@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { consentApi, type UserConsentStatus, type ConsentRecord } from '$lib/api/consent';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -18,6 +19,10 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import { th } from 'date-fns/locale';
 
+	// /privacy-policy route not yet defined in app — SvelteKit typed route dynamic interpolation.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route: /privacy-policy has no +page.svelte
+	const privacyPolicyUrl = resolve('/privacy-policy' as any);
+
 	// State
 	let status = $state<UserConsentStatus | null>(null);
 	let loading = $state(true);
@@ -31,7 +36,6 @@
 	const withdrawnConsents = $derived(
 		status?.consents.filter((c) => c.consent_status === 'withdrawn') || []
 	);
-	const expiredConsents = $derived(status?.consents.filter((c) => c.is_expired) || []);
 
 	// Load consent status
 	onMount(async () => {
@@ -198,7 +202,7 @@
 						<Alert.Description>
 							คุณยังไม่ได้ให้ความยินยอมในรายการต่อไปนี้:
 							<ul class="list-disc list-inside mt-2">
-								{#each status.missing_required_consents as code}
+								{#each status.missing_required_consents as code (code)}
 									<li class="text-sm">{code}</li>
 								{/each}
 							</ul>
@@ -216,7 +220,7 @@
 					<Card.Description>ความยินยอมที่คุณให้ไว้และยังมีผลบังคับใช้</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
-					{#each activeConsents as consent}
+					{#each activeConsents as consent (consent.id)}
 						<div class="rounded-lg border p-4 space-y-3">
 							<!-- Header -->
 							<div class="flex items-start justify-between gap-4">
@@ -288,7 +292,7 @@
 					<Card.Description>ความยินยอมที่คุณได้ถอนคืนไปแล้ว</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
-					{#each withdrawnConsents as consent}
+					{#each withdrawnConsents as consent (consent.id)}
 						<div class="rounded-lg border p-4 space-y-2 opacity-60">
 							<div class="flex items-start justify-between gap-4">
 								<div class="flex-1">
@@ -315,7 +319,7 @@
 			<Card.Content class="p-4">
 				<p class="text-sm text-muted-foreground text-center">
 					อ่านเพิ่มเติมที่
-					<a href="/privacy-policy" class="text-primary underline hover:no-underline">
+					<a href={privacyPolicyUrl} class="text-primary underline hover:no-underline">
 						นโยบายความเป็นส่วนตัว
 					</a>
 					หรือติดต่อเจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล (DPO)

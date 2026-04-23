@@ -99,7 +99,10 @@
 						{#each filtered() as school (school.name)}
 							<Command.Item value={school.name} onSelect={() => selectSchool(school)}>
 								<Check
-									class={cn('mr-2 h-4 w-4 shrink-0', value === school.name ? 'opacity-100' : 'opacity-0')}
+									class={cn(
+										'mr-2 h-4 w-4 shrink-0',
+										value === school.name ? 'opacity-100' : 'opacity-0'
+									)}
 								/>
 								<span>{school.name}</span>
 								<span class="ml-1 text-xs text-muted-foreground">({school.province})</span>

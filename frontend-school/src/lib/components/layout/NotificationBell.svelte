@@ -1,12 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { notificationStore } from '$lib/stores/notification';
 	import { Bell, CheckCheck } from 'lucide-svelte';
-	import { fly, fade } from 'svelte/transition';
+	import { fade } from 'svelte/transition';
 	import * as Popover from '$lib/components/ui/popover';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import { Badge } from '$lib/components/ui/badge';
 
 	import { authStore } from '$lib/stores/auth';
 
@@ -35,19 +33,6 @@
 		if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`;
 		if (diff < 86400) return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`;
 		return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
-	}
-
-	function getTypeColor(type: string) {
-		switch (type) {
-			case 'success':
-				return 'text-green-600 bg-green-50';
-			case 'warning':
-				return 'text-amber-600 bg-amber-50';
-			case 'error':
-				return 'text-red-600 bg-red-50';
-			default:
-				return 'text-blue-600 bg-blue-50';
-		}
 	}
 </script>
 

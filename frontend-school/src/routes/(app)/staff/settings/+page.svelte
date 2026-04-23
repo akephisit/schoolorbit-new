@@ -11,7 +11,6 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
 	import {
 		ArrowLeft,
 		Lock,
@@ -48,11 +47,13 @@
 
 	onMount(() => {
 		// Check if iOS
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- MSStream is an IE-specific non-standard property
 		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
 
 		// Check if already installed
 		isStandalone =
 			window.matchMedia('(display-mode: standalone)').matches ||
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- navigator.standalone is a Safari iOS non-standard property
 			(navigator as any).standalone === true;
 	});
 
@@ -68,7 +69,7 @@
 			if (choiceResult.outcome === 'accepted') {
 				toast.success('ติดตั้งแอปสำเร็จ');
 			}
-		} catch (error) {
+		} catch {
 			toast.error('ไม่สามารถติดตั้งแอปได้');
 		} finally {
 			pwaStore.setPrompt(null);

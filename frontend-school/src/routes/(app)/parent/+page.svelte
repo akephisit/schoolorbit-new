@@ -3,14 +3,19 @@
 	import { getOwnParentProfile, type ParentProfile } from '$lib/api/parents';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import { Avatar } from '$lib/components/ui/avatar';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Loader2, User, ChevronRight } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	let profile = $state<ParentProfile | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+
+	function goToStudent(id: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
+		goto(resolve(`/parent/student/${id}` as any));
+	}
 
 	onMount(async () => {
 		try {
@@ -65,10 +70,10 @@
 				</Card>
 			{:else}
 				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-					{#each profile.children as child}
+					{#each profile.children as child (child.id)}
 						<Card
 							class="overflow-hidden hover:shadow-lg transition-all cursor-pointer group"
-							onclick={() => goto(`/parent/student/${child.id}`)}
+							onclick={() => goToStudent(String(child.id))}
 						>
 							<div class="p-6">
 								<div class="flex items-start gap-4">

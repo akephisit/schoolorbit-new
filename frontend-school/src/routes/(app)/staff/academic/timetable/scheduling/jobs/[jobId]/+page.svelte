@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -12,7 +13,6 @@
 		CheckCircle2,
 		XCircle,
 		Clock,
-		Zap,
 		AlertCircle,
 		ArrowLeft,
 		Eye
@@ -22,6 +22,11 @@
 
 	const { params }: PageProps = $props();
 	let jobId = $derived(params.jobId);
+
+	function goToSchedulingJobs() {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- route doesn't have a typed page file
+		goto(resolve('/staff/academic/timetable/scheduling/jobs' as any));
+	}
 
 	let job = $state<SchedulingJobResponse | null>(null);
 	let loading = $state(true);
@@ -106,11 +111,7 @@
 	<div class="container mx-auto p-6 max-w-4xl">
 		<!-- Header -->
 		<div class="mb-6">
-			<Button
-				variant="ghost"
-				size="sm"
-				onclick={() => goto('/staff/academic/timetable/scheduling')}
-			>
+			<Button variant="ghost" size="sm" onclick={() => goToSchedulingJobs()}>
 				<ArrowLeft class="mr-2 h-4 w-4" />
 				กลับ
 			</Button>
@@ -214,7 +215,7 @@
 							</h3>
 
 							<div class="space-y-2 max-h-[300px] overflow-y-auto">
-								{#each job.failed_courses as failed}
+								{#each job.failed_courses as failed, i (i)}
 									<div class="p-3 rounded-lg border bg-orange-50 dark:bg-orange-950/20">
 										<div class="font-medium">{failed.subject_name || failed.subject_code}</div>
 										<div class="text-sm text-muted-foreground">ห้อง: {failed.classroom}</div>
@@ -279,7 +280,7 @@
 			<!-- Actions -->
 			{#if job.status === 'COMPLETED'}
 				<div class="flex justify-end gap-3">
-					<Button onclick={() => goto('/staff/academic/timetable')}>
+					<Button onclick={() => goto(resolve('/staff/academic/timetable'))}>
 						<Eye class="mr-2 h-4 w-4" />
 						ดูตารางสอน
 					</Button>
@@ -293,7 +294,7 @@
 			<AlertCircle class="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
 			<h2 class="text-xl font-semibold mb-2">ไม่พบงาน</h2>
 			<p class="text-muted-foreground mb-4">ไม่พบงานที่คุณต้องการ</p>
-			<Button onclick={() => goto('/staff/academic/timetable/scheduling')}>กลับ</Button>
+			<Button onclick={() => goToSchedulingJobs()}>กลับ</Button>
 		</Card>
 	</div>
 {/if}

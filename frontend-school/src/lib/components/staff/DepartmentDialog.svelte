@@ -5,7 +5,12 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { createDepartment, updateDepartment, type Department } from '$lib/api/staff';
+	import {
+		createDepartment,
+		updateDepartment,
+		type Department,
+		type CreateDepartmentRequest
+	} from '$lib/api/staff';
 	import { toast } from 'svelte-sonner';
 
 	let {
@@ -79,7 +84,7 @@
 		loading = true;
 
 		try {
-			const payload: any = { ...formData };
+			const payload: Partial<Department> & { parent_department_id?: string } = { ...formData };
 			if (payload.parent_department_id === 'none') {
 				delete payload.parent_department_id;
 			}
@@ -91,13 +96,13 @@
 				await updateDepartment(departmentToEdit.id, payload);
 				toast.success('อัปเดตฝ่ายสำเร็จ');
 			} else {
-				await createDepartment(payload);
+				await createDepartment(payload as CreateDepartmentRequest);
 				toast.success('สร้างฝ่ายสำเร็จ');
 			}
 			open = false;
 			onSuccess?.();
-		} catch (error: any) {
-			toast.error(error.message || 'เกิดข้อผิดพลาด');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
 		} finally {
 			loading = false;
 		}
@@ -183,14 +188,18 @@
 
 			<div class="space-y-2">
 				<Label>สังกัดภายใต้ (Parent Department)</Label>
-				<Select.Root type="single" bind:value={formData.parent_department_id} disabled={!!forcedParentId}>
+				<Select.Root
+					type="single"
+					bind:value={formData.parent_department_id}
+					disabled={!!forcedParentId}
+				>
 					<Select.Trigger>
 						{departments.find((d: Department) => d.id === formData.parent_department_id)?.name ||
 							'ไม่มี (ระดับสูงสุด)'}
 					</Select.Trigger>
 					<Select.Content class="max-h-[200px] overflow-y-auto">
 						<Select.Item value="none">ไม่มี (ระดับสูงสุด)</Select.Item>
-						{#each departments.filter((d: Department) => d.id !== departmentToEdit?.id) as dept}
+						{#each departments.filter((d: Department) => d.id !== departmentToEdit?.id) as dept (dept.id)}
 							<Select.Item value={dept.id}>{dept.name} ({dept.code})</Select.Item>
 						{/each}
 					</Select.Content>

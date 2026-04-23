@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getPublicRounds, type AdmissionRound, roundStatusLabel, roundStatusColor } from '$lib/api/admission';
+	import {
+		getPublicRounds,
+		type AdmissionRound,
+		roundStatusLabel,
+		roundStatusColor
+	} from '$lib/api/admission';
 	import { getPublicSchoolInfo, type PublicSchoolInfo } from '$lib/api/school';
 	import { Button } from '$lib/components/ui/button';
 	import { GraduationCap, CalendarDays, ArrowRight, Search } from 'lucide-svelte';
@@ -11,10 +16,7 @@
 
 	onMount(async () => {
 		try {
-			[publicRounds, schoolInfo] = await Promise.all([
-				getPublicRounds(),
-				getPublicSchoolInfo()
-			]);
+			[publicRounds, schoolInfo] = await Promise.all([getPublicRounds(), getPublicSchoolInfo()]);
 		} catch (e) {
 			console.error('Failed to load public rounds', e);
 		} finally {
@@ -34,7 +36,11 @@
 		<!-- Header -->
 		<div class="text-center">
 			{#if schoolInfo.logoUrl}
-				<img src={schoolInfo.logoUrl} alt="school logo" class="w-24 h-24 object-contain mx-auto mb-4" />
+				<img
+					src={schoolInfo.logoUrl}
+					alt="school logo"
+					class="w-24 h-24 object-contain mx-auto mb-4"
+				/>
 			{:else}
 				<div class="inline-flex p-3 bg-white rounded-2xl shadow-md mb-4">
 					<GraduationCap class="w-10 h-10 text-blue-600" />
@@ -80,7 +86,7 @@
 					<GraduationCap class="w-5 h-5 text-blue-600" /> รอบรับสมัครทั้งหมด
 				</h2>
 				<div class="grid gap-4">
-					{#each publicRounds as r}
+					{#each publicRounds as r (r.id)}
 						<div
 							class="bg-white rounded-2xl shadow-sm border border-blue-100 p-5 hover:shadow-md transition-shadow"
 						>
@@ -88,7 +94,11 @@
 								<div class="space-y-1">
 									<div class="flex items-center gap-2 flex-wrap">
 										<h3 class="font-bold text-gray-900 text-lg">{r.name}</h3>
-										<span class="text-xs px-2 py-0.5 rounded-full font-medium {roundStatusColor[r.status] ?? 'bg-gray-100 text-gray-700'}">
+										<span
+											class="text-xs px-2 py-0.5 rounded-full font-medium {roundStatusColor[
+												r.status
+											] ?? 'bg-gray-100 text-gray-700'}"
+										>
 											{roundStatusLabel[r.status] ?? r.status}
 										</span>
 									</div>

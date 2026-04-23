@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import {
 		createStaff,
 		listRoles,
@@ -265,7 +266,8 @@
 		errors = {};
 
 		try {
-			const { confirmPassword, ...payloadData } = formData;
+			const payloadData = { ...formData };
+			delete (payloadData as Partial<typeof formData>).confirmPassword;
 
 			// Clean up payload - convert empty strings to undefined
 			const payload = {
@@ -299,7 +301,7 @@
 				toast.success('เพิ่มบุคลากรเรียบร้อยแล้ว');
 
 				// Redirect to profile
-				await goto('/staff/manage', { invalidateAll: true });
+				await goto(resolve('/staff/manage'), { invalidateAll: true });
 			} else {
 				// Show error toast
 				toast.error(result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร');
@@ -351,8 +353,7 @@
 		<!-- Progress Steps -->
 		<div class="mb-8">
 			<div class="flex items-center justify-between">
-				{#each Array(totalSteps) as _, i (i)}
-					<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
+				{#each Array.from({ length: totalSteps }, (_v, i) => i) as i (i)}
 					{@const step = i + 1}
 					{@const Icon = getStepIcon(step)}
 					<div class="flex flex-col items-center flex-1">
@@ -811,7 +812,7 @@
 														<Select.Label class="font-bold text-muted-foreground"
 															>อื่นๆ</Select.Label
 														>
-														{#each departments.filter((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id)) as orphan}
+														{#each departments.filter((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id)) as orphan (orphan.id)}
 															<Select.Item value={orphan.id} class="pl-6">
 																{orphan.name}
 															</Select.Item>
@@ -828,9 +829,9 @@
 											<Select.Trigger>
 												{dept.position === 'member'
 													? 'สมาชิก'
-														: dept.position === 'head'
-															? 'หัวหน้าฝ่าย'
-															: 'เลือกตำแหน่ง'}
+													: dept.position === 'head'
+														? 'หัวหน้าฝ่าย'
+														: 'เลือกตำแหน่ง'}
 											</Select.Trigger>
 											<Select.Content>
 												<Select.Item value="member">สมาชิก</Select.Item>

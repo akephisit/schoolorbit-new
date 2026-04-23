@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	let { data } = $props();
 
@@ -39,15 +40,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import {
-		Loader2,
-		BookOpen,
-		Trash2,
-		Calendar,
-		Settings,
-		Wand2,
-		Plus
-	} from 'lucide-svelte';
+	import { Loader2, BookOpen, Trash2, Calendar, Settings, Wand2, Plus } from 'lucide-svelte';
 
 	// State
 	let loading = $state(true);
@@ -115,11 +108,7 @@
 	async function handleAddTeamInstructor() {
 		if (!teamDialogSelectedInstructor) return;
 		try {
-			await addCourseInstructor(
-				teamDialogCourseId,
-				teamDialogSelectedInstructor,
-				teamDialogRole
-			);
+			await addCourseInstructor(teamDialogCourseId, teamDialogSelectedInstructor, teamDialogRole);
 			await loadTeamInstructors(teamDialogCourseId);
 			await fetchCourses();
 			teamDialogSelectedInstructor = '';
@@ -287,7 +276,6 @@
 			toast.error('ลบไม่สำเร็จ');
 		}
 	}
-
 
 	function openDeleteDialog(course: ClassroomCourse) {
 		deletingCourse = course;
@@ -479,7 +467,7 @@
 	});
 
 	// Auto-load team instructors when courses list changes — batched to avoid N+1
-	let loadedTeamCourseIds = $state<Set<string>>(new Set());
+	let loadedTeamCourseIds = new SvelteSet<string>();
 
 	$effect(() => {
 		const courseIds = courses.map((c) => c.id).filter((id) => !loadedTeamCourseIds.has(id));
@@ -493,7 +481,6 @@
 					loadedTeamCourseIds.add(id);
 				}
 				teamInstructorsMap = newMap;
-				loadedTeamCourseIds = new Set(loadedTeamCourseIds);
 			})
 			.catch(() => {
 				/* ignore */
@@ -528,7 +515,7 @@
 							{structure.years.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
 						</Select.Trigger>
 						<Select.Content>
-							{#each structure.years as year}
+							{#each structure.years as year (year.id)}
 								<Select.Item value={year.id}>{year.name}</Select.Item>
 							{/each}
 						</Select.Content>
@@ -542,7 +529,7 @@
 							{filteredSemesters.find((s) => s.id === selectedTermId)?.term || 'เลือกภาคเรียน'}
 						</Select.Trigger>
 						<Select.Content>
-							{#each filteredSemesters as term}
+							{#each filteredSemesters as term (term.id)}
 								<Select.Item value={term.id}>เทอม {term.term} ({term.name})</Select.Item>
 							{/each}
 						</Select.Content>
@@ -556,7 +543,7 @@
 							{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
 						</Select.Trigger>
 						<Select.Content class="max-h-[300px]">
-							{#each classrooms as room}
+							{#each classrooms as room (room.id)}
 								<Select.Item value={room.id}>{room.name} ({room.grade_level_name})</Select.Item>
 							{/each}
 						</Select.Content>
@@ -677,7 +664,7 @@
 								</Table.Cell>
 							</Table.Row>
 						{:else}
-							{#each sortedCourses as course}
+							{#each sortedCourses as course (course.id)}
 								<Table.Row>
 									<Table.Cell class="font-medium">{course.subject_code}</Table.Cell>
 									<Table.Cell>
@@ -714,7 +701,7 @@
 									</Table.Cell>
 									<Table.Cell>
 										<div class="flex items-center gap-2 flex-wrap">
-											{#each teamInstructorsMap[course.id] ?? [] as instr}
+											{#each teamInstructorsMap[course.id] ?? [] as instr (instr.id)}
 												<Badge
 													variant={instr.role === 'primary' ? 'default' : 'secondary'}
 													class="gap-1"
@@ -724,8 +711,7 @@
 													{#if instr.role === 'secondary'}
 														<button
 															class="ml-1 text-[10px]"
-															onclick={() =>
-																handlePromoteToPrimary(course.id, instr.instructor_id)}
+															onclick={() => handlePromoteToPrimary(course.id, instr.instructor_id)}
 															title="เปลี่ยนเป็นครูหลัก"
 														>
 															↑
@@ -783,8 +769,8 @@
 					<Badge variant="outline" class="ml-2">{classroomActivities.length} กิจกรรม</Badge>
 				</h3>
 				<p class="text-sm text-muted-foreground">
-					ช่องกิจกรรมที่ห้องนี้เข้าร่วม — ลบได้จากห้องนี้
-					(ถ้าเป็นห้องสุดท้าย slot จะถูกลบโดยอัตโนมัติพร้อมกิจกรรม/ตารางสอน)
+					ช่องกิจกรรมที่ห้องนี้เข้าร่วม — ลบได้จากห้องนี้ (ถ้าเป็นห้องสุดท้าย slot
+					จะถูกลบโดยอัตโนมัติพร้อมกิจกรรม/ตารางสอน)
 				</p>
 
 				<div class="bg-card border rounded-lg overflow-hidden">
@@ -812,7 +798,7 @@
 									</Table.Cell>
 								</Table.Row>
 							{:else}
-								{#each classroomActivities as activity}
+								{#each classroomActivities as activity (activity.slot_id)}
 									<Table.Row>
 										<Table.Cell class="font-medium">{activity.name}</Table.Cell>
 										<Table.Cell>
@@ -881,7 +867,7 @@
 						</Select.Trigger>
 						<Select.Content class="max-h-[300px]">
 							<Select.Item value="unassigned">- ไม่ระบุ -</Select.Item>
-							{#each teachers as teacher}
+							{#each teachers as teacher (teacher.id)}
 								<Select.Item value={teacher.id}>
 									{teacher.name}
 								</Select.Item>
@@ -933,8 +919,8 @@
 					สร้างวิชา + กิจกรรมอัตโนมัติจากแผนการเรียน
 				</Dialog.Title>
 				<Dialog.Description>
-					ระบบจะดึงทั้ง <b>รายวิชา</b> และ <b>กิจกรรมพัฒนาผู้เรียน</b> จากหลักสูตรที่ห้องนี้ใช้
-					แล้วสร้างให้อัตโนมัติตามระดับชั้น + ภาคเรียนที่เลือก (ครูทีมจะถูก copy จากคลังรายวิชาให้ด้วย)
+					ระบบจะดึงทั้ง <b>รายวิชา</b> และ <b>กิจกรรมพัฒนาผู้เรียน</b> จากหลักสูตรที่ห้องนี้ใช้ แล้วสร้างให้อัตโนมัติตามระดับชั้น
+					+ ภาคเรียนที่เลือก (ครูทีมจะถูก copy จากคลังรายวิชาให้ด้วย)
 				</Dialog.Description>
 			</Dialog.Header>
 
@@ -1003,10 +989,14 @@
 			<Tabs.Root bind:value={addCourseTab} class="w-full">
 				<Tabs.List class="grid w-full grid-cols-2">
 					<Tabs.Trigger value="plan" disabled={!currentClassroom?.study_plan_version_id}>
-						จากหลักสูตร ({planSubjectsForAdd.filter((sps) => !courses.some((c) => c.subject_id === sps.subject_id)).length})
+						จากหลักสูตร ({planSubjectsForAdd.filter(
+							(sps) => !courses.some((c) => c.subject_id === sps.subject_id)
+						).length})
 					</Tabs.Trigger>
 					<Tabs.Trigger value="catalog">
-						จากคลังวิชาทั้งหมด ({catalogSubjectsForAdd.filter((s) => !courses.some((c) => c.subject_id === s.id)).length})
+						จากคลังวิชาทั้งหมด ({catalogSubjectsForAdd.filter(
+							(s) => !courses.some((c) => c.subject_id === s.id)
+						).length})
 					</Tabs.Trigger>
 				</Tabs.List>
 
@@ -1124,7 +1114,7 @@
 						{teachers.find((t) => t.id === teamDialogSelectedInstructor)?.name || 'เลือกครู'}
 					</Select.Trigger>
 					<Select.Content class="max-h-[280px] overflow-y-auto">
-						{#each teachers as t}
+						{#each teachers as t (t.id)}
 							<Select.Item value={t.id}>{t.name}</Select.Item>
 						{/each}
 					</Select.Content>

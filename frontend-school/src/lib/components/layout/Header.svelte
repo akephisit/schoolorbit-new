@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Bell, Search, Menu, Sun, Moon } from 'lucide-svelte';
+	import { Search, Menu, Sun, Moon } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ProfileMenu from './ProfileMenu.svelte';
 	import NotificationBell from './NotificationBell.svelte';

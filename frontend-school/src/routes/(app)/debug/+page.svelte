@@ -63,7 +63,7 @@
 					{:else}
 						<p class="text-green-600">✅ Found {authState.user.permissions.length} permissions:</p>
 						<ul class="list-disc pl-5 max-h-96 overflow-auto">
-							{#each authState.user.permissions as perm}
+							{#each authState.user.permissions as perm (perm)}
 								<li class="text-sm font-mono">{perm}</li>
 							{/each}
 						</ul>

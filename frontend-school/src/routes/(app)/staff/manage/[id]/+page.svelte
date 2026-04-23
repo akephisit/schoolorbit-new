@@ -76,21 +76,21 @@
 		loadingAchievements = false;
 	}
 
-	async function handleSaveAchievement(payload: any) {
+	async function handleSaveAchievement(payload: Partial<Achievement>) {
 		let res;
 		if (payload.id) {
 			res = await updateAchievement(payload.id, {
-				title: payload.title,
+				title: payload.title ?? '',
 				description: payload.description,
-				achievement_date: payload.achievement_date,
+				achievement_date: payload.achievement_date ?? '',
 				image_path: payload.image_path
 			});
 		} else {
 			res = await createAchievement({
-				user_id: payload.user_id,
-				title: payload.title,
+				user_id: payload.user_id ?? '',
+				title: payload.title ?? '',
 				description: payload.description,
-				achievement_date: payload.achievement_date,
+				achievement_date: payload.achievement_date ?? '',
 				image_path: payload.image_path
 			});
 		}
@@ -408,7 +408,7 @@
 									{#if g.advisors.length > 0}
 										<div class="mb-2 flex flex-wrap gap-1.5">
 											<span class="text-xs text-muted-foreground self-center">ครูที่ปรึกษา:</span>
-											{#each g.advisors as a}
+											{#each g.advisors as a (a.classroom_id ?? a.classroom_name)}
 												<span
 													class="text-xs px-2 py-0.5 rounded-full {a.role === 'primary'
 														? 'bg-primary/10 text-primary'
@@ -423,7 +423,9 @@
 									{#if g.courses.length > 0}
 										<div class="space-y-2">
 											{#each g.courses as c (c.classroom_course_id + '-' + c.role)}
-												<div class="px-3 py-2 rounded-lg bg-muted/50 border border-border flex items-start justify-between">
+												<div
+													class="px-3 py-2 rounded-lg bg-muted/50 border border-border flex items-start justify-between"
+												>
 													<div>
 														<p class="font-medium text-foreground text-sm">
 															{c.subject_name}

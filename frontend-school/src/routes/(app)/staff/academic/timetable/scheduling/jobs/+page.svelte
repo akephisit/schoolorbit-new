@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -25,13 +26,15 @@
 	} from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import { listSchedulingJobs, type SchedulingJobResponse } from '$lib/api/scheduling';
-	import { getAcademicStructure } from '$lib/api/academic';
+	import { getAcademicStructure, type Semester } from '$lib/api/academic';
+
+	type SemesterWithCode = Semester & { academic_year_code?: string };
 
 	// State
 	let jobs = $state<SchedulingJobResponse[]>([]);
 	let loading = $state(true);
 	let semesterId = $state<string>('');
-	let allSemesters = $state<any[]>([]);
+	let allSemesters = $state<SemesterWithCode[]>([]);
 
 	// Selected semester object for Select component
 	let selectedSemester = $derived(
@@ -125,6 +128,11 @@
 		return new Date(dateStr).toLocaleString('th-TH');
 	}
 
+	function goToJob(id: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic route interpolation
+		goto(resolve(`/staff/academic/timetable/scheduling/jobs/${id}` as any));
+	}
+
 	$effect(() => {
 		if (semesterId) {
 			loadJobs();
@@ -139,7 +147,7 @@
 			<Button
 				variant="ghost"
 				size="icon"
-				onclick={() => goto('/staff/academic/timetable/scheduling/auto-schedule')}
+				onclick={() => goto(resolve('/staff/academic/timetable/scheduling/auto-schedule'))}
 			>
 				<ArrowLeft class="h-4 w-4" />
 			</Button>
@@ -151,7 +159,7 @@
 				<p class="text-muted-foreground">รายการจัดตารางทั้งหมดในระบบ</p>
 			</div>
 		</div>
-		<Button onclick={() => goto('/staff/academic/timetable/scheduling/auto-schedule')}>
+		<Button onclick={() => goto(resolve('/staff/academic/timetable/scheduling/auto-schedule'))}>
 			<Plus class="mr-2 h-4 w-4" />
 			สร้างรายการใหม่
 		</Button>
@@ -174,7 +182,7 @@
 					</div>
 				</Select.Trigger>
 				<Select.Content>
-					{#each allSemesters as semester}
+					{#each allSemesters as semester (semester.id)}
 						<Select.Item
 							value={semester.id}
 							label={`${semester.term}/${semester.academic_year_code}`}
@@ -212,12 +220,9 @@
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{#each jobs as job}
+					{#each jobs as job (job.id)}
 						{@const status = getStatusBadge(job.status)}
-						<TableRow
-							class="hover:bg-muted/50 cursor-pointer"
-							onclick={() => goto(`/staff/academic/timetable/scheduling/jobs/${job.id}`)}
-						>
+						<TableRow class="hover:bg-muted/50 cursor-pointer" onclick={() => goToJob(job.id)}>
 							<TableCell>
 								<div class="flex items-center gap-2">
 									<status.icon class={`h-4 w-4 ${status.color}`} />

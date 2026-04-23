@@ -5,18 +5,17 @@
 		deleteMenuItem,
 		reorderMenuItems,
 		reorderMenuGroups,
-		moveItemToGroup,
 		type MenuGroup,
 		type MenuItem
 	} from '$lib/api/menu-admin';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { LoaderCircle, FolderOpen, GripVertical, CircleAlert } from 'lucide-svelte';
+	import { LoaderCircle, FolderOpen, GripVertical } from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
-	
-    // Remove dnd-kit imports
+
+	// Remove dnd-kit imports
 	import SortableItem from '$lib/components/menu/SortableItem.svelte';
 	import MenuGroupContainer from '$lib/components/menu/MenuGroupContainer.svelte';
 	import GroupManagementDialog from '$lib/components/menu/GroupManagementDialog.svelte';
@@ -41,12 +40,12 @@
 
 	// Local State for Drag & Drop
 	// ----------------------------------------------------
-    let containers = $state<GroupContainer[]>([]);
-	
-    // We keep track of the Item or Group being dragged
-    let draggedItem = $state<MenuItem | null>(null);
-    let draggedGroup = $state<MenuGroup | null>(null);
-    let dragType = $state<'item' | 'group' | null>(null);
+	let containers = $state<GroupContainer[]>([]);
+
+	// We keep track of the Item or Group being dragged
+	let draggedItem = $state<MenuItem | null>(null);
+	let draggedGroup = $state<MenuGroup | null>(null);
+	let dragType = $state<'item' | 'group' | null>(null);
 
 	// Load data on mount
 	$effect(() => {
@@ -57,7 +56,7 @@
 		try {
 			loading = true;
 			[groups, items] = await Promise.all([listMenuGroups(), listMenuItems()]);
-            rebuildContainers();
+			rebuildContainers();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลได้';
 			toast.error(message);
@@ -65,23 +64,23 @@
 			loading = false;
 		}
 	}
-    
-    function rebuildContainers() {
-        // Sort items by display_order
-        const sortedItems = [...items].sort((a,b) => a.display_order - b.display_order);
-        
-        // Sort groups by display_order
-        const sortedGroups = [...groups].sort((a,b) => a.display_order - b.display_order);
 
-        containers = sortedGroups.map((group) => ({
-            data: group,
-            nesteds: sortedItems.filter((item) => item.group_id === group.id)
-        }));
-    }
+	function rebuildContainers() {
+		// Sort items by display_order
+		const sortedItems = [...items].sort((a, b) => a.display_order - b.display_order);
+
+		// Sort groups by display_order
+		const sortedGroups = [...groups].sort((a, b) => a.display_order - b.display_order);
+
+		containers = sortedGroups.map((group) => ({
+			data: group,
+			nesteds: sortedItems.filter((item) => item.group_id === group.id)
+		}));
+	}
 
 	// Filtered for display
-    // Note: Mutating 'containers' directly maps to view. 
-    // If filtering is active, we might limit interaction scope.
+	// Note: Mutating 'containers' directly maps to view.
+	// If filtering is active, we might limit interaction scope.
 	const displayContainers = $derived(
 		userTypeFilter === 'all'
 			? containers
@@ -92,195 +91,194 @@
 					}))
 					.filter((container) => container.nesteds.length > 0)
 	);
-    
-    // ===========================================
-    // NATIVE DRAG & DROP LOGIC
-    // ===========================================
-    
-    // --- 1. MENU ITEMS REORDERING ---
 
-    let originalItemGroupId = $state<string | null>(null);
+	// ===========================================
+	// NATIVE DRAG & DROP LOGIC
+	// ===========================================
 
-    function handleItemDragStart(e: DragEvent, item: MenuItem) {
-        if(activeTab !== 'items') return;
-        
-        e.dataTransfer!.effectAllowed = 'move';
-        e.dataTransfer!.setData('application/json', JSON.stringify(item));
-        
-        draggedItem = item;
-        originalItemGroupId = item.group_id; // Capture original group
-        dragType = 'item';
-    }
+	// --- 1. MENU ITEMS REORDERING ---
 
-    function handleItemDragEnter(e: DragEvent, targetItem: MenuItem) {
-        if(dragType !== 'item' || !draggedItem) return;
-        if(draggedItem.id === targetItem.id) return;
+	function handleItemDragStart(e: DragEvent, item: MenuItem) {
+		if (activeTab !== 'items') return;
 
-        // Perform Swap (Live Sorting)
-        // 1. Find source container and index
-        let sourceGroupIndex = containers.findIndex(c => c.nesteds.find(i => i.id === draggedItem!.id));
-        if(sourceGroupIndex === -1) return;
-        
-        let targetGroupIndex = containers.findIndex(c => c.nesteds.find(i => i.id === targetItem.id));
-        if(targetGroupIndex === -1) return;
+		e.dataTransfer!.effectAllowed = 'move';
+		e.dataTransfer!.setData('application/json', JSON.stringify(item));
 
-        const sourceList = containers[sourceGroupIndex].nesteds;
-        const targetList = containers[targetGroupIndex].nesteds;
+		draggedItem = item;
+		dragType = 'item';
+	}
 
-        const oldIndex = sourceList.findIndex(i => i.id === draggedItem!.id);
-        const newIndex = targetList.findIndex(i => i.id === targetItem.id);
-        
-        // Optimistic Update
-        if (sourceGroupIndex === targetGroupIndex) {
-            // Same Group Swap
-            const newList = [...sourceList];
-            const [removed] = newList.splice(oldIndex, 1);
-            newList.splice(newIndex, 0, removed);
-            containers[sourceGroupIndex].nesteds = newList;
-        } else {
-            // Cross Group Move (Drag over item in another group)
-            // Remove from source
-            const [removed] = sourceList.splice(oldIndex, 1);
-            // Update group_id locally
-            removed.group_id = containers[targetGroupIndex].data.id;
-            // Add to target
-            targetList.splice(newIndex, 0, removed);
-            
-            // Trigger reactivity
-            containers[sourceGroupIndex].nesteds = sourceList;
-            containers[targetGroupIndex].nesteds = targetList;
-        }
-    }
+	function handleItemDragEnter(e: DragEvent, targetItem: MenuItem) {
+		if (dragType !== 'item' || !draggedItem) return;
+		if (draggedItem.id === targetItem.id) return;
 
-    // Handle dropping on an empty group or specific group area
-    function handleGroupDragOver(e: DragEvent) {
-        // Allow dropping items into group
-        if(dragType === 'item') {
-            e.preventDefault(); // Necessary to allow drop
-            e.dataTransfer!.dropEffect = 'move';
-        }
-    }
+		// Perform Swap (Live Sorting)
+		// 1. Find source container and index
+		let sourceGroupIndex = containers.findIndex((c) =>
+			c.nesteds.find((i) => i.id === draggedItem!.id)
+		);
+		if (sourceGroupIndex === -1) return;
 
-    function handleGroupDrop(e: DragEvent, targetGroup: MenuGroup) {
-        if(dragType === 'item' && draggedItem) {
-             e.preventDefault();
-             // Check if item is already in this group (handled by dragEnter on items usually)
-             // If group is empty, we must handle the move here because there are no items to drag enter
-             
-             const sourceGroupIndex = containers.findIndex(c => c.nesteds.find(i => i.id === draggedItem!.id));
-             if(sourceGroupIndex === -1) return; // Should not happen
-             
-             const targetGroupIndex = containers.findIndex(c => c.data.id === targetGroup.id);
-             
-             if(sourceGroupIndex !== targetGroupIndex) {
-                 const sourceList = containers[sourceGroupIndex].nesteds;
-                 const targetList = containers[targetGroupIndex].nesteds;
-                 const oldIndex = sourceList.findIndex(i => i.id === draggedItem!.id);
-                 
-                 // Remove
-                 const [removed] = sourceList.splice(oldIndex, 1);
-                 removed.group_id = targetGroup.id;
-                 
-                 // Append to end of target
-                 targetList.push(removed);
-                 
-                 // Update state
-                 containers[sourceGroupIndex].nesteds = sourceList;
-                 containers[targetGroupIndex].nesteds = targetList;
-             }
-        } else if (dragType === 'group' && draggedGroup) {
-            // Group reordering drop (optional, handled via dragEnter usually)
-        }
-    }
+		let targetGroupIndex = containers.findIndex((c) =>
+			c.nesteds.find((i) => i.id === targetItem.id)
+		);
+		if (targetGroupIndex === -1) return;
 
-    async function commitItemReorder() {
-        // Save current state to backend
-        try {
-            // Flatten all items with updated display_order AND group_id
-            const reorderPayload: {id: string, display_order: number, group_id: string}[] = [];
-            
-            for(const container of containers) {
-                container.nesteds.forEach((item, index) => {
-                    reorderPayload.push({
-                        id: item.id,
-                        display_order: index + 1,
-                        group_id: container.data.id // Must match the container it is in
-                    });
-                });
-            }
-            
-            if(reorderPayload.length > 0) {
-                 await reorderMenuItems(reorderPayload);
-                 toast.success('บันทึกลำดับสำเร็จ');
-            }
-            
-        } catch (e) {
-            console.error(e);
-            toast.error('บันทึกไม่สำเร็จ');
-            await loadData(); // Revert
-        }
-    }
+		const sourceList = containers[sourceGroupIndex].nesteds;
+		const targetList = containers[targetGroupIndex].nesteds;
 
-    async function handleDragEnd(e: DragEvent) {
-        e.preventDefault();
-        
-        if (dragType === 'item') {
-            await commitItemReorder();
-        } else if (dragType === 'group') {
-            await commitGroupReorder();
-        }
-        
-        draggedItem = null;
-        draggedGroup = null;
-        dragType = null;
-    }
-            
+		const oldIndex = sourceList.findIndex((i) => i.id === draggedItem!.id);
+		const newIndex = targetList.findIndex((i) => i.id === targetItem.id);
 
+		// Optimistic Update
+		if (sourceGroupIndex === targetGroupIndex) {
+			// Same Group Swap
+			const newList = [...sourceList];
+			const [removed] = newList.splice(oldIndex, 1);
+			newList.splice(newIndex, 0, removed);
+			containers[sourceGroupIndex].nesteds = newList;
+		} else {
+			// Cross Group Move (Drag over item in another group)
+			// Remove from source
+			const [removed] = sourceList.splice(oldIndex, 1);
+			// Update group_id locally
+			removed.group_id = containers[targetGroupIndex].data.id;
+			// Add to target
+			targetList.splice(newIndex, 0, removed);
 
-    
-    // --- 2. MENU GROUPS REORDERING ---
-    
-    function handleGroupDragStart(e: DragEvent, group: MenuGroup) {
-        if(activeTab !== 'groups') return;
-        
-        e.dataTransfer!.effectAllowed = 'move';
-        draggedGroup = group;
-        dragType = 'group';
-    }
-    
-    function handleGroupDragEnter(e: DragEvent, targetGroup: MenuGroup) {
-        if(dragType !== 'group' || !draggedGroup) return;
-        if(draggedGroup.id === targetGroup.id) return;
-        
-        // Swap groups in 'containers' (view in Items tab) AND 'groups' (view in Groups tab)
-        // But activeTab handles which view we are in.
-        
-        // Updating 'groups' array
-        const oldIndex = groups.findIndex(g => g.id === draggedGroup!.id);
-        const newIndex = groups.findIndex(g => g.id === targetGroup.id);
-        
-        if (oldIndex !== newIndex) {
-            const newGroups = [...groups];
-            const [removed] = newGroups.splice(oldIndex, 1);
-            newGroups.splice(newIndex, 0, removed);
-            groups = newGroups;
-            rebuildContainers(); // Sync containers
-        }
-    }
-    
-    async function commitGroupReorder() {
-        try {
-            const payload = groups.map((g, i) => ({
-                id: g.id,
-                display_order: i + 1
-            }));
-            await reorderMenuGroups(payload);
-            toast.success('เรียงกลุ่มสำเร็จ');
-        } catch (e) {
-            toast.error('เรียงกลุ่มไม่สำเร็จ');
-            loadData();
-        }
-    }
+			// Trigger reactivity
+			containers[sourceGroupIndex].nesteds = sourceList;
+			containers[targetGroupIndex].nesteds = targetList;
+		}
+	}
+
+	// Handle dropping on an empty group or specific group area
+	function handleGroupDragOver(e: DragEvent) {
+		// Allow dropping items into group
+		if (dragType === 'item') {
+			e.preventDefault(); // Necessary to allow drop
+			e.dataTransfer!.dropEffect = 'move';
+		}
+	}
+
+	function handleGroupDrop(e: DragEvent, targetGroup: MenuGroup) {
+		if (dragType === 'item' && draggedItem) {
+			e.preventDefault();
+			// Check if item is already in this group (handled by dragEnter on items usually)
+			// If group is empty, we must handle the move here because there are no items to drag enter
+
+			const sourceGroupIndex = containers.findIndex((c) =>
+				c.nesteds.find((i) => i.id === draggedItem!.id)
+			);
+			if (sourceGroupIndex === -1) return; // Should not happen
+
+			const targetGroupIndex = containers.findIndex((c) => c.data.id === targetGroup.id);
+
+			if (sourceGroupIndex !== targetGroupIndex) {
+				const sourceList = containers[sourceGroupIndex].nesteds;
+				const targetList = containers[targetGroupIndex].nesteds;
+				const oldIndex = sourceList.findIndex((i) => i.id === draggedItem!.id);
+
+				// Remove
+				const [removed] = sourceList.splice(oldIndex, 1);
+				removed.group_id = targetGroup.id;
+
+				// Append to end of target
+				targetList.push(removed);
+
+				// Update state
+				containers[sourceGroupIndex].nesteds = sourceList;
+				containers[targetGroupIndex].nesteds = targetList;
+			}
+		} else if (dragType === 'group' && draggedGroup) {
+			// Group reordering drop (optional, handled via dragEnter usually)
+		}
+	}
+
+	async function commitItemReorder() {
+		// Save current state to backend
+		try {
+			// Flatten all items with updated display_order AND group_id
+			const reorderPayload: { id: string; display_order: number; group_id: string }[] = [];
+
+			for (const container of containers) {
+				container.nesteds.forEach((item, index) => {
+					reorderPayload.push({
+						id: item.id,
+						display_order: index + 1,
+						group_id: container.data.id // Must match the container it is in
+					});
+				});
+			}
+
+			if (reorderPayload.length > 0) {
+				await reorderMenuItems(reorderPayload);
+				toast.success('บันทึกลำดับสำเร็จ');
+			}
+		} catch (e) {
+			console.error(e);
+			toast.error('บันทึกไม่สำเร็จ');
+			await loadData(); // Revert
+		}
+	}
+
+	async function handleDragEnd(e: DragEvent) {
+		e.preventDefault();
+
+		if (dragType === 'item') {
+			await commitItemReorder();
+		} else if (dragType === 'group') {
+			await commitGroupReorder();
+		}
+
+		draggedItem = null;
+		draggedGroup = null;
+		dragType = null;
+	}
+
+	// --- 2. MENU GROUPS REORDERING ---
+
+	function handleGroupDragStart(e: DragEvent, group: MenuGroup) {
+		if (activeTab !== 'groups') return;
+
+		e.dataTransfer!.effectAllowed = 'move';
+		draggedGroup = group;
+		dragType = 'group';
+	}
+
+	function handleGroupDragEnter(e: DragEvent, targetGroup: MenuGroup) {
+		if (dragType !== 'group' || !draggedGroup) return;
+		if (draggedGroup.id === targetGroup.id) return;
+
+		// Swap groups in 'containers' (view in Items tab) AND 'groups' (view in Groups tab)
+		// But activeTab handles which view we are in.
+
+		// Updating 'groups' array
+		const oldIndex = groups.findIndex((g) => g.id === draggedGroup!.id);
+		const newIndex = groups.findIndex((g) => g.id === targetGroup.id);
+
+		if (oldIndex !== newIndex) {
+			const newGroups = [...groups];
+			const [removed] = newGroups.splice(oldIndex, 1);
+			newGroups.splice(newIndex, 0, removed);
+			groups = newGroups;
+			rebuildContainers(); // Sync containers
+		}
+	}
+
+	async function commitGroupReorder() {
+		try {
+			const payload = groups.map((g, i) => ({
+				id: g.id,
+				display_order: i + 1
+			}));
+			await reorderMenuGroups(payload);
+			toast.success('เรียงกลุ่มสำเร็จ');
+		} catch {
+			toast.error('เรียงกลุ่มไม่สำเร็จ');
+			loadData();
+		}
+	}
 
 	function openEditDialog(item: MenuItem) {
 		// Placeholder

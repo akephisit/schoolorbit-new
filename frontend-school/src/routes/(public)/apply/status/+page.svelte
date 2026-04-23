@@ -13,6 +13,7 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { getPublicSchoolInfo, type PublicSchoolInfo } from '$lib/api/school';
 	import {
 		GraduationCap,
@@ -53,7 +54,8 @@
 		if (d.length <= 1) return d;
 		if (d.length <= 5) return d[0] + '-' + d.slice(1);
 		if (d.length <= 10) return d[0] + '-' + d.slice(1, 5) + '-' + d.slice(5);
-		if (d.length <= 12) return d[0] + '-' + d.slice(1, 5) + '-' + d.slice(5, 10) + '-' + d.slice(10);
+		if (d.length <= 12)
+			return d[0] + '-' + d.slice(1, 5) + '-' + d.slice(5, 10) + '-' + d.slice(10);
 		return d[0] + '-' + d.slice(1, 5) + '-' + d.slice(5, 10) + '-' + d.slice(10, 12) + '-' + d[12];
 	});
 
@@ -66,7 +68,8 @@
 		if (portalData?.application?.admissionRoundId) {
 			sessionStorage.setItem('admissionEditNid', nationalId);
 			sessionStorage.setItem('admissionEditDob', dateOfBirth);
-			goto(`/apply/${portalData.application.admissionRoundId}?edit=true`);
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic route interpolation
+			goto(resolve(`/apply/${portalData.application.admissionRoundId}?edit=true` as any));
 		}
 	}
 
@@ -171,7 +174,10 @@
 	});
 
 	function addGuardian() {
-		formFields.guardians = [...formFields.guardians, { title: '', firstName: '', lastName: '', phone: '', relationship: '' }];
+		formFields.guardians = [
+			...formFields.guardians,
+			{ title: '', firstName: '', lastName: '', phone: '', relationship: '' }
+		];
 	}
 
 	function removeGuardian(index: number) {
@@ -233,16 +239,29 @@
 				formFields.allergies = (fd.allergies as string) ?? '';
 				if (fd.father) {
 					const f = fd.father as Record<string, string>;
-					formFields.father = { title: f.title ?? 'นาย', firstName: f.firstName ?? '', lastName: f.lastName ?? '', phone: f.phone ?? '' };
+					formFields.father = {
+						title: f.title ?? 'นาย',
+						firstName: f.firstName ?? '',
+						lastName: f.lastName ?? '',
+						phone: f.phone ?? ''
+					};
 				}
 				if (fd.mother) {
 					const m = fd.mother as Record<string, string>;
-					formFields.mother = { title: m.title ?? 'นาง', firstName: m.firstName ?? '', lastName: m.lastName ?? '', phone: m.phone ?? '' };
+					formFields.mother = {
+						title: m.title ?? 'นาง',
+						firstName: m.firstName ?? '',
+						lastName: m.lastName ?? '',
+						phone: m.phone ?? ''
+					};
 				}
 				if (fd.guardians && Array.isArray(fd.guardians)) {
-					formFields.guardians = (fd.guardians as ParentEntry[]).map(g => ({
-						title: g.title ?? '', firstName: g.firstName ?? '', lastName: g.lastName ?? '',
-						phone: g.phone ?? '', relationship: g.relationship ?? ''
+					formFields.guardians = (fd.guardians as ParentEntry[]).map((g) => ({
+						title: g.title ?? '',
+						firstName: g.firstName ?? '',
+						lastName: g.lastName ?? '',
+						phone: g.phone ?? '',
+						relationship: g.relationship ?? ''
 					}));
 				}
 			} else if (app) {
@@ -262,13 +281,15 @@
 				// ถ้ามีข้อมูลผู้ปกครอง pre-fill เป็น guardian ตัวแรก
 				if (app.guardianName && app.guardianPhone) {
 					const parts = app.guardianName.split(' ');
-					formFields.guardians = [{
-						title: '',
-						firstName: parts[0] ?? '',
-						lastName: parts.slice(1).join(' ') ?? '',
-						phone: app.guardianPhone,
-						relationship: app.guardianRelation ?? ''
-					}];
+					formFields.guardians = [
+						{
+							title: '',
+							firstName: parts[0] ?? '',
+							lastName: parts.slice(1).join(' ') ?? '',
+							phone: app.guardianPhone,
+							relationship: app.guardianRelation ?? ''
+						}
+					];
 				}
 			}
 
@@ -295,7 +316,9 @@
 			toast.error('กรุณาเพิ่มผู้ปกครองอย่างน้อย 1 คน');
 			return;
 		}
-		const hasEmptyGuardian = formFields.guardians.some(g => !g.firstName.trim() || !g.phone.trim());
+		const hasEmptyGuardian = formFields.guardians.some(
+			(g) => !g.firstName.trim() || !g.phone.trim()
+		);
 		if (hasEmptyGuardian) {
 			toast.error('กรุณากรอกชื่อและเบอร์โทรผู้ปกครองให้ครบ');
 			return;
@@ -399,7 +422,10 @@
 					<div class="flex items-start justify-between">
 						<div>
 							<p class="text-xs text-gray-400 uppercase tracking-wide">ผู้สมัคร</p>
-							<p class="text-xl font-bold text-gray-900">{(app.title ?? '') + app.firstName} {app.lastName}</p>
+							<p class="text-xl font-bold text-gray-900">
+								{(app.title ?? '') + app.firstName}
+								{app.lastName}
+							</p>
 							<p class="text-sm text-gray-500">
 								ใบสมัคร: <span class="font-mono font-semibold">{app.applicationNumber}</span>
 							</p>
@@ -410,7 +436,8 @@
 					</div>
 
 					<div
-						class="border rounded-xl p-4 {statusColor[effectiveStatus()] ?? 'bg-gray-50 border-gray-200'}"
+						class="border rounded-xl p-4 {statusColor[effectiveStatus()] ??
+							'bg-gray-50 border-gray-200'}"
 					>
 						<div class="flex flex-col gap-2">
 							<div class="flex items-center gap-2">
@@ -458,14 +485,20 @@
 								ผลการคัดเลือก
 							</p>
 							{#if app?.assignedTrackName}
-								<p class="text-sm text-green-700">สายการเรียน: <span class="font-semibold">{app.assignedTrackName}</span></p>
+								<p class="text-sm text-green-700">
+									สายการเรียน: <span class="font-semibold">{app.assignedTrackName}</span>
+								</p>
 							{:else if app?.trackName}
-								<p class="text-sm text-green-700">สายการเรียน: <span class="font-semibold">{app.trackName}</span></p>
+								<p class="text-sm text-green-700">
+									สายการเรียน: <span class="font-semibold">{app.trackName}</span>
+								</p>
 							{/if}
 							<div class="grid grid-cols-3 gap-3 text-center">
 								<div>
 									<p class="text-2xl font-bold text-green-700">{assignment.rankInTrack ?? '-'}</p>
-									<p class="text-xs text-green-600">{portalData?.assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย'}</p>
+									<p class="text-xs text-green-600">
+										{portalData?.assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย'}
+									</p>
 								</div>
 								<div>
 									<p class="text-2xl font-bold text-green-700">
@@ -512,7 +545,12 @@
 							</div>
 							{#if examSeat.examDate}
 								<p class="text-xs text-blue-600 text-center pt-1">
-									วันสอบ: {new Date(examSeat.examDate).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+									วันสอบ: {new Date(examSeat.examDate).toLocaleDateString('th-TH', {
+										weekday: 'long',
+										year: 'numeric',
+										month: 'long',
+										day: 'numeric'
+									})}
 								</p>
 							{/if}
 							{#if examSeat.examId}
@@ -530,7 +568,7 @@
 							<div
 								class="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden"
 							>
-								{#each scores as s, i}
+								{#each scores as s, i (i)}
 									<div
 										class="flex items-center justify-between px-4 py-2 {i % 2 === 0
 											? 'bg-gray-50'
@@ -586,7 +624,13 @@
 							{#if app.dateOfBirth}
 								<div>
 									<span class="text-gray-500">วันเกิด:</span>
-									<span class="font-medium">{new Date(app.dateOfBirth).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+									<span class="font-medium"
+										>{new Date(app.dateOfBirth).toLocaleDateString('th-TH', {
+											year: 'numeric',
+											month: 'long',
+											day: 'numeric'
+										})}</span
+									>
 								</div>
 							{/if}
 						</div>
@@ -603,7 +647,7 @@
 										{formFields.bloodType || '-- เลือก --'}
 									</Select.Trigger>
 									<Select.Content>
-										{#each ['A', 'B', 'AB', 'O'] as b}
+										{#each ['A', 'B', 'AB', 'O'] as b (b)}
 											<Select.Item value={b}>{b}</Select.Item>
 										{/each}
 									</Select.Content>
@@ -640,7 +684,7 @@
 											{formFields.father.title || '-- เลือก --'}
 										</Select.Trigger>
 										<Select.Content>
-											{#each ['นาย'] as t}
+											{#each ['นาย'] as t (t)}
 												<Select.Item value={t}>{t}</Select.Item>
 											{/each}
 										</Select.Content>
@@ -648,16 +692,28 @@
 								</div>
 								<div class="space-y-1">
 									<Label class="text-xs text-gray-600">ชื่อ</Label>
-									<Input bind:value={formFields.father.firstName} class="h-8 text-sm" placeholder="ชื่อ" />
+									<Input
+										bind:value={formFields.father.firstName}
+										class="h-8 text-sm"
+										placeholder="ชื่อ"
+									/>
 								</div>
 								<div class="space-y-1">
 									<Label class="text-xs text-gray-600">นามสกุล</Label>
-									<Input bind:value={formFields.father.lastName} class="h-8 text-sm" placeholder="นามสกุล" />
+									<Input
+										bind:value={formFields.father.lastName}
+										class="h-8 text-sm"
+										placeholder="นามสกุล"
+									/>
 								</div>
 							</div>
 							<div class="space-y-1">
 								<Label class="text-xs text-gray-600">เบอร์โทร</Label>
-								<Input bind:value={formFields.father.phone} class="h-8 text-sm" placeholder="0XX-XXX-XXXX" />
+								<Input
+									bind:value={formFields.father.phone}
+									class="h-8 text-sm"
+									placeholder="0XX-XXX-XXXX"
+								/>
 							</div>
 						</div>
 
@@ -672,7 +728,7 @@
 											{formFields.mother.title || '-- เลือก --'}
 										</Select.Trigger>
 										<Select.Content>
-											{#each ['นาง', 'นางสาว'] as t}
+											{#each ['นาง', 'นางสาว'] as t (t)}
 												<Select.Item value={t}>{t}</Select.Item>
 											{/each}
 										</Select.Content>
@@ -680,44 +736,86 @@
 								</div>
 								<div class="space-y-1">
 									<Label class="text-xs text-gray-600">ชื่อ</Label>
-									<Input bind:value={formFields.mother.firstName} class="h-8 text-sm" placeholder="ชื่อ" />
+									<Input
+										bind:value={formFields.mother.firstName}
+										class="h-8 text-sm"
+										placeholder="ชื่อ"
+									/>
 								</div>
 								<div class="space-y-1">
 									<Label class="text-xs text-gray-600">นามสกุล</Label>
-									<Input bind:value={formFields.mother.lastName} class="h-8 text-sm" placeholder="นามสกุล" />
+									<Input
+										bind:value={formFields.mother.lastName}
+										class="h-8 text-sm"
+										placeholder="นามสกุล"
+									/>
 								</div>
 							</div>
 							<div class="space-y-1">
 								<Label class="text-xs text-gray-600">เบอร์โทร</Label>
-								<Input bind:value={formFields.mother.phone} class="h-8 text-sm" placeholder="0XX-XXX-XXXX" />
+								<Input
+									bind:value={formFields.mother.phone}
+									class="h-8 text-sm"
+									placeholder="0XX-XXX-XXXX"
+								/>
 							</div>
 						</div>
 
 						<!-- ผู้ปกครอง -->
 						<div class="space-y-3">
 							<div class="flex items-center justify-between">
-								<p class="text-sm font-medium text-gray-700">ผู้ปกครอง <span class="text-red-500">*</span></p>
-								<Button type="button" variant="outline" size="sm" onclick={addGuardian} class="h-7 text-xs gap-1">
+								<p class="text-sm font-medium text-gray-700">
+									ผู้ปกครอง <span class="text-red-500">*</span>
+								</p>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onclick={addGuardian}
+									class="h-7 text-xs gap-1"
+								>
 									<Plus class="w-3 h-3" /> เพิ่มผู้ปกครอง
 								</Button>
 							</div>
 							{#if formFields.guardians.length === 0}
-								<p class="text-xs text-gray-400 text-center py-3 border border-dashed border-gray-200 rounded-lg">
+								<p
+									class="text-xs text-gray-400 text-center py-3 border border-dashed border-gray-200 rounded-lg"
+								>
 									กรุณาเพิ่มผู้ปกครองอย่างน้อย 1 คน
 								</p>
 							{/if}
-							{#each formFields.guardians as guardian, i}
+							{#each formFields.guardians as guardian, i (i)}
 								<div class="border border-blue-200 bg-blue-50/30 rounded-lg p-3 space-y-2">
 									<div class="flex items-center justify-between">
 										<p class="text-xs font-medium text-blue-700">ผู้ปกครองคนที่ {i + 1}</p>
 										<div class="flex gap-1">
-											<Button type="button" variant="ghost" size="sm" onclick={() => copyFromFather(i)} class="h-6 text-xs px-2 text-gray-500 hover:text-blue-600" title="ใช้ข้อมูลจากบิดา">
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												onclick={() => copyFromFather(i)}
+												class="h-6 text-xs px-2 text-gray-500 hover:text-blue-600"
+												title="ใช้ข้อมูลจากบิดา"
+											>
 												<Copy class="w-3 h-3 mr-1" /> บิดา
 											</Button>
-											<Button type="button" variant="ghost" size="sm" onclick={() => copyFromMother(i)} class="h-6 text-xs px-2 text-gray-500 hover:text-blue-600" title="ใช้ข้อมูลจากมารดา">
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												onclick={() => copyFromMother(i)}
+												class="h-6 text-xs px-2 text-gray-500 hover:text-blue-600"
+												title="ใช้ข้อมูลจากมารดา"
+											>
 												<Copy class="w-3 h-3 mr-1" /> มารดา
 											</Button>
-											<Button type="button" variant="ghost" size="sm" onclick={() => removeGuardian(i)} class="h-6 px-1 text-red-400 hover:text-red-600">
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												onclick={() => removeGuardian(i)}
+												class="h-6 px-1 text-red-400 hover:text-red-600"
+											>
 												<Trash2 class="w-3 h-3" />
 											</Button>
 										</div>
@@ -730,25 +828,41 @@
 													{guardian.title || '-- เลือก --'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each ['นาย', 'นาง', 'นางสาว'] as t}
+													{#each ['นาย', 'นาง', 'นางสาว'] as t (t)}
 														<Select.Item value={t}>{t}</Select.Item>
 													{/each}
 												</Select.Content>
 											</Select.Root>
 										</div>
 										<div class="space-y-1">
-											<Label class="text-xs text-gray-600">ชื่อ <span class="text-red-500">*</span></Label>
-											<Input bind:value={guardian.firstName} class="h-8 text-sm" placeholder="ชื่อ" />
+											<Label class="text-xs text-gray-600"
+												>ชื่อ <span class="text-red-500">*</span></Label
+											>
+											<Input
+												bind:value={guardian.firstName}
+												class="h-8 text-sm"
+												placeholder="ชื่อ"
+											/>
 										</div>
 										<div class="space-y-1">
 											<Label class="text-xs text-gray-600">นามสกุล</Label>
-											<Input bind:value={guardian.lastName} class="h-8 text-sm" placeholder="นามสกุล" />
+											<Input
+												bind:value={guardian.lastName}
+												class="h-8 text-sm"
+												placeholder="นามสกุล"
+											/>
 										</div>
 									</div>
 									<div class="grid grid-cols-2 gap-2">
 										<div class="space-y-1">
-											<Label class="text-xs text-gray-600">เบอร์โทร <span class="text-red-500">*</span></Label>
-											<Input bind:value={guardian.phone} class="h-8 text-sm" placeholder="0XX-XXX-XXXX" />
+											<Label class="text-xs text-gray-600"
+												>เบอร์โทร <span class="text-red-500">*</span></Label
+											>
+											<Input
+												bind:value={guardian.phone}
+												class="h-8 text-sm"
+												placeholder="0XX-XXX-XXXX"
+											/>
 										</div>
 										<div class="space-y-1">
 											<Label class="text-xs text-gray-600">ความสัมพันธ์</Label>
@@ -757,7 +871,7 @@
 													{guardian.relationship || '-- เลือก --'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each ['บิดา', 'มารดา', 'ปู่', 'ย่า', 'ตา', 'ยาย', 'ลุง', 'ป้า', 'น้า', 'อา', 'พี่', 'อื่นๆ'] as r}
+													{#each ['บิดา', 'มารดา', 'ปู่', 'ย่า', 'ตา', 'ยาย', 'ลุง', 'ป้า', 'น้า', 'อา', 'พี่', 'อื่นๆ'] as r (r)}
 														<Select.Item value={r}>{r}</Select.Item>
 													{/each}
 												</Select.Content>

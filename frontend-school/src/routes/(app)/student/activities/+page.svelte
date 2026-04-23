@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import {
 		listActivitySlots,
 		listActivityGroups,
@@ -18,7 +19,7 @@
 	let loading = $state(true);
 	let slots = $state<ActivitySlot[]>([]);
 	let groups = $state<ActivityGroup[]>([]);
-	let myEnrollments = $state<Set<string>>(new Set());
+	let myEnrollments = new SvelteSet<string>();
 	let enrolling = $state('');
 
 	onMount(async () => {
@@ -30,7 +31,8 @@
 			]);
 			slots = slotsRes.data ?? [];
 			groups = groupsRes.data ?? [];
-			myEnrollments = new Set(enrollRes.data ?? []);
+			myEnrollments.clear();
+			for (const id of enrollRes.data ?? []) myEnrollments.add(id);
 		} catch (e) {
 			console.error(e);
 			toast.error('ไม่สามารถโหลดข้อมูลได้');
@@ -54,15 +56,18 @@
 	async function handleEnroll(groupId: string) {
 		enrolling = groupId;
 		try {
-			const res: any = await selfEnrollActivity(groupId);
+			const res = (await selfEnrollActivity(groupId)) as { error?: string };
 			if (res.error) {
 				toast.error(res.error);
 			} else {
 				toast.success('ลงทะเบียนสำเร็จ');
-				myEnrollments = new Set([...myEnrollments, groupId]);
+				myEnrollments.add(groupId);
 			}
-		} catch { toast.error('เกิดข้อผิดพลาด'); }
-		finally { enrolling = ''; }
+		} catch {
+			toast.error('เกิดข้อผิดพลาด');
+		} finally {
+			enrolling = '';
+		}
 	}
 
 	async function handleUnenroll(groupId: string) {
@@ -71,11 +76,12 @@
 		try {
 			await selfUnenrollActivity(groupId);
 			toast.success('ยกเลิกการลงทะเบียนแล้ว');
-			const next = new Set(myEnrollments);
-			next.delete(groupId);
-			myEnrollments = next;
-		} catch { toast.error('เกิดข้อผิดพลาด'); }
-		finally { enrolling = ''; }
+			myEnrollments.delete(groupId);
+		} catch {
+			toast.error('เกิดข้อผิดพลาด');
+		} finally {
+			enrolling = '';
+		}
 	}
 </script>
 
@@ -96,7 +102,7 @@
 			<p class="text-muted-foreground">ไม่มีกิจกรรมที่เปิดลงทะเบียนในขณะนี้</p>
 		</div>
 	{:else}
-		{#each slots as slot}
+		{#each slots as slot (slot.id)}
 			{@const slotGroups = groupsForSlot(slot.id)}
 			{@const enrolled = isEnrolledInSlot(slot.id)}
 			{@const enrolledGroup = enrolledGroupInSlot(slot.id)}
@@ -105,7 +111,9 @@
 				<div class="p-4 border-b">
 					<div class="flex items-center gap-2 flex-wrap">
 						<span class="font-semibold">{slot.name}</span>
-						<Badge variant="secondary">{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge>
+						<Badge variant="secondary"
+							>{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge
+						>
 					</div>
 					{#if enrolled && enrolledGroup}
 						<div class="mt-2 flex items-center gap-2 text-sm text-green-600">
@@ -116,7 +124,7 @@
 				</div>
 
 				<div class="divide-y">
-					{#each slotGroups as g}
+					{#each slotGroups as g (g.id)}
 						{@const isMyGroup = myEnrollments.has(g.id)}
 						{@const isFull = g.max_capacity ? (g.member_count ?? 0) >= g.max_capacity : false}
 						<div class="flex items-center gap-3 px-4 py-3 {isMyGroup ? 'bg-green-50' : ''}">
@@ -132,7 +140,12 @@
 							</div>
 							<div class="shrink-0">
 								{#if isMyGroup}
-									<Button variant="outline" size="sm" onclick={() => handleUnenroll(g.id)} disabled={enrolling === g.id}>
+									<Button
+										variant="outline"
+										size="sm"
+										onclick={() => handleUnenroll(g.id)}
+										disabled={enrolling === g.id}
+									>
 										<X class="mr-1 h-3 w-3" />{enrolling === g.id ? '...' : 'ยกเลิก'}
 									</Button>
 								{:else if enrolled}
@@ -140,7 +153,11 @@
 								{:else if isFull}
 									<Badge variant="outline">เต็ม</Badge>
 								{:else}
-									<Button size="sm" onclick={() => handleEnroll(g.id)} disabled={enrolling === g.id}>
+									<Button
+										size="sm"
+										onclick={() => handleEnroll(g.id)}
+										disabled={enrolling === g.id}
+									>
 										{enrolling === g.id ? 'กำลังลงทะเบียน...' : 'ลงทะเบียน'}
 									</Button>
 								{/if}

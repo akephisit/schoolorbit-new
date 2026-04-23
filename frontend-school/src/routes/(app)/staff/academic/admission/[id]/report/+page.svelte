@@ -5,7 +5,6 @@
 		listApplications,
 		type AdmissionRound,
 		type ApplicationListItem,
-		type ReportConfig,
 		applicationStatusLabel
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
@@ -13,6 +12,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { LoaderCircle, ArrowLeft, Settings, ChevronDown } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
+	import { SvelteMap } from 'svelte/reactivity';
 
 	import type { PageProps } from './$types';
 	let { data, params }: PageProps = $props();
@@ -24,24 +24,30 @@
 	let statusFilter = $state('all');
 
 	// ---- Types ----
-	interface SchoolCount { name: string; count: number }
+	interface SchoolCount {
+		name: string;
+		count: number;
+	}
 	interface ZoneStatsDetail {
-		inZone:  { total: number; schools: SchoolCount[] }
-		outZone: { total: number; schools: SchoolCount[] }
-		noInfo:  { total: number }
-		total:   number
+		inZone: { total: number; schools: SchoolCount[] };
+		outZone: { total: number; schools: SchoolCount[] };
+		noInfo: { total: number };
+		total: number;
 	}
 	interface InstitutionStatsDetail {
-		fromOwn:   { total: number }
-		fromOther: { total: number; schools: SchoolCount[] }
-		noInfo:    { total: number }
-		total:     number
+		fromOwn: { total: number };
+		fromOther: { total: number; schools: SchoolCount[] };
+		noInfo: { total: number };
+		total: number;
 	}
-	interface DayGroup { date: string; apps: ApplicationListItem[] }
+	interface DayGroup {
+		date: string;
+		apps: ApplicationListItem[];
+	}
 
 	// ---- Helpers ----
 	function countBySchool(subset: ApplicationListItem[]): SchoolCount[] {
-		const map = new Map<string, number>();
+		const map = new SvelteMap<string, number>();
 		for (const a of subset) {
 			const name = a.previousSchool!;
 			map.set(name, (map.get(name) ?? 0) + 1);
@@ -52,26 +58,33 @@
 	}
 
 	function computeZoneDetail(apps: ApplicationListItem[], zoneSchools: string[]): ZoneStatsDetail {
-		const inZoneApps  = apps.filter(a => a.previousSchool && zoneSchools.includes(a.previousSchool));
-		const noInfoApps  = apps.filter(a => !a.previousSchool);
-		const outZoneApps = apps.filter(a => a.previousSchool && !zoneSchools.includes(a.previousSchool));
+		const inZoneApps = apps.filter(
+			(a) => a.previousSchool && zoneSchools.includes(a.previousSchool)
+		);
+		const noInfoApps = apps.filter((a) => !a.previousSchool);
+		const outZoneApps = apps.filter(
+			(a) => a.previousSchool && !zoneSchools.includes(a.previousSchool)
+		);
 		return {
-			inZone:  { total: inZoneApps.length,  schools: countBySchool(inZoneApps) },
+			inZone: { total: inZoneApps.length, schools: countBySchool(inZoneApps) },
 			outZone: { total: outZoneApps.length, schools: countBySchool(outZoneApps) },
-			noInfo:  { total: noInfoApps.length },
-			total:   apps.length
+			noInfo: { total: noInfoApps.length },
+			total: apps.length
 		};
 	}
 
-	function computeInstitutionDetail(apps: ApplicationListItem[], ownSchool: string): InstitutionStatsDetail {
-		const fromOwnApps   = apps.filter(a => a.previousSchool === ownSchool);
-		const noInfoApps    = apps.filter(a => !a.previousSchool);
-		const fromOtherApps = apps.filter(a => a.previousSchool && a.previousSchool !== ownSchool);
+	function computeInstitutionDetail(
+		apps: ApplicationListItem[],
+		ownSchool: string
+	): InstitutionStatsDetail {
+		const fromOwnApps = apps.filter((a) => a.previousSchool === ownSchool);
+		const noInfoApps = apps.filter((a) => !a.previousSchool);
+		const fromOtherApps = apps.filter((a) => a.previousSchool && a.previousSchool !== ownSchool);
 		return {
-			fromOwn:   { total: fromOwnApps.length },
+			fromOwn: { total: fromOwnApps.length },
 			fromOther: { total: fromOtherApps.length, schools: countBySchool(fromOtherApps) },
-			noInfo:    { total: noInfoApps.length },
-			total:     apps.length
+			noInfo: { total: noInfoApps.length },
+			total: apps.length
 		};
 	}
 
@@ -83,15 +96,17 @@
 	function formatThaiDate(dateStr: string): string {
 		if (dateStr === 'unknown') return 'ไม่ระบุวันที่';
 		return new Date(dateStr + 'T00:00:00').toLocaleDateString('th-TH', {
-			year: 'numeric', month: 'long', day: 'numeric'
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric'
 		});
 	}
 
 	// ---- Expand state ----
-	let expanded = $state(new Map<string, boolean>());
+	let expanded = new SvelteMap<string, boolean>();
 
 	function toggleExpand(key: string) {
-		const next = new Map(expanded);
+		const next = new SvelteMap(expanded);
 		next.set(key, !next.get(key));
 		expanded = next;
 	}
@@ -117,11 +132,11 @@
 	let reportConfig = $derived(round ? (round.reportConfig ?? null) : null);
 
 	let filteredApps = $derived(
-		applications.filter(a => statusFilter === 'all' || a.status === statusFilter)
+		applications.filter((a) => statusFilter === 'all' || a.status === statusFilter)
 	);
 
 	let dayGroups = $derived((): DayGroup[] => {
-		const map = new Map<string, ApplicationListItem[]>();
+		const map = new SvelteMap<string, ApplicationListItem[]>();
 		for (const a of filteredApps) {
 			const date = a.createdAt?.slice(0, 10) ?? 'unknown';
 			if (!map.has(date)) map.set(date, []);
@@ -138,7 +153,15 @@
 		both: 'ทั้งสองประเภท'
 	};
 
-	const allStatuses = ['submitted', 'verified', 'scored', 'rejected', 'accepted', 'enrolled', 'withdrawn'];
+	const allStatuses = [
+		'submitted',
+		'verified',
+		'scored',
+		'rejected',
+		'accepted',
+		'enrolled',
+		'withdrawn'
+	];
 
 	onMount(load);
 </script>
@@ -149,7 +172,7 @@
 
 {#snippet statsBlock(scopeKey: string, apps: ApplicationListItem[])}
 	{@const zoneSchools = reportConfig?.zone?.schools ?? []}
-	{@const ownSchool   = reportConfig?.institution?.ownSchool ?? ''}
+	{@const ownSchool = reportConfig?.institution?.ownSchool ?? ''}
 
 	{#if apps.length === 0}
 		<p class="text-sm text-muted-foreground py-4 text-center">ไม่มีข้อมูลในช่วงนี้</p>
@@ -180,14 +203,23 @@
 								<tbody>
 									<!-- ในเขตพื้นที่ -->
 									<tr
-										class="border-b {z.inZone.schools.length > 0 ? 'cursor-pointer hover:bg-muted/40' : ''}"
-										onclick={() => z.inZone.schools.length > 0 && toggleExpand(`${scopeKey}-inZone`)}
+										class="border-b {z.inZone.schools.length > 0
+											? 'cursor-pointer hover:bg-muted/40'
+											: ''}"
+										onclick={() =>
+											z.inZone.schools.length > 0 && toggleExpand(`${scopeKey}-inZone`)}
 									>
 										<td class="py-2">
 											<span class="flex items-center gap-1.5">
 												ในเขตพื้นที่
 												{#if z.inZone.schools.length > 0}
-													<ChevronDown class="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 {isExpanded(`${scopeKey}-inZone`) ? 'rotate-180' : ''}" />
+													<ChevronDown
+														class="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 {isExpanded(
+															`${scopeKey}-inZone`
+														)
+															? 'rotate-180'
+															: ''}"
+													/>
 												{/if}
 											</span>
 										</td>
@@ -195,7 +227,10 @@
 										<td class="text-right py-2 tabular-nums">{pct(z.inZone.total, z.total)}</td>
 										<td class="py-2 pl-3 hidden sm:table-cell">
 											<div class="h-2 rounded-full bg-muted overflow-hidden">
-												<div class="h-full bg-green-500 rounded-full" style="width: {z.total ? (z.inZone.total/z.total*100) : 0}%"></div>
+												<div
+													class="h-full bg-green-500 rounded-full"
+													style="width: {z.total ? (z.inZone.total / z.total) * 100 : 0}%"
+												></div>
 											</div>
 										</td>
 									</tr>
@@ -203,10 +238,18 @@
 										<tr>
 											<td colspan="4" class="pb-3 pt-0 pl-5">
 												<div class="space-y-0.5 text-xs">
-													{#each z.inZone.schools as school}
-														<div class="flex items-center justify-between pr-2 py-0.5 text-muted-foreground">
-															<span class="flex items-center gap-1.5"><span class="opacity-40">└</span>{school.name}</span>
-															<span class="tabular-nums shrink-0 ml-4">{school.count} <span class="opacity-60">({pct(school.count, z.inZone.total)})</span></span>
+													{#each z.inZone.schools as school (school.name)}
+														<div
+															class="flex items-center justify-between pr-2 py-0.5 text-muted-foreground"
+														>
+															<span class="flex items-center gap-1.5"
+																><span class="opacity-40">└</span>{school.name}</span
+															>
+															<span class="tabular-nums shrink-0 ml-4"
+																>{school.count}
+																<span class="opacity-60">({pct(school.count, z.inZone.total)})</span
+																></span
+															>
 														</div>
 													{/each}
 												</div>
@@ -216,14 +259,23 @@
 
 									<!-- นอกเขตพื้นที่ -->
 									<tr
-										class="border-b {z.outZone.schools.length > 0 ? 'cursor-pointer hover:bg-muted/40' : ''}"
-										onclick={() => z.outZone.schools.length > 0 && toggleExpand(`${scopeKey}-outZone`)}
+										class="border-b {z.outZone.schools.length > 0
+											? 'cursor-pointer hover:bg-muted/40'
+											: ''}"
+										onclick={() =>
+											z.outZone.schools.length > 0 && toggleExpand(`${scopeKey}-outZone`)}
 									>
 										<td class="py-2">
 											<span class="flex items-center gap-1.5">
 												นอกเขตพื้นที่
 												{#if z.outZone.schools.length > 0}
-													<ChevronDown class="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 {isExpanded(`${scopeKey}-outZone`) ? 'rotate-180' : ''}" />
+													<ChevronDown
+														class="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 {isExpanded(
+															`${scopeKey}-outZone`
+														)
+															? 'rotate-180'
+															: ''}"
+													/>
 												{/if}
 											</span>
 										</td>
@@ -231,7 +283,10 @@
 										<td class="text-right py-2 tabular-nums">{pct(z.outZone.total, z.total)}</td>
 										<td class="py-2 pl-3 hidden sm:table-cell">
 											<div class="h-2 rounded-full bg-muted overflow-hidden">
-												<div class="h-full bg-red-400 rounded-full" style="width: {z.total ? (z.outZone.total/z.total*100) : 0}%"></div>
+												<div
+													class="h-full bg-red-400 rounded-full"
+													style="width: {z.total ? (z.outZone.total / z.total) * 100 : 0}%"
+												></div>
 											</div>
 										</td>
 									</tr>
@@ -239,10 +294,19 @@
 										<tr>
 											<td colspan="4" class="pb-3 pt-0 pl-5">
 												<div class="space-y-0.5 text-xs">
-													{#each z.outZone.schools as school}
-														<div class="flex items-center justify-between pr-2 py-0.5 text-muted-foreground">
-															<span class="flex items-center gap-1.5"><span class="opacity-40">└</span>{school.name}</span>
-															<span class="tabular-nums shrink-0 ml-4">{school.count} <span class="opacity-60">({pct(school.count, z.outZone.total)})</span></span>
+													{#each z.outZone.schools as school (school.name)}
+														<div
+															class="flex items-center justify-between pr-2 py-0.5 text-muted-foreground"
+														>
+															<span class="flex items-center gap-1.5"
+																><span class="opacity-40">└</span>{school.name}</span
+															>
+															<span class="tabular-nums shrink-0 ml-4"
+																>{school.count}
+																<span class="opacity-60"
+																	>({pct(school.count, z.outZone.total)})</span
+																></span
+															>
 														</div>
 													{/each}
 												</div>
@@ -257,7 +321,10 @@
 										<td class="text-right py-2 tabular-nums">{pct(z.noInfo.total, z.total)}</td>
 										<td class="py-2 pl-3 hidden sm:table-cell">
 											<div class="h-2 rounded-full bg-muted overflow-hidden">
-												<div class="h-full bg-gray-400 rounded-full" style="width: {z.total ? (z.noInfo.total/z.total*100) : 0}%"></div>
+												<div
+													class="h-full bg-gray-400 rounded-full"
+													style="width: {z.total ? (z.noInfo.total / z.total) * 100 : 0}%"
+												></div>
 											</div>
 										</td>
 									</tr>
@@ -301,32 +368,53 @@
 									<tr class="border-b">
 										<td class="py-2">สถานศึกษาเดิม (โรงเรียนตนเอง)</td>
 										<td class="text-right py-2 tabular-nums">{inst.fromOwn.total}</td>
-										<td class="text-right py-2 tabular-nums">{pct(inst.fromOwn.total, inst.total)}</td>
+										<td class="text-right py-2 tabular-nums"
+											>{pct(inst.fromOwn.total, inst.total)}</td
+										>
 										<td class="py-2 pl-3 hidden sm:table-cell">
 											<div class="h-2 rounded-full bg-muted overflow-hidden">
-												<div class="h-full bg-blue-500 rounded-full" style="width: {inst.total ? (inst.fromOwn.total/inst.total*100) : 0}%"></div>
+												<div
+													class="h-full bg-blue-500 rounded-full"
+													style="width: {inst.total ? (inst.fromOwn.total / inst.total) * 100 : 0}%"
+												></div>
 											</div>
 										</td>
 									</tr>
 
 									<!-- สถานศึกษาอื่น — expandable -->
 									<tr
-										class="border-b {inst.fromOther.schools.length > 0 ? 'cursor-pointer hover:bg-muted/40' : ''}"
-										onclick={() => inst.fromOther.schools.length > 0 && toggleExpand(`${scopeKey}-fromOther`)}
+										class="border-b {inst.fromOther.schools.length > 0
+											? 'cursor-pointer hover:bg-muted/40'
+											: ''}"
+										onclick={() =>
+											inst.fromOther.schools.length > 0 && toggleExpand(`${scopeKey}-fromOther`)}
 									>
 										<td class="py-2">
 											<span class="flex items-center gap-1.5">
 												สถานศึกษาอื่น
 												{#if inst.fromOther.schools.length > 0}
-													<ChevronDown class="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 {isExpanded(`${scopeKey}-fromOther`) ? 'rotate-180' : ''}" />
+													<ChevronDown
+														class="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 {isExpanded(
+															`${scopeKey}-fromOther`
+														)
+															? 'rotate-180'
+															: ''}"
+													/>
 												{/if}
 											</span>
 										</td>
 										<td class="text-right py-2 tabular-nums">{inst.fromOther.total}</td>
-										<td class="text-right py-2 tabular-nums">{pct(inst.fromOther.total, inst.total)}</td>
+										<td class="text-right py-2 tabular-nums"
+											>{pct(inst.fromOther.total, inst.total)}</td
+										>
 										<td class="py-2 pl-3 hidden sm:table-cell">
 											<div class="h-2 rounded-full bg-muted overflow-hidden">
-												<div class="h-full bg-orange-400 rounded-full" style="width: {inst.total ? (inst.fromOther.total/inst.total*100) : 0}%"></div>
+												<div
+													class="h-full bg-orange-400 rounded-full"
+													style="width: {inst.total
+														? (inst.fromOther.total / inst.total) * 100
+														: 0}%"
+												></div>
 											</div>
 										</td>
 									</tr>
@@ -334,10 +422,19 @@
 										<tr>
 											<td colspan="4" class="pb-3 pt-0 pl-5">
 												<div class="space-y-0.5 text-xs">
-													{#each inst.fromOther.schools as school}
-														<div class="flex items-center justify-between pr-2 py-0.5 text-muted-foreground">
-															<span class="flex items-center gap-1.5"><span class="opacity-40">└</span>{school.name}</span>
-															<span class="tabular-nums shrink-0 ml-4">{school.count} <span class="opacity-60">({pct(school.count, inst.fromOther.total)})</span></span>
+													{#each inst.fromOther.schools as school (school.name)}
+														<div
+															class="flex items-center justify-between pr-2 py-0.5 text-muted-foreground"
+														>
+															<span class="flex items-center gap-1.5"
+																><span class="opacity-40">└</span>{school.name}</span
+															>
+															<span class="tabular-nums shrink-0 ml-4"
+																>{school.count}
+																<span class="opacity-60"
+																	>({pct(school.count, inst.fromOther.total)})</span
+																></span
+															>
 														</div>
 													{/each}
 												</div>
@@ -349,10 +446,15 @@
 									<tr class="border-b">
 										<td class="py-2 text-muted-foreground">ไม่ระบุ</td>
 										<td class="text-right py-2 tabular-nums">{inst.noInfo.total}</td>
-										<td class="text-right py-2 tabular-nums">{pct(inst.noInfo.total, inst.total)}</td>
+										<td class="text-right py-2 tabular-nums"
+											>{pct(inst.noInfo.total, inst.total)}</td
+										>
 										<td class="py-2 pl-3 hidden sm:table-cell">
 											<div class="h-2 rounded-full bg-muted overflow-hidden">
-												<div class="h-full bg-gray-400 rounded-full" style="width: {inst.total ? (inst.noInfo.total/inst.total*100) : 0}%"></div>
+												<div
+													class="h-full bg-gray-400 rounded-full"
+													style="width: {inst.total ? (inst.noInfo.total / inst.total) * 100 : 0}%"
+												></div>
 											</div>
 										</td>
 									</tr>
@@ -427,11 +529,13 @@
 				<span class="text-sm font-medium">กรอง:</span>
 				<Select.Root type="single" bind:value={statusFilter}>
 					<Select.Trigger class="w-full sm:w-48">
-						{statusFilter === 'all' ? 'สถานะทั้งหมด' : (applicationStatusLabel[statusFilter] ?? statusFilter)}
+						{statusFilter === 'all'
+							? 'สถานะทั้งหมด'
+							: (applicationStatusLabel[statusFilter] ?? statusFilter)}
 					</Select.Trigger>
 					<Select.Content>
 						<Select.Item value="all">สถานะทั้งหมด</Select.Item>
-						{#each allStatuses as s}
+						{#each allStatuses as s (s)}
 							<Select.Item value={s}>{applicationStatusLabel[s] ?? s}</Select.Item>
 						{/each}
 					</Select.Content>
@@ -460,9 +564,17 @@
 								>
 									<span class="font-medium text-sm">
 										{formatThaiDate(group.date)}
-										<span class="text-muted-foreground font-normal ml-1.5">({group.apps.length} คน)</span>
+										<span class="text-muted-foreground font-normal ml-1.5"
+											>({group.apps.length} คน)</span
+										>
 									</span>
-									<ChevronDown class="w-4 h-4 text-muted-foreground transition-transform duration-200 shrink-0 {isExpanded(`day-${group.date}`) ? 'rotate-180' : ''}" />
+									<ChevronDown
+										class="w-4 h-4 text-muted-foreground transition-transform duration-200 shrink-0 {isExpanded(
+											`day-${group.date}`
+										)
+											? 'rotate-180'
+											: ''}"
+									/>
 								</button>
 								{#if isExpanded(`day-${group.date}`)}
 									<div class="px-5 pb-4 space-y-4 border-t border-border pt-4">

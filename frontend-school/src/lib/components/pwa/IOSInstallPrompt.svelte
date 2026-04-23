@@ -10,12 +10,14 @@
 
 	onMount(() => {
 		// Check if iOS
-		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+		isIOS =
+			/iPad|iPhone|iPod/.test(navigator.userAgent) &&
+			!(window as Window & { MSStream?: unknown }).MSStream;
 
 		// Check if already installed (standalone mode)
 		isStandalone =
 			window.matchMedia('(display-mode: standalone)').matches ||
-			(navigator as any).standalone === true;
+			(navigator as Navigator & { standalone?: boolean }).standalone === true;
 
 		// Show prompt if iOS and not installed
 		if (isIOS && !isStandalone) {

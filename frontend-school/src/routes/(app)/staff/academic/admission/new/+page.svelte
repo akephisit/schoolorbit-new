@@ -1,9 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createRound } from '$lib/api/admission';
-	import { type AcademicYear } from '$lib/api/academic';
-	import { lookupAcademicYears, lookupGradeLevels, type AcademicYearLookupItem, type GradeLevelLookupItem } from '$lib/api/lookup';
+	import {
+		lookupAcademicYears,
+		lookupGradeLevels,
+		type AcademicYearLookupItem,
+		type GradeLevelLookupItem
+	} from '$lib/api/lookup';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -16,6 +21,11 @@
 	import { ArrowLeft, Plus, Loader2 } from 'lucide-svelte';
 
 	let { data } = $props();
+
+	function goToAdmissionRound(id: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route dynamic interpolation
+		goto(resolve(`/staff/academic/admission/${id}` as any));
+	}
 
 	let years: AcademicYearLookupItem[] = $state([]);
 	let gradeLevels: GradeLevelLookupItem[] = $state([]);
@@ -36,7 +46,10 @@
 	});
 
 	async function loadGradeLevels(yearId: string) {
-		if (!yearId) { gradeLevels = []; return; }
+		if (!yearId) {
+			gradeLevels = [];
+			return;
+		}
 		loadingGrades = true;
 		try {
 			gradeLevels = await lookupGradeLevels({ academicYearId: yearId });
@@ -84,7 +97,7 @@
 				description: form.description || undefined
 			});
 			toast.success('สร้างรอบรับสมัครแล้ว');
-			goto(`/staff/academic/admission/${round.id}`);
+			goToAdmissionRound(String(round.id));
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'สร้างไม่สำเร็จ');
 		} finally {
@@ -119,8 +132,14 @@
 				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					<div class="space-y-2">
 						<Label for="year-select">ปีการศึกษา <span class="text-destructive">*</span></Label>
-						<Select.Root type="single" bind:value={form.academicYearId}
-							onValueChange={(v) => { form.gradeLevelId = ''; loadGradeLevels(v ?? ''); }}>
+						<Select.Root
+							type="single"
+							bind:value={form.academicYearId}
+							onValueChange={(v) => {
+								form.gradeLevelId = '';
+								loadGradeLevels(v ?? '');
+							}}
+						>
 							<Select.Trigger id="year-select" class="w-full">
 								{years.find((y) => y.id === form.academicYearId)?.name ?? '-- เลือกปีการศึกษา --'}
 							</Select.Trigger>
@@ -135,9 +154,18 @@
 					</div>
 					<div class="space-y-2">
 						<Label for="grade-select">ระดับชั้น <span class="text-destructive">*</span></Label>
-						<Select.Root type="single" bind:value={form.gradeLevelId} disabled={loadingGrades || !form.academicYearId}>
+						<Select.Root
+							type="single"
+							bind:value={form.gradeLevelId}
+							disabled={loadingGrades || !form.academicYearId}
+						>
 							<Select.Trigger id="grade-select" class="w-full">
-								{loadingGrades ? 'กำลังโหลด...' : (gradeLevels.find((g) => g.id === form.gradeLevelId)?.short_name ?? (gradeLevels.length === 0 && form.academicYearId ? 'ไม่มีระดับชั้นที่เปิด' : '-- เลือกระดับชั้น --'))}
+								{loadingGrades
+									? 'กำลังโหลด...'
+									: (gradeLevels.find((g) => g.id === form.gradeLevelId)?.short_name ??
+										(gradeLevels.length === 0 && form.academicYearId
+											? 'ไม่มีระดับชั้นที่เปิด'
+											: '-- เลือกระดับชั้น --'))}
 							</Select.Trigger>
 							<Select.Content>
 								{#each gradeLevels as g (g.id)}

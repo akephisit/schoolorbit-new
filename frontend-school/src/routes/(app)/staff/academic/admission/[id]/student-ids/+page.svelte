@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { PageProps } from './$types';
-	import { getRound, listStudentIds, batchUpdateStudentIds, sortRoomStudents, type StudentIdEntry } from '$lib/api/admission';
+	import {
+		getRound,
+		listStudentIds,
+		batchUpdateStudentIds,
+		sortRoomStudents,
+		type StudentIdEntry
+	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
@@ -9,7 +15,19 @@
 	import * as Table from '$lib/components/ui/table';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Save, Wand2, X, AlertTriangle, School, FileSpreadsheet, ArrowUpDown, LoaderCircle, Upload, FileDown } from 'lucide-svelte';
+	import {
+		ArrowLeft,
+		Save,
+		Wand2,
+		X,
+		School,
+		FileSpreadsheet,
+		ArrowUpDown,
+		LoaderCircle,
+		Upload,
+		FileDown
+	} from 'lucide-svelte';
+	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -38,10 +56,7 @@
 
 	onMount(async () => {
 		try {
-			const [roundRes, listRes] = await Promise.all([
-				getRound(id),
-				listStudentIds(id)
-			]);
+			const [roundRes, listRes] = await Promise.all([getRound(id), listStudentIds(id)]);
 			roundName = roundRes.name ?? '';
 			assignmentMode = roundRes.selectionSettings?.assignmentMode;
 			entries = listRes.data;
@@ -62,14 +77,12 @@
 	let filteredEntries = $derived(() => {
 		const q = schoolFilter.trim().toLowerCase();
 		if (!q) return entries;
-		return entries.filter((e) =>
-			(e.previousSchool ?? '').toLowerCase().includes(q)
-		);
+		return entries.filter((e) => (e.previousSchool ?? '').toLowerCase().includes(q));
 	});
 
 	// Unique school names for suggestions (sorted)
 	let schoolSuggestions = $derived(() => {
-		const schools = new Set<string>();
+		const schools = new SvelteSet<string>();
 		for (const e of entries) {
 			if (e.previousSchool?.trim()) schools.add(e.previousSchool.trim());
 		}
@@ -84,7 +97,7 @@
 				counts[val.trim()] = (counts[val.trim()] ?? 0) + 1;
 			}
 		}
-		const dups = new Set<string>();
+		const dups = new SvelteSet<string>();
 		for (const [val, count] of Object.entries(counts)) {
 			if (count > 1) dups.add(val);
 		}
@@ -132,7 +145,7 @@
 		}
 
 		// Collect ALL existing values (including non-filtered rows) to avoid collisions
-		const occupied = new Set<string>();
+		const occupied = new SvelteSet<string>();
 		for (const e of entries) {
 			const val = edits[e.applicationId]?.trim();
 			if (val) occupied.add(val);
@@ -193,7 +206,19 @@
 	async function downloadXlsx() {
 		const XLSX = await import('xlsx');
 		const rankColLabel = assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย';
-		const header = ['ลำดับ', 'เลขประจำตัว', 'เลขที่นั่งสอบ', 'ชื่อ-สกุล', 'เลขที่สมัคร', 'สายที่สมัคร', 'สายที่จัด', 'โรงเรียนเดิม', 'ห้องที่ได้', 'เลขที่', rankColLabel];
+		const header = [
+			'ลำดับ',
+			'เลขประจำตัว',
+			'เลขที่นั่งสอบ',
+			'ชื่อ-สกุล',
+			'เลขที่สมัคร',
+			'สายที่สมัคร',
+			'สายที่จัด',
+			'โรงเรียนเดิม',
+			'ห้องที่ได้',
+			'เลขที่',
+			rankColLabel
+		];
 		const rows = entries.map((e, i) => {
 			return [
 				i + 1,
@@ -246,16 +271,22 @@
 			// Detect columns
 			const headers = Object.keys(rows[0]);
 			const idCol = headers.find((h) => /เลข|id|รหัส/i.test(h) && !/นามสกุล|สกุล/i.test(h));
-			const firstCol = headers.find((h) => /^ชื่อ$|^ชื่อตัว$|^firstname$/i.test(h.trim()) || (h.includes('ชื่อ') && !h.includes('สกุล') && !h.includes('นาม')));
+			const firstCol = headers.find(
+				(h) =>
+					/^ชื่อ$|^ชื่อตัว$|^firstname$/i.test(h.trim()) ||
+					(h.includes('ชื่อ') && !h.includes('สกุล') && !h.includes('นาม'))
+			);
 			const lastCol = headers.find((h) => /สกุล/i.test(h));
 
 			if (!idCol || !firstCol || !lastCol) {
-				toast.error(`ไม่พบคอลัมน์ที่ต้องการ (เลขประจำตัว / ชื่อ / นามสกุล)\nพบ: ${headers.join(', ')}`);
+				toast.error(
+					`ไม่พบคอลัมน์ที่ต้องการ (เลขประจำตัว / ชื่อ / นามสกุล)\nพบ: ${headers.join(', ')}`
+				);
 				return;
 			}
 
 			// Build lookup map: "ชื่อ นามสกุล" → applicationId[]
-			const lookup = new Map<string, string[]>();
+			const lookup = new SvelteMap<string, string[]>();
 			for (const e of entries) {
 				const key = normalize(`${e.firstName} ${e.lastName}`);
 				if (!lookup.has(key)) lookup.set(key, []);
@@ -263,7 +294,7 @@
 			}
 
 			// Build school lookup: applicationId → previousSchool
-			const schoolMap = new Map<string, string>();
+			const schoolMap = new SvelteMap<string, string>();
 			for (const e of entries) {
 				schoolMap.set(e.applicationId, e.previousSchool ?? '');
 			}
@@ -354,7 +385,9 @@
 
 			<!-- School filter -->
 			<div class="relative shrink-0">
-				<School class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+				<School
+					class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground"
+				/>
 				<Input
 					list="school-suggestions"
 					bind:value={schoolFilter}
@@ -371,7 +404,7 @@
 					</button>
 				{/if}
 				<datalist id="school-suggestions">
-					{#each schoolSuggestions() as school}
+					{#each schoolSuggestions() as school (school)}
 						<option value={school}></option>
 					{/each}
 				</datalist>
@@ -442,7 +475,11 @@
 				title="เลขเริ่มต้น"
 				class="w-20 h-8 text-sm shrink-0"
 			/>
-			<Button variant="outline" size="sm" class="gap-1.5 h-8 shrink-0" onclick={autoFill}
+			<Button
+				variant="outline"
+				size="sm"
+				class="gap-1.5 h-8 shrink-0"
+				onclick={autoFill}
 				title={schoolFilter.trim() ? 'Auto-fill เฉพาะที่กรอง' : 'Auto-fill ช่องว่าง'}
 			>
 				<Wand2 class="w-3.5 h-3.5" />
@@ -452,12 +489,7 @@
 			<div class="w-px h-5 bg-border shrink-0"></div>
 
 			<!-- Save + Download + Clear -->
-			<Button
-				size="sm"
-				class="gap-1.5 h-8 shrink-0"
-				onclick={saveAll}
-				disabled={saving || loading}
-			>
+			<Button size="sm" class="gap-1.5 h-8 shrink-0" onclick={saveAll} disabled={saving || loading}>
 				{#if saving}
 					<span class="animate-spin">⏳</span>
 				{:else}
@@ -500,7 +532,9 @@
 					<Table.Head>โรงเรียนเดิม</Table.Head>
 					<Table.Head>ห้องที่ได้</Table.Head>
 					<Table.Head class="w-16 text-center">เลขที่</Table.Head>
-					<Table.Head class="w-20 text-center">{assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย'}</Table.Head>
+					<Table.Head class="w-20 text-center"
+						>{assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย'}</Table.Head
+					>
 					<Table.Head class="w-44">เลขประจำตัว</Table.Head>
 					<Table.Head class="w-8"></Table.Head>
 				</Table.Row>
@@ -515,7 +549,9 @@
 				{:else if filteredEntries().length === 0}
 					<Table.Row>
 						<Table.Cell colspan={10} class="text-center text-muted-foreground py-8">
-							{entries.length === 0 ? 'ไม่มีนักเรียนที่ผ่านการคัดเลือก' : 'ไม่พบนักเรียนจากโรงเรียนที่ค้นหา'}
+							{entries.length === 0
+								? 'ไม่มีนักเรียนที่ผ่านการคัดเลือก'
+								: 'ไม่พบนักเรียนจากโรงเรียนที่ค้นหา'}
 						</Table.Cell>
 					</Table.Row>
 				{:else}
@@ -530,7 +566,9 @@
 							</Table.Cell>
 							<Table.Cell class="text-sm">
 								{#if entry.assignedTrackName}
-									<span class="text-muted-foreground line-through text-xs">{entry.originalTrackName ?? '-'}</span>
+									<span class="text-muted-foreground line-through text-xs"
+										>{entry.originalTrackName ?? '-'}</span
+									>
 									<br />
 									<span class="font-medium">{entry.assignedTrackName}</span>
 								{:else}
@@ -557,9 +595,14 @@
 								<Input
 									value={val}
 									oninput={(e) => {
-										edits = { ...edits, [entry.applicationId]: (e.target as HTMLInputElement).value };
+										edits = {
+											...edits,
+											[entry.applicationId]: (e.target as HTMLInputElement).value
+										};
 									}}
-									class="h-7 text-sm {isDup ? 'border-destructive focus-visible:ring-destructive' : ''}"
+									class="h-7 text-sm {isDup
+										? 'border-destructive focus-visible:ring-destructive'
+										: ''}"
 									placeholder="กรอกเลข..."
 								/>
 							</Table.Cell>
@@ -596,20 +639,29 @@
 				<!-- Summary stats -->
 				<div class="space-y-1.5">
 					<div class="flex items-center gap-2 text-sm">
-						<span class="w-5 h-5 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">✓</span>
+						<span
+							class="w-5 h-5 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold"
+							>✓</span
+						>
 						<span>จะกรอกได้</span>
 						<span class="ml-auto font-semibold">{importStats.filled} คน</span>
 					</div>
 					{#if importStats.ambiguous > 0}
 						<div class="flex items-center gap-2 text-sm text-amber-600">
-							<span class="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold">!</span>
+							<span
+								class="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold"
+								>!</span
+							>
 							<span>ชื่อซ้ำในระบบ (ข้าม)</span>
 							<span class="ml-auto font-semibold">{importStats.ambiguous} คน</span>
 						</div>
 					{/if}
 					{#if importStats.notFound > 0}
 						<div class="flex items-center gap-2 text-sm text-muted-foreground">
-							<span class="w-5 h-5 rounded-full bg-muted flex items-center justify-center text-xs font-bold">–</span>
+							<span
+								class="w-5 h-5 rounded-full bg-muted flex items-center justify-center text-xs font-bold"
+								>–</span
+							>
 							<span>ไม่พบในรายชื่อผู้สมัคร</span>
 							<span class="ml-auto font-semibold">{importStats.notFound} คน</span>
 						</div>
@@ -621,7 +673,7 @@
 					<div>
 						<p class="text-xs text-muted-foreground mb-1.5">รายละเอียดตามโรงเรียน:</p>
 						<div class="max-h-48 overflow-y-auto space-y-1 rounded border p-2">
-							{#each schoolBreakdown() as [school, count]}
+							{#each schoolBreakdown() as [school, count] (school)}
 								<div class="flex items-center justify-between text-sm">
 									<span class="truncate text-muted-foreground">{school}</span>
 									<span class="ml-2 font-medium shrink-0">{count} คน</span>

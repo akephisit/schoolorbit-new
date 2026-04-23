@@ -26,7 +26,16 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
-	import { Loader2, Plus, Users, School, Pencil, Trash2, ChevronsUpDown, Check } from 'lucide-svelte';
+	import {
+		Loader2,
+		Plus,
+		Users,
+		School,
+		Pencil,
+		Trash2,
+		ChevronsUpDown,
+		Check
+	} from 'lucide-svelte';
 
 	type AdvisorRow = { user_id: string; role: 'primary' | 'secondary' };
 
@@ -109,7 +118,8 @@
 		const nextRole: 'primary' | 'secondary' = target.role === 'primary' ? 'secondary' : 'primary';
 		return list.map((a) => {
 			if (a.user_id === userId) return { ...a, role: nextRole };
-			if (nextRole === 'primary' && a.role === 'primary') return { ...a, role: 'secondary' as const };
+			if (nextRole === 'primary' && a.role === 'primary')
+				return { ...a, role: 'secondary' as const };
 			return a;
 		});
 	}
@@ -269,7 +279,7 @@
 						<Command.Input placeholder="ค้นหาครู..." />
 						<Command.Empty>ไม่พบครู</Command.Empty>
 						<Command.Group class="max-h-[280px] overflow-y-auto">
-							{#each staffList.filter((s) => !list.some((a) => a.user_id === s.id)) as staff}
+							{#each staffList.filter((s) => !list.some((a) => a.user_id === s.id)) as staff (staff.id)}
 								<Command.Item
 									value={`${staff.title ?? ''}${staff.name}`}
 									onSelect={() => {
@@ -277,7 +287,9 @@
 										staffPickerOpen = false;
 									}}
 								>
-									<Check class="mr-2 h-4 w-4 {addStaffId === staff.id ? 'opacity-100' : 'opacity-0'}" />
+									<Check
+										class="mr-2 h-4 w-4 {addStaffId === staff.id ? 'opacity-100' : 'opacity-0'}"
+									/>
 									{staff.title ?? ''}{staff.name}
 								</Command.Item>
 							{/each}
@@ -365,8 +377,10 @@
 							{/if}
 						</Select.Trigger>
 						<Select.Content>
-							{#each structure.years as year}
-								<Select.Item value={year.id}>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</Select.Item>
+							{#each structure.years as year (year.id)}
+								<Select.Item value={year.id}
+									>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</Select.Item
+								>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -393,7 +407,7 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each classrooms as room}
+					{#each classrooms as room (room.id)}
 						<Table.Row>
 							<Table.Cell class="font-medium">
 								<Badge variant="outline">{room.grade_level_name}</Badge>
@@ -416,8 +430,11 @@
 							<Table.Cell>
 								{#if room.advisors && room.advisors.length > 0}
 									<div class="flex flex-wrap gap-1">
-										{#each room.advisors as a}
-											<Badge variant={a.role === 'primary' ? 'default' : 'secondary'} class="font-normal">
+										{#each room.advisors as a (a.user_id)}
+											<Badge
+												variant={a.role === 'primary' ? 'default' : 'secondary'}
+												class="font-normal"
+											>
 												{a.role === 'primary' ? '⭐ ' : ''}{a.name}
 											</Badge>
 										{/each}
@@ -461,10 +478,11 @@
 						<Label>ระดับชั้น <span class="text-red-500">*</span></Label>
 						<Select.Root type="single" bind:value={newClassroom.grade_level_id}>
 							<Select.Trigger class="w-full">
-								{structure.levels.find((l) => l.id === newClassroom.grade_level_id)?.name || 'เลือกชั้น'}
+								{structure.levels.find((l) => l.id === newClassroom.grade_level_id)?.name ||
+									'เลือกชั้น'}
 							</Select.Trigger>
 							<Select.Content>
-								{#each structure.levels.filter((l) => activeLevelIds.includes(l.id)) as level}
+								{#each structure.levels.filter( (l) => activeLevelIds.includes(l.id) ) as level (level.id)}
 									<Select.Item value={level.id}>{level.name} ({level.short_name})</Select.Item>
 								{/each}
 							</Select.Content>
@@ -488,12 +506,14 @@
 					<Select.Root type="single" bind:value={newClassroom.study_plan_version_id}>
 						<Select.Trigger class="w-full">
 							{(() => {
-								const v = filteredStudyPlanVersions.find((v) => v.id === newClassroom.study_plan_version_id);
+								const v = filteredStudyPlanVersions.find(
+									(v) => v.id === newClassroom.study_plan_version_id
+								);
 								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
 							})()}
 						</Select.Trigger>
 						<Select.Content>
-							{#each filteredStudyPlanVersions as version}
+							{#each filteredStudyPlanVersions as version (version.id)}
 								<Select.Item value={version.id}>
 									{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
 								</Select.Item>
@@ -551,12 +571,14 @@
 					<Select.Root type="single" bind:value={editingClassroom.study_plan_version_id}>
 						<Select.Trigger class="w-full">
 							{(() => {
-								const v = filteredStudyPlanVersions.find((v) => v.id === editingClassroom.study_plan_version_id);
+								const v = filteredStudyPlanVersions.find(
+									(v) => v.id === editingClassroom.study_plan_version_id
+								);
 								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
 							})()}
 						</Select.Trigger>
 						<Select.Content>
-							{#each filteredStudyPlanVersions as version}
+							{#each filteredStudyPlanVersions as version (version.id)}
 								<Select.Item value={version.id}>
 									{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
 								</Select.Item>

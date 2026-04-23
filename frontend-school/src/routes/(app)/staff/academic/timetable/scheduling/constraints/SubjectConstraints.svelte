@@ -3,9 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Checkbox from '$lib/components/ui/checkbox';
 	import {
 		listSubjectConstraints,
 		updateSubjectConstraints,
@@ -14,7 +12,7 @@
 		type SubjectConstraintView,
 		type Period
 	} from '$lib/api/scheduling';
-	import { Loader2, Pencil, Clock, MapPin, Layers } from 'lucide-svelte';
+	import { Loader2, Pencil, Layers } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	// State
@@ -174,7 +172,7 @@
 				</tr>
 			</thead>
 			<tbody class="[&_tr:last-child]:border-0">
-				{#each filteredSubjects as subject}
+				{#each filteredSubjects as subject (subject.id)}
 					<tr class="border-b transition-colors hover:bg-muted/50">
 						<td class="p-4 align-middle font-medium">{subject.code}</td>
 						<td class="p-4 align-middle">{subject.name}</td>
@@ -225,7 +223,7 @@
 			<div class="space-y-2">
 				<Label>คาบที่อนุญาต (ไม่เลือก = ทุกคาบ)</Label>
 				<div class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 border rounded-md">
-					{#each periods as period}
+					{#each periods as period (period.id)}
 						<label class="flex items-center space-x-2 text-sm cursor-pointer">
 							<input
 								type="checkbox"
@@ -253,7 +251,7 @@
 			<div class="space-y-2">
 				<Label>วันที่อนุญาต (ไม่เลือก = ทุกวัน)</Label>
 				<div class="grid grid-cols-2 gap-2">
-					{#each DAY_OPTIONS as day}
+					{#each DAY_OPTIONS as day (day.value)}
 						<label class="flex items-center space-x-2 text-sm cursor-pointer">
 							<input
 								type="checkbox"

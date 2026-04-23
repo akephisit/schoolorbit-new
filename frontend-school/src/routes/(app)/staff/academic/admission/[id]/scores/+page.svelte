@@ -23,6 +23,7 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, ClipboardList, Save, Loader2, DoorOpen, UserX } from 'lucide-svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -36,11 +37,17 @@
 	let loading = $state(true);
 	let saving = $state(false);
 	let selectedTrack = $state('');
-	let allRawScores: any[] = [];
+	interface RawScore {
+		applicationId: string;
+		subjectId: string;
+		score?: number | null;
+		status?: string;
+	}
+	let allRawScores: RawScore[] = [];
 	let activeSubjectIds: string[] = $state([]);
 
 	let scores: Record<string, Record<string, string>> = $state({});
-	let absentIds: Set<string> = $state(new Set());
+	let absentIds = new SvelteSet<string>();
 	let togglingAbsent: Record<string, boolean> = $state({});
 
 	// flat list in room order for Enter navigation
@@ -69,15 +76,14 @@
 			tracks = t;
 			subjects = s;
 			activeSubjectIds = s.map((sub) => sub.id);
-			allRawScores = allS as any[];
+			allRawScores = allS as unknown as RawScore[];
 			seatGroups = Array.isArray(seatData) ? seatData : [];
 
 			// สร้าง set ของ absent จาก status ใน allRawScores
-			const absSet = new Set<string>();
+			absentIds.clear();
 			for (const sc of allRawScores) {
-				if (sc.status === 'absent') absSet.add(sc.applicationId);
+				if (sc.status === 'absent') absentIds.add(sc.applicationId);
 			}
-			absentIds = absSet;
 
 			// default to room view if seats are assigned
 			if (seatGroups.length > 0) {
@@ -107,7 +113,9 @@
 		if (!id || !selectedTrack) return;
 		const allApps = await listApplications(id, { trackId: selectedTrack });
 		// Only show applications that are verified, scored, accepted, or absent
-		applications = allApps.filter((a) => ['verified', 'scored', 'accepted', 'absent'].includes(a.status));
+		applications = allApps.filter((a) =>
+			['verified', 'scored', 'accepted', 'absent'].includes(a.status)
+		);
 
 		for (const app of applications) {
 			if (!scores[app.id]) scores[app.id] = {};
@@ -148,10 +156,8 @@
 		togglingAbsent = { ...togglingAbsent, [appId]: true };
 		try {
 			await markAbsent(appId, !isAbsent);
-			const next = new Set(absentIds);
-			if (isAbsent) next.delete(appId);
-			else next.add(appId);
-			absentIds = next;
+			if (isAbsent) absentIds.delete(appId);
+			else absentIds.add(appId);
 			toast.success(isAbsent ? 'ยกเลิกขาดสอบแล้ว' : 'ทำเครื่องหมายขาดสอบแล้ว');
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ดำเนินการไม่สำเร็จ');
@@ -328,10 +334,7 @@
 						{#each seatGroups as group (group.examRoomId)}
 							<!-- Room header row -->
 							<Table.Row class="bg-muted/50 hover:bg-muted/50">
-								<Table.Cell
-									colspan={4 + subjects.length}
-									class="font-semibold py-2 px-4 text-sm"
-								>
+								<Table.Cell colspan={4 + subjects.length} class="font-semibold py-2 px-4 text-sm">
 									<span class="flex items-center gap-2">
 										<DoorOpen class="w-4 h-4" />
 										{group.roomName}
@@ -346,7 +349,9 @@
 							</Table.Row>
 							{#each group.seats as seat, seatIdx (seat.applicationId)}
 								{@const globalIdx =
-									seatGroups.slice(0, seatGroups.indexOf(group)).reduce((acc, g) => acc + g.seats.length, 0) + seatIdx}
+									seatGroups
+										.slice(0, seatGroups.indexOf(group))
+										.reduce((acc, g) => acc + g.seats.length, 0) + seatIdx}
 								{@const isAbsent = absentIds.has(seat.applicationId)}
 								<Table.Row class={isAbsent ? 'opacity-50' : ''}>
 									<Table.Cell class="text-center text-muted-foreground"
@@ -355,12 +360,16 @@
 									<Table.Cell class="font-mono text-xs"
 										>{seat.examId ?? seat.applicationNumber ?? '-'}</Table.Cell
 									>
-									<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}">{seat.fullName}</Table.Cell>
+									<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}"
+										>{seat.fullName}</Table.Cell
+									>
 									<Table.Cell class="text-center">
 										<Button
 											size="sm"
 											variant={isAbsent ? 'default' : 'ghost'}
-											class="h-7 text-xs gap-1 {isAbsent ? 'bg-red-600 hover:bg-red-700' : 'text-muted-foreground hover:text-red-600'}"
+											class="h-7 text-xs gap-1 {isAbsent
+												? 'bg-red-600 hover:bg-red-700'
+												: 'text-muted-foreground hover:text-red-600'}"
 											disabled={togglingAbsent[seat.applicationId]}
 											onclick={() => toggleAbsent(seat.applicationId)}
 										>
@@ -410,12 +419,16 @@
 							<Table.Row class={isAbsent ? 'opacity-50' : ''}>
 								<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
 								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-								<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}">{app.fullName}</Table.Cell>
+								<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}"
+									>{app.fullName}</Table.Cell
+								>
 								<Table.Cell class="text-center">
 									<Button
 										size="sm"
 										variant={isAbsent ? 'default' : 'ghost'}
-										class="h-7 text-xs gap-1 {isAbsent ? 'bg-red-600 hover:bg-red-700' : 'text-muted-foreground hover:text-red-600'}"
+										class="h-7 text-xs gap-1 {isAbsent
+											? 'bg-red-600 hover:bg-red-700'
+											: 'text-muted-foreground hover:text-red-600'}"
 										disabled={togglingAbsent[app.id]}
 										onclick={() => toggleAbsent(app.id)}
 									>
@@ -426,9 +439,7 @@
 								{#each subjects as sub, subIdx (sub.id)}
 									{@const isActive = activeSubjectIds.includes(sub.id)}
 									<Table.Cell
-										class="px-2 py-1.5 transition-all duration-300 {isActive
-											? ''
-											: 'bg-muted/40'}"
+										class="px-2 py-1.5 transition-all duration-300 {isActive ? '' : 'bg-muted/40'}"
 									>
 										<Input
 											id="score-{app.id}-{sub.id}"

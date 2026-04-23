@@ -3,17 +3,22 @@
 
 	export let title = '';
 	export let subTitle = '';
-	// periods should use any type if the strict type isn't shared, but better to be safe
-	export let periods: any[] = [];
+	interface PeriodInput {
+		id: string;
+		order_index: number;
+		start_time: string;
+		end_time: string;
+	}
+	export let periods: PeriodInput[] = [];
 	export let timetableEntries: TimetableEntry[] = [];
-	
+
 	// Helper for Days
 	const DAYS = [
 		{ value: 'MON', label: 'จันทร์', color: '#FEF9C3' }, // Yellow-50
 		{ value: 'TUE', label: 'อังคาร', color: '#FCE7F3' }, // Pink-50
-		{ value: 'WED', label: 'พุธ', color: '#DCFCE7' },    // Green-50
+		{ value: 'WED', label: 'พุธ', color: '#DCFCE7' }, // Green-50
 		{ value: 'THU', label: 'พฤหัสฯ', color: '#FFEDD5' }, // Orange-50
-		{ value: 'FRI', label: 'ศุกร์', color: '#DBEAFE' },   // Blue-50
+		{ value: 'FRI', label: 'ศุกร์', color: '#DBEAFE' }, // Blue-50
 		{ value: 'SAT', label: 'เสาร์', color: '#F3F4F6' },
 		{ value: 'SUN', label: 'อาทิตย์', color: '#F3F4F6' }
 	];
@@ -53,7 +58,7 @@
 		<thead>
 			<tr class="bg-[#f3f4f6]">
 				<th class="border border-[#9ca3af] p-2 w-28 text-center text-lg">วัน / เวลา</th>
-				{#each periods as p}
+				{#each periods as p (p.id)}
 					<th class="border border-[#9ca3af] p-2 text-center min-w-[80px]">
 						<div class="text-lg font-bold">คาบที่ {p.order_index}</div>
 						<div class="text-sm font-normal text-[#4b5563]">
@@ -64,7 +69,7 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each DAYS.slice(0, 5) as day}
+			{#each DAYS.slice(0, 5) as day (day.value)}
 				<!-- Usually Mon-Fri. If weekend has classes, expand logic -->
 				<tr class="h-28">
 					<!-- Day Header -->
@@ -76,7 +81,7 @@
 					</td>
 
 					<!-- Slots -->
-					{#each periods as p}
+					{#each periods as p (p.id)}
 						{@const entry = getEntry(day.value, p.id)}
 						<td class="border border-[#9ca3af] p-1 text-center align-middle relative bg-white">
 							{#if entry}

@@ -13,15 +13,14 @@
 		getAcademicStructure,
 		getSchoolDays,
 		type AcademicYear,
-		type Semester,
-		ACTIVITY_TYPE_LABELS
+		type Semester
 	} from '$lib/api/academic';
 	import { getOwnProfile, type Student } from '$lib/api/students';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { CalendarDays, Loader2, Users, MapPin, Clock, BookOpen } from 'lucide-svelte';
+	import { CalendarDays, Loader2, Users, BookOpen } from 'lucide-svelte';
 
 	let loading = $state(true);
 	let student = $state<Student | null>(null);
@@ -53,10 +52,7 @@
 
 	async function loadData() {
 		try {
-			const [profileRes, structRes] = await Promise.all([
-				getOwnProfile(),
-				getAcademicStructure()
-			]);
+			const [profileRes, structRes] = await Promise.all([getOwnProfile(), getAcademicStructure()]);
 
 			student = profileRes.data;
 			years = structRes.data.years;
@@ -80,9 +76,9 @@
 					await loadTimetable();
 				}
 			}
-		} catch (e: any) {
+		} catch (e: unknown) {
 			console.error(e);
-			toast.error(e.message || 'โหลดข้อมูลไม่สำเร็จ');
+			toast.error((e instanceof Error ? e.message : String(e)) || 'โหลดข้อมูลไม่สำเร็จ');
 		} finally {
 			loading = false;
 		}
@@ -96,7 +92,7 @@
 				academic_semester_id: selectedSemesterId
 			});
 			entries = res.data;
-		} catch (e: any) {
+		} catch (e: unknown) {
 			console.error(e);
 			toast.error('โหลดตารางเรียนไม่สำเร็จ');
 		}
@@ -115,7 +111,7 @@
 		try {
 			const res = await getMyActivityForEntry(entry.id);
 			activityData = res.data;
-		} catch (e: any) {
+		} catch (e: unknown) {
 			console.error(e);
 			toast.error('โหลดข้อมูลกิจกรรมไม่สำเร็จ');
 		} finally {
@@ -137,7 +133,8 @@
 			<h1 class="text-2xl font-bold">ตารางเรียน</h1>
 			{#if student}
 				<p class="text-sm text-muted-foreground">
-					{student.first_name} {student.last_name}
+					{student.first_name}
+					{student.last_name}
 					{#if student.grade_level && student.class_room}
 						— {student.grade_level}/{student.class_room}
 					{/if}
@@ -164,7 +161,7 @@
 						<th class="p-2 border bg-muted/50 text-xs font-medium text-muted-foreground w-20">
 							คาบ
 						</th>
-						{#each schoolDays as day}
+						{#each schoolDays as day (day.value)}
 							<th class="p-2 border bg-muted/50 text-xs font-medium text-center">
 								{day.label}
 							</th>
@@ -172,7 +169,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each periods as period}
+					{#each periods as period (period.id)}
 						<tr>
 							<td class="p-2 border bg-muted/30 text-center">
 								<div class="text-xs font-medium">{period.name}</div>
@@ -180,13 +177,18 @@
 									{formatTime(period.start_time)}-{formatTime(period.end_time)}
 								</div>
 							</td>
-							{#each schoolDays as day}
+							{#each schoolDays as day (day.value)}
 								{@const entry = getEntry(day.value, period.id)}
 								<td class="p-1 border relative h-20">
 									{#if entry}
-										{@const isClickable = entry.entry_type === 'ACTIVITY' && !!entry.activity_slot_id}
+										{@const isClickable =
+											entry.entry_type === 'ACTIVITY' && !!entry.activity_slot_id}
 										<button
-											class="w-full h-full rounded border p-2 text-left text-xs flex flex-col gap-0.5 transition-all {getEntryColor(entry.entry_type)} {isClickable ? 'cursor-pointer hover:shadow-md hover:brightness-95' : 'cursor-default'}"
+											class="w-full h-full rounded border p-2 text-left text-xs flex flex-col gap-0.5 transition-all {getEntryColor(
+												entry.entry_type
+											)} {isClickable
+												? 'cursor-pointer hover:shadow-md hover:brightness-95'
+												: 'cursor-default'}"
 											onclick={() => isClickable && handleActivityClick(entry)}
 											disabled={!isClickable}
 										>
@@ -207,7 +209,10 @@
 												<div class="text-[10px] opacity-60">{entry.room_code}</div>
 											{/if}
 											{#if isClickable}
-												<Badge variant="outline" class="text-[9px] px-1 py-0 mt-0.5 w-fit border-emerald-300 text-emerald-700">
+												<Badge
+													variant="outline"
+													class="text-[9px] px-1 py-0 mt-0.5 w-fit border-emerald-300 text-emerald-700"
+												>
 													กดดูกิจกรรม
 												</Badge>
 											{/if}
@@ -271,7 +276,7 @@
 							<Users class="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
 							<div>
 								<p class="text-xs text-muted-foreground mb-1">ครูผู้สอน</p>
-								{#each activityData.instructors as instr}
+								{#each activityData.instructors as instr (instr.id)}
 									<p class="text-sm">{instr.name}</p>
 								{/each}
 							</div>
@@ -283,7 +288,8 @@
 						<div>
 							<p class="text-xs text-muted-foreground mb-1">สมาชิก</p>
 							<p class="text-sm">
-								{activityData.member_count}{#if activityData.max_capacity}/{activityData.max_capacity}{/if} คน
+								{activityData.member_count}{#if activityData.max_capacity}/{activityData.max_capacity}{/if}
+								คน
 							</p>
 						</div>
 					</div>

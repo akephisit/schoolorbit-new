@@ -30,14 +30,22 @@ export async function scanRoutes(): Promise<RouteMetadata[]> {
 		const meta = extractMeta(content);
 
 		if (meta?.menu) {
+			const menu = meta.menu as {
+				title: string;
+				icon?: string;
+				group: string;
+				order?: number;
+				permission?: string;
+				user_type?: string;
+			};
 			routes.push({
 				path: fileToPath(file),
-				title: (meta.menu as any).title,
-				icon: (meta.menu as any).icon,
-				group: (meta.menu as any).group,
-				order: (meta.menu as any).order ?? 999,
-				permission: (meta.menu as any).permission,
-				user_type: (meta.menu as any).user_type
+				title: menu.title,
+				icon: menu.icon,
+				group: menu.group,
+				order: menu.order ?? 999,
+				permission: menu.permission,
+				user_type: menu.user_type
 			});
 		}
 	}

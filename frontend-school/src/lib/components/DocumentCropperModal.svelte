@@ -66,13 +66,13 @@
 		if (imageSrc) {
 			dispReady = false;
 			corners = initialCorners
-				? initialCorners.map((c) => ({ ...c })) as [Point, Point, Point, Point]
+				? (initialCorners.map((c) => ({ ...c })) as [Point, Point, Point, Point])
 				: [
-					{ x: 0.08, y: 0.08 },
-					{ x: 0.92, y: 0.08 },
-					{ x: 0.92, y: 0.92 },
-					{ x: 0.08, y: 0.92 }
-				];
+						{ x: 0.08, y: 0.08 },
+						{ x: 0.92, y: 0.08 },
+						{ x: 0.92, y: 0.92 },
+						{ x: 0.08, y: 0.92 }
+					];
 		}
 	});
 
@@ -174,10 +174,12 @@
 	}
 
 	function polygonPoints(): string {
-		return corners.map((c) => {
-			const d = cornerToDisplay(c);
-			return `${d.x},${d.y}`;
-		}).join(' ');
+		return corners
+			.map((c) => {
+				const d = cornerToDisplay(c);
+				return `${d.x},${d.y}`;
+			})
+			.join(' ');
 	}
 
 	// ===========================
@@ -209,8 +211,10 @@
 		ctx.strokeStyle = 'rgba(59,130,246,0.9)';
 		ctx.lineWidth = 1.5;
 		ctx.beginPath();
-		ctx.moveTo(MAG_SIZE / 2, 0); ctx.lineTo(MAG_SIZE / 2, MAG_SIZE);
-		ctx.moveTo(0, MAG_SIZE / 2); ctx.lineTo(MAG_SIZE, MAG_SIZE / 2);
+		ctx.moveTo(MAG_SIZE / 2, 0);
+		ctx.lineTo(MAG_SIZE / 2, MAG_SIZE);
+		ctx.moveTo(0, MAG_SIZE / 2);
+		ctx.lineTo(MAG_SIZE, MAG_SIZE / 2);
 		ctx.stroke();
 	});
 
@@ -262,8 +266,12 @@
 	}
 
 	function computeAffine(
-		s0: Point, s1: Point, s2: Point,
-		d0: Point, d1: Point, d2: Point
+		s0: Point,
+		s1: Point,
+		s2: Point,
+		d0: Point,
+		d1: Point,
+		d2: Point
 	): [number, number, number, number, number, number] {
 		const M = [
 			[s0.x, s0.y, 1],
@@ -365,7 +373,9 @@
 	<DialogContent class="w-full max-w-2xl p-0 gap-0 overflow-hidden rounded-xl">
 		<DialogHeader class="px-4 pt-4 pb-3 border-b">
 			<DialogTitle class="text-sm font-semibold truncate pr-6">{docLabel}</DialogTitle>
-			<p class="text-xs text-muted-foreground mt-1">ลากจุด 4 มุมให้ครอบเอกสาร — ระบบจะปรับมุมเอียงให้ตรงอัตโนมัติ</p>
+			<p class="text-xs text-muted-foreground mt-1">
+				ลากจุด 4 มุมให้ครอบเอกสาร — ระบบจะปรับมุมเอียงให้ตรงอัตโนมัติ
+			</p>
 		</DialogHeader>
 
 		{#if imageSrc}
@@ -396,7 +406,7 @@
 							stroke-width="2"
 							stroke-dasharray="8,5"
 						/>
-						{#each corners as corner, i}
+						{#each corners as corner, i (i)}
 							{@const dp = cornerToDisplay(corner)}
 							<circle
 								cx={dp.x}
@@ -405,15 +415,11 @@
 								fill="white"
 								stroke="#3b82f6"
 								stroke-width="2.5"
-								style="pointer-events: all; cursor: {perspDraggingIdx === i ? 'grabbing' : 'grab'}; touch-action: none;"
+								style="pointer-events: all; cursor: {perspDraggingIdx === i
+									? 'grabbing'
+									: 'grab'}; touch-action: none;"
 							/>
-							<circle
-								cx={dp.x}
-								cy={dp.y}
-								r="3"
-								fill="#3b82f6"
-								style="pointer-events: none"
-							/>
+							<circle cx={dp.x} cy={dp.y} r="3" fill="#3b82f6" style="pointer-events: none" />
 						{/each}
 					</svg>
 					{#if magnPos !== null}

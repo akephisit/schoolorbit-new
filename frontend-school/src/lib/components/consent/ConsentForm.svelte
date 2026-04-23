@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { consentApi, type ConsentType, type CreateConsentRequest } from '$lib/api/consent';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -23,6 +24,10 @@
 		onSkip,
 		showSkipButton = false
 	}: Props = $props();
+
+	// /privacy-policy route not yet defined in app — SvelteKit typed route dynamic interpolation.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SvelteKit typed route: /privacy-policy has no +page.svelte
+	const privacyPolicyUrl = resolve('/privacy-policy' as any);
 
 	// State
 	let consentTypes = $state<ConsentType[]>([]);
@@ -136,7 +141,7 @@
 					<Card.Description>ท่านจำเป็นต้องให้ความยินยอมเหล่านี้เพื่อใช้บริการ</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
-					{#each requiredConsents as consent}
+					{#each requiredConsents as consent (consent.code)}
 						<div class="rounded-lg border p-4 bg-muted/30">
 							<div class="flex items-start gap-3">
 								<Checkbox
@@ -174,7 +179,7 @@
 					<Card.Description>ท่านสามารถเลือกให้หรือไม่ให้ความยินยอมเหล่านี้ได้</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
-					{#each optionalConsents as consent}
+					{#each optionalConsents as consent (consent.code)}
 						<div class="rounded-lg border p-4 hover:bg-muted/30 transition-colors">
 							<div class="flex items-start gap-3">
 								<Checkbox
@@ -253,7 +258,7 @@
 				<p class="text-sm text-muted-foreground text-center">
 					การให้ความยินยอมนี้ถือว่าท่านได้อ่านและเข้าใจ
 					<a
-						href="/privacy-policy"
+						href={privacyPolicyUrl}
 						target="_blank"
 						class="text-primary underline hover:no-underline"
 					>

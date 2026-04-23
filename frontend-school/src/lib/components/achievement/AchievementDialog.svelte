@@ -12,11 +12,10 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
-	import { LoaderCircle, Upload, X, FileText } from 'lucide-svelte';
+	import { LoaderCircle, Upload, X } from 'lucide-svelte';
 	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
 	import { achievementSchema } from '$lib/validation/schemas';
-	import type { z } from 'zod';
 	import Compressor from 'compressorjs';
 
 	interface Props {
@@ -25,7 +24,7 @@
 		userId: string;
 		canSelectUser?: boolean;
 		onclose?: () => void;
-		onsave?: (data: any) => void;
+		onsave?: (data: Partial<Achievement>) => void;
 	}
 
 	let {
@@ -58,7 +57,6 @@
 	import * as Command from '$lib/components/ui/command';
 	import { Check, ChevronsUpDown } from 'lucide-svelte';
 	import { cn } from '$lib/utils';
-	import { tick } from 'svelte';
 
 	let staffList = $state<StaffListItem[]>([]);
 	let openCombobox = $state(false);
@@ -239,7 +237,7 @@
 				title,
 				description,
 				achievement_date: date,
-				image_path: imagePath
+				image_path: imagePath ?? undefined
 			});
 
 			loading = false;
