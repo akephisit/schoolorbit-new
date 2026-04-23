@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
 	import type { Achievement } from '$lib/types/achievement';
 	import { Calendar, Trash2, Pencil } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -12,10 +11,14 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 
-	export let achievement: Achievement;
-	export let readonly: boolean = false;
+	interface Props {
+		achievement: Achievement;
+		readonly?: boolean;
+		onedit?: (achievement: Achievement) => void;
+		ondelete?: (achievement: Achievement) => void;
+	}
 
-	const dispatch = createEventDispatcher();
+	let { achievement, readonly = false, onedit, ondelete }: Props = $props();
 
 	function formatDate(dateStr: string) {
 		const date = new Date(dateStr);
@@ -62,7 +65,7 @@
 				variant="ghost"
 				size="icon"
 				class="h-8 w-8 hover:text-primary"
-				onclick={() => dispatch('edit', achievement)}
+				onclick={() => onedit?.(achievement)}
 			>
 				<Pencil class="w-4 h-4" />
 			</Button>
@@ -70,7 +73,7 @@
 				variant="ghost"
 				size="icon"
 				class="h-8 w-8 hover:text-destructive text-muted-foreground"
-				onclick={() => dispatch('delete', achievement)}
+				onclick={() => ondelete?.(achievement)}
 			>
 				<Trash2 class="w-4 h-4" />
 			</Button>

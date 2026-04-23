@@ -229,7 +229,7 @@
 								type="checkbox"
 								value={period.id}
 								checked={selectedPeriodIds.includes(period.id)}
-								on:change={(e) => {
+								onchange={(e) => {
 									if (e.currentTarget.checked) {
 										selectedPeriodIds = [...selectedPeriodIds, period.id];
 									} else {
@@ -257,7 +257,7 @@
 								type="checkbox"
 								value={day.value}
 								checked={selectedDays.includes(day.value)}
-								on:change={(e) => {
+								onchange={(e) => {
 									if (e.currentTarget.checked) {
 										selectedDays = [...selectedDays, day.value];
 									} else {

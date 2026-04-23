@@ -1,16 +1,21 @@
 <script lang="ts">
 	import type { TimetableEntry } from '$lib/api/timetable';
 
-	export let title = '';
-	export let subTitle = '';
 	interface PeriodInput {
 		id: string;
 		order_index: number;
 		start_time: string;
 		end_time: string;
 	}
-	export let periods: PeriodInput[] = [];
-	export let timetableEntries: TimetableEntry[] = [];
+
+	interface Props {
+		title?: string;
+		subTitle?: string;
+		periods?: PeriodInput[];
+		timetableEntries?: TimetableEntry[];
+	}
+
+	let { title = '', subTitle = '', periods = [], timetableEntries = [] }: Props = $props();
 
 	// Helper for Days
 	const DAYS = [

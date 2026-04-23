@@ -484,11 +484,11 @@
 					{#each achievements as achievement (achievement.id)}
 						<AchievementCard
 							{achievement}
-							on:edit={(e) => {
-								selectedAchievement = e.detail;
+							onedit={(a) => {
+								selectedAchievement = a;
 								showAchievementDialog = true;
 							}}
-							on:delete={(e) => confirmDelete(e.detail)}
+							ondelete={(a) => confirmDelete(a)}
 						/>
 					{/each}
 				</div>
