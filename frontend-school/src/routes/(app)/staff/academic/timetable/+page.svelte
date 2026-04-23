@@ -1745,24 +1745,22 @@
 	let activitySlots = $state<ActivitySlot[]>([]);
 	let batchSlotId = $state('');
 	let loadingSlots = $state(false);
-	// ครูที่กำหนดใน slot (read-only info ใน SLOT mode — แสดงให้ user เห็น
-	// ว่าใครจะถูก attach; tei จะมาจาก activity_slot_instructors อัตโนมัติ
-	// ตอน backend สร้าง entry ไม่ต้องให้ user ติ๊กใน "ครู" อีก)
-	let batchSlotInstructors = $state<{ user_id: string; instructor_name?: string }[]>([]);
-
-	// Auto-fetch slot instructors เมื่อเปลี่ยน slot ใน SLOT mode
+	// SLOT mode: auto-populate ห้อง + ครู จาก slot metadata เมื่อเลือก slot
+	// (user สามารถ uncheck ได้ถ้าอยากเอาออก)
 	$effect(() => {
 		const sid = batchSlotId;
 		if (batchMode === 'SLOT' && sid && showBatchModal) {
+			const slot = activitySlots.find((s) => s.id === sid);
+			if (slot?.classroom_ids) {
+				batchClassrooms = [...slot.classroom_ids];
+			}
 			listSlotInstructors(sid)
 				.then((res) => {
-					if (batchSlotId === sid) batchSlotInstructors = res.data ?? [];
+					if (batchSlotId === sid) {
+						batchInstructors = (res.data ?? []).map((i) => i.user_id);
+					}
 				})
-				.catch(() => {
-					batchSlotInstructors = [];
-				});
-		} else {
-			batchSlotInstructors = [];
+				.catch(() => {});
 		}
 	});
 
@@ -1883,14 +1881,12 @@
 				slotIdToSend = batchSlotId;
 			}
 
-			// SLOT mode: tei มาจาก activity_slot_instructors อัตโนมัติ ไม่ต้องส่ง instructor_ids
-			// (ป้องกัน duplicate teacher-only entries)
-			const instructorIdsToSend = batchMode === 'SLOT' ? [] : batchInstructors;
-
 			// Backend รับ days_of_week: string[] → call เดียวจบ ทุก entry อยู่ใน batch เดียวกัน
+			// SLOT mode: tei attach ครูใน batchInstructors เข้า classroom entries (ไม่สร้าง
+			// teacher-only entry ซ้ำ — backend ข้ามให้เมื่อ activity_slot_id present)
 			const res = await createBatchTimetableEntries({
 				classroom_ids: batchClassrooms,
-				instructor_ids: instructorIdsToSend,
+				instructor_ids: batchInstructors,
 				days_of_week: batchDays,
 				period_ids: batchPeriodIds,
 				academic_semester_id: selectedSemesterId,
@@ -3689,80 +3685,60 @@
 					</div>
 				</div>
 
-				<!-- ครู -->
+				<!-- ครู (ใน SLOT mode — pre-populated จาก slot; แก้ได้) -->
 				<div>
-					{#if batchMode === 'SLOT' && batchSlotId}
-						<!-- SLOT mode: read-only info จาก activity_slot_instructors -->
-						<Label.Root class="text-xs">ครูในกิจกรรม (จาก slot — auto-attach)</Label.Root>
-						<div
-							class="mt-1 border rounded-md p-2 bg-emerald-50/50 border-emerald-200 text-xs min-h-[40px] flex flex-wrap gap-1 items-center"
-						>
-							{#if batchSlotInstructors.length === 0}
-								<span class="text-muted-foreground italic">
-									ไม่มีครูใน slot นี้ — กำหนดในหน้า Activities ก่อน
+					<div class="flex justify-between items-center mb-1">
+						<Label.Root class="text-xs">
+							ครู ({batchInstructors.length})
+							{#if batchMode === 'SLOT' && batchSlotId}
+								<span class="text-[10px] text-emerald-700 font-normal ml-1">
+									· auto จาก slot
 								</span>
-							{:else}
-								{#each batchSlotInstructors as si (si.user_id)}
-									<span
-										class="inline-flex items-center gap-1 bg-white border border-emerald-300 rounded px-2 py-0.5"
-									>
-										<Users class="w-3 h-3 text-emerald-600" />
-										{si.instructor_name || si.user_id}
-									</span>
-								{/each}
 							{/if}
-						</div>
-						<p class="text-[10px] text-muted-foreground mt-1">
-							ครูเหล่านี้จะถูก attach อัตโนมัติทุก entry ของ batch นี้
-						</p>
-					{:else}
-						<!-- TEXT mode: user pick เอง -->
-						<div class="flex justify-between items-center mb-1">
-							<Label.Root class="text-xs">ครู ({batchInstructors.length})</Label.Root>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-6 text-xs"
-								onclick={() => {
-									if (batchInstructors.length === instructors.length) {
-										batchInstructors = [];
-									} else {
-										batchInstructors = instructors.map((i) => i.id);
-									}
-								}}
-							>
-								{batchInstructors.length === instructors.length ? 'ล้าง' : 'เลือกทั้งหมด'}
-							</Button>
-						</div>
-						<div
-							class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-2 gap-1"
+						</Label.Root>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 text-xs"
+							onclick={() => {
+								if (batchInstructors.length === instructors.length) {
+									batchInstructors = [];
+								} else {
+									batchInstructors = instructors.map((i) => i.id);
+								}
+							}}
 						>
-							{#each instructors as instructor (instructor.id)}
-								<label
-									class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
-								>
-									<Checkbox
-										checked={batchInstructors.includes(instructor.id)}
-										onCheckedChange={() => {
-											if (batchInstructors.includes(instructor.id)) {
-												batchInstructors = batchInstructors.filter((i) => i !== instructor.id);
-											} else {
-												batchInstructors = [...batchInstructors, instructor.id];
-											}
-										}}
-									/>
-									<span class="truncate">{instructor.name}</span>
-								</label>
-							{:else}
-								<div
-									class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
-								>
-									<Users class="w-6 h-6 mb-1 opacity-20" />
-									<span class="text-xs">ไม่พบครู</span>
-								</div>
-							{/each}
-						</div>
-					{/if}
+							{batchInstructors.length === instructors.length ? 'ล้าง' : 'เลือกทั้งหมด'}
+						</Button>
+					</div>
+					<div
+						class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-2 gap-1"
+					>
+						{#each instructors as instructor (instructor.id)}
+							<label
+								class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
+							>
+								<Checkbox
+									checked={batchInstructors.includes(instructor.id)}
+									onCheckedChange={() => {
+										if (batchInstructors.includes(instructor.id)) {
+											batchInstructors = batchInstructors.filter((i) => i !== instructor.id);
+										} else {
+											batchInstructors = [...batchInstructors, instructor.id];
+										}
+									}}
+								/>
+								<span class="truncate">{instructor.name}</span>
+							</label>
+						{:else}
+							<div
+								class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
+							>
+								<Users class="w-6 h-6 mb-1 opacity-20" />
+								<span class="text-xs">ไม่พบครู</span>
+							</div>
+						{/each}
+					</div>
 				</div>
 			</div>
 			<div class="border-t pt-3 mt-1">

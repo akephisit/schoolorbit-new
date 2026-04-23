@@ -1499,10 +1499,12 @@ pub async fn create_batch_timetable_entries(
                     ON asca.slot_id = $11 AND asca.classroom_id = ne.classroom_id
                 WHERE (SELECT mode FROM slot_mode) = 'independent'
             UNION ALL
-            SELECT ne.id, asi.user_id, 'primary'
+            -- SLOT-sync: attach ครูจาก payload.instructor_ids (frontend pre-populate
+            -- จาก activity_slot_instructors แล้ว user อาจ uncheck เพื่อเอาออก)
+            SELECT ne.id, i.v, 'primary'
                 FROM new_entries ne
-                CROSS JOIN activity_slot_instructors asi
-                WHERE asi.slot_id = $11 AND (SELECT mode FROM slot_mode) = 'synchronized'
+                CROSS JOIN UNNEST($13::uuid[]) AS i(v)
+                WHERE (SELECT mode FROM slot_mode) = 'synchronized'
             ON CONFLICT DO NOTHING
             "#
         )
@@ -1518,6 +1520,7 @@ pub async fn create_batch_timetable_entries(
         .bind(&payload.note)                  // $10
         .bind(payload.activity_slot_id)       // $11
         .bind(batch_uuid)                     // $12
+        .bind(&payload.instructor_ids)        // $13
         .execute(&mut *tx).await
         .map_err(|e| {
             eprintln!("Failed bulk classroom batch INSERT: {}", e);
@@ -1526,7 +1529,8 @@ pub async fn create_batch_timetable_entries(
     }
 
     // === INSTRUCTOR-only entries — bulk INSERT + bulk TEI INSERT ===
-    if !payload.instructor_ids.is_empty() {
+    // ข้าม ถ้าเป็น SLOT mode (ครูถูก attach เข้า classroom entries' tei แล้วผ่าน CTE ด้านบน)
+    if !payload.instructor_ids.is_empty() && payload.activity_slot_id.is_none() {
         let total = payload.instructor_ids.len()
             * payload.days_of_week.len()
             * payload.period_ids.len();
