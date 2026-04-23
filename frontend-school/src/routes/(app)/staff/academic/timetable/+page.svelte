@@ -748,7 +748,14 @@
 	let selectedRoomId = $state<string>(''); // empty string = no room (default)
 
 	// Availability State
-	let occupiedSlots = $state<Set<string>>(new Set()); // Format: "DAY_PERIODID"
+	interface SlotConflict {
+		kind: 'classroom' | 'teacher';
+		teacher_name?: string;
+		subject: string;
+		classroom_name: string;
+		room_code?: string;
+	}
+	let slotConflicts = new SvelteMap<string, SlotConflict[]>();
 
 	// Drag validity map: key "DAY|PERIODID" → cell state (from POST /timetable/validate-moves)
 	// Populated on drag start for MOVE type; cleared on drag end.
@@ -761,62 +768,129 @@
 	}
 
 	function isSlotOccupiedByInstructor(day: string, periodId: string) {
-		return occupiedSlots.has(getSlotKey(day, periodId));
+		return slotConflicts.has(getSlotKey(day, periodId));
 	}
 
 	async function fetchInstructorConflicts(course: DragCourse) {
-		let conflicts = new SvelteSet<string>();
+		// 1. Detect MOVE entry (source-of-truth สำหรับทีม via tei)
+		let moveEntry: TimetableEntry | undefined;
+		if (dragType === 'MOVE' && draggedEntryId) {
+			moveEntry =
+				timetableEntries.find((e) => e.id === draggedEntryId) ??
+				rawTeamEntries.find((e) => e.id === draggedEntryId);
+		}
 
-		// 1. INSTRUCTOR VIEW
+		// 2. Target classroom (ที่จะวาง entry ลง)
+		let targetClassroomId: string | undefined;
 		if (viewMode === 'INSTRUCTOR') {
-			const classroomId = course.classroom_id;
-			if (!classroomId) return;
-
-			try {
-				const res = await listTimetableEntries({
-					classroom_id: classroomId,
-					academic_semester_id: selectedSemesterId
-				});
-				res.data.forEach((entry) => {
-					if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
-
-					// Conflict = entry ที่ viewer ไม่ได้อยู่ใน tei (ครูคนอื่น หรือ ghost ของเราเอง)
-					// เช็คจาก instructor_ids ตรง ๆ ไม่ใช่ "isMyCourse" เพราะ ghost คือ course
-					// ของฉันแต่ฉันไม่อยู่ใน cell นั้น — ไม่ควรวางทับ
-					const iAmOnEntry = (entry.instructor_ids ?? []).includes(selectedInstructorId);
-					if (iAmOnEntry) return;
-
-					conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
-				});
-				occupiedSlots = conflicts;
-			} catch (e) {
-				console.error('Failed to check conflicts', e);
-			}
+			targetClassroomId =
+				moveEntry?.classroom_id ?? course._classroom_id ?? course.classroom_id;
+		} else {
+			targetClassroomId = selectedClassroomId;
+		}
+		if (!targetClassroomId) {
+			slotConflicts.clear();
 			return;
 		}
 
-		// 2. CLASSROOM VIEW
-		const instructorId = course.primary_instructor_id;
-		if (!instructorId) {
-			occupiedSlots = new Set();
-			return;
-		}
-
-		try {
-			const res = await listTimetableEntries({
-				instructor_id: instructorId,
-				academic_semester_id: selectedSemesterId
-			});
-			res.data.forEach((entry) => {
-				if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
-
-				if (viewMode === 'CLASSROOM') {
-					if (entry.classroom_id === selectedClassroomId) return;
+		// 3. หาทีมครู
+		let teamIds: string[] = [];
+		if (moveEntry) {
+			// MOVE: ใช้ tei ปัจจุบันของ entry (source-of-truth ว่าใครสอน cell นี้จริง)
+			teamIds = moveEntry.instructor_ids ?? [];
+		} else if (course._isActivity) {
+			// ACTIVITY NEW — Independent เท่านั้น (synchronized ลากไม่ได้): 1 ครู/ห้อง
+			if (course.activity_slot_id) {
+				try {
+					const res = await listSlotClassroomAssignments(course.activity_slot_id);
+					const a = (res.data ?? []).find((x) => x.classroom_id === targetClassroomId);
+					if (a) teamIds = [a.instructor_id];
+				} catch {
+					/* ignore */
 				}
+			}
+		} else if (course.id) {
+			// COURSE NEW: ทีมจาก classroom_course_instructors
+			try {
+				const res = await listCourseInstructors(course.id);
+				teamIds = (res.data ?? []).map((m) => m.instructor_id);
+			} catch {
+				/* ignore */
+			}
+		}
 
-				conflicts.add(getSlotKey(entry.day_of_week, entry.period_id));
+		// 4. Fetch parallel: entries ของห้องปลายทาง + entries ของครูแต่ละคนในทีม
+		try {
+			const results = await Promise.all([
+				listTimetableEntries({
+					classroom_id: targetClassroomId,
+					academic_semester_id: selectedSemesterId
+				}),
+				...teamIds.map((id) =>
+					listTimetableEntries({
+						instructor_id: id,
+						academic_semester_id: selectedSemesterId
+					})
+				)
+			]);
+			const classroomEntries = results[0].data;
+			const teamEntriesList = results.slice(1).map((r) => r.data);
+
+			// Build ใน SvelteMap ใหม่ก่อน แล้วค่อย clear + copy ไปที่ slotConflicts (reactive)
+			// เพื่อไม่ให้ UI "กระพริบ" ตอน populate (clear ทันทีจะเห็นเปล่าชั่วขณะก่อน set ชุดใหม่)
+			const newConflicts = new SvelteMap<string, SlotConflict[]>();
+			const addConflict = (key: string, c: SlotConflict) => {
+				if (!newConflicts.has(key)) newConflicts.set(key, []);
+				newConflicts.get(key)!.push(c);
+			};
+
+			// 5a. Classroom-busy: ห้องปลายทางติดอยู่แล้ว และผู้ drop ไม่ได้อยู่ใน tei
+			//     pivotInstructor = ใครเป็นผู้ drop ของ cell นี้
+			//     - INSTRUCTOR view: selectedInstructor (grid viewer)
+			//     - CLASSROOM view: ไม่เช็ก pivot — ถ้าห้องติด = conflict เสมอ (ยังไม่ map ผู้ drop ได้ชัด)
+			const pivotInstructor = viewMode === 'INSTRUCTOR' ? selectedInstructorId : undefined;
+			classroomEntries.forEach((entry) => {
+				if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
+				if (pivotInstructor && (entry.instructor_ids ?? []).includes(pivotInstructor)) return;
+
+				const key = getSlotKey(entry.day_of_week, entry.period_id);
+				addConflict(key, {
+					kind: 'classroom',
+					subject:
+						entry.subject_code ||
+						entry.title ||
+						(entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
+					classroom_name: entry.classroom_name ?? '',
+					room_code: entry.room_code
+				});
 			});
-			occupiedSlots = conflicts;
+
+			// 5b. Team-busy: ครูแต่ละคนในทีมติดคาบที่ห้องอื่นในเวลาเดียวกัน (double-book)
+			teamIds.forEach((tid, idx) => {
+				const entries = teamEntriesList[idx];
+				const teacherInfo = instructors.find((i) => i.id === tid);
+				const teacherName = teacherInfo?.name ?? '?';
+
+				entries.forEach((entry) => {
+					if (dragType === 'MOVE' && entry.id === draggedEntryId) return;
+					if (entry.classroom_id === targetClassroomId) return; // ห้องเดียวกัน = ไม่ใช่ double-book
+
+					const key = getSlotKey(entry.day_of_week, entry.period_id);
+					addConflict(key, {
+						kind: 'teacher',
+						teacher_name: teacherName,
+						subject:
+							entry.subject_code ||
+							entry.title ||
+							(entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
+						classroom_name: entry.classroom_name ?? '',
+						room_code: entry.room_code
+					});
+				});
+			});
+
+			slotConflicts.clear();
+			newConflicts.forEach((v, k) => slotConflicts.set(k, v));
 		} catch (e) {
 			console.error('Failed to check conflicts', e);
 		}
@@ -857,25 +931,9 @@
 		};
 		draggedEntryId = null;
 
-		// แสดง conflict highlights ตาม viewMode (เหมือน drag วิชาปกติ)
-		if (viewMode === 'INSTRUCTOR' && classroomId) {
-			// โหมดครู → highlight คาบที่ "ห้องปลายทาง" ติดอยู่แล้ว (แต่เราไม่อยู่ใน tei)
-			fetchInstructorConflicts({ id: activity.id, classroom_id: classroomId });
-		} else if (
-			viewMode === 'CLASSROOM' &&
-			activity.scheduling_mode === 'independent' &&
-			classroomId
-		) {
-			// โหมดห้องเรียน → lookup ครูประจำห้องของ slot นี้ → highlight คาบที่ครูคนนั้นติดอยู่ที่อื่น
-			listSlotClassroomAssignments(activity.id)
-				.then((res) => {
-					const assignment = (res.data ?? []).find((a) => a.classroom_id === classroomId);
-					if (assignment) {
-						fetchInstructorConflicts({ id: '', primary_instructor_id: assignment.instructor_id });
-					}
-				})
-				.catch(() => {});
-		}
+		// conflict highlights: ใช้ draggedCourse ที่มี _isActivity + _classroom_id
+		// fetchInstructorConflicts จัดการ target classroom + team lookup เองตาม viewMode
+		fetchInstructorConflicts(draggedCourse);
 
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = 'copy';
@@ -1000,7 +1058,7 @@
 		}
 		draggedCourse = null;
 		draggedEntryId = null;
-		occupiedSlots = new Set();
+		slotConflicts.clear();
 		moveValidityMap = new Map();
 	}
 
@@ -2761,12 +2819,51 @@
 											{/if}
 										</div>
 									{:else if isOccupied}
+										{@const conflicts =
+											slotConflicts.get(getSlotKey(day.value, period.id)) ?? []}
+										{@const primary = conflicts[0]}
 										<div
-											class="absolute inset-0 flex items-center justify-center p-2 text-center opacity-40 select-none"
+											class="absolute inset-0 flex flex-col items-center justify-center p-1 text-center select-none gap-0.5"
+											title={conflicts
+												.map((c) =>
+													c.kind === 'classroom'
+														? `📚 ห้องติด: ${c.subject}${c.classroom_name ? ' (' + c.classroom_name + ')' : ''}${c.room_code ? ' ห้อง ' + c.room_code : ''}`
+														: `👤 ${c.teacher_name} ติด: ${c.subject}${c.classroom_name ? ' (' + c.classroom_name + ')' : ''}${c.room_code ? ' ห้อง ' + c.room_code : ''}`
+												)
+												.join('\n')}
 										>
-											<div class="text-xs text-red-500 font-medium">
-												{viewMode === 'INSTRUCTOR' ? 'ห้องนี้ไม่ว่าง' : 'ครูติดสอน'}
-											</div>
+											{#if primary}
+												<div
+													class="text-[11px] text-red-600 font-semibold truncate max-w-full leading-tight"
+												>
+													{#if primary.kind === 'classroom'}
+														📚 {primary.subject || 'ไม่ว่าง'}
+													{:else}
+														👤 {primary.teacher_name}
+													{/if}
+												</div>
+												<div
+													class="text-[10px] text-red-500/80 truncate max-w-full leading-tight"
+												>
+													{#if primary.kind === 'teacher'}
+														{primary.subject}
+														{#if primary.classroom_name}
+															<span class="opacity-70"> · {primary.classroom_name}</span>
+														{/if}
+													{:else if primary.room_code}
+														ห้อง {primary.room_code}
+													{/if}
+												</div>
+												{#if conflicts.length > 1}
+													<div class="text-[9px] text-red-400 leading-none">
+														+{conflicts.length - 1} ติดเพิ่ม
+													</div>
+												{/if}
+											{:else}
+												<div class="text-xs text-red-500 font-medium">
+													{viewMode === 'INSTRUCTOR' ? 'ห้องนี้ไม่ว่าง' : 'ครูติดสอน'}
+												</div>
+											{/if}
 										</div>
 									{:else if draggedCourse}
 										<div
