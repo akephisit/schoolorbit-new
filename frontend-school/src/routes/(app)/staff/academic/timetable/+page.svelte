@@ -737,6 +737,16 @@
 
 	// Room Selection State
 	let showRoomModal = $state(false);
+
+	// Dialog ปิดโดยคลิกนอก/กด ESC → bind:open จะ set false เองแต่ cleanup ไม่ทำงาน
+	// watch: ถ้า modal ปิดตอน drop ยัง pending → treat as cancel (ลบ highlights/conflicts)
+	$effect(() => {
+		if (!showRoomModal && isDropPending) {
+			isDropPending = false;
+			pendingDropContext = null;
+			handleDragEnd();
+		}
+	});
 	let pendingDropContext = $state<{
 		day: string;
 		periodId: string;
@@ -2645,7 +2655,7 @@
 									class="flex-1 border-r border-b min-w-[100px] relative transition-colors {isOccupied
 										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
 										: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied && !validity
-										? 'bg-blue-50/30'
+										? 'bg-green-50/50 ring-1 ring-inset ring-green-400/60'
 										: ''} {validityClass} {draggedCourse &&
 									entry &&
 									isOccupied &&
