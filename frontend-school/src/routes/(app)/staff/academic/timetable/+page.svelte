@@ -751,7 +751,8 @@
 	interface SlotConflict {
 		kind: 'classroom' | 'teacher';
 		teacher_name?: string;
-		subject: string;
+		subject_code: string;
+		subject_name: string;
 		classroom_name: string;
 		room_code?: string;
 	}
@@ -856,10 +857,10 @@
 				const key = getSlotKey(entry.day_of_week, entry.period_id);
 				addConflict(key, {
 					kind: 'classroom',
-					subject:
+					subject_code:
 						entry.subject_code ||
-						entry.title ||
 						(entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
+					subject_name: entry.subject_name_th || entry.title || '',
 					classroom_name: entry.classroom_name ?? '',
 					room_code: entry.room_code
 				});
@@ -879,10 +880,10 @@
 					addConflict(key, {
 						kind: 'teacher',
 						teacher_name: teacherName,
-						subject:
+						subject_code:
 							entry.subject_code ||
-							entry.title ||
 							(entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
+						subject_name: entry.subject_name_th || entry.title || '',
 						classroom_name: entry.classroom_name ?? '',
 						room_code: entry.room_code
 					});
@@ -2823,37 +2824,55 @@
 											slotConflicts.get(getSlotKey(day.value, period.id)) ?? []}
 										{@const primary = conflicts[0]}
 										<div
-											class="absolute inset-0 flex flex-col items-center justify-center p-1 text-center select-none gap-0.5"
+											class="absolute inset-0 flex flex-col items-center justify-center px-1 py-0.5 text-center select-none gap-0.5"
 											title={conflicts
-												.map((c) =>
-													c.kind === 'classroom'
-														? `📚 ห้องติด: ${c.subject}${c.classroom_name ? ' (' + c.classroom_name + ')' : ''}${c.room_code ? ' ห้อง ' + c.room_code : ''}`
-														: `👤 ${c.teacher_name} ติด: ${c.subject}${c.classroom_name ? ' (' + c.classroom_name + ')' : ''}${c.room_code ? ' ห้อง ' + c.room_code : ''}`
-												)
+												.map((c) => {
+													const subj = [c.subject_code, c.subject_name]
+														.filter(Boolean)
+														.join(' · ');
+													const loc = [
+														c.classroom_name,
+														c.room_code ? `ห้อง ${c.room_code}` : ''
+													]
+														.filter(Boolean)
+														.join(' ');
+													return c.kind === 'classroom'
+														? `ห้องติด: ${subj}${loc ? ' (' + loc + ')' : ''}`
+														: `${c.teacher_name} ติด: ${subj}${loc ? ' (' + loc + ')' : ''}`;
+												})
 												.join('\n')}
 										>
 											{#if primary}
 												<div
-													class="text-[11px] text-red-600 font-semibold truncate max-w-full leading-tight"
+													class="flex items-center gap-1 text-[11px] text-red-600 font-semibold truncate max-w-full leading-tight"
 												>
 													{#if primary.kind === 'classroom'}
-														📚 {primary.subject || 'ไม่ว่าง'}
+														<BookOpen class="w-3 h-3 shrink-0" />
+														<span class="truncate">{primary.subject_code || 'ไม่ว่าง'}</span>
 													{:else}
-														👤 {primary.teacher_name}
+														<Users class="w-3 h-3 shrink-0" />
+														<span class="truncate">{primary.teacher_name}</span>
 													{/if}
 												</div>
-												<div
-													class="text-[10px] text-red-500/80 truncate max-w-full leading-tight"
-												>
-													{#if primary.kind === 'teacher'}
-														{primary.subject}
-														{#if primary.classroom_name}
-															<span class="opacity-70"> · {primary.classroom_name}</span>
+												{#if primary.subject_name}
+													<div
+														class="text-[10px] text-red-500/80 truncate max-w-full leading-tight"
+													>
+														{primary.subject_name}
+													</div>
+												{/if}
+												{#if primary.kind === 'teacher' || primary.room_code}
+													<div
+														class="text-[9px] text-red-500/70 truncate max-w-full leading-tight"
+													>
+														{#if primary.kind === 'teacher'}
+															{primary.classroom_name}{#if primary.room_code}
+																· ห้อง {primary.room_code}{/if}
+														{:else}
+															ห้อง {primary.room_code}
 														{/if}
-													{:else if primary.room_code}
-														ห้อง {primary.room_code}
-													{/if}
-												</div>
+													</div>
+												{/if}
 												{#if conflicts.length > 1}
 													<div class="text-[9px] text-red-400 leading-none">
 														+{conflicts.length - 1} ติดเพิ่ม
