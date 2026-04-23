@@ -1886,18 +1886,11 @@
 			batchSlotId = '';
 			batchInstructors = [];
 
-			// Reload if current view is affected
-			const classroomAffected =
-				viewMode === 'CLASSROOM' &&
-				selectedClassroomId &&
-				batchClassrooms.includes(selectedClassroomId);
-			const instructorAffected =
-				viewMode === 'INSTRUCTOR' &&
-				selectedInstructorId &&
-				batchInstructors.includes(selectedInstructorId);
-			if (classroomAffected || instructorAffected) {
-				loadTimetable();
-			}
+			// Reload เสมอ — batch สามารถกระทบ view ปัจจุบันได้ทางอ้อม
+			// (force=true ลบคาบเก่า, teacher entries ใน INSTRUCTOR view แม้ไม่ได้ tick ตัวเอง,
+			//  tei ที่ derive จาก slot/course)
+			loadTimetable();
+			loadSidebarActivitySlots();
 		} catch (e: unknown) {
 			toast.error((e instanceof Error ? e.message : String(e)) || 'บันทึกไม่สำเร็จ');
 		} finally {
