@@ -1848,37 +1848,23 @@
 				slotIdToSend = batchSlotId;
 			}
 
-			// ยิงทีละวัน (backend รับวันเดียวต่อ call) รวมผลทุกวัน
-			// Generate batch_id ที่ frontend → ทุกวัน/ทุกคาบ/ทุกห้อง/ทุกครู อยู่ใน batch เดียวกัน
-			// ("ลบทั้งกลุ่ม" จะลบครบทุก cell ที่สร้างพร้อมกันในการกดบันทึกครั้งเดียวนี้)
-			const sharedBatchId = crypto.randomUUID();
-			const allConflicts: { message: string }[] = [];
-			for (const day of batchDays) {
-				const res = await createBatchTimetableEntries({
-					classroom_ids: batchClassrooms,
-					instructor_ids: batchInstructors,
-					day_of_week: day,
-					period_ids: batchPeriodIds,
-					academic_semester_id: selectedSemesterId,
-					entry_type: entryTypeToSend as 'ACTIVITY' | 'BREAK' | 'HOMEROOM',
-					title: titleToSend,
-					room_id: batchRoomId === 'none' ? undefined : batchRoomId,
-					force: batchForce,
-					activity_slot_id: slotIdToSend,
-					batch_id: sharedBatchId
-				});
-				if (res.success === false && res.conflicts) {
-					allConflicts.push(
-						...res.conflicts.map((c: ConflictInfo) => ({
-							message: `${DAYS.find((d) => d.value === day)?.label || day}: ${c.message}`
-						}))
-					);
-				}
-			}
+			// Backend รับ days_of_week: string[] → call เดียวจบ ทุก entry อยู่ใน batch เดียวกัน
+			const res = await createBatchTimetableEntries({
+				classroom_ids: batchClassrooms,
+				instructor_ids: batchInstructors,
+				days_of_week: batchDays,
+				period_ids: batchPeriodIds,
+				academic_semester_id: selectedSemesterId,
+				entry_type: entryTypeToSend as 'ACTIVITY' | 'BREAK' | 'HOMEROOM',
+				title: titleToSend,
+				room_id: batchRoomId === 'none' ? undefined : batchRoomId,
+				force: batchForce,
+				activity_slot_id: slotIdToSend
+			});
 
-			if (allConflicts.length > 0) {
+			if (res.success === false && res.conflicts) {
 				toast.error('พบรายการที่ชนกัน');
-				for (const c of allConflicts) toast.error(c.message);
+				for (const c of res.conflicts as ConflictInfo[]) toast.error(c.message);
 				submitting = false;
 				return;
 			}
