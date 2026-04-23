@@ -59,7 +59,7 @@
 
 		<!-- Main Content - scroll อยู่ที่นี่ -->
 		<main class="flex-1 min-h-0 overflow-y-auto">
-			<div class="p-4 lg:p-6">
+			<div class="p-4 lg:p-6 h-full">
 				{@render children()}
 			</div>
 		</main>

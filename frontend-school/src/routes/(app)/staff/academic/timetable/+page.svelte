@@ -2061,8 +2061,8 @@
 	<!-- Row 1: Title + View Mode + Status + Avatars + Actions -->
 	<div class="flex items-center justify-between gap-3 flex-wrap">
 		<div class="flex items-center gap-3">
-			<h2 class="text-xl font-bold flex items-center gap-2">
-				<CalendarDays class="w-5 h-5" />
+			<h2 class="text-2xl font-bold flex items-center gap-2">
+				<CalendarDays class="w-6 h-6" />
 				จัดตารางสอน
 			</h2>
 
@@ -2101,15 +2101,15 @@
 				<Tooltip.Root>
 					<Tooltip.Trigger>
 						<div
-							class="flex items-center gap-1.5 px-2 py-1 rounded-full border bg-white/50 backdrop-blur shadow-sm"
+							class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border bg-white/50 backdrop-blur shadow-sm"
 						>
 							<div
 								class="w-2 h-2 rounded-full {$isConnected
 									? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]'
 									: 'bg-red-500'}"
 							></div>
-							<span class="text-xs font-medium text-muted-foreground">
-								{$isConnected ? $activeUsers.length : 'Offline'}
+							<span class="text-xs font-semibold text-muted-foreground">
+								{$isConnected ? `Online (${$activeUsers.length})` : 'Offline'}
 							</span>
 						</div>
 					</Tooltip.Trigger>
@@ -2177,55 +2177,28 @@
 
 			<div class="w-px h-5 bg-border mx-1"></div>
 
-			<Tooltip.Provider>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<Button
-							variant="outline"
-							size="sm"
-							onclick={() => {
-								goto(resolve('/staff/academic/timetable/scheduling/auto-schedule'));
-							}}
-						>
-							<Zap class="w-4 h-4 mr-1.5 text-orange-500" />
-							Auto
-						</Button>
-					</Tooltip.Trigger>
-					<Tooltip.Content>จัดตารางสอนอัตโนมัติ</Tooltip.Content>
-				</Tooltip.Root>
-			</Tooltip.Provider>
+			<Button
+				variant="outline"
+				onclick={() => {
+					goto(resolve('/staff/academic/timetable/scheduling/auto-schedule'));
+				}}
+			>
+				<Zap class="w-4 h-4 mr-2 text-orange-500" />
+				จัดอัตโนมัติ
+			</Button>
 
-			<Tooltip.Provider>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<Button variant="outline" size="sm" onclick={() => (showBatchModal = true)}>
-							<PlusCircle class="w-4 h-4 mr-1.5" /> Batch
-						</Button>
-					</Tooltip.Trigger>
-					<Tooltip.Content>เพิ่มกิจกรรมพิเศษ (Batch)</Tooltip.Content>
-				</Tooltip.Root>
-			</Tooltip.Provider>
+			<Button variant="outline" onclick={() => (showBatchModal = true)}>
+				<PlusCircle class="w-4 h-4 mr-2" /> กิจกรรมพิเศษ
+			</Button>
 
-			<Tooltip.Provider>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<Button
-							variant="outline"
-							size="sm"
-							onclick={handleExportPDF}
-							disabled={isExporting}
-						>
-							{#if isExporting}
-								<Loader2 class="w-4 h-4 mr-1.5 animate-spin" />
-							{:else}
-								<Download class="w-4 h-4 mr-1.5" />
-							{/if}
-							PDF
-						</Button>
-					</Tooltip.Trigger>
-					<Tooltip.Content>ดาวน์โหลด PDF</Tooltip.Content>
-				</Tooltip.Root>
-			</Tooltip.Provider>
+			<Button variant="outline" onclick={handleExportPDF} disabled={isExporting}>
+				{#if isExporting}
+					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+				{:else}
+					<Download class="w-4 h-4 mr-2" />
+				{/if}
+				ดาวน์โหลด PDF
+			</Button>
 		</div>
 	</div>
 
@@ -2307,13 +2280,13 @@
 		role="application"
 	>
 		<!-- Left Sidebar: Courses -->
-		<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden">
-			<Card.Header class="py-2 px-3 border-b">
-				<Card.Title class="text-sm flex items-center gap-2">
+		<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden gap-0 py-0">
+			<div class="py-2 px-3 border-b shrink-0">
+				<div class="text-sm font-semibold flex items-center gap-2">
 					<BookOpen class="w-4 h-4" /> รายวิชา
 					<span class="text-[10px] font-normal text-muted-foreground ml-auto"> ลากไปวาง </span>
-				</Card.Title>
-			</Card.Header>
+				</div>
+			</div>
 			<div class="flex-1 overflow-y-auto p-2 space-y-2 bg-muted/20">
 				{#each unscheduledCourses as course (course.id)}
 					{@const lockedBy = getDragOwner(undefined, course.id)}
@@ -2490,7 +2463,7 @@
 		</Card.Root>
 
 		<!-- Right Content: Timetable Grid -->
-		<Card.Root class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none">
+		<Card.Root class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none gap-0 py-0">
 			<div class="overflow-auto flex-1">
 				<div class="min-w-[800px] h-full flex flex-col">
 					<!-- Header Row (Periods) -->
