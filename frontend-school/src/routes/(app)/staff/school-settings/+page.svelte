@@ -53,10 +53,12 @@
 				form.append('file', pendingFile);
 				form.append('file_type', 'school_logo');
 				form.append('is_public', 'true');
-				const res = await apiClient.postMultipart<never>('/api/files/upload', form);
-				const uploaded = (
-					res as unknown as { file?: { id: string; url: string; storage_path: string } }
-				).file;
+				const res = (await apiClient.postMultipart<unknown>('/api/files/upload', form)) as {
+					success: boolean;
+					error?: string;
+					file?: { id: string; url: string; storage_path: string };
+				};
+				const uploaded = res.file;
 				if (!res.success || !uploaded) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
 				pathToSave = uploaded.storage_path;
 				logoUrl = uploaded.url;

@@ -14,6 +14,7 @@
 		type AdmissionExamSubject,
 		type ApplicationListItem,
 		type ExamRoomGroup,
+		type RawScore,
 		getAllScores
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
@@ -37,12 +38,6 @@
 	let loading = $state(true);
 	let saving = $state(false);
 	let selectedTrack = $state('');
-	interface RawScore {
-		applicationId: string;
-		subjectId: string;
-		score?: number | null;
-		status?: string;
-	}
 	let allRawScores: RawScore[] = [];
 	let activeSubjectIds: string[] = $state([]);
 
@@ -76,7 +71,7 @@
 			tracks = t;
 			subjects = s;
 			activeSubjectIds = s.map((sub) => sub.id);
-			allRawScores = allS as unknown as RawScore[];
+			allRawScores = allS;
 			seatGroups = Array.isArray(seatData) ? seatData : [];
 
 			// สร้าง set ของ absent จาก status ใน allRawScores

@@ -3,11 +3,10 @@
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { User, Calendar, BookOpen, Award } from 'lucide-svelte';
-	import { getOwnProfile } from '$lib/api/students';
+	import { getOwnProfile, type Student } from '$lib/api/students';
 	import { toast } from 'svelte-sonner';
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let student = $state<any>(null);
+	let student = $state<Student | null>(null);
 	let loading = $state(true);
 
 	onMount(async () => {

@@ -7,10 +7,9 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
 	import { User, Edit, Save, X } from 'lucide-svelte';
-	import { getOwnProfile, updateOwnProfile } from '$lib/api/students';
+	import { getOwnProfile, updateOwnProfile, type Student } from '$lib/api/students';
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let student = $state<any>(null);
+	let student = $state<Student | null>(null);
 	let loading = $state(true);
 	let editing = $state(false);
 	let saving = $state(false);
@@ -65,9 +64,9 @@
 
 	function handleCancel() {
 		// Reset to original values
-		phone = student.phone || '';
-		address = student.address || '';
-		nickname = student.nickname || '';
+		phone = student?.phone || '';
+		address = student?.address || '';
+		nickname = student?.nickname || '';
 		editing = false;
 	}
 </script>

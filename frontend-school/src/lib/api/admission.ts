@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, type ApiResponse } from './client';
 
 // ==========================================
 // Types
@@ -218,6 +218,13 @@ export interface ExamScore {
 	subjectName?: string;
 	subjectCode?: string;
 	maxScore?: number;
+}
+
+export interface RawScore {
+	applicationId: string;
+	subjectId: string;
+	score?: number | null;
+	status?: string;
 }
 
 export interface RoomAssignment {
@@ -453,13 +460,8 @@ export async function getApplication(
 ): Promise<{ application: AdmissionApplication; documents: ApplicationDocument[] }> {
 	const res = (await apiClient.get<AdmissionApplication>(
 		`/api/admission/applications/${id}`
-	)) as unknown as {
-		success: boolean;
-		error?: string;
-		data: AdmissionApplication;
-		documents: ApplicationDocument[];
-	};
-	if (!res.success) throw new Error(res.error);
+	)) as ApiResponse<AdmissionApplication> & { documents?: ApplicationDocument[] };
+	if (!res.success || !res.data) throw new Error(res.error);
 	return { application: res.data, documents: res.documents ?? [] };
 }
 
@@ -492,10 +494,10 @@ export async function unverifyApplication(id: string) {
 // Scores API
 // ==========================================
 
-export async function getAllScores(roundId: string) {
-	const res = await apiClient.get(`/api/admission/rounds/${roundId}/scores`);
+export async function getAllScores(roundId: string): Promise<RawScore[]> {
+	const res = await apiClient.get<RawScore[]>(`/api/admission/rounds/${roundId}/scores`);
 	if (!res.success) throw new Error(res.error);
-	return res.data;
+	return res.data ?? [];
 }
 
 export async function getApplicationScores(id: string) {
@@ -628,10 +630,12 @@ export async function assignRoomsGlobal(roundId: string, method?: string, roomOr
 	return res;
 }
 
-export async function sortRoomStudents(roundId: string) {
-	const res = await apiClient.post(`/api/admission/rounds/${roundId}/sort-room-students`);
+export async function sortRoomStudents(roundId: string): Promise<{ updated: number }> {
+	const res = (await apiClient.post(
+		`/api/admission/rounds/${roundId}/sort-room-students`
+	)) as ApiResponse<unknown> & { updated?: number };
 	if (!res.success) throw new Error(res.error);
-	return res as unknown as { updated: number };
+	return { updated: res.updated ?? 0 };
 }
 
 export async function autoAssignStudentIds(roundId: string, startNumber: number) {
@@ -1150,7 +1154,10 @@ export async function batchUpdateStudentIds(
 	roundId: string,
 	updates: { applicationId: string; studentId: string | null }[]
 ): Promise<{ updated: number }> {
-	const res = await apiClient.patch(`/api/admission/rounds/${roundId}/student-ids`, updates);
+	const res = (await apiClient.patch(
+		`/api/admission/rounds/${roundId}/student-ids`,
+		updates
+	)) as ApiResponse<unknown> & { updated?: number };
 	if (!res.success) throw new Error(res.error);
-	return res as unknown as { updated: number };
+	return { updated: res.updated ?? 0 };
 }

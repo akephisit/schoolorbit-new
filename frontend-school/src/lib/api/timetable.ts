@@ -177,7 +177,7 @@ export const listTimetableEntries = async (
 		/** คู่กับ instructor_id: รวม entries ของ course ที่ instructor อยู่ในทีม (รวม ghost cells) */
 		include_team_ghosts?: boolean;
 	} = {}
-): Promise<{ data: TimetableEntry[] }> => {
+): Promise<{ data: TimetableEntry[]; current_seq?: number }> => {
 	const params = new URLSearchParams();
 	if (filters.classroom_id) params.append('classroom_id', filters.classroom_id);
 	if (filters.student_id) params.append('student_id', filters.student_id);
@@ -193,7 +193,6 @@ export const listTimetableEntries = async (
 	return await fetchApi(`/api/academic/timetable${queryString}`);
 };
 
-/** Response signature: { data: TimetableEntry[], current_seq: number } */
 export const listTimetableEntriesWithSeq = listTimetableEntries;
 
 export const createBatchTimetableEntries = async (data: CreateBatchTimetableEntriesRequest) => {

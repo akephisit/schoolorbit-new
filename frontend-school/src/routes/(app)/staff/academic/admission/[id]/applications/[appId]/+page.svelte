@@ -467,13 +467,11 @@
 	];
 
 	function toggleEditParentStatus(val: string) {
-		const current = (editData.parentStatus as string[]) ?? [];
+		const current = editData.parentStatus ?? [];
 		if (current.includes(val)) {
-			editData.parentStatus = current.filter(
-				(s: string) => s !== val
-			) as unknown as typeof editData.parentStatus;
+			editData.parentStatus = current.filter((s) => s !== val);
 		} else {
-			editData.parentStatus = [...current, val] as unknown as typeof editData.parentStatus;
+			editData.parentStatus = [...current, val];
 		}
 	}
 

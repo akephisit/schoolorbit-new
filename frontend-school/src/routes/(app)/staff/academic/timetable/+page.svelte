@@ -454,8 +454,8 @@
 				timetableEntries = res.data;
 			}
 			// Sync seq: ตั้งจุดเริ่ม tracking patch events จาก response
-			if (typeof (res as unknown as { current_seq?: unknown }).current_seq === 'number') {
-				setInitialSeq((res as unknown as { current_seq: number }).current_seq);
+			if (typeof res.current_seq === 'number') {
+				setInitialSeq(res.current_seq);
 			}
 		} catch {
 			toast.error('โหลดตารางสอนไม่สำเร็จ');
@@ -1088,10 +1088,8 @@
 			try {
 				submitting = true;
 				const payload: UpdateTimetableEntryRequest = {};
-				const dc = draggedCourse as unknown as ClassroomCourse & {
-					_isActivity?: boolean;
-					activity_slot_id?: string;
-				};
+				const dc = draggedCourse;
+				if (!dc) return;
 				if (dc._isActivity) {
 					payload.activity_slot_id = dc.activity_slot_id;
 					payload.classroom_course_id = null;
@@ -1202,12 +1200,7 @@
 				const courseCode = course.subject_code;
 				let payload: CreateTimetableEntryRequest;
 
-				const ac = course as unknown as ClassroomCourse & {
-					_isActivity?: boolean;
-					activity_slot_id?: string;
-					title_th?: string;
-					_classroom_id?: string;
-				};
+				const ac = course;
 				if (ac._isActivity) {
 					const activityClassroomId = ac._classroom_id || selectedClassroomId;
 					// Check if independent slot has instructor assigned for this classroom
