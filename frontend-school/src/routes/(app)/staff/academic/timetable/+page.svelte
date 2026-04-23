@@ -902,23 +902,6 @@
 		}
 	}
 
-	function createDragImage(text: string, subtext: string) {
-		const div = document.createElement('div');
-		div.className =
-			'fixed top-[-1000px] left-[-1000px] bg-white border border-primary/50 shadow-xl rounded-lg p-3 w-[180px] z-[9999] flex flex-col gap-1';
-		div.innerHTML = `
-            <div class="flex items-center gap-2">
-                <div class="p-1 rounded bg-primary/10 text-primary">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                </div>
-                <span class="font-bold text-sm truncate text-primary">${text}</span>
-            </div>
-            <div class="text-xs text-muted-foreground truncate pl-1">${subtext}</div>
-        `;
-		document.body.appendChild(div);
-		return div;
-	}
-
 	function handleActivityDragStart(
 		event: DragEvent,
 		activity: (typeof unscheduledActivities)[number]
@@ -944,12 +927,7 @@
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = 'copy';
 			event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'NEW', id: activity.id }));
-			const dragElement = createDragImage(
-				ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type,
-				activity.name
-			);
-			event.dataTransfer.setDragImage(dragElement, 10, 10);
-			setTimeout(() => document.body.removeChild(dragElement), 0);
+			// ใช้ browser native ghost (translucent copy ของ card ที่ลาก) → ไม่บัง hover popup
 		}
 
 		// Notify others
@@ -1025,13 +1003,7 @@
 				})
 			);
 
-			// Custom Drag Image (courseToCheck is always set above)
-			const dragTitle = courseToCheck!.subject_code || 'วิชา';
-			const dragSub = courseToCheck!.title_th || courseToCheck!.title || '...';
-			const dragElement = createDragImage(dragTitle, dragSub);
-			event.dataTransfer.setDragImage(dragElement, 10, 10);
-
-			setTimeout(() => document.body.removeChild(dragElement), 0);
+			// ใช้ browser native ghost — ไม่ setDragImage เพราะ custom image บัง hover popup
 		}
 
 		// Notify others
