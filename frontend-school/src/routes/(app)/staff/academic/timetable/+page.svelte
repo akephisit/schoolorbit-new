@@ -2807,12 +2807,18 @@
 												class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
 											>
 												{#if viewMode === 'CLASSROOM'}
-													<div class="flex items-center gap-1 truncate">
-														<Users class="w-3 h-3 shrink-0" />
-														{entry.instructor_names && entry.instructor_names.length > 0
+													{@const teacherText =
+														entry.instructor_names && entry.instructor_names.length > 0
 															? entry.instructor_names.join(', ')
-															: entry.instructor_name || '-'}
-													</div>
+															: entry.instructor_name && entry.instructor_name !== '-'
+																? entry.instructor_name
+																: ''}
+													{#if teacherText}
+														<div class="flex items-center gap-1 truncate">
+															<Users class="w-3 h-3 shrink-0" />
+															{teacherText}
+														</div>
+													{/if}
 												{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
 													<!-- Independent: แสดงชื่อห้อง -->
 													<div class="flex items-center gap-1 truncate">
