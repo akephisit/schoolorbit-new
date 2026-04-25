@@ -2739,7 +2739,13 @@
 													? entry.instructor_name
 													: ''}
 										{@const hasMetaRow =
-											viewMode === 'CLASSROOM' ? !!teacherText || !!entry.room_id : true}
+											viewMode === 'CLASSROOM'
+												? !!teacherText || !!entry.room_id
+												: !!entry.classroom_name ||
+													!!entry.activity_slot_id ||
+													isGhost ||
+													coTeacherCount > 0 ||
+													!!entry.room_id}
 										<!-- Timetable Entry Card -->
 										<div
 											class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !==
@@ -2839,10 +2845,10 @@
 																{entry.activity_slot_name || '-'}
 															{/if}
 														</div>
-													{:else}
+													{:else if entry.classroom_name}
 														<div class="flex items-center gap-1 truncate">
 															<School class="w-3 h-3 shrink-0" />
-															{entry.classroom_name || '-'}
+															{entry.classroom_name}
 														</div>
 													{/if}
 
