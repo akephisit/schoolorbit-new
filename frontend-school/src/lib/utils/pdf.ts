@@ -9,6 +9,7 @@ import type { TimetableEntry } from '$lib/api/timetable';
 interface PdfPeriod {
 	id: string;
 	order_index: number;
+	name?: string | null;
 	start_time: string;
 	end_time: string;
 }
@@ -64,10 +65,13 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 	const headerRow: TableCell[] = [
 		{ text: 'วัน / เวลา', bold: true, alignment: 'center', fillColor: '#f3f4f6', margin: [0, 5] }
 	];
+	// ใส่ \n เพื่อรักษา line height ให้คอลัมน์ที่ไม่มีชื่อสูงเท่ากับคอลัมน์ที่มีชื่อ
+	// (ตรงกับ behavior ของหน้าจัดตารางที่ใช้ nbsp placeholder)
 	periods.forEach((p) => {
+		const labelText = p.name && p.name.trim() ? p.name : ' ';
 		headerRow.push({
 			text: [
-				{ text: `คาบที่ ${p.order_index}\n`, bold: true, fontSize: 10 },
+				{ text: `${labelText}\n`, bold: true, fontSize: 9 },
 				{
 					text: `${formatTime(p.start_time)} - ${formatTime(p.end_time)}`,
 					fontSize: 8,
@@ -171,7 +175,9 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 		{
 			table: {
 				headerRows: 1,
-				widths: ['auto', ...periods.map(() => '*')],
+				// day column: fixed กระชับ; period columns: แชร์ space ที่เหลือเท่าๆ กัน
+				// fix(overflow): ใช้ค่าตายตัวแทน 'auto' ป้องกันคอลัมน์วันกินพื้นที่จนตารางล้นขอบ
+				widths: [50, ...periods.map(() => '*')],
 				body: tableBody
 			},
 			layout: tableLayout
@@ -206,6 +212,8 @@ export const generateTimetablePDF = async (pages: TimetablePage[], fileName?: st
 	const docDefinition: TDocumentDefinitions = {
 		pageSize: 'A4',
 		pageOrientation: 'landscape',
+		// ลด margin ซ้าย-ขวา เพื่อมีพื้นที่ตารางมากขึ้น (ลด overflow บนคาบเยอะๆ)
+		pageMargins: [20, 40, 20, 30],
 		content,
 		styles: {
 			header: { fontSize: 18, bold: true, color: '#1e3a8a' },
