@@ -803,9 +803,7 @@
 	let slotConflicts = new SvelteMap<string, SlotConflict[]>();
 
 	// Floating conflict popup ตอน drag hover (native title tooltip ใช้ไม่ได้ระหว่าง drag)
-	let hoverDragCell = $state<{ day: string; periodId: string; x: number; y: number } | null>(
-		null
-	);
+	let hoverDragCell = $state<{ day: string; periodId: string; x: number; y: number } | null>(null);
 
 	// Drag validity map: key "DAY|PERIODID" → cell state (from POST /timetable/validate-moves)
 	// Populated on drag start for MOVE type; cleared on drag end.
@@ -833,8 +831,7 @@
 		// 2. Target classroom (ที่จะวาง entry ลง)
 		let targetClassroomId: string | undefined;
 		if (viewMode === 'INSTRUCTOR') {
-			targetClassroomId =
-				moveEntry?.classroom_id ?? course._classroom_id ?? course.classroom_id;
+			targetClassroomId = moveEntry?.classroom_id ?? course._classroom_id ?? course.classroom_id;
 		} else {
 			targetClassroomId = selectedClassroomId;
 		}
@@ -906,9 +903,7 @@
 				const key = getSlotKey(entry.day_of_week, entry.period_id);
 				addConflict(key, {
 					kind: 'classroom',
-					subject_code:
-						entry.subject_code ||
-						(entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
+					subject_code: entry.subject_code || (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
 					subject_name: entry.subject_name_th || entry.title || '',
 					classroom_name: entry.classroom_name ?? '',
 					room_code: entry.room_code
@@ -929,9 +924,7 @@
 					addConflict(key, {
 						kind: 'teacher',
 						teacher_name: teacherName,
-						subject_code:
-							entry.subject_code ||
-							(entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
+						subject_code: entry.subject_code || (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
 						subject_name: entry.subject_name_th || entry.title || '',
 						classroom_name: entry.classroom_name ?? '',
 						room_code: entry.room_code
@@ -1475,8 +1468,7 @@
 					if (!room) return null;
 					let roomName = room.name;
 					if (roomName.startsWith('ม.')) roomName = roomName.replace('ม.', 'มัธยมศึกษาปีที่ ');
-					else if (roomName.startsWith('ป.'))
-						roomName = roomName.replace('ป.', 'ประถมศึกษาปีที่ ');
+					else if (roomName.startsWith('ป.')) roomName = roomName.replace('ป.', 'ประถมศึกษาปีที่ ');
 					else if (roomName.startsWith('อ.')) roomName = roomName.replace('อ.', 'อนุบาลปีที่ ');
 					else if (/^\d/.test(roomName)) roomName = `มัธยมศึกษาปีที่ ${roomName}`;
 					title = `ตารางเรียน ชั้น${roomName}`;
@@ -2567,7 +2559,9 @@
 		</Card.Root>
 
 		<!-- Right Content: Timetable Grid -->
-		<Card.Root class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none gap-0 py-0">
+		<Card.Root
+			class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none gap-0 py-0"
+		>
 			<div class="overflow-auto flex-1">
 				<div class="min-w-[800px] h-full flex flex-col">
 					<!-- Header Row (Periods) -->
@@ -2773,9 +2767,7 @@
 											{/if}
 
 											{#if entry.subject_code}
-												<div
-													class="font-bold text-foreground/90 truncate text-sm leading-tight"
-												>
+												<div class="font-bold text-foreground/90 truncate text-sm leading-tight">
 													{entry.subject_code}
 												</div>
 												<div
@@ -2867,20 +2859,14 @@
 											{/if}
 										</div>
 									{:else if isOccupied}
-										{@const conflicts =
-											slotConflicts.get(getSlotKey(day.value, period.id)) ?? []}
+										{@const conflicts = slotConflicts.get(getSlotKey(day.value, period.id)) ?? []}
 										{@const primary = conflicts[0]}
 										<div
 											class="absolute inset-0 flex flex-col items-center justify-center px-1 py-0.5 text-center select-none gap-0.5"
 											title={conflicts
 												.map((c) => {
-													const subj = [c.subject_code, c.subject_name]
-														.filter(Boolean)
-														.join(' · ');
-													const loc = [
-														c.classroom_name,
-														c.room_code ? `ห้อง ${c.room_code}` : ''
-													]
+													const subj = [c.subject_code, c.subject_name].filter(Boolean).join(' · ');
+													const loc = [c.classroom_name, c.room_code ? `ห้อง ${c.room_code}` : '']
 														.filter(Boolean)
 														.join(' ');
 													return c.kind === 'classroom'
@@ -2909,9 +2895,7 @@
 													</div>
 												{/if}
 												{#if primary.kind === 'teacher' || primary.room_code}
-													<div
-														class="text-[9px] text-red-500/70 truncate max-w-full leading-tight"
-													>
+													<div class="text-[9px] text-red-500/70 truncate max-w-full leading-tight">
 														{#if primary.kind === 'teacher'}
 															{primary.classroom_name}{#if primary.room_code}
 																· ห้อง {primary.room_code}{/if}
@@ -3243,9 +3227,7 @@
 		</Dialog.Header>
 		<div class="flex flex-col gap-2 py-2">
 			<Button variant="outline" onclick={doDeleteBatchSingle}>ลบแค่คาบนี้</Button>
-			<Button variant="destructive" onclick={doDeleteBatchGroup}>
-				ลบทั้งหมดที่สร้างพร้อมกัน
-			</Button>
+			<Button variant="destructive" onclick={doDeleteBatchGroup}>ลบทั้งหมดที่สร้างพร้อมกัน</Button>
 		</div>
 		<Dialog.Footer>
 			<Button
@@ -3527,8 +3509,8 @@
 							</Select.Root>
 						{/if}
 						<p class="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
-							*Batch รองรับเฉพาะ <b>Synchronized</b> (ทุกห้องตรงกัน) —
-							Independent ให้ลากทีละห้องจาก sidebar<br />
+							*Batch รองรับเฉพาะ <b>Synchronized</b> (ทุกห้องตรงกัน) — Independent ให้ลากทีละห้องจาก
+							sidebar<br />
 							นักเรียนกดดูกิจกรรมที่ตัวเองลงทะเบียนได้จากตารางเรียน
 						</p>
 					</div>
@@ -3759,9 +3741,7 @@
 										checked={batchInstructors.includes(instructor.id)}
 										onCheckedChange={() => {
 											if (batchInstructors.includes(instructor.id)) {
-												batchInstructors = batchInstructors.filter(
-													(i) => i !== instructor.id
-												);
+												batchInstructors = batchInstructors.filter((i) => i !== instructor.id);
 											} else {
 												batchInstructors = [...batchInstructors, instructor.id];
 											}
@@ -3782,7 +3762,6 @@
 				{/if}
 			</div>
 			<div class="border-t pt-3 mt-1">
-
 				<!-- Override Option -->
 				<div
 					class="flex items-start space-x-2 mt-4 p-3 rounded-md border border-red-200 bg-red-50/50"
