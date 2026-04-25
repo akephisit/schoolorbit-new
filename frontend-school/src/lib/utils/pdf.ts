@@ -63,7 +63,7 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 
 	// Header Row
 	const headerRow: TableCell[] = [
-		{ text: 'วัน / เวลา', bold: true, alignment: 'center', fillColor: '#f3f4f6', margin: [0, 5] }
+		{ text: 'วัน / เวลา', bold: true, alignment: 'center', fillColor: '#f3f4f6', margin: [0, 4] }
 	];
 	// ใส่ \n เพื่อรักษา line height ให้คอลัมน์ที่ไม่มีชื่อสูงเท่ากับคอลัมน์ที่มีชื่อ
 	// (ตรงกับ behavior ของหน้าจัดตารางที่ใช้ nbsp placeholder)
@@ -71,10 +71,10 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 		const labelText = p.name && p.name.trim() ? p.name : ' ';
 		headerRow.push({
 			text: [
-				{ text: `${labelText}\n`, bold: true, fontSize: 9 },
+				{ text: `${labelText}\n`, bold: true, fontSize: 8 },
 				{
 					text: `${formatTime(p.start_time)} - ${formatTime(p.end_time)}`,
-					fontSize: 8,
+					fontSize: 7,
 					color: '#4b5563'
 				}
 			],
@@ -94,8 +94,8 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 			bold: true,
 			alignment: 'center',
 			fillColor: day.color,
-			fontSize: 12,
-			margin: [0, 15]
+			fontSize: 10,
+			margin: [0, 4]
 		});
 
 		periods.forEach((p) => {
@@ -105,10 +105,10 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 
 				if (entry.entry_type === 'COURSE') {
 					stack.push(
-						{ text: entry.subject_code || '', bold: true, fontSize: 10, color: '#1e3a8a' },
+						{ text: entry.subject_code || '', bold: true, fontSize: 8, color: '#1e3a8a' },
 						{
 							text: entry.subject_name_th || entry.subject_name_en || 'วิชา',
-							fontSize: 9,
+							fontSize: 7,
 							margin: [0, 0]
 						}
 					);
@@ -116,7 +116,7 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 					stack.push({
 						text: entry.title || 'กิจกรรม',
 						bold: true,
-						fontSize: 10,
+						fontSize: 8,
 						color: '#047857',
 						margin: [0, 2]
 					});
@@ -130,13 +130,13 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 					) {
 						const rawName = entry.instructor_name.trim();
 						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
-						stack.push({ text: teacherName, fontSize: 8, color: '#4b5563', margin: [0, 1] });
+						stack.push({ text: teacherName, fontSize: 7, color: '#4b5563', margin: [0, 1] });
 					}
 				} else {
 					if (entry.classroom_name) {
 						stack.push({
 							text: entry.classroom_name,
-							fontSize: 9,
+							fontSize: 7,
 							color: '#d97706',
 							bold: true,
 							margin: [0, 1]
@@ -147,16 +147,26 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 				if (entry.room_code) {
 					stack.push({
 						text: `ห้อง ${entry.room_code}`,
-						fontSize: 8,
+						fontSize: 7,
 						background: '#f3f4f6',
 						color: '#1f2937',
 						margin: [0, 2]
 					});
 				}
 
-				row.push({ stack, alignment: 'center', margin: [2, 5] });
+				row.push({ stack, alignment: 'center', margin: [2, 3] });
 			} else {
-				row.push({ text: '' });
+				// ช่องว่าง: ใส่ stub stack ให้ cell มี height ใกล้เคียง cell ที่มี content
+				// → row ทุกแถวสูงเท่ากัน ไม่ว่าจะมีคาบหรือไม่
+				row.push({
+					stack: [
+						{ text: ' ', fontSize: 8 },
+						{ text: ' ', fontSize: 7 },
+						{ text: ' ', fontSize: 7 }
+					],
+					alignment: 'center',
+					margin: [2, 3]
+				});
 			}
 		});
 
