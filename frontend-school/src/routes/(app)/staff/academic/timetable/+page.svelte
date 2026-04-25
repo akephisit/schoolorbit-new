@@ -123,9 +123,26 @@
 	let { data } = $props();
 
 	// Helper: Generate consistent pastel color from string
+	// แสดง label fallback เมื่อ entry ไม่มี subject_code/title
+	function getEntryTypeFallbackLabel(entryType?: string): string {
+		switch (entryType) {
+			case 'ACTIVITY':
+				return 'กิจกรรม';
+			case 'ACADEMIC':
+				return 'วิชาการ';
+			case 'BREAK':
+				return 'พัก';
+			case 'HOMEROOM':
+				return 'โฮมรูม';
+			default:
+				return '';
+		}
+	}
+
 	function getSubjectColor(code: string, type?: string): string {
 		if (type === 'BREAK') return '#fef3c7'; // amber-100
 		if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#d1fae5'; // emerald-100
+		if (type === 'ACADEMIC') return '#dbeafe'; // blue-100
 
 		if (!code) return '#eff6ff'; // default blue-50
 		let hash = 0;
@@ -139,6 +156,7 @@
 	function getSubjectBorderColor(code: string, type?: string): string {
 		if (type === 'BREAK') return '#fcd34d'; // amber-300
 		if (type === 'ACTIVITY' || type === 'HOMEROOM') return '#6ee7b7'; // emerald-300
+		if (type === 'ACADEMIC') return '#93c5fd'; // blue-300
 
 		if (!code) return '#bfdbfe'; // default blue-200
 		let hash = 0;
@@ -903,7 +921,7 @@
 				const key = getSlotKey(entry.day_of_week, entry.period_id);
 				addConflict(key, {
 					kind: 'classroom',
-					subject_code: entry.subject_code || (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
+					subject_code: entry.subject_code || getEntryTypeFallbackLabel(entry.entry_type),
 					subject_name: entry.subject_name_th || entry.title || '',
 					classroom_name: entry.classroom_name ?? '',
 					room_code: entry.room_code
@@ -924,7 +942,7 @@
 					addConflict(key, {
 						kind: 'teacher',
 						teacher_name: teacherName,
-						subject_code: entry.subject_code || (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : ''),
+						subject_code: entry.subject_code || getEntryTypeFallbackLabel(entry.entry_type),
 						subject_name: entry.subject_name_th || entry.title || '',
 						classroom_name: entry.classroom_name ?? '',
 						room_code: entry.room_code
@@ -1882,7 +1900,7 @@
 				days_of_week: batchDays,
 				period_ids: batchPeriodIds,
 				academic_semester_id: selectedSemesterId,
-				entry_type: entryTypeToSend as 'ACTIVITY' | 'BREAK' | 'HOMEROOM',
+				entry_type: entryTypeToSend as 'ACTIVITY' | 'BREAK' | 'HOMEROOM' | 'ACADEMIC',
 				title: titleToSend,
 				room_id: batchRoomId === 'none' ? undefined : batchRoomId,
 				force: batchForce,
@@ -2782,7 +2800,7 @@
 													class="font-bold text-foreground/90 text-sm leading-tight whitespace-pre-line line-clamp-3 mb-auto"
 													title={entry.title || undefined}
 												>
-													{entry.title || (entry.entry_type === 'ACTIVITY' ? 'กิจกรรม' : '')}
+													{entry.title || getEntryTypeFallbackLabel(entry.entry_type)}
 												</div>
 											{/if}
 											<div

@@ -48,7 +48,7 @@ export interface TimetableEntry {
 	is_active: boolean;
 
 	// New fields
-	entry_type: 'COURSE' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM';
+	entry_type: 'COURSE' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM' | 'ACADEMIC';
 	title?: string;
 	classroom_id?: string;
 	academic_semester_id: string;
@@ -107,7 +107,7 @@ export interface CreateBatchTimetableEntriesRequest {
 	days_of_week: string[];
 	period_ids: string[];
 	academic_semester_id: string;
-	entry_type: 'ACTIVITY' | 'BREAK' | 'HOMEROOM';
+	entry_type: 'ACTIVITY' | 'BREAK' | 'HOMEROOM' | 'ACADEMIC';
 	title: string;
 	room_id?: string;
 	note?: string;

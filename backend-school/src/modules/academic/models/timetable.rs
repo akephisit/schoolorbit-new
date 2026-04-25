@@ -79,7 +79,7 @@ pub struct TimetableEntry {
     pub room_id: Option<Uuid>,
     pub note: Option<String>,
 
-    pub entry_type: String, // COURSE, BREAK, ACTIVITY, HOMEROOM
+    pub entry_type: String, // COURSE, BREAK, ACTIVITY, HOMEROOM, ACADEMIC
     pub title: Option<String>,
     pub classroom_id: Option<Uuid>,
     pub academic_semester_id: Uuid,
@@ -202,7 +202,7 @@ pub struct CreateBatchTimetableEntriesRequest {
     pub days_of_week: Vec<String>,
     pub period_ids: Vec<Uuid>,
     pub academic_semester_id: Uuid,
-    pub entry_type: String, // ACTIVITY, BREAK, HOMEROOM
+    pub entry_type: String, // ACTIVITY, BREAK, HOMEROOM, ACADEMIC
     pub title: String,
     pub room_id: Option<Uuid>,
     pub note: Option<String>,
