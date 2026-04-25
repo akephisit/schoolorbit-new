@@ -156,17 +156,7 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 
 				row.push({ stack, alignment: 'center', margin: [2, 3] });
 			} else {
-				// ช่องว่าง: ใส่ stub stack ให้ cell มี height ใกล้เคียง cell ที่มี content
-				// → row ทุกแถวสูงเท่ากัน ไม่ว่าจะมีคาบหรือไม่
-				row.push({
-					stack: [
-						{ text: ' ', fontSize: 8 },
-						{ text: ' ', fontSize: 7 },
-						{ text: ' ', fontSize: 7 }
-					],
-					alignment: 'center',
-					margin: [2, 3]
-				});
+				row.push({ text: '' });
 			}
 		});
 
@@ -188,6 +178,10 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 				// day column: fixed กระชับ; period columns: แชร์ space ที่เหลือเท่าๆ กัน
 				// fix(overflow): ใช้ค่าตายตัวแทน 'auto' ป้องกันคอลัมน์วันกินพื้นที่จนตารางล้นขอบ
 				widths: [50, ...periods.map(() => '*')],
+				// header: auto, data rows (MON–FRI): fix 50pt
+				// → row ที่ไม่มีคาบเลย/มีคาบน้อย ก็สูงเท่าแถวอื่นที่เต็ม
+				// (pdfmake ใช้เป็น min height — cell content ยาวเกินยังขยายได้)
+				heights: ['auto', 50, 50, 50, 50, 50],
 				body: tableBody
 			},
 			layout: tableLayout
