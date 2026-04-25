@@ -144,6 +144,21 @@ pub async fn create_period(
         return Err(AppError::BadRequest("เวลาจบต้องมากกว่าเวลาเริ่ม".to_string()));
     }
 
+    // Auto-assign order_index = MAX + 1 ถ้าไม่ส่งมา
+    let order_index = match payload.order_index {
+        Some(idx) => idx,
+        None => {
+            let next: Option<i32> = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(order_index), 0) + 1 FROM academic_periods WHERE academic_year_id = $1"
+            )
+            .bind(payload.academic_year_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to compute next order_index: {}", e)))?;
+            next.unwrap_or(1)
+        }
+    };
+
     let period = sqlx::query_as::<_, AcademicPeriod>(
         r#"
         INSERT INTO academic_periods (
@@ -157,7 +172,7 @@ pub async fn create_period(
     .bind(payload.name)
     .bind(start_time)
     .bind(end_time)
-    .bind(payload.order_index)
+    .bind(order_index)
     .bind(payload.applicable_days)
     .fetch_one(&pool)
     .await
@@ -257,6 +272,57 @@ pub async fn delete_period(
         })?;
 
     Ok(Json(json!({ "success": true })).into_response())
+}
+
+/// POST /api/academic/periods/reorder
+/// Batch update order_index หลายแถวใน transaction เดียว
+/// ใช้ SET CONSTRAINTS DEFERRED เพื่อเลี่ยง unique constraint ชนระหว่าง update
+pub async fn reorder_periods(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<ReorderPeriodsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_STRUCTURE_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(response);
+    }
+
+    if payload.items.is_empty() {
+        return Ok(Json(json!({ "success": true, "updated": 0 })).into_response());
+    }
+
+    let mut tx = pool.begin().await
+        .map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
+
+    sqlx::query("SET CONSTRAINTS unique_period_per_year DEFERRED")
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(format!("Failed to defer constraint: {}", e)))?;
+
+    for item in &payload.items {
+        sqlx::query(
+            "UPDATE academic_periods SET order_index = $1 WHERE id = $2 AND academic_year_id = $3"
+        )
+        .bind(item.order_index)
+        .bind(item.id)
+        .bind(payload.academic_year_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(format!("Failed to update period: {}", e)))?;
+    }
+
+    tx.commit().await
+        .map_err(|e| {
+            let msg = if e.to_string().contains("unique_period_per_year") {
+                "ลำดับคาบซ้ำกัน — ตรวจสอบ payload".to_string()
+            } else {
+                format!("Failed to commit reorder: {}", e)
+            };
+            AppError::BadRequest(msg)
+        })?;
+
+    Ok(Json(json!({ "success": true, "updated": payload.items.len() })).into_response())
 }
 
 // ============================================

@@ -70,6 +70,7 @@ pub fn academic_routes() -> Router<AppState> {
 
         // Timetable: Periods
         .route("/periods", get(handlers::timetable::list_periods).post(handlers::timetable::create_period))
+        .route("/periods/reorder", post(handlers::timetable::reorder_periods))
         .route("/periods/{id}", put(handlers::timetable::update_period).delete(handlers::timetable::delete_period))
 
         // Timetable: Entries

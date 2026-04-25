@@ -82,7 +82,8 @@ export interface CreatePeriodRequest {
 	start_time: string; // "HH:MM"
 	end_time: string;
 
-	order_index: number;
+	/** ถ้าไม่ส่ง backend จะ auto-assign เป็น MAX+1 ของปีการศึกษา */
+	order_index?: number;
 	applicable_days?: string;
 }
 
@@ -165,6 +166,18 @@ export const updatePeriod = async (id: string, data: Partial<CreatePeriodRequest
 
 export const deletePeriod = async (id: string) => {
 	return await fetchApi(`/api/academic/periods/${id}`, { method: 'DELETE' });
+};
+
+export interface ReorderPeriodItem {
+	id: string;
+	order_index: number;
+}
+
+export const reorderPeriods = async (academic_year_id: string, items: ReorderPeriodItem[]) => {
+	return await fetchApi('/api/academic/periods/reorder', {
+		method: 'POST',
+		body: JSON.stringify({ academic_year_id, items })
+	});
 };
 
 // ============================================

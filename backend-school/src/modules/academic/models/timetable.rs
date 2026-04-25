@@ -31,8 +31,21 @@ pub struct CreatePeriodRequest {
     pub start_time: String,  // Format: "HH:MM"
     pub end_time: String,    // Format: "HH:MM"
 
-    pub order_index: i32,
+    /// ถ้าไม่ส่ง backend จะ auto-set เป็น MAX(order_index) + 1 ของปีการศึกษานั้น
+    pub order_index: Option<i32>,
     pub applicable_days: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReorderPeriodItem {
+    pub id: Uuid,
+    pub order_index: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReorderPeriodsRequest {
+    pub academic_year_id: Uuid,
+    pub items: Vec<ReorderPeriodItem>,
 }
 
 #[derive(Debug, Deserialize)]
