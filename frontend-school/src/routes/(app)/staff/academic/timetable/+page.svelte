@@ -2732,6 +2732,14 @@
 												? Math.max(0, (entry.instructor_ids?.length ?? 0) - 1)
 												: 0}
 										{@const isRemoteLocked = !!remoteActivityEntry}
+										{@const teacherText =
+											entry.instructor_names && entry.instructor_names.length > 0
+												? entry.instructor_names.join(', ')
+												: entry.instructor_name && entry.instructor_name !== '-'
+													? entry.instructor_name
+													: ''}
+										{@const hasMetaRow =
+											viewMode === 'CLASSROOM' ? !!teacherText || !!entry.room_id : true}
 										<!-- Timetable Entry Card -->
 										<div
 											class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !==
@@ -2803,71 +2811,67 @@
 													{entry.title || getEntryTypeFallbackLabel(entry.entry_type)}
 												</div>
 											{/if}
-											<div
-												class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
-											>
-												{#if viewMode === 'CLASSROOM'}
-													{@const teacherText =
-														entry.instructor_names && entry.instructor_names.length > 0
-															? entry.instructor_names.join(', ')
-															: entry.instructor_name && entry.instructor_name !== '-'
-																? entry.instructor_name
-																: ''}
-													{#if teacherText}
+											{#if hasMetaRow}
+												<div
+													class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
+												>
+													{#if viewMode === 'CLASSROOM'}
+														{#if teacherText}
+															<div class="flex items-center gap-1 truncate">
+																<Users class="w-3 h-3 shrink-0" />
+																{teacherText}
+															</div>
+														{/if}
+													{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
+														<!-- Independent: แสดงชื่อห้อง -->
 														<div class="flex items-center gap-1 truncate">
-															<Users class="w-3 h-3 shrink-0" />
-															{teacherText}
+															<School class="w-3 h-3 shrink-0" />
+															{entry.classroom_name || '-'}
+														</div>
+													{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
+														<!-- Synchronized: แสดงชื่อกิจกรรมถ้ามี -->
+														{@const groupName = instructorGroupsMap[entry.activity_slot_id]}
+														<div class="flex items-center gap-1 truncate">
+															<BookOpen class="w-3 h-3 shrink-0" />
+															{#if groupName}
+																{groupName}
+															{:else}
+																{entry.activity_slot_name || '-'}
+															{/if}
+														</div>
+													{:else}
+														<div class="flex items-center gap-1 truncate">
+															<School class="w-3 h-3 shrink-0" />
+															{entry.classroom_name || '-'}
 														</div>
 													{/if}
-												{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
-													<!-- Independent: แสดงชื่อห้อง -->
-													<div class="flex items-center gap-1 truncate">
-														<School class="w-3 h-3 shrink-0" />
-														{entry.classroom_name || '-'}
-													</div>
-												{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
-													<!-- Synchronized: แสดงชื่อกิจกรรมถ้ามี -->
-													{@const groupName = instructorGroupsMap[entry.activity_slot_id]}
-													<div class="flex items-center gap-1 truncate">
-														<BookOpen class="w-3 h-3 shrink-0" />
-														{#if groupName}
-															{groupName}
-														{:else}
-															{entry.activity_slot_name || '-'}
-														{/if}
-													</div>
-												{:else}
-													<div class="flex items-center gap-1 truncate">
-														<School class="w-3 h-3 shrink-0" />
-														{entry.classroom_name || '-'}
-													</div>
-												{/if}
 
-												{#if viewMode === 'INSTRUCTOR' && isGhost}
-													<div class="flex items-center gap-1 text-amber-700 text-[10px]">
-														<span>👻</span>
-														<span>อยู่ในทีม (ยังไม่ได้สอนคาบนี้)</span>
-													</div>
-												{:else if viewMode === 'INSTRUCTOR' && coTeacherCount > 0}
-													<div
-														class="flex items-center gap-1 text-foreground/60 text-[10px]"
-														title={entry.instructor_names?.join(', ')}
-													>
-														<Users class="w-3 h-3 shrink-0" />
-														<span>+{coTeacherCount} ครูร่วม</span>
-													</div>
-												{/if}
+													{#if viewMode === 'INSTRUCTOR' && isGhost}
+														<div class="flex items-center gap-1 text-amber-700 text-[10px]">
+															<span>👻</span>
+															<span>อยู่ในทีม (ยังไม่ได้สอนคาบนี้)</span>
+														</div>
+													{:else if viewMode === 'INSTRUCTOR' && coTeacherCount > 0}
+														<div
+															class="flex items-center gap-1 text-foreground/60 text-[10px]"
+															title={entry.instructor_names?.join(', ')}
+														>
+															<Users class="w-3 h-3 shrink-0" />
+															<span>+{coTeacherCount} ครูร่วม</span>
+														</div>
+													{/if}
 
-												{#if entry.room_id}
-													<div
-														class="flex items-center gap-1 truncate text-foreground/60"
-														title={rooms.find((r) => r.id === entry.room_id)?.name_th}
-													>
-														<MapPin class="w-3 h-3 shrink-0" />
-														{rooms.find((r) => r.id === entry.room_id)?.name_th || '?'}
-													</div>
-												{/if}
-											</div>
+													{#if entry.room_id}
+														<div
+															class="flex items-center gap-1 truncate text-foreground/60"
+															title={rooms.find((r) => r.id === entry.room_id)?.name_th}
+														>
+															<MapPin class="w-3 h-3 shrink-0" />
+															{rooms.find((r) => r.id === entry.room_id)?.name_th || '?'}
+														</div>
+													{/if}
+												</div>
+											{/if}
 
 											<!-- Delete Button (ghost cells + remote-locked ไม่แสดง — ไม่ใช่คาบที่แก้ได้) -->
 											{#if !isGhost && !isRemoteLocked}
