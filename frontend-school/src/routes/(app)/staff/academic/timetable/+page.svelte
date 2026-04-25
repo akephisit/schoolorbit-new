@@ -2573,9 +2573,7 @@
 						</div>
 						{#each periods as period (period.id)}
 							<div class="flex-1 min-w-[100px] p-2 border-r border-b text-center relative group">
-								{#if period.name}
-									<div class="text-sm font-bold">{period.name}</div>
-								{/if}
+								<div class="text-sm font-bold">{period.name || ' '}</div>
 								<div class="text-xs text-muted-foreground">
 									{formatTime(period.start_time)}-{formatTime(period.end_time)}
 								</div>

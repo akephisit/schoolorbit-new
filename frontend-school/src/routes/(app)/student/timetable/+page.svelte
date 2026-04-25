@@ -172,9 +172,7 @@
 					{#each periods as period (period.id)}
 						<tr>
 							<td class="p-2 border bg-muted/30 text-center">
-								{#if period.name}
-									<div class="text-xs font-medium">{period.name}</div>
-								{/if}
+								<div class="text-xs font-medium">{period.name || ' '}</div>
 								<div class="text-[10px] text-muted-foreground">
 									{formatTime(period.start_time)}-{formatTime(period.end_time)}
 								</div>

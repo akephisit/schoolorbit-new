@@ -66,9 +66,7 @@
 				<th class="border border-[#9ca3af] p-2 w-28 text-center text-lg">วัน / เวลา</th>
 				{#each periods as p (p.id)}
 					<th class="border border-[#9ca3af] p-2 text-center min-w-[80px]">
-						{#if p.name}
-							<div class="text-lg font-bold">{p.name}</div>
-						{/if}
+						<div class="text-lg font-bold">{p.name || ' '}</div>
 						<div class="text-sm font-normal text-[#4b5563]">
 							{formatTime(p.start_time)} - {formatTime(p.end_time)}
 						</div>
