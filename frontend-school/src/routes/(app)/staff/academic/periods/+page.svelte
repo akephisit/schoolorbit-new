@@ -143,7 +143,8 @@
 	}
 
 	function confirmDelete(p: AcademicPeriod) {
-		deleteTarget = { id: p.id, name: p.name };
+		const label = p.name || `${formatTime(p.start_time)} – ${formatTime(p.end_time)}`;
+		deleteTarget = { id: p.id, name: label };
 		showDeleteDialog = true;
 	}
 
@@ -287,10 +288,16 @@
 						<Badge variant="outline" class="font-mono">#{i + 1}</Badge>
 
 						<div class="min-w-0 flex-1">
-							<p class="text-foreground truncate font-medium">{p.name}</p>
-							<p class="text-muted-foreground text-sm">
-								{formatTime(p.start_time)} – {formatTime(p.end_time)}
-							</p>
+							{#if p.name}
+								<p class="text-foreground truncate font-medium">{p.name}</p>
+								<p class="text-muted-foreground text-sm">
+									{formatTime(p.start_time)} – {formatTime(p.end_time)}
+								</p>
+							{:else}
+								<p class="text-foreground font-medium">
+									{formatTime(p.start_time)} – {formatTime(p.end_time)}
+								</p>
+							{/if}
 						</div>
 
 						<Badge variant={p.is_active ? 'default' : 'outline'}>
@@ -326,12 +333,11 @@
 				<input type="hidden" name="academic_year_id" value={formYearId} />
 
 				<div class="space-y-2">
-					<Label>ชื่อคาบ <span class="text-red-500">*</span></Label>
+					<Label>ชื่อคาบ <span class="text-muted-foreground text-xs">(ไม่บังคับ)</span></Label>
 					<Input
 						name="name"
 						value={editingPeriod?.name || ''}
-						required
-						placeholder="เช่น คาบที่ 1, พักเที่ยง"
+						placeholder="เช่น พักเที่ยง, โฮมรูม (เว้นว่างถ้าเป็นคาบเรียนปกติ)"
 					/>
 				</div>
 

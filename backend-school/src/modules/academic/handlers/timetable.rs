@@ -169,7 +169,7 @@ pub async fn create_period(
         "#
     )
     .bind(payload.academic_year_id)
-    .bind(payload.name)
+    .bind(payload.name.filter(|s| !s.trim().is_empty()))
     .bind(start_time)
     .bind(end_time)
     .bind(order_index)
@@ -219,22 +219,30 @@ pub async fn update_period(
         None
     };
 
+    // name: ถ้า field ไม่ส่งมา → คงเดิม; ถ้าส่ง "" → clear เป็น NULL; ส่งค่า → set
+    // ใช้ flag separate เพราะ COALESCE แยก "ไม่ส่ง" กับ "ส่ง NULL" ไม่ได้
+    let (name_set, name_value) = match payload.name {
+        None => (false, None),
+        Some(s) => (true, Some(s).filter(|s| !s.trim().is_empty())),
+    };
+
     let period = sqlx::query_as::<_, AcademicPeriod>(
         r#"
         UPDATE academic_periods SET
-            name = COALESCE($2, name),
-            start_time = COALESCE($3, start_time),
-            end_time = COALESCE($4, end_time),
-            order_index = COALESCE($5, order_index),
-            applicable_days = COALESCE($6, applicable_days),
-            is_active = COALESCE($7, is_active),
+            name = CASE WHEN $2 THEN $3 ELSE name END,
+            start_time = COALESCE($4, start_time),
+            end_time = COALESCE($5, end_time),
+            order_index = COALESCE($6, order_index),
+            applicable_days = COALESCE($7, applicable_days),
+            is_active = COALESCE($8, is_active),
             updated_at = NOW()
         WHERE id = $1
         RETURNING *
         "#
     )
     .bind(id)
-    .bind(payload.name)
+    .bind(name_set)
+    .bind(name_value)
     .bind(start_time)
     .bind(end_time)
     .bind(payload.order_index)
@@ -1414,7 +1422,9 @@ pub async fn create_batch_timetable_entries(
         // 3. Check room conflict
         if let Some(room_id) = payload.room_id {
             let room_conflicts: Vec<(String, String, String)> = sqlx::query_as(
-                r#"SELECT DISTINCT r.code, ap.name, te.day_of_week
+                r#"SELECT DISTINCT r.code,
+                          COALESCE(ap.name, 'คาบที่ ' || ap.order_index::text) AS period_label,
+                          te.day_of_week
                    FROM academic_timetable_entries te
                    JOIN rooms r ON r.id = te.room_id
                    JOIN academic_periods ap ON ap.id = te.period_id

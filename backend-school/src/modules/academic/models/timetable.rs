@@ -11,7 +11,7 @@ use uuid::Uuid;
 pub struct AcademicPeriod {
     pub id: Uuid,
     pub academic_year_id: Uuid,
-    pub name: String,
+    pub name: Option<String>,
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
 
@@ -27,7 +27,7 @@ pub struct AcademicPeriod {
 #[derive(Debug, Deserialize)]
 pub struct CreatePeriodRequest {
     pub academic_year_id: Uuid,
-    pub name: String,
+    pub name: Option<String>,
     pub start_time: String,  // Format: "HH:MM"
     pub end_time: String,    // Format: "HH:MM"
 

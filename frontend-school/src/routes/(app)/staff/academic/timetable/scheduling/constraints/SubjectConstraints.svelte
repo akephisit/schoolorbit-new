@@ -238,7 +238,7 @@
 								}}
 								class="h-4 w-4 rounded border-gray-300"
 							/>
-							<span>{period.name} ({period.start_time})</span>
+							<span>{period.name ? `${period.name} ` : ''}({period.start_time})</span>
 						</label>
 					{/each}
 				</div>

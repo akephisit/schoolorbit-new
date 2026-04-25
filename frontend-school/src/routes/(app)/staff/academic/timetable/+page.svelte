@@ -3572,7 +3572,9 @@
 								class="rounded"
 							/>
 							<span class="truncate">
-								{period.name} ({formatTime(period.start_time)}-{formatTime(period.end_time)})
+								{period.name ? `${period.name} ` : ''}({formatTime(period.start_time)}-{formatTime(
+									period.end_time
+								)})
 							</span>
 						</label>
 					{/each}

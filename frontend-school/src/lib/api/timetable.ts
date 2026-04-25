@@ -28,7 +28,7 @@ async function fetchApi<T = unknown>(path: string, options: RequestInit = {}): P
 export interface AcademicPeriod {
 	id: string;
 	academic_year_id: string;
-	name: string;
+	name: string | null;
 	start_time: string; // "HH:MM:SS"
 	end_time: string;
 	order_index: number;
@@ -78,7 +78,8 @@ export interface TimetableEntry {
 
 export interface CreatePeriodRequest {
 	academic_year_id: string;
-	name: string;
+	/** ตั้งได้ตามต้องการ (เช่น "พักเที่ยง", "โฮมรูม"); ปล่อยว่างก็ได้ */
+	name?: string | null;
 	start_time: string; // "HH:MM"
 	end_time: string;
 
