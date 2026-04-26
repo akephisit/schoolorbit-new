@@ -1,16 +1,17 @@
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse},
+    http::HeaderMap,
+    response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgPool, Row};
 use uuid::Uuid;
 use crate::error::AppError;
 use crate::AppState;
 use crate::db::school_mapping::get_school_database_url;
 use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::middleware::permission::check_permission;
+use crate::permissions::registry::codes;
 
 // Structs for Request/Response
 #[derive(Serialize)]
@@ -50,6 +51,9 @@ pub struct UpdateInstructorConstraintRequest {
     pub max_periods_per_day: Option<i32>,
     pub preferred_slots: Option<serde_json::Value>,
     pub assigned_room_id: Option<Uuid>,
+    /// ส่ง true เพื่อล้าง room assignment (อย่าใช้ assigned_room_id=null
+    /// เพราะกำกวม กับการ "ไม่ส่งมา")
+    pub clear_assigned_room: Option<bool>,
     pub priority: Option<i32>,
 }
 
@@ -60,12 +64,12 @@ pub struct ReorderInstructorPriorityRequest {
 }
 
 #[derive(Serialize)]
-pub struct SchoolSettingsView {
+pub struct SchedulerSettingsView {
     pub default_max_consecutive: i32,
 }
 
 #[derive(Deserialize)]
-pub struct UpdateSchoolSettingsRequest {
+pub struct UpdateSchedulerSettingsRequest {
     pub default_max_consecutive: Option<i32>,
 }
 
@@ -129,6 +133,10 @@ pub async fn list_classroom_course_constraints(
     axum::extract::Query(q): axum::extract::Query<ListCcConstraintsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
 
     // Active academic year
     let year_id: Uuid = sqlx::query_scalar(
@@ -206,7 +214,7 @@ pub async fn list_classroom_course_constraints(
     }
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(Json(ApiResponse::success(rows)))
+    Ok(Json(ApiResponse::success(rows)).into_response())
 }
 
 #[derive(Deserialize)]
@@ -222,6 +230,10 @@ pub async fn update_classroom_course_constraints(
     Json(payload): Json<UpdateClassroomCourseConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
 
     // Validate consecutive_pattern: array of int + sum == periods_per_week ของ subject ที่ผูก
     if let Some(ref pattern) = payload.consecutive_pattern {
@@ -279,7 +291,7 @@ pub async fn update_classroom_course_constraints(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(Json(ApiResponse::success("Updated classroom course constraints".to_string())))
+    Ok(Json(ApiResponse::success("Updated classroom course constraints".to_string())).into_response())
 }
 
 // ==========================
@@ -318,6 +330,10 @@ pub async fn list_cc_preferred_rooms(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
     let rows = sqlx::query_as::<_, CcPreferredRoomView>(
         r#"SELECT pr.id, pr.classroom_course_id, pr.room_id,
                   r.code AS room_code, r.name_th AS room_name,
@@ -332,7 +348,7 @@ pub async fn list_cc_preferred_rooms(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(Json(ApiResponse::success(rows)))
+    Ok(Json(ApiResponse::success(rows)).into_response())
 }
 
 /// PUT /api/academic/scheduling/classroom-courses/{id}/rooms
@@ -344,6 +360,10 @@ pub async fn set_cc_preferred_rooms(
     Json(payload): Json<SetCcRoomsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
 
     let mut tx = pool.begin().await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
@@ -379,7 +399,7 @@ pub async fn set_cc_preferred_rooms(
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(Json(ApiResponse::success(format!("Updated {} rooms", payload.rooms.len()))))
+    Ok(Json(ApiResponse::success(format!("Updated {} rooms", payload.rooms.len()))).into_response())
 }
 
 /// GET /api/academic/scheduling/rooms — list ทุกห้อง (สำหรับ dropdown)
@@ -397,6 +417,10 @@ pub async fn list_all_rooms(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
     let rows = sqlx::query_as::<_, RoomView>(
         "SELECT id, code, name_th, room_type FROM rooms WHERE status = 'ACTIVE' ORDER BY code"
     )
@@ -404,7 +428,7 @@ pub async fn list_all_rooms(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(Json(ApiResponse::success(rows)))
+    Ok(Json(ApiResponse::success(rows)).into_response())
 }
 
 /// Helper
@@ -426,7 +450,11 @@ pub async fn list_instructor_constraints(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
     // Get active academic year
     let academic_year = sqlx::query_as::<_, (Uuid,)>("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
         .fetch_optional(&pool)
@@ -478,7 +506,7 @@ pub async fn list_instructor_constraints(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(Json(ApiResponse::success(instructors)))
+    Ok(Json(ApiResponse::success(instructors)).into_response())
 }
 
 /// PUT /api/academic/scheduling/instructors/order
@@ -489,6 +517,10 @@ pub async fn reorder_instructor_priority(
     Json(payload): Json<ReorderInstructorPriorityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
 
     let academic_year = sqlx::query_as::<_, (Uuid,)>(
         "SELECT id FROM academic_years WHERE is_active = true LIMIT 1"
@@ -503,7 +535,7 @@ pub async fn reorder_instructor_priority(
     };
 
     if payload.instructor_ids.is_empty() {
-        return Ok(Json(ApiResponse::success("No changes".to_string())));
+        return Ok(Json(ApiResponse::success("No changes".to_string())).into_response());
     }
 
     // Build (instructor_id, priority) arrays
@@ -528,15 +560,19 @@ pub async fn reorder_instructor_priority(
 
     Ok(Json(ApiResponse::success(format!(
         "Reordered {} instructors", payload.instructor_ids.len()
-    ))))
+    ))).into_response())
 }
 
 /// GET /api/academic/scheduling/settings
-pub async fn get_school_settings(
+pub async fn get_scheduler_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
 
     let rows = sqlx::query_as::<_, (String, serde_json::Value)>(
         "SELECT key, value FROM scheduler_settings"
@@ -552,18 +588,22 @@ pub async fn get_school_settings(
         }
     }
 
-    Ok(Json(ApiResponse::success(SchoolSettingsView {
+    Ok(Json(ApiResponse::success(SchedulerSettingsView {
         default_max_consecutive,
-    })))
+    })).into_response())
 }
 
 /// PUT /api/academic/scheduling/settings
-pub async fn update_school_settings(
+pub async fn update_scheduler_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<UpdateSchoolSettingsRequest>,
+    Json(payload): Json<UpdateSchedulerSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
 
     if let Some(v) = payload.default_max_consecutive {
         if !(1..=20).contains(&v) {
@@ -581,7 +621,7 @@ pub async fn update_school_settings(
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
-    Ok(Json(ApiResponse::success("Updated school settings".to_string())))
+    Ok(Json(ApiResponse::success("Updated scheduler settings".to_string())).into_response())
 }
 
 pub async fn update_instructor_constraints(
@@ -591,7 +631,11 @@ pub async fn update_instructor_constraints(
     Json(payload): Json<UpdateInstructorConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
     let mut tx = pool.begin().await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
@@ -637,24 +681,26 @@ pub async fn update_instructor_constraints(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // Handle Room Assignment
+    // Handle Room Assignment — partial update safe
+    // - assigned_room_id Some(uuid)            → set room
+    // - clear_assigned_room = Some(true)        → clear room
+    // - ทั้งคู่ None                              → ไม่แตะต้อง (preserve existing)
     if let Some(room_id) = payload.assigned_room_id {
+        // Set: replace existing
         sqlx::query(
-            "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
+            "DELETE FROM instructor_room_assignments
+             WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
         )
         .bind(instructor_id)
         .bind(year_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-        
+
         sqlx::query(
-            r#"
-            INSERT INTO instructor_room_assignments (
-                instructor_id, academic_year_id, room_id, is_required
-            )
-            VALUES ($1, $2, $3, true)
-            "#
+            r#"INSERT INTO instructor_room_assignments
+                (instructor_id, academic_year_id, room_id, is_required)
+               VALUES ($1, $2, $3, true)"#
         )
         .bind(instructor_id)
         .bind(year_id)
@@ -662,24 +708,11 @@ pub async fn update_instructor_constraints(
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    } else {
-        // Clear assignment if None passed? Or assume no change? 
-        // Let's check logic. If UI sends undefined, it's None.
-        // If UI sends null, it's deserialized as None (if Option<Uuid>).
-        // Standard JSON: null -> None.
-        // If we want to support "Clear", we might need to know if it was explicitly null.
-        // But for simplicity, let's assume if it is NOT in payload, we don't clear (Partial Update).
-        // BUT `assigned_room_id` is Option<Uuid>. If field is missing => None.
-        // We can't distinguish Missing vs Null easily without `Option<Option<T>>` or serde default.
-        
-        // Let's implement: If we want to clear, user must send specific cleared value?
-        // Or actually, simple approach: Always clear if this endpoint is called? No.
-        // Let's assume this endpoint is "Settings Save". It sends FULL state.
-        // If user selected "No Room", frontend sends null.
-        // So we should DELETE if room_id is None.
-        
+    } else if payload.clear_assigned_room.unwrap_or(false) {
+        // Explicit clear
         sqlx::query(
-            "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
+            "DELETE FROM instructor_room_assignments
+             WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
         )
         .bind(instructor_id)
         .bind(year_id)
@@ -687,10 +720,11 @@ pub async fn update_instructor_constraints(
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
+    // else: preserve existing — ไม่แตะ
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(Json(ApiResponse::success("Updated instructor constraints".to_string())))
+    Ok(Json(ApiResponse::success("Updated instructor constraints".to_string())).into_response())
 }
 
 pub async fn list_subject_constraints(
@@ -698,6 +732,10 @@ pub async fn list_subject_constraints(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
     
     // Simple query for subjects
     let subjects = sqlx::query_as::<_, SubjectConstraintView>(
@@ -721,7 +759,7 @@ pub async fn list_subject_constraints(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(Json(ApiResponse::success(subjects)))
+    Ok(Json(ApiResponse::success(subjects)).into_response())
 }
 
 pub async fn update_subject_constraints(
@@ -731,6 +769,10 @@ pub async fn update_subject_constraints(
     Json(payload): Json<UpdateSubjectConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
 
     sqlx::query(
         r#"
@@ -754,5 +796,5 @@ pub async fn update_subject_constraints(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(Json(ApiResponse::success("Updated subject constraints".to_string())))
+    Ok(Json(ApiResponse::success("Updated subject constraints".to_string())).into_response())
 }

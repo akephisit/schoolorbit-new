@@ -156,10 +156,10 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/scheduling/instructors/{id}", put(handlers::scheduling_config::update_instructor_constraints))
         .route("/scheduling/subjects", get(handlers::scheduling_config::list_subject_constraints))
         .route("/scheduling/subjects/{id}", put(handlers::scheduling_config::update_subject_constraints))
-        // Global school settings
+        // Global scheduler settings
         .route("/scheduling/settings",
-               get(handlers::scheduling_config::get_school_settings)
-               .put(handlers::scheduling_config::update_school_settings))
+               get(handlers::scheduling_config::get_scheduler_settings)
+               .put(handlers::scheduling_config::update_scheduler_settings))
         // Classroom-course constraints (Phase B)
         .route("/scheduling/classroom-courses",
                get(handlers::scheduling_config::list_classroom_course_constraints))
