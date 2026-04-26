@@ -2366,10 +2366,7 @@
 
 			<Button
 				variant="outline"
-				onclick={() => {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- typed-routes ยังไม่รู้จัก
-					goto(resolve('/staff/academic/scheduling-config' as any));
-				}}
+				onclick={() => goto(resolve('/staff/academic/scheduling-config'))}
 			>
 				<Zap class="w-4 h-4 mr-2 text-orange-500" />
 				จัดอัตโนมัติ
@@ -2377,10 +2374,7 @@
 
 			<Button
 				variant="outline"
-				onclick={() => {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					goto(resolve('/staff/academic/timetable-templates' as any));
-				}}
+				onclick={() => goto(resolve('/staff/academic/timetable-templates'))}
 			>
 				<FileStack class="w-4 h-4 mr-2" />
 				Templates

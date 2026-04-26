@@ -619,10 +619,7 @@
 			<Button
 				variant="ghost"
 				size="sm"
-				onclick={() => {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					goto(resolve('/staff/academic/timetable/scheduling/jobs' as any));
-				}}
+				onclick={() => goto(resolve('/staff/academic/timetable/scheduling/jobs'))}
 			>
 				<History class="w-4 h-4 mr-2" />
 				ประวัติ
