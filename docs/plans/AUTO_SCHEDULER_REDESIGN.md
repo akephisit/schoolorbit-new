@@ -1,7 +1,11 @@
 # Auto-Scheduler Redesign — แผนปรับปรุงการจัดตารางสอนอัตโนมัติ
 
-> สถานะ: Draft (รอ confirm scope ก่อน implement)
-> วันที่: 2026-04-26
+> สถานะ: ✅ Phase A-G ทั้งหมด implemented
+> วันที่: 2026-04-26 (เริ่ม) → 2026-04-26 (จบ Phase A-G)
+>
+> Migration ใหม่: 109-113
+> หน้าใหม่: `/staff/academic/scheduling-config`,
+>          `/staff/academic/timetable-templates`
 
 ---
 
