@@ -521,9 +521,6 @@
 	async function handlePopoverRemoveInstructor(userId: string) {
 		if (!entryPopoverTarget) return;
 		const entry = entryPopoverTarget;
-		if (viewMode === 'INSTRUCTOR' && userId === selectedInstructorId) {
-			if (!confirm('ลบตัวเองจากคาบนี้? — คาบจะหายจากตารางของคุณ')) return;
-		}
 		entryPopoverSaving = userId;
 		try {
 			await removeEntryInstructor(entry.id, userId);
@@ -693,8 +690,6 @@
 				}
 			} else {
 				// Regular course: ลบ entry ทั้งอัน (กระทบครูทุกคน) — ถ้าจะลบแค่ตัวเอง ใช้ × ใน popover
-				if (!confirm('ลบคาบนี้ทั้งอัน? — กระทบครูทุกคนในคาบ\n(ลบเฉพาะตัวเองใช้ × ใน popover)'))
-					return;
 				try {
 					await deleteTimetableEntry(entry.id);
 					toast.success('ลบคาบแล้ว');
