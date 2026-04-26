@@ -79,9 +79,11 @@ if force_overwrite {
 | `subjects.consecutive_pattern` (jsonb) | ❌ ต้องเพิ่ม |
 | `subjects.same_day_unique` (bool) | ❌ ต้องเพิ่ม |
 | `subjects.max_consecutive` (int) | ❌ ต้องเพิ่ม |
+| `subjects.hard_unavailable_slots` (jsonb) | ❌ ต้องเพิ่ม |
 | `subject_preferred_rooms` (table) | ❌ ต้องเพิ่ม |
 | `instructor_room_assignments` | ✅ มี (ใช้เป็น fallback) |
 | `timetable_locked_slots` | ✅ มี (ใช้ pin เพิ่มเติมได้) |
+| `timetable_templates` + `template_entries` | ❌ ต้องเพิ่ม |
 
 ---
 
@@ -131,10 +133,17 @@ if force_overwrite {
 - คลิก ▼ บน row ครู → ขยายแสดง:
   1. **Grid 7×N** — วัน × คาบ → คลิกเพื่อ toggle "ไม่ว่าง" (เก็บใน `hard_unavailable_slots`)
   2. **ห้องประจำของครู** — multi-select rooms (default ของห้องที่ครูสอน)
-  3. **List วิชา** — แสดงเฉพาะวิชาที่ครูสอน (จาก `classroom_course_instructors`)
+  3. **List วิชา** — แสดง**เฉพาะวิชาที่เป็นครูหลัก** (primary)
+     เพื่อไม่ให้ครูร่วมเห็นวิชาเดียวกันซ้ำในหลาย row
+     filter: `classroom_course_instructors.role = 'primary'`
      - radio button เลือก consecutive pattern
      - checkbox `same_day_unique` (default ✓)
      - **multi-select ห้อง** เฉพาะวิชา (override ห้องของครู)
+     - **Grid 7×N สำหรับวิชา** — คาบที่ "ไม่จัดสอน" (override + เพิ่มจากครู)
+       - คาบไม่ว่างของครูทุกคนใน team → แสดง pre-checked + readonly
+         พร้อม tooltip "(ครู ก. ไม่ว่าง)"
+       - คาบที่ admin ติ๊กเพิ่มเอง → editable (เก็บใน `subjects.hard_unavailable_slots`)
+       - effective = union (teacher_unavailable ∪ subject_unavailable)
 
 ---
 
@@ -245,6 +254,168 @@ def pick_room(course, slot, day, period):
 
 ---
 
+## 4.6 Subject Unavailable Slots (คาบที่ห้ามจัดวิชานี้)
+
+นอกจากครูจะมีคาบไม่ว่าง — แต่ละ**วิชา**ก็มีคาบที่ "ไม่ควรจัด" ได้เช่นกัน
+เช่น คณิตไม่ควรเป็นคาบสุดท้าย / พละไม่ควรเป็นคาบเช้าก่อนวิชาเรียน
+
+### Auto-derive from teachers
+
+```
+effective_unavailable(subject) =
+    subject.hard_unavailable_slots
+  ∪ ⋃ for each teacher in subject.team:
+        teacher.hard_unavailable_slots
+```
+
+ดังนั้น admin ไม่ต้องกรอกซ้ำ — UI ดึงจากครูทีมมาแสดงเป็น pre-checked + readonly
+
+### UI behavior
+
+```
+วิชา ค23101 คณิต ม.3/1 — คาบที่ไม่จัดสอน
+                  คาบ1  คาบ2  คาบ3  คาบ4  คาบ5  คาบ6  คาบ7  คาบ8
+จันทร์            ☐     ☐     ☑🔒   ☑🔒   ☐     ☐     ☐     ☐
+                              (ครู ก. ไม่ว่าง)
+อังคาร           ☑     ☐     ☐     ☐     ☐     ☐     ☐     ☐
+                  ↑ admin ติ๊กเพิ่ม (subject-level)
+พุธ              ☐     ☐     ☐     ☐     ☐     ☐     ☑🔒   ☑🔒
+                                                  (ครู ข. ไม่ว่าง)
+```
+
+- 🔒 = inherited จากครู — แก้ที่ row ครู
+- ที่เหลือ = subject-level (admin override / เพิ่มเอง)
+
+### DB schema
+
+```sql
+ALTER TABLE subjects ADD COLUMN hard_unavailable_slots jsonb DEFAULT '[]';
+-- format: [{"day": "MON", "period_id": "uuid"}, ...]
+```
+
+---
+
+## 4.7 Templates สำหรับ Phase 1 Fixed Slots
+
+### ปัญหา
+
+ทุกครั้งที่กดจัดอัตโนมัติ → ผลลัพธ์อาจไม่ถูกใจ → user อยากเคลียร์แล้วลองใหม่
+แต่การเคลียร์ลบหมด = หายทั้ง Phase 1 (พัก/โฮมรูม/sync) ที่ตั้งใจวางไว้
+→ user ต้องกลับไป batch ใหม่ทีละอัน
+
+### ทางออก: บันทึกเป็น Template
+
+```
+┌─────────────────────────────────────────────────┐
+│  Templates (ตารางพื้นฐานก่อนจัด)                  │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  📋 ตาราง ม.ต้น 2/2569                            │
+│      • พักเช้า 9:30-9:45 ทุกห้อง ม.1-3            │
+│      • พักกลางวัน 12:00-13:00 ทุกห้อง            │
+│      • โฮมรูม คาบ 1 จันทร์ ทุกห้อง                 │
+│      • ชุมนุม คาบ 7-8 พุธ (sync)                  │
+│      [ ใช้ template นี้ ]   [ แก้ไข ]   [ ลบ ]    │
+│                                                  │
+│  📋 ตาราง ม.ปลาย 2/2569                           │
+│      ...                                         │
+│                                                  │
+│  [ + สร้าง Template ใหม่จากตารางปัจจุบัน ]         │
+└─────────────────────────────────────────────────┘
+```
+
+### Workflow
+
+```
+1. ครั้งแรก: batch พัก/โฮมรูม/sync ตามปกติ
+2. กด "บันทึกเป็น template" → ตั้งชื่อ → save
+3. กดจัดอัตโนมัติ → ผลไม่ถูกใจ
+4. กด "เคลียร์ทั้งหมด" → ลบทุก entry
+5. กด "ใช้ template" → batch กลับมาเหมือนเดิม
+6. กดจัดอัตโนมัติใหม่ → ลองใหม่ (อาจปรับ priority/constraint ก่อน)
+```
+
+### DB schema
+
+```sql
+CREATE TABLE timetable_templates (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    description text,
+    created_by uuid REFERENCES users(id),
+    created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE timetable_template_entries (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    template_id uuid NOT NULL REFERENCES timetable_templates(id) ON DELETE CASCADE,
+    day_of_week text NOT NULL,
+    period_id uuid NOT NULL REFERENCES academic_periods(id),
+    entry_type text NOT NULL,                  -- BREAK / HOMEROOM / ACTIVITY / ACADEMIC
+    title text,                                -- TEXT batch — title
+    activity_slot_id uuid REFERENCES activity_slots(id),  -- SLOT batch — slot ref
+    -- Scope ของห้อง: ใส่หลายแบบ
+    grade_level_ids jsonb DEFAULT '[]',        -- ["ม.1", "ม.2"] ← apply ทุกห้องใน grade
+    classroom_ids jsonb DEFAULT '[]',          -- specific classrooms (ถ้ามี)
+    instructor_ids jsonb DEFAULT '[]',         -- ครูที่ tag ใน entries
+    room_id uuid REFERENCES rooms(id)
+);
+```
+
+### Apply template = batch hydration
+
+```python
+def apply_template(template_id, target_semester_id):
+    template = load_template(template_id)
+    for entry in template.entries:
+        # Resolve target classrooms (จาก grade_level_ids → ห้องจริงในเทอม)
+        target_classrooms = resolve_classrooms(
+            entry.grade_level_ids,
+            entry.classroom_ids,
+            target_semester_id
+        )
+        # ใช้ batch endpoint เดิม — หลีกเลี่ยง logic ซ้ำ
+        createBatchTimetableEntries({
+            classroom_ids: target_classrooms,
+            instructor_ids: entry.instructor_ids,
+            days_of_week: [entry.day_of_week],
+            period_ids: [entry.period_id],
+            entry_type: entry.entry_type,
+            title: entry.title,
+            room_id: entry.room_id,
+            activity_slot_id: entry.activity_slot_id,
+            academic_semester_id: target_semester_id,
+        })
+```
+
+### Endpoint ใหม่
+
+```
+POST   /api/academic/timetable-templates              — สร้าง template
+GET    /api/academic/timetable-templates              — list
+GET    /api/academic/timetable-templates/{id}         — detail
+PUT    /api/academic/timetable-templates/{id}         — แก้ไข
+DELETE /api/academic/timetable-templates/{id}
+POST   /api/academic/timetable-templates/{id}/apply   — body: {semester_id}
+POST   /api/academic/timetable-templates/from-current — สร้างจากตารางปัจจุบัน
+                                                        body: {semester_id, name, filter}
+DELETE /api/academic/timetable/clear                  — เคลียร์ entries ทั้งภาคเรียน
+                                                        body: {semester_id, entry_types?}
+                                                        default: ลบทุกประเภท
+                                                        ระบุได้ว่าเก็บประเภทไหนไว้
+```
+
+### Use case combinations
+
+| สถานการณ์ | ใช้ |
+|-----------|-----|
+| ปีใหม่ — เริ่มจาก 0 | + สร้าง template เป็นครั้งแรก |
+| Reschedule ทั้งเทอม | clear → apply template → auto-schedule |
+| Clear เฉพาะวิชา (เก็บกิจกรรม) | clear?entry_types=COURSE → auto-schedule |
+| Copy จากเทอมก่อน | สร้าง template จากเทอม 1 → apply ใน เทอม 2 |
+
+---
+
 ## 5. Priority ของครู — ตีความใหม่
 
 `priority` **ไม่ใช่** "ใครชนะใครแพ้" (เพราะครูสองคนสอนคาบเดียวกันคือ hard
@@ -277,6 +448,7 @@ constraint อยู่แล้ว — ห้ามชน)
 | H7 | Locked slots | `timetable_locked_slots` |
 | H8 | คาบติดกันต้องห้องเดิม | derived (default on) |
 | H9 | ห้องที่ระบุ `is_required` ต้องว่าง | `subject_preferred_rooms.is_required` |
+| H10 | คาบที่วิชาห้ามจัด (รวมจากครู) | `subjects.hard_unavailable_slots` ∪ teacher's |
 
 ### 6.2 Soft constraints (อยากได้ — เป็น penalty ไม่ใช่ fail)
 
@@ -403,11 +575,15 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 - [ ] Frontend: DnD list ครู + grid วัน×คาบ toggle unavailable
 - [ ] Frontend: ปุ่ม "บันทึกและจัดอัตโนมัติ" → call existing endpoint
 
-### Phase B — Subject patterns
-- [ ] Migration: `subjects.consecutive_pattern` jsonb, `same_day_unique` bool, `max_consecutive` int
+### Phase B — Subject patterns + unavailable
+- [ ] Migration: `subjects.consecutive_pattern` jsonb, `same_day_unique` bool,
+      `max_consecutive` int, `hard_unavailable_slots` jsonb
 - [ ] Backend: scheduler ใช้ consecutive_pattern กระจายคาบ
 - [ ] Backend: ตรวจ same_day_unique + max_consecutive (S2, S3)
-- [ ] Frontend: per-row expand → list วิชา + radio pattern + checkbox
+- [ ] Backend: scheduler รวม subject + teacher unavailable เป็น effective set (H10)
+- [ ] Backend: API GET subjects รวม teacher_unavailable เพื่อ pre-fill UI
+- [ ] Frontend: per-row expand → **เฉพาะวิชาที่ครูเป็น primary** + radio + checkbox
+- [ ] Frontend: grid วิชา 7×N — pre-checked readonly สำหรับคาบครู, editable สำหรับ subject-level
 
 ### Phase C — Independent activities
 - [ ] Backend: scheduler รวม activity independent ในรอบ schedule
@@ -425,7 +601,16 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 - [ ] Backend: prefer morning, avoid first/last (S4, S5)
 - [ ] Backend: failure reasons ละเอียด
 
-### Phase F — UX polish
+### Phase F — Templates (Phase 1 enhancement)
+- [ ] Migration: `timetable_templates` + `timetable_template_entries`
+- [ ] Backend: CRUD endpoints — list/create/update/delete templates
+- [ ] Backend: POST `/templates/{id}/apply` — hydrate เข้า semester ผ่าน batch logic เดิม
+- [ ] Backend: POST `/templates/from-current` — สร้าง template จากตารางปัจจุบัน
+- [ ] Backend: DELETE `/timetable/clear?entry_types=` — เคลียร์ตามชนิด
+- [ ] Frontend: หน้า `/staff/academic/timetable-templates`
+- [ ] Frontend: ปุ่ม "บันทึกเป็น template" + "เคลียร์" + "ใช้ template" ใน /timetable
+
+### Phase G — UX polish
 - [ ] Realtime preview ก่อนกดจัด
 - [ ] Conflict report — แสดงสาเหตุที่จัดไม่ได้
 - [ ] Undo last auto-schedule
@@ -449,9 +634,10 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 ```
 backend-school/
 ├── migrations/
-│   ├── XXX_instructor_priority.sql                  ← ใหม่
-│   ├── YYY_subject_scheduling_pattern.sql           ← ใหม่
-│   └── ZZZ_subject_preferred_rooms.sql              ← ใหม่
+│   ├── XXX_instructor_priority.sql                  ← ใหม่ (Phase A)
+│   ├── YYY_subject_scheduling_pattern.sql           ← ใหม่ (Phase B)
+│   ├── ZZZ_subject_preferred_rooms.sql              ← ใหม่ (Phase D)
+│   └── WWW_timetable_templates.sql                  ← ใหม่ (Phase F)
 ├── src/modules/academic/
 │   ├── handlers/
 │   │   ├── scheduling.rs                            ← แก้ algorithm
