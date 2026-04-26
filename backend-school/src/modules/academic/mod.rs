@@ -157,6 +157,7 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/activity-slots", get(handlers::activity::list_activity_slots))
         .route("/activity-slots/{id}", put(handlers::activity::update_activity_slot).delete(handlers::activity::delete_activity_slot))
         .route("/activity-slots/{id}/instructors", get(handlers::activity::list_slot_instructors).post(handlers::activity::add_slot_instructor))
+        .route("/activity-slots/{id}/instructors/batch", post(handlers::activity::add_slot_instructors_batch))
         .route("/activity-slots/{id}/groups", axum::routing::delete(handlers::activity::delete_all_slot_groups))
         .route("/activity-slots/{id}/timetable-entries", axum::routing::delete(handlers::activity::delete_slot_timetable_entries))
         .route("/activity-slots/{id}/instructors/all", axum::routing::delete(handlers::activity::remove_all_slot_instructors))

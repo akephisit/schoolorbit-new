@@ -11,7 +11,7 @@
 		deleteActivityGroup,
 		listClassrooms,
 		listSlotInstructors,
-		addSlotInstructor,
+		addSlotInstructorsBatch,
 		removeSlotInstructor,
 		ACTIVITY_TYPE_LABELS,
 		type SlotInstructor,
@@ -544,9 +544,8 @@
 		}
 		addingSlotInstructors = true;
 		try {
-			for (const userId of slotInstructorSelectedIds) {
-				await addSlotInstructor(slotInstructorSlotId, userId);
-			}
+			// 1 transaction (เดิม loop ทีละคน → ช้า + transaction ซ้อน)
+			await addSlotInstructorsBatch(slotInstructorSlotId, slotInstructorSelectedIds);
 			toast.success(`เพิ่มครู ${slotInstructorSelectedIds.length} คนแล้ว`);
 			slotInstructorsMap[slotInstructorSlotId] =
 				(await listSlotInstructors(slotInstructorSlotId)).data ?? [];

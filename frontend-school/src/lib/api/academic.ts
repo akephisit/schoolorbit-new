@@ -764,6 +764,13 @@ export const addSlotInstructor = async (slotId: string, userId: string) => {
 	});
 };
 
+export const addSlotInstructorsBatch = async (slotId: string, userIds: string[]) => {
+	return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors/batch`, {
+		method: 'POST',
+		body: JSON.stringify({ user_ids: userIds })
+	});
+};
+
 export const removeSlotInstructor = async (slotId: string, userId: string) => {
 	return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors/${userId}`, {
 		method: 'DELETE'

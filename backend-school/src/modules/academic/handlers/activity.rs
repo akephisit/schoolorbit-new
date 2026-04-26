@@ -960,6 +960,75 @@ pub async fn add_slot_instructor(
     Ok(Json(json!({ "message": "เพิ่มครูแล้ว" })).into_response())
 }
 
+/// POST /api/academic/activity-slots/:id/instructors/batch
+/// เพิ่มครูหลายคนเข้า slot ใน transaction เดียว — ลด round-trip + transaction overhead
+/// (frontend เดิม loop เรียก add_slot_instructor ทีละคน — ช้าตามจำนวน)
+pub async fn add_slot_instructors_batch(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slot_id): Path<Uuid>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACTIVITY_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    let user_ids: Vec<Uuid> = body.get("user_ids")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| AppError::BadRequest("user_ids array required".to_string()))?
+        .iter()
+        .filter_map(|v| v.as_str().and_then(|s| Uuid::parse_str(s).ok()))
+        .collect();
+
+    if user_ids.is_empty() {
+        return Ok(Json(json!({ "message": "ไม่มีครูที่จะเพิ่ม", "added": 0 })).into_response());
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Bulk insert ครู → slot
+    sqlx::query(
+        r#"INSERT INTO activity_slot_instructors (slot_id, user_id)
+           SELECT $1, u.id FROM UNNEST($2::uuid[]) AS u(id)
+           ON CONFLICT DO NOTHING"#
+    )
+    .bind(slot_id)
+    .bind(&user_ids)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Propagate ไปทุก entry ของ slot — ครูทุกคนทีเดียว
+    // ข้ามคาบที่ครูคนนั้นติดอยู่ที่อื่น (ghost — ครูตัดสินใจเอง)
+    sqlx::query(
+        r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+           SELECT te.id, u.id, 'primary'
+           FROM academic_timetable_entries te
+           CROSS JOIN UNNEST($2::uuid[]) AS u(id)
+           WHERE te.activity_slot_id = $1
+             AND NOT EXISTS (
+                 SELECT 1 FROM academic_timetable_entries te2
+                 JOIN timetable_entry_instructors tei2 ON tei2.entry_id = te2.id
+                 WHERE tei2.instructor_id = u.id
+                   AND te2.day_of_week = te.day_of_week
+                   AND te2.period_id = te.period_id
+                   AND te2.id <> te.id
+             )
+           ON CONFLICT (entry_id, instructor_id) DO NOTHING"#,
+    )
+    .bind(slot_id)
+    .bind(&user_ids)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "message": "เพิ่มครูแล้ว", "added": user_ids.len() })).into_response())
+}
+
 /// DELETE /api/academic/activity-slots/:id/instructors/:user_id
 pub async fn remove_slot_instructor(
     State(state): State<AppState>,
