@@ -18,6 +18,7 @@
 		addEntryInstructor,
 		restoreInstructorToSlot,
 		hideInstructorFromSlot,
+		hideInstructorFromSlotPeriod,
 		swapTimetableEntries,
 		validateTimetableMoves
 	} from '$lib/api/timetable';
@@ -349,6 +350,16 @@
 		}>
 	>([]);
 
+	// INSTRUCTOR view + sync activity → ปุ่มใน batch delete dialog ทำ "ซ่อน" แทน "ลบจริง"
+	let isInstructorSyncDelete = $derived(
+		viewMode === 'INSTRUCTOR' &&
+			!!deleteBatchTarget?.activity_slot_id &&
+			(sidebarActivitySlots.find((s) => s.id === deleteBatchTarget?.activity_slot_id)
+				?.scheduling_mode === 'synchronized' ||
+				instructorActivityItems.find((i) => i.slot.id === deleteBatchTarget?.activity_slot_id)
+					?.slot?.scheduling_mode === 'synchronized')
+	);
+
 	async function loadSidebarActivitySlots() {
 		if (!selectedSemesterId) {
 			sidebarActivitySlots = [];
@@ -645,12 +656,7 @@
 			return;
 		}
 
-		// ถ้า entry มาจาก batch (มี batch_id) → ถามว่าจะลบเฉพาะคาบนี้ หรือ ลบทั้งกลุ่ม batch
-		if (entry.batch_id) {
-			deleteBatchTarget = entry;
-			showDeleteBatchDialog = true;
-			return;
-		}
+		// INSTRUCTOR view ตรวจก่อน batch_id เพราะ sync activity ลบเฉพาะตัวเอง ≠ ลบ entry/batch
 		if (viewMode === 'INSTRUCTOR') {
 			if (entry.activity_slot_id) {
 				const slot =
@@ -658,6 +664,13 @@
 					instructorActivityItems.find((i) => i.slot.id === entry.activity_slot_id)?.slot;
 				if (slot?.scheduling_mode === 'synchronized') {
 					if (!selectedInstructorId) return;
+					// Sync: ถ้ามาจาก batch → ถามว่าซ่อนเฉพาะคาบนี้ หรือทั้งกิจกรรม
+					if (entry.batch_id) {
+						deleteBatchTarget = entry;
+						showDeleteBatchDialog = true;
+						return;
+					}
+					// ไม่มี batch → hide ทั้ง slot
 					try {
 						await hideInstructorFromSlot(entry.activity_slot_id, selectedInstructorId);
 						toast.success('ลบครูออกจากกิจกรรมนี้แล้ว (ทุกห้อง)');
@@ -693,6 +706,13 @@
 			return;
 		}
 
+		// CLASSROOM view: ถ้า entry มาจาก batch → ถามว่าจะลบเฉพาะคาบนี้ หรือลบทั้งกลุ่ม batch
+		if (entry.batch_id) {
+			deleteBatchTarget = entry;
+			showDeleteBatchDialog = true;
+			return;
+		}
+
 		if (entry.activity_slot_id) {
 			const slot =
 				sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id) ||
@@ -711,9 +731,30 @@
 	}
 
 	async function doDeleteBatchGroup() {
-		if (!deleteBatchTarget?.batch_id) return;
+		const target = deleteBatchTarget;
+		if (!target?.batch_id) return;
 		try {
-			const res = await deleteBatchGroup(deleteBatchTarget.batch_id);
+			// INSTRUCTOR view + sync activity → ซ่อนครูคนนี้จากทั้ง slot (ไม่ลบ entry จริง)
+			if (
+				viewMode === 'INSTRUCTOR' &&
+				target.activity_slot_id &&
+				selectedInstructorId
+			) {
+				const slot =
+					sidebarActivitySlots.find((s) => s.id === target.activity_slot_id) ||
+					instructorActivityItems.find((i) => i.slot.id === target.activity_slot_id)?.slot;
+				if (slot?.scheduling_mode === 'synchronized') {
+					await hideInstructorFromSlot(target.activity_slot_id, selectedInstructorId);
+					toast.success('ลบครูออกจากกิจกรรมนี้แล้ว (ทุกคาบ ทุกห้อง)');
+					showDeleteBatchDialog = false;
+					deleteBatchTarget = null;
+					loadTimetable();
+					loadSidebarActivitySlots();
+					return;
+				}
+			}
+			// CLASSROOM view (หรือ INSTRUCTOR + non-sync): ลบ batch group จริง
+			const res = await deleteBatchGroup(target.batch_id);
 			toast.success(`ลบทั้งกลุ่มสำเร็จ (${res.deleted_count} คาบ)`);
 			showDeleteBatchDialog = false;
 			deleteBatchTarget = null;
@@ -725,8 +766,35 @@
 
 	async function doDeleteBatchSingle() {
 		if (!deleteBatchTarget) return;
+		const target = deleteBatchTarget;
 		try {
-			await deleteTimetableEntry(deleteBatchTarget.id);
+			// INSTRUCTOR view + sync activity → ซ่อนครูคนนี้จาก slot+day+period (ทุกห้อง)
+			// ไม่ใช่ลบ entry เพราะจะลบแค่ห้องเดียว — INSTRUCTOR view ทำ dedupe → cell ยังโผล่
+			if (
+				viewMode === 'INSTRUCTOR' &&
+				target.activity_slot_id &&
+				selectedInstructorId
+			) {
+				const slot =
+					sidebarActivitySlots.find((s) => s.id === target.activity_slot_id) ||
+					instructorActivityItems.find((i) => i.slot.id === target.activity_slot_id)?.slot;
+				if (slot?.scheduling_mode === 'synchronized') {
+					await hideInstructorFromSlotPeriod(
+						target.activity_slot_id,
+						selectedInstructorId,
+						target.day_of_week,
+						target.period_id
+					);
+					toast.success('ลบครูออกจากคาบนี้แล้ว (ทุกห้อง)');
+					showDeleteBatchDialog = false;
+					deleteBatchTarget = null;
+					loadTimetable();
+					loadSidebarActivitySlots();
+					return;
+				}
+			}
+			// CLASSROOM view (หรือ INSTRUCTOR + non-sync): ลบ entry เดียว
+			await deleteTimetableEntry(target.id);
 			toast.success('ลบเฉพาะคาบนี้แล้ว');
 			showDeleteBatchDialog = false;
 			deleteBatchTarget = null;
@@ -1612,24 +1680,19 @@
 	};
 
 	let unscheduledActivities: UnscheduledActivity[] = $derived.by(() => {
-		const slotCounts = new SvelteMap<string, number>();
-		timetableEntries.forEach((entry) => {
-			if (entry.activity_slot_id) {
-				// For INSTRUCTOR view with independent: count per slot+classroom
-				const key =
-					viewMode === 'INSTRUCTOR' && entry.classroom_id
-						? `${entry.activity_slot_id}:${entry.classroom_id}`
-						: entry.activity_slot_id;
-				slotCounts.set(key, (slotCounts.get(key) || 0) + 1);
-			}
-		});
-
 		if (viewMode === 'INSTRUCTOR') {
 			const items: UnscheduledActivity[] = [];
 
-			// Synchronized slots (read-only)
+			// Synchronized: count unique (day, period) ต่อ slot
+			// (1 คาบ logical = N entries ของ N ห้อง — นับเป็น 1)
 			for (const slot of sidebarActivitySlots) {
-				const scheduled = slotCounts.get(slot.id) || 0;
+				const seen = new SvelteSet<string>();
+				for (const entry of timetableEntries) {
+					if (entry.activity_slot_id === slot.id) {
+						seen.add(`${entry.day_of_week}:${entry.period_id}`);
+					}
+				}
+				const scheduled = seen.size;
 				if (scheduled < slot.periods_per_week) {
 					items.push({
 						...slot,
@@ -1643,10 +1706,17 @@
 				}
 			}
 
-			// Independent items per classroom (draggable)
+			// Independent items per classroom (draggable) — นับ entries ตรง ๆ ต่อ slot+classroom
+			const indepCounts = new SvelteMap<string, number>();
+			for (const entry of timetableEntries) {
+				if (entry.activity_slot_id && entry.classroom_id) {
+					const key = `${entry.activity_slot_id}:${entry.classroom_id}`;
+					indepCounts.set(key, (indepCounts.get(key) || 0) + 1);
+				}
+			}
 			for (const item of instructorActivityItems) {
 				const key = `${item.slot.id}:${item.classroom_id}`;
-				const scheduled = slotCounts.get(key) || 0;
+				const scheduled = indepCounts.get(key) || 0;
 				if (scheduled < item.slot.periods_per_week) {
 					items.push({
 						...item.slot,
@@ -1663,6 +1733,17 @@
 
 			return items;
 		}
+
+		// CLASSROOM view: 1 entry = 1 คาบ (entries ถูก filter เหลือห้องเดียวอยู่แล้ว)
+		const slotCounts = new SvelteMap<string, number>();
+		timetableEntries.forEach((entry) => {
+			if (entry.activity_slot_id) {
+				slotCounts.set(
+					entry.activity_slot_id,
+					(slotCounts.get(entry.activity_slot_id) || 0) + 1
+				);
+			}
+		});
 
 		return sidebarActivitySlots
 			.map((slot) => {
@@ -3252,16 +3333,26 @@
 <Dialog.Root bind:open={showDeleteBatchDialog}>
 	<Dialog.Content class="max-w-sm">
 		<Dialog.Header>
-			<Dialog.Title>ลบคาบที่สร้างจาก Batch</Dialog.Title>
+			<Dialog.Title>
+				{isInstructorSyncDelete ? 'ซ่อนตัวเองจากกิจกรรม' : 'ลบคาบที่สร้างจาก Batch'}
+			</Dialog.Title>
 			<Dialog.Description>
 				<span class="font-medium text-foreground">{deleteBatchTarget?.title || 'กิจกรรม'}</span>
 				<br />
-				คาบนี้ถูกสร้างพร้อมกับคาบอื่นจาก Batch เดียวกัน — ลบแบบไหนดี?
+				{#if isInstructorSyncDelete}
+					กิจกรรมนี้สอนพร้อมกันหลายห้อง — ซ่อนครูแบบไหนดี? (ห้องอื่นยังเห็นกิจกรรมเหมือนเดิม)
+				{:else}
+					คาบนี้ถูกสร้างพร้อมกับคาบอื่นจาก Batch เดียวกัน — ลบแบบไหนดี?
+				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="flex flex-col gap-2 py-2">
-			<Button variant="outline" onclick={doDeleteBatchSingle}>ลบแค่คาบนี้</Button>
-			<Button variant="destructive" onclick={doDeleteBatchGroup}>ลบทั้งหมดที่สร้างพร้อมกัน</Button>
+			<Button variant="outline" onclick={doDeleteBatchSingle}>
+				{isInstructorSyncDelete ? 'ซ่อนเฉพาะคาบนี้' : 'ลบแค่คาบนี้'}
+			</Button>
+			<Button variant="destructive" onclick={doDeleteBatchGroup}>
+				{isInstructorSyncDelete ? 'ซ่อนทั้งกิจกรรม' : 'ลบทั้งหมดที่สร้างพร้อมกัน'}
+			</Button>
 		</div>
 		<Dialog.Footer>
 			<Button

@@ -400,3 +400,16 @@ export const hideInstructorFromSlot = async (slotId: string, instructorId: strin
 		method: 'DELETE'
 	});
 };
+
+export const hideInstructorFromSlotPeriod = async (
+	slotId: string,
+	instructorId: string,
+	dayOfWeek: string,
+	periodId: string
+) => {
+	const params = new URLSearchParams({ day_of_week: dayOfWeek, period_id: periodId });
+	return await fetchApi(
+		`/api/academic/timetable/slots/${slotId}/instructors/${instructorId}/period?${params.toString()}`,
+		{ method: 'DELETE' }
+	);
+};

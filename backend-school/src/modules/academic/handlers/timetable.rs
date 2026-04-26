@@ -1944,6 +1944,84 @@ pub async fn hide_instructor_from_slot_entries(
     .execute(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Broadcast TableRefresh เพื่อให้ client อื่น sync
+    let semester_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT academic_semester_id FROM academic_timetable_entries
+         WHERE activity_slot_id = $1 LIMIT 1"
+    )
+    .bind(slot_id)
+    .fetch_optional(&pool).await.ok().flatten();
+    if let Some(sid) = semester_id {
+        let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+        state.websocket_manager.broadcast_mutation(
+            subdomain, sid,
+            TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+        );
+    }
+
+    Ok(Json(json!({ "success": true, "deleted": affected.rows_affected() })).into_response())
+}
+
+/// DELETE /api/academic/timetable/slots/:slot_id/instructors/:uid/period
+/// Query: day_of_week, period_id
+/// Removes the instructor from entries of the given slot for one specific (day, period) only.
+/// Used when an instructor wants to hide themselves from a single period of a synchronized
+/// activity (across all classrooms in that slot).
+#[derive(Debug, serde::Deserialize)]
+pub struct HideSlotPeriodQuery {
+    pub day_of_week: String,
+    pub period_id: Uuid,
+}
+
+pub async fn hide_instructor_from_slot_period_entries(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
+    Query(q): Query<HideSlotPeriodQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+    let affected = sqlx::query(
+        "DELETE FROM timetable_entry_instructors
+         WHERE instructor_id = $1
+           AND entry_id IN (
+               SELECT id FROM academic_timetable_entries
+               WHERE activity_slot_id = $2
+                 AND day_of_week = $3
+                 AND period_id = $4
+                 AND is_active = true
+           )"
+    )
+    .bind(instructor_id)
+    .bind(slot_id)
+    .bind(&q.day_of_week)
+    .bind(q.period_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Broadcast TableRefresh
+    let semester_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT academic_semester_id FROM academic_timetable_entries
+         WHERE activity_slot_id = $1 AND day_of_week = $2 AND period_id = $3 LIMIT 1"
+    )
+    .bind(slot_id)
+    .bind(&q.day_of_week)
+    .bind(q.period_id)
+    .fetch_optional(&pool).await.ok().flatten();
+    if let Some(sid) = semester_id {
+        let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+        state.websocket_manager.broadcast_mutation(
+            subdomain, sid,
+            TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+        );
+    }
+
     Ok(Json(json!({ "success": true, "deleted": affected.rows_affected() })).into_response())
 }
 

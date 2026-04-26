@@ -88,6 +88,8 @@ pub fn academic_routes() -> Router<AppState> {
                post(handlers::timetable::restore_instructor_to_slot_entries))
         .route("/timetable/slots/{slot_id}/instructors/{uid}",
                axum::routing::delete(handlers::timetable::hide_instructor_from_slot_entries))
+        .route("/timetable/slots/{slot_id}/instructors/{uid}/period",
+               axum::routing::delete(handlers::timetable::hide_instructor_from_slot_period_entries))
 
         // Study Plans (หลักสูตรสถานศึกษา)
         .route("/study-plans", get(handlers::study_plans::list_study_plans).post(handlers::study_plans::create_study_plan))
