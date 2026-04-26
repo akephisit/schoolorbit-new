@@ -198,7 +198,11 @@
 											onclick={() => isClickable && handleActivityClick(entry)}
 											disabled={!isClickable}
 										>
-											<div class="font-semibold truncate w-full">
+											<div
+												class="font-semibold w-full {isCourse
+													? 'truncate'
+													: 'whitespace-pre-line line-clamp-3 leading-tight'}"
+											>
 												{entry.subject_code || entry.title || entry.subject_name_th || ''}
 											</div>
 											{#if isCourse && entry.subject_name_th}

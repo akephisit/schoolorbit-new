@@ -230,7 +230,11 @@
 												entry.entry_type
 											)} {isCourse ? 'text-left' : 'items-center justify-center text-center'}"
 										>
-											<div class="w-full truncate font-semibold">
+											<div
+												class="w-full font-semibold {isCourse
+													? 'truncate'
+													: 'line-clamp-3 leading-tight whitespace-pre-line'}"
+											>
 												{entry.subject_code || entry.title || entry.subject_name_th || ''}
 											</div>
 											{#if isCourse && entry.subject_name_th}
