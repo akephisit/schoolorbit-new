@@ -16,6 +16,7 @@ use crate::utils::{
 use crate::AppState;
 use super::models::{ParentProfile, ParentDbRow, ChildDto};
 use crate::modules::students::models::{StudentProfile, StudentDbRow, ParentDto};
+use crate::modules::academic::models::timetable::TimetableEntry;
 
 /// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
 pub async fn get_own_parent_profile(
@@ -225,6 +226,115 @@ pub async fn get_child_profile(
         info: student_row,
         parents,
     };
-    
+
     Ok((StatusCode::OK, Json(json!({"success": true, "data": student}))))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ChildTimetableQuery {
+    pub academic_semester_id: Option<Uuid>,
+}
+
+/// GET /api/parent/students/:student_id/timetable
+/// ผู้ปกครองดูตารางเรียนของบุตรหลาน — verify ownership ผ่าน student_parents
+pub async fn get_child_timetable(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(student_id): Path<Uuid>,
+    Query(query): Query<ChildTimetableQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let subdomain = extract_subdomain_from_request(&headers)
+        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
+
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
+        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
+
+    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+
+    let user = get_current_user(&headers, &pool).await?;
+
+    // Verify parent owns this student
+    let is_linked = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM student_parents
+            WHERE parent_user_id = $1 AND student_user_id = $2
+        )
+        "#
+    )
+    .bind(user.id)
+    .bind(student_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !is_linked {
+        return Err(AppError::Forbidden("คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string()));
+    }
+
+    // Query timetable scoped to the student's active classroom enrollments
+    // (เลียน list_timetable_entries แต่ filter เฉพาะนักเรียนคนนี้)
+    let mut sql = String::from(
+        r#"
+        SELECT
+            te.*,
+            s.code   AS subject_code,
+            s.name_th AS subject_name_th,
+            (SELECT ARRAY_AGG(concat(u2.first_name, ' ', u2.last_name) ORDER BY tei2.role, tei2.created_at)
+             FROM timetable_entry_instructors tei2
+             JOIN users u2 ON u2.id = tei2.instructor_id
+             WHERE tei2.entry_id = te.id) AS instructor_names,
+            (SELECT ARRAY_AGG(tei_id.instructor_id ORDER BY tei_id.role, tei_id.created_at)
+             FROM timetable_entry_instructors tei_id
+             WHERE tei_id.entry_id = te.id) AS instructor_ids,
+            (SELECT concat(u3.first_name, ' ', u3.last_name)
+             FROM timetable_entry_instructors tei3
+             JOIN users u3 ON u3.id = tei3.instructor_id
+             WHERE tei3.entry_id = te.id
+             ORDER BY tei3.role, tei3.created_at
+             LIMIT 1) AS instructor_name,
+            cr.name  AS classroom_name,
+            r.code   AS room_code,
+            ap.name  AS period_name,
+            ap.start_time,
+            ap.end_time,
+            asl_ac.name AS activity_slot_name,
+            asl_ac.activity_type AS activity_type,
+            asl_ac.scheduling_mode AS activity_scheduling_mode
+        FROM academic_timetable_entries te
+        LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
+        LEFT JOIN subjects s ON cc.subject_id = s.id
+        LEFT JOIN class_rooms cr ON te.classroom_id = cr.id
+        JOIN academic_periods ap ON te.period_id = ap.id
+        LEFT JOIN rooms r ON te.room_id = r.id
+        LEFT JOIN activity_slots asl ON te.activity_slot_id = asl.id
+        LEFT JOIN activity_catalog asl_ac ON asl.activity_catalog_id = asl_ac.id
+        WHERE te.is_active = true
+          AND te.classroom_id IN (
+              SELECT class_room_id FROM student_class_enrollments
+              WHERE student_id = $1 AND status = 'active'
+          )
+        "#
+    );
+
+    if query.academic_semester_id.is_some() {
+        sql.push_str(" AND te.academic_semester_id = $2");
+    }
+
+    sql.push_str(" ORDER BY te.day_of_week, ap.order_index");
+
+    let mut q = sqlx::query_as::<_, TimetableEntry>(&sql).bind(student_id);
+    if let Some(sem_id) = query.academic_semester_id {
+        q = q.bind(sem_id);
+    }
+
+    let entries = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("Failed to fetch child timetable: {}", e);
+        AppError::InternalServerError("Failed to fetch timetable".to_string())
+    })?;
+
+    Ok((StatusCode::OK, Json(json!({ "success": true, "data": entries }))))
 }

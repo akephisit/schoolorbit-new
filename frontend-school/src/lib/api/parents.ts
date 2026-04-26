@@ -59,3 +59,28 @@ export async function getChildProfile(
 
 	return await response.json();
 }
+
+import type { TimetableEntry } from './timetable';
+
+/**
+ * Get child's timetable (parent self-service)
+ */
+export async function getChildTimetable(
+	studentId: string,
+	academicSemesterId?: string
+): Promise<{ success: boolean; data: TimetableEntry[] }> {
+	const params = new URLSearchParams();
+	if (academicSemesterId) params.append('academic_semester_id', academicSemesterId);
+	const qs = params.toString() ? `?${params.toString()}` : '';
+
+	const response = await fetch(`${BACKEND_URL}/api/parent/students/${studentId}/timetable${qs}`, {
+		credentials: 'include'
+	});
+
+	if (!response.ok) {
+		const error = await response.json().catch(() => ({ error: 'Failed to get timetable' }));
+		throw new Error(error.error || 'Failed to get child timetable');
+	}
+
+	return await response.json();
+}

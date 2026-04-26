@@ -136,8 +136,16 @@
 					</div>
 					<h3 class="font-semibold">ตารางเรียน</h3>
 				</div>
-				<p class="text-muted-foreground text-sm">ยังไม่มีข้อมูลตารางเรียน</p>
-				<Button variant="link" class="px-0 mt-2 text-purple-600">ดูทั้งหมด</Button>
+				<p class="text-muted-foreground text-sm">ดูตารางเรียนของบุตรในแต่ละภาคเรียน</p>
+				<Button
+					variant="link"
+					class="px-0 mt-2 text-purple-600"
+					onclick={() =>
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic typed-route interpolation
+						goto(resolve(`/parent/student/${studentId}/timetable` as any))}
+				>
+					ดูทั้งหมด
+				</Button>
 			</Card>
 		</div>
 	{/if}
