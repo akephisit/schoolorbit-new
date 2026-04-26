@@ -656,21 +656,24 @@
 			return;
 		}
 
-		// INSTRUCTOR view ตรวจก่อน batch_id เพราะ sync activity ลบเฉพาะตัวเอง ≠ ลบ entry/batch
+		// batch_id ทุกชนิด (TEXT/SLOT-sync) เปิด dialog ถามก่อน
+		// — doDeleteBatch* จัดการ routing เอง: INSTRUCTOR + sync ใช้ hide endpoint,
+		//   ส่วน CLASSROOM หรือ TEXT batch ลบ entry/group จริง
+		if (entry.batch_id) {
+			deleteBatchTarget = entry;
+			showDeleteBatchDialog = true;
+			return;
+		}
+
+		// INSTRUCTOR view: non-batch entries (independent activity, course)
 		if (viewMode === 'INSTRUCTOR') {
 			if (entry.activity_slot_id) {
 				const slot =
 					sidebarActivitySlots.find((s) => s.id === entry.activity_slot_id) ||
 					instructorActivityItems.find((i) => i.slot.id === entry.activity_slot_id)?.slot;
 				if (slot?.scheduling_mode === 'synchronized') {
+					// Legacy sync ที่ไม่มี batch_id — ซ่อนทั้ง slot
 					if (!selectedInstructorId) return;
-					// Sync: ถ้ามาจาก batch → ถามว่าซ่อนเฉพาะคาบนี้ หรือทั้งกิจกรรม
-					if (entry.batch_id) {
-						deleteBatchTarget = entry;
-						showDeleteBatchDialog = true;
-						return;
-					}
-					// ไม่มี batch → hide ทั้ง slot
 					try {
 						await hideInstructorFromSlot(entry.activity_slot_id, selectedInstructorId);
 						toast.success('ลบครูออกจากกิจกรรมนี้แล้ว (ทุกห้อง)');
@@ -703,13 +706,6 @@
 			// Backend broadcasts patch event ให้แล้ว — ไม่ต้องส่ง TableRefresh ซ้ำ
 			loadTimetable();
 			loadSidebarActivitySlots();
-			return;
-		}
-
-		// CLASSROOM view: ถ้า entry มาจาก batch → ถามว่าจะลบเฉพาะคาบนี้ หรือลบทั้งกลุ่ม batch
-		if (entry.batch_id) {
-			deleteBatchTarget = entry;
-			showDeleteBatchDialog = true;
 			return;
 		}
 
