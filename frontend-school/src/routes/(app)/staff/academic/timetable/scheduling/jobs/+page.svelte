@@ -146,7 +146,10 @@
 			<Button
 				variant="ghost"
 				size="icon"
-				onclick={() => goto(resolve('/staff/academic/timetable/scheduling/auto-schedule'))}
+				onclick={() => {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					goto(resolve('/staff/academic/scheduling-config' as any));
+				}}
 			>
 				<ArrowLeft class="h-4 w-4" />
 			</Button>
@@ -158,7 +161,10 @@
 				<p class="text-muted-foreground">รายการจัดตารางทั้งหมดในระบบ</p>
 			</div>
 		</div>
-		<Button onclick={() => goto(resolve('/staff/academic/timetable/scheduling/auto-schedule'))}>
+		<Button onclick={() => {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			goto(resolve('/staff/academic/scheduling-config' as any));
+		}}>
 			<Plus class="mr-2 h-4 w-4" />
 			สร้างรายการใหม่
 		</Button>

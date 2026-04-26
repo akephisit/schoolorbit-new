@@ -1,16 +1,8 @@
-export const _meta = {
-	menu: {
-		title: 'Templates ตาราง',
-		icon: 'FileStack',
-		group: 'academic',
-		permission: 'academic_course_plan.manage.all',
-		order: 78,
-		user_type: 'staff'
-	}
-};
+// ไม่อยู่ใน menu — เข้าจากปุ่ม "Templates" ในหน้า /staff/academic/timetable
+const TITLE = 'Templates ตาราง';
 
 export const load = async () => {
 	return {
-		title: _meta.menu.title
+		title: TITLE
 	};
 };

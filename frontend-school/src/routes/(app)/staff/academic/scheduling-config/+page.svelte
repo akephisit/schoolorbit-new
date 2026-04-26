@@ -22,8 +22,7 @@
 		type RoomView,
 		type Period,
 		type TimeSlot,
-		type SchedulingJobResponse,
-		type FailedCourse
+		type SchedulingJobResponse
 	} from '$lib/api/scheduling';
 	import { getAcademicStructure, getSchoolDays, type AcademicYear, listClassrooms, type Semester } from '$lib/api/academic';
 	import * as Card from '$lib/components/ui/card';
@@ -31,7 +30,9 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
-	import { GripVertical, ChevronDown, ChevronRight, Sparkles, Save, LoaderCircle, Zap, TriangleAlert, Undo2 } from 'lucide-svelte';
+	import { GripVertical, ChevronDown, ChevronRight, Sparkles, Save, LoaderCircle, Zap, TriangleAlert, Undo2, History } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 
@@ -615,6 +616,17 @@
 			<h1 class="text-2xl font-bold">ตั้งค่าจัดตารางอัตโนมัติ</h1>
 		</div>
 		<div class="flex items-center gap-2">
+			<Button
+				variant="ghost"
+				size="sm"
+				onclick={() => {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					goto(resolve('/staff/academic/timetable/scheduling/jobs' as any));
+				}}
+			>
+				<History class="w-4 h-4 mr-2" />
+				ประวัติ
+			</Button>
 			<Button variant="outline" onclick={saveAll} disabled={saving || loading || autoScheduling}>
 				{#if saving}
 					<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
