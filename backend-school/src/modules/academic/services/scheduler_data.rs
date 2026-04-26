@@ -17,13 +17,14 @@ impl<'a> SchedulerDataLoader<'a> {
     }
     
     /// Load courses to schedule for given classrooms and semester
+    /// Sorted by primary instructor's priority — ครูสำคัญถูกจัดก่อน
     pub async fn load_courses(
         &self,
         classroom_ids: &[Uuid],
         semester_id: Uuid,
     ) -> Result<Vec<CourseToSchedule>, sqlx::Error> {
         let query = r#"
-            SELECT 
+            SELECT
                 cc.id as classroom_course_id,
                 cc.classroom_id,
                 cls.name as classroom_name,
@@ -32,28 +33,32 @@ impl<'a> SchedulerDataLoader<'a> {
                 s.name_th as subject_name,
                 cc.primary_instructor_id as instructor_id,
                 u.first_name || ' ' || u.last_name as instructor_name,
-                
+
                 -- Period requirements
-                COALESCE(s.periods_per_week, 
+                COALESCE(s.periods_per_week,
                     CASE WHEN s.hours_per_semester > 0 THEN CEIL(s.hours_per_semester::float / 20.0)::int
                          WHEN s.credit > 0 THEN CEIL(s.credit * 2.0)::int
                          ELSE 2
                     END) as periods_needed,
-                
+
                 -- Consecutive requirements
                 COALESCE(s.min_consecutive_periods, 1) as min_consecutive,
                 2 as max_consecutive,
                 COALESCE(s.allow_single_period, true) as allow_single_period,
                 s.allowed_period_ids,
                 s.allowed_days
-                
+
             FROM classroom_courses cc
             JOIN subjects s ON s.id = cc.subject_id
             JOIN class_rooms cls ON cls.id = cc.classroom_id
+            JOIN academic_semesters sem ON sem.id = cc.academic_semester_id
             LEFT JOIN users u ON u.id = cc.primary_instructor_id
+            LEFT JOIN instructor_preferences ip
+                ON ip.instructor_id = cc.primary_instructor_id
+                AND ip.academic_year_id = sem.academic_year_id
             WHERE cc.classroom_id = ANY($1)
               AND cc.academic_semester_id = $2
-            ORDER BY s.code
+            ORDER BY COALESCE(ip.priority, 100) ASC, s.code ASC
         "#;
         
         let rows = sqlx::query_as::<_, CourseRow>(query)
@@ -349,6 +354,57 @@ impl<'a> SchedulerDataLoader<'a> {
         .await?;
 
         Ok(rows.into_iter().collect())
+    }
+
+    /// Load entries ที่มีอยู่แล้ว (Phase 1 fixed slots: BREAK/HOMEROOM/ACTIVITY/TEXT)
+    /// แปลงเป็น LockedSlotData เพื่อให้ scheduler มองเป็น "ช่องที่ถูกจองแล้ว"
+    /// Skip COURSE entries — auto-scheduler จะ regenerate (พร้อม force_overwrite)
+    pub async fn load_existing_entries_as_locked(
+        &self,
+        semester_id: Uuid,
+        classroom_ids: &[Uuid],
+    ) -> Result<Vec<LockedSlotData>, sqlx::Error> {
+        // 1 query — group by (classroom, day, period) → unique locks
+        // skip COURSE เพราะ scheduler regenerate (ถ้า force_overwrite=true ยังไงก็ลบ)
+        let rows = sqlx::query_as::<_, (Uuid, String, Uuid)>(
+            r#"SELECT DISTINCT te.classroom_id, te.day_of_week, te.period_id
+               FROM academic_timetable_entries te
+               WHERE te.academic_semester_id = $1
+                 AND te.classroom_id = ANY($2)
+                 AND te.is_active = true
+                 AND te.entry_type <> 'COURSE'"#
+        )
+        .bind(semester_id)
+        .bind(classroom_ids)
+        .fetch_all(self.pool)
+        .await?;
+
+        // Pack: 1 row per (classroom, day, period)
+        // ใช้ Uuid::nil() เป็น sentinel "ไม่ใช่ subject ใด ๆ" — locked check ใน validator
+        // ใช้ subject_id != course.subject_id → nil ≠ real subject → block ทุกวิชา
+        let nil = Uuid::nil();
+        let locked = rows.into_iter().map(|(classroom_id, day, period_id)| {
+            LockedSlotData {
+                subject_id: nil,
+                day,
+                period_ids: vec![period_id],
+                classroom_ids: vec![classroom_id],
+                scope_type: "EXISTING_ENTRY".to_string(),
+            }
+        }).collect();
+
+        Ok(locked)
+    }
+
+    /// Load global setting: default_max_consecutive
+    pub async fn load_default_max_consecutive(&self) -> Result<i32, sqlx::Error> {
+        let val: Option<serde_json::Value> = sqlx::query_scalar(
+            "SELECT value FROM school_settings WHERE key = 'default_max_consecutive'"
+        )
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(val.and_then(|v| v.as_i64()).unwrap_or(4) as i32)
     }
 
     /// Load all rooms with details

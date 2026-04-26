@@ -285,7 +285,15 @@ async fn run_scheduling_job(
     let courses = loader.load_courses(&classroom_ids, semester_id).await?;
     let available_slots = loader.load_available_slots(semester_id).await?;
     let periods = loader.load_periods(academic_year_id).await?;
-    let locked_slots = loader.load_locked_slots(semester_id, &classroom_ids).await?;
+
+    // รวม locked slots จาก 2 แหล่ง:
+    // - timetable_locked_slots (admin pin ผ่าน UI)
+    // - academic_timetable_entries ที่ไม่ใช่ COURSE (Phase 1 fixed: BREAK/HOMEROOM/ACTIVITY/TEXT)
+    //   → scheduler จะหลบ ไม่จัด COURSE ทับช่องที่ถูกจองแล้ว
+    let mut locked_slots = loader.load_locked_slots(semester_id, &classroom_ids).await?;
+    let existing = loader.load_existing_entries_as_locked(semester_id, &classroom_ids).await?;
+    locked_slots.extend(existing);
+
     let instructor_prefs = loader.load_instructor_preferences(academic_year_id).await?;
     let rooms = loader.load_rooms().await?; // Load rooms
     

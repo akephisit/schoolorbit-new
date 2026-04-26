@@ -150,9 +150,15 @@ pub fn academic_routes() -> Router<AppState> {
 
         // Scheduling Constraints Config
         .route("/scheduling/instructors", get(handlers::scheduling_config::list_instructor_constraints))
+        // Bulk reorder priority — register BEFORE /{id} เพื่อกัน Axum match "order" เป็น id
+        .route("/scheduling/instructors/order", put(handlers::scheduling_config::reorder_instructor_priority))
         .route("/scheduling/instructors/{id}", put(handlers::scheduling_config::update_instructor_constraints))
         .route("/scheduling/subjects", get(handlers::scheduling_config::list_subject_constraints))
         .route("/scheduling/subjects/{id}", put(handlers::scheduling_config::update_subject_constraints))
+        // Global school settings
+        .route("/scheduling/settings",
+               get(handlers::scheduling_config::get_school_settings)
+               .put(handlers::scheduling_config::update_school_settings))
 
         // Activity Slots (ช่องกิจกรรม — Admin)
         // POST removed: slots must come from plan via generate_courses_from_plan

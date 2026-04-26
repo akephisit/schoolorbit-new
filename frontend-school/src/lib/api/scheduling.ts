@@ -155,17 +155,28 @@ export interface InstructorConstraintView {
 	last_name: string;
 	short_name?: string;
 	max_periods_per_day?: number;
-	hard_unavailable_slots?: unknown; // JSON
-	preferred_slots?: unknown; // JSON
+	hard_unavailable_slots?: TimeSlot[]; // Concrete type
+	preferred_slots?: TimeSlot[];
 	assigned_room_id?: UUID;
 	assigned_room_name?: string;
+	priority: number;
+	primary_course_count: number;
 }
 
 export interface UpdateInstructorConstraintRequest {
 	max_periods_per_day?: number;
-	hard_unavailable_slots?: unknown;
-	preferred_slots?: unknown;
-	assigned_room_id?: UUID;
+	hard_unavailable_slots?: TimeSlot[];
+	preferred_slots?: TimeSlot[];
+	assigned_room_id?: UUID | null;
+	priority?: number;
+}
+
+export interface SchoolSettings {
+	default_max_consecutive: number;
+}
+
+export interface UpdateSchoolSettingsRequest {
+	default_max_consecutive?: number;
 }
 
 export interface SubjectConstraintView {
@@ -197,6 +208,20 @@ export async function updateInstructorConstraints(
 	req: UpdateInstructorConstraintRequest
 ) {
 	return apiClient.put<unknown>(`/api/academic/scheduling/instructors/${id}`, req);
+}
+
+export async function reorderInstructorPriority(instructor_ids: UUID[]) {
+	return apiClient.put<string>('/api/academic/scheduling/instructors/order', {
+		instructor_ids
+	});
+}
+
+export async function getSchoolSettings() {
+	return apiClient.get<SchoolSettings>('/api/academic/scheduling/settings');
+}
+
+export async function updateSchoolSettings(req: UpdateSchoolSettingsRequest) {
+	return apiClient.put<string>('/api/academic/scheduling/settings', req);
 }
 
 export async function listSubjectConstraints() {

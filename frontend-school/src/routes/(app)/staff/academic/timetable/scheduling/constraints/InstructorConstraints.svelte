@@ -94,20 +94,19 @@
 			.map(() => Array(PERIODS).fill(false));
 
 		// Parse Unavailable Slots
+		// Legacy format from this old component: {day_index, period_index}
+		// New format (from /scheduling-config): {day, period_id}
+		// We fall back to legacy fields if present.
 		if (instructor.hard_unavailable_slots && Array.isArray(instructor.hard_unavailable_slots)) {
-			// Example format from DB: [{ day_index: 0, period_index: 0 }, ...]
-			instructor.hard_unavailable_slots.forEach(
-				(slot: { day_index: number; period_index: number }) => {
-					if (slot.day_index !== undefined && slot.period_index !== undefined) {
-						if (
-							busyGrid[slot.day_index] &&
-							busyGrid[slot.day_index][slot.period_index] !== undefined
-						) {
-							busyGrid[slot.day_index][slot.period_index] = true;
-						}
+			(instructor.hard_unavailable_slots as unknown as Array<Record<string, unknown>>).forEach((slot) => {
+				const di = slot.day_index as number | undefined;
+				const pi = slot.period_index as number | undefined;
+				if (di !== undefined && pi !== undefined) {
+					if (busyGrid[di] && busyGrid[di][pi] !== undefined) {
+						busyGrid[di][pi] = true;
 					}
 				}
-			);
+			});
 		}
 
 		showDialog = true;
@@ -122,8 +121,8 @@
 		if (!selectedInstructor) return;
 		saving = true;
 
-		// Convert grid back to JSON
-		const unavailableSlots = [];
+		// Convert grid back to JSON — legacy format ของ component เก่า
+		const unavailableSlots: Array<Record<string, unknown>> = [];
 		for (let d = 0; d < 5; d++) {
 			for (let p = 0; p < PERIODS; p++) {
 				if (busyGrid[d][p]) {
@@ -135,8 +134,9 @@
 		try {
 			await updateInstructorConstraints(selectedInstructor.id, {
 				max_periods_per_day: maxPeriods,
-				assigned_room_id: assignedRoomId ? assignedRoomId : undefined, // Handle empty string
-				hard_unavailable_slots: unavailableSlots
+				assigned_room_id: assignedRoomId ? assignedRoomId : undefined,
+				// Cast — legacy format ไม่ตรง TimeSlot ใหม่
+				hard_unavailable_slots: unavailableSlots as unknown as never
 			});
 			toast.success('บันทึกข้อมูลเรียบร้อย');
 			showDialog = false;

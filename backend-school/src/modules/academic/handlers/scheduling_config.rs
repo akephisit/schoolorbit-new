@@ -39,6 +39,8 @@ pub struct InstructorConstraintView {
     pub min_periods_per_day: Option<i32>,
     pub assigned_room_id: Option<Uuid>,
     pub assigned_room_name: Option<String>,
+    pub priority: i32,
+    pub primary_course_count: i64,
 }
 
 #[derive(Deserialize)]
@@ -48,6 +50,23 @@ pub struct UpdateInstructorConstraintRequest {
     pub max_periods_per_day: Option<i32>,
     pub preferred_slots: Option<serde_json::Value>,
     pub assigned_room_id: Option<Uuid>,
+    pub priority: Option<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct ReorderInstructorPriorityRequest {
+    /// Array of instructor_id ตามลำดับ — index 0 → priority=1, etc.
+    pub instructor_ids: Vec<Uuid>,
+}
+
+#[derive(Serialize)]
+pub struct SchoolSettingsView {
+    pub default_max_consecutive: i32,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateSchoolSettingsRequest {
+    pub default_max_consecutive: Option<i32>,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -104,23 +123,39 @@ pub async fn list_instructor_constraints(
         None => return Err(AppError::NotFound("Active academic year not found".to_string())),
     };
 
+    // ดึงครู + priority + count จำนวน classroom_course ที่เป็น primary
+    // (เพื่อให้ frontend filter ครูที่ไม่มีวิชาสอนเลยออกได้)
+    // ใช้ subquery เดียวกัน aggregate ใน CTE — ไม่ใช่ N+1
     let instructors = sqlx::query_as::<_, InstructorConstraintView>(
         r#"
-        SELECT 
-            u.id, -- map to id
+        WITH primary_counts AS (
+            SELECT cci.instructor_id, COUNT(*)::bigint AS cnt
+            FROM classroom_course_instructors cci
+            JOIN classroom_courses cc ON cc.id = cci.classroom_course_id
+            JOIN academic_semesters s ON s.id = cc.academic_semester_id
+            WHERE cci.role = 'primary' AND s.academic_year_id = $1
+            GROUP BY cci.instructor_id
+        )
+        SELECT
+            u.id,
             u.first_name,
             u.last_name,
             ip.hard_unavailable_slots,
             ip.max_periods_per_day,
             ip.min_periods_per_day,
-            ra.room_id as assigned_room_id,
-            r.name_th as assigned_room_name
+            ra.room_id AS assigned_room_id,
+            r.name_th AS assigned_room_name,
+            COALESCE(ip.priority, 100) AS priority,
+            COALESCE(pc.cnt, 0) AS primary_course_count
         FROM users u
-        LEFT JOIN instructor_preferences ip ON u.id = ip.instructor_id AND ip.academic_year_id = $1
-        LEFT JOIN instructor_room_assignments ra ON u.id = ra.instructor_id AND ra.academic_year_id = $1 AND ra.is_required = true
+        LEFT JOIN instructor_preferences ip
+            ON u.id = ip.instructor_id AND ip.academic_year_id = $1
+        LEFT JOIN instructor_room_assignments ra
+            ON u.id = ra.instructor_id AND ra.academic_year_id = $1 AND ra.is_required = true
         LEFT JOIN rooms r ON ra.room_id = r.id
+        LEFT JOIN primary_counts pc ON pc.instructor_id = u.id
         WHERE u.user_type = 'staff' AND u.status = 'active'
-        ORDER BY u.first_name
+        ORDER BY COALESCE(ip.priority, 100), u.first_name
         "#
     )
     .bind(year_id)
@@ -129,6 +164,109 @@ pub async fn list_instructor_constraints(
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(Json(ApiResponse::success(instructors)))
+}
+
+/// PUT /api/academic/scheduling/instructors/order
+/// Bulk update priority — instructor_ids ตามลำดับ → priority = index + 1
+pub async fn reorder_instructor_priority(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<ReorderInstructorPriorityRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let academic_year = sqlx::query_as::<_, (Uuid,)>(
+        "SELECT id FROM academic_years WHERE is_active = true LIMIT 1"
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let year_id = match academic_year {
+        Some(y) => y.0,
+        None => return Err(AppError::NotFound("Active academic year not found".to_string())),
+    };
+
+    if payload.instructor_ids.is_empty() {
+        return Ok(Json(ApiResponse::success("No changes".to_string())));
+    }
+
+    // Build (instructor_id, priority) arrays
+    let priorities: Vec<i32> = (1..=payload.instructor_ids.len() as i32).collect();
+
+    // ใช้ INSERT ON CONFLICT แบบ batch — 1 query เดียว, ไม่ loop
+    sqlx::query(
+        r#"
+        INSERT INTO instructor_preferences (instructor_id, academic_year_id, priority)
+        SELECT instr_id, $2, prio
+        FROM UNNEST($1::uuid[], $3::int[]) AS t(instr_id, prio)
+        ON CONFLICT (instructor_id, academic_year_id)
+        DO UPDATE SET priority = EXCLUDED.priority, updated_at = NOW()
+        "#
+    )
+    .bind(&payload.instructor_ids)
+    .bind(year_id)
+    .bind(&priorities)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(ApiResponse::success(format!(
+        "Reordered {} instructors", payload.instructor_ids.len()
+    ))))
+}
+
+/// GET /api/academic/scheduling/settings
+pub async fn get_school_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let rows = sqlx::query_as::<_, (String, serde_json::Value)>(
+        "SELECT key, value FROM school_settings"
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let mut default_max_consecutive: i32 = 4;
+    for (key, value) in rows {
+        if key == "default_max_consecutive" {
+            default_max_consecutive = value.as_i64().unwrap_or(4) as i32;
+        }
+    }
+
+    Ok(Json(ApiResponse::success(SchoolSettingsView {
+        default_max_consecutive,
+    })))
+}
+
+/// PUT /api/academic/scheduling/settings
+pub async fn update_school_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateSchoolSettingsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Some(v) = payload.default_max_consecutive {
+        if !(1..=20).contains(&v) {
+            return Err(AppError::BadRequest(
+                "default_max_consecutive ต้องอยู่ระหว่าง 1-20".to_string()
+            ));
+        }
+        sqlx::query(
+            "INSERT INTO school_settings (key, value) VALUES ('default_max_consecutive', $1::jsonb)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
+        )
+        .bind(serde_json::Value::from(v))
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    Ok(Json(ApiResponse::success("Updated school settings".to_string())))
 }
 
 pub async fn update_instructor_constraints(
@@ -153,27 +291,33 @@ pub async fn update_instructor_constraints(
         None => return Err(AppError::NotFound("Active academic year not found".to_string())),
     };
 
-    // Update preferences
+    // Update preferences — partial update: COALESCE เก็บค่าเดิมถ้า payload field เป็น None
     sqlx::query(
         r#"
         INSERT INTO instructor_preferences (
-            instructor_id, academic_year_id, 
-            hard_unavailable_slots, max_periods_per_day, preferred_slots
+            instructor_id, academic_year_id,
+            hard_unavailable_slots, max_periods_per_day, preferred_slots, priority
         )
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (instructor_id, academic_year_id) 
-        DO UPDATE SET 
-            hard_unavailable_slots = EXCLUDED.hard_unavailable_slots,
-            max_periods_per_day = EXCLUDED.max_periods_per_day,
-            preferred_slots = EXCLUDED.preferred_slots,
+        VALUES ($1, $2,
+                COALESCE($3, '[]'::jsonb),
+                $4,
+                COALESCE($5, '[]'::jsonb),
+                COALESCE($6, 100))
+        ON CONFLICT (instructor_id, academic_year_id)
+        DO UPDATE SET
+            hard_unavailable_slots = COALESCE($3, instructor_preferences.hard_unavailable_slots),
+            max_periods_per_day = COALESCE($4, instructor_preferences.max_periods_per_day),
+            preferred_slots = COALESCE($5, instructor_preferences.preferred_slots),
+            priority = COALESCE($6, instructor_preferences.priority),
             updated_at = NOW()
         "#
     )
     .bind(instructor_id)
     .bind(year_id)
-    .bind(payload.hard_unavailable_slots.unwrap_or(serde_json::json!([])))
+    .bind(payload.hard_unavailable_slots)
     .bind(payload.max_periods_per_day)
-    .bind(payload.preferred_slots.unwrap_or(serde_json::json!([])))
+    .bind(payload.preferred_slots)
+    .bind(payload.priority)
     .execute(&mut *tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
