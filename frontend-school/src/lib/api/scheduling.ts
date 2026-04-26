@@ -167,7 +167,9 @@ export interface UpdateInstructorConstraintRequest {
 	max_periods_per_day?: number;
 	hard_unavailable_slots?: TimeSlot[];
 	preferred_slots?: TimeSlot[];
-	assigned_room_id?: UUID | null;
+	assigned_room_id?: UUID;
+	/// ส่ง true เพื่อล้าง room assignment (อย่าใช้ assigned_room_id=null)
+	clear_assigned_room?: boolean;
 	priority?: number;
 }
 

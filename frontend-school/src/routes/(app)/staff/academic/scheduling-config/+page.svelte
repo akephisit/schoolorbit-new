@@ -50,6 +50,9 @@
 	let expandedCcIds = $state(new Set<string>()); // เปิดดู cc แต่ละตัว
 	// Local edits — keyed by instructor_id, only flushed on Save
 	let unavailableEdits = $state(new Map<string, TimeSlot[]>());
+	// Per-instructor room (assigned_room_id) — server snapshot + local edit
+	// '' = not assigned (clear), uuid = set
+	let instructorRoomEdits = $state(new Map<string, string>());
 
 	// Phase B: cc constraints — load lazily ต่อครู
 	let ccByInstructor = $state(new Map<string, ClassroomCourseConstraintView[]>());
@@ -127,10 +130,13 @@
 
 			// Initialize edits from server state
 			const init = new Map<string, TimeSlot[]>();
+			const roomInit = new Map<string, string>();
 			for (const i of instructors) {
 				init.set(i.id, (i.hard_unavailable_slots ?? []) as TimeSlot[]);
+				roomInit.set(i.id, i.assigned_room_id ?? '');
 			}
 			unavailableEdits = init;
+			instructorRoomEdits = roomInit;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
 		} finally {
@@ -186,14 +192,28 @@
 			// 2. Global settings
 			ops.push(updateSchoolSettings({ default_max_consecutive: defaultMaxConsecutive }));
 
-			// 3. Per-instructor unavailable — only ที่เปลี่ยนจริง
+			// 3. Per-instructor unavailable + room — only ที่เปลี่ยนจริง
 			for (const i of instructors) {
-				const local = unavailableEdits.get(i.id) ?? [];
-				const remote = (i.hard_unavailable_slots ?? []) as TimeSlot[];
-				if (slotsEqual(local, remote)) continue;
-				ops.push(updateInstructorConstraints(i.id, {
-					hard_unavailable_slots: local
-				}));
+				const localUnavail = unavailableEdits.get(i.id) ?? [];
+				const remoteUnavail = (i.hard_unavailable_slots ?? []) as TimeSlot[];
+				const localRoom = instructorRoomEdits.get(i.id) ?? '';
+				const remoteRoom = i.assigned_room_id ?? '';
+
+				const unavailChanged = !slotsEqual(localUnavail, remoteUnavail);
+				const roomChanged = localRoom !== remoteRoom;
+
+				if (!unavailChanged && !roomChanged) continue;
+
+				const req: Parameters<typeof updateInstructorConstraints>[1] = {};
+				if (unavailChanged) req.hard_unavailable_slots = localUnavail;
+				if (roomChanged) {
+					if (localRoom === '') {
+						req.clear_assigned_room = true;
+					} else {
+						req.assigned_room_id = localRoom;
+					}
+				}
+				ops.push(updateInstructorConstraints(i.id, req));
 			}
 
 			// 4. Per-cc constraints — only ที่เปลี่ยนจริง
@@ -707,6 +727,29 @@
 							<!-- Expanded content -->
 							{#if expandedIds.has(instr.id)}
 								<div class="border-t p-3 bg-muted/30 space-y-3">
+									<!-- ห้องประจำของครู (instructor_room_assignments) — fallback room ของ scheduler -->
+									<div>
+										<Label class="text-sm font-medium">ห้องประจำของครู</Label>
+										<select
+											class="text-sm border rounded px-2 py-1 bg-background w-full mt-1"
+											value={instructorRoomEdits.get(instr.id) ?? ''}
+											onchange={(e) => {
+												const next = new Map(instructorRoomEdits);
+												next.set(instr.id, e.currentTarget.value);
+												instructorRoomEdits = next;
+											}}
+										>
+											<option value="">— ไม่กำหนด —</option>
+											{#each allRooms as r (r.id)}
+												<option value={r.id}>{r.code} — {r.name_th}</option>
+											{/each}
+										</select>
+										<p class="text-xs text-muted-foreground mt-1">
+											ห้องที่ครูคนนี้มักใช้สอน — scheduler จะใช้เป็น fallback
+											ถ้าวิชาไม่ได้กำหนดห้องเฉพาะ
+										</p>
+									</div>
+
 									<div>
 										<h4 class="text-sm font-medium mb-2">คาบที่ไม่ว่าง</h4>
 										<div class="overflow-x-auto">

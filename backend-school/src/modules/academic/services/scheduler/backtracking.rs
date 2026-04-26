@@ -248,14 +248,59 @@ impl BacktrackingScheduler {
         // Convert back to owned Vec for easier handling
         let filtered_owned: Vec<TimeSlot> = filtered_slots.iter().map(|s| (*s).clone()).collect();
         
-        // Strategy based on consecutive requirements
-        // Use consecutive scheduler if we want to group periods together (max > 1)
-        // or if we require minimum consecutive periods (min > 1)
-        if course.max_consecutive > 1 || course.min_consecutive > 1 {
+        // Strategy:
+        // 1. ถ้ามี cc.consecutive_pattern → ใช้ pattern strategy (Phase B)
+        // 2. else: legacy min/max consecutive
+        if let Some(ref pattern) = course.consecutive_pattern {
+            // Validate sum == periods_needed (defensive — backend ตรวจไว้แล้ว)
+            let pattern_sum: i32 = pattern.iter().sum();
+            if pattern_sum != periods_needed {
+                // Pattern ไม่ตรง periods_needed → fallback ไป legacy
+                if course.max_consecutive > 1 || course.min_consecutive > 1 {
+                    return self.schedule_with_consecutive(course, periods_needed, &filtered_owned, state);
+                } else {
+                    return self.schedule_without_consecutive(course, periods_needed, &filtered_owned, state);
+                }
+            }
+            self.schedule_with_pattern(course, pattern, &filtered_owned, state)
+        } else if course.max_consecutive > 1 || course.min_consecutive > 1 {
             self.schedule_with_consecutive(course, periods_needed, &filtered_owned, state)
         } else {
             self.schedule_without_consecutive(course, periods_needed, &filtered_owned, state)
         }
+    }
+
+    /// Phase B: Schedule course ตาม consecutive_pattern (e.g. [1,1,1], [2,1], [3])
+    /// แต่ละ chunk_size ใน pattern → หา slot ติดกัน chunk_size อันที่ว่าง
+    /// Default: chunks ต่างกันต้องอยู่ต่างวัน (ยกเว้น allow_multiple_sessions_per_day)
+    fn schedule_with_pattern(
+        &self,
+        course: &CourseToSchedule,
+        pattern: &[i32],
+        available_slots: &[TimeSlot],
+        state: &mut ScheduleState,
+    ) -> bool {
+        // เรียง chunks จากใหญ่ → เล็ก เพื่อจัดอันที่ยากก่อน (chunks ใหญ่ต้องการ
+        // consecutive slots — หาช่องยากกว่า)
+        let mut chunks: Vec<i32> = pattern.to_vec();
+        chunks.sort_by(|a, b| b.cmp(a));
+
+        for chunk_size in chunks {
+            // หา slots ติดกัน chunk_size อัน — ห้ามอยู่ในวันที่ course นี้มี
+            // assignment อยู่แล้ว (บังคับ chunks กระจายต่างวัน)
+            if let Some(slots) = self.find_consecutive_slots(course, chunk_size, available_slots, state) {
+                for slot in slots {
+                    let room_id = self.determine_room_id(course, &slot, state);
+                    let assignment = Assignment::new(course, slot, room_id, false);
+                    state.add_assignment(assignment);
+                }
+            } else {
+                // Chunk นี้จัดไม่ได้ → fail ทั้ง course
+                return false;
+            }
+        }
+
+        true
     }
     
     /// Schedule course with consecutive requirements
@@ -288,9 +333,10 @@ impl BacktrackingScheduler {
                     available_slots,
                     state,
                 ) {
-                    // Assign these slots
+                    // Assign these slots — pick room ต่อ slot (รองรับ fallback iteration)
+                    // Rationale: ใน chunk เดียวกัน ห้องอาจต่างกันได้ถ้าจำเป็น (rare case)
                     for slot in slots {
-                        let room_id = self.determine_room_id(course);
+                        let room_id = self.determine_room_id(course, &slot, state);
                         let assignment = Assignment::new(course, slot, room_id, false);
                         state.add_assignment(assignment);
                     }
@@ -331,8 +377,8 @@ impl BacktrackingScheduler {
             }
             
             // Check if can assign
-            let room_id = self.determine_room_id(course);
-            
+            let room_id = self.determine_room_id(course, slot, state);
+
             // Check max consecutive per day limit locally
             let current_day_count = state.assignments.iter()
                 .filter(|a| a.classroom_course_id == course.classroom_course_id && a.time_slot.day == slot.day)
@@ -417,9 +463,9 @@ impl BacktrackingScheduler {
                     continue;
                 }
                 
-                // Check if all can be assigned
-                let room_id = self.determine_room_id(course);
+                // Check if all can be assigned (pick room per-slot to support fallback)
                 let all_valid = window.iter().all(|slot| {
+                    let room_id = self.determine_room_id(course, slot, state);
                     self.validator.can_assign(course, slot, room_id, state).is_ok()
                 });
                 
@@ -446,16 +492,52 @@ impl BacktrackingScheduler {
         true
     }
     
-    /// Phase D: room hierarchy
-    /// 1. cc preferred_rooms (rank-ordered) — TODO: iterate try-fallback ใน scheduler loop
-    /// 2. instructor's fixed_room_id (จาก instructor_room_assignments)
-    /// 3. None (no preference)
-    /// ตอนนี้ pick first จาก cc list — scheduler iteration จะ enhance ทีหลัง (rank-2 fallback)
-    fn determine_room_id(&self, course: &CourseToSchedule) -> Option<Uuid> {
-        if let Some(first) = course.preferred_rooms.first() {
-            return Some(first.room_id);
+    /// Phase D: room hierarchy + iteration fallback
+    /// 1. ลอง cc.preferred_rooms ตาม rank — return ห้องแรกที่ว่างที่ slot นี้
+    /// 2. ถ้าทุกห้องใน preferred_rooms เต็ม:
+    ///    - ถ้ามีห้อง is_required → return None (scheduler ต้อง fail slot นี้)
+    ///    - else → fallback ไป instructor's fixed_room_id (ถ้าว่าง) → None
+    /// 3. ถ้าไม่มี preferred_rooms เลย → ใช้ instructor's fixed_room_id (เดิม)
+    ///
+    /// `slot` + `state` ใช้เช็คห้องว่าง — ห้องเดียวกันคนละชั้นใน slot เดียวกันถือว่าเต็ม
+    fn determine_room_id(
+        &self,
+        course: &CourseToSchedule,
+        slot: &TimeSlot,
+        state: &ScheduleState,
+    ) -> Option<Uuid> {
+        let slot_key = slot.key();
+
+        // ไม่มี preferred_rooms → fallback ไป instructor (เดิม)
+        if course.preferred_rooms.is_empty() {
+            return course.fixed_room_id;
         }
-        course.fixed_room_id
+
+        // ลองแต่ละ preferred room ตาม rank
+        let mut has_required = false;
+        for pref in &course.preferred_rooms {
+            if pref.is_required {
+                has_required = true;
+            }
+            if !state.is_room_slot_occupied(pref.room_id, &slot_key) {
+                return Some(pref.room_id);
+            }
+        }
+
+        // ทุกห้อง preferred เต็ม
+        if has_required {
+            // ห้ามใช้ห้องอื่น → fail
+            return None;
+        }
+
+        // Fallback ไป instructor's room ถ้ามีและว่าง
+        if let Some(fallback) = course.fixed_room_id {
+            if !state.is_room_slot_occupied(fallback, &slot_key) {
+                return Some(fallback);
+            }
+        }
+
+        None
     }
     
     fn calculate_difficulty(&self, course: &CourseToSchedule) -> i32 {
