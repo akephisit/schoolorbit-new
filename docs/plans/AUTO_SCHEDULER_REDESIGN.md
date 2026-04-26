@@ -75,12 +75,12 @@ if force_overwrite {
 | `instructor_preferences.hard_unavailable_slots` (jsonb) | ✅ มี |
 | `instructor_preferences.preferred_slots` (jsonb) | ✅ มี |
 | `instructor_preferences.priority` (int) | ❌ ต้องเพิ่ม |
-| `subjects.periods_per_week` | ✅ มี |
-| `subjects.consecutive_pattern` (jsonb) | ❌ ต้องเพิ่ม |
-| `subjects.same_day_unique` (bool) | ❌ ต้องเพิ่ม |
-| `subjects.max_consecutive` (int) | ❌ ต้องเพิ่ม |
-| `subjects.hard_unavailable_slots` (jsonb) | ❌ ต้องเพิ่ม |
-| `subject_preferred_rooms` (table) | ❌ ต้องเพิ่ม |
+| `subjects.periods_per_week` | ✅ มี (default — classroom_course override ได้) |
+| `classroom_courses.consecutive_pattern` (jsonb) | ❌ ต้องเพิ่ม |
+| `classroom_courses.same_day_unique` (bool) | ❌ ต้องเพิ่ม |
+| `classroom_courses.max_consecutive` (int) | ❌ ต้องเพิ่ม |
+| `classroom_courses.hard_unavailable_slots` (jsonb) | ❌ ต้องเพิ่ม |
+| `classroom_course_preferred_rooms` (table) | ❌ ต้องเพิ่ม |
 | `instructor_room_assignments` | ✅ มี (ใช้เป็น fallback) |
 | `timetable_locked_slots` | ✅ มี (ใช้ pin เพิ่มเติมได้) |
 | `timetable_templates` + `template_entries` | ❌ ต้องเพิ่ม |
@@ -130,20 +130,29 @@ if force_overwrite {
 
 ### 3.3 Per-row expand → constraint editor
 
+**ตัดสินใจ:** Config ของ pattern/rooms/unavailable เก็บที่ `classroom_courses`
+(ระดับ subject × classroom) **ไม่ใช่ subject** — เพราะครู primary ต่างห้องอาจ
+อยากตั้งค่าต่างกัน
+
 - คลิก ▼ บน row ครู → ขยายแสดง:
-  1. **Grid 7×N** — วัน × คาบ → คลิกเพื่อ toggle "ไม่ว่าง" (เก็บใน `hard_unavailable_slots`)
-  2. **ห้องประจำของครู** — multi-select rooms (default ของห้องที่ครูสอน)
-  3. **List วิชา** — แสดง**เฉพาะวิชาที่เป็นครูหลัก** (primary)
-     เพื่อไม่ให้ครูร่วมเห็นวิชาเดียวกันซ้ำในหลาย row
+  1. **Grid 7×N** — วัน × คาบ → คลิกเพื่อ toggle "ไม่ว่าง" (teacher-level)
+     เก็บใน `instructor_preferences.hard_unavailable_slots`
+  2. **ห้องประจำของครู** — multi-select rooms (teacher-level, default fallback)
+     เก็บใน `instructor_room_assignments`
+  3. **List classroom_courses ที่ครูเป็น primary**
      filter: `classroom_course_instructors.role = 'primary'`
-     - radio button เลือก consecutive pattern
-     - checkbox `same_day_unique` (default ✓)
-     - **multi-select ห้อง** เฉพาะวิชา (override ห้องของครู)
-     - **Grid 7×N สำหรับวิชา** — คาบที่ "ไม่จัดสอน" (override + เพิ่มจากครู)
-       - คาบไม่ว่างของครูทุกคนใน team → แสดง pre-checked + readonly
-         พร้อม tooltip "(ครู ก. ไม่ว่าง)"
-       - คาบที่ admin ติ๊กเพิ่มเอง → editable (เก็บใน `subjects.hard_unavailable_slots`)
-       - effective = union (teacher_unavailable ∪ subject_unavailable)
+     แต่ละ row = 1 (subject × classroom) → config แยกต่อห้อง
+     ```
+     • ค23101 คณิต ม.3/1 ▼
+         ├─ pattern (radio)
+         ├─ same_day_unique (checkbox, default ✓)
+         ├─ max_consecutive (number)
+         ├─ ห้อง — multi-select + drag rank + checkbox is_required
+         └─ Grid 7×N — คาบที่ห้ามจัดวิชานี้ในห้องนี้
+              - inherited จากครู ก. → pre-checked readonly + 🔒
+              - admin ติ๊กเพิ่ม → editable
+     • ค23101 คณิต ม.3/3 ▼   ← row แยก ตั้งค่าได้ต่างจาก ม.3/1
+     ```
 
 ---
 
@@ -167,12 +176,14 @@ if force_overwrite {
 
 **DB schema:**
 ```sql
-ALTER TABLE subjects ADD COLUMN consecutive_pattern jsonb DEFAULT '[1]';
+ALTER TABLE classroom_courses
+    ADD COLUMN consecutive_pattern jsonb DEFAULT NULL;
+-- nullable: ถ้า NULL → fallback เป็น [1] * periods_per_week
 -- เก็บ array เช่น [1,1,1], [2,1], [3] — ยืดหยุ่นรองรับทุกแบบ
 -- 5 คาบ → [2,2,1], [3,1,1], [1,1,1,1,1], ...
 ```
 
-**Validation:** `sum(pattern) == periods_per_week`
+**Validation:** `sum(pattern) == subjects.periods_per_week` (ของ subject ที่ผูก)
 
 ---
 
@@ -181,10 +192,11 @@ ALTER TABLE subjects ADD COLUMN consecutive_pattern jsonb DEFAULT '[1]';
 ### Hierarchy การเลือกห้อง (จากสำคัญสุด → ต่ำสุด)
 
 ```
-1. Subject preferred rooms (multi)  ← ตั้งระดับวิชา (override ครู)
-   เช่น ฟิสิกส์ → [Lab1, Lab2, Lab3]
+1. classroom_course preferred rooms (multi) ← ระดับ (subject × classroom)
+   เช่น ฟิสิกส์ ม.3/1 → [Lab1, Lab2]
+        ฟิสิกส์ ม.3/2 → [Lab2, Lab3]   ← ตั้งต่างห้องได้
    ────────────────────────────────────────
-2. Instructor preferred rooms (multi) ← ตั้งระดับครู (default)
+2. Instructor preferred rooms (multi) ← ตั้งระดับครู (default fallback)
    เช่น ครูต้น → [ห้อง ม.3/1] (ห้องประจำชั้น)
    ────────────────────────────────────────
 3. (no preference) → ใช้ห้องไหนก็ได้ที่ว่าง / หรือไม่กำหนดห้อง
@@ -192,27 +204,28 @@ ALTER TABLE subjects ADD COLUMN consecutive_pattern jsonb DEFAULT '[1]';
 
 ### Use cases
 
-| สถานการณ์ | Subject rooms | Teacher rooms | Scheduler ทำ |
-|-----------|--------------|---------------|--------------|
-| คณิตประจำชั้น | (ไม่ระบุ) | [ม.3/1] | ใช้ห้อง ม.3/1 |
-| ฟิสิกส์ | [Lab1, Lab2] | [ม.3/1] | Lab1 ก่อน → ถ้าเต็ม ลอง Lab2 |
-| พละ | [สนามฟุตบอล, สนามบาส] | (ไม่ระบุ) | สนามฟุตบอลก่อน |
-| HOMEROOM | (ไม่ระบุ) | (ไม่ระบุ) | ใช้ห้อง classroom (เช่น ม.3/1) |
-| คณิตเสริม (extra) | [ห้องคอม] | [ม.3/1] | ห้องคอมก่อน (subject ชนะ) |
+| สถานการณ์ | classroom_course rooms | Teacher rooms | Scheduler ทำ |
+|-----------|----------------------|---------------|--------------|
+| คณิต ม.3/1 ประจำชั้น | (ไม่ระบุ) | [ม.3/1] | ใช้ห้อง ม.3/1 (fallback ครู) |
+| ฟิสิกส์ ม.3/1 | [Lab1, Lab2] | [ม.3/1] | Lab1 ก่อน → ถ้าเต็ม ลอง Lab2 |
+| พละ ม.3/1 | [สนามฟุตบอล, สนามบาส] | (ไม่ระบุ) | สนามฟุตบอลก่อน |
+| HOMEROOM ม.3/1 | (ไม่ระบุ) | (ไม่ระบุ) | ใช้ห้อง classroom (= ม.3/1) |
+| คณิตเสริม ม.3/1 | [ห้องคอม] | [ม.3/1] | ห้องคอมก่อน (cc ชนะ) |
 
 ### DB schema
 
 ```sql
--- 1. ห้องที่วิชานี้ใช้สอนได้ (multi, ranked)
-CREATE TABLE subject_preferred_rooms (
+-- 1. ห้องที่ classroom_course นี้ใช้สอนได้ (multi, ranked)
+CREATE TABLE classroom_course_preferred_rooms (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    subject_id uuid NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+    classroom_course_id uuid NOT NULL
+        REFERENCES classroom_courses(id) ON DELETE CASCADE,
     room_id uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    rank int NOT NULL DEFAULT 1,  -- 1 = ใช้เป็นอันดับแรก
-    is_required bool DEFAULT false,  -- true = ห้ามใช้ห้องอื่น (fail ถ้าทุกห้องเต็ม)
-    UNIQUE (subject_id, room_id)
+    rank int NOT NULL DEFAULT 1,    -- 1 = ใช้เป็นอันดับแรก
+    is_required bool DEFAULT false, -- true = ห้ามใช้ห้องอื่น (fail ถ้าทุกห้องเต็ม)
+    UNIQUE (classroom_course_id, room_id)
 );
-CREATE INDEX idx_spr_subject ON subject_preferred_rooms(subject_id, rank);
+CREATE INDEX idx_ccpr_cc ON classroom_course_preferred_rooms(classroom_course_id, rank);
 
 -- 2. ห้องของครู — มีอยู่แล้ว (instructor_room_assignments)
 --    ใช้ตรงนี้เลย ไม่ต้องสร้างใหม่
@@ -223,8 +236,9 @@ CREATE INDEX idx_spr_subject ON subject_preferred_rooms(subject_id, rank);
 
 ```python
 def pick_room(course, slot, day, period):
-    # 1. ลองห้องที่ subject กำหนด (sorted by rank)
-    for room in subject_preferred_rooms[course.subject_id]:
+    # 1. ลองห้องที่ classroom_course กำหนด (sorted by rank)
+    cc_rooms = classroom_course_preferred_rooms[course.cc_id]
+    for room in cc_rooms.sorted_by_rank():
         if room_free(room, day, period):
             return room
         if room.is_required:
@@ -245,26 +259,27 @@ def pick_room(course, slot, day, period):
 ### UI integration
 
 หน้า config เพิ่มในแต่ละ row ครู (ในส่วน expand):
-- "ห้องประจำของครู" — multi-select
-- ในวิชาแต่ละวิชา → "ห้องเฉพาะวิชา (override)" — multi-select + drag เพื่อเรียงลำดับ
-- toggle "บังคับ (is_required)" — ถ้าเต็มทุกห้อง → fail แทน fallback
-
-ที่หน้า `/staff/academic/subjects` (ที่มีอยู่แล้ว) เพิ่ม:
-- field "ห้องที่ใช้สอน" — multi-select rooms + ลำดับ + bool required
+- "ห้องประจำของครู" — multi-select (teacher-level fallback)
+- ในแต่ละ row classroom_course → "ห้องเฉพาะ (subject × classroom)"
+  - multi-select + drag เพื่อเรียงลำดับ rank
+  - toggle "บังคับ (is_required)" — ถ้าเต็มทุกห้อง → fail แทน fallback
 
 ---
 
-## 4.6 Subject Unavailable Slots (คาบที่ห้ามจัดวิชานี้)
+## 4.6 Classroom Course Unavailable Slots (คาบที่ห้ามจัดวิชานี้ในห้องนี้)
 
-นอกจากครูจะมีคาบไม่ว่าง — แต่ละ**วิชา**ก็มีคาบที่ "ไม่ควรจัด" ได้เช่นกัน
-เช่น คณิตไม่ควรเป็นคาบสุดท้าย / พละไม่ควรเป็นคาบเช้าก่อนวิชาเรียน
+นอกจากครูจะมีคาบไม่ว่าง — แต่ละ **(subject × classroom)** ก็มีคาบที่ "ไม่ควรจัด"
+ได้เช่นกัน เช่น คณิต ม.3/1 ไม่ควรเป็นคาบสุดท้าย / พละ ม.3/2 ห้ามคาบเช้า
+
+แยกระดับ classroom_course เพราะแต่ละห้องอาจมี constraint ต่างกัน — ห้องที่อยู่
+ติดสนามอาจต้องเลี่ยงเสียงดัง, ห้องที่อยู่ใกล้ห้องน้ำคนพิการอาจมี constraint อื่น
 
 ### Auto-derive from teachers
 
 ```
-effective_unavailable(subject) =
-    subject.hard_unavailable_slots
-  ∪ ⋃ for each teacher in subject.team:
+effective_unavailable(cc) =
+    cc.hard_unavailable_slots
+  ∪ ⋃ for each teacher in cc.team:
         teacher.hard_unavailable_slots
 ```
 
@@ -273,24 +288,27 @@ effective_unavailable(subject) =
 ### UI behavior
 
 ```
-วิชา ค23101 คณิต ม.3/1 — คาบที่ไม่จัดสอน
+ค23101 คณิต ม.3/1 — คาบที่ไม่จัดสอน (classroom_course-level)
                   คาบ1  คาบ2  คาบ3  คาบ4  คาบ5  คาบ6  คาบ7  คาบ8
 จันทร์            ☐     ☐     ☑🔒   ☑🔒   ☐     ☐     ☐     ☐
                               (ครู ก. ไม่ว่าง)
 อังคาร           ☑     ☐     ☐     ☐     ☐     ☐     ☐     ☐
-                  ↑ admin ติ๊กเพิ่ม (subject-level)
+                  ↑ admin ติ๊กเพิ่ม (cc-level)
 พุธ              ☐     ☐     ☐     ☐     ☐     ☐     ☑🔒   ☑🔒
                                                   (ครู ข. ไม่ว่าง)
 ```
 
-- 🔒 = inherited จากครู — แก้ที่ row ครู
-- ที่เหลือ = subject-level (admin override / เพิ่มเอง)
+- 🔒 = inherited จากครูใน team — แก้ที่ row ครู
+- ที่เหลือ = classroom_course-level (admin override / เพิ่มเอง)
 
 ### DB schema
 
 ```sql
-ALTER TABLE subjects ADD COLUMN hard_unavailable_slots jsonb DEFAULT '[]';
--- format: [{"day": "MON", "period_id": "uuid"}, ...]
+ALTER TABLE classroom_courses
+    ADD COLUMN hard_unavailable_slots jsonb DEFAULT '[]',
+    ADD COLUMN same_day_unique bool DEFAULT true,
+    ADD COLUMN max_consecutive int DEFAULT 4;
+-- hard_unavailable_slots format: [{"day": "MON", "period_id": "uuid"}, ...]
 ```
 
 ---
@@ -448,15 +466,15 @@ constraint อยู่แล้ว — ห้ามชน)
 | H7 | Locked slots | `timetable_locked_slots` |
 | H8 | คาบติดกันต้องห้องเดิม | derived (default on) |
 | H9 | ห้องที่ระบุ `is_required` ต้องว่าง | `subject_preferred_rooms.is_required` |
-| H10 | คาบที่วิชาห้ามจัด (รวมจากครู) | `subjects.hard_unavailable_slots` ∪ teacher's |
+| H10 | คาบที่ห้ามจัด (รวมจากครู) | `classroom_courses.hard_unavailable_slots` ∪ teacher's |
 
 ### 6.2 Soft constraints (อยากได้ — เป็น penalty ไม่ใช่ fail)
 
 | # | Constraint | แหล่งข้อมูล |
 |---|-----------|-------------|
-| S1 | คาบติดกันไหม (consecutive pattern) | `subjects.consecutive_pattern` |
-| S2 | ห้ามวันเดียวกันรหัสซ้ำ | `subjects.same_day_unique` |
-| S3 | ครูสอนติดไม่เกิน N คาบ | `subjects.max_consecutive` (default 4) |
+| S1 | คาบติดกันไหม (consecutive pattern) | `classroom_courses.consecutive_pattern` |
+| S2 | ห้ามวันเดียวกันรหัสซ้ำ | `classroom_courses.same_day_unique` |
+| S3 | ครูสอนติดไม่เกิน N คาบ | `classroom_courses.max_consecutive` (default 4) |
 | S4 | คาบเรียนยาก (คณิต/วิทย์) → ช่วงเช้า | `subjects.prefer_morning` |
 | S5 | First/last period restrictions | `subjects.avoid_first` / `avoid_last` |
 | S6 | Priority order | `instructor_preferences.priority` |
@@ -486,9 +504,10 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 
     # === STEP 4: Greedy + backtracking ===
     assignments = []
-    for course in courses:
+    for course in courses:  # course = classroom_course (subject × classroom)
         instructor = course.primary_instructor
-        pattern = course.consecutive_pattern or [1]*course.periods_per_week
+        pattern = course.consecutive_pattern \
+                  or [1] * course.subject.periods_per_week
 
         for chunk_size in pattern:
             # หา slot ที่:
@@ -575,15 +594,18 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 - [ ] Frontend: DnD list ครู + grid วัน×คาบ toggle unavailable
 - [ ] Frontend: ปุ่ม "บันทึกและจัดอัตโนมัติ" → call existing endpoint
 
-### Phase B — Subject patterns + unavailable
-- [ ] Migration: `subjects.consecutive_pattern` jsonb, `same_day_unique` bool,
-      `max_consecutive` int, `hard_unavailable_slots` jsonb
-- [ ] Backend: scheduler ใช้ consecutive_pattern กระจายคาบ
+### Phase B — Classroom-course patterns + unavailable
+- [ ] Migration: `classroom_courses` ADD `consecutive_pattern` jsonb (nullable),
+      `same_day_unique` bool DEFAULT true, `max_consecutive` int DEFAULT 4,
+      `hard_unavailable_slots` jsonb DEFAULT '[]'
+- [ ] Backend: scheduler ใช้ classroom_courses.consecutive_pattern กระจายคาบ
+      (fallback [1]*periods_per_week ถ้า NULL)
 - [ ] Backend: ตรวจ same_day_unique + max_consecutive (S2, S3)
-- [ ] Backend: scheduler รวม subject + teacher unavailable เป็น effective set (H10)
-- [ ] Backend: API GET subjects รวม teacher_unavailable เพื่อ pre-fill UI
-- [ ] Frontend: per-row expand → **เฉพาะวิชาที่ครูเป็น primary** + radio + checkbox
-- [ ] Frontend: grid วิชา 7×N — pre-checked readonly สำหรับคาบครู, editable สำหรับ subject-level
+- [ ] Backend: scheduler รวม cc + teacher unavailable เป็น effective set (H10)
+- [ ] Backend: API GET classroom_courses รวม teacher_unavailable เพื่อ pre-fill UI
+- [ ] Frontend: per-row expand → list **classroom_courses ที่ครูเป็น primary**
+- [ ] Frontend: แต่ละ cc row — radio pattern + checkbox same_day_unique + grid 7×N
+      (pre-checked readonly สำหรับคาบครู, editable สำหรับ cc-level)
 
 ### Phase C — Independent activities
 - [ ] Backend: scheduler รวม activity independent ในรอบ schedule
@@ -591,11 +613,12 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 - [ ] Frontend: แสดง activity ในรายการวิชาที่จัด
 
 ### Phase D — Room assignment
-- [ ] Migration: `subject_preferred_rooms` table (subject ↔ rooms multi + rank + required)
-- [ ] Backend: scheduler ใช้ pick_room() hierarchy (subject > instructor > classroom)
+- [ ] Migration: `classroom_course_preferred_rooms` table
+      (cc ↔ rooms multi + rank + required)
+- [ ] Backend: scheduler ใช้ pick_room() hierarchy (cc > instructor > classroom)
 - [ ] Backend: respect `is_required` → fail ถ้าห้องเต็ม (H9)
-- [ ] Frontend: subjects page — เพิ่ม field "ห้องที่ใช้สอน"
-- [ ] Frontend: scheduling-config — ห้องประจำครู + ห้องเฉพาะวิชา
+- [ ] Frontend: scheduling-config — ห้องประจำครู (teacher-level)
+      + ใน cc row → ห้องเฉพาะ (cc-level multi-select + drag rank + is_required)
 
 ### Phase E — Soft constraints
 - [ ] Backend: prefer morning, avoid first/last (S4, S5)
@@ -634,10 +657,10 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 ```
 backend-school/
 ├── migrations/
-│   ├── XXX_instructor_priority.sql                  ← ใหม่ (Phase A)
-│   ├── YYY_subject_scheduling_pattern.sql           ← ใหม่ (Phase B)
-│   ├── ZZZ_subject_preferred_rooms.sql              ← ใหม่ (Phase D)
-│   └── WWW_timetable_templates.sql                  ← ใหม่ (Phase F)
+│   ├── XXX_instructor_priority.sql                       ← ใหม่ (Phase A)
+│   ├── YYY_classroom_course_scheduling.sql              ← ใหม่ (Phase B)
+│   ├── ZZZ_classroom_course_preferred_rooms.sql         ← ใหม่ (Phase D)
+│   └── WWW_timetable_templates.sql                       ← ใหม่ (Phase F)
 ├── src/modules/academic/
 │   ├── handlers/
 │   │   ├── scheduling.rs                            ← แก้ algorithm
