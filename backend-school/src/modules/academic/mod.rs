@@ -183,6 +183,7 @@ pub fn academic_routes() -> Router<AppState> {
                .post(handlers::timetable_templates::create_template))
         .route("/timetable-templates/{id}",
                get(handlers::timetable_templates::get_template)
+               .put(handlers::timetable_templates::update_template)
                .delete(handlers::timetable_templates::delete_template))
         .route("/timetable-templates/{id}/apply",
                post(handlers::timetable_templates::apply_template))

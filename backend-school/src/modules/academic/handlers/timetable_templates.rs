@@ -192,6 +192,43 @@ pub async fn create_template(
     Ok(Json(serde_json::json!({ "success": true, "data": { "id": row.0 }})).into_response())
 }
 
+/// PUT /api/academic/timetable-templates/{id}
+/// แก้ไขชื่อ/คำอธิบาย — ไม่แก้ entries ใน template (ใช้ from_current เพื่อ snapshot ใหม่)
+#[derive(Debug, Deserialize)]
+pub struct UpdateTemplateRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
+pub async fn update_template(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateTemplateRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    sqlx::query(
+        "UPDATE timetable_templates SET
+            name = COALESCE($2, name),
+            description = COALESCE($3, description),
+            updated_at = NOW()
+         WHERE id = $1"
+    )
+    .bind(id)
+    .bind(&payload.name)
+    .bind(&payload.description)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "success": true })).into_response())
+}
+
 /// DELETE /api/academic/timetable-templates/{id}
 pub async fn delete_template(
     State(state): State<AppState>,

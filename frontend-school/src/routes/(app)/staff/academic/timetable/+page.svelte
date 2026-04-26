@@ -68,7 +68,8 @@
 		MapPin,
 		Download,
 		Zap,
-		Lock
+		Lock,
+		FileStack
 	} from 'lucide-svelte';
 	import { generateTimetablePDF } from '$lib/utils/pdf';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
@@ -2366,11 +2367,23 @@
 			<Button
 				variant="outline"
 				onclick={() => {
-					goto(resolve('/staff/academic/timetable/scheduling/auto-schedule'));
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- typed-routes ยังไม่รู้จัก
+					goto(resolve('/staff/academic/scheduling-config' as any));
 				}}
 			>
 				<Zap class="w-4 h-4 mr-2 text-orange-500" />
 				จัดอัตโนมัติ
+			</Button>
+
+			<Button
+				variant="outline"
+				onclick={() => {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					goto(resolve('/staff/academic/timetable-templates' as any));
+				}}
+			>
+				<FileStack class="w-4 h-4 mr-2" />
+				Templates
 			</Button>
 
 			<Button variant="outline" onclick={() => (showBatchModal = true)}>

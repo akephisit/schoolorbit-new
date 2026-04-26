@@ -636,18 +636,19 @@ UI: เพิ่มในหน้า scheduling-config ด้านบน (glob
 - [ ] Frontend: แสดง list ของวิชาที่จัดไม่ได้ พร้อมเหตุผล + ปุ่ม "แก้ที่ config"
 
 ### Phase F — Templates (Phase 1 enhancement)
-- [ ] Migration: `timetable_templates` + `timetable_template_entries`
-- [ ] Backend: CRUD endpoints — list/create/update/delete templates
-- [ ] Backend: POST `/templates/{id}/apply` — hydrate เข้า semester ผ่าน batch logic เดิม
-- [ ] Backend: POST `/templates/from-current` — สร้าง template จากตารางปัจจุบัน
-- [ ] Backend: DELETE `/timetable/clear?entry_types=` — เคลียร์ตามชนิด
-- [ ] Frontend: หน้า `/staff/academic/timetable-templates`
-- [ ] Frontend: ปุ่ม "บันทึกเป็น template" + "เคลียร์" + "ใช้ template" ใน /timetable
+- [x] Migration: `timetable_templates` + `timetable_template_entries` (112)
+- [x] Backend: CRUD endpoints — list/create/update/delete templates (PUT for edit added)
+- [x] Backend: POST `/templates/{id}/apply` — hydrate เข้า semester ผ่าน batch logic เดิม
+- [x] Backend: POST `/templates/from-current` — สร้าง template จากตารางปัจจุบัน
+- [x] Backend: DELETE `/timetable/clear?entry_types=` — เคลียร์ตามชนิด
+- [x] Frontend: หน้า `/staff/academic/timetable-templates`
+- [x] Frontend: ปุ่ม link "Templates" + redirect "จัดอัตโนมัติ" → /scheduling-config ใน /timetable
+      (ใน /timetable-templates page มี save/clear/apply ครบ)
 
 ### Phase G — UX polish
-- [ ] Realtime preview ก่อนกดจัด
-- [ ] Conflict report — แสดงสาเหตุที่จัดไม่ได้
-- [ ] Undo last auto-schedule
+- [ ] Realtime preview ก่อนกดจัด — **deferred** (complex, scheduler dry-run mode)
+- [x] Conflict report — แสดงสาเหตุที่จัดไม่ได้ (Phase E)
+- [x] Undo last auto-schedule (migration 113 + endpoint)
 
 ---
 

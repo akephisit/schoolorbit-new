@@ -346,6 +346,13 @@ export async function getTimetableTemplate(id: UUID) {
 	}>(`/api/academic/timetable-templates/${id}`);
 }
 
+export async function updateTimetableTemplate(
+	id: UUID,
+	req: { name?: string; description?: string }
+) {
+	return apiClient.put<unknown>(`/api/academic/timetable-templates/${id}`, req);
+}
+
 export async function deleteTimetableTemplate(id: UUID) {
 	return apiClient.delete<unknown>(`/api/academic/timetable-templates/${id}`);
 }
