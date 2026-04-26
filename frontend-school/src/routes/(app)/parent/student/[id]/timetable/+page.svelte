@@ -193,31 +193,31 @@
 			<p>ยังไม่มีตารางเรียนในภาคเรียนนี้</p>
 		</Card>
 	{:else}
-		<!-- Timetable Grid -->
+		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
 		<div class="overflow-x-auto">
 			<table class="w-full min-w-[640px] border-collapse">
 				<thead>
 					<tr>
 						<th class="bg-muted/50 text-muted-foreground w-20 border p-2 text-xs font-medium">
-							คาบ
+							วัน / คาบ
 						</th>
-						{#each schoolDays as day (day.value)}
+						{#each periods as period (period.id)}
 							<th class="bg-muted/50 border p-2 text-center text-xs font-medium">
-								{day.label}
+								<div class="font-semibold">{period.name || ' '}</div>
+								<div class="text-muted-foreground text-[10px] font-normal">
+									{formatTime(period.start_time)}-{formatTime(period.end_time)}
+								</div>
 							</th>
 						{/each}
 					</tr>
 				</thead>
 				<tbody>
-					{#each periods as period (period.id)}
+					{#each schoolDays as day (day.value)}
 						<tr>
-							<td class="bg-muted/30 border p-2 text-center">
-								<div class="text-xs font-medium">{period.name || ' '}</div>
-								<div class="text-muted-foreground text-[10px]">
-									{formatTime(period.start_time)}-{formatTime(period.end_time)}
-								</div>
+							<td class="bg-muted/30 border p-2 text-center text-xs font-medium">
+								{day.label}
 							</td>
-							{#each schoolDays as day (day.value)}
+							{#each periods as period (period.id)}
 								{@const entry = getEntry(day.value, period.id)}
 								<td class="relative h-20 border p-1">
 									{#if entry}
