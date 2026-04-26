@@ -126,7 +126,7 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<div class="container mx-auto space-y-4 p-4 md:p-6">
+<div class="space-y-6">
 	<Button
 		variant="ghost"
 		onclick={() =>
@@ -137,20 +137,20 @@
 		<ArrowLeft class="h-4 w-4" /> ย้อนกลับ
 	</Button>
 
-	<div class="flex items-center gap-3">
-		<CalendarDays class="text-primary h-7 w-7" />
-		<div>
-			<h1 class="text-2xl font-bold">ตารางเรียน</h1>
-			{#if child}
-				<p class="text-muted-foreground text-sm">
-					{child.first_name ?? ''}
-					{child.last_name ?? ''}
-					{#if child.grade_level && child.class_room}
-						— {child.grade_level}/{child.class_room}
-					{/if}
-				</p>
-			{/if}
-		</div>
+	<div class="flex flex-col gap-2">
+		<h2 class="flex items-center gap-2 text-3xl font-bold">
+			<CalendarDays class="h-8 w-8" />
+			ตารางเรียน
+		</h2>
+		{#if child}
+			<p class="text-muted-foreground">
+				{child.first_name ?? ''}
+				{child.last_name ?? ''}
+				{#if child.grade_level && child.class_room}
+					— {child.grade_level}/{child.class_room}
+				{/if}
+			</p>
+		{/if}
 	</div>
 
 	<!-- Year + Semester selector -->

@@ -129,21 +129,21 @@
 	<title>ตารางเรียน</title>
 </svelte:head>
 
-<div class="container mx-auto p-4 md:p-6 space-y-4">
-	<div class="flex items-center gap-3">
-		<CalendarDays class="w-7 h-7 text-primary" />
-		<div>
-			<h1 class="text-2xl font-bold">ตารางเรียน</h1>
-			{#if student}
-				<p class="text-sm text-muted-foreground">
-					{student.first_name}
-					{student.last_name}
-					{#if student.grade_level && student.class_room}
-						— {student.grade_level}/{student.class_room}
-					{/if}
-				</p>
-			{/if}
-		</div>
+<div class="space-y-6">
+	<div class="flex flex-col gap-2">
+		<h2 class="flex items-center gap-2 text-3xl font-bold">
+			<CalendarDays class="h-8 w-8" />
+			ตารางเรียน
+		</h2>
+		{#if student}
+			<p class="text-muted-foreground">
+				{student.first_name}
+				{student.last_name}
+				{#if student.grade_level && student.class_room}
+					— {student.grade_level}/{student.class_room}
+				{/if}
+			</p>
+		{/if}
 	</div>
 
 	{#if loading}

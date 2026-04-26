@@ -125,15 +125,15 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<div class="container mx-auto space-y-4 p-4 md:p-6">
-	<div class="flex items-center gap-3">
-		<CalendarDays class="text-primary h-7 w-7" />
-		<div>
-			<h1 class="text-2xl font-bold">ตารางสอน</h1>
-			{#if userName}
-				<p class="text-muted-foreground text-sm">ครู{userName}</p>
-			{/if}
-		</div>
+<div class="space-y-6">
+	<div class="flex flex-col gap-2">
+		<h2 class="flex items-center gap-2 text-3xl font-bold">
+			<CalendarDays class="h-8 w-8" />
+			ตารางสอน
+		</h2>
+		{#if userName}
+			<p class="text-muted-foreground">ครู{userName}</p>
+		{/if}
 	</div>
 
 	<!-- Year + Semester selector -->
