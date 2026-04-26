@@ -13,20 +13,26 @@
 		listCcPreferredRooms,
 		setCcPreferredRooms,
 		listAllRooms,
+		autoScheduleTimetable,
+		getSchedulingJob,
 		type InstructorConstraintView,
 		type ClassroomCourseConstraintView,
 		type CcPreferredRoom,
 		type RoomView,
 		type Period,
-		type TimeSlot
+		type TimeSlot,
+		type SchedulingJobResponse,
+		type FailedCourse
 	} from '$lib/api/scheduling';
-	import { getAcademicStructure, getSchoolDays, type AcademicYear } from '$lib/api/academic';
+	import { getAcademicStructure, getSchoolDays, type AcademicYear, listClassrooms, type Semester } from '$lib/api/academic';
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
-	import { GripVertical, ChevronDown, ChevronRight, Sparkles, Save, LoaderCircle } from 'lucide-svelte';
+	import { GripVertical, ChevronDown, ChevronRight, Sparkles, Save, LoaderCircle, Zap, AlertCircle } from 'lucide-svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
 
 	let { data } = $props();
 
@@ -56,6 +62,14 @@
 	let allRooms = $state<RoomView[]>([]);
 	let ccRoomsServer = $state(new Map<string, CcPreferredRoom[]>()); // server snapshot
 	let ccRoomsEdits = $state(new Map<string, CcPreferredRoom[]>()); // local edits
+
+	// Phase E: auto-schedule
+	let semesters = $state<Semester[]>([]);
+	let selectedSemesterId = $state('');
+	let autoScheduling = $state(false);
+	let currentJob = $state<SchedulingJobResponse | null>(null);
+	let showResultDialog = $state(false);
+	let pollAbort: ReturnType<typeof setTimeout> | null = null;
 
 	// DnD state
 	let draggedId = $state<string | null>(null);
@@ -93,6 +107,11 @@
 				return;
 			}
 			schoolDays = getSchoolDays(activeYear.school_days);
+
+			// Phase E: load semesters เพื่อให้เลือก scope auto-schedule
+			semesters = (struct.data.semesters ?? []).filter((s) => s.academic_year_id === activeYear!.id);
+			const activeSem = semesters.find((s) => s.is_active) ?? semesters[0];
+			if (activeSem) selectedSemesterId = activeSem.id;
 
 			const [instrRes, periodsRes, settingsRes, roomsRes] = await Promise.all([
 				listInstructorConstraints(),
@@ -459,7 +478,91 @@
 		return unavailableEdits.get(id)?.length ?? 0;
 	}
 
+	// =========================================
+	// Phase E: Auto-schedule + result polling
+	// =========================================
+
+	async function runAutoSchedule() {
+		if (!selectedSemesterId) {
+			toast.error('กรุณาเลือกภาคเรียน');
+			return;
+		}
+		// บันทึก config ก่อน → จัด
+		await saveAll();
+		if (saving) return; // saveAll ยัง running
+
+		// Load classrooms ของปีการศึกษานี้
+		try {
+			autoScheduling = true;
+			if (!activeYear) throw new Error('No active year');
+			const crRes = await listClassrooms({ year_id: activeYear.id });
+			const classroom_ids = (crRes.data ?? []).map((c) => c.id);
+			if (classroom_ids.length === 0) {
+				toast.error('ไม่มีห้องเรียนในภาคเรียนนี้');
+				autoScheduling = false;
+				return;
+			}
+
+			const jobRes = await autoScheduleTimetable({
+				academic_semester_id: selectedSemesterId,
+				classroom_ids,
+				algorithm: 'BACKTRACKING',
+				config: {
+					force_overwrite: true,
+					allow_partial: true,
+					min_quality_score: 60,
+					timeout_seconds: 120
+				}
+			});
+
+			if (!jobRes.data?.job_id) {
+				throw new Error('Backend ไม่ส่ง job_id กลับ');
+			}
+			toast.success('เริ่มจัดตารางอัตโนมัติแล้ว');
+			pollJob(jobRes.data.job_id);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'จัดอัตโนมัติไม่สำเร็จ');
+			autoScheduling = false;
+		}
+	}
+
+	function pollJob(jobId: string) {
+		const check = async () => {
+			try {
+				const res = await getSchedulingJob(jobId);
+				const job = res.data;
+				if (!job) {
+					autoScheduling = false;
+					return;
+				}
+				currentJob = job;
+				if (job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELLED') {
+					autoScheduling = false;
+					showResultDialog = true;
+					if (job.status === 'COMPLETED') {
+						toast.success(`จัดสำเร็จ ${job.scheduled_courses}/${job.total_courses} วิชา`);
+					} else {
+						toast.error(job.error_message || `Status: ${job.status}`);
+					}
+				} else {
+					// running — poll again
+					pollAbort = setTimeout(check, 2000);
+				}
+			} catch (e) {
+				toast.error(e instanceof Error ? e.message : 'ติดตามสถานะไม่สำเร็จ');
+				autoScheduling = false;
+			}
+		};
+		check();
+	}
+
 	onMount(loadAll);
+
+	// Cleanup polling on unmount
+	import { onDestroy } from 'svelte';
+	onDestroy(() => {
+		if (pollAbort) clearTimeout(pollAbort);
+	});
 </script>
 
 <svelte:head>
@@ -472,14 +575,24 @@
 			<Sparkles class="w-6 h-6 text-primary" />
 			<h1 class="text-2xl font-bold">ตั้งค่าจัดตารางอัตโนมัติ</h1>
 		</div>
-		<Button onclick={saveAll} disabled={saving || loading}>
-			{#if saving}
-				<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-			{:else}
-				<Save class="w-4 h-4 mr-2" />
-			{/if}
-			บันทึก
-		</Button>
+		<div class="flex items-center gap-2">
+			<Button variant="outline" onclick={saveAll} disabled={saving || loading || autoScheduling}>
+				{#if saving}
+					<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+				{:else}
+					<Save class="w-4 h-4 mr-2" />
+				{/if}
+				บันทึก
+			</Button>
+			<Button onclick={runAutoSchedule} disabled={saving || loading || autoScheduling || !selectedSemesterId}>
+				{#if autoScheduling}
+					<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+				{:else}
+					<Zap class="w-4 h-4 mr-2" />
+				{/if}
+				บันทึกและจัดอัตโนมัติ
+			</Button>
+		</div>
 	</div>
 
 	{#if loading}
@@ -490,17 +603,32 @@
 		<!-- Global settings -->
 		<Card.Root class="p-4">
 			<h2 class="font-semibold mb-3">ตั้งค่ารวม</h2>
-			<div class="flex items-center gap-3">
-				<Label for="max-consec" class="shrink-0">ครูสอนติดสูงสุด:</Label>
-				<Input
-					id="max-consec"
-					type="number"
-					min="1"
-					max="20"
-					bind:value={defaultMaxConsecutive}
-					class="w-24"
-				/>
-				<span class="text-sm text-muted-foreground">คาบติด (default 4)</span>
+			<div class="grid gap-3 md:grid-cols-2">
+				<div class="flex items-center gap-3">
+					<Label for="max-consec" class="shrink-0">ครูสอนติดสูงสุด:</Label>
+					<Input
+						id="max-consec"
+						type="number"
+						min="1"
+						max="20"
+						bind:value={defaultMaxConsecutive}
+						class="w-24"
+					/>
+					<span class="text-sm text-muted-foreground">คาบติด</span>
+				</div>
+				<div class="flex items-center gap-3">
+					<Label class="shrink-0">ภาคเรียน:</Label>
+					<Select.Root type="single" bind:value={selectedSemesterId}>
+						<Select.Trigger class="flex-1">
+							{semesters.find((s) => s.id === selectedSemesterId)?.name || 'เลือกภาคเรียน'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each semesters as sem (sem.id)}
+								<Select.Item value={sem.id}>{sem.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
 			</div>
 		</Card.Root>
 
@@ -812,3 +940,65 @@
 		</Card.Root>
 	{/if}
 </div>
+
+<!-- Phase E: Auto-schedule result dialog -->
+<Dialog.Root bind:open={showResultDialog}>
+	<Dialog.Content class="max-w-2xl max-h-[80vh] overflow-y-auto">
+		<Dialog.Header>
+			<Dialog.Title>ผลการจัดตารางอัตโนมัติ</Dialog.Title>
+		</Dialog.Header>
+		{#if currentJob}
+			<div class="space-y-3">
+				<div class="grid grid-cols-3 gap-2 text-sm">
+					<div class="border rounded p-2">
+						<div class="text-xs text-muted-foreground">สถานะ</div>
+						<div class="font-medium">{currentJob.status}</div>
+					</div>
+					<div class="border rounded p-2">
+						<div class="text-xs text-muted-foreground">จัดสำเร็จ</div>
+						<div class="font-medium text-emerald-700">
+							{currentJob.scheduled_courses}/{currentJob.total_courses}
+						</div>
+					</div>
+					<div class="border rounded p-2">
+						<div class="text-xs text-muted-foreground">คะแนนคุณภาพ</div>
+						<div class="font-medium">{currentJob.quality_score?.toFixed(1) ?? '-'}</div>
+					</div>
+				</div>
+
+				{#if currentJob.failed_courses.length > 0}
+					<div class="border rounded-md p-3 bg-destructive/5">
+						<div class="flex items-center gap-2 font-medium text-destructive mb-2">
+							<AlertCircle class="w-4 h-4" />
+							วิชาที่จัดไม่ได้ ({currentJob.failed_courses.length})
+						</div>
+						<div class="space-y-2 max-h-[400px] overflow-y-auto">
+							{#each currentJob.failed_courses as fc (fc.course_id)}
+								<div class="border rounded p-2 bg-card text-sm">
+									<div class="font-medium">
+										{fc.subject_code} {fc.subject_name}
+									</div>
+									<div class="text-xs text-muted-foreground">{fc.classroom}</div>
+									<div class="text-xs mt-1 text-destructive">{fc.reason}</div>
+								</div>
+							{/each}
+						</div>
+						<p class="text-xs text-muted-foreground mt-2">
+							💡 ลองปรับ priority ครู / ลด constraint / เปลี่ยน pattern แล้วจัดใหม่
+						</p>
+					</div>
+				{/if}
+
+				{#if currentJob.error_message}
+					<div class="border rounded-md p-3 bg-destructive/5 text-sm text-destructive">
+						<div class="font-medium">ข้อผิดพลาด</div>
+						<div class="mt-1">{currentJob.error_message}</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showResultDialog = false)}>ปิด</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
