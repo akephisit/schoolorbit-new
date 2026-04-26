@@ -374,9 +374,12 @@ pub async fn apply_template(
     let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
     let mut total_inserted: u64 = 0;
 
+    // Group template entries by (title, activity_slot_id) — กิจกรรมเดียวกันใช้ batch_id ร่วม
+    // → "ลบทั้งหมด" จะลบเฉพาะ entries ของกิจกรรมนั้น (ไม่กระทบกิจกรรมอื่นใน template)
+    use std::collections::HashMap;
+    let mut group_batch_ids: HashMap<(Option<String>, Option<Uuid>), Uuid> = HashMap::new();
+
     // Resolve grade_level_ids → classroom_ids ใน semester นี้
-    // โดย JOIN class_rooms.grade_level_id with academic_semesters.academic_year_id
-    // (เพื่อเอา ห้องของปีนี้)
     for entry in &entries {
         // Build classroom_ids: union ของ specific + resolved from grade_level
         let specific_classrooms: Vec<Uuid> = serde_json::from_value(entry.classroom_ids.clone())
@@ -412,8 +415,13 @@ pub async fn apply_template(
             continue; // skip — no targets
         }
 
-        // batch_uuid ต่อ template entry
-        let batch_uuid = Uuid::new_v4();
+        // batch_uuid ต่อ "กิจกรรม" — ใช้ key (title, activity_slot_id)
+        // - TEXT batch (ไม่มี slot): group ตาม title
+        // - SLOT-sync (มี slot): group ตาม slot_id
+        let group_key = (entry.title.clone(), entry.activity_slot_id);
+        let batch_uuid = *group_batch_ids
+            .entry(group_key)
+            .or_insert_with(Uuid::new_v4);
 
         // Bulk insert entries — 1 query per template entry × N classrooms
         // ON CONFLICT DO NOTHING (กัน clash กับ entries เดิม)
@@ -445,7 +453,10 @@ pub async fn apply_template(
 
         total_inserted += inserted_count;
 
-        // Insert tei (ครู) — ผูกกับ entries ที่เพิ่ง insert
+        // Insert tei (ครู) — ผูกกับ entries ที่ "เพิ่ง insert" จาก template entry นี้
+        // ใช้ batch_id + day_of_week + period_id เพื่อ scope ให้แน่ — กัน leak ไป entries
+        // อื่นใน batch เดียวกัน (เช่น template entry อื่นใน batch group เดียวกันแต่คาบ
+        // ต่างกัน อาจมี instructor_ids ต่างกัน)
         if !instructor_ids.is_empty() {
             sqlx::query(
                 r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
@@ -453,10 +464,14 @@ pub async fn apply_template(
                    FROM academic_timetable_entries te
                    CROSS JOIN UNNEST($1::uuid[]) AS instr(v)
                    WHERE te.batch_id = $2
+                     AND te.day_of_week = $3
+                     AND te.period_id = $4
                    ON CONFLICT DO NOTHING"#
             )
             .bind(&instructor_ids)
             .bind(batch_uuid)
+            .bind(&entry.day_of_week)
+            .bind(entry.period_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::InternalServerError(e.to_string()))?;
