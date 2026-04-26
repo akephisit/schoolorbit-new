@@ -47,6 +47,14 @@ pub struct CourseToSchedule {
     // Flexible constraints (new)
     pub allowed_period_ids: Option<Vec<Uuid>>, // NULL = all periods allowed
     pub allowed_days: Option<Vec<String>>,     // NULL = all days allowed
+
+    // Phase B: classroom_course-level constraints
+    /// คาบที่ห้ามจัดวิชานี้ในห้องนี้ (cc-level, ไม่รวมจากครู — scheduler รวมเอง)
+    pub cc_hard_unavailable: HashSet<String>, // key: "DAY__period_id"
+    /// true → วันเดียวกันห้ามมีรหัสวิชาซ้ำ (default true)
+    pub same_day_unique: bool,
+    /// รูปแบบการจัดคาบ — None = fallback [1; periods_needed]
+    pub consecutive_pattern: Option<Vec<i32>>,
 }
 
 // ==================== Assignment ====================

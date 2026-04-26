@@ -5,15 +5,18 @@ use uuid::Uuid;
 pub struct ConstraintValidator {
     // Locked slots
     locked_slots: HashMap<String, LockedSlotInfo>, // key -> info
-    
+
     // Instructor preferences
     instructor_prefs: HashMap<Uuid, InstructorPrefData>,
-    
+
     // Periods by day
     periods_by_day: HashMap<String, Vec<PeriodInfo>>,
-    
+
     // Rooms info
     rooms: HashMap<Uuid, RoomInfo>,
+
+    // Phase A/B: global cap ของจำนวนคาบติดต่อกัน (คาบสอนติดของครูคนเดียว)
+    pub default_max_consecutive: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -30,8 +33,19 @@ impl ConstraintValidator {
         periods: Vec<PeriodInfo>,
         rooms: HashMap<Uuid, RoomInfo>,
     ) -> Self {
+        Self::with_settings(locked_slots, instructor_prefs, periods, rooms, 4)
+    }
+
+    /// Constructor variant ที่รับ default_max_consecutive จาก school_settings
+    pub fn with_settings(
+        locked_slots: Vec<LockedSlotData>,
+        instructor_prefs: HashMap<Uuid, InstructorPrefData>,
+        periods: Vec<PeriodInfo>,
+        rooms: HashMap<Uuid, RoomInfo>,
+        default_max_consecutive: i32,
+    ) -> Self {
         let mut locked_map = HashMap::new();
-        
+
         for locked in locked_slots {
             for period_id in &locked.period_ids {
                 let key = format!("{}__{}", locked.day, period_id);
@@ -45,17 +59,18 @@ impl ConstraintValidator {
                 );
             }
         }
-        
+
         let mut periods_by_day = HashMap::new();
         for day in &["MON", "TUE", "WED", "THU", "FRI"] {
             periods_by_day.insert(day.to_string(), periods.clone());
         }
-        
+
         Self {
             locked_slots: locked_map,
             instructor_prefs,
             periods_by_day,
             rooms,
+            default_max_consecutive,
         }
     }
     
@@ -122,6 +137,81 @@ impl ConstraintValidator {
             }
         }
         
+        // HC-10 (Phase B): cc-level hard unavailable
+        if course.cc_hard_unavailable.contains(&slot_key) {
+            return Err(Conflict {
+                conflict_type: ConflictType::InstructorUnavailable,
+                message: format!(
+                    "Course {} {} ห้ามจัดที่ {}",
+                    course.subject_code, course.classroom_name, slot_key
+                ),
+            });
+        }
+
+        // HC-11 (Phase B): same_day_unique — วันเดียวกันห้ามมีรหัสซ้ำ
+        // (ยกเว้นเป็น chunk ติดกันของ subject เดียวกัน — กรณี pattern [2,1])
+        if course.same_day_unique {
+            let conflict = state.assignments.iter().any(|a| {
+                a.subject_id == course.subject_id
+                    && a.classroom_id == course.classroom_id
+                    && a.time_slot.day == time_slot.day
+                    // ติดกันได้ — period_order ต่างกัน 1 ถือเป็น chunk เดียวกัน (chain check
+                    // ละเอียดกว่านี้เป็นไปไม่ได้ที่ stage นี้ — รอ post-validation)
+                    && (a.time_slot.period_order - time_slot.period_order).abs() != 1
+            });
+            if conflict {
+                return Err(Conflict {
+                    conflict_type: ConflictType::InvalidConsecutive,
+                    message: format!(
+                        "Subject {} ใน {} วัน {} ซ้ำ — same_day_unique=true",
+                        course.subject_code, course.classroom_name, time_slot.day
+                    ),
+                });
+            }
+        }
+
+        // HC-12 (Phase A/B): max_consecutive ของครู (global cap)
+        if let Some(instructor_id) = course.instructor_id {
+            // นับจำนวนคาบติดต่อกันของครูในวันเดียวกัน รอบ ๆ slot ที่จะวาง
+            let day = &time_slot.day;
+            let order = time_slot.period_order;
+            let mut consecutive = 1; // คาบใหม่ที่จะวาง
+            // นับย้อนหลัง
+            let mut prev = order - 1;
+            loop {
+                let has = state.assignments.iter().any(|a| {
+                    a.instructor_id == Some(instructor_id)
+                        && a.time_slot.day == *day
+                        && a.time_slot.period_order == prev
+                });
+                if !has { break; }
+                consecutive += 1;
+                prev -= 1;
+            }
+            // นับไปข้างหน้า
+            let mut next = order + 1;
+            loop {
+                let has = state.assignments.iter().any(|a| {
+                    a.instructor_id == Some(instructor_id)
+                        && a.time_slot.day == *day
+                        && a.time_slot.period_order == next
+                });
+                if !has { break; }
+                consecutive += 1;
+                next += 1;
+            }
+            if consecutive > self.default_max_consecutive {
+                return Err(Conflict {
+                    conflict_type: ConflictType::InvalidConsecutive,
+                    message: format!(
+                        "ครู {} จะสอนติด {} คาบ (เกิน {} คาบ)",
+                        course.instructor_name.as_deref().unwrap_or("?"),
+                        consecutive, self.default_max_consecutive
+                    ),
+                });
+            }
+        }
+
         // HC-9: Locked slot check
         if let Some(locked_info) = self.locked_slots.get(&slot_key) {
             // Check if this slot is locked for a different subject

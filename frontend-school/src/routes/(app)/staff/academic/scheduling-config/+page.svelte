@@ -8,7 +8,10 @@
 		getSchoolSettings,
 		updateSchoolSettings,
 		listPeriods,
+		listClassroomCourseConstraints,
+		updateClassroomCourseConstraints,
 		type InstructorConstraintView,
+		type ClassroomCourseConstraintView,
 		type Period,
 		type TimeSlot
 	} from '$lib/api/scheduling';
@@ -32,8 +35,17 @@
 
 	// Per-row UI state
 	let expandedIds = $state(new Set<string>());
+	let expandedCcIds = $state(new Set<string>()); // เปิดดู cc แต่ละตัว
 	// Local edits — keyed by instructor_id, only flushed on Save
 	let unavailableEdits = $state(new Map<string, TimeSlot[]>());
+
+	// Phase B: cc constraints — load lazily ต่อครู
+	let ccByInstructor = $state(new Map<string, ClassroomCourseConstraintView[]>());
+	let ccLoadingIds = $state(new Set<string>());
+	// Local edits ของ cc — keyed by cc.id
+	let ccUnavailableEdits = $state(new Map<string, TimeSlot[]>());
+	let ccPatternEdits = $state(new Map<string, number[] | null>());
+	let ccSameDayUniqueEdits = $state(new Map<string, boolean>());
 
 	// DnD state
 	let draggedId = $state<string | null>(null);
@@ -152,6 +164,27 @@
 				}));
 			}
 
+			// 4. Per-cc constraints — only ที่เปลี่ยนจริง
+			for (const [_, ccList] of ccByInstructor.entries()) {
+				for (const cc of ccList) {
+					const localUnavail = ccUnavailableEdits.get(cc.id) ?? [];
+					const localPattern = ccPatternEdits.get(cc.id) ?? null;
+					const localSdu = ccSameDayUniqueEdits.get(cc.id);
+
+					const unavailChanged = !slotsEqual(localUnavail, cc.hard_unavailable_slots ?? []);
+					const patternChanged = !patternEquals(localPattern, cc.consecutive_pattern);
+					const sduChanged = localSdu !== undefined && localSdu !== cc.same_day_unique;
+
+					if (!unavailChanged && !patternChanged && !sduChanged) continue;
+
+					ops.push(updateClassroomCourseConstraints(cc.id, {
+						hard_unavailable_slots: unavailChanged ? localUnavail : undefined,
+						consecutive_pattern: patternChanged ? localPattern : undefined,
+						same_day_unique: sduChanged ? localSdu : undefined
+					}));
+				}
+			}
+
 			await Promise.all(ops);
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 			priorityDirty = false;
@@ -172,9 +205,134 @@
 
 	function toggleExpand(id: string) {
 		const next = new Set(expandedIds);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+			// Load cc list lazily ครั้งแรก
+			if (!ccByInstructor.has(id)) {
+				loadCcForInstructor(id);
+			}
+		}
 		expandedIds = next;
+	}
+
+	async function loadCcForInstructor(instructorId: string) {
+		const loading = new Set(ccLoadingIds);
+		loading.add(instructorId);
+		ccLoadingIds = loading;
+		try {
+			const res = await listClassroomCourseConstraints(instructorId);
+			const list = res.data ?? [];
+			const newMap = new Map(ccByInstructor);
+			newMap.set(instructorId, list);
+			ccByInstructor = newMap;
+
+			// Init local edits จาก server state
+			const unavail = new Map(ccUnavailableEdits);
+			const pattern = new Map(ccPatternEdits);
+			const sdu = new Map(ccSameDayUniqueEdits);
+			for (const cc of list) {
+				unavail.set(cc.id, cc.hard_unavailable_slots ?? []);
+				pattern.set(cc.id, cc.consecutive_pattern ?? null);
+				sdu.set(cc.id, cc.same_day_unique);
+			}
+			ccUnavailableEdits = unavail;
+			ccPatternEdits = pattern;
+			ccSameDayUniqueEdits = sdu;
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'โหลด classroom courses ไม่สำเร็จ');
+		} finally {
+			const stop = new Set(ccLoadingIds);
+			stop.delete(instructorId);
+			ccLoadingIds = stop;
+		}
+	}
+
+	function toggleCcExpand(ccId: string) {
+		const next = new Set(expandedCcIds);
+		if (next.has(ccId)) next.delete(ccId);
+		else next.add(ccId);
+		expandedCcIds = next;
+	}
+
+	// CC unavailable helpers — รวม union ของ team + local edits
+	function ccIsUnavailable(cc: ClassroomCourseConstraintView, day: string, periodId: string): boolean {
+		// Inherited จากครูใน team → readonly true
+		if ((cc.team_unavailable_slots ?? []).some((s) => s.day === day && s.period_id === periodId)) {
+			return true;
+		}
+		const local = ccUnavailableEdits.get(cc.id) ?? [];
+		return local.some((s) => s.day === day && s.period_id === periodId);
+	}
+
+	function ccIsInheritedUnavailable(
+		cc: ClassroomCourseConstraintView,
+		day: string,
+		periodId: string
+	): boolean {
+		return (cc.team_unavailable_slots ?? []).some(
+			(s) => s.day === day && s.period_id === periodId
+		);
+	}
+
+	function toggleCcUnavailable(cc: ClassroomCourseConstraintView, day: string, periodId: string) {
+		// Inherited → ห้าม toggle
+		if (ccIsInheritedUnavailable(cc, day, periodId)) return;
+		const current = ccUnavailableEdits.get(cc.id) ?? [];
+		const idx = current.findIndex((s) => s.day === day && s.period_id === periodId);
+		const next = idx >= 0
+			? current.filter((_, i) => i !== idx)
+			: [...current, { day, period_id: periodId }];
+		const newMap = new Map(ccUnavailableEdits);
+		newMap.set(cc.id, next);
+		ccUnavailableEdits = newMap;
+	}
+
+	function setCcPattern(ccId: string, pattern: number[] | null) {
+		const next = new Map(ccPatternEdits);
+		next.set(ccId, pattern);
+		ccPatternEdits = next;
+	}
+
+	function setCcSameDayUnique(ccId: string, value: boolean) {
+		const next = new Map(ccSameDayUniqueEdits);
+		next.set(ccId, value);
+		ccSameDayUniqueEdits = next;
+	}
+
+	// Generate pattern options ให้ periods_per_week
+	// 3 → [[1,1,1], [2,1], [1,2], [3]]
+	// 4 → [[1,1,1,1], [2,1,1], [1,2,1], [1,1,2], [2,2], [3,1], [1,3], [4]]
+	// ใช้ recursive composition
+	function patternOptions(periods: number): number[][] {
+		if (periods <= 0) return [[]];
+		if (periods > 6) return [[periods]]; // edge case — too many — only "all in one"
+		const result: number[][] = [];
+		const compose = (remaining: number, acc: number[]) => {
+			if (remaining === 0) {
+				result.push([...acc]);
+				return;
+			}
+			for (let chunk = 1; chunk <= remaining; chunk++) {
+				acc.push(chunk);
+				compose(remaining - chunk, acc);
+				acc.pop();
+			}
+		};
+		compose(periods, []);
+		return result;
+	}
+
+	function patternLabel(pattern: number[]): string {
+		return pattern.join('+');
+	}
+
+	function patternEquals(a: number[] | null | undefined, b: number[] | null | undefined): boolean {
+		if (!a && !b) return true;
+		if (!a || !b) return false;
+		if (a.length !== b.length) return false;
+		return a.every((v, i) => v === b[i]);
 	}
 
 	function unavailableCount(id: string): number {
@@ -329,6 +487,137 @@
 										<p class="text-xs text-muted-foreground mt-1">
 											คลิกเพื่อ toggle "ไม่ว่าง" — คาบสีแดง = ครูจะไม่ถูกจัดในคาบนั้น
 										</p>
+									</div>
+
+									<!-- Phase B: classroom_courses ที่ครูเป็น primary -->
+									<div>
+										<h4 class="text-sm font-medium mb-2">
+											รายวิชาที่ครูคนนี้เป็นครูหลัก ({ccByInstructor.get(instr.id)?.length ?? 0})
+										</h4>
+										{#if ccLoadingIds.has(instr.id)}
+											<div class="flex items-center gap-2 text-sm text-muted-foreground">
+												<LoaderCircle class="w-4 h-4 animate-spin" /> กำลังโหลด...
+											</div>
+										{:else if (ccByInstructor.get(instr.id)?.length ?? 0) === 0}
+											<p class="text-sm text-muted-foreground">ไม่มีวิชาที่เป็นครูหลัก</p>
+										{:else}
+											<div class="space-y-2">
+												{#each ccByInstructor.get(instr.id) ?? [] as cc (cc.id)}
+													{@const ccPpw = cc.periods_per_week ?? 1}
+													{@const opts = patternOptions(ccPpw)}
+													{@const currentPattern = ccPatternEdits.get(cc.id) ?? null}
+													{@const currentSdu = ccSameDayUniqueEdits.get(cc.id) ?? cc.same_day_unique}
+													<div class="border rounded-md bg-card">
+														<button
+															onclick={() => toggleCcExpand(cc.id)}
+															class="w-full flex items-center gap-2 p-2 hover:bg-accent text-left text-sm"
+														>
+															{#if expandedCcIds.has(cc.id)}
+																<ChevronDown class="w-3 h-3" />
+															{:else}
+																<ChevronRight class="w-3 h-3" />
+															{/if}
+															<span class="font-medium">{cc.subject_code}</span>
+															<span class="text-muted-foreground">
+																{cc.subject_name} — {cc.classroom_name}
+															</span>
+															<span class="ml-auto text-xs text-muted-foreground">
+																{ccPpw} คาบ/สัปดาห์
+															</span>
+														</button>
+														{#if expandedCcIds.has(cc.id)}
+															<div class="border-t p-3 space-y-3">
+																<!-- Pattern picker -->
+																<div>
+																	<Label class="text-xs">รูปแบบการจัดคาบ</Label>
+																	<div class="flex flex-wrap gap-1 mt-1">
+																		<button
+																			onclick={() => setCcPattern(cc.id, null)}
+																			class="text-xs px-2 py-1 rounded border {currentPattern === null
+																				? 'bg-primary text-primary-foreground'
+																				: 'bg-background hover:bg-accent'}"
+																		>
+																			Auto (default)
+																		</button>
+																		{#each opts as opt (patternLabel(opt))}
+																			<button
+																				onclick={() => setCcPattern(cc.id, opt)}
+																				class="text-xs px-2 py-1 rounded border {patternEquals(currentPattern, opt)
+																					? 'bg-primary text-primary-foreground'
+																					: 'bg-background hover:bg-accent'}"
+																			>
+																				{patternLabel(opt)}
+																			</button>
+																		{/each}
+																	</div>
+																</div>
+
+																<!-- Same day unique -->
+																<label class="flex items-center gap-2 text-xs cursor-pointer">
+																	<input
+																		type="checkbox"
+																		checked={currentSdu}
+																		onchange={(e) => setCcSameDayUnique(cc.id, e.currentTarget.checked)}
+																	/>
+																	<span>ห้ามวันเดียวกันมีรหัสวิชาซ้ำ</span>
+																</label>
+
+																<!-- CC unavailable grid -->
+																<div>
+																	<Label class="text-xs">คาบที่ห้ามจัดวิชานี้</Label>
+																	<div class="overflow-x-auto mt-1">
+																		<table class="text-xs border-collapse">
+																			<thead>
+																				<tr>
+																					<th class="border p-1 bg-muted sticky left-0 z-10">วัน</th>
+																					{#each periods as p (p.id)}
+																						<th class="border p-1 bg-muted min-w-[50px]">
+																							{p.name || `${p.order_index}`}
+																						</th>
+																					{/each}
+																				</tr>
+																			</thead>
+																			<tbody>
+																				{#each schoolDays as day (day.value)}
+																					<tr>
+																						<td class="border p-1 bg-muted font-medium sticky left-0 z-10">
+																							{day.shortLabel}
+																						</td>
+																						{#each periods as p (p.id)}
+																							{@const inherited = ccIsInheritedUnavailable(cc, day.value, p.id)}
+																							{@const unavail = ccIsUnavailable(cc, day.value, p.id)}
+																							<td class="border p-0 text-center">
+																								<button
+																									onclick={() => toggleCcUnavailable(cc, day.value, p.id)}
+																									disabled={inherited}
+																									title={inherited ? 'ครูในทีมไม่ว่าง' : ''}
+																									class="w-full h-6 transition-colors {unavail
+																										? inherited
+																											? 'bg-muted-foreground/40 cursor-not-allowed'
+																											: 'bg-destructive/80 hover:bg-destructive text-destructive-foreground'
+																										: 'hover:bg-accent'}"
+																								>
+																									{#if unavail}
+																										{inherited ? '🔒' : '✕'}
+																									{/if}
+																								</button>
+																							</td>
+																						{/each}
+																					</tr>
+																				{/each}
+																			</tbody>
+																		</table>
+																	</div>
+																	<p class="text-xs text-muted-foreground mt-1">
+																		🔒 = inherited จากครูในทีม (แก้ที่ row ครู) — ✕ = subject-level
+																	</p>
+																</div>
+															</div>
+														{/if}
+													</div>
+												{/each}
+											</div>
+										{/if}
 									</div>
 								</div>
 							{/if}

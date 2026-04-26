@@ -296,6 +296,7 @@ async fn run_scheduling_job(
 
     let instructor_prefs = loader.load_instructor_preferences(academic_year_id).await?;
     let rooms = loader.load_rooms().await?; // Load rooms
+    let default_max_consecutive = loader.load_default_max_consecutive().await.unwrap_or(4);
     
     // Update progress
     sqlx::query(
@@ -328,13 +329,14 @@ async fn run_scheduling_job(
     .execute(pool)
     .await?;
     
-    let result = scheduler.schedule(
+    let result = scheduler.schedule_with_settings(
         courses,
         available_slots,
         locked_slots,
         instructor_prefs,
         periods,
-        rooms, // Pass rooms
+        rooms,
+        default_max_consecutive,
     );
     
     // Save assignments to database

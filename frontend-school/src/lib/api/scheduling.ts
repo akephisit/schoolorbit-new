@@ -232,6 +232,43 @@ export async function updateSubjectConstraints(id: UUID, req: UpdateSubjectConst
 	return apiClient.put<unknown>(`/api/academic/scheduling/subjects/${id}`, req);
 }
 
+// Phase B: Classroom Course Constraints
+export interface ClassroomCourseConstraintView {
+	id: UUID;
+	classroom_id: UUID;
+	classroom_name: string;
+	subject_id: UUID;
+	subject_code: string;
+	subject_name: string;
+	periods_per_week?: number;
+	primary_instructor_id?: UUID;
+	primary_instructor_name?: string;
+	consecutive_pattern?: number[] | null;
+	same_day_unique: boolean;
+	hard_unavailable_slots: TimeSlot[];
+	team_unavailable_slots: TimeSlot[]; // readonly union ครูใน team
+}
+
+export interface UpdateClassroomCourseConstraintRequest {
+	consecutive_pattern?: number[] | null;
+	same_day_unique?: boolean;
+	hard_unavailable_slots?: TimeSlot[];
+}
+
+export async function listClassroomCourseConstraints(instructorId?: UUID) {
+	const q = instructorId ? `?instructor_id=${instructorId}` : '';
+	return apiClient.get<ClassroomCourseConstraintView[]>(
+		`/api/academic/scheduling/classroom-courses${q}`
+	);
+}
+
+export async function updateClassroomCourseConstraints(
+	id: UUID,
+	req: UpdateClassroomCourseConstraintRequest
+) {
+	return apiClient.put<string>(`/api/academic/scheduling/classroom-courses/${id}`, req);
+}
+
 export async function listPeriods(academicYearId?: UUID) {
 	const params = academicYearId ? `?academic_year_id=${academicYearId}` : '';
 	return apiClient.get<Period[]>(`/api/academic/periods${params}`);

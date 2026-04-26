@@ -41,12 +41,17 @@ impl<'a> SchedulerDataLoader<'a> {
                          ELSE 2
                     END) as periods_needed,
 
-                -- Consecutive requirements
+                -- Consecutive requirements (subject-level, kept for back-compat)
                 COALESCE(s.min_consecutive_periods, 1) as min_consecutive,
                 2 as max_consecutive,
                 COALESCE(s.allow_single_period, true) as allow_single_period,
                 s.allowed_period_ids,
-                s.allowed_days
+                s.allowed_days,
+
+                -- Phase B: classroom_course-level constraints
+                cc.consecutive_pattern AS consecutive_pattern,
+                cc.same_day_unique AS same_day_unique,
+                cc.hard_unavailable_slots AS cc_hard_unavailable_slots
 
             FROM classroom_courses cc
             JOIN subjects s ON s.id = cc.subject_id
@@ -100,6 +105,29 @@ impl<'a> SchedulerDataLoader<'a> {
                 })
             });
             
+            // Phase B: parse cc.consecutive_pattern (Option<Vec<i32>>)
+            let consecutive_pattern: Option<Vec<i32>> = row.consecutive_pattern.as_ref().and_then(|json| {
+                json.as_array().map(|arr| {
+                    arr.iter().filter_map(|v| v.as_i64().map(|n| n as i32)).collect()
+                })
+            });
+
+            // Phase B: parse cc.hard_unavailable_slots → HashSet<key>
+            let cc_hard_unavailable: HashSet<String> = {
+                let mut set = HashSet::new();
+                if let Some(arr) = row.cc_hard_unavailable_slots.as_array() {
+                    for slot in arr {
+                        let day = slot.get("day").and_then(|v| v.as_str()).map(String::from);
+                        let period_id = slot.get("period_id").and_then(|v| v.as_str())
+                            .and_then(|s| Uuid::parse_str(s).ok());
+                        if let (Some(d), Some(p)) = (day, period_id) {
+                            set.insert(format!("{}__{}", d, p));
+                        }
+                    }
+                }
+                set
+            };
+
             courses.push(CourseToSchedule {
                 id: Uuid::new_v4(), // Unique ID for this scheduling instance
                 classroom_course_id: row.classroom_course_id,
@@ -118,9 +146,12 @@ impl<'a> SchedulerDataLoader<'a> {
                 fixed_room_id,
                 allowed_period_ids,
                 allowed_days,
+                cc_hard_unavailable,
+                same_day_unique: row.same_day_unique,
+                consecutive_pattern,
             });
         }
-        
+
         Ok(courses)
     }
     
@@ -452,8 +483,11 @@ struct CourseRow {
     min_consecutive: i32,
     max_consecutive: i32,
     allow_single_period: bool,
-    allowed_period_ids: Option<serde_json::Value>, // JSONB
-    allowed_days: Option<serde_json::Value>,       // JSONB
+    allowed_period_ids: Option<serde_json::Value>,         // JSONB
+    allowed_days: Option<serde_json::Value>,               // JSONB
+    consecutive_pattern: Option<serde_json::Value>,        // jsonb [1,1,1] etc.
+    same_day_unique: bool,
+    cc_hard_unavailable_slots: serde_json::Value,          // [{"day","period_id"}]
 }
 
 #[derive(sqlx::FromRow)]

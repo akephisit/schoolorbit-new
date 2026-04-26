@@ -30,12 +30,26 @@ impl TimetableScheduler {
         periods: Vec<PeriodInfo>,
         rooms: HashMap<Uuid, RoomInfo>,
     ) -> SchedulingResult {
+        self.schedule_with_settings(courses, available_slots, locked_slots, instructor_prefs, periods, rooms, 4)
+    }
+
+    pub fn schedule_with_settings(
+        &self,
+        mut courses: Vec<CourseToSchedule>,
+        available_slots: Vec<TimeSlot>,
+        locked_slots: Vec<LockedSlotData>,
+        instructor_prefs: HashMap<Uuid, InstructorPrefData>,
+        periods: Vec<PeriodInfo>,
+        rooms: HashMap<Uuid, RoomInfo>,
+        default_max_consecutive: i32,
+    ) -> SchedulingResult {
         // Build validator
-        let validator = ConstraintValidator::new(
+        let validator = ConstraintValidator::with_settings(
             locked_slots,
             instructor_prefs,
             periods,
             rooms,
+            default_max_consecutive,
         );
         
         // Select algorithm

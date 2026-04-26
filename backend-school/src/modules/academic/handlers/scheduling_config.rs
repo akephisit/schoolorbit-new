@@ -92,6 +92,196 @@ pub struct UpdateSubjectConstraintRequest {
     pub allowed_days: Option<serde_json::Value>,       // JSONB array
 }
 
+// ==========================
+// Classroom Course Constraints (Phase B)
+// ==========================
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct ClassroomCourseConstraintView {
+    pub id: Uuid,                 // classroom_course id
+    pub classroom_id: Uuid,
+    pub classroom_name: String,
+    pub subject_id: Uuid,
+    pub subject_code: String,
+    pub subject_name: String,
+    pub periods_per_week: Option<i32>,
+    pub primary_instructor_id: Option<Uuid>,
+    pub primary_instructor_name: Option<String>,
+    pub consecutive_pattern: Option<serde_json::Value>,
+    pub same_day_unique: bool,
+    pub hard_unavailable_slots: serde_json::Value,
+    /// คาบไม่ว่างของครูใน team (รวม primary + secondary) — readonly ฝั่ง UI
+    pub team_unavailable_slots: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateClassroomCourseConstraintRequest {
+    pub consecutive_pattern: Option<serde_json::Value>,
+    pub same_day_unique: Option<bool>,
+    pub hard_unavailable_slots: Option<serde_json::Value>,
+}
+
+/// GET /api/academic/scheduling/classroom-courses?instructor_id=...
+/// List cc ที่ instructor นั้นเป็น primary — อยู่ในหน้า scheduling-config
+pub async fn list_classroom_course_constraints(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<ListCcConstraintsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    // Active academic year
+    let year_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_years WHERE is_active = true LIMIT 1"
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?
+    .ok_or_else(|| AppError::NotFound("Active academic year not found".to_string()))?;
+
+    // Optional filter: instructor_id (ครูคนนั้นเป็น primary)
+    // Effective unavailable = cc + union ของครูทุกคนใน team (จาก instructor_preferences)
+    let mut sql = String::from(
+        r#"
+        WITH team_unavail AS (
+            SELECT cci.classroom_course_id,
+                   COALESCE(jsonb_agg(elem) FILTER (WHERE elem IS NOT NULL), '[]'::jsonb) AS slots
+            FROM classroom_course_instructors cci
+            JOIN classroom_courses cc2 ON cc2.id = cci.classroom_course_id
+            JOIN academic_semesters sem2 ON sem2.id = cc2.academic_semester_id
+            LEFT JOIN instructor_preferences ip2
+                ON ip2.instructor_id = cci.instructor_id
+                AND ip2.academic_year_id = sem2.academic_year_id
+            LEFT JOIN LATERAL jsonb_array_elements(COALESCE(ip2.hard_unavailable_slots, '[]'::jsonb)) elem ON true
+            WHERE sem2.academic_year_id = $1
+            GROUP BY cci.classroom_course_id
+        ),
+        primary_instr AS (
+            SELECT cci.classroom_course_id, cci.instructor_id
+            FROM classroom_course_instructors cci
+            WHERE cci.role = 'primary'
+        )
+        SELECT
+            cc.id,
+            cc.classroom_id,
+            cls.name AS classroom_name,
+            cc.subject_id,
+            s.code AS subject_code,
+            s.name_th AS subject_name,
+            s.periods_per_week,
+            pi.instructor_id AS primary_instructor_id,
+            CASE WHEN u.id IS NOT NULL THEN u.first_name || ' ' || u.last_name ELSE NULL END
+                AS primary_instructor_name,
+            cc.consecutive_pattern,
+            cc.same_day_unique,
+            cc.hard_unavailable_slots,
+            COALESCE(tu.slots, '[]'::jsonb) AS team_unavailable_slots
+        FROM classroom_courses cc
+        JOIN class_rooms cls ON cls.id = cc.classroom_id
+        JOIN subjects s ON s.id = cc.subject_id
+        JOIN academic_semesters sem ON sem.id = cc.academic_semester_id
+        LEFT JOIN primary_instr pi ON pi.classroom_course_id = cc.id
+        LEFT JOIN users u ON u.id = pi.instructor_id
+        LEFT JOIN team_unavail tu ON tu.classroom_course_id = cc.id
+        WHERE sem.academic_year_id = $1
+        "#,
+    );
+
+    if q.instructor_id.is_some() {
+        sql.push_str(" AND pi.instructor_id = $2");
+    }
+    sql.push_str(" ORDER BY cls.name, s.code");
+
+    let rows = if let Some(iid) = q.instructor_id {
+        sqlx::query_as::<_, ClassroomCourseConstraintView>(&sql)
+            .bind(year_id)
+            .bind(iid)
+            .fetch_all(&pool)
+            .await
+    } else {
+        sqlx::query_as::<_, ClassroomCourseConstraintView>(&sql)
+            .bind(year_id)
+            .fetch_all(&pool)
+            .await
+    }
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(ApiResponse::success(rows)))
+}
+
+#[derive(Deserialize)]
+pub struct ListCcConstraintsQuery {
+    pub instructor_id: Option<Uuid>,
+}
+
+/// PUT /api/academic/scheduling/classroom-courses/{id}
+pub async fn update_classroom_course_constraints(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(cc_id): Path<Uuid>,
+    Json(payload): Json<UpdateClassroomCourseConstraintRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    // Validate consecutive_pattern: array of int + sum == periods_per_week ของ subject ที่ผูก
+    if let Some(ref pattern) = payload.consecutive_pattern {
+        let arr = pattern
+            .as_array()
+            .ok_or_else(|| AppError::BadRequest("consecutive_pattern ต้องเป็น array".to_string()))?;
+        let mut sum: i64 = 0;
+        for v in arr {
+            let n = v.as_i64().ok_or_else(|| AppError::BadRequest(
+                "consecutive_pattern มีค่าที่ไม่ใช่ตัวเลข".to_string()
+            ))?;
+            if !(1..=20).contains(&n) {
+                return Err(AppError::BadRequest(
+                    "consecutive_pattern แต่ละค่าต้องอยู่ระหว่าง 1-20".to_string()
+                ));
+            }
+            sum += n;
+        }
+
+        // เทียบกับ periods_per_week
+        let pw: Option<i32> = sqlx::query_scalar(
+            "SELECT s.periods_per_week
+             FROM classroom_courses cc JOIN subjects s ON s.id = cc.subject_id
+             WHERE cc.id = $1"
+        )
+        .bind(cc_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .flatten();
+
+        if let Some(ppw) = pw {
+            if sum != ppw as i64 {
+                return Err(AppError::BadRequest(format!(
+                    "ผลรวมของ pattern ({}) ต้องเท่ากับ periods_per_week ของวิชา ({})",
+                    sum, ppw
+                )));
+            }
+        }
+    }
+
+    sqlx::query(
+        r#"UPDATE classroom_courses SET
+            consecutive_pattern = COALESCE($2, consecutive_pattern),
+            same_day_unique     = COALESCE($3, same_day_unique),
+            hard_unavailable_slots = COALESCE($4, hard_unavailable_slots),
+            updated_at = NOW()
+           WHERE id = $1"#
+    )
+    .bind(cc_id)
+    .bind(payload.consecutive_pattern)
+    .bind(payload.same_day_unique)
+    .bind(payload.hard_unavailable_slots)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(ApiResponse::success("Updated classroom course constraints".to_string())))
+}
+
 /// Helper
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)

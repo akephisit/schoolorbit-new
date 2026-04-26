@@ -159,6 +159,11 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/scheduling/settings",
                get(handlers::scheduling_config::get_school_settings)
                .put(handlers::scheduling_config::update_school_settings))
+        // Classroom-course constraints (Phase B)
+        .route("/scheduling/classroom-courses",
+               get(handlers::scheduling_config::list_classroom_course_constraints))
+        .route("/scheduling/classroom-courses/{id}",
+               put(handlers::scheduling_config::update_classroom_course_constraints))
 
         // Activity Slots (ช่องกิจกรรม — Admin)
         // POST removed: slots must come from plan via generate_courses_from_plan
