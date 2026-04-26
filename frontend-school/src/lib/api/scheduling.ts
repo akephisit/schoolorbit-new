@@ -308,6 +308,82 @@ export async function listAllRooms() {
 	return apiClient.get<RoomView[]>('/api/academic/scheduling/rooms');
 }
 
+// Phase F: Timetable Templates
+export interface TimetableTemplateView {
+	id: UUID;
+	name: string;
+	description?: string;
+	created_by?: UUID;
+	created_at: string;
+	updated_at: string;
+	entry_count: number;
+}
+
+export interface TimetableTemplateEntry {
+	id: UUID;
+	template_id: UUID;
+	day_of_week: string;
+	period_id: UUID;
+	entry_type: string;
+	title?: string;
+	activity_slot_id?: UUID;
+	grade_level_ids: UUID[];
+	classroom_ids: UUID[];
+	instructor_ids: UUID[];
+	room_id?: UUID;
+}
+
+export async function listTimetableTemplates() {
+	return apiClient.get<TimetableTemplateView[]>('/api/academic/timetable-templates');
+}
+
+export async function getTimetableTemplate(id: UUID) {
+	return apiClient.get<{
+		template: TimetableTemplateView;
+		entries: TimetableTemplateEntry[];
+	}>(`/api/academic/timetable-templates/${id}`);
+}
+
+export async function deleteTimetableTemplate(id: UUID) {
+	return apiClient.delete<unknown>(`/api/academic/timetable-templates/${id}`);
+}
+
+export async function createTemplateFromCurrent(req: {
+	semester_id: UUID;
+	name: string;
+	description?: string;
+	entry_types?: string[];
+}) {
+	return apiClient.post<{ id: UUID }>(
+		'/api/academic/timetable-templates/from-current',
+		req
+	);
+}
+
+export async function applyTimetableTemplate(id: UUID, req: { semester_id: UUID }) {
+	return apiClient.post<{ applied: number }>(
+		`/api/academic/timetable-templates/${id}/apply`,
+		req
+	);
+}
+
+export async function clearTimetable(req: { semester_id: UUID; entry_types?: string[] }) {
+	// DELETE with body — use raw fetch since apiClient.delete doesn't support body
+	const { PUBLIC_BACKEND_URL } = await import('$env/static/public');
+	const baseURL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+	const res = await fetch(`${baseURL}/api/academic/timetable/clear`, {
+		method: 'DELETE',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(req)
+	});
+	const json = await res.json();
+	if (!res.ok || !json.success) {
+		throw new Error(json.error || 'Clear timetable failed');
+	}
+	return json as { success: boolean; data: { deleted: number } };
+}
+
 export async function listPeriods(academicYearId?: UUID) {
 	const params = academicYearId ? `?academic_year_id=${academicYearId}` : '';
 	return apiClient.get<Period[]>(`/api/academic/periods${params}`);

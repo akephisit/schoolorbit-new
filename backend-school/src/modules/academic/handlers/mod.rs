@@ -12,6 +12,7 @@ pub mod study_plans;
 pub mod scheduling;
 pub mod scheduling_config;
 pub mod activity;
+pub mod timetable_templates;
 
 use axum::{
     extract::{Path, Query, State},

@@ -171,6 +171,21 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/scheduling/rooms",
                get(handlers::scheduling_config::list_all_rooms))
 
+        // Phase F: Timetable Templates
+        // from-current + clear ต้อง register ก่อน /{id} กัน Axum match path เป็น id
+        .route("/timetable-templates/from-current",
+               post(handlers::timetable_templates::from_current))
+        .route("/timetable/clear",
+               axum::routing::delete(handlers::timetable_templates::clear_timetable))
+        .route("/timetable-templates",
+               get(handlers::timetable_templates::list_templates)
+               .post(handlers::timetable_templates::create_template))
+        .route("/timetable-templates/{id}",
+               get(handlers::timetable_templates::get_template)
+               .delete(handlers::timetable_templates::delete_template))
+        .route("/timetable-templates/{id}/apply",
+               post(handlers::timetable_templates::apply_template))
+
         // Activity Slots (ช่องกิจกรรม — Admin)
         // POST removed: slots must come from plan via generate_courses_from_plan
         .route("/activity-slots", get(handlers::activity::list_activity_slots))
