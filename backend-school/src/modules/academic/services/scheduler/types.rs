@@ -60,6 +60,10 @@ pub struct CourseToSchedule {
     /// ห้องที่ classroom_course นี้ใช้สอน — เรียงตาม rank (index 0 = ลองก่อน)
     /// scheduler ใช้ตัวแรกเป็นค่า default; ถ้าเต็มลองตัวถัดไป (TODO: iteration)
     pub preferred_rooms: Vec<RoomPref>,
+
+    // Phase C: ถ้าเป็น activity slot (indep) แทนที่จะเป็น classroom_course
+    /// Some = นี่คือ activity slot — insert เป็น ACTIVITY entry, ไม่ใช่ COURSE
+    pub activity_slot_id: Option<Uuid>,
 }
 
 /// Phase D: Room preference entry — used as cc-level preferred room list
@@ -81,6 +85,8 @@ pub struct Assignment {
     pub time_slot: TimeSlot,
     pub room_id: Option<Uuid>,
     pub is_locked: bool, // From pre-assigned slots
+    /// Phase C: ถ้า Some = ACTIVITY entry (insert ต่างจาก COURSE)
+    pub activity_slot_id: Option<Uuid>,
 }
 
 impl Assignment {
@@ -98,6 +104,7 @@ impl Assignment {
             instructor_id: course.instructor_id,
             time_slot,
             room_id,
+            activity_slot_id: course.activity_slot_id,
             is_locked,
         }
     }

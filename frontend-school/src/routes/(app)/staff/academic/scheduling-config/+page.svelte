@@ -15,6 +15,7 @@
 		listAllRooms,
 		autoScheduleTimetable,
 		getSchedulingJob,
+		undoSchedulingJob,
 		type InstructorConstraintView,
 		type ClassroomCourseConstraintView,
 		type CcPreferredRoom,
@@ -30,7 +31,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
-	import { GripVertical, ChevronDown, ChevronRight, Sparkles, Save, LoaderCircle, Zap, AlertCircle } from 'lucide-svelte';
+	import { GripVertical, ChevronDown, ChevronRight, Sparkles, Save, LoaderCircle, Zap, AlertCircle, Undo2 } from 'lucide-svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 
@@ -526,6 +527,24 @@
 		}
 	}
 
+	let undoing = $state(false);
+
+	async function handleUndo() {
+		if (!currentJob || undoing) return;
+		if (!window.confirm('Undo การจัดอัตโนมัติครั้งนี้? — จะลบ entries ที่ scheduler สร้าง')) return;
+		undoing = true;
+		try {
+			const res = await undoSchedulingJob(currentJob.id);
+			toast.success(`Undo สำเร็จ — ลบ ${res.data?.deleted ?? 0} entries`);
+			showResultDialog = false;
+			currentJob = null;
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'Undo ไม่สำเร็จ');
+		} finally {
+			undoing = false;
+		}
+	}
+
 	function pollJob(jobId: string) {
 		const check = async () => {
 			try {
@@ -998,6 +1017,16 @@
 			</div>
 		{/if}
 		<Dialog.Footer>
+			{#if currentJob && currentJob.status === 'COMPLETED' && currentJob.scheduled_courses > 0}
+				<Button variant="outline" onclick={handleUndo} disabled={undoing}>
+					{#if undoing}
+						<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+					{:else}
+						<Undo2 class="w-4 h-4 mr-2" />
+					{/if}
+					Undo
+				</Button>
+			{/if}
 			<Button variant="outline" onclick={() => (showResultDialog = false)}>ปิด</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

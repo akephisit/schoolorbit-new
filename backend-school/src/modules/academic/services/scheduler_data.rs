@@ -185,10 +185,82 @@ impl<'a> SchedulerDataLoader<'a> {
                 same_day_unique: row.same_day_unique,
                 consecutive_pattern,
                 preferred_rooms,
+                activity_slot_id: None,
             });
         }
 
         Ok(courses)
+    }
+
+    /// Phase C: Load independent activity slots → CourseToSchedule list
+    /// แต่ละ (slot, classroom) → 1 entity (ครู = จาก activity_slot_classroom_assignments)
+    /// scheduler มอง activity เหมือน course — schedule ลง slot ว่างได้
+    pub async fn load_independent_activities(
+        &self,
+        classroom_ids: &[Uuid],
+        semester_id: Uuid,
+    ) -> Result<Vec<CourseToSchedule>, sqlx::Error> {
+        // ดึง slot + assignments + catalog
+        // 1 query — JOIN ทุกอย่าง
+        let rows = sqlx::query_as::<_, IndepActivityRow>(
+            r#"
+            SELECT
+                s.id AS slot_id,
+                cls.id AS classroom_id,
+                cls.name AS classroom_name,
+                ac.name AS activity_name,
+                ac.activity_type AS activity_type,
+                ac.periods_per_week AS periods_per_week,
+                asca.instructor_id,
+                u.first_name || ' ' || u.last_name AS instructor_name
+            FROM activity_slots s
+            JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
+            JOIN activity_slot_classroom_assignments asca ON asca.slot_id = s.id
+            JOIN class_rooms cls ON cls.id = asca.classroom_id
+            LEFT JOIN users u ON u.id = asca.instructor_id
+            WHERE s.semester_id = $1
+              AND s.is_active = true
+              AND ac.scheduling_mode = 'independent'
+              AND asca.classroom_id = ANY($2)
+            "#
+        )
+        .bind(semester_id)
+        .bind(classroom_ids)
+        .fetch_all(self.pool)
+        .await?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            // ใช้ Uuid::nil() สำหรับ classroom_course_id (ไม่ใช้ในกรณี activity)
+            // subject_id ก็ใช้ slot_id แทน (เพื่อให้ same_day_unique check ทำงาน — slot เดียวกัน
+            // ในวันเดียวกันจะถือว่าเป็นวิชาเดียวกัน)
+            result.push(CourseToSchedule {
+                id: Uuid::new_v4(),
+                classroom_course_id: Uuid::nil(),
+                classroom_id: row.classroom_id,
+                classroom_name: row.classroom_name,
+                subject_id: row.slot_id,  // slot_id เป็น "subject id" สำหรับ same_day_unique
+                subject_code: format!("[{}]", row.activity_type),
+                subject_name: row.activity_name,
+                instructor_id: row.instructor_id,
+                instructor_name: row.instructor_name,
+                periods_needed: row.periods_per_week,
+                periods_remaining: row.periods_per_week,
+                min_consecutive: 1,
+                max_consecutive: 2,
+                allow_single_period: true,
+                fixed_room_id: None,
+                allowed_period_ids: None,
+                allowed_days: None,
+                cc_hard_unavailable: HashSet::new(),
+                same_day_unique: true,
+                consecutive_pattern: None,
+                preferred_rooms: Vec::new(),
+                activity_slot_id: Some(row.slot_id),
+            });
+        }
+
+        Ok(result)
     }
     
     /// Load available time slots from periods
@@ -524,6 +596,18 @@ struct CourseRow {
     consecutive_pattern: Option<serde_json::Value>,        // jsonb [1,1,1] etc.
     same_day_unique: bool,
     cc_hard_unavailable_slots: serde_json::Value,          // [{"day","period_id"}]
+}
+
+#[derive(sqlx::FromRow)]
+struct IndepActivityRow {
+    slot_id: Uuid,
+    classroom_id: Uuid,
+    classroom_name: String,
+    activity_name: String,
+    activity_type: String,
+    periods_per_week: i32,
+    instructor_id: Option<Uuid>,
+    instructor_name: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]

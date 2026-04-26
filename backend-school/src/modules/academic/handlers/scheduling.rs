@@ -195,6 +195,55 @@ pub async fn get_scheduling_job(
     })).into_response())
 }
 
+/// POST /api/academic/scheduling/jobs/{id}/undo
+/// ลบ entries ที่ scheduler job นี้สร้างขึ้น (ใช้ scheduler_job_id เป็นตัวระบุ)
+pub async fn undo_scheduling_job(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(job_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(response) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+        return Ok(response);
+    }
+
+    // Get semester_id ก่อนลบ (สำหรับ broadcast)
+    let semester_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT academic_semester_id FROM academic_timetable_entries
+         WHERE scheduler_job_id = $1 LIMIT 1"
+    )
+    .bind(job_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    let result = sqlx::query(
+        "DELETE FROM academic_timetable_entries WHERE scheduler_job_id = $1"
+    )
+    .bind(job_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    // Broadcast TableRefresh
+    if let Some(sid) = semester_id {
+        let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+        state.websocket_manager.broadcast_mutation(
+            subdomain, sid,
+            crate::modules::academic::websockets::TimetableEvent::TableRefresh {
+                user_id: user_id.unwrap_or_default()
+            },
+        );
+    }
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "data": { "deleted": result.rows_affected() }
+    })).into_response())
+}
+
 /// List scheduling jobs
 #[derive(Deserialize)]
 pub struct ListJobsQuery {
@@ -282,7 +331,11 @@ async fn run_scheduling_job(
     .fetch_one(pool)
     .await?;
 
-    let courses = loader.load_courses(&classroom_ids, semester_id).await?;
+    let mut courses = loader.load_courses(&classroom_ids, semester_id).await?;
+    // Phase C: รวม activity slots (independent) เข้า scheduler
+    let activities = loader.load_independent_activities(&classroom_ids, semester_id).await?;
+    courses.extend(activities);
+
     let available_slots = loader.load_available_slots(semester_id).await?;
     let periods = loader.load_periods(academic_year_id).await?;
 
@@ -355,46 +408,95 @@ async fn run_scheduling_job(
         .await?;
     }
     
-    // Insert new assignments
+    // Insert new assignments — branch ตามว่าเป็น COURSE หรือ ACTIVITY (Phase C)
+    // Phase G: ติด scheduler_job_id เพื่อ support undo
     for assignment in &result.assignments {
-        let inserted_id: Option<Uuid> = sqlx::query_scalar(
-            r#"
-            INSERT INTO academic_timetable_entries
-                (id, classroom_course_id, day_of_week, period_id, room_id,
-                 classroom_id, academic_semester_id, entry_type)
-            SELECT
-                $1, $2, $3, $4, $5,
-                cc.classroom_id, cc.academic_semester_id, 'COURSE'
-            FROM classroom_courses cc
-            WHERE cc.id = $2
-            ON CONFLICT (classroom_id, academic_semester_id, day_of_week, period_id) WHERE is_active = true
-            DO UPDATE
-            SET room_id = EXCLUDED.room_id, updated_at = NOW()
-            RETURNING id
-            "#
-        )
-        .bind(assignment.id)
-        .bind(assignment.classroom_course_id)
-        .bind(&assignment.time_slot.day)
-        .bind(assignment.time_slot.period_id)
-        .bind(assignment.room_id)
-        .fetch_optional(pool)
-        .await?;
-
-        // Populate timetable_entry_instructors junction so INSTRUCTOR view
-        // (which filters via EXISTS on this table) can see auto-scheduled entries.
-        if let Some(entry_id) = inserted_id {
-            sqlx::query(
-                "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-                 SELECT $1, instructor_id, role FROM classroom_course_instructors
-                 WHERE classroom_course_id = $2
-                 ON CONFLICT DO NOTHING"
+        let inserted_id: Option<Uuid> = if let Some(slot_id) = assignment.activity_slot_id {
+            // ACTIVITY entry — derived จาก activity slot (independent)
+            sqlx::query_scalar(
+                r#"
+                INSERT INTO academic_timetable_entries
+                    (id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
+                     entry_type, activity_slot_id, is_active, scheduler_job_id)
+                VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVITY', $7, true, $8)
+                ON CONFLICT (classroom_id, academic_semester_id, day_of_week, period_id) WHERE is_active = true
+                DO UPDATE
+                SET room_id = EXCLUDED.room_id, activity_slot_id = EXCLUDED.activity_slot_id,
+                    entry_type = 'ACTIVITY', scheduler_job_id = EXCLUDED.scheduler_job_id,
+                    updated_at = NOW()
+                RETURNING id
+                "#
             )
-            .bind(entry_id)
+            .bind(assignment.id)
+            .bind(assignment.classroom_id)
+            .bind(semester_id)
+            .bind(&assignment.time_slot.day)
+            .bind(assignment.time_slot.period_id)
+            .bind(assignment.room_id)
+            .bind(slot_id)
+            .bind(job_id)
+            .fetch_optional(pool)
+            .await?
+        } else {
+            // COURSE entry (เดิม)
+            sqlx::query_scalar(
+                r#"
+                INSERT INTO academic_timetable_entries
+                    (id, classroom_course_id, day_of_week, period_id, room_id,
+                     classroom_id, academic_semester_id, entry_type, scheduler_job_id)
+                SELECT
+                    $1, $2, $3, $4, $5,
+                    cc.classroom_id, cc.academic_semester_id, 'COURSE', $6
+                FROM classroom_courses cc
+                WHERE cc.id = $2
+                ON CONFLICT (classroom_id, academic_semester_id, day_of_week, period_id) WHERE is_active = true
+                DO UPDATE
+                SET room_id = EXCLUDED.room_id, scheduler_job_id = EXCLUDED.scheduler_job_id,
+                    updated_at = NOW()
+                RETURNING id
+                "#
+            )
+            .bind(assignment.id)
             .bind(assignment.classroom_course_id)
-            .execute(pool)
-            .await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+            .bind(&assignment.time_slot.day)
+            .bind(assignment.time_slot.period_id)
+            .bind(assignment.room_id)
+            .bind(job_id)
+            .fetch_optional(pool)
+            .await?
+        };
+
+        // Populate timetable_entry_instructors junction
+        if let Some(entry_id) = inserted_id {
+            if let Some(slot_id) = assignment.activity_slot_id {
+                // ACTIVITY: ครูจาก activity_slot_classroom_assignments (per classroom)
+                sqlx::query(
+                    "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                     SELECT $1, instructor_id, 'primary'
+                     FROM activity_slot_classroom_assignments
+                     WHERE slot_id = $2 AND classroom_id = $3
+                     ON CONFLICT DO NOTHING"
+                )
+                .bind(entry_id)
+                .bind(slot_id)
+                .bind(assignment.classroom_id)
+                .execute(pool)
+                .await
+                .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+            } else {
+                // COURSE: ครูจาก classroom_course_instructors
+                sqlx::query(
+                    "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                     SELECT $1, instructor_id, role FROM classroom_course_instructors
+                     WHERE classroom_course_id = $2
+                     ON CONFLICT DO NOTHING"
+                )
+                .bind(entry_id)
+                .bind(assignment.classroom_course_id)
+                .execute(pool)
+                .await
+                .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+            }
         }
     }
     

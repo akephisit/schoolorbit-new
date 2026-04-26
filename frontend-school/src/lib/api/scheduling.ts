@@ -403,6 +403,13 @@ export async function getSchedulingJob(jobId: UUID) {
 	return apiClient.get<SchedulingJobResponse>(`/api/academic/scheduling/jobs/${jobId}`);
 }
 
+export async function undoSchedulingJob(jobId: UUID) {
+	return apiClient.post<{ deleted: number }>(
+		`/api/academic/scheduling/jobs/${jobId}/undo`,
+		{}
+	);
+}
+
 export async function listSchedulingJobs(params?: { semester_id?: UUID; limit?: number }) {
 	const queryParams = new URLSearchParams();
 	if (params?.semester_id) queryParams.append('semester_id', params.semester_id);

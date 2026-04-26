@@ -137,6 +137,7 @@ pub fn academic_routes() -> Router<AppState> {
         .route("/scheduling/auto-schedule", post(handlers::scheduling::auto_schedule_timetable))
         .route("/scheduling/jobs", get(handlers::scheduling::list_scheduling_jobs))
         .route("/scheduling/jobs/{id}", get(handlers::scheduling::get_scheduling_job))
+        .route("/scheduling/jobs/{id}/undo", post(handlers::scheduling::undo_scheduling_job))
         
         // Instructor Preferences
         .route("/instructor-preferences", post(handlers::scheduling::create_instructor_preference))
