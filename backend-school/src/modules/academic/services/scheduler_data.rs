@@ -538,7 +538,7 @@ impl<'a> SchedulerDataLoader<'a> {
     /// Load global setting: default_max_consecutive
     pub async fn load_default_max_consecutive(&self) -> Result<i32, sqlx::Error> {
         let val: Option<serde_json::Value> = sqlx::query_scalar(
-            "SELECT value FROM school_settings WHERE key = 'default_max_consecutive'"
+            "SELECT value FROM scheduler_settings WHERE key = 'default_max_consecutive'"
         )
         .fetch_optional(self.pool)
         .await?;

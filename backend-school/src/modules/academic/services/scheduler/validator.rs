@@ -36,7 +36,7 @@ impl ConstraintValidator {
         Self::with_settings(locked_slots, instructor_prefs, periods, rooms, 4)
     }
 
-    /// Constructor variant ที่รับ default_max_consecutive จาก school_settings
+    /// Constructor variant ที่รับ default_max_consecutive จาก scheduler_settings
     pub fn with_settings(
         locked_slots: Vec<LockedSlotData>,
         instructor_prefs: HashMap<Uuid, InstructorPrefData>,

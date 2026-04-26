@@ -539,7 +539,7 @@ pub async fn get_school_settings(
     let pool = get_pool(&state, &headers).await?;
 
     let rows = sqlx::query_as::<_, (String, serde_json::Value)>(
-        "SELECT key, value FROM school_settings"
+        "SELECT key, value FROM scheduler_settings"
     )
     .fetch_all(&pool)
     .await
@@ -572,7 +572,7 @@ pub async fn update_school_settings(
             ));
         }
         sqlx::query(
-            "INSERT INTO school_settings (key, value) VALUES ('default_max_consecutive', $1::jsonb)
+            "INSERT INTO scheduler_settings (key, value) VALUES ('default_max_consecutive', $1::jsonb)
              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
         )
         .bind(serde_json::Value::from(v))
