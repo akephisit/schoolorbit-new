@@ -564,25 +564,20 @@
 	<title>กิจกรรมพัฒนาผู้เรียน</title>
 </svelte:head>
 
-<div class="space-y-4 p-4">
+<div class="space-y-6">
 	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-2">
-			<Users class="h-5 w-5" />
-			<h1 class="text-xl font-semibold">กิจกรรมพัฒนาผู้เรียน</h1>
-		</div>
-		{#if $can.has('activity.manage.all')}
-			<div class="flex gap-2">
-				<Button variant="outline" onclick={openGenerateDialog} disabled={!filterSemesterId}>
-					<FolderInput class="w-4 h-4 mr-1" />
-					Generate จากหลักสูตร
-				</Button>
-			</div>
-		{/if}
+	<div class="flex flex-col gap-2">
+		<h2 class="flex items-center gap-2 text-3xl font-bold">
+			<Users class="h-8 w-8" />
+			กิจกรรมพัฒนาผู้เรียน
+		</h2>
+		<p class="text-muted-foreground">
+			จัดการช่อง/กลุ่มกิจกรรมพัฒนาผู้เรียน เช่น ลูกเสือ, ชุมนุม, แนะแนว
+		</p>
 	</div>
 
-	<!-- Filters -->
-	<div class="flex flex-wrap gap-3">
+	<!-- Filters + Action -->
+	<div class="flex flex-wrap items-center gap-3">
 		<Select.Root type="single" bind:value={filterYearId}>
 			<Select.Trigger class="w-52">{currentYearName}</Select.Trigger>
 			<Select.Content>
@@ -612,6 +607,15 @@
 				{/each}
 			</Select.Content>
 		</Select.Root>
+
+		{#if $can.has('activity.manage.all')}
+			<div class="ml-auto">
+				<Button variant="outline" onclick={openGenerateDialog} disabled={!filterSemesterId}>
+					<FolderInput class="w-4 h-4 mr-1" />
+					Generate จากหลักสูตร
+				</Button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Slots & Groups -->
