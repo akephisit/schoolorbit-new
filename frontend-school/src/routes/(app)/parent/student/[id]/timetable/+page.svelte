@@ -195,7 +195,7 @@
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
 		<div class="overflow-x-auto">
-			<table class="w-full min-w-[640px] border-collapse">
+			<table class="w-full min-w-[640px] table-fixed border-collapse">
 				<thead>
 					<tr>
 						<th class="bg-muted/50 text-muted-foreground w-20 border p-2 text-xs font-medium">
