@@ -78,8 +78,8 @@ if force_overwrite {
 | `subjects.periods_per_week` | ✅ มี (default — classroom_course override ได้) |
 | `classroom_courses.consecutive_pattern` (jsonb) | ❌ ต้องเพิ่ม |
 | `classroom_courses.same_day_unique` (bool) | ❌ ต้องเพิ่ม |
-| `classroom_courses.max_consecutive` (int) | ❌ ต้องเพิ่ม |
 | `classroom_courses.hard_unavailable_slots` (jsonb) | ❌ ต้องเพิ่ม |
+| `school_settings` (key-value) | ❌ ต้องเพิ่ม (global config) |
 | `classroom_course_preferred_rooms` (table) | ❌ ต้องเพิ่ม |
 | `instructor_room_assignments` | ✅ มี (ใช้เป็น fallback) |
 | `timetable_locked_slots` | ✅ มี (ใช้ pin เพิ่มเติมได้) |
@@ -306,9 +306,9 @@ effective_unavailable(cc) =
 ```sql
 ALTER TABLE classroom_courses
     ADD COLUMN hard_unavailable_slots jsonb DEFAULT '[]',
-    ADD COLUMN same_day_unique bool DEFAULT true,
-    ADD COLUMN max_consecutive int DEFAULT 4;
+    ADD COLUMN same_day_unique bool DEFAULT true;
 -- hard_unavailable_slots format: [{"day": "MON", "period_id": "uuid"}, ...]
+-- max_consecutive อยู่ที่ school_settings (global) — ดู §8
 ```
 
 ---
@@ -474,10 +474,8 @@ constraint อยู่แล้ว — ห้ามชน)
 |---|-----------|-------------|
 | S1 | คาบติดกันไหม (consecutive pattern) | `classroom_courses.consecutive_pattern` |
 | S2 | ห้ามวันเดียวกันรหัสซ้ำ | `classroom_courses.same_day_unique` |
-| S3 | ครูสอนติดไม่เกิน N คาบ | `classroom_courses.max_consecutive` (default 4) |
-| S4 | คาบเรียนยาก (คณิต/วิทย์) → ช่วงเช้า | `subjects.prefer_morning` |
-| S5 | First/last period restrictions | `subjects.avoid_first` / `avoid_last` |
-| S6 | Priority order | `instructor_preferences.priority` |
+| S3 | ครูสอนติดไม่เกิน N คาบ (global) | `school_settings.default_max_consecutive` |
+| S4 | Priority order | `instructor_preferences.priority` |
 
 ---
 
@@ -548,59 +546,67 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 
 ---
 
-## 8. ข้อเพิ่มเติมที่แนะนำ (เกินจาก scope ที่ user ระบุ)
+## 8. การตัดสินใจเรื่องข้อเพิ่มเติม
+
+| # | ประเด็น | สถานะ | หมายเหตุ |
+|---|---------|-------|---------|
+| 1 | ครูสอนติดเกิน X คาบ | ✅ ทำ — **global** | `school_settings.default_max_consecutive` (ไม่ทำ per-teacher) |
+| 2 | คาบเรียนยาก → ช่วงเช้า | ❌ skip | ใช้ `hard_unavailable_slots` แทน (ใส่บ่ายไม่ว่างถ้าอยากให้อยู่เช้า) |
+| 3 | ห้องพิเศษ | ✅ ครอบคลุมแล้ว | `classroom_course_preferred_rooms` (Phase D) |
+| 4 | First/last period restrictions | ❌ skip | ใช้ `hard_unavailable_slots` แทน (ใส่คาบ 1 ไม่ว่าง / คาบสุดท้าย) |
+| 5 | ครูคนเดียวสอนหลายห้องวิชาเดียว | ✅ ครอบคลุมแล้ว | Hard constraint H1 (ครู 1 คน 1 คาบ = 1 ที่) |
+| 6 | กิจกรรมที่ pin ไว้แล้ว | ✅ ทำ | H6 — scheduler อ่าน existing entries |
+| 7 | แสดงผลถ้าจัดไม่สำเร็จ | ✅ ทำ — Phase E | ระบุเหตุผลชัดเจน ไม่ใช่แค่ fail |
+
+### ที่ต้องเพิ่ม
+
+```sql
+-- Global school settings (single row หรือ key-value table)
+CREATE TABLE school_settings (
+    key text PRIMARY KEY,
+    value jsonb NOT NULL,
+    updated_at timestamptz DEFAULT now()
+);
+INSERT INTO school_settings (key, value) VALUES
+    ('default_max_consecutive', '4');
+```
+
+UI: เพิ่มในหน้า scheduling-config ด้านบน (global section ก่อน list ครู)
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ ข้อเพิ่มเติมที่ระบบโรงเรียนไทยมักต้องการ                │
-├─────────────────────────────────────────────────────┤
-│                                                      │
-│ 1. ครูสอนติดเกิน X คาบไม่ได้ (S3)                     │
-│    → "ครูเหนื่อย ต้องพักบ้าง"                          │
-│    → default 4 คาบติด                               │
-│                                                      │
-│ 2. คาบเรียนยาก → ช่วงเช้า prefer (S4)                │
-│    → soft constraint บน subject                     │
-│                                                      │
-│ 3. ห้องพิเศษ (lab, สนาม, คอม)                        │
-│    → วิชาฟิสิกส์ต้อง lab → "ถ้า lab ว่างเท่านั้น"      │
-│    → Subject ↔ Room compatibility table             │
-│                                                      │
-│ 4. คาบ first/last ของวัน (S5)                        │
-│    → วิชาบางอย่างไม่ควรเป็นคาบแรก/สุดท้าย              │
-│                                                      │
-│ 5. ครูคนเดียวสอนหลายห้องวิชาเดียว                     │
-│    → ต้องไม่สอนพร้อมกัน (auto handle จาก H1)          │
-│                                                      │
-│ 6. กิจกรรมที่ pin ไว้แล้ว (Phase 1)                   │
-│    → scheduler อ่าน existing entries → respect (H6)  │
-│                                                      │
-│ 7. แสดงผลถ้าจัดไม่สำเร็จ                              │
-│    → "ครู ก. คณิต ม.3/1 จัดไม่ได้ — ครูชนกับ X"        │
-│    → ระบุเหตุผลชัดเจน ไม่ใช่แค่ fail                  │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  ตั้งค่ารวม                                        │
+│  • ครูสอนติดสูงสุด: [4] คาบ ← number input        │
+│  ─────────────────────────────────────           │
+│  ลำดับครู                                         │
+│  ⋮⋮ 1. ครู ก. ▶                                  │
+│  ⋮⋮ 2. ครู ข. ▶                                  │
+└──────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 9. แผนการทำงาน (Phased Implementation)
 
-### Phase A — Foundation (priority + unavailable)
+### Phase A — Foundation (priority + unavailable + global settings)
 - [ ] Migration: เพิ่ม `instructor_preferences.priority` (int, default 100)
+- [ ] Migration: `school_settings` table + insert `default_max_consecutive = 4`
 - [ ] Backend: API GET/PUT `/scheduling/instructor-prefs/order` — bulk update priority
+- [ ] Backend: API GET/PUT `/scheduling/settings` — global settings
 - [ ] Backend: scheduler รับ priority order → sort ครูก่อน assign
+- [ ] Backend: scheduler ตรวจ default_max_consecutive (S3)
 - [ ] Backend: อ่าน existing entries → mark occupied (H6)
 - [ ] Frontend: หน้าใหม่ `/staff/academic/scheduling-config`
+- [ ] Frontend: ส่วน global — input max_consecutive
 - [ ] Frontend: DnD list ครู + grid วัน×คาบ toggle unavailable
 - [ ] Frontend: ปุ่ม "บันทึกและจัดอัตโนมัติ" → call existing endpoint
 
 ### Phase B — Classroom-course patterns + unavailable
 - [ ] Migration: `classroom_courses` ADD `consecutive_pattern` jsonb (nullable),
-      `same_day_unique` bool DEFAULT true, `max_consecutive` int DEFAULT 4,
-      `hard_unavailable_slots` jsonb DEFAULT '[]'
+      `same_day_unique` bool DEFAULT true, `hard_unavailable_slots` jsonb DEFAULT '[]'
 - [ ] Backend: scheduler ใช้ classroom_courses.consecutive_pattern กระจายคาบ
       (fallback [1]*periods_per_week ถ้า NULL)
-- [ ] Backend: ตรวจ same_day_unique + max_consecutive (S2, S3)
+- [ ] Backend: ตรวจ same_day_unique (S2)
 - [ ] Backend: scheduler รวม cc + teacher unavailable เป็น effective set (H10)
 - [ ] Backend: API GET classroom_courses รวม teacher_unavailable เพื่อ pre-fill UI
 - [ ] Frontend: per-row expand → list **classroom_courses ที่ครูเป็น primary**
@@ -620,9 +626,10 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 - [ ] Frontend: scheduling-config — ห้องประจำครู (teacher-level)
       + ใน cc row → ห้องเฉพาะ (cc-level multi-select + drag rank + is_required)
 
-### Phase E — Soft constraints
-- [ ] Backend: prefer morning, avoid first/last (S4, S5)
-- [ ] Backend: failure reasons ละเอียด
+### Phase E — Failure reasons
+- [ ] Backend: scheduler return reason ละเอียด — เช่น
+      "ค23101 ม.3/1 จัดไม่ได้ — คาบที่เหลือทุกคาบ ครู ก. ไม่ว่าง / ห้อง Lab1 เต็ม"
+- [ ] Frontend: แสดง list ของวิชาที่จัดไม่ได้ พร้อมเหตุผล + ปุ่ม "แก้ที่ config"
 
 ### Phase F — Templates (Phase 1 enhancement)
 - [ ] Migration: `timetable_templates` + `timetable_template_entries`
@@ -657,7 +664,7 @@ def auto_schedule(semester_id, classroom_ids, force_overwrite):
 ```
 backend-school/
 ├── migrations/
-│   ├── XXX_instructor_priority.sql                       ← ใหม่ (Phase A)
+│   ├── XXX_instructor_priority_school_settings.sql      ← ใหม่ (Phase A)
 │   ├── YYY_classroom_course_scheduling.sql              ← ใหม่ (Phase B)
 │   ├── ZZZ_classroom_course_preferred_rooms.sql         ← ใหม่ (Phase D)
 │   └── WWW_timetable_templates.sql                       ← ใหม่ (Phase F)
