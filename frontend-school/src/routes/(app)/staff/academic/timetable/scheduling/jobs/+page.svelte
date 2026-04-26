@@ -146,7 +146,7 @@
 			<Button
 				variant="ghost"
 				size="icon"
-				onclick={() => goto(resolve('/staff/academic/scheduling-config'))}
+				onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
 			>
 				<ArrowLeft class="h-4 w-4" />
 			</Button>
@@ -158,7 +158,7 @@
 				<p class="text-muted-foreground">รายการจัดตารางทั้งหมดในระบบ</p>
 			</div>
 		</div>
-		<Button onclick={() => goto(resolve('/staff/academic/scheduling-config'))}>
+		<Button onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}>
 			<Plus class="mr-2 h-4 w-4" />
 			สร้างรายการใหม่
 		</Button>

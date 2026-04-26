@@ -2366,7 +2366,7 @@
 
 			<Button
 				variant="outline"
-				onclick={() => goto(resolve('/staff/academic/scheduling-config'))}
+				onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
 			>
 				<Zap class="w-4 h-4 mr-2 text-orange-500" />
 				จัดอัตโนมัติ
@@ -2374,7 +2374,7 @@
 
 			<Button
 				variant="outline"
-				onclick={() => goto(resolve('/staff/academic/timetable-templates'))}
+				onclick={() => goto(resolve('/staff/academic/timetable/templates'))}
 			>
 				<FileStack class="w-4 h-4 mr-2" />
 				Templates
