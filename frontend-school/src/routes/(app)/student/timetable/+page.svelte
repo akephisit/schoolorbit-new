@@ -31,6 +31,9 @@
 	let selectedSemesterId = $state('');
 	let schoolDays = $state<{ value: string; label: string; shortLabel: string }[]>([]);
 
+	// คอลัมน์วัน 80px + คาบละ 110px → mobile บีบไม่ได้ ต้องเลื่อน
+	const tableMinWidth = $derived(80 + periods.length * 110);
+
 	// Activity detail dialog
 	let showActivityDetail = $state(false);
 	let activityLoading = $state(false);
@@ -155,7 +158,7 @@
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
 		<div class="overflow-x-auto">
-			<table class="w-full table-fixed border-collapse min-w-[640px]">
+			<table class="w-full table-fixed border-collapse" style="min-width: {tableMinWidth}px">
 				<thead>
 					<tr>
 						<th class="p-2 border bg-muted/50 text-xs font-medium text-muted-foreground w-20">
@@ -183,35 +186,38 @@
 									{#if entry}
 										{@const isClickable =
 											entry.entry_type === 'ACTIVITY' && !!entry.activity_slot_id}
+										{@const isCourse = entry.entry_type === 'COURSE'}
 										<button
-											class="w-full h-full rounded border p-2 text-left text-xs flex flex-col gap-0.5 transition-all {getEntryColor(
+											class="w-full h-full rounded border p-2 text-xs flex flex-col gap-0.5 transition-all {getEntryColor(
 												entry.entry_type
-											)} {isClickable
+											)} {isCourse
+												? 'text-left'
+												: 'text-center justify-center items-center'} {isClickable
 												? 'cursor-pointer hover:shadow-md hover:brightness-95'
 												: 'cursor-default'}"
 											onclick={() => isClickable && handleActivityClick(entry)}
 											disabled={!isClickable}
 										>
-											<div class="font-semibold truncate">
+											<div class="font-semibold truncate w-full">
 												{entry.subject_code || entry.title || entry.subject_name_th || ''}
 											</div>
-											{#if entry.entry_type === 'COURSE' && entry.subject_name_th}
-												<div class="truncate text-[10px] opacity-80">
+											{#if isCourse && entry.subject_name_th}
+												<div class="truncate text-[10px] opacity-80 w-full">
 													{entry.subject_name_th}
 												</div>
 											{/if}
-											{#if entry.instructor_name}
-												<div class="truncate text-[10px] opacity-70 mt-auto">
+											{#if isCourse && entry.instructor_name}
+												<div class="truncate text-[10px] opacity-70 mt-auto w-full">
 													{entry.instructor_name}
 												</div>
 											{/if}
-											{#if entry.room_code}
-												<div class="text-[10px] opacity-60">{entry.room_code}</div>
+											{#if isCourse && entry.room_code}
+												<div class="text-[10px] opacity-60 w-full">{entry.room_code}</div>
 											{/if}
 											{#if isClickable}
 												<Badge
 													variant="outline"
-													class="text-[9px] px-1 py-0 mt-0.5 w-fit border-emerald-300 text-emerald-700"
+													class="text-[9px] px-1 py-0 mt-0.5 border-emerald-300 text-emerald-700"
 												>
 													กดดูกิจกรรม
 												</Badge>

@@ -39,6 +39,9 @@
 
 	const semestersOfYear = $derived(semesters.filter((s) => s.academic_year_id === selectedYearId));
 
+	// คอลัมน์วัน 80px + คาบละ 110px → mobile บีบไม่ได้ ต้องเลื่อน
+	const tableMinWidth = $derived(80 + periods.length * 110);
+
 	function formatTime(t?: string): string {
 		if (!t) return '';
 		return t.substring(0, 5);
@@ -195,7 +198,7 @@
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
 		<div class="overflow-x-auto">
-			<table class="w-full min-w-[640px] table-fixed border-collapse">
+			<table class="w-full table-fixed border-collapse" style="min-width: {tableMinWidth}px">
 				<thead>
 					<tr>
 						<th class="bg-muted/50 text-muted-foreground w-20 border p-2 text-xs font-medium">
@@ -221,26 +224,27 @@
 								{@const entry = getEntry(day.value, period.id)}
 								<td class="relative h-20 border p-1">
 									{#if entry}
+										{@const isCourse = entry.entry_type === 'COURSE'}
 										<div
-											class="flex h-full w-full flex-col gap-0.5 rounded border p-2 text-left text-xs {getEntryColor(
+											class="flex h-full w-full flex-col gap-0.5 rounded border p-2 text-xs {getEntryColor(
 												entry.entry_type
-											)}"
+											)} {isCourse ? 'text-left' : 'items-center justify-center text-center'}"
 										>
-											<div class="truncate font-semibold">
+											<div class="w-full truncate font-semibold">
 												{entry.subject_code || entry.title || entry.subject_name_th || ''}
 											</div>
-											{#if entry.entry_type === 'COURSE' && entry.subject_name_th}
-												<div class="truncate text-[10px] opacity-80">
+											{#if isCourse && entry.subject_name_th}
+												<div class="w-full truncate text-[10px] opacity-80">
 													{entry.subject_name_th}
 												</div>
 											{/if}
-											{#if entry.instructor_name}
-												<div class="mt-auto truncate text-[10px] opacity-70">
+											{#if isCourse && entry.instructor_name}
+												<div class="mt-auto w-full truncate text-[10px] opacity-70">
 													{entry.instructor_name}
 												</div>
 											{/if}
-											{#if entry.room_code}
-												<div class="text-[10px] opacity-60">{entry.room_code}</div>
+											{#if isCourse && entry.room_code}
+												<div class="w-full text-[10px] opacity-60">{entry.room_code}</div>
 											{/if}
 										</div>
 									{/if}
