@@ -44,13 +44,11 @@
 		Save,
 		LoaderCircle,
 		Zap,
-		AlertCircle,
+		TriangleAlert,
 		Undo2,
 		Pencil,
-		GripVertical,
 		Users,
 		BookOpen,
-		Loader2,
 		Briefcase,
 		ArrowUp,
 		ArrowDown
@@ -559,7 +557,7 @@
 							/>
 							<Button variant="outline" size="sm" onclick={saveSettings} disabled={savingSettings}>
 								{#if savingSettings}
-									<Loader2 class="w-3 h-3 animate-spin" />
+									<LoaderCircle class="w-3 h-3 animate-spin" />
 								{:else}
 									บันทึก
 								{/if}
@@ -896,7 +894,7 @@
 			<Button variant="outline" onclick={() => (showInstrDialog = false)}>ยกเลิก</Button>
 			<Button onclick={saveInstr} disabled={instrSaving}>
 				{#if instrSaving}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
 					กำลังบันทึก...
 				{:else}
 					บันทึก
@@ -962,7 +960,7 @@
 				<Label>ห้องที่ใช้สอน (เรียงตามลำดับ)</Label>
 				{#if !ccRoomsLoaded}
 					<div class="flex items-center gap-2 text-sm text-muted-foreground">
-						<Loader2 class="w-4 h-4 animate-spin" /> กำลังโหลด...
+						<LoaderCircle class="w-4 h-4 animate-spin" /> กำลังโหลด...
 					</div>
 				{:else}
 					<div class="space-y-1">
@@ -1097,7 +1095,7 @@
 			<Button variant="outline" onclick={() => (showCcDialog = false)}>ยกเลิก</Button>
 			<Button onclick={saveCc} disabled={ccSaving}>
 				{#if ccSaving}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
 					กำลังบันทึก...
 				{:else}
 					บันทึก
@@ -1137,7 +1135,7 @@
 				{#if currentJob.failed_courses.length > 0}
 					<div class="border rounded-md p-3 bg-destructive/5">
 						<div class="flex items-center gap-2 font-medium text-destructive mb-2">
-							<AlertCircle class="w-4 h-4" />
+							<TriangleAlert class="w-4 h-4" />
 							วิชาที่จัดไม่ได้ ({currentJob.failed_courses.length})
 						</div>
 						<div class="space-y-2 max-h-[400px] overflow-y-auto">
