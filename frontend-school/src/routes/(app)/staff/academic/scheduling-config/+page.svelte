@@ -10,8 +10,13 @@
 		listPeriods,
 		listClassroomCourseConstraints,
 		updateClassroomCourseConstraints,
+		listCcPreferredRooms,
+		setCcPreferredRooms,
+		listAllRooms,
 		type InstructorConstraintView,
 		type ClassroomCourseConstraintView,
+		type CcPreferredRoom,
+		type RoomView,
 		type Period,
 		type TimeSlot
 	} from '$lib/api/scheduling';
@@ -46,6 +51,11 @@
 	let ccUnavailableEdits = $state(new Map<string, TimeSlot[]>());
 	let ccPatternEdits = $state(new Map<string, number[] | null>());
 	let ccSameDayUniqueEdits = $state(new Map<string, boolean>());
+
+	// Phase D: cc rooms — server state + local edits
+	let allRooms = $state<RoomView[]>([]);
+	let ccRoomsServer = $state(new Map<string, CcPreferredRoom[]>()); // server snapshot
+	let ccRoomsEdits = $state(new Map<string, CcPreferredRoom[]>()); // local edits
 
 	// DnD state
 	let draggedId = $state<string | null>(null);
@@ -84,14 +94,16 @@
 			}
 			schoolDays = getSchoolDays(activeYear.school_days);
 
-			const [instrRes, periodsRes, settingsRes] = await Promise.all([
+			const [instrRes, periodsRes, settingsRes, roomsRes] = await Promise.all([
 				listInstructorConstraints(),
 				listPeriods(activeYear.id),
-				getSchoolSettings()
+				getSchoolSettings(),
+				listAllRooms()
 			]);
 			instructors = (instrRes.data ?? []).filter((i) => i.primary_course_count > 0);
 			periods = (periodsRes.data ?? []).sort((a, b) => a.order_index - b.order_index);
 			defaultMaxConsecutive = settingsRes.data?.default_max_consecutive ?? 4;
+			allRooms = roomsRes.data ?? [];
 
 			// Initialize edits from server state
 			const init = new Map<string, TimeSlot[]>();
@@ -185,6 +197,19 @@
 				}
 			}
 
+			// 5. Phase D: cc rooms — only ที่เปลี่ยนจริง
+			for (const [ccId, _] of ccRoomsEdits.entries()) {
+				if (!ccRoomsChanged(ccId)) continue;
+				const local = ccRoomsEdits.get(ccId) ?? [];
+				ops.push(setCcPreferredRooms(ccId, {
+					rooms: local.map((r) => ({
+						room_id: r.room_id,
+						rank: r.rank,
+						is_required: r.is_required
+					}))
+				}));
+			}
+
 			await Promise.all(ops);
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 			priorityDirty = false;
@@ -251,9 +276,104 @@
 
 	function toggleCcExpand(ccId: string) {
 		const next = new Set(expandedCcIds);
-		if (next.has(ccId)) next.delete(ccId);
-		else next.add(ccId);
+		if (next.has(ccId)) {
+			next.delete(ccId);
+		} else {
+			next.add(ccId);
+			// Lazy load rooms ครั้งแรก
+			if (!ccRoomsServer.has(ccId)) {
+				loadCcRooms(ccId);
+			}
+		}
 		expandedCcIds = next;
+	}
+
+	async function loadCcRooms(ccId: string) {
+		try {
+			const res = await listCcPreferredRooms(ccId);
+			const list = res.data ?? [];
+			const newServer = new Map(ccRoomsServer);
+			const newEdits = new Map(ccRoomsEdits);
+			newServer.set(ccId, list);
+			newEdits.set(ccId, [...list]); // copy → editable
+			ccRoomsServer = newServer;
+			ccRoomsEdits = newEdits;
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'โหลดห้องไม่สำเร็จ');
+		}
+	}
+
+	function ccRooms(ccId: string): CcPreferredRoom[] {
+		return ccRoomsEdits.get(ccId) ?? [];
+	}
+
+	function addCcRoom(ccId: string, roomId: string) {
+		const current = ccRooms(ccId);
+		if (current.some((r) => r.room_id === roomId)) return;
+		const room = allRooms.find((r) => r.id === roomId);
+		if (!room) return;
+		const next: CcPreferredRoom[] = [
+			...current,
+			{
+				id: '',
+				classroom_course_id: ccId,
+				room_id: roomId,
+				room_code: room.code,
+				room_name: room.name_th,
+				rank: current.length + 1,
+				is_required: false
+			}
+		];
+		const map = new Map(ccRoomsEdits);
+		map.set(ccId, next);
+		ccRoomsEdits = map;
+	}
+
+	function removeCcRoom(ccId: string, roomId: string) {
+		const current = ccRooms(ccId).filter((r) => r.room_id !== roomId);
+		// Recompute ranks
+		current.forEach((r, i) => (r.rank = i + 1));
+		const map = new Map(ccRoomsEdits);
+		map.set(ccId, current);
+		ccRoomsEdits = map;
+	}
+
+	function moveCcRoom(ccId: string, roomId: string, direction: -1 | 1) {
+		const current = ccRooms(ccId);
+		const idx = current.findIndex((r) => r.room_id === roomId);
+		const newIdx = idx + direction;
+		if (idx < 0 || newIdx < 0 || newIdx >= current.length) return;
+		const next = [...current];
+		const [moved] = next.splice(idx, 1);
+		next.splice(newIdx, 0, moved);
+		next.forEach((r, i) => (r.rank = i + 1));
+		const map = new Map(ccRoomsEdits);
+		map.set(ccId, next);
+		ccRoomsEdits = map;
+	}
+
+	function toggleCcRoomRequired(ccId: string, roomId: string) {
+		const current = ccRooms(ccId);
+		const next = current.map((r) =>
+			r.room_id === roomId ? { ...r, is_required: !r.is_required } : r
+		);
+		const map = new Map(ccRoomsEdits);
+		map.set(ccId, next);
+		ccRoomsEdits = map;
+	}
+
+	function ccRoomsChanged(ccId: string): boolean {
+		const server = ccRoomsServer.get(ccId) ?? [];
+		const local = ccRoomsEdits.get(ccId) ?? [];
+		if (server.length !== local.length) return true;
+		for (let i = 0; i < local.length; i++) {
+			const s = server[i];
+			const l = local[i];
+			if (s.room_id !== l.room_id || s.rank !== l.rank || s.is_required !== l.is_required) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// CC unavailable helpers — รวม union ของ team + local edits
@@ -561,6 +681,70 @@
 																	/>
 																	<span>ห้ามวันเดียวกันมีรหัสวิชาซ้ำ</span>
 																</label>
+
+																<!-- Phase D: CC preferred rooms -->
+																<div>
+																	<Label class="text-xs">ห้องที่ใช้สอน (เรียงตามลำดับ)</Label>
+																	<div class="space-y-1 mt-1">
+																		{#each ccRooms(cc.id) as r (r.room_id)}
+																			<div class="flex items-center gap-2 border rounded px-2 py-1 bg-card">
+																				<span class="text-xs text-muted-foreground w-5">{r.rank}.</span>
+																				<span class="text-xs flex-1">
+																					<span class="font-medium">{r.room_code}</span>
+																					<span class="text-muted-foreground"> — {r.room_name}</span>
+																				</span>
+																				<label class="text-xs flex items-center gap-1">
+																					<input
+																						type="checkbox"
+																						checked={r.is_required}
+																						onchange={() => toggleCcRoomRequired(cc.id, r.room_id)}
+																					/>
+																					บังคับ
+																				</label>
+																				<button
+																					class="text-xs px-1 hover:bg-accent rounded"
+																					onclick={() => moveCcRoom(cc.id, r.room_id, -1)}
+																					disabled={r.rank === 1}
+																					aria-label="เลื่อนขึ้น"
+																				>
+																					↑
+																				</button>
+																				<button
+																					class="text-xs px-1 hover:bg-accent rounded"
+																					onclick={() => moveCcRoom(cc.id, r.room_id, 1)}
+																					disabled={r.rank === ccRooms(cc.id).length}
+																					aria-label="เลื่อนลง"
+																				>
+																					↓
+																				</button>
+																				<button
+																					class="text-xs px-1 hover:bg-destructive/20 rounded text-destructive"
+																					onclick={() => removeCcRoom(cc.id, r.room_id)}
+																					aria-label="ลบ"
+																				>
+																					✕
+																				</button>
+																			</div>
+																		{/each}
+																		<select
+																			class="text-xs border rounded px-2 py-1 bg-background w-full"
+																			onchange={(e) => {
+																				if (e.currentTarget.value) {
+																					addCcRoom(cc.id, e.currentTarget.value);
+																					e.currentTarget.value = '';
+																				}
+																			}}
+																		>
+																			<option value="">+ เพิ่มห้อง...</option>
+																			{#each allRooms.filter((r) => !ccRooms(cc.id).some((cr) => cr.room_id === r.id)) as r (r.id)}
+																				<option value={r.id}>{r.code} — {r.name_th}</option>
+																			{/each}
+																		</select>
+																	</div>
+																	<p class="text-xs text-muted-foreground mt-1">
+																		scheduler ลองห้องตามลำดับ — "บังคับ" = ถ้าห้องเต็มจะ fail ไม่ลองห้องอื่น
+																	</p>
+																</div>
 
 																<!-- CC unavailable grid -->
 																<div>

@@ -282,6 +282,131 @@ pub async fn update_classroom_course_constraints(
     Ok(Json(ApiResponse::success("Updated classroom course constraints".to_string())))
 }
 
+// ==========================
+// Phase D: Classroom Course Preferred Rooms
+// ==========================
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct CcPreferredRoomView {
+    pub id: Uuid,
+    pub classroom_course_id: Uuid,
+    pub room_id: Uuid,
+    pub room_code: String,
+    pub room_name: String,
+    pub rank: i32,
+    pub is_required: bool,
+}
+
+#[derive(Deserialize)]
+pub struct SetCcRoomsRequest {
+    /// ทั้ง list ของห้อง — replace ของเดิม
+    pub rooms: Vec<CcRoomItem>,
+}
+
+#[derive(Deserialize)]
+pub struct CcRoomItem {
+    pub room_id: Uuid,
+    pub rank: i32,
+    pub is_required: Option<bool>,
+}
+
+/// GET /api/academic/scheduling/classroom-courses/{id}/rooms
+pub async fn list_cc_preferred_rooms(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(cc_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let rows = sqlx::query_as::<_, CcPreferredRoomView>(
+        r#"SELECT pr.id, pr.classroom_course_id, pr.room_id,
+                  r.code AS room_code, r.name_th AS room_name,
+                  pr.rank, pr.is_required
+           FROM classroom_course_preferred_rooms pr
+           JOIN rooms r ON r.id = pr.room_id
+           WHERE pr.classroom_course_id = $1
+           ORDER BY pr.rank ASC"#
+    )
+    .bind(cc_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(ApiResponse::success(rows)))
+}
+
+/// PUT /api/academic/scheduling/classroom-courses/{id}/rooms
+/// Replace ทั้ง list — atomic transaction (delete + bulk insert)
+pub async fn set_cc_preferred_rooms(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(cc_id): Path<Uuid>,
+    Json(payload): Json<SetCcRoomsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let mut tx = pool.begin().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    sqlx::query("DELETE FROM classroom_course_preferred_rooms WHERE classroom_course_id = $1")
+        .bind(cc_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if !payload.rooms.is_empty() {
+        // Bulk insert ผ่าน UNNEST — 1 query
+        let room_ids: Vec<Uuid> = payload.rooms.iter().map(|r| r.room_id).collect();
+        let ranks: Vec<i32> = payload.rooms.iter().map(|r| r.rank).collect();
+        let required: Vec<bool> = payload.rooms.iter()
+            .map(|r| r.is_required.unwrap_or(false))
+            .collect();
+
+        sqlx::query(
+            r#"INSERT INTO classroom_course_preferred_rooms
+                   (classroom_course_id, room_id, rank, is_required)
+               SELECT $1, room_id, rk, req
+               FROM UNNEST($2::uuid[], $3::int[], $4::bool[]) AS t(room_id, rk, req)"#
+        )
+        .bind(cc_id)
+        .bind(&room_ids)
+        .bind(&ranks)
+        .bind(&required)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    }
+
+    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(ApiResponse::success(format!("Updated {} rooms", payload.rooms.len()))))
+}
+
+/// GET /api/academic/scheduling/rooms — list ทุกห้อง (สำหรับ dropdown)
+#[derive(Serialize, sqlx::FromRow)]
+pub struct RoomView {
+    pub id: Uuid,
+    pub code: String,
+    pub name_th: String,
+    pub room_type: Option<String>,
+}
+
+pub async fn list_all_rooms(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    let rows = sqlx::query_as::<_, RoomView>(
+        "SELECT id, code, name_th, room_type FROM rooms WHERE status = 'ACTIVE' ORDER BY code"
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(ApiResponse::success(rows)))
+}
+
 /// Helper
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)

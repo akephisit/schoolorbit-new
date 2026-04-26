@@ -6,6 +6,31 @@ use crate::modules::academic::services::scheduler::{
 };
 use std::collections::{HashMap, HashSet};
 
+/// Phase D: cc preferred rooms — load all in 1 query → group by cc_id
+async fn load_cc_preferred_rooms_batch(
+    pool: &PgPool,
+    cc_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<RoomPref>>, sqlx::Error> {
+    if cc_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query_as::<_, (Uuid, Uuid, i32, bool)>(
+        r#"SELECT classroom_course_id, room_id, rank, is_required
+           FROM classroom_course_preferred_rooms
+           WHERE classroom_course_id = ANY($1)
+           ORDER BY classroom_course_id, rank ASC"#
+    )
+    .bind(cc_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let mut map: HashMap<Uuid, Vec<RoomPref>> = HashMap::new();
+    for (cc_id, room_id, _rank, is_required) in rows {
+        map.entry(cc_id).or_default().push(RoomPref { room_id, is_required });
+    }
+    Ok(map)
+}
+
 /// Load data from database for scheduler
 pub struct SchedulerDataLoader<'a> {
     pool: &'a PgPool,
@@ -71,10 +96,14 @@ impl<'a> SchedulerDataLoader<'a> {
             .bind(semester_id)
             .fetch_all(self.pool)
             .await?;
-        
+
         // Load instructor room assignments
         let instructor_rooms = self.load_instructor_room_assignments(semester_id).await?;
-        
+
+        // Phase D: load cc preferred rooms (batch — 1 query for all cc)
+        let cc_ids: Vec<Uuid> = rows.iter().map(|r| r.classroom_course_id).collect();
+        let cc_room_map = load_cc_preferred_rooms_batch(self.pool, &cc_ids).await?;
+
         // Convert to CourseToSchedule
         let mut courses = Vec::new();
         for row in rows {
@@ -128,6 +157,12 @@ impl<'a> SchedulerDataLoader<'a> {
                 set
             };
 
+            // Phase D: pull cc preferred rooms from batch map
+            let preferred_rooms = cc_room_map
+                .get(&row.classroom_course_id)
+                .cloned()
+                .unwrap_or_default();
+
             courses.push(CourseToSchedule {
                 id: Uuid::new_v4(), // Unique ID for this scheduling instance
                 classroom_course_id: row.classroom_course_id,
@@ -149,6 +184,7 @@ impl<'a> SchedulerDataLoader<'a> {
                 cc_hard_unavailable,
                 same_day_unique: row.same_day_unique,
                 consecutive_pattern,
+                preferred_rooms,
             });
         }
 

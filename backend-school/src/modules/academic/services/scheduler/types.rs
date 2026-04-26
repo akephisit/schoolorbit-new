@@ -55,6 +55,18 @@ pub struct CourseToSchedule {
     pub same_day_unique: bool,
     /// รูปแบบการจัดคาบ — None = fallback [1; periods_needed]
     pub consecutive_pattern: Option<Vec<i32>>,
+
+    // Phase D: room hierarchy
+    /// ห้องที่ classroom_course นี้ใช้สอน — เรียงตาม rank (index 0 = ลองก่อน)
+    /// scheduler ใช้ตัวแรกเป็นค่า default; ถ้าเต็มลองตัวถัดไป (TODO: iteration)
+    pub preferred_rooms: Vec<RoomPref>,
+}
+
+/// Phase D: Room preference entry — used as cc-level preferred room list
+#[derive(Debug, Clone)]
+pub struct RoomPref {
+    pub room_id: Uuid,
+    pub is_required: bool,
 }
 
 // ==================== Assignment ====================

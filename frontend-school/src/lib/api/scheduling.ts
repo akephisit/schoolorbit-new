@@ -269,6 +269,45 @@ export async function updateClassroomCourseConstraints(
 	return apiClient.put<string>(`/api/academic/scheduling/classroom-courses/${id}`, req);
 }
 
+// Phase D: Room Assignment
+export interface CcPreferredRoom {
+	id: UUID;
+	classroom_course_id: UUID;
+	room_id: UUID;
+	room_code: string;
+	room_name: string;
+	rank: number;
+	is_required: boolean;
+}
+
+export interface RoomView {
+	id: UUID;
+	code: string;
+	name_th: string;
+	room_type?: string;
+}
+
+export interface SetCcRoomsRequest {
+	rooms: { room_id: UUID; rank: number; is_required?: boolean }[];
+}
+
+export async function listCcPreferredRooms(ccId: UUID) {
+	return apiClient.get<CcPreferredRoom[]>(
+		`/api/academic/scheduling/classroom-courses/${ccId}/rooms`
+	);
+}
+
+export async function setCcPreferredRooms(ccId: UUID, req: SetCcRoomsRequest) {
+	return apiClient.put<string>(
+		`/api/academic/scheduling/classroom-courses/${ccId}/rooms`,
+		req
+	);
+}
+
+export async function listAllRooms() {
+	return apiClient.get<RoomView[]>('/api/academic/scheduling/rooms');
+}
+
 export async function listPeriods(academicYearId?: UUID) {
 	const params = academicYearId ? `?academic_year_id=${academicYearId}` : '';
 	return apiClient.get<Period[]>(`/api/academic/periods${params}`);

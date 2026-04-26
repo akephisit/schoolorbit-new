@@ -446,8 +446,15 @@ impl BacktrackingScheduler {
         true
     }
     
+    /// Phase D: room hierarchy
+    /// 1. cc preferred_rooms (rank-ordered) — TODO: iterate try-fallback ใน scheduler loop
+    /// 2. instructor's fixed_room_id (จาก instructor_room_assignments)
+    /// 3. None (no preference)
+    /// ตอนนี้ pick first จาก cc list — scheduler iteration จะ enhance ทีหลัง (rank-2 fallback)
     fn determine_room_id(&self, course: &CourseToSchedule) -> Option<Uuid> {
-        // Priority: fixed room > none (use classroom's room)
+        if let Some(first) = course.preferred_rooms.first() {
+            return Some(first.room_id);
+        }
         course.fixed_room_id
     }
     
