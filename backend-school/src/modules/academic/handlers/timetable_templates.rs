@@ -287,9 +287,14 @@ pub async fn from_current(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // 2. Snapshot entries — group by (day, period, entry_type, title, activity_slot_id, room_id)
-    //    เพื่อรวมห้องที่มี config เดียวกันเป็น 1 template entry (classroom_ids[])
-    //    instructor_ids = union ของ tei ในกลุ่ม
+    // 2. Snapshot entries — เฉพาะ classroom entries (classroom_id IS NOT NULL)
+    //    เพื่อกัน leak tei จาก instructor-only entries (เช่น TEXT batch ที่ user
+    //    เลือกครู — backend สร้าง 2 ชุด: classroom entries (no tei) + instructor-only
+    //    entries (with tei) ที่มี (day,period,type,title) เหมือนกัน → ถ้านับ
+    //    instructor-only เข้ามาด้วย apply จะใส่ครูทับ classroom entries → ผิดเจตนาเดิม)
+    //
+    //    Group by (day, period, entry_type, title, activity_slot_id, room_id)
+    //    instructor_ids = union ของ tei เฉพาะที่ผูกกับ classroom entries
     sqlx::query(
         r#"
         WITH grouped AS (
@@ -300,7 +305,7 @@ pub async fn from_current(
                 te.title,
                 te.activity_slot_id,
                 te.room_id,
-                ARRAY_AGG(DISTINCT te.classroom_id) FILTER (WHERE te.classroom_id IS NOT NULL)
+                ARRAY_AGG(DISTINCT te.classroom_id)
                     AS classroom_ids,
                 ARRAY_AGG(DISTINCT tei.instructor_id) FILTER (WHERE tei.instructor_id IS NOT NULL)
                     AS instructor_ids
@@ -309,6 +314,7 @@ pub async fn from_current(
             WHERE te.academic_semester_id = $1
               AND te.is_active = true
               AND te.entry_type = ANY($2)
+              AND te.classroom_id IS NOT NULL
             GROUP BY te.day_of_week, te.period_id, te.entry_type, te.title,
                      te.activity_slot_id, te.room_id
         )
