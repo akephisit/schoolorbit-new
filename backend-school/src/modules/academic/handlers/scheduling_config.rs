@@ -176,7 +176,16 @@ pub async fn list_classroom_course_constraints(
             cc.subject_id,
             s.code AS subject_code,
             s.name_th AS subject_name,
-            s.periods_per_week,
+            -- ถ้า subjects.periods_per_week NULL → คำนวณจาก credit/hours
+            -- (logic เดียวกับ scheduler_data::load_courses)
+            COALESCE(
+                s.periods_per_week,
+                CASE
+                    WHEN s.hours_per_semester > 0 THEN CEIL(s.hours_per_semester::float / 20.0)::int
+                    WHEN s.credit > 0 THEN CEIL(s.credit * 2.0)::int
+                    ELSE 2
+                END
+            ) AS periods_per_week,
             pi.instructor_id AS primary_instructor_id,
             CASE WHEN u.id IS NOT NULL THEN u.first_name || ' ' || u.last_name ELSE NULL END
                 AS primary_instructor_name,
