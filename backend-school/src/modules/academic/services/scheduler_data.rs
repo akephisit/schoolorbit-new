@@ -52,10 +52,10 @@ impl<'a> SchedulerDataLoader<'a> {
             SELECT
                 cc.id as classroom_course_id,
                 cc.classroom_id,
-                cls.name as classroom_name,
+                COALESCE(cls.name, '') as classroom_name,
                 cc.subject_id,
-                s.code as subject_code,
-                s.name_th as subject_name,
+                COALESCE(s.code, '') as subject_code,
+                COALESCE(s.name_th, '') as subject_name,
                 cc.primary_instructor_id as instructor_id,
                 u.first_name || ' ' || u.last_name as instructor_name,
 
@@ -207,9 +207,9 @@ impl<'a> SchedulerDataLoader<'a> {
             SELECT
                 s.id AS slot_id,
                 cls.id AS classroom_id,
-                cls.name AS classroom_name,
-                ac.name AS activity_name,
-                ac.activity_type AS activity_type,
+                COALESCE(cls.name, '') AS classroom_name,
+                COALESCE(ac.name, '') AS activity_name,
+                COALESCE(ac.activity_type, '') AS activity_type,
                 ac.periods_per_week AS periods_per_week,
                 asca.instructor_id,
                 u.first_name || ' ' || u.last_name AS instructor_name
@@ -548,12 +548,16 @@ impl<'a> SchedulerDataLoader<'a> {
 
     /// Load all rooms with details
     pub async fn load_rooms(&self) -> Result<HashMap<Uuid, RoomInfo>, sqlx::Error> {
+        // COALESCE: บางห้องอาจไม่มีชื่อ (name_th NULL) → fallback เป็น code, แล้วเป็น "ห้อง"
         let query = r#"
-            SELECT id, name_th as name, room_type, capacity
+            SELECT id,
+                   COALESCE(NULLIF(name_th, ''), code, 'ห้อง') AS name,
+                   room_type,
+                   capacity
             FROM rooms
             WHERE status = 'ACTIVE'
         "#;
-        
+
         let rows = sqlx::query_as::<_, RoomRow>(query)
             .fetch_all(self.pool)
             .await?;
