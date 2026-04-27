@@ -328,7 +328,7 @@ impl<'a> SchedulerDataLoader<'a> {
         Ok(rows.into_iter().map(|r| PeriodInfo {
             id: r.id,
             order: r.period_order,
-            name: r.name,
+            name: r.name.unwrap_or_default(),
             start_time: r.start_time,
             end_time: r.end_time,
         }).collect())
@@ -618,7 +618,7 @@ struct IndepActivityRow {
 struct PeriodRow {
     id: Uuid,
     period_order: i32,
-    name: String,
+    name: Option<String>,
     start_time: String,
     end_time: String,
 }
