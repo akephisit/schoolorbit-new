@@ -108,22 +108,27 @@
 	</div>
 {:else if job}
 	<div class="space-y-6">
-		<Button variant="ghost" size="sm" class="gap-2 -ml-2" onclick={() => goToSchedulingJobs()}>
-			<ArrowLeft class="h-4 w-4" />
-			กลับไปประวัติ
-		</Button>
-
-		<div class="flex flex-col gap-2">
-			<div class="flex items-center justify-between flex-wrap gap-2">
-				<h2 class="text-3xl font-bold">สถานะการจัดตาราง</h2>
-				{#if statusBadge}
-					<Badge variant={statusBadge.variant} class="px-3 py-1">
-						<statusBadge.icon class="mr-1 h-4 w-4" />
-						{statusBadge.text}
-					</Badge>
-				{/if}
+		<div class="flex items-center justify-between flex-wrap gap-3">
+			<div class="flex items-center gap-2">
+				<Button
+					variant="ghost"
+					size="icon"
+					onclick={() => goToSchedulingJobs()}
+					aria-label="กลับ"
+				>
+					<ArrowLeft class="h-5 w-5" />
+				</Button>
+				<div class="flex flex-col gap-1">
+					<h2 class="text-3xl font-bold">สถานะการจัดตาราง</h2>
+					<p class="text-muted-foreground text-xs">Job ID: {job.id}</p>
+				</div>
 			</div>
-			<p class="text-muted-foreground text-xs">Job ID: {job.id}</p>
+			{#if statusBadge}
+				<Badge variant={statusBadge.variant} class="px-3 py-1">
+					<statusBadge.icon class="mr-1 h-4 w-4" />
+					{statusBadge.text}
+				</Badge>
+			{/if}
 		</div>
 
 		<div class="space-y-6">

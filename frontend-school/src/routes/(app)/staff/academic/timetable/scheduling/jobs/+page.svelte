@@ -140,22 +140,23 @@
 </script>
 
 <div class="space-y-6">
-	<Button
-		variant="ghost"
-		size="sm"
-		class="gap-2 -ml-2"
-		onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
-	>
-		<ArrowLeft class="h-4 w-4" />
-		กลับไปตั้งค่าจัดตาราง
-	</Button>
 	<div class="flex items-center justify-between flex-wrap gap-3">
-		<div class="flex flex-col gap-2">
-			<h2 class="text-3xl font-bold flex items-center gap-2">
-				<History class="h-8 w-8" />
-				ประวัติการจัดตาราง
-			</h2>
-			<p class="text-muted-foreground">รายการจัดตารางทั้งหมดในระบบ</p>
+		<div class="flex items-center gap-2">
+			<Button
+				variant="ghost"
+				size="icon"
+				onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
+				aria-label="กลับ"
+			>
+				<ArrowLeft class="h-5 w-5" />
+			</Button>
+			<div class="flex flex-col gap-1">
+				<h2 class="text-3xl font-bold flex items-center gap-2">
+					<History class="h-8 w-8" />
+					ประวัติการจัดตาราง
+				</h2>
+				<p class="text-muted-foreground">รายการจัดตารางทั้งหมดในระบบ</p>
+			</div>
 		</div>
 		<Button onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}>
 			<Plus class="mr-2 h-4 w-4" />

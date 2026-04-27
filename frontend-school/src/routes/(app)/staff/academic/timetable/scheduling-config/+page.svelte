@@ -610,17 +610,16 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<Button
-		variant="ghost"
-		size="sm"
-		class="gap-2 -ml-2"
-		onclick={() => goto(resolve('/staff/academic/timetable'))}
-	>
-		<ArrowLeft class="h-4 w-4" />
-		กลับไปจัดตารางสอน
-	</Button>
 	<div class="flex items-center justify-between flex-wrap gap-3">
-		<div class="flex flex-col gap-2">
+		<div class="flex items-center gap-2">
+			<Button
+				variant="ghost"
+				size="icon"
+				onclick={() => goto(resolve('/staff/academic/timetable'))}
+				aria-label="กลับ"
+			>
+				<ArrowLeft class="h-5 w-5" />
+			</Button>
 			<h2 class="text-3xl font-bold flex items-center gap-2">
 				<Sparkles class="h-8 w-8" />
 				ตั้งค่าจัดตารางอัตโนมัติ
