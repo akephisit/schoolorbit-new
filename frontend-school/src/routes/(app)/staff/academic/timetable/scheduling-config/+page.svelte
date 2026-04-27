@@ -491,14 +491,11 @@
 		return pattern.join('+');
 	}
 
-	// Order-insensitive — [1,2] ≡ [2,1] (scheduler sort เองอยู่แล้ว)
 	function patternEquals(a: number[] | null | undefined, b: number[] | null | undefined): boolean {
 		if (!a && !b) return true;
 		if (!a || !b) return false;
 		if (a.length !== b.length) return false;
-		const sa = [...a].sort((x, y) => y - x);
-		const sb = [...b].sort((x, y) => y - x);
-		return sa.every((v, i) => v === sb[i]);
+		return a.every((v, i) => v === b[i]);
 	}
 
 	function unavailableCount(id: string): number {
