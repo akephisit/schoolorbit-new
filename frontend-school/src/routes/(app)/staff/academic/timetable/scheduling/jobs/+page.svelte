@@ -139,24 +139,23 @@
 	});
 </script>
 
-<div class="container mx-auto p-6 max-w-6xl">
-	<!-- Header -->
-	<div class="flex items-center justify-between mb-6">
-		<div class="flex items-center gap-4">
-			<Button
-				variant="ghost"
-				size="icon"
-				onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
-			>
-				<ArrowLeft class="h-4 w-4" />
-			</Button>
-			<div>
-				<h1 class="text-3xl font-bold flex items-center gap-2">
-					<History class="h-8 w-8" />
-					ประวัติการจัดตาราง
-				</h1>
-				<p class="text-muted-foreground">รายการจัดตารางทั้งหมดในระบบ</p>
-			</div>
+<div class="space-y-6">
+	<Button
+		variant="ghost"
+		size="sm"
+		class="gap-2 -ml-2"
+		onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
+	>
+		<ArrowLeft class="h-4 w-4" />
+		กลับไปตั้งค่าจัดตาราง
+	</Button>
+	<div class="flex items-center justify-between flex-wrap gap-3">
+		<div class="flex flex-col gap-2">
+			<h2 class="text-3xl font-bold flex items-center gap-2">
+				<History class="h-8 w-8" />
+				ประวัติการจัดตาราง
+			</h2>
+			<p class="text-muted-foreground">รายการจัดตารางทั้งหมดในระบบ</p>
 		</div>
 		<Button onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}>
 			<Plus class="mr-2 h-4 w-4" />
@@ -165,7 +164,7 @@
 	</div>
 
 	<!-- Filters -->
-	<div class="mb-6 flex gap-4">
+	<div class="flex gap-4">
 		<div class="w-[300px]">
 			<Select.Root
 				type="single"

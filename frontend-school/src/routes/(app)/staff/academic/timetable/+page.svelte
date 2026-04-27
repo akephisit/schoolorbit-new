@@ -2248,8 +2248,8 @@
 	<!-- Row 1: Title + View Mode + Status + Avatars + Actions -->
 	<div class="flex items-center justify-between gap-3 flex-wrap">
 		<div class="flex items-center gap-3">
-			<h2 class="text-2xl font-bold flex items-center gap-2">
-				<CalendarDays class="w-6 h-6" />
+			<h2 class="text-3xl font-bold flex items-center gap-2">
+				<CalendarDays class="h-8 w-8" />
 				จัดตารางสอน
 			</h2>
 

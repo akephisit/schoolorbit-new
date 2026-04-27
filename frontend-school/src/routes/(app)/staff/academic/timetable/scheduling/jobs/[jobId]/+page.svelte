@@ -107,26 +107,23 @@
 		<Loader2 class="h-8 w-8 animate-spin text-primary" />
 	</div>
 {:else if job}
-	<div class="container mx-auto p-6 max-w-4xl">
-		<!-- Header -->
-		<div class="mb-6">
-			<Button variant="ghost" size="sm" onclick={() => goToSchedulingJobs()}>
-				<ArrowLeft class="mr-2 h-4 w-4" />
-				กลับ
-			</Button>
+	<div class="space-y-6">
+		<Button variant="ghost" size="sm" class="gap-2 -ml-2" onclick={() => goToSchedulingJobs()}>
+			<ArrowLeft class="h-4 w-4" />
+			กลับไปประวัติ
+		</Button>
 
-			<div class="mt-4">
-				<div class="flex items-center justify-between mb-2">
-					<h1 class="text-3xl font-bold">สถานะการจัดตาราง</h1>
-					{#if statusBadge}
-						<Badge variant={statusBadge.variant} class="px-3 py-1">
-							<statusBadge.icon class="mr-1 h-4 w-4" />
-							{statusBadge.text}
-						</Badge>
-					{/if}
-				</div>
-				<p class="text-muted-foreground">Job ID: {job.id}</p>
+		<div class="flex flex-col gap-2">
+			<div class="flex items-center justify-between flex-wrap gap-2">
+				<h2 class="text-3xl font-bold">สถานะการจัดตาราง</h2>
+				{#if statusBadge}
+					<Badge variant={statusBadge.variant} class="px-3 py-1">
+						<statusBadge.icon class="mr-1 h-4 w-4" />
+						{statusBadge.text}
+					</Badge>
+				{/if}
 			</div>
+			<p class="text-muted-foreground text-xs">Job ID: {job.id}</p>
 		</div>
 
 		<div class="space-y-6">

@@ -16,7 +16,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { FileStack, Plus, Trash2, Play, Eraser, LoaderCircle } from 'lucide-svelte';
+	import { FileStack, Plus, Trash2, Play, Eraser, LoaderCircle, ArrowLeft } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	let { data } = $props();
 
@@ -163,11 +165,22 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<div class="container mx-auto p-4 space-y-4">
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-2">
-			<FileStack class="w-6 h-6 text-primary" />
-			<h1 class="text-2xl font-bold">Templates ตาราง</h1>
+<div class="space-y-6">
+	<Button
+		variant="ghost"
+		size="sm"
+		class="gap-2 -ml-2"
+		onclick={() => goto(resolve('/staff/academic/timetable'))}
+	>
+		<ArrowLeft class="h-4 w-4" />
+		กลับไปจัดตารางสอน
+	</Button>
+	<div class="flex items-center justify-between flex-wrap gap-3">
+		<div class="flex flex-col gap-2">
+			<h2 class="text-3xl font-bold flex items-center gap-2">
+				<FileStack class="h-8 w-8" />
+				Templates ตาราง
+			</h2>
 		</div>
 		<div class="flex items-center gap-2">
 			<Select.Root type="single" bind:value={selectedSemesterId}>

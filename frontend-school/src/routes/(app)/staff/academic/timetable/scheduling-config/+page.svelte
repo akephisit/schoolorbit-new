@@ -30,7 +30,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
-	import { GripVertical, ChevronDown, ChevronRight, Sparkles, Save, LoaderCircle, Zap, TriangleAlert, Undo2, History } from 'lucide-svelte';
+	import { GripVertical, ChevronDown, ChevronRight, Sparkles, Save, LoaderCircle, Zap, TriangleAlert, Undo2, History, ArrowLeft } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -609,11 +609,22 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<div class="container mx-auto p-4 space-y-4">
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-2">
-			<Sparkles class="w-6 h-6 text-primary" />
-			<h1 class="text-2xl font-bold">ตั้งค่าจัดตารางอัตโนมัติ</h1>
+<div class="space-y-6">
+	<Button
+		variant="ghost"
+		size="sm"
+		class="gap-2 -ml-2"
+		onclick={() => goto(resolve('/staff/academic/timetable'))}
+	>
+		<ArrowLeft class="h-4 w-4" />
+		กลับไปจัดตารางสอน
+	</Button>
+	<div class="flex items-center justify-between flex-wrap gap-3">
+		<div class="flex flex-col gap-2">
+			<h2 class="text-3xl font-bold flex items-center gap-2">
+				<Sparkles class="h-8 w-8" />
+				ตั้งค่าจัดตารางอัตโนมัติ
+			</h2>
 		</div>
 		<div class="flex items-center gap-2">
 			<Button
