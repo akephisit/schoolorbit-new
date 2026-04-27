@@ -198,9 +198,9 @@
 		</p>
 		<p class="text-xs text-muted-foreground">
 			📌 Template เก็บเฉพาะกิจกรรมแบบ <strong>ระบุชื่อเอง</strong>
-			(พักเที่ยง โฮมรูม ประชุม ฯลฯ) — กิจกรรมจาก slot (ชุมนุม sync/independent)
-			ไม่ถูกเก็บ เพราะมีการจัดการที่หน้า Activities — apply ใหม่ผ่าน batch
-			ของหน้าตารางได้ทันที
+			(พักเที่ยง / โฮมรูม / ประชุม) ทั้งแบบผูกห้องและแบบเฉพาะครู
+			— กิจกรรมจาก slot (ชุมนุม sync/independent) ไม่ถูกเก็บเพราะมีการจัดการ
+			ที่หน้า Activities — apply ใหม่ผ่าน batch ของหน้าตารางได้ทันที
 		</p>
 	</Card.Root>
 

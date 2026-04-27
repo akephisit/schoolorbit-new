@@ -287,18 +287,16 @@ pub async fn from_current(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // 2. Snapshot — เฉพาะ TEXT batch entries (activity_slot_id IS NULL)
-    //    เหตุผล: SLOT activities (ชุมนุม sync/indep) มีการจัดการ centralized ที่
-    //    /staff/academic/activities — ครู/ห้อง/classrooms ของ slot อาจเปลี่ยน
-    //    หลัง snapshot → ถ้า template snapshot ไว้ apply จะใช้ STALE data
-    //    → user ควร batch SLOT activities ใหม่ผ่าน /timetable batch dialog
-    //      (SLOT mode auto-fill จาก slot ปัจจุบัน)
+    // 2. Snapshot — เฉพาะ TEXT batch (activity_slot_id IS NULL)
+    //    SLOT activities skip เพราะมีจัดการ centralized แล้ว (อาจ stale)
     //
-    //    Template = "ของที่ระบุเอง ไม่มีบ้านอื่น" เท่านั้น (พักเที่ยง, โฮมรูม, ประชุม)
+    //    แยก 2 ชนิด เข้าเป็น template entry คนละแถว ผ่าน is_instructor_only flag
+    //    ใน GROUP BY:
+    //    - false: classroom-bound (มี classroom_ids, tei ปกติเปล่าสำหรับ TEXT)
+    //    - true:  instructor-only (classroom_id NULL, tei มีครู)
+    //    → กัน leak ครูจาก instructor-only ไป classroom entries
     //
-    //    Filter เพิ่ม:
-    //    - classroom_id IS NOT NULL → กัน instructor-only entries
-    //    - activity_slot_id IS NULL → snapshot เฉพาะ TEXT batch
+    //    Filter ทิ้ง group ที่ไม่มีอะไรเลย (กัน noise)
     sqlx::query(
         r#"
         WITH grouped AS (
@@ -308,7 +306,8 @@ pub async fn from_current(
                 te.entry_type,
                 te.title,
                 te.room_id,
-                ARRAY_AGG(DISTINCT te.classroom_id)
+                (te.classroom_id IS NULL) AS is_instructor_only,
+                ARRAY_AGG(DISTINCT te.classroom_id) FILTER (WHERE te.classroom_id IS NOT NULL)
                     AS classroom_ids,
                 ARRAY_AGG(DISTINCT tei.instructor_id) FILTER (WHERE tei.instructor_id IS NOT NULL)
                     AS instructor_ids
@@ -317,9 +316,9 @@ pub async fn from_current(
             WHERE te.academic_semester_id = $1
               AND te.is_active = true
               AND te.entry_type = ANY($2)
-              AND te.classroom_id IS NOT NULL
               AND te.activity_slot_id IS NULL
-            GROUP BY te.day_of_week, te.period_id, te.entry_type, te.title, te.room_id
+            GROUP BY te.day_of_week, te.period_id, te.entry_type, te.title, te.room_id,
+                     (te.classroom_id IS NULL)
         )
         INSERT INTO timetable_template_entries
             (template_id, day_of_week, period_id, entry_type, title,
@@ -331,6 +330,8 @@ pub async fn from_current(
                COALESCE(to_jsonb(g.instructor_ids), '[]'::jsonb),
                g.room_id
         FROM grouped g
+        WHERE COALESCE(array_length(g.classroom_ids, 1), 0) > 0
+           OR COALESCE(array_length(g.instructor_ids, 1), 0) > 0
         "#
     )
     .bind(payload.semester_id)
@@ -420,71 +421,111 @@ pub async fn apply_template(
             }
         }
 
-        if resolved_classrooms.is_empty() {
-            continue; // skip — no targets
-        }
-
         // batch_uuid ต่อ "กิจกรรม" — ใช้ key (title, activity_slot_id)
-        // - TEXT batch (ไม่มี slot): group ตาม title
-        // - SLOT-sync (มี slot): group ตาม slot_id
         let group_key = (entry.title.clone(), entry.activity_slot_id);
         let batch_uuid = *group_batch_ids
             .entry(group_key)
             .or_insert_with(Uuid::new_v4);
 
-        // Bulk insert entries — 1 query per template entry × N classrooms
-        // ON CONFLICT DO NOTHING (กัน clash กับ entries เดิม)
-        let inserted_count: u64 = sqlx::query(
-            r#"INSERT INTO academic_timetable_entries
-                   (id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
-                    entry_type, title, is_active, created_by, updated_by,
-                    classroom_course_id, note, activity_slot_id, batch_id)
-               SELECT gen_random_uuid(), c, $1, $2, $3, $4,
-                      $5, $6, true, $7, $7,
-                      NULL, NULL, $8, $9
-               FROM UNNEST($10::uuid[]) AS c
-               ON CONFLICT DO NOTHING"#
-        )
-        .bind(payload.semester_id)
-        .bind(&entry.day_of_week)
-        .bind(entry.period_id)
-        .bind(entry.room_id)
-        .bind(&entry.entry_type)
-        .bind(&entry.title)
-        .bind(user_id)
-        .bind(entry.activity_slot_id)
-        .bind(batch_uuid)
-        .bind(&resolved_classrooms)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        .rows_affected();
-
-        total_inserted += inserted_count;
-
-        // Insert tei (ครู) — ผูกกับ entries ที่ "เพิ่ง insert" จาก template entry นี้
-        // ใช้ batch_id + day_of_week + period_id เพื่อ scope ให้แน่ — กัน leak ไป entries
-        // อื่นใน batch เดียวกัน (เช่น template entry อื่นใน batch group เดียวกันแต่คาบ
-        // ต่างกัน อาจมี instructor_ids ต่างกัน)
-        if !instructor_ids.is_empty() {
-            sqlx::query(
-                r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-                   SELECT te.id, instr.v, 'primary'
-                   FROM academic_timetable_entries te
-                   CROSS JOIN UNNEST($1::uuid[]) AS instr(v)
-                   WHERE te.batch_id = $2
-                     AND te.day_of_week = $3
-                     AND te.period_id = $4
+        if !resolved_classrooms.is_empty() {
+            // === Branch 1: classroom-bound entries (มีห้อง) ===
+            let inserted_count: u64 = sqlx::query(
+                r#"INSERT INTO academic_timetable_entries
+                       (id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
+                        entry_type, title, is_active, created_by, updated_by,
+                        classroom_course_id, note, activity_slot_id, batch_id)
+                   SELECT gen_random_uuid(), c, $1, $2, $3, $4,
+                          $5, $6, true, $7, $7,
+                          NULL, NULL, $8, $9
+                   FROM UNNEST($10::uuid[]) AS c
                    ON CONFLICT DO NOTHING"#
             )
-            .bind(&instructor_ids)
-            .bind(batch_uuid)
+            .bind(payload.semester_id)
             .bind(&entry.day_of_week)
             .bind(entry.period_id)
+            .bind(entry.room_id)
+            .bind(&entry.entry_type)
+            .bind(&entry.title)
+            .bind(user_id)
+            .bind(entry.activity_slot_id)
+            .bind(batch_uuid)
+            .bind(&resolved_classrooms)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?
+            .rows_affected();
+
+            total_inserted += inserted_count;
+
+            // tei สำหรับ classroom entries — ผูกกับ entries ที่เพิ่ง insert
+            // scope ด้วย batch_id + day + period (กัน leak ไป template entry อื่นใน group)
+            if !instructor_ids.is_empty() {
+                sqlx::query(
+                    r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                       SELECT te.id, instr.v, 'primary'
+                       FROM academic_timetable_entries te
+                       CROSS JOIN UNNEST($1::uuid[]) AS instr(v)
+                       WHERE te.batch_id = $2
+                         AND te.day_of_week = $3
+                         AND te.period_id = $4
+                         AND te.classroom_id IS NOT NULL
+                       ON CONFLICT DO NOTHING"#
+                )
+                .bind(&instructor_ids)
+                .bind(batch_uuid)
+                .bind(&entry.day_of_week)
+                .bind(entry.period_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+            }
+        } else if !instructor_ids.is_empty() {
+            // === Branch 2: instructor-only entries (ไม่มีห้อง) ===
+            // 1 entry ต่อครู ต่อคาบ ต่อวัน — classroom_id=NULL, tei ผูก 1 ครู ต่อ entry
+            let entry_ids: Vec<Uuid> = (0..instructor_ids.len())
+                .map(|_| Uuid::new_v4())
+                .collect();
+
+            let inserted_count: u64 = sqlx::query(
+                r#"INSERT INTO academic_timetable_entries
+                       (id, classroom_id, academic_semester_id, day_of_week, period_id, room_id,
+                        entry_type, title, is_active, created_by, updated_by,
+                        classroom_course_id, note, activity_slot_id, batch_id)
+                   SELECT id, NULL, $1, $2, $3, $4,
+                          $5, $6, true, $7, $7,
+                          NULL, NULL, NULL, $8
+                   FROM UNNEST($9::uuid[]) AS t(id)"#
+            )
+            .bind(payload.semester_id)
+            .bind(&entry.day_of_week)
+            .bind(entry.period_id)
+            .bind(entry.room_id)
+            .bind(&entry.entry_type)
+            .bind(&entry.title)
+            .bind(user_id)
+            .bind(batch_uuid)
+            .bind(&entry_ids)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?
+            .rows_affected();
+
+            total_inserted += inserted_count;
+
+            // tei แบบ 1-to-1 (entry[i] ↔ instructor[i])
+            sqlx::query(
+                r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                   SELECT eid, iid, 'primary'
+                   FROM UNNEST($1::uuid[], $2::uuid[]) AS t(eid, iid)
+                   ON CONFLICT DO NOTHING"#
+            )
+            .bind(&entry_ids)
+            .bind(&instructor_ids)
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::InternalServerError(e.to_string()))?;
         }
+        // else: classroom_ids ว่าง + instructor_ids ว่าง → skip (noise)
     }
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
