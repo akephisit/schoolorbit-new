@@ -462,26 +462,28 @@
 		ccSameDayUniqueEdits = next;
 	}
 
-	// Generate pattern options ให้ periods_per_week
-	// 3 → [[1,1,1], [2,1], [1,2], [3]]
-	// 4 → [[1,1,1,1], [2,1,1], [1,2,1], [1,1,2], [2,2], [3,1], [1,3], [4]]
-	// ใช้ recursive composition
+	// Generate UNIQUE pattern options (partitions ของ periods_per_week, descending)
+	// scheduler เรียง chunks ก่อน schedule อยู่แล้ว → [1,2] กับ [2,1] ผลเหมือนกัน
+	// จึงแสดงแค่ตัวแทนเดียวต่อกลุ่ม (ใหญ่ → เล็ก)
+	// 3 → [[3], [2,1], [1,1,1]]
+	// 4 → [[4], [3,1], [2,2], [2,1,1], [1,1,1,1]]
+	// 5 → [[5], [4,1], [3,2], [3,1,1], [2,2,1], [2,1,1,1], [1,1,1,1,1]]
 	function patternOptions(periods: number): number[][] {
 		if (periods <= 0) return [[]];
-		if (periods > 6) return [[periods]]; // edge case — too many — only "all in one"
+		if (periods > 6) return [[periods]];
 		const result: number[][] = [];
-		const compose = (remaining: number, acc: number[]) => {
+		const compose = (remaining: number, max: number, acc: number[]) => {
 			if (remaining === 0) {
 				result.push([...acc]);
 				return;
 			}
-			for (let chunk = 1; chunk <= remaining; chunk++) {
+			for (let chunk = Math.min(max, remaining); chunk >= 1; chunk--) {
 				acc.push(chunk);
-				compose(remaining - chunk, acc);
+				compose(remaining - chunk, chunk, acc);
 				acc.pop();
 			}
 		};
-		compose(periods, []);
+		compose(periods, periods, []);
 		return result;
 	}
 
@@ -489,11 +491,14 @@
 		return pattern.join('+');
 	}
 
+	// Order-insensitive — [1,2] ≡ [2,1] (scheduler sort เองอยู่แล้ว)
 	function patternEquals(a: number[] | null | undefined, b: number[] | null | undefined): boolean {
 		if (!a && !b) return true;
 		if (!a || !b) return false;
 		if (a.length !== b.length) return false;
-		return a.every((v, i) => v === b[i]);
+		const sa = [...a].sort((x, y) => y - x);
+		const sb = [...b].sort((x, y) => y - x);
+		return sa.every((v, i) => v === sb[i]);
 	}
 
 	function unavailableCount(id: string): number {
