@@ -191,11 +191,16 @@
 		</div>
 	</div>
 
-	<Card.Root class="p-3 bg-muted/30">
+	<Card.Root class="p-3 bg-muted/30 space-y-1">
 		<p class="text-sm text-muted-foreground">
-			💡 <strong>Workflow:</strong> 1) Batch fixed slots (พัก/โฮมรูม/sync) ที่หน้าตาราง →
-			2) สร้าง template จากตารางปัจจุบัน → 3) ถ้าจัดอัตโนมัติแล้วไม่ถูกใจ → เคลียร์ → apply
-			template → ลองจัดใหม่
+			💡 <strong>Workflow:</strong> 1) Batch fixed slots ที่หน้าตาราง →
+			2) สร้าง template → 3) ถ้าจัดอัตโนมัติไม่ถูกใจ → เคลียร์ → apply template → จัดใหม่
+		</p>
+		<p class="text-xs text-muted-foreground">
+			📌 Template เก็บเฉพาะกิจกรรมแบบ <strong>ระบุชื่อเอง</strong>
+			(พักเที่ยง โฮมรูม ประชุม ฯลฯ) — กิจกรรมจาก slot (ชุมนุม sync/independent)
+			ไม่ถูกเก็บ เพราะมีการจัดการที่หน้า Activities — apply ใหม่ผ่าน batch
+			ของหน้าตารางได้ทันที
 		</p>
 	</Card.Root>
 
@@ -254,8 +259,12 @@
 		<Dialog.Header>
 			<Dialog.Title>สร้าง Template จากตารางปัจจุบัน</Dialog.Title>
 			<Dialog.Description>
-				Snapshot entries ที่ไม่ใช่ COURSE (พัก/โฮมรูม/กิจกรรม) ของ
+				Snapshot กิจกรรมแบบระบุเอง (พัก/โฮมรูม/ประชุม/ฯลฯ) ของ
 				<strong>{semesters.find((s) => s.id === selectedSemesterId)?.name || ''}</strong>
+				<br />
+				<span class="text-xs">
+					ไม่เก็บกิจกรรมจาก slot (ชุมนุม sync) — apply ใหม่ผ่าน batch ของหน้าตาราง
+				</span>
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="space-y-3 py-2">

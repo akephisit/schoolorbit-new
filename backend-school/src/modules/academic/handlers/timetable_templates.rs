@@ -287,14 +287,18 @@ pub async fn from_current(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    // 2. Snapshot entries — เฉพาะ classroom entries (classroom_id IS NOT NULL)
-    //    เพื่อกัน leak tei จาก instructor-only entries (เช่น TEXT batch ที่ user
-    //    เลือกครู — backend สร้าง 2 ชุด: classroom entries (no tei) + instructor-only
-    //    entries (with tei) ที่มี (day,period,type,title) เหมือนกัน → ถ้านับ
-    //    instructor-only เข้ามาด้วย apply จะใส่ครูทับ classroom entries → ผิดเจตนาเดิม)
+    // 2. Snapshot — เฉพาะ TEXT batch entries (activity_slot_id IS NULL)
+    //    เหตุผล: SLOT activities (ชุมนุม sync/indep) มีการจัดการ centralized ที่
+    //    /staff/academic/activities — ครู/ห้อง/classrooms ของ slot อาจเปลี่ยน
+    //    หลัง snapshot → ถ้า template snapshot ไว้ apply จะใช้ STALE data
+    //    → user ควร batch SLOT activities ใหม่ผ่าน /timetable batch dialog
+    //      (SLOT mode auto-fill จาก slot ปัจจุบัน)
     //
-    //    Group by (day, period, entry_type, title, activity_slot_id, room_id)
-    //    instructor_ids = union ของ tei เฉพาะที่ผูกกับ classroom entries
+    //    Template = "ของที่ระบุเอง ไม่มีบ้านอื่น" เท่านั้น (พักเที่ยง, โฮมรูม, ประชุม)
+    //
+    //    Filter เพิ่ม:
+    //    - classroom_id IS NOT NULL → กัน instructor-only entries
+    //    - activity_slot_id IS NULL → snapshot เฉพาะ TEXT batch
     sqlx::query(
         r#"
         WITH grouped AS (
@@ -303,7 +307,6 @@ pub async fn from_current(
                 te.period_id,
                 te.entry_type,
                 te.title,
-                te.activity_slot_id,
                 te.room_id,
                 ARRAY_AGG(DISTINCT te.classroom_id)
                     AS classroom_ids,
@@ -315,15 +318,15 @@ pub async fn from_current(
               AND te.is_active = true
               AND te.entry_type = ANY($2)
               AND te.classroom_id IS NOT NULL
-            GROUP BY te.day_of_week, te.period_id, te.entry_type, te.title,
-                     te.activity_slot_id, te.room_id
+              AND te.activity_slot_id IS NULL
+            GROUP BY te.day_of_week, te.period_id, te.entry_type, te.title, te.room_id
         )
         INSERT INTO timetable_template_entries
             (template_id, day_of_week, period_id, entry_type, title,
              activity_slot_id, classroom_ids, instructor_ids, room_id)
         SELECT $3,
                g.day_of_week, g.period_id, g.entry_type, g.title,
-               g.activity_slot_id,
+               NULL,
                COALESCE(to_jsonb(g.classroom_ids), '[]'::jsonb),
                COALESCE(to_jsonb(g.instructor_ids), '[]'::jsonb),
                g.room_id
