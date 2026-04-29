@@ -122,8 +122,16 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 					});
 				}
 
+				// SLOT-sync activity: ห้อง+ครูไม่ได้ผูกกัน 1-to-1 (sync = ทุกห้องร่วมกัน,
+				// ครูหลายคน) — ซ่อน meta side ที่ไม่ตรงกับ view เพื่อกัน confusion
+				const isSlotSync =
+					entry.entry_type === 'ACTIVITY' &&
+					entry.activity_scheduling_mode === 'synchronized';
+
 				if (viewMode === 'CLASSROOM') {
+					// Student PDF — แสดงชื่อครู (ยกเว้น sync activity เพราะมีหลายครู)
 					if (
+						!isSlotSync &&
 						entry.instructor_name &&
 						entry.instructor_name.trim() &&
 						entry.instructor_name !== '-'
@@ -133,7 +141,8 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 						stack.push({ text: teacherName, fontSize: 7, color: '#4b5563', margin: [0, 1] });
 					}
 				} else {
-					if (entry.classroom_name) {
+					// Teacher PDF — แสดงห้อง (ยกเว้น sync activity เพราะเป็นกิจกรรมรวมทุกห้อง)
+					if (!isSlotSync && entry.classroom_name) {
 						stack.push({
 							text: entry.classroom_name,
 							fontSize: 7,
