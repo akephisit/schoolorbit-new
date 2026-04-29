@@ -54,6 +54,8 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
+	import * as Popover from '$lib/components/ui/popover';
+	import * as Command from '$lib/components/ui/command';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
@@ -69,7 +71,9 @@
 		Download,
 		Zap,
 		Lock,
-		FileStack
+		FileStack,
+		ChevronsUpDown,
+		Check
 	} from 'lucide-svelte';
 	import { generateTimetablePDF } from '$lib/utils/pdf';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
@@ -224,6 +228,11 @@
 	let selectedSemesterId = $state('');
 	let selectedClassroomId = $state('');
 	let selectedInstructorId = $state('');
+
+	// Searchable picker state
+	let classroomPickerOpen = $state(false);
+	let instructorPickerOpen = $state(false);
+	let roomPickerOpen = $state(false);
 
 	// Derived
 	let DAYS = $derived(
@@ -2429,29 +2438,87 @@
 
 		{#if viewMode === 'CLASSROOM'}
 			<div class="w-[220px]">
-				<Select.Root type="single" bind:value={selectedClassroomId}>
-					<Select.Trigger class="w-full h-9">
-						{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
-					</Select.Trigger>
-					<Select.Content class="max-h-[300px] overflow-y-auto">
-						{#each classrooms as classroom (classroom.id)}
-							<Select.Item value={classroom.id}>{classroom.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+				<Popover.Root bind:open={classroomPickerOpen}>
+					<Popover.Trigger class="w-full">
+						<Button
+							variant="outline"
+							role="combobox"
+							aria-expanded={classroomPickerOpen}
+							class="w-full justify-between font-normal h-9"
+						>
+							<span class="truncate">
+								{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
+							</span>
+							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+						</Button>
+					</Popover.Trigger>
+					<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+						<Command.Root>
+							<Command.Input placeholder="ค้นหาห้อง..." />
+							<Command.Empty>ไม่พบห้องเรียน</Command.Empty>
+							<Command.Group class="max-h-[280px] overflow-y-auto">
+								{#each classrooms as classroom (classroom.id)}
+									<Command.Item
+										value={classroom.name}
+										onSelect={() => {
+											selectedClassroomId = classroom.id;
+											classroomPickerOpen = false;
+										}}
+									>
+										<Check
+											class="mr-2 h-4 w-4 {selectedClassroomId === classroom.id
+												? 'opacity-100'
+												: 'opacity-0'}"
+										/>
+										{classroom.name}
+									</Command.Item>
+								{/each}
+							</Command.Group>
+						</Command.Root>
+					</Popover.Content>
+				</Popover.Root>
 			</div>
 		{:else}
 			<div class="w-[220px]">
-				<Select.Root type="single" bind:value={selectedInstructorId}>
-					<Select.Trigger class="w-full h-9">
-						{instructors.find((i) => i.id === selectedInstructorId)?.name || 'เลือกครูผู้สอน'}
-					</Select.Trigger>
-					<Select.Content class="max-h-[300px] overflow-y-auto">
-						{#each instructors as instructor (instructor.id)}
-							<Select.Item value={instructor.id}>{instructor.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+				<Popover.Root bind:open={instructorPickerOpen}>
+					<Popover.Trigger class="w-full">
+						<Button
+							variant="outline"
+							role="combobox"
+							aria-expanded={instructorPickerOpen}
+							class="w-full justify-between font-normal h-9"
+						>
+							<span class="truncate">
+								{instructors.find((i) => i.id === selectedInstructorId)?.name || 'เลือกครูผู้สอน'}
+							</span>
+							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+						</Button>
+					</Popover.Trigger>
+					<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+						<Command.Root>
+							<Command.Input placeholder="ค้นหาครู..." />
+							<Command.Empty>ไม่พบครู</Command.Empty>
+							<Command.Group class="max-h-[280px] overflow-y-auto">
+								{#each instructors as instructor (instructor.id)}
+									<Command.Item
+										value={instructor.name}
+										onSelect={() => {
+											selectedInstructorId = instructor.id;
+											instructorPickerOpen = false;
+										}}
+									>
+										<Check
+											class="mr-2 h-4 w-4 {selectedInstructorId === instructor.id
+												? 'opacity-100'
+												: 'opacity-0'}"
+										/>
+										{instructor.name}
+									</Command.Item>
+								{/each}
+							</Command.Group>
+						</Command.Root>
+					</Popover.Content>
+				</Popover.Root>
 			</div>
 			{#if selectedInstructorId}
 				<label
@@ -3285,25 +3352,68 @@
 		<div class="py-4 space-y-4">
 			<div class="space-y-2">
 				<Label.Root>ห้องเรียน</Label.Root>
-				<Select.Root type="single" bind:value={selectedRoomId}>
-					<Select.Trigger class="w-full">
-						{rooms.find((r) => r.id === selectedRoomId)?.name_th ||
-							(selectedRoomId === 'none' ? 'ไม่ระบุห้อง' : 'เลือกห้อง')}
-					</Select.Trigger>
-					<Select.Content class="max-h-[300px] overflow-y-auto">
-						<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
-						{#each rooms as room (room.id)}
-							{@const isBusy = unavailableRooms.has(room.id)}
-							{@const displaySelected = selectedRoomId === room.id}
-
-							{#if !isBusy || displaySelected}
-								<Select.Item value={room.id} class="flex justify-between">
-									<span>{room.name_th} ({room.building_name})</span>
-								</Select.Item>
-							{/if}
-						{/each}
-					</Select.Content>
-				</Select.Root>
+				<Popover.Root bind:open={roomPickerOpen}>
+					<Popover.Trigger class="w-full">
+						<Button
+							variant="outline"
+							role="combobox"
+							aria-expanded={roomPickerOpen}
+							class="w-full justify-between font-normal"
+						>
+							<span class="truncate">
+								{#if selectedRoomId === 'none'}
+									ไม่ระบุห้อง
+								{:else if selectedRoomId}
+									{@const r = rooms.find((x) => x.id === selectedRoomId)}
+									{r ? `${r.name_th} (${r.building_name})` : 'เลือกห้อง'}
+								{:else}
+									เลือกห้อง
+								{/if}
+							</span>
+							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+						</Button>
+					</Popover.Trigger>
+					<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+						<Command.Root>
+							<Command.Input placeholder="ค้นหาห้อง..." />
+							<Command.Empty>ไม่พบห้อง</Command.Empty>
+							<Command.Group class="max-h-[280px] overflow-y-auto">
+								<Command.Item
+									value="ไม่ระบุห้อง"
+									onSelect={() => {
+										selectedRoomId = 'none';
+										roomPickerOpen = false;
+									}}
+								>
+									<Check
+										class="mr-2 h-4 w-4 {selectedRoomId === 'none' ? 'opacity-100' : 'opacity-0'}"
+									/>
+									<span class="text-muted-foreground">ไม่ระบุห้อง</span>
+								</Command.Item>
+								{#each rooms as room (room.id)}
+									{@const isBusy = unavailableRooms.has(room.id)}
+									{@const displaySelected = selectedRoomId === room.id}
+									{#if !isBusy || displaySelected}
+										<Command.Item
+											value={`${room.name_th} ${room.building_name ?? ''}`}
+											onSelect={() => {
+												selectedRoomId = room.id;
+												roomPickerOpen = false;
+											}}
+										>
+											<Check
+												class="mr-2 h-4 w-4 {selectedRoomId === room.id
+													? 'opacity-100'
+													: 'opacity-0'}"
+											/>
+											{room.name_th} ({room.building_name})
+										</Command.Item>
+									{/if}
+								{/each}
+							</Command.Group>
+						</Command.Root>
+					</Popover.Content>
+				</Popover.Root>
 			</div>
 		</div>
 
