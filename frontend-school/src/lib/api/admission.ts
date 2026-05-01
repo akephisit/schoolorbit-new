@@ -1142,6 +1142,7 @@ export interface StudentIdEntry {
 	fullName: string;
 	firstName: string;
 	lastName: string;
+	nationalId?: string;
 	assignedStudentId?: string;
 	roomName?: string;
 	rankInRoom?: number;

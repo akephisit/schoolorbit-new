@@ -1645,6 +1645,7 @@ pub async fn list_student_ids(
             CONCAT(COALESCE(a.title, ''), a.first_name, ' ', a.last_name) AS full_name,
             a.first_name,
             a.last_name,
+            a.national_id,
             cr.name AS room_name,
             ra.rank_in_room,
             ra.rank_in_track,
