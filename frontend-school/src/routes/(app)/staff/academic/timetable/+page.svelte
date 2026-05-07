@@ -232,6 +232,15 @@
 	let selectedClassroomId = $state('');
 	let selectedInstructorId = $state('');
 
+	// ghost = ครูที่เลือกอยู่ในทีมวิชา แต่ไม่ได้สอนคาบนี้ → entry ไม่ใช่ของเขา → ซ่อน "เปลี่ยนห้อง"
+	// (กันครูแก้ห้องของ entry คนอื่นโดยไม่ตั้งใจ)
+	let entryPopoverIsGhost = $derived(
+		viewMode === 'INSTRUCTOR' &&
+			selectedInstructorId !== '' &&
+			entryPopoverTarget !== null &&
+			!(entryPopoverTarget.instructor_ids ?? []).includes(selectedInstructorId)
+	);
+
 	// Searchable picker state
 	let classroomPickerOpen = $state(false);
 	let instructorPickerOpen = $state(false);
@@ -524,7 +533,14 @@
 		entryPopoverLoading = true;
 		try {
 			const tasks: Promise<unknown>[] = [listCourseInstructors(entry.classroom_course_id)];
-			if (viewMode === 'INSTRUCTOR') tasks.push(loadUnavailableRoomsForEntry(entry));
+			// โหลด busy rooms เฉพาะกรณีที่จะแสดง section "เปลี่ยนห้อง" (INSTRUCTOR view + ไม่ใช่ ghost)
+			const isGhostForThisEntry =
+				viewMode === 'INSTRUCTOR' &&
+				selectedInstructorId !== '' &&
+				!(entry.instructor_ids ?? []).includes(selectedInstructorId);
+			if (viewMode === 'INSTRUCTOR' && !isGhostForThisEntry) {
+				tasks.push(loadUnavailableRoomsForEntry(entry));
+			}
 			const [teamRes] = (await Promise.all(tasks)) as [
 				Awaited<ReturnType<typeof listCourseInstructors>>,
 				...unknown[]
@@ -3365,8 +3381,8 @@
 				</div>
 
 				<!-- ห้องเรียน — ครูร่วมที่ใช้ห้องต่างจากครูหลัก: เปลี่ยนเฉพาะคาบนี้ได้
-			      เฉพาะมุมมองครู (CLASSROOM view ไม่ใช่ use case) -->
-				{#if viewMode === 'INSTRUCTOR'}
+			      เฉพาะมุมมองครู (CLASSROOM view ไม่ใช่ use case) + ไม่ใช่ ghost (ไม่ใช่ entry ของเรา) -->
+				{#if viewMode === 'INSTRUCTOR' && !entryPopoverIsGhost}
 				<div class="space-y-2 border-t pt-3">
 					<div class="text-sm font-medium">ห้องเรียน</div>
 					<Popover.Root bind:open={entryPopoverRoomPickerOpen}>
