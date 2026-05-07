@@ -210,6 +210,9 @@
 	let entryPopoverTeam = $state<CourseInstructor[]>([]);
 	let entryPopoverLoading = $state(false);
 	let entryPopoverSaving = $state('');
+	let entryPopoverSavingRoom = $state(false);
+	let entryPopoverRoomPickerOpen = $state(false);
+	let entryPopoverUnavailableRooms = $state<Set<string>>(new Set());
 
 	// INSTRUCTOR view: toggle "แสดงคาบในทีม" (ghost cells)
 	let showTeamGhosts = $state(false);
@@ -516,15 +519,65 @@
 		}
 		entryPopoverTarget = entry;
 		entryPopoverTeam = [];
+		entryPopoverUnavailableRooms = new Set();
 		entryPopoverOpen = true;
 		entryPopoverLoading = true;
 		try {
-			const res = await listCourseInstructors(entry.classroom_course_id);
-			entryPopoverTeam = res.data ?? [];
+			const tasks: Promise<unknown>[] = [listCourseInstructors(entry.classroom_course_id)];
+			if (viewMode === 'INSTRUCTOR') tasks.push(loadUnavailableRoomsForEntry(entry));
+			const [teamRes] = (await Promise.all(tasks)) as [
+				Awaited<ReturnType<typeof listCourseInstructors>>,
+				...unknown[]
+			];
+			entryPopoverTeam = teamRes.data ?? [];
 		} catch {
 			toast.error('โหลดรายชื่อครูไม่สำเร็จ');
 		} finally {
 			entryPopoverLoading = false;
+		}
+	}
+
+	async function loadUnavailableRoomsForEntry(entry: TimetableEntry) {
+		try {
+			const res = await listTimetableEntries({
+				day_of_week: entry.day_of_week,
+				academic_semester_id: selectedSemesterId
+			});
+			const busy = new Set<string>();
+			res.data.forEach((e) => {
+				if (e.period_id === entry.period_id && e.room_id && e.id !== entry.id) {
+					busy.add(e.room_id);
+				}
+			});
+			entryPopoverUnavailableRooms = busy;
+		} catch {
+			entryPopoverUnavailableRooms = new Set();
+		}
+	}
+
+	async function handlePopoverChangeRoom(roomId: string) {
+		if (!entryPopoverTarget) return;
+		const entry = entryPopoverTarget;
+		if (entry.room_id === roomId) {
+			entryPopoverRoomPickerOpen = false;
+			return;
+		}
+		entryPopoverSavingRoom = true;
+		try {
+			const res = await updateTimetableEntry(entry.id, { room_id: roomId });
+			if (res?.success === false) {
+				toast.error(res.message || 'เปลี่ยนห้องไม่สำเร็จ');
+				return;
+			}
+			entry.room_id = roomId;
+			rawTeamEntries = [...rawTeamEntries];
+			timetableEntries = [...timetableEntries];
+			toast.success('เปลี่ยนห้องแล้ว');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'เปลี่ยนห้องไม่สำเร็จ');
+		} finally {
+			entryPopoverSavingRoom = false;
+			entryPopoverRoomPickerOpen = false;
 		}
 	}
 
@@ -3236,7 +3289,7 @@
 				{#if entryPopoverTarget}
 					{entryPopoverTarget.subject_code ?? ''} {entryPopoverTarget.subject_name_th ?? ''}
 				{:else}
-					แก้ไขครูในคาบนี้
+					แก้ไขคาบนี้
 				{/if}
 			</Dialog.Title>
 			<Dialog.Description>
@@ -3310,6 +3363,63 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- ห้องเรียน — ครูร่วมที่ใช้ห้องต่างจากครูหลัก: เปลี่ยนเฉพาะคาบนี้ได้
+			      เฉพาะมุมมองครู (CLASSROOM view ไม่ใช่ use case) -->
+				{#if viewMode === 'INSTRUCTOR'}
+				<div class="space-y-2 border-t pt-3">
+					<div class="text-sm font-medium">ห้องเรียน</div>
+					<Popover.Root bind:open={entryPopoverRoomPickerOpen}>
+						<Popover.Trigger class="w-full">
+							<Button
+								variant="outline"
+								role="combobox"
+								aria-expanded={entryPopoverRoomPickerOpen}
+								class="w-full justify-between font-normal"
+								disabled={entryPopoverSavingRoom}
+							>
+								<span class="truncate flex items-center gap-1.5">
+									{#if entryPopoverSavingRoom}
+										<Loader2 class="h-3.5 w-3.5 animate-spin" />
+									{:else}
+										<MapPin class="h-3.5 w-3.5 shrink-0 opacity-70" />
+									{/if}
+									{#if entryPopoverTarget?.room_id}
+										{@const r = rooms.find((x) => x.id === entryPopoverTarget?.room_id)}
+										{r ? `${r.name_th}${r.building_name ? ` (${r.building_name})` : ''}` : 'ห้องไม่พบ'}
+									{:else}
+										ไม่ระบุห้อง
+									{/if}
+								</span>
+								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						</Popover.Trigger>
+						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+							<Command.Root>
+								<Command.Input placeholder="ค้นหาห้อง..." />
+								<Command.Empty>ไม่พบห้อง</Command.Empty>
+								<Command.Group class="max-h-[280px] overflow-y-auto">
+									{#each rooms as room (room.id)}
+										{@const isBusy = entryPopoverUnavailableRooms.has(room.id)}
+										{@const isSelected = entryPopoverTarget?.room_id === room.id}
+										{#if !isBusy || isSelected}
+											<Command.Item
+												value={`${room.name_th} ${room.building_name ?? ''}`}
+												onSelect={() => handlePopoverChangeRoom(room.id)}
+											>
+												<Check
+													class="mr-2 h-4 w-4 {isSelected ? 'opacity-100' : 'opacity-0'}"
+												/>
+												{room.name_th}{room.building_name ? ` (${room.building_name})` : ''}
+											</Command.Item>
+										{/if}
+									{/each}
+								</Command.Group>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
+				</div>
+				{/if}
 			{/if}
 		</div>
 
