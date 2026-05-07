@@ -63,8 +63,12 @@ impl PoolManager {
                 let pool = PgPoolOptions::new()
                     .min_connections(0) // allow pool to reach 0 connections so Neon can scale-down
                     .max_connections(self.max_connections_per_school)
-                    .acquire_timeout(Duration::from_secs(10))
+                    // Neon Free cold start ~5-10s — เผื่อให้ acquire request แรกไม่ timeout
+                    .acquire_timeout(Duration::from_secs(20))
                     .idle_timeout(Duration::from_secs(300)) // close idle connections before Neon scale-down
+                    // ping connection ก่อนใช้ → ถ้า Neon ปิดจากฝั่งโน้น (autosuspend race) ทิ้ง stale + สร้างใหม่
+                    // → user ไม่เจอ "broken pipe" ตอนกลับมาใช้หลังพัก
+                    .test_before_acquire(true)
                     .connect_with(connect_opts)
                     .await
                     .map_err(|e| format!("Failed to connect to database for {}: {}", subdomain, e))?;
