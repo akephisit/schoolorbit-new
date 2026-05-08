@@ -82,7 +82,35 @@ export type TimetableEvent =
 			type: 'EntryInstructorRemoved';
 			payload: { user_id: string; entry_id: string; instructor_id: string; entry_deleted: boolean };
 	  }
-	| { type: 'CourseTeamChanged'; payload: { user_id: string; course_id: string } };
+	| { type: 'CourseTeamChanged'; payload: { user_id: string; course_id: string } }
+	| {
+			type: 'DropIntent';
+			payload: {
+				user_id: string;
+				kind: string;
+				entry_id: string;
+				day_of_week: string;
+				period_id: string;
+				room_id?: string | null;
+				swap_partner_id?: string | null;
+				swap_partner_day?: string | null;
+				swap_partner_period_id?: string | null;
+			};
+	  }
+	| {
+			type: 'DropRejected';
+			payload: {
+				user_id: string;
+				entry_id: string;
+				original_day: string;
+				original_period_id: string;
+				original_room_id?: string | null;
+				partner_id?: string | null;
+				partner_original_day?: string | null;
+				partner_original_period_id?: string | null;
+				reason: string;
+			};
+	  };
 
 /** Patch events ที่ page subscribe เพื่อ apply ต่อ state — ไม่ fetch DB ซ้ำ */
 export type TimetablePatch =
@@ -103,7 +131,31 @@ export type TimetablePatch =
 			instructor_id: string;
 			entry_deleted: boolean;
 	  }
-	| { type: 'CourseTeamChanged'; course_id: string };
+	| { type: 'CourseTeamChanged'; course_id: string }
+	| {
+			type: 'DropIntent';
+			user_id: string;
+			kind: string; // 'move' | 'swap'
+			entry_id: string;
+			day_of_week: string;
+			period_id: string;
+			room_id: string | null;
+			swap_partner_id: string | null;
+			swap_partner_day: string | null;
+			swap_partner_period_id: string | null;
+	  }
+	| {
+			type: 'DropRejected';
+			user_id: string;
+			entry_id: string;
+			original_day: string;
+			original_period_id: string;
+			original_room_id: string | null;
+			partner_id: string | null;
+			partner_original_day: string | null;
+			partner_original_period_id: string | null;
+			reason: string;
+	  };
 
 // Stores
 export const activeUsers: Writable<UserPresence[]> = writable([]);
@@ -199,6 +251,21 @@ interface RawMessagePayload {
 	instructor_name?: string;
 	role?: string;
 	entry_deleted?: boolean;
+	// Phase 2 — DropIntent / DropRejected
+	kind?: string;
+	day_of_week?: string;
+	period_id?: string;
+	room_id?: string | null;
+	swap_partner_id?: string | null;
+	swap_partner_day?: string | null;
+	swap_partner_period_id?: string | null;
+	original_day?: string;
+	original_period_id?: string;
+	original_room_id?: string | null;
+	partner_id?: string | null;
+	partner_original_day?: string | null;
+	partner_original_period_id?: string | null;
+	reason?: string;
 }
 
 interface SeqEvent {
@@ -257,6 +324,43 @@ function applyPatchFromSeqEvent(seqEvent: SeqEvent) {
 		case 'CourseTeamChanged':
 			if (payload.course_id)
 				lastPatch.set({ type: 'CourseTeamChanged', course_id: payload.course_id });
+			break;
+		case 'DropIntent':
+			if (payload.user_id && payload.entry_id && payload.day_of_week && payload.period_id) {
+				lastPatch.set({
+					type: 'DropIntent',
+					user_id: payload.user_id,
+					kind: payload.kind ?? 'move',
+					entry_id: payload.entry_id,
+					day_of_week: payload.day_of_week,
+					period_id: payload.period_id,
+					room_id: payload.room_id ?? null,
+					swap_partner_id: payload.swap_partner_id ?? null,
+					swap_partner_day: payload.swap_partner_day ?? null,
+					swap_partner_period_id: payload.swap_partner_period_id ?? null
+				});
+			}
+			break;
+		case 'DropRejected':
+			if (
+				payload.user_id &&
+				payload.entry_id &&
+				payload.original_day &&
+				payload.original_period_id
+			) {
+				lastPatch.set({
+					type: 'DropRejected',
+					user_id: payload.user_id,
+					entry_id: payload.entry_id,
+					original_day: payload.original_day,
+					original_period_id: payload.original_period_id,
+					original_room_id: payload.original_room_id ?? null,
+					partner_id: payload.partner_id ?? null,
+					partner_original_day: payload.partner_original_day ?? null,
+					partner_original_period_id: payload.partner_original_period_id ?? null,
+					reason: payload.reason ?? ''
+				});
+			}
 			break;
 	}
 }
@@ -415,6 +519,28 @@ export function sendUserActivityEnd() {
 	sendTimetableEvent({
 		type: 'UserActivityEnd',
 		payload: { user_id: currentUserId }
+	});
+}
+
+/** Phase 2: broadcast optimistic drop intent — server relays to other clients
+ *  so they apply the same optimistic mutation before DB confirms. */
+export function sendDropIntent(payload: {
+	kind: 'move' | 'swap';
+	entry_id: string;
+	day_of_week: string;
+	period_id: string;
+	room_id?: string | null;
+	swap_partner_id?: string | null;
+	swap_partner_day?: string | null;
+	swap_partner_period_id?: string | null;
+}) {
+	if (!currentUserId) return;
+	sendTimetableEvent({
+		type: 'DropIntent',
+		payload: {
+			user_id: currentUserId,
+			...payload
+		}
 	});
 }
 
@@ -606,6 +732,11 @@ function handleMessage(msg: SeqEvent & { seq?: number }) {
 			});
 			break;
 		}
+		case 'DropIntent':
+		case 'DropRejected':
+			// Phase 2 ephemeral — page subscribes via lastPatch
+			applyPatchFromSeqEvent(msg);
+			break;
 		// TableRefresh + patch events จัดการใน isMutation branch ด้านบน
 	}
 }

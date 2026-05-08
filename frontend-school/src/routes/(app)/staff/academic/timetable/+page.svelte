@@ -87,6 +87,7 @@
 		connectTimetableSocket,
 		disconnectTimetableSocket,
 		sendTimetableEvent,
+		sendDropIntent,
 		activeUsers,
 		remoteCursors,
 		dragPositions,
@@ -554,6 +555,27 @@
 
 	function removeOccupancy(entryId: string) {
 		occupancyEntries = occupancyEntries.filter((e) => e.id !== entryId);
+	}
+
+	function markPending(entryId: string) {
+		pendingEntryIds.add(entryId);
+	}
+
+	function clearPending(entryId: string) {
+		pendingEntryIds.delete(entryId);
+		optimisticSnapshots.delete(entryId);
+	}
+
+	function snapshotPosition(entryId: string) {
+		const e = timetableEntries.find((x) => x.id === entryId)
+			?? rawTeamEntries.find((x) => x.id === entryId)
+			?? occupancyEntries.find((x) => x.id === entryId);
+		if (!e) return null;
+		return {
+			day_of_week: e.day_of_week,
+			period_id: e.period_id,
+			room_id: 'room_id' in e ? (e.room_id ?? null) : null
+		};
 	}
 
 	/** Optimistic mutation: apply partial fields to entry locally across timetableEntries,
@@ -1172,6 +1194,16 @@
 	// โหลดครั้งเดียวต่อ semester + sync ตาม WS events → drag validity คำนวณใน JS (0ms lag)
 	let occupancyEntries = $state<OccupancyEntry[]>([]);
 
+	// Phase 2: entry IDs ที่อยู่ในสถานะ pending (รอ DB confirm) — UI แสดง spinner
+	let pendingEntryIds = $state<SvelteSet<string>>(new SvelteSet());
+
+	// Phase 2: snapshot table — สำหรับ rollback ตอน DropRejected (ทั้ง self + others)
+	// เฉพาะ entry ที่มี optimistic mutation ที่ยังไม่ confirm
+	let optimisticSnapshots = new Map<
+		string,
+		{ day_of_week: string; period_id: string; room_id: string | null }
+	>();
+
 	function getSlotKey(day: string, periodId: string) {
 		return `${day}_${periodId}`;
 	}
@@ -1408,14 +1440,19 @@
 			draggedCourse = item;
 			draggedEntryId = item.id;
 
-			const originalCourse = courses.find((c) => c.id === item.classroom_course_id);
 			const entry = item as TimetableEntry;
+			const isActivityEntry = entry.entry_type === 'ACTIVITY';
+			const originalCourse = isActivityEntry
+				? null
+				: courses.find((c) => c.id === entry.classroom_course_id);
 			courseToCheck = originalCourse || {
 				...entry,
-				id: entry.classroom_course_id ?? entry.id,
-				subject_code: entry.subject_code,
-				title: entry.subject_name_th,
-				title_th: entry.subject_name_th
+				id: entry.classroom_course_id ?? entry.activity_slot_id ?? entry.id,
+				subject_code: entry.subject_code ?? (isActivityEntry ? entry.title : undefined),
+				title: entry.subject_name_th ?? entry.title,
+				title_th: entry.subject_name_th ?? entry.title,
+				_isActivity: isActivityEntry,
+				activity_slot_id: entry.activity_slot_id
 			};
 		}
 
@@ -1554,7 +1591,7 @@
 			return;
 		}
 
-		// Case A: MOVE drag (from table) onto occupied → SWAP (optimistic)
+		// Case A: MOVE drag (from table) onto occupied → SWAP (optimistic + WS intent broadcast)
 		if (
 			existingEntry &&
 			dragType === 'MOVE' &&
@@ -1567,29 +1604,54 @@
 				handleDragEnd();
 				return;
 			}
-			// Optimistic swap: ขยับ UI ทันที, รอ API ใน background
 			const aId = draggedEntryId;
 			const bId = existingEntry.id;
-			const aDay = existingEntry.day_of_week === day ? day : day; // target's pos for source
-			const aPid = periodId;
-			const bDay = (timetableEntries.find((e) => e.id === aId) ?? rawTeamEntries.find((e) => e.id === aId))?.day_of_week ?? '';
-			const bPid = (timetableEntries.find((e) => e.id === aId) ?? rawTeamEntries.find((e) => e.id === aId))?.period_id ?? '';
-			const snapA = applyEntryMutation(aId, {
-				day_of_week: aDay as TimetableEntry['day_of_week'],
-				period_id: aPid
+			const aOriginal = snapshotPosition(aId);
+			const bOriginal = snapshotPosition(bId);
+			if (!aOriginal || !bOriginal) {
+				handleDragEnd();
+				return;
+			}
+			// Optimistic swap: ขยับ UI ทันที, รอ API ใน background
+			optimisticSnapshots.set(aId, aOriginal);
+			optimisticSnapshots.set(bId, bOriginal);
+			markPending(aId);
+			markPending(bId);
+			applyEntryMutation(aId, {
+				day_of_week: bOriginal.day_of_week as TimetableEntry['day_of_week'],
+				period_id: bOriginal.period_id
 			});
-			const snapB = applyEntryMutation(bId, {
-				day_of_week: bDay as TimetableEntry['day_of_week'],
-				period_id: bPid
+			applyEntryMutation(bId, {
+				day_of_week: aOriginal.day_of_week as TimetableEntry['day_of_week'],
+				period_id: aOriginal.period_id
+			});
+			// Broadcast intent → คนอื่นเห็น optimistic ทันที
+			sendDropIntent({
+				kind: 'swap',
+				entry_id: aId,
+				day_of_week: bOriginal.day_of_week,
+				period_id: bOriginal.period_id,
+				swap_partner_id: bId,
+				swap_partner_day: aOriginal.day_of_week,
+				swap_partner_period_id: aOriginal.period_id
 			});
 			handleDragEnd();
 			try {
 				await swapTimetableEntries(aId, bId);
 				toast.success('สลับคาบเรียบร้อย');
+				// EntriesSwapped WS will arrive → clearPending in patch handler
 			} catch (e: unknown) {
-				// Rollback
-				if (snapA) applyEntryMutation(aId, snapA);
-				if (snapB) applyEntryMutation(bId, snapB);
+				// Rollback locally; DropRejected broadcast (จาก server) จะมาแยก
+				applyEntryMutation(aId, {
+					day_of_week: aOriginal.day_of_week as TimetableEntry['day_of_week'],
+					period_id: aOriginal.period_id
+				});
+				applyEntryMutation(bId, {
+					day_of_week: bOriginal.day_of_week as TimetableEntry['day_of_week'],
+					period_id: bOriginal.period_id
+				});
+				clearPending(aId);
+				clearPending(bId);
 				toast.error((e instanceof Error ? e.message : String(e)) || 'สลับไม่สำเร็จ');
 			}
 			return;
@@ -1756,7 +1818,7 @@
 				const res = await createTimetableEntry(payload);
 				handleResponse(res, `ลงตาราง ${courseCode} สำเร็จ`);
 			} else if (dragType === 'MOVE' && entryId) {
-				// UPDATE EXISTING — optimistic move
+				// UPDATE EXISTING — optimistic move + WS intent broadcast
 				const courseName = course.subject_code || course.title || 'รายการ';
 
 				const payload = {
@@ -1765,11 +1827,22 @@
 					room_id: roomId
 				};
 
+				const original = snapshotPosition(entryId);
+				if (original) optimisticSnapshots.set(entryId, original);
+				markPending(entryId);
 				// Optimistic mutation
-				const snapshot = applyEntryMutation(entryId, {
+				applyEntryMutation(entryId, {
 					day_of_week: day as TimetableEntry['day_of_week'],
 					period_id: periodId,
 					room_id: roomId
+				});
+				// Broadcast intent → คนอื่นเห็น optimistic ทันที
+				sendDropIntent({
+					kind: 'move',
+					entry_id: entryId,
+					day_of_week: day,
+					period_id: periodId,
+					room_id: roomId ?? null
 				});
 				submitting = false;
 				pendingDropContext = null;
@@ -1781,14 +1854,29 @@
 						conflicts?: ConflictInfo[];
 					};
 					if (res?.success === false) {
-						if (snapshot) applyEntryMutation(entryId, snapshot);
+						if (original) {
+							applyEntryMutation(entryId, {
+								day_of_week: original.day_of_week as TimetableEntry['day_of_week'],
+								period_id: original.period_id,
+								room_id: original.room_id
+							});
+						}
+						clearPending(entryId);
 						const msgs = (res.conflicts ?? []).map((c) => c.message).filter(Boolean);
 						toast.error(msgs.length > 0 ? msgs.join(' · ') : 'ย้ายไม่สำเร็จ');
 					} else {
 						toast.success(`ย้าย ${courseName} สำเร็จ`);
+						// EntryUpdated WS will arrive → clearPending in patch handler
 					}
 				} catch (e: unknown) {
-					if (snapshot) applyEntryMutation(entryId, snapshot);
+					if (original) {
+						applyEntryMutation(entryId, {
+							day_of_week: original.day_of_week as TimetableEntry['day_of_week'],
+							period_id: original.period_id,
+							room_id: original.room_id
+						});
+					}
+					clearPending(entryId);
 					toast.error((e instanceof Error ? e.message : String(e)) || 'ย้ายไม่สำเร็จ');
 				}
 				return;
@@ -2437,6 +2525,7 @@
 			case 'EntryCreated': {
 				// Backend ส่ง entry พร้อม joined fields ครบ — push เข้า state ได้ทันที
 				const created = patch.entry as TimetableEntry;
+				clearPending(created.id);
 				upsertOccupancy(created);
 				// เฉพาะ entry ที่เกี่ยวกับ view ปัจจุบันถึงจะ push
 				const relevantForClassroom =
@@ -2458,6 +2547,7 @@
 			}
 			case 'EntryUpdated': {
 				const updated = patch.entry;
+				clearPending(updated.id);
 				upsertOccupancy(updated);
 				const isRelevant = (e: TimetableEntry) => e.id === updated.id;
 				updateEntries((arr) => {
@@ -2471,11 +2561,14 @@
 				break;
 			}
 			case 'EntryDeleted':
+				clearPending(patch.entry_id);
 				removeOccupancy(patch.entry_id);
 				updateEntries((arr) => arr.filter((e) => e.id !== patch.entry_id));
 				break;
 			case 'EntriesSwapped':
 				// Swap = 2 entries เปลี่ยน day/period — apply ทั้งคู่
+				clearPending(patch.entry_a.id);
+				clearPending(patch.entry_b.id);
 				upsertOccupancy(patch.entry_a);
 				upsertOccupancy(patch.entry_b);
 				updateEntries((arr) =>
@@ -2535,6 +2628,74 @@
 				// ใช้ TableRefresh fallback
 				refreshTrigger.update((n) => n + 1);
 				break;
+			case 'DropIntent': {
+				// Phase 2: คนอื่น drop เสร็จแล้ว → apply optimistic (รอ EntryUpdated/Swapped/DropRejected)
+				if (patch.user_id === $authStore.user?.id) break; // ตัวเองทำเอง — apply ไปแล้ว
+				const original = snapshotPosition(patch.entry_id);
+				if (original && !optimisticSnapshots.has(patch.entry_id)) {
+					optimisticSnapshots.set(patch.entry_id, original);
+				}
+				markPending(patch.entry_id);
+				applyEntryMutation(patch.entry_id, {
+					day_of_week: patch.day_of_week as TimetableEntry['day_of_week'],
+					period_id: patch.period_id,
+					room_id: patch.room_id ?? undefined
+				});
+				if (patch.kind === 'swap' && patch.swap_partner_id) {
+					const partnerOriginal = snapshotPosition(patch.swap_partner_id);
+					if (partnerOriginal && !optimisticSnapshots.has(patch.swap_partner_id)) {
+						optimisticSnapshots.set(patch.swap_partner_id, partnerOriginal);
+					}
+					markPending(patch.swap_partner_id);
+					if (patch.swap_partner_day && patch.swap_partner_period_id) {
+						applyEntryMutation(patch.swap_partner_id, {
+							day_of_week: patch.swap_partner_day as TimetableEntry['day_of_week'],
+							period_id: patch.swap_partner_period_id
+						});
+					}
+				}
+				break;
+			}
+			case 'DropRejected': {
+				// Phase 2: rollback optimistic state (ทุกคนที่เคยรับ DropIntent)
+				const snap = optimisticSnapshots.get(patch.entry_id);
+				if (snap) {
+					applyEntryMutation(patch.entry_id, {
+						day_of_week: snap.day_of_week as TimetableEntry['day_of_week'],
+						period_id: snap.period_id,
+						room_id: snap.room_id
+					});
+				} else if (patch.original_day && patch.original_period_id) {
+					// fallback: ใช้ original จาก server (ถ้าไม่มี local snapshot)
+					applyEntryMutation(patch.entry_id, {
+						day_of_week: patch.original_day as TimetableEntry['day_of_week'],
+						period_id: patch.original_period_id,
+						room_id: patch.original_room_id ?? undefined
+					});
+				}
+				clearPending(patch.entry_id);
+				if (patch.partner_id) {
+					const psnap = optimisticSnapshots.get(patch.partner_id);
+					if (psnap) {
+						applyEntryMutation(patch.partner_id, {
+							day_of_week: psnap.day_of_week as TimetableEntry['day_of_week'],
+							period_id: psnap.period_id,
+							room_id: psnap.room_id
+						});
+					} else if (patch.partner_original_day && patch.partner_original_period_id) {
+						applyEntryMutation(patch.partner_id, {
+							day_of_week: patch.partner_original_day as TimetableEntry['day_of_week'],
+							period_id: patch.partner_original_period_id
+						});
+					}
+					clearPending(patch.partner_id);
+				}
+				// Toast: เฉพาะคนที่ drop (ตอบโจทย์ feedback option b)
+				if (patch.user_id === $authStore.user?.id) {
+					toast.error(patch.reason ? `ขัดแย้ง — ${patch.reason}` : 'การลากถูก reject — ย้อนกลับ');
+				}
+				break;
+			}
 		}
 	}
 
@@ -3225,8 +3386,12 @@
 													!!entry.room_id}
 										<!-- Timetable Entry Card -->
 										<div
-											class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {entry.entry_type !==
-												'COURSE' ||
+											class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {(entry.entry_type !==
+												'COURSE' &&
+												!(
+													entry.entry_type === 'ACTIVITY' &&
+													entry.activity_scheduling_mode === 'independent'
+												)) ||
 											isGhost ||
 											isRemoteLocked
 												? 'cursor-pointer'
@@ -3247,8 +3412,11 @@
 											)};"
 											draggable={!lockedBy &&
 												!isRemoteLocked &&
-												entry.entry_type === 'COURSE' &&
-												!isGhost}
+												!isGhost &&
+												(entry.entry_type === 'COURSE' ||
+													(entry.entry_type === 'ACTIVITY' &&
+														entry.activity_scheduling_mode === 'independent' &&
+														!entry.batch_id))}
 											ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
 											ondragend={handleDragEnd}
 											onclick={(e) => {
@@ -3367,6 +3535,15 @@
 												>
 													<Trash2 class="w-3 h-3" />
 												</button>
+											{/if}
+											<!-- Phase 2: pending spinner — drop ยังไม่ confirm จาก DB -->
+											{#if pendingEntryIds.has(entry.id)}
+												<div
+													class="absolute top-0.5 left-0.5 z-30 p-0.5 rounded bg-amber-50/80"
+													title="กำลังบันทึก..."
+												>
+													<Loader2 class="w-3 h-3 animate-spin text-amber-600" />
+												</div>
 											{/if}
 										</div>
 									{:else if isOccupied}
