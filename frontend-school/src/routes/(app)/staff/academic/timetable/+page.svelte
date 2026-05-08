@@ -556,6 +556,41 @@
 		occupancyEntries = occupancyEntries.filter((e) => e.id !== entryId);
 	}
 
+	/** Optimistic mutation: apply partial fields to entry locally across timetableEntries,
+	 *  rawTeamEntries, and occupancyEntries. Returns snapshot used to rollback on failure. */
+	function applyEntryMutation(
+		entryId: string,
+		fields: Partial<TimetableEntry>
+	): Partial<TimetableEntry> | null {
+		const current = timetableEntries.find((e) => e.id === entryId)
+			?? rawTeamEntries.find((e) => e.id === entryId);
+		if (!current) return null;
+
+		// Build snapshot of fields about to change (so rollback is precise)
+		const snapshot: Partial<TimetableEntry> = {};
+		for (const k of Object.keys(fields) as (keyof TimetableEntry)[]) {
+			(snapshot as Record<string, unknown>)[k] = current[k];
+		}
+
+		const merge = (e: TimetableEntry) => (e.id === entryId ? { ...e, ...fields } : e);
+		timetableEntries = timetableEntries.map(merge);
+		rawTeamEntries = rawTeamEntries.map(merge);
+
+		// Mirror occupancy fields (only the keys that affect conflict checks)
+		const occMutation: Partial<OccupancyEntry> = {};
+		if ('day_of_week' in fields) occMutation.day_of_week = fields.day_of_week as string;
+		if ('period_id' in fields) occMutation.period_id = fields.period_id as string;
+		if ('room_id' in fields) occMutation.room_id = (fields.room_id ?? null) as string | null;
+		if ('classroom_id' in fields)
+			occMutation.classroom_id = (fields.classroom_id ?? null) as string | null;
+		if (Object.keys(occMutation).length > 0) {
+			occupancyEntries = occupancyEntries.map((e) =>
+				e.id === entryId ? { ...e, ...occMutation } : e
+			);
+		}
+		return snapshot;
+	}
+
 	/** Compute MoveValidityCell map locally — replaces POST /validate-moves
 	 *  Logic mirrors backend handler: pairwise swap validation vs empty-cell direct fit. */
 	function computeValidMoves(entryId: string): Map<string, MoveValidityCell> {
@@ -1519,7 +1554,7 @@
 			return;
 		}
 
-		// Case A: MOVE drag (from table) onto occupied → SWAP
+		// Case A: MOVE drag (from table) onto occupied → SWAP (optimistic)
 		if (
 			existingEntry &&
 			dragType === 'MOVE' &&
@@ -1532,19 +1567,30 @@
 				handleDragEnd();
 				return;
 			}
+			// Optimistic swap: ขยับ UI ทันที, รอ API ใน background
+			const aId = draggedEntryId;
+			const bId = existingEntry.id;
+			const aDay = existingEntry.day_of_week === day ? day : day; // target's pos for source
+			const aPid = periodId;
+			const bDay = (timetableEntries.find((e) => e.id === aId) ?? rawTeamEntries.find((e) => e.id === aId))?.day_of_week ?? '';
+			const bPid = (timetableEntries.find((e) => e.id === aId) ?? rawTeamEntries.find((e) => e.id === aId))?.period_id ?? '';
+			const snapA = applyEntryMutation(aId, {
+				day_of_week: aDay as TimetableEntry['day_of_week'],
+				period_id: aPid
+			});
+			const snapB = applyEntryMutation(bId, {
+				day_of_week: bDay as TimetableEntry['day_of_week'],
+				period_id: bPid
+			});
+			handleDragEnd();
 			try {
-				submitting = true;
-				await swapTimetableEntries(draggedEntryId, existingEntry.id);
+				await swapTimetableEntries(aId, bId);
 				toast.success('สลับคาบเรียบร้อย');
-				await loadTimetable();
-				if ($authStore.user) {
-					sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
-				}
 			} catch (e: unknown) {
+				// Rollback
+				if (snapA) applyEntryMutation(aId, snapA);
+				if (snapB) applyEntryMutation(bId, snapB);
 				toast.error((e instanceof Error ? e.message : String(e)) || 'สลับไม่สำเร็จ');
-			} finally {
-				submitting = false;
-				handleDragEnd();
 			}
 			return;
 		}
@@ -1710,7 +1756,7 @@
 				const res = await createTimetableEntry(payload);
 				handleResponse(res, `ลงตาราง ${courseCode} สำเร็จ`);
 			} else if (dragType === 'MOVE' && entryId) {
-				// UPDATE EXISTING
+				// UPDATE EXISTING — optimistic move
 				const courseName = course.subject_code || course.title || 'รายการ';
 
 				const payload = {
@@ -1719,8 +1765,33 @@
 					room_id: roomId
 				};
 
-				const res = await updateTimetableEntry(entryId, payload);
-				handleResponse(res, `ย้าย ${courseName} สำเร็จ`);
+				// Optimistic mutation
+				const snapshot = applyEntryMutation(entryId, {
+					day_of_week: day as TimetableEntry['day_of_week'],
+					period_id: periodId,
+					room_id: roomId
+				});
+				submitting = false;
+				pendingDropContext = null;
+				isDropPending = false;
+				handleDragEnd();
+				try {
+					const res = (await updateTimetableEntry(entryId, payload)) as {
+						success?: boolean;
+						conflicts?: ConflictInfo[];
+					};
+					if (res?.success === false) {
+						if (snapshot) applyEntryMutation(entryId, snapshot);
+						const msgs = (res.conflicts ?? []).map((c) => c.message).filter(Boolean);
+						toast.error(msgs.length > 0 ? msgs.join(' · ') : 'ย้ายไม่สำเร็จ');
+					} else {
+						toast.success(`ย้าย ${courseName} สำเร็จ`);
+					}
+				} catch (e: unknown) {
+					if (snapshot) applyEntryMutation(entryId, snapshot);
+					toast.error((e instanceof Error ? e.message : String(e)) || 'ย้ายไม่สำเร็จ');
+				}
+				return;
 			}
 		} catch (e: unknown) {
 			toast.error((e instanceof Error ? e.message : String(e)) || 'บันทึกไม่สำเร็จ');
