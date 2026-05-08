@@ -20,7 +20,9 @@
 		hideInstructorFromSlot,
 		hideInstructorFromSlotPeriod,
 		swapTimetableEntries,
-		validateTimetableMoves
+		getTimetableOccupancy,
+		type OccupancyEntry,
+		type MoveValidityCell
 	} from '$lib/api/timetable';
 	import {
 		listClassrooms,
@@ -514,6 +516,172 @@
 		}
 	}
 
+	// ===== Occupancy map: client-side validation (Phase 1) =====
+	async function loadOccupancy() {
+		if (!selectedSemesterId) {
+			occupancyEntries = [];
+			return;
+		}
+		try {
+			const res = await getTimetableOccupancy(selectedSemesterId);
+			occupancyEntries = res.data ?? [];
+		} catch {
+			occupancyEntries = [];
+		}
+	}
+
+	function entryToOccupancy(e: TimetableEntry): OccupancyEntry {
+		return {
+			id: e.id,
+			classroom_id: e.classroom_id ?? null,
+			day_of_week: e.day_of_week,
+			period_id: e.period_id,
+			room_id: e.room_id ?? null,
+			instructor_ids: e.instructor_ids ?? []
+		};
+	}
+
+	function upsertOccupancy(e: TimetableEntry) {
+		const o = entryToOccupancy(e);
+		const idx = occupancyEntries.findIndex((x) => x.id === o.id);
+		if (idx >= 0) {
+			occupancyEntries[idx] = o;
+			occupancyEntries = [...occupancyEntries];
+		} else {
+			occupancyEntries = [...occupancyEntries, o];
+		}
+	}
+
+	function removeOccupancy(entryId: string) {
+		occupancyEntries = occupancyEntries.filter((e) => e.id !== entryId);
+	}
+
+	/** Compute MoveValidityCell map locally — replaces POST /validate-moves
+	 *  Logic mirrors backend handler: pairwise swap validation vs empty-cell direct fit. */
+	function computeValidMoves(entryId: string): Map<string, MoveValidityCell> {
+		const result = new Map<string, MoveValidityCell>();
+		const source = occupancyEntries.find((e) => e.id === entryId);
+		if (!source) return result;
+
+		// Index entries by cell key once → O(1) lookup per cell
+		const cellIndex = new Map<string, OccupancyEntry[]>();
+		for (const e of occupancyEntries) {
+			const k = `${e.day_of_week}|${e.period_id}`;
+			const arr = cellIndex.get(k);
+			if (arr) arr.push(e);
+			else cellIndex.set(k, [e]);
+		}
+
+		const srcInstructorSet = new Set(source.instructor_ids);
+		const srcCellKey = `${source.day_of_week}|${source.period_id}`;
+
+		for (const day of DAYS) {
+			for (const period of periods) {
+				const key = `${day.value}|${period.id}`;
+
+				if (key === srcCellKey) {
+					result.set(key, {
+						day_of_week: day.value,
+						period_id: period.id,
+						state: 'source',
+						target_entry_id: null,
+						valid: false,
+						reason: ''
+					});
+					continue;
+				}
+
+				const occupants = cellIndex.get(key) ?? [];
+				const others = occupants.filter((e) => e.id !== entryId);
+
+				if (others.length === 0) {
+					// Empty — source moves freely (no entry at this cell to conflict with)
+					result.set(key, {
+						day_of_week: day.value,
+						period_id: period.id,
+						state: 'empty',
+						target_entry_id: null,
+						valid: true,
+						reason: ''
+					});
+					continue;
+				}
+
+				// Occupied — try swap with first other entry (matches backend behavior)
+				const target = others[0];
+				const targetInstructorSet = new Set(target.instructor_ids);
+
+				// Other entries at source's pos (excluding source itself, excluding target if it's there)
+				const srcPosOthers = (cellIndex.get(srcCellKey) ?? []).filter(
+					(e) => e.id !== entryId && e.id !== target.id
+				);
+				// Other entries at target's pos (excluding source if it's there, excluding target)
+				const tgtPosOthers = others.filter((e) => e.id !== target.id);
+
+				let valid = true;
+				let reason = '';
+
+				// Classroom: source's classroom mustn't have a 3rd entry at target's pos
+				if (source.classroom_id && tgtPosOthers.some((e) => e.classroom_id === source.classroom_id)) {
+					valid = false;
+					reason = 'ห้องของต้นทางถูกใช้ที่คาบนี้';
+				}
+				// Classroom: target's classroom mustn't have a 3rd entry at source's pos
+				if (
+					valid &&
+					target.classroom_id &&
+					srcPosOthers.some((e) => e.classroom_id === target.classroom_id)
+				) {
+					valid = false;
+					reason = 'ห้องของปลายทางถูกใช้ที่คาบต้นทาง';
+				}
+
+				// Instructor: source's instructors mustn't conflict at target's pos
+				if (valid) {
+					for (const e of tgtPosOthers) {
+						if (e.instructor_ids.some((iid) => srcInstructorSet.has(iid))) {
+							valid = false;
+							reason = 'ครูต้นทางติดคาบปลายทาง';
+							break;
+						}
+					}
+				}
+				// Instructor: target's instructors mustn't conflict at source's pos
+				if (valid) {
+					for (const e of srcPosOthers) {
+						if (e.instructor_ids.some((iid) => targetInstructorSet.has(iid))) {
+							valid = false;
+							reason = 'ครูปลายทางติดคาบต้นทาง';
+							break;
+						}
+					}
+				}
+
+				// Room: source's room mustn't conflict at target's pos
+				if (valid && source.room_id && tgtPosOthers.some((e) => e.room_id === source.room_id)) {
+					valid = false;
+					reason = 'ห้องต้นทางถูกใช้ที่คาบปลายทาง';
+				}
+				// Room: target's room mustn't conflict at source's pos
+				if (valid && target.room_id && srcPosOthers.some((e) => e.room_id === target.room_id)) {
+					valid = false;
+					reason = 'ห้องปลายทางถูกใช้ที่คาบต้นทาง';
+				}
+
+				result.set(key, {
+					day_of_week: day.value,
+					period_id: period.id,
+					state: 'occupied',
+					target_entry_id: target.id,
+					valid,
+					reason
+				});
+			}
+		}
+
+		return result;
+	}
+
 	// ===== Per-cell instructor popover =====
 	async function openEntryPopover(entry: TimetableEntry) {
 		// Only support COURSE entries (activity entries have different instructor logic)
@@ -961,11 +1129,13 @@
 	// Floating conflict popup ตอน drag hover (native title tooltip ใช้ไม่ได้ระหว่าง drag)
 	let hoverDragCell = $state<{ day: string; periodId: string; x: number; y: number } | null>(null);
 
-	// Drag validity map: key "DAY|PERIODID" → cell state (from POST /timetable/validate-moves)
+	// Drag validity map: key "DAY|PERIODID" → cell state (computed locally from occupancyEntries)
 	// Populated on drag start for MOVE type; cleared on drag end.
-	let moveValidityMap = $state<Map<string, import('$lib/api/timetable').MoveValidityCell>>(
-		new Map()
-	);
+	let moveValidityMap = $state<Map<string, MoveValidityCell>>(new Map());
+
+	// Lightweight semester-wide entry summary for client-side conflict checks.
+	// โหลดครั้งเดียวต่อ semester + sync ตาม WS events → drag validity คำนวณใน JS (0ms lag)
+	let occupancyEntries = $state<OccupancyEntry[]>([]);
 
 	function getSlotKey(day: string, periodId: string) {
 		return `${day}_${periodId}`;
@@ -1219,18 +1389,9 @@
 		}
 
 		// Precompute drop validity for MOVE drags (colorize cells 🟢🔵🔴)
+		// Local computation — no API call, 0ms lag
 		if (type === 'MOVE' && draggedEntryId) {
-			validateTimetableMoves(draggedEntryId)
-				.then((res) => {
-					const m = new SvelteMap<string, import('$lib/api/timetable').MoveValidityCell>();
-					for (const c of res.data ?? []) {
-						m.set(`${c.day_of_week}|${c.period_id}`, c);
-					}
-					moveValidityMap = m;
-				})
-				.catch(() => {
-					moveValidityMap = new SvelteMap();
-				});
+			moveValidityMap = computeValidMoves(draggedEntryId);
 		}
 
 		if (event.dataTransfer) {
@@ -1889,6 +2050,15 @@
 		}
 	});
 
+	// Occupancy = semester-wide (ไม่ขึ้นกับ view) → load แยก ตอน semester เปลี่ยน
+	$effect(() => {
+		if (selectedSemesterId) {
+			loadOccupancy();
+		} else {
+			occupancyEntries = [];
+		}
+	});
+
 	// Batch Assign State
 	let showBatchModal = $state(false);
 	let batchClassrooms = $state<string[]>([]);
@@ -2196,6 +2366,7 @@
 			case 'EntryCreated': {
 				// Backend ส่ง entry พร้อม joined fields ครบ — push เข้า state ได้ทันที
 				const created = patch.entry as TimetableEntry;
+				upsertOccupancy(created);
 				// เฉพาะ entry ที่เกี่ยวกับ view ปัจจุบันถึงจะ push
 				const relevantForClassroom =
 					viewMode === 'CLASSROOM' && created.classroom_id === selectedClassroomId;
@@ -2216,6 +2387,7 @@
 			}
 			case 'EntryUpdated': {
 				const updated = patch.entry;
+				upsertOccupancy(updated);
 				const isRelevant = (e: TimetableEntry) => e.id === updated.id;
 				updateEntries((arr) => {
 					const found = arr.some(isRelevant);
@@ -2228,10 +2400,13 @@
 				break;
 			}
 			case 'EntryDeleted':
+				removeOccupancy(patch.entry_id);
 				updateEntries((arr) => arr.filter((e) => e.id !== patch.entry_id));
 				break;
 			case 'EntriesSwapped':
 				// Swap = 2 entries เปลี่ยน day/period — apply ทั้งคู่
+				upsertOccupancy(patch.entry_a);
+				upsertOccupancy(patch.entry_b);
 				updateEntries((arr) =>
 					arr.map((e) => {
 						if (e.id === patch.entry_a.id) return { ...e, ...patch.entry_a };
@@ -2240,24 +2415,40 @@
 					})
 				);
 				break;
-			case 'EntryInstructorAdded':
+			case 'EntryInstructorAdded': {
+				const targetId = patch.entry_id;
+				const newIid = patch.instructor_id;
+				occupancyEntries = occupancyEntries.map((e) =>
+					e.id === targetId
+						? { ...e, instructor_ids: [...e.instructor_ids, newIid] }
+						: e
+				);
 				updateEntries((arr) =>
 					arr.map((e) => {
-						if (e.id !== patch.entry_id) return e;
-						const ids = [...(e.instructor_ids ?? []), patch.instructor_id];
+						if (e.id !== targetId) return e;
+						const ids = [...(e.instructor_ids ?? []), newIid];
 						const names = [...(e.instructor_names ?? []), patch.instructor_name];
 						return { ...e, instructor_ids: ids, instructor_names: names };
 					})
 				);
 				break;
+			}
 			case 'EntryInstructorRemoved':
 				if (patch.entry_deleted) {
+					removeOccupancy(patch.entry_id);
 					updateEntries((arr) => arr.filter((e) => e.id !== patch.entry_id));
 				} else {
+					const targetId = patch.entry_id;
+					const removeIid = patch.instructor_id;
+					occupancyEntries = occupancyEntries.map((e) =>
+						e.id === targetId
+							? { ...e, instructor_ids: e.instructor_ids.filter((iid) => iid !== removeIid) }
+							: e
+					);
 					updateEntries((arr) =>
 						arr.map((e) => {
-							if (e.id !== patch.entry_id) return e;
-							const idx = e.instructor_ids?.indexOf(patch.instructor_id) ?? -1;
+							if (e.id !== targetId) return e;
+							const idx = e.instructor_ids?.indexOf(removeIid) ?? -1;
 							if (idx < 0) return e;
 							return {
 								...e,

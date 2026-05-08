@@ -2513,3 +2513,57 @@ pub async fn validate_timetable_moves(
 
     Ok(Json(json!({ "data": cells })).into_response())
 }
+
+#[derive(serde::Deserialize)]
+pub struct OccupancyQuery {
+    pub semester_id: Uuid,
+}
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct OccupancyRow {
+    pub id: Uuid,
+    pub classroom_id: Option<Uuid>,
+    pub day_of_week: String,
+    pub period_id: Uuid,
+    pub room_id: Option<Uuid>,
+    pub instructor_ids: Vec<Uuid>,
+}
+
+/// GET /api/academic/timetable/occupancy?semester_id=X
+/// Returns all active entries with instructor_ids — frontend builds indexes locally
+/// to compute drop validity without hitting backend per drag.
+pub async fn get_timetable_occupancy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<OccupancyQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+
+    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+        return Ok(r);
+    }
+
+    // Single query — aggregate instructor_ids via array_agg
+    let rows: Vec<OccupancyRow> = sqlx::query_as::<_, OccupancyRow>(
+        r#"SELECT
+            te.id,
+            te.classroom_id,
+            te.day_of_week,
+            te.period_id,
+            te.room_id,
+            COALESCE(
+                ARRAY_AGG(tei.instructor_id) FILTER (WHERE tei.instructor_id IS NOT NULL),
+                '{}'::uuid[]
+            ) AS instructor_ids
+           FROM academic_timetable_entries te
+           LEFT JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
+           WHERE te.academic_semester_id = $1 AND te.is_active = true
+           GROUP BY te.id"#,
+    )
+    .bind(q.semester_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(Json(json!({ "data": rows })).into_response())
+}

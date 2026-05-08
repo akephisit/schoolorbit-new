@@ -275,6 +275,24 @@ export const validateTimetableMoves = async (
 	});
 };
 
+/** Lightweight entry summary — used for client-side conflict checks (drop validity). */
+export interface OccupancyEntry {
+	id: string;
+	classroom_id: string | null;
+	day_of_week: string;
+	period_id: string;
+	room_id: string | null;
+	instructor_ids: string[];
+}
+
+export const getTimetableOccupancy = async (
+	semesterId: string
+): Promise<{ data: OccupancyEntry[] }> => {
+	return await fetchApi(
+		`/api/academic/timetable/occupancy?semester_id=${encodeURIComponent(semesterId)}`
+	);
+};
+
 export const createTimetableEntry = async (data: CreateTimetableEntryRequest) => {
 	const response = await fetch(`${BACKEND_URL}/api/academic/timetable`, {
 		method: 'POST',
