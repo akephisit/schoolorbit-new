@@ -148,6 +148,38 @@ pub enum TimetableEvent {
     UserActivityEnd {
         user_id: Uuid,
     },
+
+    // === Phase 2: optimistic drop intent + rejection ===
+    /// Client → Server: ผู้ใช้ drop เสร็จแล้ว (UI ขยับแล้ว) — relay ให้คนอื่นเห็นทันที
+    /// ก่อน DB confirm. Server ไม่ validate, ไม่เขียน DB — แค่ relay
+    /// (ephemeral — ไม่ seq เพราะ EntryUpdated/Created/Swapped จะมาตามทีหลังพร้อม seq จริง)
+    DropIntent {
+        user_id: Uuid,
+        kind: String,                            // "move" | "swap" — caller ใช้ judge
+        entry_id: Uuid,
+        day_of_week: String,
+        period_id: Uuid,
+        room_id: Option<Uuid>,
+        /// สำหรับ swap: id ของ entry ที่ถูกสลับด้วย, day/period ของมันก่อน swap
+        /// (ตำแหน่งใหม่หลัง swap = ตำแหน่งเดิมของ entry_id)
+        swap_partner_id: Option<Uuid>,
+        swap_partner_day: Option<String>,
+        swap_partner_period_id: Option<Uuid>,
+    },
+    /// Server → Clients: DB reject drop ที่ broadcast intent ไปแล้ว → ทุกคน rollback
+    /// ตำแหน่งเดิม. Toast แสดงเฉพาะคนที่ drop (`user_id` ตรงกับตัวเอง)
+    DropRejected {
+        user_id: Uuid,                           // คนที่ drop (ใช้ filter toast)
+        entry_id: Uuid,
+        original_day: String,
+        original_period_id: Uuid,
+        original_room_id: Option<Uuid>,
+        /// optional: ถ้า swap → entry คู่สลับที่ต้อง rollback เช่นกัน
+        partner_id: Option<Uuid>,
+        partner_original_day: Option<String>,
+        partner_original_period_id: Option<Uuid>,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -663,6 +695,23 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
                             None,
                         );
                         valid_event = Some(TimetableEvent::UserActivityEnd { user_id: params.user_id });
+                    },
+                    // Phase 2: client broadcast optimistic drop intent
+                    TimetableEvent::DropIntent {
+                        kind, entry_id, day_of_week, period_id, room_id,
+                        swap_partner_id, swap_partner_day, swap_partner_period_id, ..
+                    } => {
+                        valid_event = Some(TimetableEvent::DropIntent {
+                            user_id: params.user_id,
+                            kind: kind.clone(),
+                            entry_id: *entry_id,
+                            day_of_week: day_of_week.clone(),
+                            period_id: *period_id,
+                            room_id: *room_id,
+                            swap_partner_id: *swap_partner_id,
+                            swap_partner_day: swap_partner_day.clone(),
+                            swap_partner_period_id: *swap_partner_period_id,
+                        });
                     },
                     _ => {}
                 }

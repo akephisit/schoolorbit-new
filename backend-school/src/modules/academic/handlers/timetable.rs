@@ -1073,7 +1073,7 @@ pub async fn update_timetable_entry(
     let target_classroom_id: Option<Uuid> = payload.classroom_id.or(existing_entry.classroom_id);
     let validation_payload = CreateTimetableEntryRequest {
         classroom_course_id: existing_entry.classroom_course_id,
-        day_of_week: payload.day_of_week.clone().unwrap_or(existing_entry.day_of_week),
+        day_of_week: payload.day_of_week.clone().unwrap_or_else(|| existing_entry.day_of_week.clone()),
         period_id: payload.period_id.unwrap_or(existing_entry.period_id),
         room_id: payload.room_id.or(existing_entry.room_id),
         note: payload.note.clone().or(existing_entry.note),
@@ -1181,6 +1181,29 @@ pub async fn update_timetable_entry(
     }
 
     if !conflict_list.is_empty() {
+        // Broadcast DropRejected → ทุก client rollback optimistic state
+        // (เฉพาะถ้ามี subscriber อื่น ๆ ที่อาจรับ DropIntent ก่อนหน้านี้)
+        let subdomain_for_reject = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        let reason = conflict_list
+            .iter()
+            .filter_map(|c| c.get("message").and_then(|m| m.as_str()))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        state.websocket_manager.broadcast_ephemeral(
+            subdomain_for_reject,
+            existing_entry.academic_semester_id,
+            TimetableEvent::DropRejected {
+                user_id: user_id.unwrap_or_default(),
+                entry_id: id,
+                original_day: existing_entry.day_of_week.clone(),
+                original_period_id: existing_entry.period_id,
+                original_room_id: existing_entry.room_id,
+                partner_id: None,
+                partner_original_day: None,
+                partner_original_period_id: None,
+                reason: if reason.is_empty() { "พบข้อขัดแย้ง".to_string() } else { reason },
+            },
+        );
         return Ok((
             StatusCode::CONFLICT,
             Json(json!({
@@ -2075,6 +2098,34 @@ pub async fn swap_timetable_entries(
     let (a_id, a_day, a_period, a_room, a_classroom, _a_sem, _a_batch) = a.clone();
     let (b_id, b_day, b_period, b_room, b_classroom, _b_sem, _b_batch) = b.clone();
 
+    // === Phase 2: ส่ง DropRejected เมื่อ swap conflict → ทุก client rollback optimistic state ===
+    let swap_subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    let swap_user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok().unwrap_or_default();
+    let swap_semester = _a_sem;
+    let swap_a_day = a_day.clone();
+    let swap_a_period = a_period;
+    let swap_a_room = a_room;
+    let swap_b_day = b_day.clone();
+    let swap_b_period = b_period;
+    let do_swap_reject = |reason: String| -> AppError {
+        state.websocket_manager.broadcast_ephemeral(
+            swap_subdomain.clone(),
+            swap_semester,
+            TimetableEvent::DropRejected {
+                user_id: swap_user_id,
+                entry_id: a_id,
+                original_day: swap_a_day.clone(),
+                original_period_id: swap_a_period,
+                original_room_id: swap_a_room,
+                partner_id: Some(b_id),
+                partner_original_day: Some(swap_b_day.clone()),
+                partner_original_period_id: Some(swap_b_period),
+                reason: reason.clone(),
+            },
+        );
+        AppError::BadRequest(reason)
+    };
+
     // Validate: each entry's classroom must be free at new position (excluding swap partner)
     let a_target_conflict: Option<(String,)> = sqlx::query_as(
         r#"SELECT cr.name FROM academic_timetable_entries te
@@ -2093,7 +2144,7 @@ pub async fn swap_timetable_entries(
     .unwrap_or(None);
 
     if let Some((name,)) = a_target_conflict {
-        return Err(AppError::BadRequest(format!(
+        return Err(do_swap_reject(format!(
             "ห้อง {} ไม่ว่างที่ตำแหน่งปลายทางของ entry A", name
         )));
     }
@@ -2115,7 +2166,7 @@ pub async fn swap_timetable_entries(
     .unwrap_or(None);
 
     if let Some((name,)) = b_target_conflict {
-        return Err(AppError::BadRequest(format!(
+        return Err(do_swap_reject(format!(
             "ห้อง {} ไม่ว่างที่ตำแหน่งปลายทางของ entry B", name
         )));
     }
@@ -2138,7 +2189,7 @@ pub async fn swap_timetable_entries(
         .await
         .unwrap_or(None);
         if let Some((code,)) = conflict {
-            return Err(AppError::BadRequest(format!(
+            return Err(do_swap_reject(format!(
                 "ห้อง {} ถูกใช้ที่ตำแหน่งปลายทางของ entry A", code
             )));
         }
@@ -2160,7 +2211,7 @@ pub async fn swap_timetable_entries(
         .await
         .unwrap_or(None);
         if let Some((code,)) = conflict {
-            return Err(AppError::BadRequest(format!(
+            return Err(do_swap_reject(format!(
                 "ห้อง {} ถูกใช้ที่ตำแหน่งปลายทางของ entry B", code
             )));
         }
@@ -2191,7 +2242,7 @@ pub async fn swap_timetable_entries(
     .unwrap_or(None);
 
     if let Some((name,)) = a_instr_conflict {
-        return Err(AppError::BadRequest(format!(
+        return Err(do_swap_reject(format!(
             "ครู {} จะติดคาบที่ตำแหน่งปลายทางของ entry A", name
         )));
     }
@@ -2220,7 +2271,7 @@ pub async fn swap_timetable_entries(
     .unwrap_or(None);
 
     if let Some((name,)) = b_instr_conflict {
-        return Err(AppError::BadRequest(format!(
+        return Err(do_swap_reject(format!(
             "ครู {} จะติดคาบที่ตำแหน่งปลายทางของ entry B", name
         )));
     }
