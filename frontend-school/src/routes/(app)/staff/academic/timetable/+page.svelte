@@ -2466,7 +2466,8 @@
 				if (scheduled < item.slot.periods_per_week) {
 					items.push({
 						...item.slot,
-						name: `${item.slot.name} — ${item.classroom_name}`,
+						// เก็บ name เดิม (ไม่ใส่ " — ห้อง") — สำหรับใช้เป็น title ของ entry ตอน drop
+						// sidebar UI จะใส่ห้องตาม _classroom_name แยก
 						scheduled_count: scheduled,
 						max_periods: item.slot.periods_per_week,
 						is_completed: false,
@@ -3587,6 +3588,12 @@
 										</Badge>
 									</div>
 									<h4 class="font-medium text-sm line-clamp-1 leading-tight">{activity.name}</h4>
+									{#if activity._classroom_name}
+										<div class="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+											<School class="w-3 h-3" />
+											{activity._classroom_name}
+										</div>
+									{/if}
 									<div class="text-[10px] text-emerald-600 mt-1">อิสระ — ลากวางได้</div>
 									<div class="mt-1.5 h-1 w-full bg-emerald-100 rounded-full overflow-hidden">
 										<div
