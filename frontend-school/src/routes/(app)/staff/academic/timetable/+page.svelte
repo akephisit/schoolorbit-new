@@ -1829,8 +1829,11 @@
 			handleDragEnd();
 			try {
 				await swapTimetableEntries(aId, bId);
+				// API success = confirm — clear pending ทันที (ไม่รอ WS เพราะ broadcast
+				// อาจ skip ถ้ามี subscriber คนเดียว). WS ยังมาถึงคนอื่น (idempotent)
+				clearPending(aId);
+				clearPending(bId);
 				toast.success('สลับคาบเรียบร้อย');
-				// EntriesSwapped WS will arrive → clearPending in patch handler
 			} catch (e: unknown) {
 				// Rollback locally; DropRejected broadcast (จาก server) จะมาแยก
 				applyEntryMutation(aId, {
@@ -1916,8 +1919,9 @@
 					const msgs = (result.conflicts ?? []).map((c) => c.message).filter(Boolean);
 					toast.error(msgs.length > 0 ? msgs.join(' · ') : 'แทนที่ไม่สำเร็จ');
 				} else {
+					// API success = confirm
+					clearPending(existingEntry.id);
 					toast.success('แทนที่รายการเดิมแล้ว');
-					// EntryUpdated WS will arrive → clearPending in patch handler
 				}
 			} catch (e: unknown) {
 				if (snapshot) applyEntryMutation(existingEntry.id, snapshot);
@@ -2094,7 +2098,7 @@
 						const msgs = (res.conflicts ?? []).map((c) => c.message).filter(Boolean);
 						toast.error(msgs.length > 0 ? msgs.join(' · ') : 'ลงตารางไม่สำเร็จ');
 					} else {
-						// Swap temp → real (id เปลี่ยน, joined fields เก็บที่คำนวณไว้)
+						// API success = confirm. Swap temp → real (id เปลี่ยน, joined fields เก็บที่คำนวณไว้)
 						const realId = res?.data?.id;
 						if (realId) {
 							const swap = (e: TimetableEntry) =>
@@ -2104,9 +2108,8 @@
 							removeOccupancy(tempId);
 							const finalEntry = timetableEntries.find((e) => e.id === realId);
 							if (finalEntry) upsertOccupancy(finalEntry);
-							clearPending(tempId);
-							markPending(realId); // รอ EntryCreated WS จาก backend (มาพร้อม joined ครบ) → clearPending
 						}
+						clearPending(tempId);
 						toast.success(`ลงตาราง ${courseCode} สำเร็จ`);
 					}
 				} catch (e: unknown) {
@@ -2164,8 +2167,9 @@
 						const msgs = (res.conflicts ?? []).map((c) => c.message).filter(Boolean);
 						toast.error(msgs.length > 0 ? msgs.join(' · ') : 'ย้ายไม่สำเร็จ');
 					} else {
+						// API success = confirm
+						clearPending(entryId);
 						toast.success(`ย้าย ${courseName} สำเร็จ`);
-						// EntryUpdated WS will arrive → clearPending in patch handler
 					}
 				} catch (e: unknown) {
 					if (original) {
