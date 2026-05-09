@@ -2065,7 +2065,9 @@
 				const tempId = `temp-${crypto.randomUUID()}`;
 				let payload: CreateTimetableEntryRequest;
 				let entryType: 'COURSE' | 'ACTIVITY' = 'COURSE';
-				let dropClassroomId = selectedClassroomId;
+				// COURSE: ใช้ classroom ของ course (ใน INSTRUCTOR view ที่ selectedClassroomId ว่าง)
+				// ACTIVITY: ใช้ _classroom_id จาก sidebar item (override ด้านล่าง)
+				let dropClassroomId = ac.classroom_id || selectedClassroomId;
 
 				if (ac._isActivity) {
 					entryType = 'ACTIVITY';
