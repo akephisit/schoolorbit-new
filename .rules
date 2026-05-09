@@ -41,6 +41,13 @@ If adding "User Profile Edit" feature:
 * **No Fluff:** Do not write comments that just summarize the code. [cite_start]Only explain "why" complex logic exists[cite: 2, 3].
 * **Modularization:** Prefer implementing functionality in existing files unless it is a new logical component. [cite_start]Avoid creating many tiny files[cite: 4].
 * [cite_start]**Naming:** Use full words for variable names (e.g., `queue` instead of `q`)[cite: 11].
+* **Fix Root Causes, Not Symptoms:** When fixing bugs, errors, or test failures:
+  * **Identify the actual cause** before writing any fix — read related code, trace the flow, understand WHY it fails
+  * **Do not patch around errors** to silence them (e.g., suppressing type errors with `as any`, swallowing exceptions, adding `if` guards that hide real problems)
+  * **Do not bypass safety checks** (e.g., `--no-verify`, disabling lint, skipping tests) just to make builds pass
+  * If a fix feels like "making the error go away", stop and investigate the root cause first
+  * **Acceptable patches:** working around external library bugs, temporary workarounds with clear `TODO` linking the real issue, time-critical hotfixes that explicitly state "patch only — root cause: X"
+  * **When uncertain whether a fix is at the root cause level:** explain the reasoning to the user before applying — let them decide if a deeper fix is needed
 
 ## 2. Backend: Rust (Axum)
 * **Error Handling (Strict):**
