@@ -4318,9 +4318,19 @@
 							draggedCourse?.title}</span
 					>
 					<span class="text-xs text-muted-foreground flex items-center gap-2">
+						{@const dropClassroomId =
+							draggedCourse?._classroom_id || selectedClassroomId}
+						{@const activityInstr =
+							draggedCourse?._isActivity && draggedCourse?.activity_slot_id
+								? activityInstructorMap.get(
+										`${draggedCourse.activity_slot_id}|${dropClassroomId}`
+									)
+								: null}
+						{@const displayInstrName =
+							activityInstr?.name || draggedCourse?.instructor_name || '-'}
 						{#if viewMode === 'CLASSROOM'}
 							<span class="flex items-center gap-1"
-								><Users class="w-3 h-3" /> {draggedCourse?.instructor_name || '-'}</span
+								><Users class="w-3 h-3" /> {displayInstrName}</span
 							>
 							<span class="flex items-center gap-1"
 								><School class="w-3 h-3" />
@@ -4330,6 +4340,11 @@
 							<span class="flex items-center gap-1"
 								><School class="w-3 h-3" /> {draggedCourse?.classroom_name || '-'}</span
 							>
+							{#if activityInstr}
+								<span class="flex items-center gap-1"
+									><Users class="w-3 h-3" /> {activityInstr.name}</span
+								>
+							{/if}
 						{/if}
 					</span>
 				</div>
