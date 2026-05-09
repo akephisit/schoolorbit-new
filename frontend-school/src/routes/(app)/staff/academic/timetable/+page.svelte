@@ -960,12 +960,12 @@
 		entryPopoverLoading = true;
 		try {
 			const tasks: Promise<unknown>[] = [listCourseInstructors(entry.classroom_course_id)];
-			// โหลด busy rooms เฉพาะกรณีที่จะแสดง section "เปลี่ยนห้อง" (INSTRUCTOR view + ไม่ใช่ ghost)
+			// โหลด busy rooms ถ้าจะแสดง section "เปลี่ยนห้อง" (ทุก view ยกเว้น ghost ใน INSTRUCTOR)
 			const isGhostForThisEntry =
 				viewMode === 'INSTRUCTOR' &&
 				selectedInstructorId !== '' &&
 				!(entry.instructor_ids ?? []).includes(selectedInstructorId);
-			if (viewMode === 'INSTRUCTOR' && !isGhostForThisEntry) {
+			if (!isGhostForThisEntry) {
 				tasks.push(loadUnavailableRoomsForEntry(entry));
 			}
 			const [teamRes] = (await Promise.all(tasks)) as [
@@ -4242,9 +4242,8 @@
 					{/if}
 				</div>
 
-				<!-- ห้องเรียน — ครูร่วมที่ใช้ห้องต่างจากครูหลัก: เปลี่ยนเฉพาะคาบนี้ได้
-			      เฉพาะมุมมองครู (CLASSROOM view ไม่ใช่ use case) + ไม่ใช่ ghost (ไม่ใช่ entry ของเรา) -->
-				{#if viewMode === 'INSTRUCTOR' && !entryPopoverIsGhost}
+				<!-- ห้องเรียน — เปลี่ยนเฉพาะคาบนี้ได้ (ทุก view; INSTRUCTOR ghost = ไม่ใช่ entry ของเรา → ซ่อน) -->
+				{#if !entryPopoverIsGhost}
 				<div class="space-y-2 border-t pt-3">
 					<div class="text-sm font-medium">ห้องเรียน</div>
 					<Popover.Root bind:open={entryPopoverRoomPickerOpen}>
