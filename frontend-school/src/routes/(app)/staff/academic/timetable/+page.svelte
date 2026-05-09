@@ -420,6 +420,28 @@
 				sidebarActivitySlots = res.data.filter((slot) =>
 					(slot.classroom_ids ?? []).includes(selectedClassroomId)
 				);
+				// Pre-fetch instructor assignment ของ independent slot สำหรับห้องนี้
+				// → buildTempEntry แสดงชื่อครูตอน CREATE optimistic
+				const independentSlots = sidebarActivitySlots.filter(
+					(s) => s.scheduling_mode === 'independent'
+				);
+				const newMap = new Map<string, { id: string; name: string }>();
+				await Promise.all(
+					independentSlots.map(async (slot) => {
+						try {
+							const assignRes = await listSlotClassroomAssignments(slot.id);
+							for (const a of assignRes.data ?? []) {
+								newMap.set(`${slot.id}|${a.classroom_id}`, {
+									id: a.instructor_id,
+									name: a.instructor_name ?? ''
+								});
+							}
+						} catch {
+							/* skip slot on error */
+						}
+					})
+				);
+				activityInstructorMap = newMap;
 			} catch (e) {
 				console.error('Failed to load activity slots for sidebar', e);
 			}
@@ -603,15 +625,25 @@
 			? sidebarActivitySlots.find((s) => s.id === args.activitySlotId)
 			: null;
 		// instructor lookup — Phase 2 Fix 3: ใช้ทีมเต็มจาก courseTeamsMap ถ้ามี, fallback primary
+		// สำหรับ activity (independent): ใช้ activityInstructorMap[slot|classroom]
 		let instructorIds: string[] = [];
 		let instructorNames: string[] = [];
-		const team = args.classroomCourseId ? courseTeamsMap.get(args.classroomCourseId) : undefined;
-		if (team && team.length > 0) {
-			instructorIds = team.map((m) => m.instructor_id);
-			instructorNames = team.map((m) => m.instructor_name ?? '');
-		} else if (courseInfo?.primary_instructor_id) {
-			instructorIds = [courseInfo.primary_instructor_id];
-			instructorNames = courseInfo.instructor_name ? [courseInfo.instructor_name] : [];
+		if (args.activitySlotId && args.classroomId) {
+			const actInstr = activityInstructorMap.get(`${args.activitySlotId}|${args.classroomId}`);
+			if (actInstr) {
+				instructorIds = [actInstr.id];
+				instructorNames = [actInstr.name];
+			}
+		}
+		if (instructorIds.length === 0 && args.classroomCourseId) {
+			const team = courseTeamsMap.get(args.classroomCourseId);
+			if (team && team.length > 0) {
+				instructorIds = team.map((m) => m.instructor_id);
+				instructorNames = team.map((m) => m.instructor_name ?? '');
+			} else if (courseInfo?.primary_instructor_id) {
+				instructorIds = [courseInfo.primary_instructor_id];
+				instructorNames = courseInfo.instructor_name ? [courseInfo.instructor_name] : [];
+			}
 		}
 		return {
 			id: args.tempId,
@@ -1367,6 +1399,10 @@
 	// Phase 2 Fix 3: pre-fetched course teams (full instructor list per course)
 	// → buildTempEntry render ครูครบทีมตอน CREATE optimistic (ไม่ใช่แค่ primary)
 	let courseTeamsMap = $state<Map<string, CourseInstructor[]>>(new Map());
+
+	// Pre-fetched independent activity instructor per (slot, classroom) — สำหรับ CREATE optimistic
+	// key: `${slotId}|${classroomId}` → { id, name }
+	let activityInstructorMap = $state<Map<string, { id: string; name: string }>>(new Map());
 
 	// Phase 2: entry IDs ที่อยู่ในสถานะ pending (รอ DB confirm) — UI แสดง spinner
 	let pendingEntryIds = $state<SvelteSet<string>>(new SvelteSet());
