@@ -3900,26 +3900,26 @@
 												</div>
 											{/if}
 
-											<!-- Delete Button (ghost cells + remote-locked ไม่แสดง — ไม่ใช่คาบที่แก้ได้) -->
+											<!-- มุมขวาบน: pending spinner (กันลบระหว่างบันทึก) | delete button (hover) -->
 											{#if !isGhost && !isRemoteLocked}
-												<button
-													class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
-													onclick={(e) => {
-														e.stopPropagation();
-														handleDeleteEntry(entry);
-													}}
-												>
-													<Trash2 class="w-3 h-3" />
-												</button>
-											{/if}
-											<!-- Phase 2: pending spinner — drop ยังไม่ confirm จาก DB -->
-											{#if pendingEntryIds.has(entry.id)}
-												<div
-													class="absolute top-0.5 left-0.5 z-30 p-0.5 rounded bg-amber-50/80"
-													title="กำลังบันทึก..."
-												>
-													<Loader2 class="w-3 h-3 animate-spin text-amber-600" />
-												</div>
+												{#if pendingEntryIds.has(entry.id)}
+													<div
+														class="absolute top-0.5 right-0.5 z-30 p-0.5 rounded bg-amber-50/90"
+														title="กำลังบันทึก..."
+													>
+														<Loader2 class="w-3 h-3 animate-spin text-amber-600" />
+													</div>
+												{:else}
+													<button
+														class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
+														onclick={(e) => {
+															e.stopPropagation();
+															handleDeleteEntry(entry);
+														}}
+													>
+														<Trash2 class="w-3 h-3" />
+													</button>
+												{/if}
 											{/if}
 										</div>
 									{:else if isOccupied}
