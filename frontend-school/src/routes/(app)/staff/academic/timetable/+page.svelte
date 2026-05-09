@@ -629,8 +629,11 @@
 		const courseInfo = args.classroomCourseId
 			? courses.find((c) => c.id === args.classroomCourseId)
 			: null;
+		// INSTRUCTOR view: independent slots อยู่ใน instructorActivityItems ไม่ใช่ sidebarActivitySlots
 		const activitySlot = args.activitySlotId
-			? sidebarActivitySlots.find((s) => s.id === args.activitySlotId)
+			? sidebarActivitySlots.find((s) => s.id === args.activitySlotId) ??
+				instructorActivityItems.find((i) => i.slot.id === args.activitySlotId)?.slot ??
+				null
 			: null;
 		// instructor lookup — Phase 2 Fix 3: ใช้ทีมเต็มจาก courseTeamsMap ถ้ามี, fallback primary
 		// สำหรับ activity (independent): ใช้ activityInstructorMap[slot|classroom]
