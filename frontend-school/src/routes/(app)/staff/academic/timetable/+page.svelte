@@ -2065,6 +2065,13 @@
 					entryType
 				});
 				timetableEntries = [...timetableEntries, tempEntry];
+				// INSTRUCTOR view: $effect ที่ derive timetableEntries จาก rawTeamEntries → tempEntry ต้องอยู่ทั้ง 2 อาร์เรย์
+				if (
+					viewMode === 'INSTRUCTOR' &&
+					(tempEntry.instructor_ids ?? []).includes(selectedInstructorId)
+				) {
+					rawTeamEntries = [...rawTeamEntries, tempEntry];
+				}
 				upsertOccupancy(tempEntry);
 				markPending(tempId);
 
@@ -3014,6 +3021,10 @@
 					(tempEntry.instructor_ids ?? []).includes(selectedInstructorId);
 				if (relevantClassroom || relevantInstructor) {
 					timetableEntries = [...timetableEntries, tempEntry];
+				}
+				// INSTRUCTOR view: $effect derive จาก rawTeamEntries → ต้อง push ที่นี่ด้วย
+				if (viewMode === 'INSTRUCTOR' && relevantInstructor) {
+					rawTeamEntries = [...rawTeamEntries, tempEntry];
 				}
 				markPending(patch.temp_id);
 				break;
