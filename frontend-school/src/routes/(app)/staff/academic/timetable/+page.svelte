@@ -28,6 +28,7 @@
 		listClassrooms,
 		listClassroomCourses,
 		listCourseInstructors,
+		batchListCourseInstructors,
 		type CourseInstructor,
 		getSchoolDays,
 		type Classroom,
@@ -348,9 +349,28 @@
 				});
 			}
 			courses = res.data;
+			// Phase 2 Fix 3: batch-fetch teams ทุก course → cache สำหรับ buildTempEntry
+			void loadCourseTeams(courses.map((c) => c.id));
 		} catch (e) {
 			console.error(e);
 			toast.error('โหลดรายวิชาไม่สำเร็จ');
+		}
+	}
+
+	async function loadCourseTeams(courseIds: string[]) {
+		if (courseIds.length === 0) {
+			courseTeamsMap = new Map();
+			return;
+		}
+		try {
+			const res = await batchListCourseInstructors(courseIds);
+			const map = new Map<string, CourseInstructor[]>();
+			for (const [cid, team] of Object.entries(res.data ?? {})) {
+				map.set(cid, team);
+			}
+			courseTeamsMap = map;
+		} catch {
+			// ถ้า fetch ไม่สำเร็จ → buildTempEntry fallback กลับไปใช้ primary instructor (เหมือนเดิม)
 		}
 	}
 
@@ -582,11 +602,17 @@
 		const activitySlot = args.activitySlotId
 			? sidebarActivitySlots.find((s) => s.id === args.activitySlotId)
 			: null;
-		// instructor lookup จากที่มี — primary instructor ของ course (อาจเป็น 1 คน, ทีมเต็มจะมาตอน WS)
-		const primaryInstructorId = courseInfo?.primary_instructor_id;
-		const primaryInstructorName = courseInfo?.instructor_name;
-		const instructorIds = primaryInstructorId ? [primaryInstructorId] : [];
-		const instructorNames = primaryInstructorName ? [primaryInstructorName] : [];
+		// instructor lookup — Phase 2 Fix 3: ใช้ทีมเต็มจาก courseTeamsMap ถ้ามี, fallback primary
+		let instructorIds: string[] = [];
+		let instructorNames: string[] = [];
+		const team = args.classroomCourseId ? courseTeamsMap.get(args.classroomCourseId) : undefined;
+		if (team && team.length > 0) {
+			instructorIds = team.map((m) => m.instructor_id);
+			instructorNames = team.map((m) => m.instructor_name ?? '');
+		} else if (courseInfo?.primary_instructor_id) {
+			instructorIds = [courseInfo.primary_instructor_id];
+			instructorNames = courseInfo.instructor_name ? [courseInfo.instructor_name] : [];
+		}
 		return {
 			id: args.tempId,
 			classroom_course_id: args.classroomCourseId,
@@ -637,6 +663,16 @@
 			};
 		} else if (args.newCourseId) {
 			const course = courses.find((c) => c.id === args.newCourseId);
+			const team = courseTeamsMap.get(args.newCourseId);
+			let instructorIds: string[] = [];
+			let instructorNames: string[] = [];
+			if (team && team.length > 0) {
+				instructorIds = team.map((m) => m.instructor_id);
+				instructorNames = team.map((m) => m.instructor_name ?? '');
+			} else if (course?.primary_instructor_id) {
+				instructorIds = [course.primary_instructor_id];
+				instructorNames = course.instructor_name ? [course.instructor_name] : [];
+			}
 			return {
 				classroom_course_id: args.newCourseId,
 				activity_slot_id: undefined,
@@ -647,8 +683,8 @@
 				title: undefined,
 				activity_scheduling_mode: undefined,
 				classroom_id: args.newClassroomId ?? course?.classroom_id,
-				instructor_ids: course?.primary_instructor_id ? [course.primary_instructor_id] : [],
-				instructor_names: course?.instructor_name ? [course.instructor_name] : []
+				instructor_ids: instructorIds,
+				instructor_names: instructorNames
 			};
 		}
 		return {};
@@ -656,11 +692,48 @@
 
 	function markPending(entryId: string) {
 		pendingEntryIds.add(entryId);
+		// Set/refresh timeout — auto rollback ถ้าครบ 15s ยังไม่ confirm
+		const existing = pendingTimeouts.get(entryId);
+		if (existing) clearTimeout(existing);
+		const t = setTimeout(() => {
+			if (pendingEntryIds.has(entryId)) {
+				autoRollbackPending(entryId);
+			}
+		}, PENDING_TIMEOUT_MS);
+		pendingTimeouts.set(entryId, t);
 	}
 
 	function clearPending(entryId: string) {
 		pendingEntryIds.delete(entryId);
 		optimisticSnapshots.delete(entryId);
+		const t = pendingTimeouts.get(entryId);
+		if (t) {
+			clearTimeout(t);
+			pendingTimeouts.delete(entryId);
+		}
+	}
+
+	/** หมดเวลา pending — ถ้า tempEntry ลบทิ้ง, ถ้า real entry restore จาก snapshot */
+	function autoRollbackPending(entryId: string) {
+		const isTemp = entryId.startsWith('temp-');
+		if (isTemp) {
+			// CREATE temp entry ค้าง → ลบทิ้ง
+			timetableEntries = timetableEntries.filter((e) => e.id !== entryId);
+			rawTeamEntries = rawTeamEntries.filter((e) => e.id !== entryId);
+			removeOccupancy(entryId);
+		} else {
+			// MOVE/SWAP/REPLACE ค้าง → restore จาก snapshot ถ้ามี
+			const snap = optimisticSnapshots.get(entryId);
+			if (snap) {
+				applyEntryMutation(entryId, {
+					day_of_week: snap.day_of_week as TimetableEntry['day_of_week'],
+					period_id: snap.period_id,
+					room_id: snap.room_id ?? undefined
+				});
+			}
+		}
+		clearPending(entryId);
+		toast.error('การบันทึกไม่ตอบกลับ — ลองอีกครั้ง');
 	}
 
 	function snapshotPosition(entryId: string) {
@@ -1291,6 +1364,10 @@
 	// โหลดครั้งเดียวต่อ semester + sync ตาม WS events → drag validity คำนวณใน JS (0ms lag)
 	let occupancyEntries = $state<OccupancyEntry[]>([]);
 
+	// Phase 2 Fix 3: pre-fetched course teams (full instructor list per course)
+	// → buildTempEntry render ครูครบทีมตอน CREATE optimistic (ไม่ใช่แค่ primary)
+	let courseTeamsMap = $state<Map<string, CourseInstructor[]>>(new Map());
+
 	// Phase 2: entry IDs ที่อยู่ในสถานะ pending (รอ DB confirm) — UI แสดง spinner
 	let pendingEntryIds = $state<SvelteSet<string>>(new SvelteSet());
 
@@ -1300,6 +1377,11 @@
 		string,
 		{ day_of_week: string; period_id: string; room_id: string | null }
 	>();
+
+	// Phase 2 Fix 1: timeout per pending entry — ถ้าครบ 15s ยังไม่ confirm → auto rollback
+	// ป้องกัน UI ค้างถาวรเมื่อ server crash หรือ WS drop ระหว่าง pending
+	let pendingTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+	const PENDING_TIMEOUT_MS = 15000;
 
 	function getSlotKey(day: string, periodId: string) {
 		return `${day}_${periodId}`;
@@ -1652,6 +1734,18 @@
 		// Block: ห้ามวาง/สลับทับ entry ที่สร้างจาก batch (TEXT/SLOT-sync — pinned)
 		if (existingEntry?.batch_id) {
 			toast.error('คาบนี้สร้างจาก Batch — ย้าย/สลับไม่ได้ (ลบแล้ว batch ใหม่แทน)');
+			handleDragEnd();
+			return;
+		}
+
+		// Phase 2 Fix 2: block drop ทับ entry ที่ยัง pending (กัน phantom race)
+		if (existingEntry && pendingEntryIds.has(existingEntry.id)) {
+			toast.error('คาบนี้กำลังบันทึก — รอสักครู่แล้วลองใหม่');
+			handleDragEnd();
+			return;
+		}
+		if (existingEntry && existingEntry.id.startsWith('temp-')) {
+			toast.error('คาบนี้ยังไม่ confirm — รอสักครู่');
 			handleDragEnd();
 			return;
 		}
@@ -3689,6 +3783,8 @@
 											draggable={!lockedBy &&
 												!isRemoteLocked &&
 												!isGhost &&
+												!pendingEntryIds.has(entry.id) &&
+												!entry.id.startsWith('temp-') &&
 												(entry.entry_type === 'COURSE' ||
 													(entry.entry_type === 'ACTIVITY' &&
 														entry.activity_scheduling_mode === 'independent' &&
