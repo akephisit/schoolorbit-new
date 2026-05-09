@@ -466,12 +466,19 @@
 				}
 
 				// Independent: slots where instructor is assigned to classrooms
+				// + populate activityInstructorMap (ใช้ทุก assignment ไม่ filter ครู)
+				// → buildTempEntry แสดงครูถูกตอน drop ใน INSTRUCTOR view
 				const indepSlots = allSlots.filter((s) => s.scheduling_mode === 'independent');
 				const items: typeof instructorActivityItems = [];
+				const newInstrMap = new Map<string, { id: string; name: string }>();
 				for (const slot of indepSlots) {
 					try {
 						const assignRes = await listSlotClassroomAssignments(slot.id);
 						for (const a of assignRes.data ?? []) {
+							newInstrMap.set(`${slot.id}|${a.classroom_id}`, {
+								id: a.instructor_id,
+								name: a.instructor_name ?? ''
+							});
 							if (a.instructor_id === selectedInstructorId) {
 								items.push({
 									slot,
@@ -487,6 +494,7 @@
 
 				sidebarActivitySlots = relevantSyncSlots;
 				instructorActivityItems = items;
+				activityInstructorMap = newInstrMap;
 			} catch (e) {
 				console.error('Failed to load activity slots for sidebar', e);
 			}
