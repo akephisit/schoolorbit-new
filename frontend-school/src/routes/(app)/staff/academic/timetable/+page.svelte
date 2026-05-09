@@ -2005,6 +2005,16 @@
 
 	let unavailableRooms = $state<Set<string>>(new Set());
 
+	// Activity dialog: lookup ครูจาก activityInstructorMap (ตอน drop independent activity)
+	let draggedActivityInstructor = $derived.by(() => {
+		if (!draggedCourse?._isActivity || !draggedCourse?.activity_slot_id) return null;
+		const dropClassroomId = draggedCourse?._classroom_id || selectedClassroomId;
+		if (!dropClassroomId) return null;
+		return (
+			activityInstructorMap.get(`${draggedCourse.activity_slot_id}|${dropClassroomId}`) ?? null
+		);
+	});
+
 	async function updateUnavailableRooms(day: string, periodId: string) {
 		unavailableRooms = new Set();
 		try {
@@ -2203,7 +2213,7 @@
 							applyEntryMutation(entryId, {
 								day_of_week: original.day_of_week as TimetableEntry['day_of_week'],
 								period_id: original.period_id,
-								room_id: original.room_id
+								room_id: original.room_id ?? undefined
 							});
 						}
 						clearPending(entryId);
@@ -2219,7 +2229,7 @@
 						applyEntryMutation(entryId, {
 							day_of_week: original.day_of_week as TimetableEntry['day_of_week'],
 							period_id: original.period_id,
-							room_id: original.room_id
+							room_id: original.room_id ?? undefined
 						});
 					}
 					clearPending(entryId);
@@ -3084,7 +3094,7 @@
 					applyEntryMutation(patch.entry_id, {
 						day_of_week: snap.day_of_week as TimetableEntry['day_of_week'],
 						period_id: snap.period_id,
-						room_id: snap.room_id
+						room_id: snap.room_id ?? undefined
 					});
 				} else if (patch.original_day && patch.original_period_id) {
 					// fallback: ใช้ original จาก server (ถ้าไม่มี local snapshot)
@@ -3101,7 +3111,7 @@
 						applyEntryMutation(patch.partner_id, {
 							day_of_week: psnap.day_of_week as TimetableEntry['day_of_week'],
 							period_id: psnap.period_id,
-							room_id: psnap.room_id
+							room_id: psnap.room_id ?? undefined
 						});
 					} else if (patch.partner_original_day && patch.partner_original_period_id) {
 						applyEntryMutation(patch.partner_id, {
@@ -4318,19 +4328,12 @@
 							draggedCourse?.title}</span
 					>
 					<span class="text-xs text-muted-foreground flex items-center gap-2">
-						{@const dropClassroomId =
-							draggedCourse?._classroom_id || selectedClassroomId}
-						{@const activityInstr =
-							draggedCourse?._isActivity && draggedCourse?.activity_slot_id
-								? activityInstructorMap.get(
-										`${draggedCourse.activity_slot_id}|${dropClassroomId}`
-									)
-								: null}
-						{@const displayInstrName =
-							activityInstr?.name || draggedCourse?.instructor_name || '-'}
 						{#if viewMode === 'CLASSROOM'}
 							<span class="flex items-center gap-1"
-								><Users class="w-3 h-3" /> {displayInstrName}</span
+								><Users class="w-3 h-3" />
+								{draggedActivityInstructor?.name ||
+									draggedCourse?.instructor_name ||
+									'-'}</span
 							>
 							<span class="flex items-center gap-1"
 								><School class="w-3 h-3" />
@@ -4340,9 +4343,9 @@
 							<span class="flex items-center gap-1"
 								><School class="w-3 h-3" /> {draggedCourse?.classroom_name || '-'}</span
 							>
-							{#if activityInstr}
+							{#if draggedActivityInstructor}
 								<span class="flex items-center gap-1"
-									><Users class="w-3 h-3" /> {activityInstr.name}</span
+									><Users class="w-3 h-3" /> {draggedActivityInstructor.name}</span
 								>
 							{/if}
 						{/if}
