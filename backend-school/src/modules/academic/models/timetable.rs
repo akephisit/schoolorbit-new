@@ -156,6 +156,10 @@ pub struct CreateTimetableEntryRequest {
     pub title: Option<String>,
     pub classroom_id: Option<Uuid>,
     pub academic_semester_id: Option<Uuid>,
+    /// Phase 2: client-generated temp UUID — backend echo ใน EntryCreated broadcast
+    /// เพื่อให้ทุก client correlate temp → real entry และ swap UI
+    #[serde(default)]
+    pub client_temp_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

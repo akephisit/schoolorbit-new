@@ -88,6 +88,7 @@
 		disconnectTimetableSocket,
 		sendTimetableEvent,
 		sendDropIntent,
+		sendEntryIntent,
 		activeUsers,
 		remoteCursors,
 		dragPositions,
@@ -555,6 +556,102 @@
 
 	function removeOccupancy(entryId: string) {
 		occupancyEntries = occupancyEntries.filter((e) => e.id !== entryId);
+	}
+
+	/** Build optimistic TimetableEntry จาก local state lookups — สำหรับ NEW drop (CREATE).
+	 *  Joined fields ที่ frontend คำนวณเองได้: subject_code/name, classroom_name, room_code,
+	 *  period_name, start/end_time, instructor_id/name (primary). 100ms ภายหลัง backend จะ broadcast
+	 *  EntryCreated มาทับด้วยข้อมูลครบ (รวมทีมครูทุกคน). */
+	function buildTempEntry(args: {
+		tempId: string;
+		classroomId: string;
+		classroomCourseId?: string;
+		activitySlotId?: string;
+		day: TimetableEntry['day_of_week'];
+		periodId: string;
+		roomId?: string;
+		title?: string;
+		entryType: 'COURSE' | 'ACTIVITY';
+	}): TimetableEntry {
+		const room = args.roomId ? rooms.find((r) => r.id === args.roomId) : null;
+		const classroom = classrooms.find((c) => c.id === args.classroomId);
+		const period = periods.find((p) => p.id === args.periodId);
+		const courseInfo = args.classroomCourseId
+			? courses.find((c) => c.id === args.classroomCourseId)
+			: null;
+		const activitySlot = args.activitySlotId
+			? sidebarActivitySlots.find((s) => s.id === args.activitySlotId)
+			: null;
+		// instructor lookup จากที่มี — primary instructor ของ course (อาจเป็น 1 คน, ทีมเต็มจะมาตอน WS)
+		const primaryInstructorId = courseInfo?.primary_instructor_id;
+		const primaryInstructorName = courseInfo?.instructor_name;
+		const instructorIds = primaryInstructorId ? [primaryInstructorId] : [];
+		const instructorNames = primaryInstructorName ? [primaryInstructorName] : [];
+		return {
+			id: args.tempId,
+			classroom_course_id: args.classroomCourseId,
+			activity_slot_id: args.activitySlotId,
+			classroom_id: args.classroomId,
+			academic_semester_id: selectedSemesterId,
+			day_of_week: args.day,
+			period_id: args.periodId,
+			room_id: args.roomId,
+			entry_type: args.entryType,
+			title: args.title ?? activitySlot?.name,
+			is_active: true,
+			subject_code: courseInfo?.subject_code,
+			subject_name_th: courseInfo?.subject_name_th,
+			subject_name_en: courseInfo?.subject_name_en,
+			instructor_ids: instructorIds,
+			instructor_names: instructorNames,
+			classroom_name: classroom?.name,
+			room_code: room?.code,
+			period_name: period?.name ?? undefined,
+			start_time: period?.start_time,
+			end_time: period?.end_time,
+			activity_scheduling_mode: activitySlot?.scheduling_mode
+		};
+	}
+
+	/** Compute replacement content fields for REPLACE optimistic — เปลี่ยน entry's content
+	 *  ไปเป็น course/activity ใหม่ โดย lookup joined fields จาก local state */
+	function computeReplacementFields(args: {
+		newCourseId?: string;
+		newActivitySlotId?: string;
+		newClassroomId?: string;
+		newTitle?: string;
+	}): Partial<TimetableEntry> {
+		if (args.newActivitySlotId) {
+			const slot = sidebarActivitySlots.find((s) => s.id === args.newActivitySlotId);
+			return {
+				classroom_course_id: undefined,
+				activity_slot_id: args.newActivitySlotId,
+				entry_type: 'ACTIVITY',
+				subject_code: undefined,
+				subject_name_th: undefined,
+				subject_name_en: undefined,
+				title: args.newTitle ?? slot?.name,
+				activity_scheduling_mode: slot?.scheduling_mode,
+				instructor_ids: [],
+				instructor_names: []
+			};
+		} else if (args.newCourseId) {
+			const course = courses.find((c) => c.id === args.newCourseId);
+			return {
+				classroom_course_id: args.newCourseId,
+				activity_slot_id: undefined,
+				entry_type: 'COURSE',
+				subject_code: course?.subject_code,
+				subject_name_th: course?.subject_name_th,
+				subject_name_en: course?.subject_name_en,
+				title: undefined,
+				activity_scheduling_mode: undefined,
+				classroom_id: args.newClassroomId ?? course?.classroom_id,
+				instructor_ids: course?.primary_instructor_id ? [course.primary_instructor_id] : [],
+				instructor_names: course?.instructor_name ? [course.instructor_name] : []
+			};
+		}
+		return {};
 	}
 
 	function markPending(entryId: string) {
@@ -1657,47 +1754,84 @@
 			return;
 		}
 
-		// Case B: NEW drag (from sidebar) onto occupied → REPLACE
+		// Case B: NEW drag (from sidebar) onto occupied → REPLACE (optimistic + WS intent)
 		if (existingEntry && dragType === 'NEW') {
-			try {
-				submitting = true;
-				const payload: UpdateTimetableEntryRequest = {};
-				const dc = draggedCourse;
-				if (!dc) return;
-				if (dc._isActivity) {
-					payload.activity_slot_id = dc.activity_slot_id;
-					payload.classroom_course_id = null;
-				} else {
-					payload.classroom_course_id = dc.id;
-					payload.activity_slot_id = null;
-					// ถ้า replace ข้ามห้อง (instructor view) → update classroom_id ให้ตรง course ใหม่
-					if (dc.classroom_id && dc.classroom_id !== existingEntry.classroom_id) {
-						payload.classroom_id = dc.classroom_id;
-					}
+			const dc = draggedCourse;
+			if (!dc) {
+				handleDragEnd();
+				return;
+			}
+			const payload: UpdateTimetableEntryRequest = {};
+			let newClassroomId: string | undefined;
+			if (dc._isActivity) {
+				payload.activity_slot_id = dc.activity_slot_id;
+				payload.classroom_course_id = null;
+			} else {
+				payload.classroom_course_id = dc.id;
+				payload.activity_slot_id = null;
+				if (dc.classroom_id && dc.classroom_id !== existingEntry.classroom_id) {
+					payload.classroom_id = dc.classroom_id;
+					newClassroomId = dc.classroom_id;
 				}
+			}
+
+			// Compute new content + apply optimistic
+			const newFields = computeReplacementFields({
+				newCourseId: dc._isActivity ? undefined : dc.id,
+				newActivitySlotId: dc._isActivity ? dc.activity_slot_id : undefined,
+				newClassroomId,
+				newTitle: dc._isActivity ? dc.title_th : undefined
+			});
+			const snapshot = applyEntryMutation(existingEntry.id, newFields);
+			// Mirror occupancy ครบ (instructor_ids เปลี่ยน → ต้อง upsert)
+			const updatedEntry = timetableEntries.find((e) => e.id === existingEntry.id)
+				?? rawTeamEntries.find((e) => e.id === existingEntry.id);
+			if (updatedEntry) upsertOccupancy(updatedEntry);
+			if (snapshot) optimisticSnapshots.set(existingEntry.id, {
+				day_of_week: existingEntry.day_of_week,
+				period_id: existingEntry.period_id,
+				room_id: existingEntry.room_id ?? null
+			});
+			markPending(existingEntry.id);
+
+			// Broadcast intent → คนอื่น lookup local courses → overwrite
+			sendDropIntent({
+				kind: 'replace',
+				entry_id: existingEntry.id,
+				day_of_week: existingEntry.day_of_week,
+				period_id: existingEntry.period_id,
+				room_id: existingEntry.room_id ?? null,
+				new_classroom_course_id: dc._isActivity ? null : dc.id,
+				new_activity_slot_id: dc._isActivity ? dc.activity_slot_id : null,
+				new_classroom_id: newClassroomId ?? null
+			});
+
+			handleDragEnd();
+			try {
 				const result = (await updateTimetableEntry(existingEntry.id, payload)) as {
 					success?: boolean;
 					conflicts?: ConflictInfo[];
 				};
 				if (result?.success === false) {
-					// Backend rejected — รวบข้อความ conflict ทุกอันเป็นไทยเดียว
-					// ไม่ใช้ result.message ("Conflict detected") เพราะไม่สื่อ
-					const msgs: string[] = (result.conflicts ?? [])
-						.map((c: ConflictInfo) => c.message)
-						.filter(Boolean);
+					// Rollback content
+					if (snapshot) applyEntryMutation(existingEntry.id, snapshot);
+					const restored = timetableEntries.find((e) => e.id === existingEntry.id)
+						?? rawTeamEntries.find((e) => e.id === existingEntry.id);
+					if (restored) upsertOccupancy(restored);
+					clearPending(existingEntry.id);
+					const msgs = (result.conflicts ?? []).map((c) => c.message).filter(Boolean);
 					toast.error(msgs.length > 0 ? msgs.join(' · ') : 'แทนที่ไม่สำเร็จ');
 				} else {
 					toast.success('แทนที่รายการเดิมแล้ว');
-					await loadTimetable();
-					if ($authStore.user) {
-						sendTimetableEvent({ type: 'TableRefresh', payload: { user_id: $authStore.user.id } });
-					}
+					// EntryUpdated WS will arrive → clearPending in patch handler
 				}
 			} catch (e: unknown) {
+				if (snapshot) applyEntryMutation(existingEntry.id, snapshot);
+				const restored = timetableEntries.find((x) => x.id === existingEntry.id)
+					?? rawTeamEntries.find((x) => x.id === existingEntry.id);
+				if (restored) upsertOccupancy(restored);
+				clearPending(existingEntry.id);
 				toast.error((e instanceof Error ? e.message : String(e)) || 'แทนที่ไม่สำเร็จ');
-			} finally {
-				submitting = false;
-				handleDragEnd();
 			}
 			return;
 		}
@@ -1770,13 +1904,17 @@
 			submitting = true;
 
 			if (dragType === 'NEW') {
-				// CREATE NEW
-				const courseCode = course.subject_code;
-				let payload: CreateTimetableEntryRequest;
-
+				// CREATE NEW — optimistic + WS intent broadcast
+				const courseCode = course.subject_code || course.title || 'รายการ';
 				const ac = course;
+				const tempId = `temp-${crypto.randomUUID()}`;
+				let payload: CreateTimetableEntryRequest;
+				let entryType: 'COURSE' | 'ACTIVITY' = 'COURSE';
+				let dropClassroomId = selectedClassroomId;
+
 				if (ac._isActivity) {
-					const activityClassroomId = ac._classroom_id || selectedClassroomId;
+					entryType = 'ACTIVITY';
+					dropClassroomId = ac._classroom_id || selectedClassroomId;
 					// Check if independent slot has instructor assigned for this classroom
 					const slot =
 						sidebarActivitySlots.find((s) => s.id === ac.activity_slot_id) ||
@@ -1784,7 +1922,7 @@
 					if (slot?.scheduling_mode === 'independent') {
 						const hasInstructor = await checkClassroomHasInstructor(
 							ac.activity_slot_id!,
-							activityClassroomId
+							dropClassroomId
 						);
 						if (!hasInstructor) {
 							toast.error('กรุณากำหนดครูประจำห้องนี้ก่อนในหน้ากิจกรรม');
@@ -1795,28 +1933,95 @@
 							return;
 						}
 					}
-					// Activity slot drop
 					payload = {
 						activity_slot_id: ac.activity_slot_id,
-						classroom_id: activityClassroomId,
+						classroom_id: dropClassroomId,
 						academic_semester_id: selectedSemesterId,
 						day_of_week: day,
 						period_id: periodId,
 						room_id: roomId,
 						entry_type: 'ACTIVITY',
-						title: ac.title_th
+						title: ac.title_th,
+						client_temp_id: tempId
 					};
 				} else {
 					payload = {
 						classroom_course_id: course.id,
 						day_of_week: day,
 						period_id: periodId,
-						room_id: roomId
+						room_id: roomId,
+						client_temp_id: tempId
 					};
 				}
 
-				const res = await createTimetableEntry(payload);
-				handleResponse(res, `ลงตาราง ${courseCode} สำเร็จ`);
+				// Optimistic: build tempEntry + push + broadcast intent
+				const tempEntry = buildTempEntry({
+					tempId,
+					classroomId: dropClassroomId,
+					classroomCourseId: ac._isActivity ? undefined : course.id,
+					activitySlotId: ac._isActivity ? ac.activity_slot_id : undefined,
+					day: day as TimetableEntry['day_of_week'],
+					periodId,
+					roomId,
+					title: ac._isActivity ? ac.title_th : undefined,
+					entryType
+				});
+				timetableEntries = [...timetableEntries, tempEntry];
+				upsertOccupancy(tempEntry);
+				markPending(tempId);
+
+				sendEntryIntent({
+					temp_id: tempId,
+					classroom_id: dropClassroomId,
+					classroom_course_id: ac._isActivity ? null : course.id,
+					activity_slot_id: ac._isActivity ? ac.activity_slot_id : null,
+					day_of_week: day,
+					period_id: periodId,
+					room_id: roomId ?? null,
+					title: ac._isActivity ? ac.title_th : null,
+					entry_type: entryType
+				});
+
+				submitting = false;
+				pendingDropContext = null;
+				isDropPending = false;
+				handleDragEnd();
+				try {
+					const res = (await createTimetableEntry(payload)) as {
+						success?: boolean;
+						conflicts?: ConflictInfo[];
+						data?: TimetableEntry;
+					};
+					if (res?.success === false) {
+						// Remove temp + show conflicts
+						timetableEntries = timetableEntries.filter((e) => e.id !== tempId);
+						removeOccupancy(tempId);
+						clearPending(tempId);
+						const msgs = (res.conflicts ?? []).map((c) => c.message).filter(Boolean);
+						toast.error(msgs.length > 0 ? msgs.join(' · ') : 'ลงตารางไม่สำเร็จ');
+					} else {
+						// Swap temp → real (id เปลี่ยน, joined fields เก็บที่คำนวณไว้)
+						const realId = res?.data?.id;
+						if (realId) {
+							const swap = (e: TimetableEntry) =>
+								e.id === tempId ? { ...e, id: realId } : e;
+							timetableEntries = timetableEntries.map(swap);
+							rawTeamEntries = rawTeamEntries.map(swap);
+							removeOccupancy(tempId);
+							const finalEntry = timetableEntries.find((e) => e.id === realId);
+							if (finalEntry) upsertOccupancy(finalEntry);
+							clearPending(tempId);
+							markPending(realId); // รอ EntryCreated WS จาก backend (มาพร้อม joined ครบ) → clearPending
+						}
+						toast.success(`ลงตาราง ${courseCode} สำเร็จ`);
+					}
+				} catch (e: unknown) {
+					timetableEntries = timetableEntries.filter((x) => x.id !== tempId);
+					removeOccupancy(tempId);
+					clearPending(tempId);
+					toast.error((e instanceof Error ? e.message : String(e)) || 'ลงตารางไม่สำเร็จ');
+				}
+				return;
 			} else if (dragType === 'MOVE' && entryId) {
 				// UPDATE EXISTING — optimistic move + WS intent broadcast
 				const courseName = course.subject_code || course.title || 'รายการ';
@@ -2523,9 +2728,27 @@
 
 		switch (patch.type) {
 			case 'EntryCreated': {
-				// Backend ส่ง entry พร้อม joined fields ครบ — push เข้า state ได้ทันที
+				// Backend ส่ง entry พร้อม joined fields ครบ
 				const created = patch.entry as TimetableEntry;
 				clearPending(created.id);
+
+				// ถ้ามี client_temp_id → เป็น CREATE optimistic ที่เรา push tempEntry ไว้แล้ว → swap
+				if (patch.client_temp_id) {
+					const tempId = patch.client_temp_id;
+					clearPending(tempId);
+					const swapTempToReal = (e: TimetableEntry) =>
+						e.id === tempId ? created : e;
+					if (timetableEntries.some((e) => e.id === tempId)) {
+						timetableEntries = timetableEntries.map(swapTempToReal);
+					}
+					if (rawTeamEntries.some((e) => e.id === tempId)) {
+						rawTeamEntries = rawTeamEntries.map(swapTempToReal);
+					}
+					removeOccupancy(tempId);
+					upsertOccupancy(created);
+					break;
+				}
+
 				upsertOccupancy(created);
 				// เฉพาะ entry ที่เกี่ยวกับ view ปัจจุบันถึงจะ push
 				const relevantForClassroom =
@@ -2636,23 +2859,76 @@
 					optimisticSnapshots.set(patch.entry_id, original);
 				}
 				markPending(patch.entry_id);
-				applyEntryMutation(patch.entry_id, {
-					day_of_week: patch.day_of_week as TimetableEntry['day_of_week'],
-					period_id: patch.period_id,
-					room_id: patch.room_id ?? undefined
+
+				if (patch.kind === 'replace') {
+					// REPLACE: lookup new course/activity locally → overwrite content fields
+					const newFields = computeReplacementFields({
+						newCourseId: patch.new_classroom_course_id ?? undefined,
+						newActivitySlotId: patch.new_activity_slot_id ?? undefined,
+						newClassroomId: patch.new_classroom_id ?? undefined
+					});
+					applyEntryMutation(patch.entry_id, newFields);
+					const updated = timetableEntries.find((e) => e.id === patch.entry_id)
+						?? rawTeamEntries.find((e) => e.id === patch.entry_id);
+					if (updated) upsertOccupancy(updated);
+				} else {
+					// move/swap: เปลี่ยน day/period/room
+					applyEntryMutation(patch.entry_id, {
+						day_of_week: patch.day_of_week as TimetableEntry['day_of_week'],
+						period_id: patch.period_id,
+						room_id: patch.room_id ?? undefined
+					});
+					if (patch.kind === 'swap' && patch.swap_partner_id) {
+						const partnerOriginal = snapshotPosition(patch.swap_partner_id);
+						if (partnerOriginal && !optimisticSnapshots.has(patch.swap_partner_id)) {
+							optimisticSnapshots.set(patch.swap_partner_id, partnerOriginal);
+						}
+						markPending(patch.swap_partner_id);
+						if (patch.swap_partner_day && patch.swap_partner_period_id) {
+							applyEntryMutation(patch.swap_partner_id, {
+								day_of_week: patch.swap_partner_day as TimetableEntry['day_of_week'],
+								period_id: patch.swap_partner_period_id
+							});
+						}
+					}
+				}
+				break;
+			}
+			case 'EntryIntent': {
+				// คนอื่น drop NEW → render tempEntry จาก local state lookups
+				if (patch.user_id === $authStore.user?.id) break; // ตัวเอง — push ไปแล้ว
+				const tempEntry = buildTempEntry({
+					tempId: patch.temp_id,
+					classroomId: patch.classroom_id,
+					classroomCourseId: patch.classroom_course_id ?? undefined,
+					activitySlotId: patch.activity_slot_id ?? undefined,
+					day: patch.day_of_week as TimetableEntry['day_of_week'],
+					periodId: patch.period_id,
+					roomId: patch.room_id ?? undefined,
+					title: patch.title ?? undefined,
+					entryType: patch.entry_type === 'ACTIVITY' ? 'ACTIVITY' : 'COURSE'
 				});
-				if (patch.kind === 'swap' && patch.swap_partner_id) {
-					const partnerOriginal = snapshotPosition(patch.swap_partner_id);
-					if (partnerOriginal && !optimisticSnapshots.has(patch.swap_partner_id)) {
-						optimisticSnapshots.set(patch.swap_partner_id, partnerOriginal);
-					}
-					markPending(patch.swap_partner_id);
-					if (patch.swap_partner_day && patch.swap_partner_period_id) {
-						applyEntryMutation(patch.swap_partner_id, {
-							day_of_week: patch.swap_partner_day as TimetableEntry['day_of_week'],
-							period_id: patch.swap_partner_period_id
-						});
-					}
+				upsertOccupancy(tempEntry);
+				const relevantClassroom =
+					viewMode === 'CLASSROOM' && tempEntry.classroom_id === selectedClassroomId;
+				const relevantInstructor =
+					viewMode === 'INSTRUCTOR' &&
+					(tempEntry.instructor_ids ?? []).includes(selectedInstructorId);
+				if (relevantClassroom || relevantInstructor) {
+					timetableEntries = [...timetableEntries, tempEntry];
+				}
+				markPending(patch.temp_id);
+				break;
+			}
+			case 'EntryRejected': {
+				// CREATE 409 → ลบ tempEntry ทุก client
+				const tempId = patch.temp_id;
+				timetableEntries = timetableEntries.filter((e) => e.id !== tempId);
+				rawTeamEntries = rawTeamEntries.filter((e) => e.id !== tempId);
+				removeOccupancy(tempId);
+				clearPending(tempId);
+				if (patch.user_id === $authStore.user?.id) {
+					toast.error(patch.reason ? `ขัดแย้ง — ${patch.reason}` : 'ลงตารางไม่สำเร็จ');
 				}
 				break;
 			}

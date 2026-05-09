@@ -77,6 +77,9 @@ pub enum TimetableEvent {
     EntryCreated {
         user_id: Uuid,
         entry: serde_json::Value, // TimetableEntry with joined fields
+        /// Phase 2: echo back ของ client_temp_id ที่ส่งมาตอน POST → client correlate temp → real entry
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_temp_id: Option<String>,
     },
     EntryUpdated {
         user_id: Uuid,
@@ -155,7 +158,7 @@ pub enum TimetableEvent {
     /// (ephemeral — ไม่ seq เพราะ EntryUpdated/Created/Swapped จะมาตามทีหลังพร้อม seq จริง)
     DropIntent {
         user_id: Uuid,
-        kind: String,                            // "move" | "swap" — caller ใช้ judge
+        kind: String,                            // "move" | "swap" | "replace"
         entry_id: Uuid,
         day_of_week: String,
         period_id: Uuid,
@@ -165,6 +168,11 @@ pub enum TimetableEvent {
         swap_partner_id: Option<Uuid>,
         swap_partner_day: Option<String>,
         swap_partner_period_id: Option<Uuid>,
+        /// สำหรับ replace: ids ของ course/activity ใหม่ + classroom (ถ้าเปลี่ยนข้ามห้อง)
+        /// client receivers lookup local courses[]/activitySlots[] เพื่อ render joined fields
+        new_classroom_course_id: Option<Uuid>,
+        new_activity_slot_id: Option<Uuid>,
+        new_classroom_id: Option<Uuid>,
     },
     /// Server → Clients: DB reject drop ที่ broadcast intent ไปแล้ว → ทุกคน rollback
     /// ตำแหน่งเดิม. Toast แสดงเฉพาะคนที่ drop (`user_id` ตรงกับตัวเอง)
@@ -178,6 +186,27 @@ pub enum TimetableEvent {
         partner_id: Option<Uuid>,
         partner_original_day: Option<String>,
         partner_original_period_id: Option<Uuid>,
+        reason: String,
+    },
+
+    /// Client → Server: ผู้ใช้ drop NEW (สร้าง entry) — relay ให้คนอื่นเห็น tempEntry ทันที
+    /// (ก่อน DB confirm). Lookup joined fields จาก local state ของ client เอง
+    EntryIntent {
+        user_id: Uuid,
+        temp_id: String,                         // UUID ที่ client gen ขึ้นเอง
+        classroom_id: Uuid,
+        classroom_course_id: Option<Uuid>,
+        activity_slot_id: Option<Uuid>,
+        day_of_week: String,
+        period_id: Uuid,
+        room_id: Option<Uuid>,
+        title: Option<String>,                   // สำหรับ ACTIVITY
+        entry_type: String,                      // "COURSE" | "ACTIVITY"
+    },
+    /// Server → Clients: CREATE ถูก reject → ทุก client ลบ tempEntry ที่มี temp_id นี้
+    EntryRejected {
+        user_id: Uuid,                           // คนที่สร้าง (ใช้ filter toast)
+        temp_id: String,
         reason: String,
     },
 }
@@ -699,7 +728,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
                     // Phase 2: client broadcast optimistic drop intent
                     TimetableEvent::DropIntent {
                         kind, entry_id, day_of_week, period_id, room_id,
-                        swap_partner_id, swap_partner_day, swap_partner_period_id, ..
+                        swap_partner_id, swap_partner_day, swap_partner_period_id,
+                        new_classroom_course_id, new_activity_slot_id, new_classroom_id, ..
                     } => {
                         valid_event = Some(TimetableEvent::DropIntent {
                             user_id: params.user_id,
@@ -711,6 +741,27 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
                             swap_partner_id: *swap_partner_id,
                             swap_partner_day: swap_partner_day.clone(),
                             swap_partner_period_id: *swap_partner_period_id,
+                            new_classroom_course_id: *new_classroom_course_id,
+                            new_activity_slot_id: *new_activity_slot_id,
+                            new_classroom_id: *new_classroom_id,
+                        });
+                    },
+                    // Phase 2: client broadcast optimistic create intent (NEW drop on empty)
+                    TimetableEvent::EntryIntent {
+                        temp_id, classroom_id, classroom_course_id, activity_slot_id,
+                        day_of_week, period_id, room_id, title, entry_type, ..
+                    } => {
+                        valid_event = Some(TimetableEvent::EntryIntent {
+                            user_id: params.user_id,
+                            temp_id: temp_id.clone(),
+                            classroom_id: *classroom_id,
+                            classroom_course_id: *classroom_course_id,
+                            activity_slot_id: *activity_slot_id,
+                            day_of_week: day_of_week.clone(),
+                            period_id: *period_id,
+                            room_id: *room_id,
+                            title: title.clone(),
+                            entry_type: entry_type.clone(),
                         });
                     },
                     _ => {}

@@ -95,6 +95,9 @@ export type TimetableEvent =
 				swap_partner_id?: string | null;
 				swap_partner_day?: string | null;
 				swap_partner_period_id?: string | null;
+				new_classroom_course_id?: string | null;
+				new_activity_slot_id?: string | null;
+				new_classroom_id?: string | null;
 			};
 	  }
 	| {
@@ -110,11 +113,30 @@ export type TimetableEvent =
 				partner_original_period_id?: string | null;
 				reason: string;
 			};
+	  }
+	| {
+			type: 'EntryIntent';
+			payload: {
+				user_id: string;
+				temp_id: string;
+				classroom_id: string;
+				classroom_course_id?: string | null;
+				activity_slot_id?: string | null;
+				day_of_week: string;
+				period_id: string;
+				room_id?: string | null;
+				title?: string | null;
+				entry_type: string;
+			};
+	  }
+	| {
+			type: 'EntryRejected';
+			payload: { user_id: string; temp_id: string; reason: string };
 	  };
 
 /** Patch events ที่ page subscribe เพื่อ apply ต่อ state — ไม่ fetch DB ซ้ำ */
 export type TimetablePatch =
-	| { type: 'EntryCreated'; entry: TimetableEntry }
+	| { type: 'EntryCreated'; entry: TimetableEntry; client_temp_id: string | null }
 	| { type: 'EntryUpdated'; entry: TimetableEntry }
 	| { type: 'EntryDeleted'; entry_id: string }
 	| { type: 'EntriesSwapped'; entry_a: TimetableEntry; entry_b: TimetableEntry }
@@ -135,7 +157,7 @@ export type TimetablePatch =
 	| {
 			type: 'DropIntent';
 			user_id: string;
-			kind: string; // 'move' | 'swap'
+			kind: string; // 'move' | 'swap' | 'replace'
 			entry_id: string;
 			day_of_week: string;
 			period_id: string;
@@ -143,6 +165,9 @@ export type TimetablePatch =
 			swap_partner_id: string | null;
 			swap_partner_day: string | null;
 			swap_partner_period_id: string | null;
+			new_classroom_course_id: string | null;
+			new_activity_slot_id: string | null;
+			new_classroom_id: string | null;
 	  }
 	| {
 			type: 'DropRejected';
@@ -155,7 +180,21 @@ export type TimetablePatch =
 			partner_original_day: string | null;
 			partner_original_period_id: string | null;
 			reason: string;
-	  };
+	  }
+	| {
+			type: 'EntryIntent';
+			user_id: string;
+			temp_id: string;
+			classroom_id: string;
+			classroom_course_id: string | null;
+			activity_slot_id: string | null;
+			day_of_week: string;
+			period_id: string;
+			room_id: string | null;
+			title: string | null;
+			entry_type: string;
+	  }
+	| { type: 'EntryRejected'; user_id: string; temp_id: string; reason: string };
 
 // Stores
 export const activeUsers: Writable<UserPresence[]> = writable([]);
@@ -251,7 +290,7 @@ interface RawMessagePayload {
 	instructor_name?: string;
 	role?: string;
 	entry_deleted?: boolean;
-	// Phase 2 — DropIntent / DropRejected
+	// Phase 2 — DropIntent / DropRejected / EntryIntent / EntryRejected
 	kind?: string;
 	day_of_week?: string;
 	period_id?: string;
@@ -259,6 +298,9 @@ interface RawMessagePayload {
 	swap_partner_id?: string | null;
 	swap_partner_day?: string | null;
 	swap_partner_period_id?: string | null;
+	new_classroom_course_id?: string | null;
+	new_activity_slot_id?: string | null;
+	new_classroom_id?: string | null;
 	original_day?: string;
 	original_period_id?: string;
 	original_room_id?: string | null;
@@ -266,6 +308,13 @@ interface RawMessagePayload {
 	partner_original_day?: string | null;
 	partner_original_period_id?: string | null;
 	reason?: string;
+	temp_id?: string;
+	client_temp_id?: string | null;
+	classroom_id?: string;
+	classroom_course_id?: string | null;
+	activity_slot_id?: string | null;
+	title?: string | null;
+	entry_type?: string;
 }
 
 interface SeqEvent {
@@ -284,7 +333,12 @@ function applyPatchFromSeqEvent(seqEvent: SeqEvent) {
 			refreshTrigger.update((n) => n + 1);
 			break;
 		case 'EntryCreated':
-			if (payload.entry) lastPatch.set({ type: 'EntryCreated', entry: payload.entry });
+			if (payload.entry)
+				lastPatch.set({
+					type: 'EntryCreated',
+					entry: payload.entry,
+					client_temp_id: payload.client_temp_id ?? null
+				});
 			break;
 		case 'EntryUpdated':
 			if (payload.entry) lastPatch.set({ type: 'EntryUpdated', entry: payload.entry });
@@ -337,7 +391,44 @@ function applyPatchFromSeqEvent(seqEvent: SeqEvent) {
 					room_id: payload.room_id ?? null,
 					swap_partner_id: payload.swap_partner_id ?? null,
 					swap_partner_day: payload.swap_partner_day ?? null,
-					swap_partner_period_id: payload.swap_partner_period_id ?? null
+					swap_partner_period_id: payload.swap_partner_period_id ?? null,
+					new_classroom_course_id: payload.new_classroom_course_id ?? null,
+					new_activity_slot_id: payload.new_activity_slot_id ?? null,
+					new_classroom_id: payload.new_classroom_id ?? null
+				});
+			}
+			break;
+		case 'EntryIntent':
+			if (
+				payload.user_id &&
+				payload.temp_id &&
+				payload.classroom_id &&
+				payload.day_of_week &&
+				payload.period_id &&
+				payload.entry_type
+			) {
+				lastPatch.set({
+					type: 'EntryIntent',
+					user_id: payload.user_id,
+					temp_id: payload.temp_id,
+					classroom_id: payload.classroom_id,
+					classroom_course_id: payload.classroom_course_id ?? null,
+					activity_slot_id: payload.activity_slot_id ?? null,
+					day_of_week: payload.day_of_week,
+					period_id: payload.period_id,
+					room_id: payload.room_id ?? null,
+					title: payload.title ?? null,
+					entry_type: payload.entry_type
+				});
+			}
+			break;
+		case 'EntryRejected':
+			if (payload.user_id && payload.temp_id) {
+				lastPatch.set({
+					type: 'EntryRejected',
+					user_id: payload.user_id,
+					temp_id: payload.temp_id,
+					reason: payload.reason ?? ''
 				});
 			}
 			break;
@@ -525,7 +616,7 @@ export function sendUserActivityEnd() {
 /** Phase 2: broadcast optimistic drop intent — server relays to other clients
  *  so they apply the same optimistic mutation before DB confirms. */
 export function sendDropIntent(payload: {
-	kind: 'move' | 'swap';
+	kind: 'move' | 'swap' | 'replace';
 	entry_id: string;
 	day_of_week: string;
 	period_id: string;
@@ -533,10 +624,36 @@ export function sendDropIntent(payload: {
 	swap_partner_id?: string | null;
 	swap_partner_day?: string | null;
 	swap_partner_period_id?: string | null;
+	new_classroom_course_id?: string | null;
+	new_activity_slot_id?: string | null;
+	new_classroom_id?: string | null;
 }) {
 	if (!currentUserId) return;
 	sendTimetableEvent({
 		type: 'DropIntent',
+		payload: {
+			user_id: currentUserId,
+			...payload
+		}
+	});
+}
+
+/** Phase 2: broadcast optimistic CREATE intent — relays so other clients render tempEntry
+ *  before backend confirms. They lookup joined fields from local state. */
+export function sendEntryIntent(payload: {
+	temp_id: string;
+	classroom_id: string;
+	classroom_course_id?: string | null;
+	activity_slot_id?: string | null;
+	day_of_week: string;
+	period_id: string;
+	room_id?: string | null;
+	title?: string | null;
+	entry_type: string;
+}) {
+	if (!currentUserId) return;
+	sendTimetableEvent({
+		type: 'EntryIntent',
 		payload: {
 			user_id: currentUserId,
 			...payload
@@ -734,6 +851,8 @@ function handleMessage(msg: SeqEvent & { seq?: number }) {
 		}
 		case 'DropIntent':
 		case 'DropRejected':
+		case 'EntryIntent':
+		case 'EntryRejected':
 			// Phase 2 ephemeral — page subscribes via lastPatch
 			applyPatchFromSeqEvent(msg);
 			break;

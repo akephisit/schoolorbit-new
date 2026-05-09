@@ -100,6 +100,9 @@ export interface CreateTimetableEntryRequest {
 	title?: string;
 	classroom_id?: string;
 	academic_semester_id?: string;
+	/** Phase 2: client-generated temp UUID — backend echo ใน EntryCreated broadcast
+	 *  เพื่อให้ทุก client correlate temp → real entry */
+	client_temp_id?: string;
 }
 
 export interface CreateBatchTimetableEntriesRequest {

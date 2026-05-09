@@ -525,6 +525,36 @@ pub async fn create_timetable_entry(
     // Validate conflicts before inserting
     let validation = validate_timetable_entry(&pool, &payload).await?;
     if !validation.is_valid {
+        // Phase 2: broadcast EntryRejected → ทุก client ลบ tempEntry
+        if let Some(temp_id) = payload.client_temp_id.as_ref() {
+            let subdomain_for_reject = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+            // ใช้ semester จาก payload หรือ lookup จาก course/slot
+            let sem_for_reject: Option<Uuid> = if let Some(sem) = payload.academic_semester_id {
+                Some(sem)
+            } else if let Some(cc_id) = payload.classroom_course_id {
+                sqlx::query_scalar("SELECT academic_semester_id FROM classroom_courses WHERE id = $1")
+                    .bind(cc_id)
+                    .fetch_optional(&pool)
+                    .await
+                    .ok()
+                    .flatten()
+            } else { None };
+            if let Some(sem) = sem_for_reject {
+                let reason = validation.conflicts.iter()
+                    .map(|c| c.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                state.websocket_manager.broadcast_ephemeral(
+                    subdomain_for_reject,
+                    sem,
+                    TimetableEvent::EntryRejected {
+                        user_id: user_id.unwrap_or_default(),
+                        temp_id: temp_id.clone(),
+                        reason: if reason.is_empty() { "พบข้อขัดแย้ง".to_string() } else { reason },
+                    },
+                );
+            }
+        }
         return Ok((
             StatusCode::CONFLICT,
             Json(json!({
@@ -718,12 +748,15 @@ pub async fn create_timetable_entry(
     // ไม่ได้พึ่งพา joined fields ใน response)
     if has_subs {
         if let Some(full_entry) = fetch_entry_with_joins(&pool, entry.id).await {
-            let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
             let entry_json = serde_json::to_value(&full_entry).unwrap_or_default();
             state.websocket_manager.broadcast_mutation(
                 subdomain,
                 full_entry.academic_semester_id,
-                TimetableEvent::EntryCreated { user_id: user_id.unwrap_or_default(), entry: entry_json },
+                TimetableEvent::EntryCreated {
+                    user_id: user_id.unwrap_or_default(),
+                    entry: entry_json,
+                    client_temp_id: payload.client_temp_id.clone(),
+                },
             );
         }
     }
@@ -1082,6 +1115,7 @@ pub async fn update_timetable_entry(
         title: existing_entry.title.clone(),
         classroom_id: target_classroom_id,
         academic_semester_id: Some(existing_entry.academic_semester_id),
+        client_temp_id: None,
     };
 
     // 3. Validate conflicts (excluding current entry ID)
