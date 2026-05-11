@@ -29,6 +29,17 @@ const getEntry = (entries: TimetableEntry[], day: string, periodId: string) => {
 	return entries.find((e) => e.day_of_week === day && e.period_id === periodId && e.is_active);
 };
 
+// Helper: Truncate string to max code points + ellipsis if truncated
+const truncate = (s: string | undefined | null, max = 8): string => {
+	if (!s) return '';
+	return s.length > max ? s.slice(0, max) + '…' : s;
+};
+
+// Helper: Strip "ตารางเรียน ชั้น" / "ตารางสอน " prefix → ใช้เป็น mini-title ใน grid mode
+const stripTitlePrefix = (title: string): string => {
+	return title.replace(/^ตารางเรียน ชั้น/, '').replace(/^ตารางสอน /, '');
+};
+
 // Helper: Define Table Layout
 // padding: ลดจาก pdfmake default (4pt) เหลือ 2pt → cells ชิดขอบมากขึ้น
 const tableLayout: CustomTableLayout = {
@@ -43,6 +54,19 @@ const tableLayout: CustomTableLayout = {
 	fillColor: () => {
 		return null;
 	}
+};
+
+// Compact layout สำหรับ grid-2×2 mode — padding/border ลด 50%
+const miniTableLayout: CustomTableLayout = {
+	hLineWidth: () => 0.5,
+	vLineWidth: () => 0.5,
+	hLineColor: () => '#9ca3af',
+	vLineColor: () => '#9ca3af',
+	paddingLeft: () => 1,
+	paddingRight: () => 1,
+	paddingTop: () => 1,
+	paddingBottom: () => 1,
+	fillColor: () => null
 };
 
 const DAYS = [
@@ -279,8 +303,195 @@ function buildPageContent(
 	];
 }
 
-export const generateTimetablePDF = async (pages: TimetablePage[], fileName?: string) => {
+/** Mini-table สำหรับ grid-2×2 mode — แสดงเฉพาะ subject_code + subject_name truncate
+ *  ซ่อนครู/ห้อง/ห้องเรียน เพราะ space จำกัด (~400×220pt per mini) */
+function buildMiniTable(page: TimetablePage): Content {
+	const { periods, timetableEntries, title, roomNames } = page;
+	void roomNames; // mini mode ไม่แสดงห้อง — keep destructure เพื่อกัน lint warning
+	const tableBody: TableCell[][] = [];
+
+	// Header row — period name + start time (no end time, ประหยัดที่)
+	const headerRow: TableCell[] = [
+		{ text: 'วัน', bold: true, alignment: 'center', fillColor: '#f3f4f6', fontSize: 5, margin: [0, 0] }
+	];
+	periods.forEach((p) => {
+		const labelText = p.name && p.name.trim() ? truncate(p.name, 6) : ' ';
+		headerRow.push({
+			text: [
+				{ text: `${labelText}\n`, bold: true, fontSize: 5 },
+				{ text: formatTime(p.start_time), fontSize: 4, color: '#4b5563' }
+			],
+			alignment: 'center',
+			fillColor: '#f3f4f6',
+			margin: [0, 0]
+		});
+	});
+	tableBody.push(headerRow);
+
+	// Data rows — ย่อชื่อวันเหลือ 1 ตัวอักษร ("จ" / "อ" / "พ" / "พฤ" / "ศ")
+	const dayShort: Record<string, string> = { MON: 'จ', TUE: 'อ', WED: 'พ', THU: 'พฤ', FRI: 'ศ' };
+	DAYS.slice(0, 5).forEach((day) => {
+		const row: TableCell[] = [
+			{
+				text: dayShort[day.value] || day.label.slice(0, 1),
+				bold: true,
+				alignment: 'center',
+				fillColor: day.color,
+				fontSize: 6,
+				margin: [0, 0]
+			}
+		];
+
+		periods.forEach((p) => {
+			const entry = getEntry(timetableEntries, day.value, p.id);
+			if (entry) {
+				const stack: Content[] = [];
+				if (entry.entry_type === 'COURSE') {
+					stack.push({
+						text: entry.subject_code || '',
+						bold: true,
+						fontSize: 5,
+						color: '#1e3a8a'
+					});
+					const name = entry.subject_name_th || entry.subject_name_en;
+					if (name) {
+						stack.push({
+							text: truncate(name, 8),
+							fontSize: 4,
+							color: '#374151',
+							margin: [0, 0]
+						});
+					}
+				} else {
+					stack.push({
+						text: truncate(entry.title || 'กิจกรรม', 8),
+						bold: true,
+						fontSize: 5,
+						color: '#047857'
+					});
+				}
+				row.push({ stack, alignment: 'center', margin: [0, 0] });
+			} else {
+				row.push({ text: '' });
+			}
+		});
+
+		tableBody.push(row);
+	});
+
+	// Widths — same formula but tighter padding (1pt) + border (0.5pt)
+	const widths = (() => {
+		const N = periods.length + 1;
+		const padLR = 1 + 1;
+		const border = 0.5;
+		const offsetsTotal = padLR * N + border * (N + 1);
+		const miniAreaWidth = 400; // ครึ่งหนึ่งของ landscape width (821.89 - 10 gap) / 2 = 405.95 — เผื่อ 5pt
+		const safety = 1;
+		const maxSumWidths = miniAreaWidth - offsetsTotal - safety;
+		const dayCol = 18; // small day column (short labels)
+		const periodWidth = (maxSumWidths - dayCol) / Math.max(1, periods.length);
+		return [dayCol, ...periods.map(() => periodWidth)];
+	})();
+
+	// cast as Content — pdfmake รับ width ใน column context แต่ TS type ไม่ครอบคลุม
+	return {
+		stack: [
+			{
+				text: stripTitlePrefix(title),
+				fontSize: 8,
+				bold: true,
+				alignment: 'center',
+				margin: [0, 0, 0, 2]
+			},
+			{
+				table: {
+					headerRows: 1,
+					widths,
+					heights: ['auto', 28, 28, 28, 28, 28],
+					body: tableBody,
+					dontBreakRows: true
+				},
+				layout: miniTableLayout
+			}
+		],
+		width: '*'
+	} as Content;
+}
+
+/** Grid-2×2 page — รวม TimetablePage 4 อันใน 1 หน้า PDF (chunk ละ 4) */
+function buildGridPageContent(
+	chunk: TimetablePage[],
+	isFirst: boolean,
+	logoDataUrl: string | null,
+	pageHeaderTitle: string,
+	pageHeaderSubTitle: string
+): Content[] {
+	const titleBlock: Content = logoDataUrl
+		? {
+				columns: [
+					{
+						width: 40,
+						stack: [{ image: logoDataUrl, fit: [40, 40], alignment: 'center' }]
+					},
+					{
+						stack: [
+							{ text: pageHeaderTitle, fontSize: 14, bold: true, color: '#1e3a8a', alignment: 'center' },
+							{
+								text: pageHeaderSubTitle,
+								fontSize: 10,
+								color: '#4b5563',
+								alignment: 'center',
+								margin: [0, 2, 0, 0]
+							}
+						],
+						width: '*'
+					},
+					{ text: '', width: 40 }
+				],
+				columnGap: 10,
+				margin: [0, 0, 0, 8],
+				...(isFirst ? {} : { pageBreak: 'before' })
+			}
+		: {
+				stack: [
+					{ text: pageHeaderTitle, fontSize: 14, bold: true, color: '#1e3a8a', alignment: 'center', margin: [0, 0, 0, 2] },
+					{ text: pageHeaderSubTitle, fontSize: 10, color: '#4b5563', alignment: 'center', margin: [0, 0, 0, 8] }
+				],
+				...(isFirst ? {} : { pageBreak: 'before' })
+			};
+
+	// pad chunk ให้ครบ 4 (empty mini สำหรับช่องที่ไม่มี target)
+	const minis: Content[] = chunk.map((p) => buildMiniTable(p));
+	while (minis.length < 4) {
+		minis.push({ text: '', width: '*' } as Content);
+	}
+
+	return [
+		titleBlock,
+		{ columns: [minis[0], minis[1]], columnGap: 10 },
+		{ columns: [minis[2], minis[3]], columnGap: 10, margin: [0, 8, 0, 0] },
+		{
+			columns: [
+				{ text: `ข้อมูล ณ วันที่ ${new Date().toLocaleDateString('th-TH')}`, style: 'footer' },
+				{ text: 'SchoolOrbit TimeTable', style: 'footer', alignment: 'right' }
+			],
+			margin: [0, 8, 0, 0]
+		}
+	];
+}
+
+export interface GeneratePdfOptions {
+	/** 'full' = 1 ตาราง/หน้า (default), 'grid-2x2' = 4 ตาราง/หน้า สำหรับเปรียบเทียบ */
+	layout?: 'full' | 'grid-2x2';
+}
+
+export const generateTimetablePDF = async (
+	pages: TimetablePage[],
+	fileName?: string,
+	options?: GeneratePdfOptions
+) => {
 	if (pages.length === 0) return;
+	const layout = options?.layout ?? 'full';
 
 	const pdfMakeModule = await import('pdfmake/build/pdfmake');
 	const pdfMake = pdfMakeModule.default;
@@ -305,7 +516,23 @@ export const generateTimetablePDF = async (pages: TimetablePage[], fileName?: st
 		/* ไม่มี logo ก็ไม่เป็นไร */
 	}
 
-	const content: Content[] = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl));
+	let content: Content[];
+	if (layout === 'grid-2x2') {
+		// chunk pages ละ 4 → 1 PDF page = 4 mini-tables
+		const chunks: TimetablePage[][] = [];
+		for (let i = 0; i < pages.length; i += 4) {
+			chunks.push(pages.slice(i, i + 4));
+		}
+		// page header (1 ครั้ง/หน้า) — title generic ตาม viewMode, subTitle ใช้ของหน้าแรก (ทุก page share เดียวกัน)
+		const isClassroom = (pages[0].viewMode ?? 'CLASSROOM') === 'CLASSROOM';
+		const pageHeaderTitle = isClassroom ? 'ตารางเรียน' : 'ตารางสอน';
+		const pageHeaderSubTitle = pages[0].subTitle;
+		content = chunks.flatMap((chunk, i) =>
+			buildGridPageContent(chunk, i === 0, logoDataUrl, pageHeaderTitle, pageHeaderSubTitle)
+		);
+	} else {
+		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl));
+	}
 
 	const docDefinition: TDocumentDefinitions = {
 		pageSize: 'A4',

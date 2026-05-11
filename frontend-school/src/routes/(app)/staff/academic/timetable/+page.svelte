@@ -182,6 +182,7 @@
 	let showExportModal = $state(false);
 	let exportType = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
 	let exportTargetIds = $state<string[]>([]);
+	let exportLayout = $state<'full' | 'grid-2x2'>('full');
 	let isExporting = $state(false);
 
 	// State
@@ -2361,7 +2362,7 @@
 					? pages[0].title
 					: `${exportType === 'CLASSROOM' ? 'ตารางเรียน' : 'ตารางสอน'}_รวม_${pages.length}รายการ_${yearName}_ภาค${semesterName}`;
 
-			await generateTimetablePDF(pages, fileName);
+			await generateTimetablePDF(pages, fileName, { layout: exportLayout });
 
 			toast.success(
 				pages.length === 1
@@ -4578,6 +4579,33 @@
 						<School class="w-4 h-4 mr-2" /> ครูผู้สอน
 					</Button>
 				</div>
+			</div>
+
+			<div class="flex flex-col gap-2">
+				<Label.Root>รูปแบบหน้า</Label.Root>
+				<div class="flex gap-2">
+					<Button
+						variant={exportLayout === 'full' ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => (exportLayout = 'full')}
+						class="flex-1"
+					>
+						1 ตาราง/หน้า
+					</Button>
+					<Button
+						variant={exportLayout === 'grid-2x2' ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => (exportLayout = 'grid-2x2')}
+						class="flex-1"
+					>
+						4 ตาราง/หน้า (2×2)
+					</Button>
+				</div>
+				{#if exportLayout === 'grid-2x2'}
+					<p class="text-xs text-muted-foreground">
+						โหมดเปรียบเทียบ — แสดงเฉพาะรหัสวิชา+ชื่อวิชา (ซ่อนชื่อครู/ห้อง)
+					</p>
+				{/if}
 			</div>
 
 			<div class="flex flex-col gap-2 max-h-[300px] overflow-y-auto border rounded p-2">
