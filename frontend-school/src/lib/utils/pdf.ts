@@ -454,16 +454,10 @@ function buildPageContent(
 							stack: [
 								{ text: 'ลงชื่อ ........................................', alignment: 'center' },
 								{
-									text: '(........................................)',
-									alignment: 'center',
-									fontSize: 10,
-									margin: [0, 2, 0, 0]
-								},
-								{
 									text: 'หัวหน้ากลุ่มบริหารงานวิชาการ',
 									alignment: 'center',
 									fontSize: 11,
-									margin: [0, 2, 0, 0]
+									margin: [0, 4, 0, 0]
 								}
 							],
 							width: '*'
@@ -472,16 +466,10 @@ function buildPageContent(
 							stack: [
 								{ text: 'ลงชื่อ ........................................', alignment: 'center' },
 								{
-									text: '(........................................)',
-									alignment: 'center',
-									fontSize: 10,
-									margin: [0, 2, 0, 0]
-								},
-								{
 									text: 'ผู้อำนวยการ',
 									alignment: 'center',
 									fontSize: 11,
-									margin: [0, 2, 0, 0]
+									margin: [0, 4, 0, 0]
 								}
 							],
 							width: '*'
