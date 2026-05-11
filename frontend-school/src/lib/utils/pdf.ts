@@ -29,43 +29,86 @@ const getEntry = (entries: TimetableEntry[], day: string, periodId: string) => {
 	return entries.find((e) => e.day_of_week === day && e.period_id === periodId && e.is_active);
 };
 
-// Helper: Truncate string to max code points + ellipsis if truncated
-const truncate = (s: string | undefined | null, max = 8): string => {
-	if (!s) return '';
-	return s.length > max ? s.slice(0, max) + '…' : s;
-};
-
 // Helper: Strip "ตารางเรียน ชั้น" / "ตารางสอน " prefix → ใช้เป็น mini-title ใน grid mode
 const stripTitlePrefix = (title: string): string => {
 	return title.replace(/^ตารางเรียน ชั้น/, '').replace(/^ตารางสอน /, '');
 };
 
-/** Thai word segmentation — แทรก space ระหว่างคำเพื่อให้ pdfmake (UAX#14 linebreak)
- *  break ที่ขอบเขตคำ ไม่ฉีกกลางคำ ใช้ Intl.Segmenter (browser-native Thai dictionary)
- *  หมายเหตุ: ใช้ space ปกติ ไม่ใช่ U+200B (ZWSP) เพราะ Sarabun TTF ไม่มี glyph
- *  ของ ZWSP → PDF renderer แสดงเป็น tofu (สี่เหลี่ยม)
- *  fallback = return text เดิมถ้า Segmenter ไม่มี */
 type SegmenterCtor = new (
 	locale: string,
 	opts: { granularity: 'grapheme' | 'word' | 'sentence' }
 ) => { segment(text: string): Iterable<{ segment: string }> };
 
-const segmentForBreak = (text: string | undefined | null): string => {
+/** ประมาณ width (pt) ของ text ใน Sarabun font ที่ fontSize หนึ่ง ๆ
+ *  ใช้ grapheme-cluster counting (Intl.Segmenter) เพื่อ handle Thai composed chars
+ *  ค่าประมาณ: Thai grapheme ~0.55em, Latin ~0.5em, digit ~0.55em, space ~0.25em
+ *  + safety factor 1.1 (เผื่อ overestimate ให้ wrap เร็วกว่าจริง 10%) */
+function approxTextWidthPt(text: string, fontSizePt: number): number {
+	if (!text) return 0;
+	let width = 0;
+	try {
+		const Ctor = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
+		if (Ctor) {
+			const seg = new Ctor('en', { granularity: 'grapheme' });
+			for (const { segment } of seg.segment(text)) {
+				const code = segment.codePointAt(0) || 0;
+				if (code >= 0x0e00 && code <= 0x0e7f) {
+					width += fontSizePt * 0.55;
+				} else if (code === 0x20) {
+					width += fontSizePt * 0.25;
+				} else if (code >= 0x30 && code <= 0x39) {
+					width += fontSizePt * 0.55;
+				} else {
+					width += fontSizePt * 0.5;
+				}
+			}
+			return width * 1.1;
+		}
+	} catch {
+		/* fallthrough */
+	}
+	return text.length * fontSizePt * 0.55 * 1.1;
+}
+
+/** Wrap Thai text เป็นหลายบรรทัดที่ขอบเขตคำ ใส่ \n (hard break) ระหว่างบรรทัด
+ *  คำในบรรทัดเดียวกันติดกันไม่มี space → ไม่มีเว้นวรรค + ไม่มี tofu
+ *  ใช้ Intl.Segmenter('th', word) ตัดคำตาม dictionary ของ ICU
+ *  fallback = return text เดิมถ้า Segmenter ไม่มี */
+function wrapThaiToLines(
+	text: string | undefined | null,
+	maxWidthPt: number,
+	fontSizePt: number
+): string {
 	if (!text) return '';
 	try {
 		const Ctor = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
 		if (!Ctor) return text;
-		const segmenter = new Ctor('th', { granularity: 'word' });
-		// กรอง empty/whitespace segments แล้ว join ด้วย space ปกติ
-		// ใช้ ' ' ไม่ใช่ ​ (ZWSP) เพราะ Sarabun TTF ไม่มี glyph → tofu
-		const segments = Array.from(segmenter.segment(text), (s) => s.segment)
-			.map((s) => s.trim())
-			.filter((s) => s.length > 0);
-		return segments.join(' ');
+		const seg = new Ctor('th', { granularity: 'word' });
+		const words = Array.from(seg.segment(text), (s) => s.segment).filter(
+			(s) => s.length > 0
+		);
+		if (words.length <= 1) return text;
+
+		const lines: string[] = [];
+		let line = '';
+		let lineWidth = 0;
+		for (const word of words) {
+			const ww = approxTextWidthPt(word, fontSizePt);
+			if (line === '' || lineWidth + ww <= maxWidthPt) {
+				line += word;
+				lineWidth += ww;
+			} else {
+				lines.push(line);
+				line = word;
+				lineWidth = ww;
+			}
+		}
+		if (line) lines.push(line);
+		return lines.join('\n');
 	} catch {
 		return text;
 	}
-};
+}
 
 // Helper: Define Table Layout
 // padding: ลดจาก pdfmake default (4pt) เหลือ 2pt → cells ชิดขอบมากขึ้น
@@ -143,6 +186,18 @@ function buildPageContent(
 	const { title, subTitle, periods, timetableEntries, viewMode = 'CLASSROOM', roomNames } = page;
 	const tableBody: TableCell[][] = [];
 
+	// คำนวณ width upfront เพื่อแชร์กับ text-wrap (ดู buildPageContent return)
+	const N = periods.length + 1;
+	const PAD_LR = 4; // 2+2 from tableLayout
+	const BORDER = 1;
+	const offsetsTotal = PAD_LR * N + BORDER * (N + 1);
+	const pageContentWidth = 841.89 - 10 - 10;
+	const safety = 2;
+	const maxSumWidths = pageContentWidth - offsetsTotal - safety;
+	const DAY_COL = 40;
+	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
+	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
+
 	// Header Row
 	const headerRow: TableCell[] = [
 		{ text: 'วัน / เวลา', bold: true, alignment: 'center', fillColor: '#f3f4f6', margin: [0, 1] }
@@ -189,14 +244,18 @@ function buildPageContent(
 					stack.push(
 						{ text: entry.subject_code || '', bold: true, fontSize: 8, color: '#1e3a8a' },
 						{
-							text: segmentForBreak(entry.subject_name_th || entry.subject_name_en || 'วิชา'),
+							text: wrapThaiToLines(
+								entry.subject_name_th || entry.subject_name_en || 'วิชา',
+								cellContentWidth,
+								7
+							),
 							fontSize: 7,
 							margin: [0, 0]
 						}
 					);
 				} else {
 					stack.push({
-						text: segmentForBreak(entry.title || 'กิจกรรม'),
+						text: wrapThaiToLines(entry.title || 'กิจกรรม', cellContentWidth, 8),
 						bold: true,
 						fontSize: 8,
 						color: '#047857',
@@ -220,13 +279,18 @@ function buildPageContent(
 					) {
 						const rawName = entry.instructor_name.trim();
 						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
-						stack.push({ text: segmentForBreak(teacherName), fontSize: 7, color: '#4b5563', margin: [0, 1] });
+						stack.push({
+							text: wrapThaiToLines(teacherName, cellContentWidth, 7),
+							fontSize: 7,
+							color: '#4b5563',
+							margin: [0, 1]
+						});
 					}
 				} else {
 					// Teacher PDF — แสดงห้อง (ยกเว้น sync activity เพราะเป็นกิจกรรมรวมทุกห้อง)
 					if (!isSlotSync && entry.classroom_name) {
 						stack.push({
-							text: segmentForBreak(entry.classroom_name),
+							text: wrapThaiToLines(entry.classroom_name, cellContentWidth, 7),
 							fontSize: 7,
 							color: '#d97706',
 							bold: true,
@@ -245,7 +309,7 @@ function buildPageContent(
 						: null;
 				if (roomDisplay) {
 					stack.push({
-						text: segmentForBreak(roomDisplay),
+						text: wrapThaiToLines(roomDisplay, cellContentWidth, 7),
 						fontSize: 7,
 						background: '#f3f4f6',
 						color: '#1f2937',
@@ -302,18 +366,7 @@ function buildPageContent(
 				// tableWidth จริง = sum(widths) + offsetsTotal
 				// offsetsTotal = (paddingL + paddingR) × N + vLineWidth × (N+1)
 				// ดู: pdfmake/src/TableProcessor.js:100 + DocMeasure.js:596-614
-				widths: (() => {
-					const N = periods.length + 1; // จำนวนคอลัมน์
-					const padLR = 2 + 2; // จาก tableLayout paddingLeft + paddingRight
-					const border = 1; // จาก tableLayout vLineWidth
-					const offsetsTotal = padLR * N + border * (N + 1);
-					const pageContent = 841.89 - 10 - 10; // A4 landscape - pageMargins L/R
-					const safety = 2; // กันเศษ rounding
-					const maxSumWidths = pageContent - offsetsTotal - safety;
-					const dayCol = 40;
-					const periodWidth = (maxSumWidths - dayCol) / Math.max(1, periods.length);
-					return [dayCol, ...periods.map(() => periodWidth)];
-				})(),
+				widths: [DAY_COL, ...periods.map(() => periodWidth)],
 				heights: ['auto', 50, 50, 50, 50, 50],
 				body: tableBody,
 				dontBreakRows: true
@@ -337,6 +390,17 @@ function buildPageContent(
 function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Content {
 	const { periods, timetableEntries, title, viewMode = 'CLASSROOM', roomNames } = page;
 	const tableBody: TableCell[][] = [];
+
+	// คำนวณ width upfront เพื่อแชร์กับ text-wrap
+	const N = periods.length + 1;
+	const PAD_LR = 2; // 1+1 from miniTableLayout
+	const BORDER = 0.5;
+	const offsetsTotal = PAD_LR * N + BORDER * (N + 1);
+	const safety = 1;
+	const maxSumWidths = miniAreaWidth - offsetsTotal - safety;
+	const DAY_COL = 18;
+	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
+	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
 	// Header row — period name + start time
 	const headerRow: TableCell[] = [
@@ -384,7 +448,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 					const name = entry.subject_name_th || entry.subject_name_en;
 					if (name) {
 						stack.push({
-							text: segmentForBreak(name),
+							text: wrapThaiToLines(name, cellContentWidth, 3.5),
 							fontSize: 3.5,
 							color: '#374151',
 							margin: [0, 0],
@@ -393,7 +457,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 					}
 				} else {
 					stack.push({
-						text: segmentForBreak(entry.title || 'กิจกรรม'),
+						text: wrapThaiToLines(entry.title || 'กิจกรรม', cellContentWidth, 4),
 						bold: true,
 						fontSize: 4,
 						color: '#047857',
@@ -415,7 +479,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 						const rawName = entry.instructor_name.trim();
 						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
 						stack.push({
-							text: segmentForBreak(teacherName),
+							text: wrapThaiToLines(teacherName, cellContentWidth, 3.5),
 							fontSize: 3.5,
 							color: '#4b5563',
 							lineHeight: 0.9
@@ -424,7 +488,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 				} else {
 					if (!isSlotSync && entry.classroom_name) {
 						stack.push({
-							text: segmentForBreak(entry.classroom_name),
+							text: wrapThaiToLines(entry.classroom_name, cellContentWidth, 3.5),
 							fontSize: 3.5,
 							color: '#d97706',
 							bold: true,
@@ -442,7 +506,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 						: null;
 				if (roomDisplay) {
 					stack.push({
-						text: segmentForBreak(roomDisplay),
+						text: wrapThaiToLines(roomDisplay, cellContentWidth, 3.5),
 						fontSize: 3.5,
 						background: '#f3f4f6',
 						color: '#1f2937',
@@ -459,18 +523,8 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 		tableBody.push(row);
 	});
 
-	// Widths — same formula but tighter padding (1pt) + border (0.5pt)
-	const widths = (() => {
-		const N = periods.length + 1;
-		const padLR = 1 + 1;
-		const border = 0.5;
-		const offsetsTotal = padLR * N + border * (N + 1);
-		const safety = 1;
-		const maxSumWidths = miniAreaWidth - offsetsTotal - safety;
-		const dayCol = 18; // small day column (short labels)
-		const periodWidth = (maxSumWidths - dayCol) / Math.max(1, periods.length);
-		return [dayCol, ...periods.map(() => periodWidth)];
-	})();
+	// Widths array — uses precomputed periodWidth + DAY_COL from top of function
+	const widths = [DAY_COL, ...periods.map(() => periodWidth)];
 
 	// row height 38pt → รองรับ multi-line (code + name 2 lines + teacher 1-2 lines + room 1-2 lines)
 	// cast as Content — pdfmake รับ width ใน column context แต่ TS type ไม่ครอบคลุม
