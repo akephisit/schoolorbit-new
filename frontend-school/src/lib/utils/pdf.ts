@@ -303,16 +303,15 @@ function buildPageContent(
 	];
 }
 
-/** Mini-table สำหรับ portrait-2col mode — แสดง subject_code + subject_name (auto-wrap)
- *  ซ่อนครู/ห้อง/ห้องเรียน เพราะ space จำกัด
- *  miniAreaWidth: ความกว้างที่ allocated ต่อ 1 mini (default 400 สำหรับ landscape 2×2,
+/** Mini-table สำหรับ portrait-2col mode — แสดงข้อมูลครบ (วิชา ครู/ห้องเรียน ห้อง)
+ *  font เล็ก + auto-wrap, row height ใหญ่ขึ้นเพื่อรองรับ multi-line
+ *  miniAreaWidth: ความกว้างที่ allocated ต่อ 1 mini (default 400 — legacy,
  *                 282 สำหรับ portrait 2-col) */
 function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Content {
-	const { periods, timetableEntries, title, roomNames } = page;
-	void roomNames; // mini mode ไม่แสดงห้อง — keep destructure เพื่อกัน lint warning
+	const { periods, timetableEntries, title, viewMode = 'CLASSROOM', roomNames } = page;
 	const tableBody: TableCell[][] = [];
 
-	// Header row — period name + start time (no end time, ประหยัดที่)
+	// Header row — period name + start time
 	const headerRow: TableCell[] = [
 		{ text: 'วัน', bold: true, alignment: 'center', fillColor: '#f3f4f6', fontSize: 5, margin: [0, 0] }
 	];
@@ -352,14 +351,14 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 					stack.push({
 						text: entry.subject_code || '',
 						bold: true,
-						fontSize: 5,
+						fontSize: 4,
 						color: '#1e3a8a'
 					});
 					const name = entry.subject_name_th || entry.subject_name_en;
 					if (name) {
 						stack.push({
 							text: name,
-							fontSize: 4,
+							fontSize: 3.5,
 							color: '#374151',
 							margin: [0, 0],
 							lineHeight: 0.9
@@ -369,11 +368,61 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 					stack.push({
 						text: entry.title || 'กิจกรรม',
 						bold: true,
-						fontSize: 5,
+						fontSize: 4,
 						color: '#047857',
 						lineHeight: 0.9
 					});
 				}
+
+				// SLOT-sync activity (ครูหลายคน, ห้องหลายห้อง) — ซ่อน meta side
+				const isSlotSync =
+					entry.entry_type === 'ACTIVITY' && entry.activity_scheduling_mode === 'synchronized';
+
+				if (viewMode === 'CLASSROOM') {
+					if (
+						!isSlotSync &&
+						entry.instructor_name &&
+						entry.instructor_name.trim() &&
+						entry.instructor_name !== '-'
+					) {
+						const rawName = entry.instructor_name.trim();
+						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
+						stack.push({
+							text: teacherName,
+							fontSize: 3.5,
+							color: '#4b5563',
+							lineHeight: 0.9
+						});
+					}
+				} else {
+					if (!isSlotSync && entry.classroom_name) {
+						stack.push({
+							text: entry.classroom_name,
+							fontSize: 3.5,
+							color: '#d97706',
+							bold: true,
+							lineHeight: 0.9
+						});
+					}
+				}
+
+				// ชื่อห้อง — ใช้ name_th ถ้ามี, fallback เป็น room_code
+				const roomFullName = entry.room_id ? roomNames?.[entry.room_id] : undefined;
+				const roomDisplay = roomFullName
+					? roomFullName
+					: entry.room_code
+						? `ห้อง ${entry.room_code}`
+						: null;
+				if (roomDisplay) {
+					stack.push({
+						text: roomDisplay,
+						fontSize: 3.5,
+						background: '#f3f4f6',
+						color: '#1f2937',
+						lineHeight: 0.9
+					});
+				}
+
 				row.push({ stack, alignment: 'center', margin: [0, 0] });
 			} else {
 				row.push({ text: '' });
@@ -384,7 +433,6 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 	});
 
 	// Widths — same formula but tighter padding (1pt) + border (0.5pt)
-	// miniAreaWidth คือพื้นที่ที่ allocated ต่อ 1 mini (parameter)
 	const widths = (() => {
 		const N = periods.length + 1;
 		const padLR = 1 + 1;
@@ -397,6 +445,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 		return [dayCol, ...periods.map(() => periodWidth)];
 	})();
 
+	// row height 38pt → รองรับ multi-line (code + name 2 lines + teacher 1-2 lines + room 1-2 lines)
 	// cast as Content — pdfmake รับ width ใน column context แต่ TS type ไม่ครอบคลุม
 	return {
 		stack: [
@@ -411,7 +460,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 				table: {
 					headerRows: 1,
 					widths,
-					heights: ['auto', 28, 28, 28, 28, 28],
+					heights: ['auto', 38, 38, 38, 38, 38],
 					body: tableBody,
 					dontBreakRows: true
 				},
