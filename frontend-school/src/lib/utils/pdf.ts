@@ -184,14 +184,20 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 		{
 			table: {
 				headerRows: 1,
-				// day column: fixed กระชับ; period columns: แชร์ space ที่เหลือเท่าๆ กัน
-				// fix(overflow): ใช้ค่าตายตัวแทน 'auto' ป้องกันคอลัมน์วันกินพื้นที่จนตารางล้นขอบ
-				widths: [50, ...periods.map(() => '*')],
+				// Fixed widths — กว้างพอดีหน้า A4 landscape ทุกกรณี ไม่ล้นขอบ
+				// A4 landscape = 842pt, margin 20+20 = usable 802pt
+				// day col 50pt; periods แชร์ที่เหลือเท่าๆ กัน
+				widths: (() => {
+					const usable = 842 - 40; // pageWidth - L margin - R margin
+					const dayCol = 50;
+					// ไม่มี min — ปล่อยให้แคบลงเรื่อยๆ ตามจำนวนคาบ เพื่อไม่ให้ตารางล้นขอบ
+					const periodWidth = (usable - dayCol) / Math.max(1, periods.length);
+					return [dayCol, ...periods.map(() => periodWidth)];
+				})(),
 				// header: auto, data rows (MON–FRI): fix 50pt
-				// → row ที่ไม่มีคาบเลย/มีคาบน้อย ก็สูงเท่าแถวอื่นที่เต็ม
-				// (pdfmake ใช้เป็น min height — cell content ยาวเกินยังขยายได้)
 				heights: ['auto', 50, 50, 50, 50, 50],
-				body: tableBody
+				body: tableBody,
+				dontBreakRows: true
 			},
 			layout: tableLayout
 		},
