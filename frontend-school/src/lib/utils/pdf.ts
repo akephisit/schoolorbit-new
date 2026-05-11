@@ -5,6 +5,7 @@ import type {
 	Content
 } from 'pdfmake/interfaces';
 import type { TimetableEntry } from '$lib/api/timetable';
+import { getSchoolSettings } from '$lib/api/school';
 
 interface PdfPeriod {
 	id: string;
@@ -57,7 +58,28 @@ export interface TimetablePage {
 	viewMode?: 'CLASSROOM' | 'INSTRUCTOR';
 }
 
-function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
+/** Fetch image และแปลงเป็น base64 data URL — pdfmake รับเฉพาะ data URL */
+async function fetchImageDataUrl(url: string): Promise<string | null> {
+	try {
+		const res = await fetch(url);
+		if (!res.ok) return null;
+		const blob = await res.blob();
+		return await new Promise<string>((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onloadend = () => resolve(reader.result as string);
+			reader.onerror = reject;
+			reader.readAsDataURL(blob);
+		});
+	} catch {
+		return null;
+	}
+}
+
+function buildPageContent(
+	page: TimetablePage,
+	isFirst: boolean,
+	logoDataUrl: string | null
+): Content[] {
 	const { title, subTitle, periods, timetableEntries, viewMode = 'CLASSROOM' } = page;
 	const tableBody: TableCell[][] = [];
 
@@ -172,15 +194,33 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 		tableBody.push(row);
 	});
 
+	const titleBlock: Content = logoDataUrl
+		? {
+				columns: [
+					{ image: logoDataUrl, width: 50, height: 50 },
+					{
+						stack: [
+							{ text: title, style: 'header', alignment: 'center' },
+							{ text: subTitle, style: 'subheader', alignment: 'center', margin: [0, 2, 0, 0] }
+						],
+						width: '*'
+					},
+					{ text: '', width: 50 } // balance
+				],
+				columnGap: 10,
+				margin: [0, 0, 0, 15],
+				...(isFirst ? {} : { pageBreak: 'before' })
+			}
+		: {
+				stack: [
+					{ text: title, style: 'header', alignment: 'center', margin: [0, 0, 0, 5] },
+					{ text: subTitle, style: 'subheader', alignment: 'center', margin: [0, 0, 0, 15] }
+				],
+				...(isFirst ? {} : { pageBreak: 'before' })
+			};
+
 	return [
-		{
-			text: title,
-			style: 'header',
-			alignment: 'center',
-			margin: [0, 0, 0, 5],
-			...(isFirst ? {} : { pageBreak: 'before' })
-		},
-		{ text: subTitle, style: 'subheader', alignment: 'center', margin: [0, 0, 0, 20] },
+		titleBlock,
 		{
 			table: {
 				headerRows: 1,
@@ -225,7 +265,18 @@ export const generateTimetablePDF = async (pages: TimetablePage[], fileName?: st
 		}
 	};
 
-	const content: Content[] = pages.flatMap((page, i) => buildPageContent(page, i === 0));
+	// Fetch โลโก้โรงเรียน (ถ้ามี) เป็น base64 data URL
+	let logoDataUrl: string | null = null;
+	try {
+		const settings = await getSchoolSettings();
+		if (settings.logoUrl) {
+			logoDataUrl = await fetchImageDataUrl(settings.logoUrl);
+		}
+	} catch {
+		/* ไม่มี logo ก็ไม่เป็นไร */
+	}
+
+	const content: Content[] = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl));
 
 	const docDefinition: TDocumentDefinitions = {
 		pageSize: 'A4',
