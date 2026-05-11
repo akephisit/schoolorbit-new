@@ -229,14 +229,20 @@ function buildPageContent(
 		{
 			table: {
 				headerRows: 1,
-				// Fixed widths — กันล้นขอบโดย buffer = (N+2) สำหรับ border 1pt × ทุก vline
-				// A4 landscape = 842pt, margin 10+10 = usable 822pt
+				// Fixed widths — `widths` ของ pdfmake = CONTENT width per cell
+				// tableWidth จริง = sum(widths) + offsetsTotal
+				// offsetsTotal = (paddingL + paddingR) × N + vLineWidth × (N+1)
+				// ดู: pdfmake/src/TableProcessor.js:100 + DocMeasure.js:596-614
 				widths: (() => {
-					const numCols = periods.length + 1; // +1 = day col
-					const borderBuffer = numCols + 2; // เผื่อเส้นแนวตั้ง + กันเศษ
-					const usable = 842 - 20 - borderBuffer;
+					const N = periods.length + 1; // จำนวนคอลัมน์
+					const padLR = 2 + 2; // จาก tableLayout paddingLeft + paddingRight
+					const border = 1; // จาก tableLayout vLineWidth
+					const offsetsTotal = padLR * N + border * (N + 1);
+					const pageContent = 841.89 - 10 - 10; // A4 landscape - pageMargins L/R
+					const safety = 2; // กันเศษ rounding
+					const maxSumWidths = pageContent - offsetsTotal - safety;
 					const dayCol = 40;
-					const periodWidth = (usable - dayCol) / Math.max(1, periods.length);
+					const periodWidth = (maxSumWidths - dayCol) / Math.max(1, periods.length);
 					return [dayCol, ...periods.map(() => periodWidth)];
 				})(),
 				heights: ['auto', 50, 50, 50, 50, 50],
