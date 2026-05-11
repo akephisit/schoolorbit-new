@@ -445,6 +445,52 @@ function buildPageContent(
 				...(isFirst ? {} : { pageBreak: 'before' })
 			};
 
+	// ช่องลงชื่อใต้ตารางสอน — แสดงเฉพาะ INSTRUCTOR view (ตามที่ user ขอ)
+	const signatureBlock: Content | null =
+		viewMode === 'INSTRUCTOR'
+			? {
+					columns: [
+						{
+							stack: [
+								{ text: 'ลงชื่อ ........................................', alignment: 'center' },
+								{
+									text: '(........................................)',
+									alignment: 'center',
+									fontSize: 10,
+									margin: [0, 2, 0, 0]
+								},
+								{
+									text: 'หัวหน้ากลุ่มบริหารงานวิชาการ',
+									alignment: 'center',
+									fontSize: 11,
+									margin: [0, 2, 0, 0]
+								}
+							],
+							width: '*'
+						},
+						{
+							stack: [
+								{ text: 'ลงชื่อ ........................................', alignment: 'center' },
+								{
+									text: '(........................................)',
+									alignment: 'center',
+									fontSize: 10,
+									margin: [0, 2, 0, 0]
+								},
+								{
+									text: 'ผู้อำนวยการ',
+									alignment: 'center',
+									fontSize: 11,
+									margin: [0, 2, 0, 0]
+								}
+							],
+							width: '*'
+						}
+					],
+					margin: [0, 30, 0, 0]
+				}
+			: null;
+
 	return [
 		titleBlock,
 		{
@@ -461,6 +507,7 @@ function buildPageContent(
 			},
 			layout: tableLayout
 		},
+		...(signatureBlock ? [signatureBlock] : []),
 		{
 			columns: [
 				{ text: `ข้อมูล ณ วันที่ ${new Date().toLocaleDateString('th-TH')}`, style: 'footer' },
