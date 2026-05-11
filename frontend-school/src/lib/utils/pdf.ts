@@ -315,7 +315,7 @@ function buildMiniTable(page: TimetablePage): Content {
 		{ text: 'วัน', bold: true, alignment: 'center', fillColor: '#f3f4f6', fontSize: 5, margin: [0, 0] }
 	];
 	periods.forEach((p) => {
-		const labelText = p.name && p.name.trim() ? truncate(p.name, 6) : ' ';
+		const labelText = p.name && p.name.trim() ? p.name : ' ';
 		headerRow.push({
 			text: [
 				{ text: `${labelText}\n`, bold: true, fontSize: 5 },
@@ -356,18 +356,20 @@ function buildMiniTable(page: TimetablePage): Content {
 					const name = entry.subject_name_th || entry.subject_name_en;
 					if (name) {
 						stack.push({
-							text: truncate(name, 8),
+							text: name,
 							fontSize: 4,
 							color: '#374151',
-							margin: [0, 0]
+							margin: [0, 0],
+							lineHeight: 0.9
 						});
 					}
 				} else {
 					stack.push({
-						text: truncate(entry.title || 'กิจกรรม', 8),
+						text: entry.title || 'กิจกรรม',
 						bold: true,
 						fontSize: 5,
-						color: '#047857'
+						color: '#047857',
+						lineHeight: 0.9
 					});
 				}
 				row.push({ stack, alignment: 'center', margin: [0, 0] });
