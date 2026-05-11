@@ -40,6 +40,27 @@ const stripTitlePrefix = (title: string): string => {
 	return title.replace(/^ตารางเรียน ชั้น/, '').replace(/^ตารางสอน /, '');
 };
 
+/** Thai word segmentation — แทรก zero-width space (U+200B) ระหว่างคำเพื่อให้
+ *  pdfmake (UAX#14 linebreak) break ที่ขอบเขตคำ ไม่ฉีกกลางคำ
+ *  ใช้ Intl.Segmenter (browser-native, Thai-aware dictionary)
+ *  fallback = return text เดิมถ้า Segmenter ไม่มี */
+type SegmenterCtor = new (
+	locale: string,
+	opts: { granularity: 'grapheme' | 'word' | 'sentence' }
+) => { segment(text: string): Iterable<{ segment: string }> };
+
+const segmentForBreak = (text: string | undefined | null): string => {
+	if (!text) return '';
+	try {
+		const Ctor = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
+		if (!Ctor) return text;
+		const segmenter = new Ctor('th', { granularity: 'word' });
+		return Array.from(segmenter.segment(text), (s) => s.segment).join('\u200B');
+	} catch {
+		return text;
+	}
+};
+
 // Helper: Define Table Layout
 // padding: ลดจาก pdfmake default (4pt) เหลือ 2pt → cells ชิดขอบมากขึ้น
 const tableLayout: CustomTableLayout = {
@@ -162,14 +183,14 @@ function buildPageContent(
 					stack.push(
 						{ text: entry.subject_code || '', bold: true, fontSize: 8, color: '#1e3a8a' },
 						{
-							text: entry.subject_name_th || entry.subject_name_en || 'วิชา',
+							text: segmentForBreak(entry.subject_name_th || entry.subject_name_en || 'วิชา'),
 							fontSize: 7,
 							margin: [0, 0]
 						}
 					);
 				} else {
 					stack.push({
-						text: entry.title || 'กิจกรรม',
+						text: segmentForBreak(entry.title || 'กิจกรรม'),
 						bold: true,
 						fontSize: 8,
 						color: '#047857',
@@ -193,13 +214,13 @@ function buildPageContent(
 					) {
 						const rawName = entry.instructor_name.trim();
 						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
-						stack.push({ text: teacherName, fontSize: 7, color: '#4b5563', margin: [0, 1] });
+						stack.push({ text: segmentForBreak(teacherName), fontSize: 7, color: '#4b5563', margin: [0, 1] });
 					}
 				} else {
 					// Teacher PDF — แสดงห้อง (ยกเว้น sync activity เพราะเป็นกิจกรรมรวมทุกห้อง)
 					if (!isSlotSync && entry.classroom_name) {
 						stack.push({
-							text: entry.classroom_name,
+							text: segmentForBreak(entry.classroom_name),
 							fontSize: 7,
 							color: '#d97706',
 							bold: true,
@@ -218,7 +239,7 @@ function buildPageContent(
 						: null;
 				if (roomDisplay) {
 					stack.push({
-						text: roomDisplay,
+						text: segmentForBreak(roomDisplay),
 						fontSize: 7,
 						background: '#f3f4f6',
 						color: '#1f2937',
@@ -357,7 +378,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 					const name = entry.subject_name_th || entry.subject_name_en;
 					if (name) {
 						stack.push({
-							text: name,
+							text: segmentForBreak(name),
 							fontSize: 3.5,
 							color: '#374151',
 							margin: [0, 0],
@@ -366,7 +387,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 					}
 				} else {
 					stack.push({
-						text: entry.title || 'กิจกรรม',
+						text: segmentForBreak(entry.title || 'กิจกรรม'),
 						bold: true,
 						fontSize: 4,
 						color: '#047857',
@@ -388,7 +409,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 						const rawName = entry.instructor_name.trim();
 						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
 						stack.push({
-							text: teacherName,
+							text: segmentForBreak(teacherName),
 							fontSize: 3.5,
 							color: '#4b5563',
 							lineHeight: 0.9
@@ -397,7 +418,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 				} else {
 					if (!isSlotSync && entry.classroom_name) {
 						stack.push({
-							text: entry.classroom_name,
+							text: segmentForBreak(entry.classroom_name),
 							fontSize: 3.5,
 							color: '#d97706',
 							bold: true,
@@ -415,7 +436,7 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 						: null;
 				if (roomDisplay) {
 					stack.push({
-						text: roomDisplay,
+						text: segmentForBreak(roomDisplay),
 						fontSize: 3.5,
 						background: '#f3f4f6',
 						color: '#1f2937',
