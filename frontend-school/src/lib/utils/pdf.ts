@@ -73,7 +73,9 @@ function approxTextWidthPt(text: string, fontSizePt: number): number {
 /** Wrap Thai text เป็นหลายบรรทัดที่ขอบเขตคำ ใส่ \n (hard break) ระหว่างบรรทัด
  *  คำในบรรทัดเดียวกันติดกันไม่มี space → ไม่มีเว้นวรรค + ไม่มี tofu
  *  ใช้ Intl.Segmenter('th', word) ตัดคำตาม dictionary ของ ICU
- *  fallback = return text เดิมถ้า Segmenter ไม่มี */
+ *  fallback: ถ้า word ใด ๆ กว้างกว่า maxWidth (คำทับศัพท์ที่ dict ไม่รู้จัก เช่น
+ *  "ไฮโดรโปนิกส์") → sub-segment เป็น grapheme cluster (= syllable ในไทย)
+ *  fallback อีกระดับ = return text เดิมถ้า Segmenter ไม่มี */
 function wrapThaiToLines(
 	text: string | undefined | null,
 	maxWidthPt: number,
@@ -83,24 +85,37 @@ function wrapThaiToLines(
 	try {
 		const Ctor = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
 		if (!Ctor) return text;
-		const seg = new Ctor('th', { granularity: 'word' });
-		const words = Array.from(seg.segment(text), (s) => s.segment).filter(
+		const wordSeg = new Ctor('th', { granularity: 'word' });
+		const words = Array.from(wordSeg.segment(text), (s) => s.segment).filter(
 			(s) => s.length > 0
 		);
-		if (words.length <= 1) return text;
+
+		// ถ้า word ใดกว้างกว่า cell → sub-segment ด้วย grapheme cluster
+		// (กัน pdfmake force-break ที่ตำแหน่งสุ่ม)
+		const graphSeg = new Ctor('en', { granularity: 'grapheme' });
+		const units: string[] = [];
+		for (const w of words) {
+			if (approxTextWidthPt(w, fontSizePt) > maxWidthPt) {
+				for (const g of graphSeg.segment(w)) units.push(g.segment);
+			} else {
+				units.push(w);
+			}
+		}
+
+		if (units.length <= 1) return text;
 
 		const lines: string[] = [];
 		let line = '';
 		let lineWidth = 0;
-		for (const word of words) {
-			const ww = approxTextWidthPt(word, fontSizePt);
-			if (line === '' || lineWidth + ww <= maxWidthPt) {
-				line += word;
-				lineWidth += ww;
+		for (const unit of units) {
+			const uw = approxTextWidthPt(unit, fontSizePt);
+			if (line === '' || lineWidth + uw <= maxWidthPt) {
+				line += unit;
+				lineWidth += uw;
 			} else {
 				lines.push(line);
-				line = word;
-				lineWidth = ww;
+				line = unit;
+				lineWidth = uw;
 			}
 		}
 		if (line) lines.push(line);
