@@ -422,15 +422,15 @@ function buildPageContent(
 	const rightCornerBlock = (
 		showQrCode
 			? {
-					width: 55,
+					width: 85,
 					stack: [
-						{ qr: qrUrl, fit: 50, alignment: 'center' },
+						{ qr: qrUrl, fit: 80, alignment: 'center' },
 						{
 							text: 'สแกนดูตาราง',
-							fontSize: 6,
+							fontSize: 7,
 							color: '#6b7280',
 							alignment: 'center',
-							margin: [0, 1, 0, 0]
+							margin: [0, 2, 0, 0]
 						}
 					]
 				}
@@ -710,6 +710,28 @@ function buildPortraitPageContent(
 	pageHeaderTitle: string,
 	pageHeaderSubTitle: string
 ): Content[] {
+	// QR code — แสดงเฉพาะ INSTRUCTOR view (เหมือนกับ full mode)
+	const isInstructor = chunk[0]?.viewMode === 'INSTRUCTOR';
+	const showQr = isInstructor && typeof window !== 'undefined';
+	const qrUrl = showQr ? window.location.origin + '/staff/timetable' : '';
+	const qrCornerBlock = (
+		showQr
+			? {
+					width: 70,
+					stack: [
+						{ qr: qrUrl, fit: 65, alignment: 'center' },
+						{
+							text: 'สแกนดูตาราง',
+							fontSize: 6,
+							color: '#6b7280',
+							alignment: 'center',
+							margin: [0, 1, 0, 0]
+						}
+					]
+				}
+			: { text: '', width: 40 }
+	) as unknown as Content;
+
 	const titleBlock: Content = logoDataUrl
 		? {
 				columns: [
@@ -730,17 +752,24 @@ function buildPortraitPageContent(
 						],
 						width: '*'
 					},
-					{ text: '', width: 40 }
+					qrCornerBlock
 				],
 				columnGap: 10,
 				margin: [0, 0, 0, 8],
 				...(isFirst ? {} : { pageBreak: 'before' })
 			}
 		: {
-				stack: [
-					{ text: pageHeaderTitle, fontSize: 14, bold: true, color: '#1e3a8a', alignment: 'center', margin: [0, 0, 0, 2] },
-					{ text: pageHeaderSubTitle, fontSize: 10, color: '#4b5563', alignment: 'center', margin: [0, 0, 0, 8] }
+				columns: [
+					{
+						stack: [
+							{ text: pageHeaderTitle, fontSize: 14, bold: true, color: '#1e3a8a', alignment: 'center', margin: [0, 0, 0, 2] },
+							{ text: pageHeaderSubTitle, fontSize: 10, color: '#4b5563', alignment: 'center', margin: [0, 0, 0, 8] }
+						],
+						width: '*'
+					},
+					qrCornerBlock
 				],
+				columnGap: 10,
 				...(isFirst ? {} : { pageBreak: 'before' })
 			};
 
