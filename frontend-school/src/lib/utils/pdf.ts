@@ -39,10 +39,67 @@ type SegmenterCtor = new (
 	opts: { granularity: 'grapheme' | 'word' | 'sentence' }
 ) => { segment(text: string): Iterable<{ segment: string }> };
 
-/** ประมาณ width (pt) ของ text ใน Sarabun font ที่ fontSize หนึ่ง ๆ
+/** Canvas-based text measurement — ใช้ Sarabun font (โหลดผ่าน FontFace API)
+ *  เพื่อวัด width จริงที่ pdfmake จะ render → แม่นกว่า approximation
+ *  fallback ไป approxTextWidthPt ถ้า font ยังโหลดไม่เสร็จหรือไม่มี DOM */
+let measureCanvas: HTMLCanvasElement | null = null;
+let measureCtx: CanvasRenderingContext2D | null = null;
+let sarabunMeasureReady = false;
+
+async function ensureSarabunMeasurement(): Promise<void> {
+	if (sarabunMeasureReady || typeof document === 'undefined') return;
+	try {
+		const url = window.location.origin + '/fonts/Sarabun-Regular.ttf';
+		const font = new FontFace('SarabunMeasure', `url(${url}) format('truetype')`);
+		await font.load();
+		document.fonts.add(font);
+		sarabunMeasureReady = true;
+	} catch {
+		// ignore — จะใช้ approx แทน
+	}
+}
+
+const PT_PER_PX = 72 / 96; // 1pt = 1.333px (CSS standard)
+
+function measureTextWidthPt(text: string, fontSizePt: number): number {
+	if (!text) return 0;
+	if (!sarabunMeasureReady || typeof document === 'undefined') {
+		return approxTextWidthPt(text, fontSizePt);
+	}
+	if (!measureCtx) {
+		measureCanvas = document.createElement('canvas');
+		measureCtx = measureCanvas.getContext('2d');
+		if (!measureCtx) return approxTextWidthPt(text, fontSizePt);
+	}
+	const fontSizePx = fontSizePt / PT_PER_PX;
+	measureCtx.font = `${fontSizePx}px SarabunMeasure, sans-serif`;
+	const widthPx = measureCtx.measureText(text).width;
+	return widthPx * PT_PER_PX;
+}
+
+/** Thai syllable split — ตัดก่อน leading vowel (ใไเแโ) → cleaner sub-breaks
+ *  เช่น "ไฮโดรโปนิกส์" → ["ไฮ", "โดร", "โปนิกส์"] (3 syllables)
+ *  ดีกว่า grapheme split (ตัดทุกตัว) สำหรับคำที่ ICU dict ไม่รู้จัก */
+function syllableSplit(text: string): string[] {
+	const LEADING_VOWELS = new Set(['ใ', 'ไ', 'เ', 'แ', 'โ']);
+	const result: string[] = [];
+	let current = '';
+	for (const ch of text) {
+		if (LEADING_VOWELS.has(ch) && current.length > 0) {
+			result.push(current);
+			current = ch;
+		} else {
+			current += ch;
+		}
+	}
+	if (current) result.push(current);
+	return result;
+}
+
+/** ประมาณ width (pt) ของ text ใน Sarabun font — fallback เมื่อ canvas measurement ไม่พร้อม
  *  ใช้ grapheme-cluster counting (Intl.Segmenter) เพื่อ handle Thai composed chars
  *  ค่าประมาณ: Thai grapheme ~0.55em, Latin ~0.5em, digit ~0.55em, space ~0.25em
- *  + safety factor 1.1 (เผื่อ overestimate ให้ wrap เร็วกว่าจริง 10%) */
+ *  + safety factor 1.1 */
 function approxTextWidthPt(text: string, fontSizePt: number): number {
 	if (!text) return 0;
 	let width = 0;
@@ -101,13 +158,18 @@ function wrapSection(text: string, maxWidthPt: number, fontSizePt: number): stri
 			(s) => s.length > 0
 		);
 
-		// ถ้า word ใดกว้างกว่า cell → sub-segment ด้วย grapheme cluster
-		// (กัน pdfmake force-break ที่ตำแหน่งสุ่ม)
+		// ถ้า word ใดกว้างกว่า cell → ลอง syllable split (ตัดก่อน leading vowel)
+		// fallback ถ้า syllable split ไม่ได้ → grapheme cluster
 		const graphSeg = new Ctor('en', { granularity: 'grapheme' });
 		const units: string[] = [];
 		for (const w of words) {
-			if (approxTextWidthPt(w, fontSizePt) > maxWidthPt) {
-				for (const g of graphSeg.segment(w)) units.push(g.segment);
+			if (measureTextWidthPt(w, fontSizePt) > maxWidthPt) {
+				const subs = syllableSplit(w);
+				if (subs.length > 1) {
+					for (const s of subs) units.push(s);
+				} else {
+					for (const g of graphSeg.segment(w)) units.push(g.segment);
+				}
 			} else {
 				units.push(w);
 			}
@@ -119,7 +181,7 @@ function wrapSection(text: string, maxWidthPt: number, fontSizePt: number): stri
 		let line = '';
 		let lineWidth = 0;
 		for (const unit of units) {
-			const uw = approxTextWidthPt(unit, fontSizePt);
+			const uw = measureTextWidthPt(unit, fontSizePt);
 			if (line === '' || lineWidth + uw <= maxWidthPt) {
 				line += unit;
 				lineWidth += uw;
@@ -667,7 +729,12 @@ export const generateTimetablePDF = async (
 	if (pages.length === 0) return;
 	const layout = options?.layout ?? 'full';
 
-	const pdfMakeModule = await import('pdfmake/build/pdfmake');
+	// โหลด Sarabun สำหรับ canvas-based text measurement (wrap แม่นยำ)
+	// + load pdfmake พร้อมกัน
+	const [pdfMakeModule] = await Promise.all([
+		import('pdfmake/build/pdfmake'),
+		ensureSarabunMeasurement()
+	]);
 	const pdfMake = pdfMakeModule.default;
 
 	pdfMake.fonts = {
