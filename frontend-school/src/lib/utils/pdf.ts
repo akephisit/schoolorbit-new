@@ -184,17 +184,16 @@ function buildPageContent(page: TimetablePage, isFirst: boolean): Content[] {
 		{
 			table: {
 				headerRows: 1,
-				// Fixed widths — กว้างพอดีหน้า A4 landscape ทุกกรณี ไม่ล้นขอบ
-				// A4 landscape = 842pt, margin 20+20 = usable 802pt
-				// day col 50pt; periods แชร์ที่เหลือเท่าๆ กัน
+				// Fixed widths — กันล้นขอบโดย buffer = (N+2) สำหรับ border 1pt × ทุก vline
+				// A4 landscape = 842pt, margin 10+10 = usable 822pt
 				widths: (() => {
-					const usable = 842 - 40; // pageWidth - L margin - R margin
-					const dayCol = 50;
-					// ไม่มี min — ปล่อยให้แคบลงเรื่อยๆ ตามจำนวนคาบ เพื่อไม่ให้ตารางล้นขอบ
+					const numCols = periods.length + 1; // +1 = day col
+					const borderBuffer = numCols + 2; // เผื่อเส้นแนวตั้ง + กันเศษ
+					const usable = 842 - 20 - borderBuffer;
+					const dayCol = 40;
 					const periodWidth = (usable - dayCol) / Math.max(1, periods.length);
 					return [dayCol, ...periods.map(() => periodWidth)];
 				})(),
-				// header: auto, data rows (MON–FRI): fix 50pt
 				heights: ['auto', 50, 50, 50, 50, 50],
 				body: tableBody,
 				dontBreakRows: true
@@ -231,8 +230,8 @@ export const generateTimetablePDF = async (pages: TimetablePage[], fileName?: st
 	const docDefinition: TDocumentDefinitions = {
 		pageSize: 'A4',
 		pageOrientation: 'landscape',
-		// ลด margin ซ้าย-ขวา เพื่อมีพื้นที่ตารางมากขึ้น (ลด overflow บนคาบเยอะๆ)
-		pageMargins: [20, 40, 20, 30],
+		// ลด margin ซ้าย-ขวาเหลือน้อยสุด → table มีที่ให้กว้างที่สุด
+		pageMargins: [10, 30, 10, 20],
 		content,
 		styles: {
 			header: { fontSize: 18, bold: true, color: '#1e3a8a' },
