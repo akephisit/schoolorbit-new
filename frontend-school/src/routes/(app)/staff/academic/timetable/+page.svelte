@@ -2303,6 +2303,9 @@
 			const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
 			const subTitle = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
 
+			// id → name_th สำหรับให้ PDF แสดงชื่อห้องเต็ม (เหมือนหน้าเว็บ) แทน room_code
+			const roomNames = Object.fromEntries(rooms.map((r) => [r.id, r.name_th]));
+
 			// fetch entries ของทุก target พร้อมกัน แล้วรวมเป็น pages เดียวสำหรับ PDF
 			const pagePromises = exportTargetIds.map(async (id) => {
 				let entries: TimetableEntry[] = [];
@@ -2339,7 +2342,8 @@
 					subTitle,
 					periods,
 					timetableEntries: entries,
-					viewMode: exportType
+					viewMode: exportType,
+					roomNames
 				};
 			});
 

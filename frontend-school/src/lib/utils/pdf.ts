@@ -61,12 +61,16 @@ export interface TimetablePage {
 	periods: PdfPeriod[];
 	timetableEntries: TimetableEntry[];
 	viewMode?: 'CLASSROOM' | 'INSTRUCTOR';
+	/** room_id → name_th — ใช้แสดงชื่อห้องเต็ม (เช่น "ห้องคณิตศาสตร์ 1")
+	 *  ถ้าไม่ส่งมาจะ fallback ไปใช้ entry.room_code (รหัสสั้น) */
+	roomNames?: Record<string, string>;
 }
 
-/** Fetch image และแปลงเป็น base64 data URL — pdfmake รับเฉพาะ data URL */
+/** Fetch image และแปลงเป็น base64 data URL — pdfmake รับเฉพาะ data URL
+ *  cache: 'no-store' — กัน browser cache เก่าที่ไม่มี CORS header (หลังตั้ง CORS ตอนหลัง) */
 async function fetchImageDataUrl(url: string): Promise<string | null> {
 	try {
-		const res = await fetch(url);
+		const res = await fetch(url, { cache: 'no-store' });
 		if (!res.ok) return null;
 		const blob = await res.blob();
 		return await new Promise<string>((resolve, reject) => {
@@ -85,7 +89,7 @@ function buildPageContent(
 	isFirst: boolean,
 	logoDataUrl: string | null
 ): Content[] {
-	const { title, subTitle, periods, timetableEntries, viewMode = 'CLASSROOM' } = page;
+	const { title, subTitle, periods, timetableEntries, viewMode = 'CLASSROOM', roomNames } = page;
 	const tableBody: TableCell[][] = [];
 
 	// Header Row
@@ -180,9 +184,17 @@ function buildPageContent(
 					}
 				}
 
-				if (entry.room_code) {
+				// ชื่อห้องเต็ม (name_th) ถ้ามี — ไม่งั้น fallback เป็นรหัสสั้น (code)
+				// name_th มักมีคำว่า "ห้อง" อยู่ในชื่ออยู่แล้ว → ไม่ใส่ prefix
+				const roomFullName = entry.room_id ? roomNames?.[entry.room_id] : undefined;
+				const roomDisplay = roomFullName
+					? roomFullName
+					: entry.room_code
+						? `ห้อง ${entry.room_code}`
+						: null;
+				if (roomDisplay) {
 					stack.push({
-						text: `ห้อง ${entry.room_code}`,
+						text: roomDisplay,
 						fontSize: 7,
 						background: '#f3f4f6',
 						color: '#1f2937',
