@@ -72,6 +72,10 @@ function approxTextWidthPt(text: string, fontSizePt: number): number {
 
 /** Wrap Thai text เป็นหลายบรรทัดที่ขอบเขตคำ ใส่ \n (hard break) ระหว่างบรรทัด
  *  คำในบรรทัดเดียวกันติดกันไม่มี space → ไม่มีเว้นวรรค + ไม่มี tofu
+ *
+ *  สำคัญ: เริ่มต้นด้วย split user's explicit \n (กิจกรรม batch อนุญาตให้ user
+ *  ใส่ "\n" เอง) → preserve intent ของ user, แล้วค่อย wrap แต่ละ section
+ *
  *  ใช้ Intl.Segmenter('th', word) ตัดคำตาม dictionary ของ ICU
  *  fallback: ถ้า word ใด ๆ กว้างกว่า maxWidth (คำทับศัพท์ที่ dict ไม่รู้จัก เช่น
  *  "ไฮโดรโปนิกส์") → sub-segment เป็น grapheme cluster (= syllable ในไทย)
@@ -81,6 +85,13 @@ function wrapThaiToLines(
 	maxWidthPt: number,
 	fontSizePt: number
 ): string {
+	if (!text) return '';
+	// preserve user's explicit \n (batch activity titles) — ตัดก่อน แล้ว wrap แต่ละ section
+	const sections = text.split(/\r?\n/);
+	return sections.map((s) => wrapSection(s, maxWidthPt, fontSizePt)).join('\n');
+}
+
+function wrapSection(text: string, maxWidthPt: number, fontSizePt: number): string {
 	if (!text) return '';
 	try {
 		const Ctor = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
