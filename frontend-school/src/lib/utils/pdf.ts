@@ -303,9 +303,11 @@ function buildPageContent(
 	];
 }
 
-/** Mini-table สำหรับ grid-2×2 mode — แสดงเฉพาะ subject_code + subject_name truncate
- *  ซ่อนครู/ห้อง/ห้องเรียน เพราะ space จำกัด (~400×220pt per mini) */
-function buildMiniTable(page: TimetablePage): Content {
+/** Mini-table สำหรับ portrait-2col mode — แสดง subject_code + subject_name (auto-wrap)
+ *  ซ่อนครู/ห้อง/ห้องเรียน เพราะ space จำกัด
+ *  miniAreaWidth: ความกว้างที่ allocated ต่อ 1 mini (default 400 สำหรับ landscape 2×2,
+ *                 282 สำหรับ portrait 2-col) */
+function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Content {
 	const { periods, timetableEntries, title, roomNames } = page;
 	void roomNames; // mini mode ไม่แสดงห้อง — keep destructure เพื่อกัน lint warning
 	const tableBody: TableCell[][] = [];
@@ -382,12 +384,12 @@ function buildMiniTable(page: TimetablePage): Content {
 	});
 
 	// Widths — same formula but tighter padding (1pt) + border (0.5pt)
+	// miniAreaWidth คือพื้นที่ที่ allocated ต่อ 1 mini (parameter)
 	const widths = (() => {
 		const N = periods.length + 1;
 		const padLR = 1 + 1;
 		const border = 0.5;
 		const offsetsTotal = padLR * N + border * (N + 1);
-		const miniAreaWidth = 400; // ครึ่งหนึ่งของ landscape width (821.89 - 10 gap) / 2 = 405.95 — เผื่อ 5pt
 		const safety = 1;
 		const maxSumWidths = miniAreaWidth - offsetsTotal - safety;
 		const dayCol = 18; // small day column (short labels)
@@ -420,8 +422,12 @@ function buildMiniTable(page: TimetablePage): Content {
 	} as Content;
 }
 
-/** Grid-2×2 page — รวม TimetablePage 4 อันใน 1 หน้า PDF (chunk ละ 4) */
-function buildGridPageContent(
+/** Portrait 2-column page — รวม mini-tables ใน 2 คอลัมเรียงลงมา (newspaper order)
+ *  6 minis/page (3 rows × 2 cols) — ปรับให้พอดี A4 portrait */
+const PORTRAIT_MINI_AREA_WIDTH = 282; // (595.28 - 20 margins - 10 gap) / 2 = 282.64 — เผื่อ 0.64
+const MINIS_PER_PORTRAIT_PAGE = 6;
+
+function buildPortraitPageContent(
 	chunk: TimetablePage[],
 	isFirst: boolean,
 	logoDataUrl: string | null,
@@ -462,16 +468,25 @@ function buildGridPageContent(
 				...(isFirst ? {} : { pageBreak: 'before' })
 			};
 
-	// pad chunk ให้ครบ 4 (empty mini สำหรับช่องที่ไม่มี target)
-	const minis: Content[] = chunk.map((p) => buildMiniTable(p));
-	while (minis.length < 4) {
-		minis.push({ text: '', width: '*' } as Content);
-	}
+	// แต่ละ mini เพิ่ม bottom margin 8pt เพื่อ separation ใน stack
+	const minis: Content[] = chunk.map((p) => {
+		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH);
+		return { ...(mini as object), margin: [0, 0, 0, 8] } as Content;
+	});
+
+	// Newspaper order: index 0,2,4 → ซ้าย, 1,3,5 → ขวา
+	const leftCol = minis.filter((_, i) => i % 2 === 0);
+	const rightCol = minis.filter((_, i) => i % 2 === 1);
 
 	return [
 		titleBlock,
-		{ columns: [minis[0], minis[1]], columnGap: 10 },
-		{ columns: [minis[2], minis[3]], columnGap: 10, margin: [0, 8, 0, 0] },
+		{
+			columns: [
+				{ stack: leftCol, width: '*' },
+				{ stack: rightCol, width: '*' }
+			],
+			columnGap: 10
+		},
 		{
 			columns: [
 				{ text: `ข้อมูล ณ วันที่ ${new Date().toLocaleDateString('th-TH')}`, style: 'footer' },
@@ -483,8 +498,9 @@ function buildGridPageContent(
 }
 
 export interface GeneratePdfOptions {
-	/** 'full' = 1 ตาราง/หน้า (default), 'grid-2x2' = 4 ตาราง/หน้า สำหรับเปรียบเทียบ */
-	layout?: 'full' | 'grid-2x2';
+	/** 'full' = 1 ตาราง/หน้า A4 landscape (default, รายละเอียดเต็ม)
+	 *  'portrait-2col' = หลายตาราง/หน้า A4 portrait, 2 คอลัมเรียงลงมา (สำหรับเปรียบเทียบ) */
+	layout?: 'full' | 'portrait-2col';
 }
 
 export const generateTimetablePDF = async (
@@ -519,18 +535,18 @@ export const generateTimetablePDF = async (
 	}
 
 	let content: Content[];
-	if (layout === 'grid-2x2') {
-		// chunk pages ละ 4 → 1 PDF page = 4 mini-tables
+	if (layout === 'portrait-2col') {
+		// chunk pages ละ MINIS_PER_PORTRAIT_PAGE → 1 PDF page = หลาย mini-tables
 		const chunks: TimetablePage[][] = [];
-		for (let i = 0; i < pages.length; i += 4) {
-			chunks.push(pages.slice(i, i + 4));
+		for (let i = 0; i < pages.length; i += MINIS_PER_PORTRAIT_PAGE) {
+			chunks.push(pages.slice(i, i + MINIS_PER_PORTRAIT_PAGE));
 		}
-		// page header (1 ครั้ง/หน้า) — title generic ตาม viewMode, subTitle ใช้ของหน้าแรก (ทุก page share เดียวกัน)
+		// page header (1 ครั้ง/หน้า) — title generic ตาม viewMode, subTitle ใช้ของหน้าแรก
 		const isClassroom = (pages[0].viewMode ?? 'CLASSROOM') === 'CLASSROOM';
 		const pageHeaderTitle = isClassroom ? 'ตารางเรียน' : 'ตารางสอน';
 		const pageHeaderSubTitle = pages[0].subTitle;
 		content = chunks.flatMap((chunk, i) =>
-			buildGridPageContent(chunk, i === 0, logoDataUrl, pageHeaderTitle, pageHeaderSubTitle)
+			buildPortraitPageContent(chunk, i === 0, logoDataUrl, pageHeaderTitle, pageHeaderSubTitle)
 		);
 	} else {
 		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl));
@@ -538,7 +554,8 @@ export const generateTimetablePDF = async (
 
 	const docDefinition: TDocumentDefinitions = {
 		pageSize: 'A4',
-		pageOrientation: 'landscape',
+		// portrait mode: 2-col stacked minis; landscape: 1 full-page table
+		pageOrientation: layout === 'portrait-2col' ? 'portrait' : 'landscape',
 		// ลด margin ซ้าย-ขวาเหลือน้อยสุด → table มีที่ให้กว้างที่สุด
 		pageMargins: [10, 30, 10, 20],
 		content,

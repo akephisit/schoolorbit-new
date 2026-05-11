@@ -182,7 +182,7 @@
 	let showExportModal = $state(false);
 	let exportType = $state<'CLASSROOM' | 'INSTRUCTOR'>('CLASSROOM');
 	let exportTargetIds = $state<string[]>([]);
-	let exportLayout = $state<'full' | 'grid-2x2'>('full');
+	let exportLayout = $state<'full' | 'portrait-2col'>('full');
 	let isExporting = $state(false);
 
 	// State
@@ -4590,20 +4590,20 @@
 						onclick={() => (exportLayout = 'full')}
 						class="flex-1"
 					>
-						1 ตาราง/หน้า
+						1 ตาราง/หน้า (Landscape)
 					</Button>
 					<Button
-						variant={exportLayout === 'grid-2x2' ? 'default' : 'outline'}
+						variant={exportLayout === 'portrait-2col' ? 'default' : 'outline'}
 						size="sm"
-						onclick={() => (exportLayout = 'grid-2x2')}
+						onclick={() => (exportLayout = 'portrait-2col')}
 						class="flex-1"
 					>
-						4 ตาราง/หน้า (2×2)
+						2 คอลัม/หน้า (Portrait)
 					</Button>
 				</div>
-				{#if exportLayout === 'grid-2x2'}
+				{#if exportLayout === 'portrait-2col'}
 					<p class="text-xs text-muted-foreground">
-						โหมดเปรียบเทียบ — แสดงเฉพาะรหัสวิชา+ชื่อวิชา (ซ่อนชื่อครู/ห้อง)
+						โหมดเปรียบเทียบ — แนวตั้ง 2 คอลัมเรียงลงมา (~6 ตาราง/หน้า) ซ่อนชื่อครู/ห้อง
 					</p>
 				{/if}
 			</div>
