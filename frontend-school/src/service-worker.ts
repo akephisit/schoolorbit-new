@@ -42,6 +42,12 @@ sw.addEventListener('activate', (event) => {
 
 // Listen for fetch event - Network-Only strategy
 sw.addEventListener('fetch', (event) => {
+	// Skip cross-origin requests — browser handle เอง (CORS, cache ฯลฯ)
+	// SW intercept อาจทำให้ CORS preflight + cached bad response ผิดทาง
+	const url = new URL(event.request.url);
+	if (url.origin !== self.location.origin) {
+		return;
+	}
 	// Network-Only: Always fetch from network, never cache
 	event.respondWith(
 		fetch(event.request)
