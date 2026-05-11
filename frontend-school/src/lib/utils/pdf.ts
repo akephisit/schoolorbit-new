@@ -40,9 +40,10 @@ const stripTitlePrefix = (title: string): string => {
 	return title.replace(/^ตารางเรียน ชั้น/, '').replace(/^ตารางสอน /, '');
 };
 
-/** Thai word segmentation — แทรก zero-width space (U+200B) ระหว่างคำเพื่อให้
- *  pdfmake (UAX#14 linebreak) break ที่ขอบเขตคำ ไม่ฉีกกลางคำ
- *  ใช้ Intl.Segmenter (browser-native, Thai-aware dictionary)
+/** Thai word segmentation — แทรก space ระหว่างคำเพื่อให้ pdfmake (UAX#14 linebreak)
+ *  break ที่ขอบเขตคำ ไม่ฉีกกลางคำ ใช้ Intl.Segmenter (browser-native Thai dictionary)
+ *  หมายเหตุ: ใช้ space ปกติ ไม่ใช่ U+200B (ZWSP) เพราะ Sarabun TTF ไม่มี glyph
+ *  ของ ZWSP → PDF renderer แสดงเป็น tofu (สี่เหลี่ยม)
  *  fallback = return text เดิมถ้า Segmenter ไม่มี */
 type SegmenterCtor = new (
 	locale: string,
@@ -55,7 +56,12 @@ const segmentForBreak = (text: string | undefined | null): string => {
 		const Ctor = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
 		if (!Ctor) return text;
 		const segmenter = new Ctor('th', { granularity: 'word' });
-		return Array.from(segmenter.segment(text), (s) => s.segment).join('\u200B');
+		// กรอง empty/whitespace segments แล้ว join ด้วย space ปกติ
+		// ใช้ ' ' ไม่ใช่ ​ (ZWSP) เพราะ Sarabun TTF ไม่มี glyph → tofu
+		const segments = Array.from(segmenter.segment(text), (s) => s.segment)
+			.map((s) => s.trim())
+			.filter((s) => s.length > 0);
+		return segments.join(' ');
 	} catch {
 		return text;
 	}
