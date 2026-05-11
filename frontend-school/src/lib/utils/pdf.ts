@@ -414,6 +414,29 @@ function buildPageContent(
 		tableBody.push(row);
 	});
 
+	// QR code link → หน้าตารางสอนของครู (ครูสแกนเปิดดูได้)
+	// ใช้ window.location.origin เพื่อให้ work กับทุก school subdomain
+	// แสดงเฉพาะ INSTRUCTOR view (URL = /staff/...)
+	const showQrCode = viewMode === 'INSTRUCTOR' && typeof window !== 'undefined';
+	const qrUrl = showQrCode ? window.location.origin + '/staff/timetable' : '';
+	const rightCornerBlock = (
+		showQrCode
+			? {
+					width: 55,
+					stack: [
+						{ qr: qrUrl, fit: 50, alignment: 'center' },
+						{
+							text: 'สแกนดูตาราง',
+							fontSize: 6,
+							color: '#6b7280',
+							alignment: 'center',
+							margin: [0, 1, 0, 0]
+						}
+					]
+				}
+			: { text: '', width: 50 }
+	) as unknown as Content;
+
 	const titleBlock: Content = logoDataUrl
 		? {
 				columns: [
@@ -431,7 +454,7 @@ function buildPageContent(
 						],
 						width: '*'
 					},
-					{ text: '', width: 50 } // balance
+					rightCornerBlock
 				],
 				columnGap: 10,
 				margin: [0, 0, 0, 15],
