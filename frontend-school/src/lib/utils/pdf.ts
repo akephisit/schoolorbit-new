@@ -214,7 +214,13 @@ function buildPageContent(
 	const titleBlock: Content = logoDataUrl
 		? {
 				columns: [
-					{ image: logoDataUrl, width: 50, height: 50 },
+					// fit แทน width+height → คงสัดส่วน logo (ไม่บิดเบี้ยว)
+					// portrait → ~33×50, landscape → 50×33, square → 50×50
+					// wrap ใน stack เพื่อให้ width:50 ตีความเป็น column width (ไม่ใช่ image width)
+					{
+						width: 50,
+						stack: [{ image: logoDataUrl, fit: [50, 50], alignment: 'center' }]
+					},
 					{
 						stack: [
 							{ text: title, style: 'header', alignment: 'center' },
