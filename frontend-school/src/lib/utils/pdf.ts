@@ -30,11 +30,16 @@ const getEntry = (entries: TimetableEntry[], day: string, periodId: string) => {
 };
 
 // Helper: Define Table Layout
+// padding: ลดจาก pdfmake default (4pt) เหลือ 2pt → cells ชิดขอบมากขึ้น
 const tableLayout: CustomTableLayout = {
 	hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 1 : 1),
 	vLineWidth: (i, node) => (i === 0 || i === (node.table.widths?.length ?? 0) ? 1 : 1),
 	hLineColor: () => '#9ca3af',
 	vLineColor: () => '#9ca3af',
+	paddingLeft: () => 2,
+	paddingRight: () => 2,
+	paddingTop: () => 2,
+	paddingBottom: () => 2,
 	fillColor: () => {
 		return null;
 	}
@@ -85,7 +90,7 @@ function buildPageContent(
 
 	// Header Row
 	const headerRow: TableCell[] = [
-		{ text: 'วัน / เวลา', bold: true, alignment: 'center', fillColor: '#f3f4f6', margin: [0, 4] }
+		{ text: 'วัน / เวลา', bold: true, alignment: 'center', fillColor: '#f3f4f6', margin: [0, 1] }
 	];
 	// ใส่ \n เพื่อรักษา line height ให้คอลัมน์ที่ไม่มีชื่อสูงเท่ากับคอลัมน์ที่มีชื่อ
 	// (ตรงกับ behavior ของหน้าจัดตารางที่ใช้ nbsp placeholder)
@@ -102,7 +107,7 @@ function buildPageContent(
 			],
 			alignment: 'center',
 			fillColor: '#f3f4f6',
-			margin: [0, 2]
+			margin: [0, 1]
 		});
 	});
 	tableBody.push(headerRow);
@@ -117,7 +122,7 @@ function buildPageContent(
 			alignment: 'center',
 			fillColor: day.color,
 			fontSize: 10,
-			margin: [0, 4]
+			margin: [0, 2]
 		});
 
 		periods.forEach((p) => {
@@ -185,7 +190,7 @@ function buildPageContent(
 					});
 				}
 
-				row.push({ stack, alignment: 'center', margin: [2, 3] });
+				row.push({ stack, alignment: 'center', margin: [0, 0] });
 			} else {
 				row.push({ text: '' });
 			}
