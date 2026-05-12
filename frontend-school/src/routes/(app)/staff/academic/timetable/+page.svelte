@@ -2357,11 +2357,25 @@
 				return;
 			}
 
-			// ตั้งชื่อไฟล์: ถ้าหน้าเดียวใช้ title, หลายหน้าใช้ชื่อรวม
-			const fileName =
-				pages.length === 1
-					? pages[0].title
-					: `${exportType === 'CLASSROOM' ? 'ตารางเรียน' : 'ตารางสอน'}_รวม_${pages.length}รายการ_${yearName}_ภาค${semesterName}`;
+			// ตั้งชื่อไฟล์: รูปแบบ "[ตารางเรียน/สอน] [id] ภาคเรียนที่ X ปีการศึกษา Y"
+			// (replace "/" เป็น "-" กัน filesystem มีปัญหา)
+			const subjectKind = exportType === 'CLASSROOM' ? 'ตารางเรียน' : 'ตารางสอน';
+			const semYearStr = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
+			let identifier: string;
+			if (pages.length === 1) {
+				const targetId = exportTargetIds[0];
+				if (exportType === 'CLASSROOM') {
+					const room = classrooms.find((c) => c.id === targetId);
+					identifier = (room?.name || '').replace(/\//g, '-');
+				} else {
+					const teacher = instructors.find((inst) => inst.id === targetId);
+					const tName = teacher?.name || '';
+					identifier = tName.startsWith('ครู') ? tName : `ครู${tName}`;
+				}
+			} else {
+				identifier = `${pages.length}${exportType === 'CLASSROOM' ? 'ห้อง' : 'คน'}`;
+			}
+			const fileName = `${subjectKind} ${identifier} ${semYearStr}`;
 
 			await generateTimetablePDF(pages, fileName, { layout: exportLayout });
 
