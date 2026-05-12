@@ -344,10 +344,11 @@ function buildPageContent(
 	// (cell-level VA ทำงานได้แม่นกว่า rowSpan VA ที่ buggy)
 	//
 	// nested table height = ประมาณการ rowSpan visual total:
-	//   INSTRUCTOR: row 0 (~50) + row 1 (~21) + row 2 (~16) = ~87pt
-	//   CLASSROOM:  row 0 (~30) + row 1 (~21) + row 2 (~16) = ~67pt
+	//   INSTRUCTOR: row 0 (~52, QR-driven) + row 1 (~22) + row 2 (~14) = ~87pt ✓ user OK
+	//   CLASSROOM:  row 0 (~45, title only) + row 1 (~22) + row 2 (~14) = ~81pt
+	//     (เดิม 67 → ครอบแค่ row 0+row 1 → ภาพชิดบน)
 	const FIT_W = DAY_COL - 4; // 51
-	const NESTED_H = showQrCode ? 87 : 67;
+	const NESTED_H = showQrCode ? 87 : 81;
 	const FIT_H = NESTED_H - 4;
 
 	const logoCell: TableCell = logoDataUrl
