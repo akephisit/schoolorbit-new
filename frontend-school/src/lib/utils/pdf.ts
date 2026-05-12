@@ -850,7 +850,9 @@ function buildMiniTable(
 						fontSize: 3.5,
 						background: '#f3f4f6',
 						color: '#1f2937',
-						lineHeight: 0.9
+						lineHeight: 0.9,
+						// margin top 1pt → กัน background ทับ สระอู ของ "ครู" บรรทัดบน
+						margin: [0, 1, 0, 0]
 					});
 				}
 
@@ -866,13 +868,13 @@ function buildMiniTable(
 	// Widths array — uses precomputed periodWidth + DAY_COL from top of function
 	const widths = [DAY_COL, ...periods.map(() => periodWidth)];
 
-	// row height 38pt → รองรับ multi-line (code + name 2 lines + teacher 1-2 lines + room 1-2 lines)
+	// row height ลดลงเหลือ 24pt — content น้อยลง (ตัดชื่อวิชาออก เหลือ code + ครูชื่อแรก + ห้อง)
 	// title อยู่ใน row 0 ของตารางแล้ว → ไม่ต้องมีข้อความข้างนอก
 	return {
 		table: {
 			headerRows: 3,
 			widths,
-			heights: ['auto', 'auto', 'auto', 38, 38, 38, 38, 38],
+			heights: ['auto', 'auto', 'auto', 24, 24, 24, 24, 24],
 			body: tableBody,
 			dontBreakRows: true
 		},
