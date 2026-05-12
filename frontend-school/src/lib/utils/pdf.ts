@@ -917,10 +917,13 @@ function buildPortraitPageContent(
 			: { text: '', width: 40 }
 	) as unknown as Content;
 
-	// Page header: logo อยู่ใน mini-table แต่ละอันแล้ว → header แค่ subtitle + QR
-	// (title generic "ตารางเรียน/สอน" ไม่ค่อย useful เพราะแต่ละ mini มี title ของตัวเอง)
+	// Page header: logo อยู่ใน mini-table แต่ละอันแล้ว → header แค่ title + subtitle + QR
+	// ใช้ 3 คอลัม [spacer ซ้าย, title (*), QR ขวา] → title อยู่กลางหน้ากระดาษจริง
+	// (spacer ซ้ายกว้างเท่า QR ขวา เพื่อ balance)
+	const sideColWidth = showQr ? 70 : 40;
 	const titleBlock: Content = {
 		columns: [
+			{ text: '', width: sideColWidth },
 			{
 				stack: [
 					{
