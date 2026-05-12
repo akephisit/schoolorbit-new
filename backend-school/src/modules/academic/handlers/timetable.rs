@@ -1454,6 +1454,31 @@ pub async fn create_batch_timetable_entries(
     .await
     .map_err(|e| AppError::InternalServerError(format!("fetch existing entries: {}", e)))?;
 
+    // ===== Pre-fetch classroom names + period names for accurate messages =====
+    let classroom_names: std::collections::HashMap<Uuid, String> = sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT id, name FROM class_rooms WHERE id = ANY($1)"
+    )
+    .bind(&payload.classroom_ids)
+    .fetch_all(&pool).await.unwrap_or_default()
+    .into_iter().collect();
+    let period_labels: std::collections::HashMap<Uuid, String> = sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT id, COALESCE(name, 'คาบ ' || order_index::text) FROM academic_periods WHERE id = ANY($1)"
+    )
+    .bind(&payload.period_ids)
+    .fetch_all(&pool).await.unwrap_or_default()
+    .into_iter().collect();
+
+    // Day labels (Thai) — return owned String to avoid lifetime issues
+    let day_label = |d: &str| -> String {
+        match d {
+            "MON" => "จันทร์".to_string(), "TUE" => "อังคาร".to_string(),
+            "WED" => "พุธ".to_string(), "THU" => "พฤหัสฯ".to_string(),
+            "FRI" => "ศุกร์".to_string(), "SAT" => "เสาร์".to_string(),
+            "SUN" => "อาทิตย์".to_string(),
+            _ => d.to_string(),
+        }
+    };
+
     // ===== Build summary collectors =====
     let mut skipped: Vec<serde_json::Value> = Vec::new();
     let mut blocked: Vec<serde_json::Value> = Vec::new();
@@ -1465,19 +1490,23 @@ pub async fn create_batch_timetable_entries(
     // เซตของ (classroom, day, period) ที่จะ INSERT จริง (filtered)
     let mut insert_tuples: Vec<(Uuid, String, Uuid)> = Vec::new();
 
+    // ครูจะถูก attach กับ classroom entries หรือไม่? → ใช้ตัดสินว่า cell ต้องเช็ค instructor conflict ไหม
+    // TEXT batch (no slot, no subject): ครูใน payload เก็บเป็น teacher-only entries แยก
+    //   → cell ของ classroom entries ไม่กระทบ instructor conflict
+    // SLOT/COURSE batch: ครูถูก attach เข้า classroom entries' tei → cell ต้องเช็ค
+    let instructors_attach_to_classroom = payload.activity_slot_id.is_some()
+        || payload.subject_id.is_some();
+
     for cr_id in &payload.classroom_ids {
         for day in &payload.days_of_week {
             for p_id in &payload.period_ids {
                 // หา entries ที่ "ทับ" cell นี้:
-                //   1. classroom_id ตรง → classroom conflict
-                //   2. room_id ตรง → room conflict
-                //   3. instructor_id ใน candidate_instructors → instructor conflict
                 let cell_conflicts: Vec<&ExistingEntry> = existing.iter().filter(|e| {
                     if e.day_of_week != *day || e.period_id != *p_id { return false; }
-                    // Match by classroom OR room OR shared instructor
                     e.classroom_id == Some(*cr_id)
                     || (payload.room_id.is_some() && e.room_id == payload.room_id)
-                    || e.instructor_ids.iter().any(|i| candidate_instructors.contains(i))
+                    || (instructors_attach_to_classroom
+                        && e.instructor_ids.iter().any(|i| candidate_instructors.contains(i)))
                 }).collect();
 
                 if cell_conflicts.is_empty() {
@@ -1491,38 +1520,40 @@ pub async fn create_batch_timetable_entries(
                 );
 
                 if is_sync_batch {
+                    let cell_cls_name = classroom_names.get(cr_id).cloned().unwrap_or_else(|| "?".to_string());
+                    let cell_period = period_labels.get(p_id).cloned().unwrap_or_default();
+                    let cell_day = day_label(day);
+
                     // === SYNC batch decisions ===
                     // Classroom conflict → block (นักเรียนห้องนี้มีคาบอื่นอยู่)
                     let classroom_busy = cell_conflicts.iter().find(|e| e.classroom_id == Some(*cr_id));
                     if let Some(blocker) = classroom_busy {
                         if force {
-                            // Force: ลบ entry เดิมแล้ว insert sync ใหม่
-                            // (ถ้าเป็น sync อื่นอยู่แล้ว — block เพราะ sync vs sync ไม่ should override)
                             if blocker.scheduling_mode.as_deref() == Some("synchronized") {
                                 blocked.push(json!({
-                                    "classroom_id": cr_id, "classroom_name": blocker.classroom_name,
-                                    "day_of_week": day, "period_id": p_id, "period_name": blocker.period_name,
+                                    "classroom_id": cr_id, "classroom_name": cell_cls_name,
+                                    "day_of_week": day, "period_id": p_id, "period_name": cell_period,
                                     "reason": "SYNC_VS_SYNC",
-                                    "message": format!("{} {}: ทับกับกิจกรรม sync '{}' — sync vs sync ทับไม่ได้",
-                                                       blocker.classroom_name.as_deref().unwrap_or("?"), day, blocker.display_title)
+                                    "message": format!("{} {} {}: ทับกิจกรรม sync '{}' — sync ทับ sync ไม่ได้",
+                                                       cell_cls_name, cell_day, cell_period, blocker.display_title)
                                 }));
                                 continue;
                             }
                             entries_to_delete.push(blocker.id);
                             deleted.push(json!({
-                                "id": blocker.id, "classroom_name": blocker.classroom_name,
-                                "day_of_week": day, "period_id": p_id, "period_name": blocker.period_name,
+                                "id": blocker.id, "classroom_name": cell_cls_name,
+                                "day_of_week": day, "period_id": p_id, "period_name": cell_period,
                                 "title": blocker.display_title, "entry_type": blocker.entry_type,
                                 "instructor_names": blocker.instructor_names
                             }));
                             insert_tuples.push((*cr_id, day.clone(), *p_id));
                         } else {
                             blocked.push(json!({
-                                "classroom_id": cr_id, "classroom_name": blocker.classroom_name,
-                                "day_of_week": day, "period_id": p_id, "period_name": blocker.period_name,
+                                "classroom_id": cr_id, "classroom_name": cell_cls_name,
+                                "day_of_week": day, "period_id": p_id, "period_name": cell_period,
                                 "reason": "STUDENT_BUSY",
-                                "message": format!("{} {}: นักเรียนติด '{}' ลบของเดิมก่อน",
-                                                   blocker.classroom_name.as_deref().unwrap_or("?"), day, blocker.display_title)
+                                "message": format!("{} {} {}: นักเรียนติด '{}' — ลบของเดิมก่อน",
+                                                   cell_cls_name, cell_day, cell_period, blocker.display_title)
                             }));
                         }
                         continue;
@@ -1543,10 +1574,12 @@ pub async fn create_batch_timetable_entries(
                             insert_tuples.push((*cr_id, day.clone(), *p_id));
                         } else {
                             skipped.push(json!({
-                                "classroom_id": cr_id, "day_of_week": day, "period_id": p_id,
-                                "period_name": blocker.period_name,
+                                "classroom_id": cr_id, "classroom_name": cell_cls_name,
+                                "day_of_week": day, "period_id": p_id,
+                                "period_name": cell_period,
                                 "reason": "ROOM_BUSY",
-                                "message": format!("{}: ห้องสอนถูกใช้โดย '{}' อยู่", day, blocker.display_title)
+                                "message": format!("{} {} {}: ห้องสอนถูกใช้โดย '{}' อยู่ — ข้ามไม่ลง",
+                                                   cell_cls_name, cell_day, cell_period, blocker.display_title)
                             }));
                         }
                         continue;
@@ -1598,17 +1631,21 @@ pub async fn create_batch_timetable_entries(
                     insert_tuples.push((*cr_id, day.clone(), *p_id));
                 } else {
                     // === TEXT/independent activity batch decisions ===
+                    let cell_cls_name = classroom_names.get(cr_id).cloned().unwrap_or_else(|| "?".to_string());
+                    let cell_period = period_labels.get(p_id).cloned().unwrap_or_default();
+                    let cell_day = day_label(day);
+
                     if has_sync_conflict {
                         // ทับ sync activity — block ทั้ง no-force และ force
                         let sync_blocker = cell_conflicts.iter().find(|e|
                             e.scheduling_mode.as_deref() == Some("synchronized")
                         ).unwrap();
                         blocked.push(json!({
-                            "classroom_id": cr_id, "classroom_name": sync_blocker.classroom_name,
-                            "day_of_week": day, "period_id": p_id, "period_name": sync_blocker.period_name,
+                            "classroom_id": cr_id, "classroom_name": cell_cls_name,
+                            "day_of_week": day, "period_id": p_id, "period_name": cell_period,
                             "reason": "SYNC_ACTIVITY_PRESENT",
-                            "message": format!("{} {}: มีกิจกรรม sync '{}' — ลบกิจกรรม sync ก่อน",
-                                               sync_blocker.classroom_name.as_deref().unwrap_or("?"), day, sync_blocker.display_title)
+                            "message": format!("{} {} {}: มีกิจกรรม sync '{}' อยู่ — ลบกิจกรรม sync ก่อน",
+                                               cell_cls_name, cell_day, cell_period, sync_blocker.display_title)
                         }));
                         continue;
                     }
@@ -1627,21 +1664,34 @@ pub async fn create_batch_timetable_entries(
                         }
                         insert_tuples.push((*cr_id, day.clone(), *p_id));
                     } else {
-                        // No force: skip cell with detailed reason
+                        // No force: skip cell — message ใช้ classroom ของ cell + อธิบายเหตุผลชัดเจน
                         let primary = &cell_conflicts[0];
-                        let reason = if primary.classroom_id == Some(*cr_id) {
-                            if primary.entry_type == "COURSE" { "CLASSROOM_COURSE" } else { "CLASSROOM_ACTIVITY" }
-                        } else if primary.instructor_ids.iter().any(|i| candidate_instructors.contains(i)) {
-                            "INSTRUCTOR_BUSY"
-                        } else { "ROOM_BUSY" };
+                        let (reason, message) = if primary.classroom_id == Some(*cr_id) {
+                            // ห้องนี้มี entry อยู่แล้ว
+                            let r = if primary.entry_type == "COURSE" { "CLASSROOM_COURSE" } else { "CLASSROOM_ACTIVITY" };
+                            (r, format!("{} {} {}: ห้องนี้มี '{}' อยู่แล้ว — ข้ามไม่ลง",
+                                cell_cls_name, cell_day, cell_period, primary.display_title))
+                        } else if let Some(busy_instr) = primary.instructor_ids.iter().enumerate()
+                                .find(|(_, iid)| candidate_instructors.contains(iid)) {
+                            let instr_name = primary.instructor_names.get(busy_instr.0)
+                                .map(|s| s.as_str()).unwrap_or("ครู");
+                            ("INSTRUCTOR_BUSY", format!(
+                                "{} {} {}: ครู {} ติดสอน '{}' (ที่ {}) — ข้ามไม่ลง",
+                                cell_cls_name, cell_day, cell_period,
+                                instr_name, primary.display_title,
+                                primary.classroom_name.as_deref().unwrap_or("?")))
+                        } else {
+                            ("ROOM_BUSY", format!(
+                                "{} {} {}: ห้องสอนถูกใช้โดย '{}' ที่ {} — ข้ามไม่ลง",
+                                cell_cls_name, cell_day, cell_period,
+                                primary.display_title,
+                                primary.classroom_name.as_deref().unwrap_or("?")))
+                        };
                         skipped.push(json!({
-                            "classroom_id": cr_id, "classroom_name": primary.classroom_name,
-                            "day_of_week": day, "period_id": p_id, "period_name": primary.period_name,
+                            "classroom_id": cr_id, "classroom_name": cell_cls_name,
+                            "day_of_week": day, "period_id": p_id, "period_name": cell_period,
                             "reason": reason,
-                            "message": format!("{} {}: ทับ '{}' ({})",
-                                               primary.classroom_name.as_deref().unwrap_or("?"),
-                                               day, primary.display_title,
-                                               primary.instructor_names.join(", "))
+                            "message": message
                         }));
                     }
                 }
@@ -1668,6 +1718,7 @@ pub async fn create_batch_timetable_entries(
             .bind(&entries_to_delete)
             .execute(&mut *tx).await
             .map_err(|e| AppError::InternalServerError(format!("delete overwrite: {}", e)))?;
+        entries_to_delete.clear();
     }
 
     // === CLASSROOM entries — bulk INSERT จาก insert_tuples (filtered) ===
@@ -1758,22 +1809,74 @@ pub async fn create_batch_timetable_entries(
     // === INSTRUCTOR-only entries — bulk INSERT + bulk TEI INSERT ===
     // ข้าม ถ้าเป็น SLOT mode (ครูถูก attach เข้า classroom entries' tei แล้วผ่าน CTE ด้านบน)
     if !payload.instructor_ids.is_empty() && payload.activity_slot_id.is_none() {
-        let total = payload.instructor_ids.len()
-            * payload.days_of_week.len()
-            * payload.period_ids.len();
-        let mut entry_ids: Vec<Uuid> = Vec::with_capacity(total);
-        let mut instr_ids: Vec<Uuid> = Vec::with_capacity(total);
-        let mut days: Vec<String> = Vec::with_capacity(total);
-        let mut periods: Vec<Uuid> = Vec::with_capacity(total);
+        // Pre-fetch ครูชื่อ (สำหรับ skip message)
+        let instr_names: std::collections::HashMap<Uuid, String> = sqlx::query_as::<_, (Uuid, String)>(
+            "SELECT id, concat(first_name, ' ', last_name) FROM users WHERE id = ANY($1)"
+        )
+        .bind(&payload.instructor_ids)
+        .fetch_all(&pool).await.unwrap_or_default()
+        .into_iter().collect();
+
+        let mut entry_ids: Vec<Uuid> = Vec::new();
+        let mut instr_ids: Vec<Uuid> = Vec::new();
+        let mut days: Vec<String> = Vec::new();
+        let mut periods: Vec<Uuid> = Vec::new();
         for i_id in &payload.instructor_ids {
             for d in &payload.days_of_week {
                 for p_id in &payload.period_ids {
+                    // เช็คว่าครูคนนี้ติดที่ (day, period) นี้ใน existing หรือไม่
+                    let busy = existing.iter().find(|e|
+                        e.day_of_week == *d && e.period_id == *p_id
+                        && e.instructor_ids.contains(i_id)
+                    );
+                    if let Some(blocker) = busy {
+                        if !force {
+                            let instr_name = instr_names.get(i_id).cloned().unwrap_or_else(|| "ครู".to_string());
+                            let p_name = period_labels.get(p_id).cloned().unwrap_or_default();
+                            skipped.push(json!({
+                                "classroom_id": null,
+                                "classroom_name": null,
+                                "day_of_week": d,
+                                "period_id": p_id,
+                                "period_name": p_name,
+                                "reason": "INSTRUCTOR_BUSY",
+                                "message": format!(
+                                    "ครู {} {} {}: ติดสอน '{}' ที่ {} อยู่ — ไม่สร้างคาบครูเปล่า",
+                                    instr_name, day_label(d), p_name,
+                                    blocker.display_title,
+                                    blocker.classroom_name.as_deref().unwrap_or("?")
+                                )
+                            }));
+                            continue;
+                        }
+                        // Force: ลบ entry เดิมที่ครูติด
+                        if !entries_to_delete.contains(&blocker.id) {
+                            entries_to_delete.push(blocker.id);
+                            deleted.push(json!({
+                                "id": blocker.id,
+                                "classroom_name": blocker.classroom_name,
+                                "day_of_week": d, "period_id": p_id, "period_name": blocker.period_name,
+                                "title": blocker.display_title,
+                                "entry_type": blocker.entry_type,
+                                "instructor_names": blocker.instructor_names
+                            }));
+                        }
+                    }
                     entry_ids.push(Uuid::new_v4());
                     instr_ids.push(*i_id);
                     days.push(d.clone());
                     periods.push(*p_id);
                 }
             }
+        }
+        // Execute force-deletes ที่ accumulated จาก teacher-only check
+        // (ทำก่อน insert teacher-only)
+        if !entries_to_delete.is_empty() {
+            sqlx::query("DELETE FROM academic_timetable_entries WHERE id = ANY($1)")
+                .bind(&entries_to_delete)
+                .execute(&mut *tx).await
+                .map_err(|e| AppError::InternalServerError(format!("delete teacher conflicts: {}", e)))?;
+            entries_to_delete.clear();
         }
 
         sqlx::query(
