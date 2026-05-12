@@ -312,7 +312,7 @@ function buildPageContent(
 	const pageContentWidth = 841.89 - 10 - 10;
 	const safety = 2;
 	const maxSumWidths = pageContentWidth - offsetsTotal - safety;
-	const DAY_COL = 55; // กว้างขึ้นจาก 40 → 55 เพื่อให้ logo (rowSpan=3) มีที่พอ
+	const DAY_COL = 70; // กว้างขึ้นจาก 55 → 70 เพื่อให้ logo (rowSpan=3) ใหญ่ขึ้น
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
@@ -327,13 +327,13 @@ function buildPageContent(
 	// Logo cell — rowSpan=3 ครอบ title + period name + time rows
 	// ใช้ stack + top spacer ดัน logo ลง (verticalAlignment กับ rowSpan ใน pdfmake
 	// คำนวณ height ผิด → logo overflow ออกนอก cell)
-	// fit [49, 50] = max 50pt tall (อย่ามากเกินไปกัน edge overflow)
-	// top spacer ~22pt → logo อยู่กึ่งกลางของ header total (~96pt content area)
+	// fit [66, 80] = max 80pt tall — ถ้า logo portrait อยากให้ใช้ height เต็มที่
+	// header rowSpan ~ 100pt content area → spacer 12pt ≈ กลาง
 	const logoCell: TableCell = logoDataUrl
 		? ({
 				stack: [
-					{ text: ' ', fontSize: 1, margin: [0, 0, 0, 22] },
-					{ image: logoDataUrl, fit: [DAY_COL - 6, 50], alignment: 'center' }
+					{ text: ' ', fontSize: 1, margin: [0, 0, 0, 12] },
+					{ image: logoDataUrl, fit: [DAY_COL - 4, 80], alignment: 'center' }
 				],
 				rowSpan: 3,
 				alignment: 'center'
