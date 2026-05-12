@@ -324,15 +324,19 @@ function buildPageContent(
 	// === Row 0: Title row ===
 	// logo (rowSpan=3) ครอบ title row + period name row + time row
 	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
-	// verticalAlignment: 'middle' — pdfmake รองรับเฉพาะ cell level (LayoutBuilder.js:974)
-	// → logo จะอยู่กึ่งกลางแนวตั้งของ cell ที่ span 3 rows
+	// Logo cell — rowSpan=3 ครอบ title + period name + time rows
+	// ใช้ stack + top spacer ดัน logo ลง (verticalAlignment กับ rowSpan ใน pdfmake
+	// คำนวณ height ผิด → logo overflow ออกนอก cell)
+	// fit [49, 50] = max 50pt tall (อย่ามากเกินไปกัน edge overflow)
+	// top spacer ~22pt → logo อยู่กึ่งกลางของ header total (~96pt content area)
 	const logoCell: TableCell = logoDataUrl
 		? ({
-				stack: [{ image: logoDataUrl, fit: [DAY_COL - 6, 65], alignment: 'center' }],
+				stack: [
+					{ text: ' ', fontSize: 1, margin: [0, 0, 0, 22] },
+					{ image: logoDataUrl, fit: [DAY_COL - 6, 50], alignment: 'center' }
+				],
 				rowSpan: 3,
-				alignment: 'center',
-				verticalAlignment: 'middle',
-				margin: [0, 2, 0, 2]
+				alignment: 'center'
 			} as unknown as TableCell)
 		: ({ text: '', rowSpan: 3 } as TableCell);
 
