@@ -59,9 +59,9 @@ const getEntry = (entries: TimetableEntry[], day: string, periodId: string) => {
 	return entries.find((e) => e.day_of_week === day && e.period_id === periodId && e.is_active);
 };
 
-// Helper: Strip "ตารางเรียน ชั้น" / "ตารางสอน " prefix → ใช้เป็น mini-title ใน grid mode
+// Helper: Strip "ตารางเรียน " / "ตารางสอน " prefix → คง "ชั้นมัธยมศึกษาปีที่..." / "ครู..." ไว้
 const stripTitlePrefix = (title: string): string => {
-	return title.replace(/^ตารางเรียน ชั้น/, '').replace(/^ตารางสอน /, '');
+	return title.replace(/^ตารางเรียน /, '').replace(/^ตารางสอน /, '');
 };
 
 type SegmenterCtor = new (
@@ -660,15 +660,13 @@ function buildMiniTable(
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
-	// === Row 0: Title row ===
+	// === Row 0: Title row (2 บรรทัด: title + subtitle) ===
 	// Logo cell — nested table + VA middle (เหมือน full mode)
 	//
 	// Math: image center = outer padding (1) + inner padding (2) + NESTED_H/2
-	// Visual rowSpan = natural row 0 (~14) + row 1 (~9) + row 2 (~8) ≈ 31pt
-	// Want image center = 15.5pt → NESTED_H = 25
-	//
-	// (เดิม 38 → image center 22 → 70% จากบน = ใกล้ row 1/row 2 boundary)
-	const NESTED_H_MINI = 25;
+	// Visual rowSpan = row 0 (~21, 2 บรรทัด) + row 1 (~9) + row 2 (~8) ≈ 38pt
+	// Target image center = 19pt → NESTED_H = (19 - 3) * 2 = 32
+	const NESTED_H_MINI = 32;
 	const FIT_W_MINI = DAY_COL - 4;
 	const FIT_H_MINI = NESTED_H_MINI - 4;
 
@@ -696,18 +694,31 @@ function buildMiniTable(
 			} as unknown as TableCell)
 		: ({ text: '', rowSpan: 3 } as TableCell);
 
+	// title + subtitle (ใช้ subTitle ของ page เช่น "ภาคเรียนที่ 1 ปีการศึกษา 2569")
 	const miniTitle = stripTitlePrefix(title);
+	const miniSubTitle = page.subTitle;
 	const titleRow: TableCell[] = [
 		logoCell,
 		{
-			text: miniTitle,
-			bold: true,
-			fontSize: 7,
-			color: '#1e3a8a',
-			alignment: 'center',
+			stack: [
+				{
+					text: miniTitle,
+					bold: true,
+					fontSize: 7,
+					color: '#1e3a8a',
+					alignment: 'center'
+				},
+				{
+					text: miniSubTitle,
+					fontSize: 5,
+					color: '#4b5563',
+					alignment: 'center',
+					margin: [0, 1, 0, 0]
+				}
+			],
 			colSpan: periods.length,
-			margin: [0, 2, 0, 2]
-		} as TableCell,
+			margin: [0, 1, 0, 1]
+		} as unknown as TableCell,
 		...Array(Math.max(0, periods.length - 1)).fill('')
 	];
 	tableBody.push(titleRow);
@@ -774,22 +785,13 @@ function buildMiniTable(
 			if (entry) {
 				const stack: Content[] = [];
 				if (entry.entry_type === 'COURSE') {
+					// ใน mini mode แสดงแค่ subject code (ตัดชื่อวิชาออกตามที่ user ขอ)
 					stack.push({
 						text: entry.subject_code || '',
 						bold: true,
-						fontSize: 4,
+						fontSize: 5,
 						color: '#1e3a8a'
 					});
-					const name = entry.subject_name_th || entry.subject_name_en;
-					if (name) {
-						stack.push({
-							text: wrapThaiToLines(name, cellContentWidth, 3.5),
-							fontSize: 3.5,
-							color: '#374151',
-							margin: [0, 0],
-							lineHeight: 0.9
-						});
-					}
 				} else {
 					stack.push({
 						text: wrapThaiToLines(entry.title || 'กิจกรรม', cellContentWidth, 4),
@@ -811,10 +813,13 @@ function buildMiniTable(
 						entry.instructor_name.trim() &&
 						entry.instructor_name !== '-'
 					) {
+						// ครูในโหมด mini แสดงแค่ชื่อแรก (ไม่มีนามสกุล) ตามที่ user ขอ
 						const rawName = entry.instructor_name.trim();
-						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
+						const withoutPrefix = rawName.replace(/^ครู\s*/, '');
+						const firstName = withoutPrefix.split(/\s+/)[0];
+						const teacherName = `ครู${firstName}`;
 						stack.push({
-							text: wrapThaiToLines(teacherName, cellContentWidth, 3.5),
+							text: teacherName,
 							fontSize: 3.5,
 							color: '#4b5563',
 							lineHeight: 0.9
