@@ -661,8 +661,9 @@ function buildMiniTable(
 
 	// === Row 0: Title row ===
 	// Logo cell — nested table + VA middle (เหมือน full mode)
-	// NESTED_H_MINI ≈ row 0 (title ~14) + row 1 (period ~9) + row 2 (time ~8) = ~31pt
-	const NESTED_H_MINI = 31;
+	// NESTED_H_MINI ≈ row 0 (title) + row 1 (period name) + row 2 (time)
+	// ค่าเดิม 31 → ภาพชิดบน → เพิ่มเป็น 38 (เหมือน full mode ที่ 81 จาก estimate 75)
+	const NESTED_H_MINI = 38;
 	const FIT_W_MINI = DAY_COL - 4;
 	const FIT_H_MINI = NESTED_H_MINI - 4;
 
