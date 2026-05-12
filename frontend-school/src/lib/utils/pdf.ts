@@ -24,6 +24,36 @@ const formatTime = (timeStr: string) => {
 	return timeStr.substring(0, 5);
 };
 
+/** เลือกรูปแบบเวลาที่พอดีกับ cellContentWidth (single line ก่อน, fallback 2 บรรทัด)
+ *  ลำดับ:
+ *  1. "08:40-09:30 น." @ 7pt  (มี "น.")
+ *  2. "08:40-09:30" @ 7pt     (ตัด "น.")
+ *  3. "08:40-09:30" @ 6pt     (ลด font)
+ *  4. "08:40-09:30" @ 5pt     (ลด font อีก)
+ *  5. "08:40\n09:30" @ 7pt    (fallback 2 บรรทัด) */
+function fitTimeRange(
+	start: string,
+	end: string,
+	maxWidthPt: number
+): { text: string; fontSize: number } {
+	const s = formatTime(start);
+	const e = formatTime(end);
+
+	const variants: { text: string; fontSize: number }[] = [
+		{ text: `${s}-${e} น.`, fontSize: 7 },
+		{ text: `${s}-${e}`, fontSize: 7 },
+		{ text: `${s}-${e}`, fontSize: 6 },
+		{ text: `${s}-${e}`, fontSize: 5 }
+	];
+
+	for (const v of variants) {
+		if (measureTextWidthPt(v.text, v.fontSize) <= maxWidthPt) {
+			return v;
+		}
+	}
+	return { text: `${s}\n${e}`, fontSize: 7 };
+}
+
 // Helper: Get entry
 const getEntry = (entries: TimetableEntry[], day: string, periodId: string) => {
 	return entries.find((e) => e.day_of_week === day && e.period_id === periodId && e.is_active);
@@ -294,13 +324,16 @@ function buildPageContent(
 	// === Row 0: Title row ===
 	// logo (rowSpan=3) ครอบ title row + period name row + time row
 	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
+	// verticalAlignment: 'middle' — pdfmake รองรับเฉพาะ cell level (LayoutBuilder.js:974)
+	// → logo จะอยู่กึ่งกลางแนวตั้งของ cell ที่ span 3 rows
 	const logoCell: TableCell = logoDataUrl
-		? {
+		? ({
 				stack: [{ image: logoDataUrl, fit: [DAY_COL - 6, 65], alignment: 'center' }],
 				rowSpan: 3,
 				alignment: 'center',
-				margin: [0, 4, 0, 4]
-			}
+				verticalAlignment: 'middle',
+				margin: [0, 2, 0, 2]
+			} as unknown as TableCell)
 		: ({ text: '', rowSpan: 3 } as TableCell);
 
 	const titleCellInner = {
@@ -330,7 +363,14 @@ function buildPageContent(
 						{
 							width: 65,
 							stack: [
-								{ qr: qrUrl, fit: 55, alignment: 'center' as const },
+								// margin-top บน QR = caption height (~8pt) → QR image อยู่กึ่งกลาง stack แนวตั้ง
+								// (stack เต็ม cell แนวตั้งอยู่แล้ว เพราะ QR เป็น content ที่สูงสุดใน row)
+								{
+									qr: qrUrl,
+									fit: 55,
+									alignment: 'center' as const,
+									margin: [0, 8, 0, 0] as [number, number, number, number]
+								},
 								{
 									text: 'สแกนดูตาราง',
 									fontSize: 6,
@@ -373,11 +413,13 @@ function buildPageContent(
 	tableBody.push(periodNameRow);
 
 	// === Row 2: Time row (logo ต่อจากแถวบน) ===
+	// fitTimeRange จัดให้พอดี cellContentWidth (1 บรรทัดก่อน, fallback 2 บรรทัด)
 	const timeRow: TableCell[] = [''];
 	periods.forEach((p) => {
+		const fitted = fitTimeRange(p.start_time, p.end_time, cellContentWidth);
 		timeRow.push({
-			text: `${formatTime(p.start_time)}\n${formatTime(p.end_time)}`,
-			fontSize: 7,
+			text: fitted.text,
+			fontSize: fitted.fontSize,
 			color: '#4b5563',
 			alignment: 'center',
 			fillColor: '#f3f4f6',
