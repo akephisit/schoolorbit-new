@@ -69,21 +69,21 @@ type SegmenterCtor = new (
 	opts: { granularity: 'grapheme' | 'word' | 'sentence' }
 ) => { segment(text: string): Iterable<{ segment: string }> };
 
-/** Canvas-based text measurement — ใช้ Sarabun font (โหลดผ่าน FontFace API)
+/** Canvas-based text measurement — ใช้ ChakraPetch font (โหลดผ่าน FontFace API)
  *  เพื่อวัด width จริงที่ pdfmake จะ render → แม่นกว่า approximation
  *  fallback ไป approxTextWidthPt ถ้า font ยังโหลดไม่เสร็จหรือไม่มี DOM */
 let measureCanvas: HTMLCanvasElement | null = null;
 let measureCtx: CanvasRenderingContext2D | null = null;
-let sarabunMeasureReady = false;
+let measureFontReady = false;
 
-async function ensureSarabunMeasurement(): Promise<void> {
-	if (sarabunMeasureReady || typeof document === 'undefined') return;
+async function ensureMeasurementFont(): Promise<void> {
+	if (measureFontReady || typeof document === 'undefined') return;
 	try {
-		const url = window.location.origin + '/fonts/Sarabun-Regular.ttf';
-		const font = new FontFace('SarabunMeasure', `url(${url}) format('truetype')`);
+		const url = window.location.origin + '/fonts/ChakraPetch-Regular.ttf';
+		const font = new FontFace('ChakraPetchMeasure', `url(${url}) format('truetype')`);
 		await font.load();
 		document.fonts.add(font);
-		sarabunMeasureReady = true;
+		measureFontReady = true;
 	} catch {
 		// ignore — จะใช้ approx แทน
 	}
@@ -93,7 +93,7 @@ const PT_PER_PX = 72 / 96; // 1pt = 1.333px (CSS standard)
 
 function measureTextWidthPt(text: string, fontSizePt: number): number {
 	if (!text) return 0;
-	if (!sarabunMeasureReady || typeof document === 'undefined') {
+	if (!measureFontReady || typeof document === 'undefined') {
 		return approxTextWidthPt(text, fontSizePt);
 	}
 	if (!measureCtx) {
@@ -102,7 +102,7 @@ function measureTextWidthPt(text: string, fontSizePt: number): number {
 		if (!measureCtx) return approxTextWidthPt(text, fontSizePt);
 	}
 	const fontSizePx = fontSizePt / PT_PER_PX;
-	measureCtx.font = `${fontSizePx}px SarabunMeasure, sans-serif`;
+	measureCtx.font = `${fontSizePx}px ChakraPetchMeasure, sans-serif`;
 	const widthPx = measureCtx.measureText(text).width;
 	return widthPx * PT_PER_PX;
 }
@@ -126,7 +126,7 @@ function syllableSplit(text: string): string[] {
 	return result;
 }
 
-/** ประมาณ width (pt) ของ text ใน Sarabun font — fallback เมื่อ canvas measurement ไม่พร้อม
+/** ประมาณ width (pt) ของ text — fallback เมื่อ canvas measurement ไม่พร้อม
  *  ใช้ grapheme-cluster counting (Intl.Segmenter) เพื่อ handle Thai composed chars
  *  ค่าประมาณ: Thai grapheme ~0.55em, Latin ~0.5em, digit ~0.55em, space ~0.25em
  *  + safety factor 1.1 */
@@ -990,20 +990,20 @@ export const generateTimetablePDF = async (
 	if (pages.length === 0) return;
 	const layout = options?.layout ?? 'full';
 
-	// โหลด Sarabun สำหรับ canvas-based text measurement (wrap แม่นยำ)
+	// โหลด ChakraPetch สำหรับ canvas-based text measurement (wrap แม่นยำ)
 	// + load pdfmake พร้อมกัน
 	const [pdfMakeModule] = await Promise.all([
 		import('pdfmake/build/pdfmake'),
-		ensureSarabunMeasurement()
+		ensureMeasurementFont()
 	]);
 	const pdfMake = pdfMakeModule.default;
 
 	pdfMake.fonts = {
-		Sarabun: {
-			normal: window.location.origin + '/fonts/Sarabun-Regular.ttf',
-			bold: window.location.origin + '/fonts/Sarabun-Bold.ttf',
-			italics: window.location.origin + '/fonts/Sarabun-Regular.ttf',
-			bolditalics: window.location.origin + '/fonts/Sarabun-Bold.ttf'
+		ChakraPetch: {
+			normal: window.location.origin + '/fonts/ChakraPetch-Regular.ttf',
+			bold: window.location.origin + '/fonts/ChakraPetch-Bold.ttf',
+			italics: window.location.origin + '/fonts/ChakraPetch-Regular.ttf',
+			bolditalics: window.location.origin + '/fonts/ChakraPetch-Bold.ttf'
 		}
 	};
 
@@ -1053,7 +1053,7 @@ export const generateTimetablePDF = async (
 			subheader: { fontSize: 14, color: '#4b5563' },
 			footer: { fontSize: 8, color: '#9ca3af' }
 		},
-		defaultStyle: { font: 'Sarabun' }
+		defaultStyle: { font: 'ChakraPetch' }
 	};
 
 	pdfMake.createPdf(docDefinition).download(`${fileName ?? pages[0].title}.pdf`);
