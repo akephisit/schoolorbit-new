@@ -337,16 +337,17 @@ function buildPageContent(
 	const qrUrl = showQrCode ? window.location.origin + '/staff/timetable' : '';
 
 	// === Row 0: Title row ===
-	// logo (rowSpan=3) ครอบ title row + period name row + time row
-	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
-	// Logo cell — rowSpan=3 ครอบ title + period name + time rows
-	// ใช้ NESTED TABLE ขนาด fixed + verticalAlignment 'middle' ใน inner cell
+	// logo (rowSpan=3) — NESTED TABLE + verticalAlignment 'middle' ใน inner cell
 	// (cell-level VA ทำงานได้แม่นกว่า rowSpan VA ที่ buggy)
+	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
 	//
-	// nested table height = rowSpan visual total
-	// QR ไม่ได้ทำให้ row ขยับ (title cell width = '*' กว้าง, QR อยู่ใน inner columns
-	// → height ของ title cell ไม่ขึ้นกับ QR) → ใช้ค่าเดียวกันทั้ง 2 modes
-	//   row 0 (~45) + row 1 (~22) + row 2 (~14) = ~81pt
+	// Math (อันเดียวกับ mini-table):
+	//   image absolute center = outer pad (2pt tableLayout) + inner pad (2pt noBorders)
+	//                         + NESTED_H/2
+	//   Visual rowSpan ≈ row 0 (~55) + row 1 (~19) + row 2 (~15) = ~89pt
+	//   Target image center = visual/2 = 44.5pt
+	//   → NESTED_H = visual - 2*(outer+inner pad) = 89 - 8 = 81pt
+	// QR ไม่ดันแถว (อยู่ใน inner columns ของ title cell) → ใช้ค่าเดียวทั้ง 2 modes
 	const FIT_W = DAY_COL - 4; // 51
 	const NESTED_H = 81;
 	const FIT_H = NESTED_H - 4;
