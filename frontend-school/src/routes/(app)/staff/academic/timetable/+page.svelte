@@ -2357,10 +2357,11 @@
 				return;
 			}
 
-			// ตั้งชื่อไฟล์: รูปแบบ "[ตารางเรียน/สอน] [id] ภาคเรียนที่ X ปีการศึกษา Y"
+			// ตั้งชื่อไฟล์: รูปแบบ "[ตารางเรียน/สอน] [id] ภาคเรียนที่ X ปีการศึกษา Y (ชนิด layout)"
 			// (replace "/" เป็น "-" กัน filesystem มีปัญหา)
 			const subjectKind = exportType === 'CLASSROOM' ? 'ตารางเรียน' : 'ตารางสอน';
 			const semYearStr = `ภาคเรียนที่ ${semesterName} ปีการศึกษา ${yearName}`;
+			const layoutTag = exportLayout === 'full' ? '1ต่อหน้า' : 'หลายต่อหน้า';
 			let identifier: string;
 			if (pages.length === 1) {
 				const targetId = exportTargetIds[0];
@@ -2375,7 +2376,7 @@
 			} else {
 				identifier = `${pages.length}${exportType === 'CLASSROOM' ? 'ห้อง' : 'คน'}`;
 			}
-			const fileName = `${subjectKind} ${identifier} ${semYearStr}`;
+			const fileName = `${subjectKind} ${identifier} ${semYearStr} (${layoutTag})`;
 
 			await generateTimetablePDF(pages, fileName, { layout: exportLayout });
 
