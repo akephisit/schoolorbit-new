@@ -340,31 +340,39 @@ function buildPageContent(
 	// logo (rowSpan=3) ครอบ title row + period name row + time row
 	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
 	// Logo cell — rowSpan=3 ครอบ title + period name + time rows
-	// Auto-center: ใช้ logoDims (natural w/h) คำนวณ rendered height จริง → spacer พอดี
-	// (verticalAlignment 'middle' บน rowSpan cell ใน pdfmake บัค → ทำเอง)
+	// Auto-center ทั้งแนวตั้ง+แนวนอน:
+	// - กำหนด stack ให้สูงเท่ากับ rowSpan visual (top+bottom spacer คุม)
+	// - image อยู่ระหว่าง spacer 2 ฝั่ง → centered ใน stack → centered visually
+	// - canvas เป็น spacer (height ชัวร์กว่า text spacer)
 	//
-	// rowSpan content area estimate:
-	//   row 0 (title): 75pt with QR (INSTRUCTOR) / 53pt without (CLASSROOM)
-	//   row 1 (period name): 17pt
-	//   row 2 (time): 13pt
-	//   logo cell content = total - cell padding (2+2) = (sumRowH) - 4
+	// rowSpan visual estimate:
+	//   row 0 (title): 75pt with QR / 53pt without
+	//   row 1 (period name): 21pt
+	//   row 2 (time): 16pt
+	//   logo cell content = total - 2 (paddingTop) - 2 (paddingBottom)
 	const FIT_W = DAY_COL - 4; // 51
 	const FIT_H = 75;
 	const row0Height = showQrCode ? 75 : 53;
-	const rowSpanContentArea = row0Height + 17 + 13 - 4; // 101 (with QR) หรือ 79 (no QR)
+	const rowSpanTotal = row0Height + 21 + 16; // visual rowSpan
+	const cellContentH = rowSpanTotal - 4; // ลบ padding บน-ล่าง ของ cell
 
 	let renderedLogoH = 0;
 	if (logoDims && logoDims.w > 0 && logoDims.h > 0) {
 		const scale = Math.min(FIT_W / logoDims.w, FIT_H / logoDims.h);
 		renderedLogoH = logoDims.h * scale;
 	}
-	const topSpacer = Math.max(0, (rowSpanContentArea - renderedLogoH) / 2);
+	const spacerH = Math.max(0, (cellContentH - renderedLogoH) / 2);
+
+	// ใช้ canvas สำหรับ spacer (height แน่นอน ไม่ขึ้นกับ font line-height)
+	const makeSpacer = (h: number): Content =>
+		({ canvas: [{ type: 'rect', x: 0, y: 0, w: 1, h, lineWidth: 0 }] }) as unknown as Content;
 
 	const logoCell: TableCell = logoDataUrl
 		? ({
 				stack: [
-					{ text: ' ', fontSize: 1, margin: [0, 0, 0, topSpacer] },
-					{ image: logoDataUrl, fit: [FIT_W, FIT_H], alignment: 'center' }
+					makeSpacer(spacerH),
+					{ image: logoDataUrl, fit: [FIT_W, FIT_H], alignment: 'center' },
+					makeSpacer(spacerH)
 				],
 				rowSpan: 3,
 				alignment: 'center'
