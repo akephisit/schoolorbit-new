@@ -22,7 +22,8 @@
 		swapTimetableEntries,
 		getTimetableOccupancy,
 		type OccupancyEntry,
-		type MoveValidityCell
+		type MoveValidityCell,
+		type BatchSummary
 	} from '$lib/api/timetable';
 	import {
 		listClassrooms,
@@ -2595,6 +2596,10 @@
 
 	// Batch Assign State
 	let showBatchModal = $state(false);
+	// Batch summary dialog (after backend response — show inserted/skipped/blocked/deleted)
+	let showBatchSummary = $state(false);
+	let batchSummary = $state<BatchSummary | null>(null);
+	let batchSummaryForce = $state(false); // remember if user submitted with force
 	let batchClassrooms = $state<string[]>([]);
 	let batchInstructors = $state<string[]>([]);
 	let batchDays = $state<string[]>(['MON']);
@@ -2762,26 +2767,27 @@
 				activity_slot_id: slotIdToSend
 			});
 
-			if (res.success === false && res.conflicts) {
-				toast.error('พบรายการที่ชนกัน');
-				for (const c of res.conflicts as ConflictInfo[]) toast.error(c.message);
-				submitting = false;
-				return;
+			// New API: summary returned even on success (skipped/blocked/deleted/excluded)
+			if (res.success && res.summary) {
+				batchSummary = res.summary;
+				batchSummaryForce = batchForce;
+				const s = res.summary;
+				const hasAnyConflict = s.skipped.length > 0 || s.blocked.length > 0
+					|| s.deleted.length > 0 || s.excluded_instructors.length > 0;
+				if (hasAnyConflict) {
+					showBatchSummary = true;
+				} else {
+					toast.success(`บันทึกสำเร็จ ${s.inserted_count} รายการ`);
+				}
+				showBatchModal = false;
+				batchTitle = '';
+				batchSlotId = '';
+				batchInstructors = [];
+				loadTimetable();
+				loadSidebarActivitySlots();
+			} else {
+				toast.error(res.message || 'บันทึกไม่สำเร็จ');
 			}
-
-			toast.success('บันทึกกิจกรรมเรียบร้อย');
-			showBatchModal = false;
-
-			// Reset fields
-			batchTitle = '';
-			batchSlotId = '';
-			batchInstructors = [];
-
-			// Reload เสมอ — batch สามารถกระทบ view ปัจจุบันได้ทางอ้อม
-			// (force=true ลบคาบเก่า, teacher entries ใน INSTRUCTOR view แม้ไม่ได้ tick ตัวเอง,
-			//  tei ที่ derive จาก slot/course)
-			loadTimetable();
-			loadSidebarActivitySlots();
 		} catch (e: unknown) {
 			toast.error((e instanceof Error ? e.message : String(e)) || 'บันทึกไม่สำเร็จ');
 		} finally {
@@ -5087,6 +5093,120 @@
 				{/if}
 				บันทึก
 			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Batch summary — แสดงผลลัพธ์หลัง batch (skipped/blocked/deleted/excluded) -->
+<Dialog.Root bind:open={showBatchSummary}>
+	<Dialog.Content class="sm:max-w-[600px] max-h-[80vh] flex flex-col">
+		<Dialog.Header>
+			<Dialog.Title>
+				{#if batchSummary && batchSummary.inserted_count > 0}
+					✅ บันทึก batch สำเร็จ — สรุปการทำงาน
+				{:else}
+					⚠️ Batch ไม่สามารถลงได้
+				{/if}
+			</Dialog.Title>
+			<Dialog.Description>
+				{#if batchSummary}
+					ลง <strong>{batchSummary.inserted_count}</strong> รายการ
+					{#if batchSummary.skipped.length > 0}
+						· ข้าม <strong>{batchSummary.skipped.length}</strong>
+					{/if}
+					{#if batchSummary.blocked.length > 0}
+						· ลงไม่ได้ <strong>{batchSummary.blocked.length}</strong>
+					{/if}
+					{#if batchSummary.deleted.length > 0}
+						· ทับ <strong>{batchSummary.deleted.length}</strong>
+					{/if}
+					{#if batchSummary.excluded_instructors.length > 0}
+						· ซ่อนครู <strong>{batchSummary.excluded_instructors.length}</strong>
+					{/if}
+				{/if}
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="overflow-y-auto space-y-3 py-2">
+			{#if batchSummary && batchSummary.deleted.length > 0}
+				<div class="border rounded-md p-3 bg-red-50 border-red-200">
+					<div class="text-sm font-medium text-red-700 mb-2 flex items-center gap-1.5">
+						🔄 เขียนทับ {batchSummary.deleted.length} รายการ
+					</div>
+					<ul class="text-xs space-y-1 text-foreground/80">
+						{#each batchSummary.deleted as d}
+							<li>
+								<span class="font-medium">{d.classroom_name ?? '?'}</span>
+								· {d.day_of_week} {d.period_name ?? ''} —
+								ลบ "<span class="font-medium">{d.title}</span>"
+								{#if d.instructor_names.length > 0}
+									<span class="text-muted-foreground">({d.instructor_names.join(', ')})</span>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
+			{#if batchSummary && batchSummary.skipped.length > 0}
+				<div class="border rounded-md p-3 bg-amber-50 border-amber-200">
+					<div class="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1.5">
+						⚠️ ข้าม {batchSummary.skipped.length} รายการ
+					</div>
+					<ul class="text-xs space-y-1 text-foreground/80">
+						{#each batchSummary.skipped as s}
+							<li>{s.message}</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
+			{#if batchSummary && batchSummary.blocked.length > 0}
+				<div class="border rounded-md p-3 bg-rose-50 border-rose-300">
+					<div class="text-sm font-medium text-rose-700 mb-2 flex items-center gap-1.5">
+						🚫 ลงไม่ได้ {batchSummary.blocked.length} รายการ
+					</div>
+					<ul class="text-xs space-y-1 text-foreground/80">
+						{#each batchSummary.blocked as b}
+							<li>{b.message}</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
+			{#if batchSummary && batchSummary.excluded_instructors.length > 0}
+				<div class="border rounded-md p-3 bg-blue-50 border-blue-200">
+					<div class="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1.5">
+						👤 ซ่อนครู {batchSummary.excluded_instructors.length} คน (ครูติดสอนคาบนี้)
+					</div>
+					<ul class="text-xs space-y-1 text-foreground/80">
+						{#each batchSummary.excluded_instructors as ex}
+							<li>
+								<span class="font-medium">{ex.instructor_name}</span> —
+								ไม่ได้ attach กับ entries ใหม่
+								{#if ex.conflicting_at.length > 0}
+									<div class="ml-3 text-muted-foreground">
+										ติดที่: {ex.conflicting_at
+											.map((c) => `${c.day_of_week} ${c.period_name ?? ''}: ${c.existing_title}`)
+											.join(', ')}
+									</div>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
+			{#if batchSummary && batchSummary.inserted_count === 0
+				&& batchSummary.skipped.length === 0
+				&& batchSummary.blocked.length === 0
+				&& batchSummary.deleted.length === 0}
+				<p class="text-sm text-muted-foreground text-center py-4">ไม่มี cell ที่จะลง</p>
+			{/if}
+		</div>
+
+		<Dialog.Footer>
+			<Button onclick={() => (showBatchSummary = false)}>ปิด</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

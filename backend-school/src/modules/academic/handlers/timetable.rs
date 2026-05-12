@@ -1320,32 +1320,24 @@ pub async fn create_batch_timetable_entries(
     }
 
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+    let force = payload.force.unwrap_or(false);
 
-    // ต้องเลือกห้องอย่างน้อย 1 หรือ ครูอย่างน้อย 1 (หรือทั้งคู่)
+    // ต้องเลือกห้องอย่างน้อย 1 หรือ ครูอย่างน้อย 1
     if payload.classroom_ids.is_empty() && payload.instructor_ids.is_empty() {
         return Err(AppError::BadRequest(
             "ต้องเลือกห้องเรียน หรือ ครู อย่างน้อย 1 อย่าง".to_string(),
         ));
     }
 
-    // Validate: ถ้าเป็น batch สำหรับ activity slot → ทุก classroom ต้องอยู่ใน junction
-    // (admin จัดการ participation ผ่านหน้า Course Planning)
+    // Validate slot participation + instructor exists (sync) — unchanged from before
     if let Some(slot_id) = payload.activity_slot_id {
         let non_participating: Vec<(String,)> = sqlx::query_as(
-            r#"SELECT cr.name
-               FROM class_rooms cr
+            r#"SELECT cr.name FROM class_rooms cr
                WHERE cr.id = ANY($1)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM activity_slot_classrooms
-                     WHERE slot_id = $2 AND classroom_id = cr.id
-                 )"#
-        )
-        .bind(&payload.classroom_ids)
-        .bind(slot_id)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
-
+                 AND NOT EXISTS (SELECT 1 FROM activity_slot_classrooms
+                                 WHERE slot_id = $2 AND classroom_id = cr.id)"#
+        ).bind(&payload.classroom_ids).bind(slot_id)
+        .fetch_all(&pool).await.unwrap_or_default();
         if !non_participating.is_empty() {
             let names: Vec<String> = non_participating.into_iter().map(|(n,)| n).collect();
             return Err(AppError::BadRequest(format!(
@@ -1353,31 +1345,18 @@ pub async fn create_batch_timetable_entries(
                 names.join(", ")
             )));
         }
-
-        // Also validate: all classrooms must have instructor.
-        // Independent → check per-classroom in activity_slot_classroom_assignments
-        // Synchronized → check slot-level activity_slot_instructors
         let missing_teacher: Vec<(String,)> = sqlx::query_as(
             r#"SELECT cr.name
                FROM class_rooms cr, activity_slots s
                JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
-               WHERE s.id = $2
-                 AND cr.id = ANY($1)
-                 AND CASE
-                       WHEN ac.scheduling_mode = 'independent' THEN
-                           NOT EXISTS(SELECT 1 FROM activity_slot_classroom_assignments
-                                      WHERE slot_id = $2 AND classroom_id = cr.id)
-                       ELSE
-                           NOT EXISTS(SELECT 1 FROM activity_slot_instructors
-                                      WHERE slot_id = $2)
-                     END"#
-        )
-        .bind(&payload.classroom_ids)
-        .bind(slot_id)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
-
+               WHERE s.id = $2 AND cr.id = ANY($1)
+                 AND CASE WHEN ac.scheduling_mode = 'independent' THEN
+                          NOT EXISTS(SELECT 1 FROM activity_slot_classroom_assignments
+                                     WHERE slot_id = $2 AND classroom_id = cr.id)
+                         ELSE NOT EXISTS(SELECT 1 FROM activity_slot_instructors
+                                         WHERE slot_id = $2) END"#
+        ).bind(&payload.classroom_ids).bind(slot_id)
+        .fetch_all(&pool).await.unwrap_or_default();
         if !missing_teacher.is_empty() {
             let names: Vec<String> = missing_teacher.into_iter().map(|(n,)| n).collect();
             return Err(AppError::BadRequest(format!(
@@ -1387,206 +1366,319 @@ pub async fn create_batch_timetable_entries(
         }
     }
 
-    // Pre-validate conflicts (unless force mode)
-    if !payload.force.unwrap_or(false) {
-        let mut conflicts: Vec<serde_json::Value> = Vec::new();
+    // ===== Determine batch type =====
+    // BatchType::SyncActivity → slot.scheduling_mode = synchronized
+    // BatchType::Other        → text หรือ independent activity (ใช้ rules เดียวกัน)
+    let is_sync_batch = if let Some(slot_id) = payload.activity_slot_id {
+        let mode: Option<String> = sqlx::query_scalar(
+            "SELECT ac.scheduling_mode FROM activity_slots s
+             JOIN activity_catalog ac ON ac.id = s.activity_catalog_id WHERE s.id = $1"
+        ).bind(slot_id).fetch_optional(&pool).await.ok().flatten();
+        mode.as_deref() == Some("synchronized")
+    } else { false };
 
-        // 1. Check classroom conflicts — single query covers all days/periods
-        // Skip entries that belong to the same activity_slot_id (re-batch scenario)
-        let classroom_conflicts: Vec<(String, String)> = sqlx::query_as(
-            r#"SELECT DISTINCT cr.name, te.day_of_week
-               FROM academic_timetable_entries te
-               LEFT JOIN class_rooms cr ON cr.id = te.classroom_id
-               WHERE te.classroom_id = ANY($1)
-                 AND te.day_of_week = ANY($2)
-                 AND te.period_id = ANY($3)
-                 AND te.is_active = true
-                 AND (te.activity_slot_id IS DISTINCT FROM $4 OR te.activity_slot_id IS NULL)"#
-        )
-        .bind(&payload.classroom_ids)
-        .bind(&payload.days_of_week)
-        .bind(&payload.period_ids)
-        .bind(payload.activity_slot_id)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
-
-        for (name, day) in &classroom_conflicts {
-            conflicts.push(serde_json::json!({
-                "conflict_type": "CLASSROOM_CONFLICT",
-                "message": format!("{}: {} มีตารางอยู่แล้ว", day, name)
-            }));
-        }
-
-        // 2. Check candidate instructor conflicts via junction
-        //    รวม instructor ที่ derive ได้จาก slot/course + ครูที่ user เลือกไว้ใน payload
-        let mut candidate_instructors: Vec<Uuid> = if let Some(slot_id) = payload.activity_slot_id {
-            let mode: Option<String> = sqlx::query_scalar(
-                "SELECT ac.scheduling_mode FROM activity_slots s JOIN activity_catalog ac ON ac.id = s.activity_catalog_id WHERE s.id = $1"
-            ).bind(slot_id).fetch_optional(&pool).await.ok().flatten();
-            if mode.as_deref() == Some("independent") {
-                sqlx::query_scalar(
-                    "SELECT instructor_id FROM activity_slot_classroom_assignments
-                     WHERE slot_id = $1 AND classroom_id = ANY($2)"
-                ).bind(slot_id).bind(&payload.classroom_ids).fetch_all(&pool).await.unwrap_or_default()
-            } else {
-                sqlx::query_scalar(
-                    "SELECT user_id FROM activity_slot_instructors WHERE slot_id = $1"
-                ).bind(slot_id).fetch_all(&pool).await.unwrap_or_default()
-            }
-        } else if let Some(subject_id) = payload.subject_id {
+    // ===== Resolve candidate instructors (ครูที่จะติด tei กับ entries ใหม่) =====
+    let mut candidate_instructors: Vec<Uuid> = if let Some(slot_id) = payload.activity_slot_id {
+        if is_sync_batch {
             sqlx::query_scalar(
-                "SELECT DISTINCT cci.instructor_id FROM classroom_course_instructors cci
-                 JOIN classroom_courses cc ON cc.id = cci.classroom_course_id
-                 WHERE cc.classroom_id = ANY($1) AND cc.subject_id = $2"
-            ).bind(&payload.classroom_ids).bind(subject_id).fetch_all(&pool).await.unwrap_or_default()
-        } else { Vec::new() };
-        // add instructor_ids from payload + dedupe
-        for id in &payload.instructor_ids {
-            if !candidate_instructors.contains(id) { candidate_instructors.push(*id); }
+                "SELECT user_id FROM activity_slot_instructors WHERE slot_id = $1"
+            ).bind(slot_id).fetch_all(&pool).await.unwrap_or_default()
+        } else {
+            // independent
+            sqlx::query_scalar(
+                "SELECT instructor_id FROM activity_slot_classroom_assignments
+                 WHERE slot_id = $1 AND classroom_id = ANY($2)"
+            ).bind(slot_id).bind(&payload.classroom_ids).fetch_all(&pool).await.unwrap_or_default()
         }
+    } else if let Some(subject_id) = payload.subject_id {
+        sqlx::query_scalar(
+            "SELECT DISTINCT cci.instructor_id FROM classroom_course_instructors cci
+             JOIN classroom_courses cc ON cc.id = cci.classroom_course_id
+             WHERE cc.classroom_id = ANY($1) AND cc.subject_id = $2"
+        ).bind(&payload.classroom_ids).bind(subject_id).fetch_all(&pool).await.unwrap_or_default()
+    } else { Vec::new() };
+    for id in &payload.instructor_ids {
+        if !candidate_instructors.contains(id) { candidate_instructors.push(*id); }
+    }
 
-        if !candidate_instructors.is_empty() {
-            let instructor_conflicts: Vec<(String, String, String)> = sqlx::query_as(
-                r#"SELECT DISTINCT concat(u.first_name, ' ', u.last_name), COALESCE(s.name_th, te.title, ''), te.day_of_week
-                   FROM academic_timetable_entries te
-                   JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
-                   JOIN users u ON u.id = tei.instructor_id
-                   LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
-                   LEFT JOIN subjects s ON cc.subject_id = s.id
-                   WHERE tei.instructor_id = ANY($1)
-                     AND te.day_of_week = ANY($2)
-                     AND te.period_id = ANY($3)
-                     AND te.is_active = true
-                     AND (te.activity_slot_id IS DISTINCT FROM $4 OR te.activity_slot_id IS NULL)"#
-            )
-            .bind(&candidate_instructors)
-            .bind(&payload.days_of_week)
-            .bind(&payload.period_ids)
-            .bind(payload.activity_slot_id)
-            .fetch_all(&pool)
-            .await
-            .unwrap_or_default();
+    // ===== Pre-fetch existing entries that COULD conflict =====
+    // (ทุก entry ที่ active + อยู่ใน day×period ของ batch + ไม่ใช่ slot เดียวกัน)
+    #[derive(sqlx::FromRow, Clone)]
+    struct ExistingEntry {
+        id: Uuid,
+        classroom_id: Option<Uuid>,
+        classroom_name: Option<String>,
+        day_of_week: String,
+        period_id: Uuid,
+        period_name: Option<String>,
+        room_id: Option<Uuid>,
+        title: Option<String>,
+        entry_type: String,
+        activity_slot_id: Option<Uuid>,
+        scheduling_mode: Option<String>,
+        display_title: String,
+        instructor_ids: Vec<Uuid>,
+        instructor_names: Vec<String>,
+    }
 
-            for (teacher_name, existing_subject, day) in &instructor_conflicts {
-                conflicts.push(serde_json::json!({
-                    "conflict_type": "INSTRUCTOR_CONFLICT",
-                    "message": format!("{}: {} มีสอน {} อยู่แล้ว", day, teacher_name, existing_subject)
-                }));
+    let existing: Vec<ExistingEntry> = sqlx::query_as::<_, ExistingEntry>(
+        r#"
+        SELECT te.id, te.classroom_id, cr.name AS classroom_name,
+               te.day_of_week, te.period_id,
+               COALESCE(ap.name, 'คาบ ' || ap.order_index::text) AS period_name,
+               te.room_id, te.title, te.entry_type,
+               te.activity_slot_id, ac.scheduling_mode,
+               COALESCE(s.name_th, te.title, '(ไม่ระบุ)') AS display_title,
+               COALESCE(ARRAY_AGG(DISTINCT tei.instructor_id) FILTER (WHERE tei.instructor_id IS NOT NULL), '{}'::uuid[]) AS instructor_ids,
+               COALESCE(ARRAY_AGG(DISTINCT concat(u.first_name, ' ', u.last_name)) FILTER (WHERE u.id IS NOT NULL), '{}'::text[]) AS instructor_names
+          FROM academic_timetable_entries te
+          LEFT JOIN class_rooms cr ON cr.id = te.classroom_id
+          LEFT JOIN academic_periods ap ON ap.id = te.period_id
+          LEFT JOIN classroom_courses cc ON cc.id = te.classroom_course_id
+          LEFT JOIN subjects s ON s.id = cc.subject_id
+          LEFT JOIN activity_slots aslot ON aslot.id = te.activity_slot_id
+          LEFT JOIN activity_catalog ac ON ac.id = aslot.activity_catalog_id
+          LEFT JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
+          LEFT JOIN users u ON u.id = tei.instructor_id
+         WHERE te.is_active = true
+           AND te.day_of_week = ANY($1)
+           AND te.period_id = ANY($2)
+           AND (te.activity_slot_id IS DISTINCT FROM $3 OR te.activity_slot_id IS NULL)
+         GROUP BY te.id, cr.name, ap.name, ap.order_index, s.name_th, ac.scheduling_mode
+        "#
+    )
+    .bind(&payload.days_of_week)
+    .bind(&payload.period_ids)
+    .bind(payload.activity_slot_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("fetch existing entries: {}", e)))?;
+
+    // ===== Build summary collectors =====
+    let mut skipped: Vec<serde_json::Value> = Vec::new();
+    let mut blocked: Vec<serde_json::Value> = Vec::new();
+    let mut deleted: Vec<serde_json::Value> = Vec::new();
+    let mut excluded_instructors_map: std::collections::HashMap<Uuid, (String, Vec<serde_json::Value>)> = std::collections::HashMap::new();
+    let mut entries_to_delete: Vec<Uuid> = Vec::new();
+
+    // ===== Per-cell decision =====
+    // เซตของ (classroom, day, period) ที่จะ INSERT จริง (filtered)
+    let mut insert_tuples: Vec<(Uuid, String, Uuid)> = Vec::new();
+
+    for cr_id in &payload.classroom_ids {
+        for day in &payload.days_of_week {
+            for p_id in &payload.period_ids {
+                // หา entries ที่ "ทับ" cell นี้:
+                //   1. classroom_id ตรง → classroom conflict
+                //   2. room_id ตรง → room conflict
+                //   3. instructor_id ใน candidate_instructors → instructor conflict
+                let cell_conflicts: Vec<&ExistingEntry> = existing.iter().filter(|e| {
+                    if e.day_of_week != *day || e.period_id != *p_id { return false; }
+                    // Match by classroom OR room OR shared instructor
+                    e.classroom_id == Some(*cr_id)
+                    || (payload.room_id.is_some() && e.room_id == payload.room_id)
+                    || e.instructor_ids.iter().any(|i| candidate_instructors.contains(i))
+                }).collect();
+
+                if cell_conflicts.is_empty() {
+                    insert_tuples.push((*cr_id, day.clone(), *p_id));
+                    continue;
+                }
+
+                // มี conflict — ตัดสินใจตาม batch_type + force
+                let has_sync_conflict = cell_conflicts.iter().any(|e|
+                    e.scheduling_mode.as_deref() == Some("synchronized")
+                );
+
+                if is_sync_batch {
+                    // === SYNC batch decisions ===
+                    // Classroom conflict → block (นักเรียนห้องนี้มีคาบอื่นอยู่)
+                    let classroom_busy = cell_conflicts.iter().find(|e| e.classroom_id == Some(*cr_id));
+                    if let Some(blocker) = classroom_busy {
+                        if force {
+                            // Force: ลบ entry เดิมแล้ว insert sync ใหม่
+                            // (ถ้าเป็น sync อื่นอยู่แล้ว — block เพราะ sync vs sync ไม่ should override)
+                            if blocker.scheduling_mode.as_deref() == Some("synchronized") {
+                                blocked.push(json!({
+                                    "classroom_id": cr_id, "classroom_name": blocker.classroom_name,
+                                    "day_of_week": day, "period_id": p_id, "period_name": blocker.period_name,
+                                    "reason": "SYNC_VS_SYNC",
+                                    "message": format!("{} {}: ทับกับกิจกรรม sync '{}' — sync vs sync ทับไม่ได้",
+                                                       blocker.classroom_name.as_deref().unwrap_or("?"), day, blocker.display_title)
+                                }));
+                                continue;
+                            }
+                            entries_to_delete.push(blocker.id);
+                            deleted.push(json!({
+                                "id": blocker.id, "classroom_name": blocker.classroom_name,
+                                "day_of_week": day, "period_id": p_id, "period_name": blocker.period_name,
+                                "title": blocker.display_title, "entry_type": blocker.entry_type,
+                                "instructor_names": blocker.instructor_names
+                            }));
+                            insert_tuples.push((*cr_id, day.clone(), *p_id));
+                        } else {
+                            blocked.push(json!({
+                                "classroom_id": cr_id, "classroom_name": blocker.classroom_name,
+                                "day_of_week": day, "period_id": p_id, "period_name": blocker.period_name,
+                                "reason": "STUDENT_BUSY",
+                                "message": format!("{} {}: นักเรียนติด '{}' ลบของเดิมก่อน",
+                                                   blocker.classroom_name.as_deref().unwrap_or("?"), day, blocker.display_title)
+                            }));
+                        }
+                        continue;
+                    }
+                    // Room conflict → skip cell (force: delete + insert)
+                    let room_busy = cell_conflicts.iter().find(|e|
+                        payload.room_id.is_some() && e.room_id == payload.room_id && e.classroom_id != Some(*cr_id)
+                    );
+                    if let Some(blocker) = room_busy {
+                        if force {
+                            entries_to_delete.push(blocker.id);
+                            deleted.push(json!({
+                                "id": blocker.id, "classroom_name": blocker.classroom_name,
+                                "day_of_week": day, "period_id": p_id, "period_name": blocker.period_name,
+                                "title": blocker.display_title, "entry_type": blocker.entry_type,
+                                "instructor_names": blocker.instructor_names
+                            }));
+                            insert_tuples.push((*cr_id, day.clone(), *p_id));
+                        } else {
+                            skipped.push(json!({
+                                "classroom_id": cr_id, "day_of_week": day, "period_id": p_id,
+                                "period_name": blocker.period_name,
+                                "reason": "ROOM_BUSY",
+                                "message": format!("{}: ห้องสอนถูกใช้โดย '{}' อยู่", day, blocker.display_title)
+                            }));
+                        }
+                        continue;
+                    }
+                    // Instructor conflict only (no classroom/room) → exclude instructor (sync no-force) / delete (force)
+                    // For sync, we collect excluded instructors globally; cell still gets inserted
+                    let mut conflicting_instructors: Vec<(Uuid, String)> = Vec::new();
+                    for e in &cell_conflicts {
+                        for (idx, iid) in e.instructor_ids.iter().enumerate() {
+                            if candidate_instructors.contains(iid) {
+                                let name = e.instructor_names.get(idx).cloned().unwrap_or_default();
+                                conflicting_instructors.push((*iid, name));
+                                if force {
+                                    if !entries_to_delete.contains(&e.id) {
+                                        entries_to_delete.push(e.id);
+                                        deleted.push(json!({
+                                            "id": e.id, "classroom_name": e.classroom_name,
+                                            "day_of_week": day, "period_id": p_id, "period_name": e.period_name,
+                                            "title": e.display_title, "entry_type": e.entry_type,
+                                            "instructor_names": e.instructor_names
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !force {
+                        for (iid, _name) in &conflicting_instructors {
+                            // find existing entry that conflict with this instructor at this cell
+                            let conf_entry = cell_conflicts.iter().find(|e| e.instructor_ids.contains(iid)).unwrap();
+                            let entry_record = excluded_instructors_map.entry(*iid).or_insert_with(|| {
+                                let nm = cell_conflicts.iter()
+                                    .filter_map(|e| {
+                                        e.instructor_ids.iter().position(|x| x == iid)
+                                            .and_then(|idx| e.instructor_names.get(idx))
+                                    })
+                                    .next()
+                                    .cloned()
+                                    .unwrap_or_default();
+                                (nm, Vec::new())
+                            });
+                            entry_record.1.push(json!({
+                                "day_of_week": day, "period_id": p_id,
+                                "period_name": conf_entry.period_name,
+                                "existing_title": conf_entry.display_title
+                            }));
+                        }
+                    }
+                    insert_tuples.push((*cr_id, day.clone(), *p_id));
+                } else {
+                    // === TEXT/independent activity batch decisions ===
+                    if has_sync_conflict {
+                        // ทับ sync activity — block ทั้ง no-force และ force
+                        let sync_blocker = cell_conflicts.iter().find(|e|
+                            e.scheduling_mode.as_deref() == Some("synchronized")
+                        ).unwrap();
+                        blocked.push(json!({
+                            "classroom_id": cr_id, "classroom_name": sync_blocker.classroom_name,
+                            "day_of_week": day, "period_id": p_id, "period_name": sync_blocker.period_name,
+                            "reason": "SYNC_ACTIVITY_PRESENT",
+                            "message": format!("{} {}: มีกิจกรรม sync '{}' — ลบกิจกรรม sync ก่อน",
+                                               sync_blocker.classroom_name.as_deref().unwrap_or("?"), day, sync_blocker.display_title)
+                        }));
+                        continue;
+                    }
+                    if force {
+                        // Overwrite — delete conflicts + insert
+                        for e in &cell_conflicts {
+                            if !entries_to_delete.contains(&e.id) {
+                                entries_to_delete.push(e.id);
+                                deleted.push(json!({
+                                    "id": e.id, "classroom_name": e.classroom_name,
+                                    "day_of_week": day, "period_id": p_id, "period_name": e.period_name,
+                                    "title": e.display_title, "entry_type": e.entry_type,
+                                    "instructor_names": e.instructor_names
+                                }));
+                            }
+                        }
+                        insert_tuples.push((*cr_id, day.clone(), *p_id));
+                    } else {
+                        // No force: skip cell with detailed reason
+                        let primary = &cell_conflicts[0];
+                        let reason = if primary.classroom_id == Some(*cr_id) {
+                            if primary.entry_type == "COURSE" { "CLASSROOM_COURSE" } else { "CLASSROOM_ACTIVITY" }
+                        } else if primary.instructor_ids.iter().any(|i| candidate_instructors.contains(i)) {
+                            "INSTRUCTOR_BUSY"
+                        } else { "ROOM_BUSY" };
+                        skipped.push(json!({
+                            "classroom_id": cr_id, "classroom_name": primary.classroom_name,
+                            "day_of_week": day, "period_id": p_id, "period_name": primary.period_name,
+                            "reason": reason,
+                            "message": format!("{} {}: ทับ '{}' ({})",
+                                               primary.classroom_name.as_deref().unwrap_or("?"),
+                                               day, primary.display_title,
+                                               primary.instructor_names.join(", "))
+                        }));
+                    }
+                }
             }
-        }
-
-        // 3. Check room conflict
-        if let Some(room_id) = payload.room_id {
-            let room_conflicts: Vec<(String, String, String)> = sqlx::query_as(
-                r#"SELECT DISTINCT r.code,
-                          COALESCE(ap.name, 'คาบที่ ' || ap.order_index::text) AS period_label,
-                          te.day_of_week
-                   FROM academic_timetable_entries te
-                   JOIN rooms r ON r.id = te.room_id
-                   JOIN academic_periods ap ON ap.id = te.period_id
-                   WHERE te.room_id = $1
-                     AND te.day_of_week = ANY($2)
-                     AND te.period_id = ANY($3)
-                     AND te.is_active = true"#
-            )
-            .bind(room_id)
-            .bind(&payload.days_of_week)
-            .bind(&payload.period_ids)
-            .fetch_all(&pool)
-            .await
-            .unwrap_or_default();
-
-            for (room_code, period_name, day) in &room_conflicts {
-                conflicts.push(serde_json::json!({
-                    "conflict_type": "ROOM_CONFLICT",
-                    "message": format!("{}: ห้อง {} ถูกใช้คาบ {}", day, room_code, period_name)
-                }));
-            }
-        }
-
-        if !conflicts.is_empty() {
-            return Ok((
-                StatusCode::CONFLICT,
-                Json(json!({
-                    "success": false,
-                    "message": "พบรายการที่ชนกัน",
-                    "conflicts": conflicts
-                }))
-            ).into_response());
         }
     }
 
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    // Compute effective instructors for tei attach (exclude conflicting for sync no-force)
+    let effective_instructors: Vec<Uuid> = if is_sync_batch && !force {
+        payload.instructor_ids.iter()
+            .filter(|i| !excluded_instructors_map.contains_key(i))
+            .copied().collect()
+    } else {
+        payload.instructor_ids.clone()
+    };
 
-    // UUID ร่วมของ entries ทุกตัวใน batch นี้ (ใช้สำหรับ "ลบทั้งกลุ่ม")
+    // ===== Execute transaction =====
+    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
     let batch_uuid = Uuid::new_v4();
 
-    // === FORCE DELETE (bulk) — 3 queries รวม ===
-    if payload.force.unwrap_or(false) {
-        if !payload.classroom_ids.is_empty() {
-            sqlx::query(
-                "DELETE FROM academic_timetable_entries
-                 WHERE classroom_id = ANY($1) AND day_of_week = ANY($2) AND period_id = ANY($3)"
-            )
-            .bind(&payload.classroom_ids)
-            .bind(&payload.days_of_week)
-            .bind(&payload.period_ids)
+    // DELETE for overwrite
+    if !entries_to_delete.is_empty() {
+        sqlx::query("DELETE FROM academic_timetable_entries WHERE id = ANY($1)")
+            .bind(&entries_to_delete)
             .execute(&mut *tx).await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-        }
-        if let Some(rid) = payload.room_id {
-            sqlx::query(
-                "DELETE FROM academic_timetable_entries
-                 WHERE room_id = $1 AND day_of_week = ANY($2) AND period_id = ANY($3)"
-            )
-            .bind(rid)
-            .bind(&payload.days_of_week)
-            .bind(&payload.period_ids)
-            .execute(&mut *tx).await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-        }
-        // รวม instructor_ids (payload + derived จาก subject) → clear slot ของครูเหล่านั้น
-        let mut clear_instrs = payload.instructor_ids.clone();
-        if let Some(subject_id) = payload.subject_id {
-            let derived: Vec<Uuid> = sqlx::query_scalar(
-                "SELECT DISTINCT cci.instructor_id
-                 FROM classroom_course_instructors cci
-                 JOIN classroom_courses cc ON cc.id = cci.classroom_course_id
-                 WHERE cc.classroom_id = ANY($1) AND cc.subject_id = $2"
-            )
-            .bind(&payload.classroom_ids).bind(subject_id)
-            .fetch_all(&mut *tx).await.unwrap_or_default();
-            for id in derived {
-                if !clear_instrs.contains(&id) { clear_instrs.push(id); }
-            }
-        }
-        if !clear_instrs.is_empty() {
-            sqlx::query(
-                "DELETE FROM academic_timetable_entries te
-                 USING timetable_entry_instructors tei
-                 WHERE tei.entry_id = te.id
-                   AND tei.instructor_id = ANY($1)
-                   AND te.day_of_week = ANY($2)
-                   AND te.period_id = ANY($3)"
-            )
-            .bind(&clear_instrs)
-            .bind(&payload.days_of_week)
-            .bind(&payload.period_ids)
-            .execute(&mut *tx).await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-        }
+            .map_err(|e| AppError::InternalServerError(format!("delete overwrite: {}", e)))?;
     }
 
-    // === CLASSROOM entries — bulk INSERT + bulk TEI INSERT ใน 1 query ===
-    // CTE:
-    //   cc_map    = resolve (subject_id, classroom) → classroom_course_id + name
-    //   new_entries = bulk INSERT ต่อ classroom × day × period (CROSS JOIN UNNEST)
-    //                 → RETURNING id, classroom_id, classroom_course_id
-    //   slot_mode = lookup scheduling_mode ของ activity_slot (ถ้ามี)
-    // ตามด้วย UNION ALL INSERT TEI จาก 3 แหล่ง (cci / slot-indep / slot-sync)
-    if !payload.classroom_ids.is_empty() {
-        sqlx::query(
+    // === CLASSROOM entries — bulk INSERT จาก insert_tuples (filtered) ===
+    // ใช้ UNNEST ของ 3 arrays แบบ paired (ไม่ใช่ cross join) เพื่อ insert เฉพาะ cell ที่ผ่านเงื่อนไข
+    let mut inserted_count: i64 = 0;
+    if !insert_tuples.is_empty() {
+        let cr_arr: Vec<Uuid> = insert_tuples.iter().map(|(c, _, _)| *c).collect();
+        let d_arr: Vec<String> = insert_tuples.iter().map(|(_, d, _)| d.clone()).collect();
+        let p_arr: Vec<Uuid> = insert_tuples.iter().map(|(_, _, p)| *p).collect();
+
+        let result = sqlx::query(
             r#"
             WITH cc_map AS (
                 SELECT cc.id AS cc_id, cc.classroom_id AS cr_id, s.name_th AS course_name
@@ -1602,15 +1694,13 @@ pub async fn create_batch_timetable_entries(
                     entry_type, title, is_active, created_by, updated_by,
                     classroom_course_id, note, activity_slot_id, batch_id
                 )
-                SELECT gen_random_uuid(), c, $1, d, p, $2,
+                SELECT gen_random_uuid(), t.c, $1, t.d, t.p, $2,
                     CASE WHEN cc_map.cc_id IS NOT NULL THEN 'COURSE' ELSE $3 END,
                     COALESCE(cc_map.course_name, $4),
                     true, $9, $9,
                     cc_map.cc_id, $10, $11, $12
-                FROM UNNEST($5::uuid[]) AS c
-                CROSS JOIN UNNEST($6::text[]) AS d
-                CROSS JOIN UNNEST($7::uuid[]) AS p
-                LEFT JOIN cc_map ON cc_map.cr_id = c
+                FROM UNNEST($5::uuid[], $6::text[], $7::uuid[]) AS t(c, d, p)
+                LEFT JOIN cc_map ON cc_map.cr_id = t.c
                 ON CONFLICT DO NOTHING
                 RETURNING id, classroom_id, classroom_course_id
             ),
@@ -1619,46 +1709,50 @@ pub async fn create_batch_timetable_entries(
                 FROM activity_slots s
                 JOIN activity_catalog ac ON ac.id = s.activity_catalog_id
                 WHERE $11::uuid IS NOT NULL AND s.id = $11
+            ),
+            tei_inserts AS (
+                INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                SELECT ne.id, cci.instructor_id, cci.role
+                    FROM new_entries ne
+                    JOIN classroom_course_instructors cci ON cci.classroom_course_id = ne.classroom_course_id
+                    WHERE ne.classroom_course_id IS NOT NULL
+                UNION ALL
+                SELECT ne.id, asca.instructor_id, 'primary'
+                    FROM new_entries ne
+                    JOIN activity_slot_classroom_assignments asca
+                        ON asca.slot_id = $11 AND asca.classroom_id = ne.classroom_id
+                    WHERE (SELECT mode FROM slot_mode) = 'independent'
+                UNION ALL
+                -- SLOT-sync: attach effective instructors (ตัด excluded ออกแล้ว)
+                SELECT ne.id, i.v, 'primary'
+                    FROM new_entries ne
+                    CROSS JOIN UNNEST($13::uuid[]) AS i(v)
+                    WHERE (SELECT mode FROM slot_mode) = 'synchronized'
+                ON CONFLICT DO NOTHING
+                RETURNING entry_id
             )
-            INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-            SELECT ne.id, cci.instructor_id, cci.role
-                FROM new_entries ne
-                JOIN classroom_course_instructors cci ON cci.classroom_course_id = ne.classroom_course_id
-                WHERE ne.classroom_course_id IS NOT NULL
-            UNION ALL
-            SELECT ne.id, asca.instructor_id, 'primary'
-                FROM new_entries ne
-                JOIN activity_slot_classroom_assignments asca
-                    ON asca.slot_id = $11 AND asca.classroom_id = ne.classroom_id
-                WHERE (SELECT mode FROM slot_mode) = 'independent'
-            UNION ALL
-            -- SLOT-sync: attach ครูจาก payload.instructor_ids (frontend pre-populate
-            -- จาก activity_slot_instructors แล้ว user อาจ uncheck เพื่อเอาออก)
-            SELECT ne.id, i.v, 'primary'
-                FROM new_entries ne
-                CROSS JOIN UNNEST($13::uuid[]) AS i(v)
-                WHERE (SELECT mode FROM slot_mode) = 'synchronized'
-            ON CONFLICT DO NOTHING
+            SELECT COUNT(*) FROM new_entries
             "#
         )
         .bind(payload.academic_semester_id)   // $1
         .bind(payload.room_id)                // $2
         .bind(&payload.entry_type)            // $3
         .bind(&payload.title)                 // $4
-        .bind(&payload.classroom_ids)         // $5
-        .bind(&payload.days_of_week)          // $6
-        .bind(&payload.period_ids)            // $7
+        .bind(&cr_arr)                        // $5
+        .bind(&d_arr)                         // $6
+        .bind(&p_arr)                         // $7
         .bind(payload.subject_id)             // $8
         .bind(user_id)                        // $9
         .bind(&payload.note)                  // $10
         .bind(payload.activity_slot_id)       // $11
         .bind(batch_uuid)                     // $12
-        .bind(&payload.instructor_ids)        // $13
-        .execute(&mut *tx).await
+        .bind(&effective_instructors)         // $13
+        .fetch_one(&mut *tx).await
         .map_err(|e| {
             eprintln!("Failed bulk classroom batch INSERT: {}", e);
             AppError::InternalServerError("Failed to batch create entries".to_string())
         })?;
+        inserted_count = sqlx::Row::try_get::<i64, _>(&result, 0).unwrap_or(0);
     }
 
     // === INSTRUCTOR-only entries — bulk INSERT + bulk TEI INSERT ===
@@ -1727,9 +1821,24 @@ pub async fn create_batch_timetable_entries(
         TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
     );
 
+    // Build excluded_instructors response (sync no-force only)
+    let excluded_instructors: Vec<serde_json::Value> = excluded_instructors_map.into_iter()
+        .map(|(iid, (name, conflicts))| json!({
+            "instructor_id": iid,
+            "instructor_name": name,
+            "conflicting_at": conflicts
+        }))
+        .collect();
+
     Ok(Json(json!({
         "success": true,
-        "message": "Batch entries created successfully"
+        "summary": {
+            "inserted_count": inserted_count,
+            "skipped": skipped,
+            "blocked": blocked,
+            "deleted": deleted,
+            "excluded_instructors": excluded_instructors
+        }
     })).into_response())
 }
 

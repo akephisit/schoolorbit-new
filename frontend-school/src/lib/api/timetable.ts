@@ -218,7 +218,59 @@ export const listTimetableEntries = async (
 
 export const listTimetableEntriesWithSeq = listTimetableEntries;
 
-export const createBatchTimetableEntries = async (data: CreateBatchTimetableEntriesRequest) => {
+export interface BatchSkippedCell {
+	classroom_id: string | null;
+	classroom_name: string | null;
+	day_of_week: string;
+	period_id: string;
+	period_name: string | null;
+	reason: string;
+	message: string;
+}
+
+export interface BatchBlockedCell {
+	classroom_id: string;
+	classroom_name: string | null;
+	day_of_week: string;
+	period_id: string;
+	period_name: string | null;
+	reason: string;
+	message: string;
+}
+
+export interface BatchDeletedEntry {
+	id: string;
+	classroom_name: string | null;
+	day_of_week: string;
+	period_id: string;
+	period_name: string | null;
+	title: string;
+	entry_type: string;
+	instructor_names: string[];
+}
+
+export interface BatchExcludedInstructor {
+	instructor_id: string;
+	instructor_name: string;
+	conflicting_at: Array<{
+		day_of_week: string;
+		period_id: string;
+		period_name: string | null;
+		existing_title: string;
+	}>;
+}
+
+export interface BatchSummary {
+	inserted_count: number;
+	skipped: BatchSkippedCell[];
+	blocked: BatchBlockedCell[];
+	deleted: BatchDeletedEntry[];
+	excluded_instructors: BatchExcludedInstructor[];
+}
+
+export const createBatchTimetableEntries = async (
+	data: CreateBatchTimetableEntriesRequest
+): Promise<{ success: boolean; summary?: BatchSummary; message?: string }> => {
 	const response = await fetch(`${BACKEND_URL}/api/academic/timetable/batch`, {
 		method: 'POST',
 		credentials: 'include',
@@ -228,12 +280,8 @@ export const createBatchTimetableEntries = async (data: CreateBatchTimetableEntr
 
 	const result = await response.json();
 
-	if (response.status === 409) {
-		return { success: false, message: result.message, conflicts: result.conflicts };
-	}
-
 	if (!response.ok) {
-		throw new Error(result.error || `Request failed with status ${response.status}`);
+		throw new Error(result.error || result.message || `Request failed with status ${response.status}`);
 	}
 
 	return result;
