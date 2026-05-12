@@ -340,21 +340,16 @@ function buildPageContent(
 	// logo (rowSpan=3) ครอบ title row + period name row + time row
 	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
 	// Logo cell — rowSpan=3 ครอบ title + period name + time rows
-	// Auto-center ทั้งแนวตั้ง+แนวนอน:
-	// - กำหนด stack ให้สูงเท่ากับ rowSpan visual (top+bottom spacer คุม)
-	// - image อยู่ระหว่าง spacer 2 ฝั่ง → centered ใน stack → centered visually
-	// - canvas เป็น spacer (height ชัวร์กว่า text spacer)
+	// IMPORTANT: pdfmake's rowSpan cell render content ใน "row 0 area" เท่านั้น
+	// (rowSpan affects แค่ visual borders, ไม่ขยาย content area)
+	// → stack สูงเกิน row 0 content → overflow ลงไปเข้า day rows
 	//
-	// rowSpan visual estimate:
-	//   row 0 (title): 75pt with QR / 53pt without
-	//   row 1 (period name): 21pt
-	//   row 2 (time): 16pt
-	//   logo cell content = total - 2 (paddingTop) - 2 (paddingBottom)
+	// row 0 content area = title cell content height - cell padding (2+2)
+	//   INSTRUCTOR (มี QR stack สูง ~71pt): content area ≈ 71pt
+	//   CLASSROOM (title stack only ~47pt): content area ≈ 47pt
 	const FIT_W = DAY_COL - 4; // 51
-	const FIT_H = 75;
-	const row0Height = showQrCode ? 75 : 53;
-	const rowSpanTotal = row0Height + 21 + 16; // visual rowSpan
-	const cellContentH = rowSpanTotal - 4; // ลบ padding บน-ล่าง ของ cell
+	const cellContentH = showQrCode ? 71 : 47;
+	const FIT_H = cellContentH; // logo ห้ามสูงเกิน cell content area
 
 	let renderedLogoH = 0;
 	if (logoDims && logoDims.w > 0 && logoDims.h > 0) {
