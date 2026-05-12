@@ -661,9 +661,13 @@ function buildMiniTable(
 
 	// === Row 0: Title row ===
 	// Logo cell — nested table + VA middle (เหมือน full mode)
-	// NESTED_H_MINI ≈ row 0 (title) + row 1 (period name) + row 2 (time)
-	// ค่าเดิม 31 → ภาพชิดบน → เพิ่มเป็น 38 (เหมือน full mode ที่ 81 จาก estimate 75)
-	const NESTED_H_MINI = 38;
+	//
+	// Math: image center = outer padding (1) + inner padding (2) + NESTED_H/2
+	// Visual rowSpan = natural row 0 (~14) + row 1 (~9) + row 2 (~8) ≈ 31pt
+	// Want image center = 15.5pt → NESTED_H = 25
+	//
+	// (เดิม 38 → image center 22 → 70% จากบน = ใกล้ row 1/row 2 boundary)
+	const NESTED_H_MINI = 25;
 	const FIT_W_MINI = DAY_COL - 4;
 	const FIT_H_MINI = NESTED_H_MINI - 4;
 
