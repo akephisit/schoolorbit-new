@@ -640,7 +640,11 @@ function buildPageContent(
  *  font เล็ก + auto-wrap, row height ใหญ่ขึ้นเพื่อรองรับ multi-line
  *  miniAreaWidth: ความกว้างที่ allocated ต่อ 1 mini (default 400 — legacy,
  *                 282 สำหรับ portrait 2-col) */
-function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Content {
+function buildMiniTable(
+	page: TimetablePage,
+	miniAreaWidth: number = 400,
+	logoDataUrl: string | null = null
+): Content {
 	const { periods, timetableEntries, title, viewMode = 'CLASSROOM', roomNames } = page;
 	const tableBody: TableCell[][] = [];
 
@@ -651,27 +655,99 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 	const offsetsTotal = PAD_LR * N + BORDER * (N + 1);
 	const safety = 1;
 	const maxSumWidths = miniAreaWidth - offsetsTotal - safety;
-	const DAY_COL = 18;
+	const DAY_COL = 24; // กว้างขึ้นจาก 18 → 24 เพื่อให้ logo มีที่
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
-	// Header row — period name + start time
-	const headerRow: TableCell[] = [
-		{ text: 'วัน', bold: true, alignment: 'center', fillColor: '#f3f4f6', fontSize: 5, margin: [0, 0] }
+	// === Row 0: Title row ===
+	// Logo cell — nested table + VA middle (เหมือน full mode)
+	// NESTED_H_MINI ≈ row 0 (title ~14) + row 1 (period ~9) + row 2 (time ~8) = ~31pt
+	const NESTED_H_MINI = 31;
+	const FIT_W_MINI = DAY_COL - 4;
+	const FIT_H_MINI = NESTED_H_MINI - 4;
+
+	const logoCell: TableCell = logoDataUrl
+		? ({
+				table: {
+					widths: ['*'],
+					heights: [NESTED_H_MINI],
+					body: [
+						[
+							{
+								stack: [
+									{ image: logoDataUrl, fit: [FIT_W_MINI, FIT_H_MINI], alignment: 'center' }
+								],
+								verticalAlignment: 'middle',
+								alignment: 'center',
+								border: [false, false, false, false]
+							} as unknown as TableCell
+						]
+					]
+				},
+				layout: 'noBorders',
+				rowSpan: 3,
+				alignment: 'center'
+			} as unknown as TableCell)
+		: ({ text: '', rowSpan: 3 } as TableCell);
+
+	const miniTitle = stripTitlePrefix(title);
+	const titleRow: TableCell[] = [
+		logoCell,
+		{
+			text: miniTitle,
+			bold: true,
+			fontSize: 7,
+			color: '#1e3a8a',
+			alignment: 'center',
+			colSpan: periods.length,
+			margin: [0, 2, 0, 2]
+		} as TableCell,
+		...Array(Math.max(0, periods.length - 1)).fill('')
 	];
+	tableBody.push(titleRow);
+
+	// === Row 1: Period name row ===
+	const periodNameRow: TableCell[] = [''];
 	periods.forEach((p) => {
 		const labelText = p.name && p.name.trim() ? p.name : ' ';
-		headerRow.push({
-			text: [
-				{ text: `${labelText}\n`, bold: true, fontSize: 5 },
-				{ text: formatTime(p.start_time), fontSize: 4, color: '#4b5563' }
-			],
+		periodNameRow.push({
+			text: labelText,
+			bold: true,
+			fontSize: 5,
 			alignment: 'center',
 			fillColor: '#f3f4f6',
 			margin: [0, 0]
 		});
 	});
-	tableBody.push(headerRow);
+	tableBody.push(periodNameRow);
+
+	// === Row 2: Time row ===
+	// fitTimeRangeMini: ลองสั้น "08:30-09:20" @ 4pt → 3.5pt → fallback 2 บรรทัด
+	const timeRow: TableCell[] = [''];
+	periods.forEach((p) => {
+		const s = formatTime(p.start_time);
+		const e = formatTime(p.end_time);
+		const variants: { text: string; fontSize: number }[] = [
+			{ text: `${s}-${e}`, fontSize: 4 },
+			{ text: `${s}-${e}`, fontSize: 3.5 }
+		];
+		let fitted = variants[variants.length - 1];
+		for (const v of variants) {
+			if (measureTextWidthPt(v.text, v.fontSize) <= cellContentWidth) {
+				fitted = v;
+				break;
+			}
+		}
+		timeRow.push({
+			text: fitted.text,
+			fontSize: fitted.fontSize,
+			color: '#4b5563',
+			alignment: 'center',
+			fillColor: '#f3f4f6',
+			margin: [0, 0]
+		});
+	});
+	tableBody.push(timeRow);
 
 	// Data rows — ย่อชื่อวันเหลือ 1 ตัวอักษร ("จ" / "อ" / "พ" / "พฤ" / "ศ")
 	const dayShort: Record<string, string> = { MON: 'จ', TUE: 'อ', WED: 'พ', THU: 'พฤ', FRI: 'ศ' };
@@ -780,29 +856,18 @@ function buildMiniTable(page: TimetablePage, miniAreaWidth: number = 400): Conte
 	const widths = [DAY_COL, ...periods.map(() => periodWidth)];
 
 	// row height 38pt → รองรับ multi-line (code + name 2 lines + teacher 1-2 lines + room 1-2 lines)
-	// cast as Content — pdfmake รับ width ใน column context แต่ TS type ไม่ครอบคลุม
+	// title อยู่ใน row 0 ของตารางแล้ว → ไม่ต้องมีข้อความข้างนอก
 	return {
-		stack: [
-			{
-				text: stripTitlePrefix(title),
-				fontSize: 8,
-				bold: true,
-				alignment: 'center',
-				margin: [0, 0, 0, 2]
-			},
-			{
-				table: {
-					headerRows: 1,
-					widths,
-					heights: ['auto', 38, 38, 38, 38, 38],
-					body: tableBody,
-					dontBreakRows: true
-				},
-				layout: miniTableLayout
-			}
-		],
+		table: {
+			headerRows: 3,
+			widths,
+			heights: ['auto', 'auto', 'auto', 38, 38, 38, 38, 38],
+			body: tableBody,
+			dontBreakRows: true
+		},
+		layout: miniTableLayout,
 		width: '*'
-	} as Content;
+	} as unknown as Content;
 }
 
 /** Portrait 2-column page — รวม mini-tables ใน 2 คอลัมเรียงลงมา (newspaper order)
@@ -839,50 +904,39 @@ function buildPortraitPageContent(
 			: { text: '', width: 40 }
 	) as unknown as Content;
 
-	const titleBlock: Content = logoDataUrl
-		? {
-				columns: [
+	// Page header: logo อยู่ใน mini-table แต่ละอันแล้ว → header แค่ subtitle + QR
+	// (title generic "ตารางเรียน/สอน" ไม่ค่อย useful เพราะแต่ละ mini มี title ของตัวเอง)
+	const titleBlock: Content = {
+		columns: [
+			{
+				stack: [
 					{
-						width: 40,
-						stack: [{ image: logoDataUrl, fit: [40, 40], alignment: 'center' }]
+						text: pageHeaderTitle,
+						fontSize: 12,
+						bold: true,
+						color: '#1e3a8a',
+						alignment: 'center'
 					},
 					{
-						stack: [
-							{ text: pageHeaderTitle, fontSize: 14, bold: true, color: '#1e3a8a', alignment: 'center' },
-							{
-								text: pageHeaderSubTitle,
-								fontSize: 10,
-								color: '#4b5563',
-								alignment: 'center',
-								margin: [0, 2, 0, 0]
-							}
-						],
-						width: '*'
-					},
-					qrCornerBlock
+						text: pageHeaderSubTitle,
+						fontSize: 9,
+						color: '#4b5563',
+						alignment: 'center',
+						margin: [0, 1, 0, 0]
+					}
 				],
-				columnGap: 10,
-				margin: [0, 0, 0, 8],
-				...(isFirst ? {} : { pageBreak: 'before' })
-			}
-		: {
-				columns: [
-					{
-						stack: [
-							{ text: pageHeaderTitle, fontSize: 14, bold: true, color: '#1e3a8a', alignment: 'center', margin: [0, 0, 0, 2] },
-							{ text: pageHeaderSubTitle, fontSize: 10, color: '#4b5563', alignment: 'center', margin: [0, 0, 0, 8] }
-						],
-						width: '*'
-					},
-					qrCornerBlock
-				],
-				columnGap: 10,
-				...(isFirst ? {} : { pageBreak: 'before' })
-			};
+				width: '*'
+			},
+			qrCornerBlock
+		],
+		columnGap: 10,
+		margin: [0, 0, 0, 8],
+		...(isFirst ? {} : { pageBreak: 'before' })
+	};
 
 	// แต่ละ mini เพิ่ม bottom margin 8pt เพื่อ separation ใน stack
 	const minis: Content[] = chunk.map((p) => {
-		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH);
+		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logoDataUrl);
 		return { ...(mini as object), margin: [0, 0, 0, 8] } as Content;
 	});
 
