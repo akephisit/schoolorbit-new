@@ -340,35 +340,35 @@ function buildPageContent(
 	// logo (rowSpan=3) ครอบ title row + period name row + time row
 	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
 	// Logo cell — rowSpan=3 ครอบ title + period name + time rows
-	// IMPORTANT: pdfmake's rowSpan cell render content ใน "row 0 area" เท่านั้น
-	// (rowSpan affects แค่ visual borders, ไม่ขยาย content area)
-	// → stack สูงเกิน row 0 content → overflow ลงไปเข้า day rows
+	// ใช้ NESTED TABLE ขนาด fixed + verticalAlignment 'middle' ใน inner cell
+	// (cell-level VA ทำงานได้แม่นกว่า rowSpan VA ที่ buggy)
 	//
-	// row 0 content area = title cell content height - cell padding (2+2)
-	//   INSTRUCTOR (มี QR stack สูง ~71pt): content area ≈ 71pt
-	//   CLASSROOM (title stack only ~47pt): content area ≈ 47pt
+	// nested table height = ประมาณการ rowSpan visual total:
+	//   INSTRUCTOR: row 0 (~50) + row 1 (~21) + row 2 (~16) = ~87pt
+	//   CLASSROOM:  row 0 (~30) + row 1 (~21) + row 2 (~16) = ~67pt
 	const FIT_W = DAY_COL - 4; // 51
-	const cellContentH = showQrCode ? 71 : 47;
-	const FIT_H = cellContentH; // logo ห้ามสูงเกิน cell content area
-
-	let renderedLogoH = 0;
-	if (logoDims && logoDims.w > 0 && logoDims.h > 0) {
-		const scale = Math.min(FIT_W / logoDims.w, FIT_H / logoDims.h);
-		renderedLogoH = logoDims.h * scale;
-	}
-	const spacerH = Math.max(0, (cellContentH - renderedLogoH) / 2);
-
-	// ใช้ canvas สำหรับ spacer (height แน่นอน ไม่ขึ้นกับ font line-height)
-	const makeSpacer = (h: number): Content =>
-		({ canvas: [{ type: 'rect', x: 0, y: 0, w: 1, h, lineWidth: 0 }] }) as unknown as Content;
+	const NESTED_H = showQrCode ? 87 : 67;
+	const FIT_H = NESTED_H - 4;
 
 	const logoCell: TableCell = logoDataUrl
 		? ({
-				stack: [
-					makeSpacer(spacerH),
-					{ image: logoDataUrl, fit: [FIT_W, FIT_H], alignment: 'center' },
-					makeSpacer(spacerH)
-				],
+				table: {
+					widths: ['*'],
+					heights: [NESTED_H],
+					body: [
+						[
+							{
+								stack: [
+									{ image: logoDataUrl, fit: [FIT_W, FIT_H], alignment: 'center' }
+								],
+								verticalAlignment: 'middle',
+								alignment: 'center',
+								border: [false, false, false, false]
+							} as unknown as TableCell
+						]
+					]
+				},
+				layout: 'noBorders',
 				rowSpan: 3,
 				alignment: 'center'
 			} as unknown as TableCell)
