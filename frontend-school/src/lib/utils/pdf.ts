@@ -282,33 +282,109 @@ function buildPageContent(
 	const pageContentWidth = 841.89 - 10 - 10;
 	const safety = 2;
 	const maxSumWidths = pageContentWidth - offsetsTotal - safety;
-	const DAY_COL = 40;
+	const DAY_COL = 55; // กว้างขึ้นจาก 40 → 55 เพื่อให้ logo (rowSpan=3) มีที่พอ
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
-	// Header Row
-	const headerRow: TableCell[] = [
-		{ text: 'วัน / เวลา', bold: true, alignment: 'center', fillColor: '#f3f4f6', margin: [0, 1] }
+	// QR code link — แสดงเฉพาะ INSTRUCTOR (ครูสแกนเปิดดูตารางสอนได้)
+	// ใช้ window.location.origin เพื่อ work กับทุก school subdomain
+	const showQrCode = viewMode === 'INSTRUCTOR' && typeof window !== 'undefined';
+	const qrUrl = showQrCode ? window.location.origin + '/staff/timetable' : '';
+
+	// === Row 0: Title row ===
+	// logo (rowSpan=3) ครอบ title row + period name row + time row
+	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
+	const logoCell: TableCell = logoDataUrl
+		? {
+				stack: [{ image: logoDataUrl, fit: [DAY_COL - 6, 65], alignment: 'center' }],
+				rowSpan: 3,
+				alignment: 'center',
+				margin: [0, 4, 0, 4]
+			}
+		: ({ text: '', rowSpan: 3 } as TableCell);
+
+	const titleCellInner = {
+		columns: [
+			{
+				stack: [
+					{
+						text: title,
+						bold: true,
+						fontSize: 16,
+						color: '#1e3a8a',
+						alignment: 'center',
+						margin: [0, 6, 0, 0]
+					},
+					{
+						text: subTitle,
+						fontSize: 11,
+						color: '#4b5563',
+						alignment: 'center',
+						margin: [0, 2, 0, 6]
+					}
+				],
+				width: '*'
+			},
+			...(showQrCode
+				? [
+						{
+							width: 65,
+							stack: [
+								{ qr: qrUrl, fit: 55, alignment: 'center' as const },
+								{
+									text: 'สแกนดูตาราง',
+									fontSize: 6,
+									color: '#6b7280',
+									alignment: 'center' as const,
+									margin: [0, 1, 0, 0] as [number, number, number, number]
+								}
+							]
+						}
+					]
+				: [])
+		]
+	};
+
+	const titleRow: TableCell[] = [
+		logoCell,
+		{
+			...titleCellInner,
+			colSpan: periods.length,
+			margin: [0, 0, 0, 0]
+		} as unknown as TableCell,
+		// ghost cells สำหรับ colSpan (periods.length - 1 cells)
+		...Array(Math.max(0, periods.length - 1)).fill('')
 	];
-	// ใส่ \n เพื่อรักษา line height ให้คอลัมน์ที่ไม่มีชื่อสูงเท่ากับคอลัมน์ที่มีชื่อ
-	// (ตรงกับ behavior ของหน้าจัดตารางที่ใช้ nbsp placeholder)
+	tableBody.push(titleRow);
+
+	// === Row 1: Period name row (logo ต่อจากแถวบน) ===
+	const periodNameRow: TableCell[] = [''];
 	periods.forEach((p) => {
 		const labelText = p.name && p.name.trim() ? p.name : ' ';
-		headerRow.push({
-			text: [
-				{ text: `${labelText}\n`, bold: true, fontSize: 8 },
-				{
-					text: `${formatTime(p.start_time)} - ${formatTime(p.end_time)}`,
-					fontSize: 7,
-					color: '#4b5563'
-				}
-			],
+		periodNameRow.push({
+			text: labelText,
+			bold: true,
+			fontSize: 9,
+			alignment: 'center',
+			fillColor: '#f3f4f6',
+			margin: [0, 2]
+		});
+	});
+	tableBody.push(periodNameRow);
+
+	// === Row 2: Time row (logo ต่อจากแถวบน) ===
+	const timeRow: TableCell[] = [''];
+	periods.forEach((p) => {
+		timeRow.push({
+			text: `${formatTime(p.start_time)}\n${formatTime(p.end_time)}`,
+			fontSize: 7,
+			color: '#4b5563',
 			alignment: 'center',
 			fillColor: '#f3f4f6',
 			margin: [0, 1]
 		});
 	});
-	tableBody.push(headerRow);
+	tableBody.push(timeRow);
 
 	// Data Rows (MON - FRI)
 	DAYS.slice(0, 5).forEach((day) => {
@@ -414,60 +490,6 @@ function buildPageContent(
 		tableBody.push(row);
 	});
 
-	// QR code link → หน้าตารางสอนของครู (ครูสแกนเปิดดูได้)
-	// ใช้ window.location.origin เพื่อให้ work กับทุก school subdomain
-	// แสดงเฉพาะ INSTRUCTOR view (URL = /staff/...)
-	const showQrCode = viewMode === 'INSTRUCTOR' && typeof window !== 'undefined';
-	const qrUrl = showQrCode ? window.location.origin + '/staff/timetable' : '';
-	const rightCornerBlock = (
-		showQrCode
-			? {
-					width: 85,
-					stack: [
-						{ qr: qrUrl, fit: 80, alignment: 'center' },
-						{
-							text: 'สแกนดูตาราง',
-							fontSize: 7,
-							color: '#6b7280',
-							alignment: 'center',
-							margin: [0, 2, 0, 0]
-						}
-					]
-				}
-			: { text: '', width: 50 }
-	) as unknown as Content;
-
-	const titleBlock: Content = logoDataUrl
-		? {
-				columns: [
-					// fit แทน width+height → คงสัดส่วน logo (ไม่บิดเบี้ยว)
-					// portrait → ~33×50, landscape → 50×33, square → 50×50
-					// wrap ใน stack เพื่อให้ width:50 ตีความเป็น column width (ไม่ใช่ image width)
-					{
-						width: 50,
-						stack: [{ image: logoDataUrl, fit: [50, 50], alignment: 'center' }]
-					},
-					{
-						stack: [
-							{ text: title, style: 'header', alignment: 'center' },
-							{ text: subTitle, style: 'subheader', alignment: 'center', margin: [0, 2, 0, 0] }
-						],
-						width: '*'
-					},
-					rightCornerBlock
-				],
-				columnGap: 10,
-				margin: [0, 0, 0, 15],
-				...(isFirst ? {} : { pageBreak: 'before' })
-			}
-		: {
-				stack: [
-					{ text: title, style: 'header', alignment: 'center', margin: [0, 0, 0, 5] },
-					{ text: subTitle, style: 'subheader', alignment: 'center', margin: [0, 0, 0, 15] }
-				],
-				...(isFirst ? {} : { pageBreak: 'before' })
-			};
-
 	// ช่องลงชื่อใต้ตารางสอน — แสดงเฉพาะ INSTRUCTOR view (ตามที่ user ขอ)
 	const signatureBlock: Content | null =
 		viewMode === 'INSTRUCTOR'
@@ -502,22 +524,26 @@ function buildPageContent(
 				}
 			: null;
 
-	return [
-		titleBlock,
-		{
-			table: {
-				headerRows: 1,
-				// Fixed widths — `widths` ของ pdfmake = CONTENT width per cell
-				// tableWidth จริง = sum(widths) + offsetsTotal
-				// offsetsTotal = (paddingL + paddingR) × N + vLineWidth × (N+1)
-				// ดู: pdfmake/src/TableProcessor.js:100 + DocMeasure.js:596-614
-				widths: [DAY_COL, ...periods.map(() => periodWidth)],
-				heights: ['auto', 50, 50, 50, 50, 50],
-				body: tableBody,
-				dontBreakRows: true
-			},
-			layout: tableLayout
+	const tableContent: Content = {
+		table: {
+			// headerRows: 3 → title + period name + time จะ repeat ตอน page break
+			// (ไม่เกิดในปกติเพราะ dontBreakRows + พอดี 1 หน้า แต่กันไว้)
+			headerRows: 3,
+			// Fixed widths — `widths` ของ pdfmake = CONTENT width per cell
+			// tableWidth จริง = sum(widths) + offsetsTotal
+			// offsetsTotal = (paddingL + paddingR) × N + vLineWidth × (N+1)
+			// ดู: pdfmake/src/TableProcessor.js:100 + DocMeasure.js:596-614
+			widths: [DAY_COL, ...periods.map(() => periodWidth)],
+			heights: ['auto', 'auto', 'auto', 50, 50, 50, 50, 50],
+			body: tableBody,
+			dontBreakRows: true
 		},
+		layout: tableLayout,
+		...(isFirst ? {} : { pageBreak: 'before' })
+	} as Content;
+
+	return [
+		tableContent,
 		...(signatureBlock ? [signatureBlock] : []),
 		{
 			columns: [
