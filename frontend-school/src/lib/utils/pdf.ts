@@ -327,13 +327,13 @@ function buildPageContent(
 	// Logo cell — rowSpan=3 ครอบ title + period name + time rows
 	// ใช้ stack + top spacer ดัน logo ลง (verticalAlignment กับ rowSpan ใน pdfmake
 	// คำนวณ height ผิด → logo overflow ออกนอก cell)
-	// fit [49, 50] = max 50pt tall (อย่ามากเกินไปกัน edge overflow)
-	// top spacer ~22pt → logo อยู่กึ่งกลางของ header total (~96pt content area)
+	// fit [DAY_COL-4, 75] → logo portrait ก็ใช้ height เต็มที่ 75pt
+	// (rowSpan content area ~ 96-100pt → spacer 12pt ≈ กลาง)
 	const logoCell: TableCell = logoDataUrl
 		? ({
 				stack: [
-					{ text: ' ', fontSize: 1, margin: [0, 0, 0, 22] },
-					{ image: logoDataUrl, fit: [DAY_COL - 6, 50], alignment: 'center' }
+					{ text: ' ', fontSize: 1, margin: [0, 0, 0, 12] },
+					{ image: logoDataUrl, fit: [DAY_COL - 4, 75], alignment: 'center' }
 				],
 				rowSpan: 3,
 				alignment: 'center'
