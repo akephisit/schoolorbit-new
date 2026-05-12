@@ -296,10 +296,25 @@ async function fetchImageDataUrl(url: string): Promise<string | null> {
 	}
 }
 
+/** อ่าน natural width/height ของรูป (data URL หรือ URL) ผ่าน Image element
+ *  ใช้สำหรับคำนวณขนาด rendered (pdfmake's fit) แบบ exact → centering แม่นยำ */
+async function getImageDimensions(
+	dataUrl: string
+): Promise<{ w: number; h: number } | null> {
+	if (typeof Image === 'undefined') return null;
+	return await new Promise((resolve) => {
+		const img = new Image();
+		img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+		img.onerror = () => resolve(null);
+		img.src = dataUrl;
+	});
+}
+
 function buildPageContent(
 	page: TimetablePage,
 	isFirst: boolean,
-	logoDataUrl: string | null
+	logoDataUrl: string | null,
+	logoDims: { w: number; h: number } | null
 ): Content[] {
 	const { title, subTitle, periods, timetableEntries, viewMode = 'CLASSROOM', roomNames } = page;
 	const tableBody: TableCell[][] = [];
@@ -325,15 +340,31 @@ function buildPageContent(
 	// logo (rowSpan=3) ครอบ title row + period name row + time row
 	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
 	// Logo cell — rowSpan=3 ครอบ title + period name + time rows
-	// ใช้ stack + top spacer ดัน logo ลง (verticalAlignment กับ rowSpan ใน pdfmake
-	// คำนวณ height ผิด → logo overflow ออกนอก cell)
-	// fit [DAY_COL-4, 75] → logo portrait ก็ใช้ height เต็มที่ 75pt
-	// (rowSpan content area ~ 96-100pt → spacer 12pt ≈ กลาง)
+	// Auto-center: ใช้ logoDims (natural w/h) คำนวณ rendered height จริง → spacer พอดี
+	// (verticalAlignment 'middle' บน rowSpan cell ใน pdfmake บัค → ทำเอง)
+	//
+	// rowSpan content area estimate:
+	//   row 0 (title): 75pt with QR (INSTRUCTOR) / 53pt without (CLASSROOM)
+	//   row 1 (period name): 17pt
+	//   row 2 (time): 13pt
+	//   logo cell content = total - cell padding (2+2) = (sumRowH) - 4
+	const FIT_W = DAY_COL - 4; // 51
+	const FIT_H = 75;
+	const row0Height = showQrCode ? 75 : 53;
+	const rowSpanContentArea = row0Height + 17 + 13 - 4; // 101 (with QR) หรือ 79 (no QR)
+
+	let renderedLogoH = 0;
+	if (logoDims && logoDims.w > 0 && logoDims.h > 0) {
+		const scale = Math.min(FIT_W / logoDims.w, FIT_H / logoDims.h);
+		renderedLogoH = logoDims.h * scale;
+	}
+	const topSpacer = Math.max(0, (rowSpanContentArea - renderedLogoH) / 2);
+
 	const logoCell: TableCell = logoDataUrl
 		? ({
 				stack: [
-					{ text: ' ', fontSize: 1, margin: [0, 0, 0, 12] },
-					{ image: logoDataUrl, fit: [DAY_COL - 4, 75], alignment: 'center' }
+					{ text: ' ', fontSize: 1, margin: [0, 0, 0, topSpacer] },
+					{ image: logoDataUrl, fit: [FIT_W, FIT_H], alignment: 'center' }
 				],
 				rowSpan: 3,
 				alignment: 'center'
@@ -905,12 +936,17 @@ export const generateTimetablePDF = async (
 		}
 	};
 
-	// Fetch โลโก้โรงเรียน (ถ้ามี) เป็น base64 data URL
+	// Fetch โลโก้โรงเรียน (ถ้ามี) เป็น base64 data URL + อ่าน natural dimensions
+	// dimensions ใช้คำนวณ rendered height ของ logo เพื่อ auto-center แนวตั้งใน rowSpan cell
 	let logoDataUrl: string | null = null;
+	let logoDims: { w: number; h: number } | null = null;
 	try {
 		const settings = await getSchoolSettings();
 		if (settings.logoUrl) {
 			logoDataUrl = await fetchImageDataUrl(settings.logoUrl);
+			if (logoDataUrl) {
+				logoDims = await getImageDimensions(logoDataUrl);
+			}
 		}
 	} catch {
 		/* ไม่มี logo ก็ไม่เป็นไร */
@@ -931,7 +967,7 @@ export const generateTimetablePDF = async (
 			buildPortraitPageContent(chunk, i === 0, logoDataUrl, pageHeaderTitle, pageHeaderSubTitle)
 		);
 	} else {
-		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl));
+		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl, logoDims));
 	}
 
 	const docDefinition: TDocumentDefinitions = {
