@@ -153,10 +153,10 @@ pub async fn get_child_profile(
     }
 
     // Check if Parent is linked to this student
-    let is_linked = sqlx::query_scalar::<_, bool>(
+    let is_linked: bool = sqlx::query_scalar(
         r#"
         SELECT EXISTS(
-            SELECT 1 FROM student_parents 
+            SELECT 1 FROM student_parents
             WHERE parent_user_id = $1 AND student_user_id = $2
         )
         "#
@@ -165,7 +165,10 @@ pub async fn get_child_profile(
     .bind(student_id)
     .fetch_one(&pool)
     .await
-    .unwrap_or(false);
+    .map_err(|e| {
+        eprintln!("❌ parent-child link check failed: {}", e);
+        AppError::InternalServerError("ตรวจสอบสิทธิ์ผิดพลาด".to_string())
+    })?;
 
     if !is_linked {
         return Err(AppError::Forbidden("คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string()));
@@ -269,7 +272,7 @@ pub async fn get_child_timetable(
     }
 
     // Verify parent owns this student
-    let is_linked = sqlx::query_scalar::<_, bool>(
+    let is_linked: bool = sqlx::query_scalar(
         r#"
         SELECT EXISTS(
             SELECT 1 FROM student_parents
@@ -281,7 +284,10 @@ pub async fn get_child_timetable(
     .bind(student_id)
     .fetch_one(&pool)
     .await
-    .unwrap_or(false);
+    .map_err(|e| {
+        eprintln!("❌ parent-child link check failed: {}", e);
+        AppError::InternalServerError("ตรวจสอบสิทธิ์ผิดพลาด".to_string())
+    })?;
 
     if !is_linked {
         return Err(AppError::Forbidden("คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string()));

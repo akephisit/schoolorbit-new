@@ -91,10 +91,11 @@
 				<div class="flex items-start justify-between">
 					<div class="space-y-2">
 						<p class="text-sm text-muted-foreground font-medium">การเข้าเรียน</p>
-						<p class="text-2xl font-bold text-green-600">95%</p>
+						<p class="text-2xl font-bold text-muted-foreground">—</p>
+						<p class="text-xs text-muted-foreground">ยังไม่เปิดใช้งาน</p>
 					</div>
-					<div class="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center">
-						<Calendar class="w-6 h-6 text-green-500" />
+					<div class="w-12 h-12 bg-muted rounded-lg flex items-center justify-center">
+						<Calendar class="w-6 h-6 text-muted-foreground" />
 					</div>
 				</div>
 			</Card>
