@@ -1,0 +1,62 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { authStore } from '$lib/stores/auth';
+	import { Users } from 'lucide-svelte';
+	import type { Snippet } from 'svelte';
+
+	let { children }: { children?: Snippet } = $props();
+
+	let loading = $state(true);
+	let authorized = $state(false);
+
+	$effect(() => {
+		// Wait for global auth check to complete
+		if ($authStore.isLoading) return;
+
+		// Check authentication
+		if (!$authStore.isAuthenticated) {
+			// Not authenticated - save current URL and redirect to login
+			const currentPath = window.location.pathname + window.location.search;
+			sessionStorage.setItem('redirectAfterLogin', currentPath);
+			goto(resolve('/login'));
+			return;
+		}
+
+		// Get user from store
+		const user = $authStore.user;
+
+		// Check if user is parent (not student or staff)
+		if (user && user.user_type !== 'parent') {
+			// Redirect to the area that matches the user's role
+			if (user.user_type === 'student') {
+				goto(resolve('/student'));
+			} else {
+				goto(resolve('/staff'));
+			}
+			return;
+		}
+
+		// User is authorized
+		authorized = true;
+		loading = false;
+	});
+</script>
+
+{#if loading}
+	<div class="fixed inset-0 bg-background flex items-center justify-center z-50">
+		<div class="text-center">
+			<div
+				class="w-16 h-16 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4 animate-pulse"
+			>
+				<Users class="w-8 h-8 text-primary-foreground" />
+			</div>
+			<p class="text-muted-foreground">กำลังตรวจสอบ...</p>
+		</div>
+	</div>
+{:else if authorized}
+	<div class="min-h-screen bg-background">
+		<!-- Parent Portal Content -->
+		{@render children?.()}
+	</div>
+{/if}
