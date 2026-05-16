@@ -163,6 +163,7 @@ pub struct ActivityGroupFilter {
 pub struct ActivityGroupMember {
     pub id: Uuid,
     pub activity_group_id: Uuid,
+    /// FK → users(id) (เปลี่ยนจาก student_info(id) ใน M114)
     pub student_id: Uuid,
     pub result: Option<String>,
     pub enrolled_by: Option<Uuid>,
