@@ -144,7 +144,11 @@ pub async fn get_own_profile(
     
     // Get current user
     let user = get_current_user(&headers, &pool).await?;
-    
+
+    if user.user_type != "student" {
+        return Err(AppError::Forbidden("เฉพาะนักเรียนเท่านั้น".to_string()));
+    }
+
     // Query student profile
     let mut student_row = sqlx::query_as::<_, StudentDbRow>(
         r#"
@@ -257,7 +261,11 @@ pub async fn update_own_profile(
     
     // Get current user
     let user = get_current_user(&headers, &pool).await?;
-    
+
+    if user.user_type != "student" {
+        return Err(AppError::Forbidden("เฉพาะนักเรียนเท่านั้น".to_string()));
+    }
+
     // Update only allowed fields
     sqlx::query(
         r#"

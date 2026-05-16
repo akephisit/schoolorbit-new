@@ -42,7 +42,11 @@ pub async fn get_own_parent_profile(
     
     // Get current user
     let user = get_current_user(&headers, &pool).await?;
-    
+
+    if user.user_type != "parent" {
+        return Err(AppError::Forbidden("เฉพาะผู้ปกครองเท่านั้น".to_string()));
+    }
+
     // Query parent profile
     let mut parent = sqlx::query_as::<_, ParentDbRow>(
         r#"
@@ -143,6 +147,10 @@ pub async fn get_child_profile(
 
     // Get current user (Parent)
     let user = get_current_user(&headers, &pool).await?;
+
+    if user.user_type != "parent" {
+        return Err(AppError::Forbidden("เฉพาะผู้ปกครองเท่านั้น".to_string()));
+    }
 
     // Check if Parent is linked to this student
     let is_linked = sqlx::query_scalar::<_, bool>(
@@ -255,6 +263,10 @@ pub async fn get_child_timetable(
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
     let user = get_current_user(&headers, &pool).await?;
+
+    if user.user_type != "parent" {
+        return Err(AppError::Forbidden("เฉพาะผู้ปกครองเท่านั้น".to_string()));
+    }
 
     // Verify parent owns this student
     let is_linked = sqlx::query_scalar::<_, bool>(
