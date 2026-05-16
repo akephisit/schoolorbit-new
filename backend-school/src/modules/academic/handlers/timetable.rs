@@ -395,10 +395,10 @@ pub async fn list_timetable_entries(
         sql.push_str(&format!(" AND te.classroom_id = ${idx}"));
     }
 
-    // student_id: ดึง classroom ที่นักเรียนสังกัด
+    // student_id: ดึง classroom ที่นักเรียนสังกัด (student_class_enrollments.student_id อ้าง users.id ตรง ๆ)
     if let Some(_) = query.student_id {
         idx += 1;
-        sql.push_str(&format!(" AND te.classroom_id IN (SELECT class_room_id FROM student_class_enrollments WHERE student_id = (SELECT user_id FROM student_info WHERE id = ${idx}) AND status = 'active')"));
+        sql.push_str(&format!(" AND te.classroom_id IN (SELECT class_room_id FROM student_class_enrollments WHERE student_id = ${idx} AND status = 'active')"));
     }
 
     if let Some(_) = query.instructor_id {
