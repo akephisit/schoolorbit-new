@@ -443,7 +443,7 @@ pub async fn list_members(
         r#"SELECT
             agm.*,
             u.first_name || ' ' || u.last_name AS student_name,
-            st.student_id AS student_code,
+            si.student_id AS student_code,
             cr.name AS classroom_name,
             CASE gl.level_type
                 WHEN 'kindergarten' THEN 'อ.' || gl.year
@@ -452,9 +452,9 @@ pub async fn list_members(
                 ELSE gl.level_type || gl.year::TEXT
             END AS grade_level_name
         FROM activity_group_members agm
-        JOIN student_info st ON st.id = agm.student_id
-        JOIN users u ON u.id = st.user_id
-        LEFT JOIN student_class_enrollments se ON se.student_id = st.user_id AND se.status = 'active'
+        JOIN users u ON u.id = agm.student_id
+        LEFT JOIN student_info si ON si.user_id = agm.student_id
+        LEFT JOIN student_class_enrollments se ON se.student_id = agm.student_id AND se.status = 'active'
         LEFT JOIN class_rooms cr ON cr.id = se.class_room_id
         LEFT JOIN grade_levels gl ON gl.id = cr.grade_level_id
         WHERE agm.activity_group_id = $1
@@ -538,23 +538,10 @@ pub async fn my_enrollments(
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await
         .map_err(|e| AppError::AuthError(e))?;
 
-    let student_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM student_info WHERE user_id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    let sid = match student_id {
-        Some(id) => id,
-        None => return Ok(Json(json!({ "data": [] })).into_response()),
-    };
-
     let group_ids: Vec<Uuid> = sqlx::query_scalar(
         "SELECT activity_group_id FROM activity_group_members WHERE student_id = $1"
     )
-    .bind(sid)
+    .bind(user_id)
     .fetch_all(&pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
@@ -591,21 +578,9 @@ pub async fn self_enroll(
         return Ok(Json(json!({ "error": "ยังไม่เปิดรับสมัคร" })).into_response());
     }
 
-    // ดึง user_id จาก JWT
+    // ดึง user_id จาก JWT — ใช้เป็น student_id ตรง ๆ (FK ชี้ users.id)
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await
         .map_err(|e| AppError::AuthError(e))?;
-
-    // ดึง student_info.id จาก user_id
-    let student_info_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM student_info WHERE user_id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    let student_id = student_info_id
-        .ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลนักเรียน".to_string()))?;
 
     // เช็ค capacity
     if let Some(max) = cap {
@@ -666,7 +641,7 @@ pub async fn self_enroll(
          VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
     )
     .bind(group_id)
-    .bind(student_id)
+    .bind(user_id)
     .bind(user_id)
     .execute(&pool)
     .await
@@ -690,19 +665,9 @@ pub async fn self_unenroll(
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await
         .map_err(|e| AppError::AuthError(e))?;
 
-    let student_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM student_info WHERE user_id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    let sid = student_id.ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลนักเรียน".to_string()))?;
-
     sqlx::query("DELETE FROM activity_group_members WHERE activity_group_id = $1 AND student_id = $2")
         .bind(group_id)
-        .bind(sid)
+        .bind(user_id)
         .execute(&pool)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
