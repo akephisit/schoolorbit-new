@@ -649,6 +649,7 @@ pub struct StudentIdRow {
     pub application_id: Uuid,
     pub application_number: Option<String>,
     pub full_name: String,
+    pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
     pub national_id: Option<String>,

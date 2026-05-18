@@ -1140,6 +1140,7 @@ export interface StudentIdEntry {
 	applicationId: string;
 	applicationNumber?: string;
 	fullName: string;
+	title?: string;
 	firstName: string;
 	lastName: string;
 	nationalId?: string;
