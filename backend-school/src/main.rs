@@ -151,6 +151,10 @@ async fn main() {
         .route("/api/parent/students/{student_id}/timetable", get(modules::parents::handlers::get_child_timetable)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
 
+        // Self-service timetable (student/staff ดูตารางตัวเอง)
+        .route("/api/me/timetable", get(modules::academic::handlers::timetable::get_my_timetable)
+            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+
         // Student Management routes (protected - for admin/staff)
         .route("/api/students", get(modules::students::handlers::list_students)
             .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))

@@ -5,7 +5,7 @@
 		type TimetableEntry,
 		type AcademicPeriod,
 		type MyActivityForEntry,
-		listTimetableEntries,
+		getMyTimetable,
 		listPeriods,
 		getMyActivityForEntry
 	} from '$lib/api/timetable';
@@ -90,8 +90,7 @@
 	async function loadTimetable() {
 		if (!student || !selectedSemesterId) return;
 		try {
-			const res = await listTimetableEntries({
-				student_id: student.id,
+			const res = await getMyTimetable({
 				academic_semester_id: selectedSemesterId
 			});
 			entries = res.data;

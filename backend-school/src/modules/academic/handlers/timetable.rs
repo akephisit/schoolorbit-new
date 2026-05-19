@@ -14,6 +14,7 @@ use crate::error::AppError;
 use crate::db::school_mapping::get_school_database_url;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::modules::academic::websockets::TimetableEvent;
+use crate::modules::academic::services::timetable_service;
 use chrono::NaiveTime;
 
 /// Helper
@@ -28,52 +29,9 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
-/// Fetch 1 entry พร้อม joined fields (subject, classroom, room, period, instructors)
-/// ใช้กับ patch events เพื่อให้ frontend ได้ entry ครบ, patch ได้ทันทีไม่ต้อง re-fetch
+/// Fetch 1 entry พร้อม joined fields — re-export จาก service สำหรับ patch events
 async fn fetch_entry_with_joins(pool: &sqlx::PgPool, entry_id: Uuid) -> Option<TimetableEntry> {
-    sqlx::query_as::<_, TimetableEntry>(
-        r#"
-        SELECT
-            te.*,
-            s.code   AS subject_code,
-            s.name_th AS subject_name_th,
-            (SELECT ARRAY_AGG(concat(u2.first_name, ' ', u2.last_name) ORDER BY tei2.role, tei2.created_at)
-             FROM timetable_entry_instructors tei2
-             JOIN users u2 ON u2.id = tei2.instructor_id
-             WHERE tei2.entry_id = te.id) AS instructor_names,
-            (SELECT ARRAY_AGG(tei_id.instructor_id ORDER BY tei_id.role, tei_id.created_at)
-             FROM timetable_entry_instructors tei_id
-             WHERE tei_id.entry_id = te.id) AS instructor_ids,
-            (SELECT concat(u3.first_name, ' ', u3.last_name)
-             FROM timetable_entry_instructors tei3
-             JOIN users u3 ON u3.id = tei3.instructor_id
-             WHERE tei3.entry_id = te.id
-             ORDER BY tei3.role, tei3.created_at
-             LIMIT 1) AS instructor_name,
-            cr.name  AS classroom_name,
-            r.code   AS room_code,
-            ap.name  AS period_name,
-            ap.start_time,
-            ap.end_time,
-            asl_ac.name AS activity_slot_name,
-            asl_ac.activity_type AS activity_type,
-            asl_ac.scheduling_mode AS activity_scheduling_mode
-        FROM academic_timetable_entries te
-        LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
-        LEFT JOIN subjects s ON cc.subject_id = s.id
-        LEFT JOIN class_rooms cr ON te.classroom_id = cr.id
-        JOIN academic_periods ap ON te.period_id = ap.id
-        LEFT JOIN rooms r ON te.room_id = r.id
-        LEFT JOIN activity_slots asl ON te.activity_slot_id = asl.id
-        LEFT JOIN activity_catalog asl_ac ON asl.activity_catalog_id = asl_ac.id
-        WHERE te.id = $1
-        "#
-    )
-    .bind(entry_id)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
+    timetable_service::fetch_entry_by_id(pool, entry_id).await
 }
 
 // ============================================
@@ -349,120 +307,11 @@ pub async fn list_timetable_entries(
         return Ok(response);
     }
 
-    let mut sql = String::from(
-        r#"
-        SELECT
-            te.*,
-            s.code   AS subject_code,
-            s.name_th AS subject_name_th,
-            (SELECT ARRAY_AGG(concat(u2.first_name, ' ', u2.last_name) ORDER BY tei2.role, tei2.created_at)
-             FROM timetable_entry_instructors tei2
-             JOIN users u2 ON u2.id = tei2.instructor_id
-             WHERE tei2.entry_id = te.id) AS instructor_names,
-            (SELECT ARRAY_AGG(tei_id.instructor_id ORDER BY tei_id.role, tei_id.created_at)
-             FROM timetable_entry_instructors tei_id
-             WHERE tei_id.entry_id = te.id) AS instructor_ids,
-            (SELECT concat(u3.first_name, ' ', u3.last_name)
-             FROM timetable_entry_instructors tei3
-             JOIN users u3 ON u3.id = tei3.instructor_id
-             WHERE tei3.entry_id = te.id
-             ORDER BY tei3.role, tei3.created_at
-             LIMIT 1) AS instructor_name,
-            cr.name  AS classroom_name,
-            r.code   AS room_code,
-            ap.name  AS period_name,
-            ap.start_time,
-            ap.end_time,
-            asl_ac.name AS activity_slot_name,
-            asl_ac.activity_type AS activity_type,
-            asl_ac.scheduling_mode AS activity_scheduling_mode
-        FROM academic_timetable_entries te
-        LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
-        LEFT JOIN subjects s ON cc.subject_id = s.id
-        LEFT JOIN class_rooms cr ON te.classroom_id = cr.id
-        JOIN academic_periods ap ON te.period_id = ap.id
-        LEFT JOIN rooms r ON te.room_id = r.id
-        LEFT JOIN activity_slots asl ON te.activity_slot_id = asl.id
-        LEFT JOIN activity_catalog asl_ac ON asl.activity_catalog_id = asl_ac.id
-        WHERE te.is_active = true
-        "#
-    );
-
-    let mut idx = 0u32;
-
-    if let Some(_) = query.classroom_id {
-        idx += 1;
-        sql.push_str(&format!(" AND te.classroom_id = ${idx}"));
-    }
-
-    // student_id: ดึง classroom ที่นักเรียนสังกัด (student_class_enrollments.student_id อ้าง users.id ตรง ๆ)
-    if let Some(_) = query.student_id {
-        idx += 1;
-        sql.push_str(&format!(" AND te.classroom_id IN (SELECT class_room_id FROM student_class_enrollments WHERE student_id = ${idx} AND status = 'active')"));
-    }
-
-    if let Some(_) = query.instructor_id {
-        idx += 1;
-        if query.include_team_ghosts.unwrap_or(false) {
-            // Ghost mode: entries ที่ instructor อยู่ในทีม
-            //   COURSE    → match ผ่าน classroom_course_instructors (team-level; รวม ghost cell
-            //              ที่คนอื่นสอนจริงใน tei แต่ user อยู่ในทีมของ course)
-            //   ACTIVITY  → match ผ่าน timetable_entry_instructors (tei populate จาก
-            //              activity_slot_classroom_assignments/activity_slot_instructors แล้ว)
-            sql.push_str(&format!(
-                " AND (EXISTS (SELECT 1 FROM classroom_course_instructors cci \
-                       WHERE cci.classroom_course_id = te.classroom_course_id AND cci.instructor_id = ${idx}) \
-                    OR EXISTS (SELECT 1 FROM timetable_entry_instructors tei \
-                       WHERE tei.entry_id = te.id AND tei.instructor_id = ${idx}))"
-            ));
-        } else {
-            // Normal mode: เฉพาะ cell ที่ instructor ถูก assign
-            sql.push_str(&format!(
-                " AND EXISTS (SELECT 1 FROM timetable_entry_instructors tei WHERE tei.entry_id = te.id AND tei.instructor_id = ${idx})"
-            ));
-        }
-    }
-
-    if let Some(_) = query.room_id {
-        idx += 1;
-        sql.push_str(&format!(" AND te.room_id = ${idx}"));
-    }
-
-    if let Some(_) = query.academic_semester_id {
-        idx += 1;
-        sql.push_str(&format!(" AND te.academic_semester_id = ${idx}"));
-    }
-
-    if let Some(ref _day) = query.day_of_week {
-        idx += 1;
-        sql.push_str(&format!(" AND te.day_of_week = ${idx}"));
-    }
-
-    if let Some(ref _entry_type) = query.entry_type {
-        idx += 1;
-        sql.push_str(&format!(" AND te.entry_type = ${idx}"));
-    }
-
-    sql.push_str(" ORDER BY te.day_of_week, ap.order_index");
-
-    let mut q = sqlx::query_as::<_, TimetableEntry>(&sql);
-    if let Some(classroom_id) = query.classroom_id { q = q.bind(classroom_id); }
-    if let Some(student_id) = query.student_id { q = q.bind(student_id); }
-    if let Some(instructor_id) = query.instructor_id { q = q.bind(instructor_id); }
-    if let Some(room_id) = query.room_id { q = q.bind(room_id); }
-    if let Some(semester_id) = query.academic_semester_id { q = q.bind(semester_id); }
-    if let Some(ref day) = query.day_of_week { q = q.bind(day); }
-    if let Some(ref entry_type) = query.entry_type { q = q.bind(entry_type); }
-    let entries = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to fetch timetable: {}", e);
-            AppError::InternalServerError("Failed to fetch timetable".to_string())
-        })?;
+    let semester_id = query.academic_semester_id;
+    let entries = timetable_service::list_entries(&pool, query.into()).await?;
 
     // current_seq ของ semester — client ใช้เป็นจุดเริ่มต้น tracking patch events
-    let current_seq = if let Some(sem_id) = query.academic_semester_id {
+    let current_seq = if let Some(sem_id) = semester_id {
         let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
         state.websocket_manager.current_seq(subdomain, sem_id)
     } else {
@@ -505,6 +354,57 @@ pub async fn replay_events(
             "current_seq": current_seq,
         })).into_response()),
     }
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct MyTimetableQuery {
+    pub academic_semester_id: Option<Uuid>,
+    pub day_of_week: Option<String>,
+    pub include_team_ghosts: Option<bool>,
+}
+
+/// GET /api/me/timetable — ผู้ใช้ดูตารางของตัวเอง (student/staff)
+/// - student: filter ตาม student_class_enrollments
+/// - staff: filter ตาม timetable_entry_instructors (+ team ghosts ถ้าเลือก)
+/// - parent: ใช้ /api/parent/students/{id}/timetable แทน
+pub async fn get_my_timetable(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<MyTimetableQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = get_pool(&state, &headers).await?;
+    let user = crate::middleware::auth::get_current_user(&headers, &pool).await?;
+
+    let filter = match user.user_type.as_str() {
+        "student" => crate::modules::academic::services::timetable_service::TimetableFilter {
+            student_id: Some(user.id),
+            academic_semester_id: query.academic_semester_id,
+            day_of_week: query.day_of_week,
+            ..Default::default()
+        },
+        "staff" => crate::modules::academic::services::timetable_service::TimetableFilter {
+            instructor_id: Some(user.id),
+            academic_semester_id: query.academic_semester_id,
+            day_of_week: query.day_of_week,
+            include_team_ghosts: query.include_team_ghosts.unwrap_or(false),
+            ..Default::default()
+        },
+        "parent" => return Err(AppError::BadRequest(
+            "ผู้ปกครองต้องใช้ /api/parent/students/{id}/timetable".to_string(),
+        )),
+        _ => return Err(AppError::Forbidden("ไม่รองรับ user_type นี้".to_string())),
+    };
+
+    let entries = timetable_service::list_entries(&pool, filter).await?;
+
+    let current_seq = if let Some(sem_id) = query.academic_semester_id {
+        let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+        state.websocket_manager.current_seq(subdomain, sem_id)
+    } else {
+        0
+    };
+
+    Ok(Json(json!({ "success": true, "data": entries, "current_seq": current_seq })).into_response())
 }
 
 /// POST /api/academic/timetable

@@ -4,7 +4,7 @@
 	import {
 		type TimetableEntry,
 		type AcademicPeriod,
-		listTimetableEntries,
+		getMyTimetable,
 		listPeriods
 	} from '$lib/api/timetable';
 	import {
@@ -89,9 +89,9 @@
 			loading = true;
 			const [periodsRes, entriesRes] = await Promise.all([
 				listPeriods({ academic_year_id: selectedYearId, active_only: true }),
-				listTimetableEntries({
-					instructor_id: userId,
-					academic_semester_id: selectedSemesterId
+				getMyTimetable({
+					academic_semester_id: selectedSemesterId,
+					include_team_ghosts: true
 				})
 			]);
 			periods = periodsRes.data.sort((a, b) => a.order_index - b.order_index);

@@ -218,6 +218,29 @@ export const listTimetableEntries = async (
 
 export const listTimetableEntriesWithSeq = listTimetableEntries;
 
+/**
+ * ตารางของผู้ใช้ปัจจุบัน (student/staff)
+ * Backend resolves user_type จาก JWT แล้วเลือก filter ให้อัตโนมัติ
+ * - student → filter ตาม student_class_enrollments
+ * - staff → filter ตาม timetable_entry_instructors (+ team ghosts ถ้าระบุ)
+ */
+export const getMyTimetable = async (
+	filters: {
+		academic_semester_id?: string;
+		day_of_week?: string;
+		include_team_ghosts?: boolean;
+	} = {}
+): Promise<{ data: TimetableEntry[]; current_seq?: number }> => {
+	const params = new URLSearchParams();
+	if (filters.academic_semester_id)
+		params.append('academic_semester_id', filters.academic_semester_id);
+	if (filters.day_of_week) params.append('day_of_week', filters.day_of_week);
+	if (filters.include_team_ghosts) params.append('include_team_ghosts', 'true');
+
+	const queryString = params.toString() ? `?${params.toString()}` : '';
+	return await fetchApi(`/api/me/timetable${queryString}`);
+};
+
 export interface BatchSkippedCell {
 	classroom_id: string | null;
 	classroom_name: string | null;
