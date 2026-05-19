@@ -56,7 +56,8 @@ async fn get_authenticated_user(
     sqlx::query_as::<_, User>(
         "SELECT * FROM users WHERE id = $1"
     )
-    .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
+    .bind(uuid::Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
     .fetch_one(pool)
     .await
     .map_err(|_| AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string()))

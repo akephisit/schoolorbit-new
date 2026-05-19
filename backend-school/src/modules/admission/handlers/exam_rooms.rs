@@ -534,17 +534,20 @@ pub async fn assign_exam_seats(
         let pad_width = format!("{}", existing_total + new_applicants.len() as i32).len().max(4);
         let mut new_assignments: Vec<(Uuid, Uuid, i32, String)> = Vec::new();
         let mut room_iter = rooms.iter();
-        let mut current_room = room_iter.next().unwrap();
+        let mut current_room = room_iter.next()
+            .ok_or_else(|| AppError::InternalServerError("ไม่พบห้องสอบสำหรับจัดที่นั่ง".to_string()))?;
         // ข้ามห้องที่เต็มแล้ว
         while existing_counts.get(&current_room.id).copied().unwrap_or(0) >= current_room.capacity {
-            current_room = room_iter.next().unwrap();
+            current_room = room_iter.next()
+                .ok_or_else(|| AppError::InternalServerError("ห้องสอบเต็มทั้งหมด — ไม่สามารถจัดที่นั่งเพิ่มได้".to_string()))?;
         }
         let mut seat_in_room = existing_counts.get(&current_room.id).copied().unwrap_or(0);
         let mut global_seq = existing_total;
 
         for app in &new_applicants {
             while seat_in_room >= current_room.capacity {
-                current_room = room_iter.next().unwrap();
+                current_room = room_iter.next()
+                    .ok_or_else(|| AppError::InternalServerError("ห้องสอบเต็มทั้งหมด — ไม่สามารถจัดที่นั่งเพิ่มได้".to_string()))?;
                 seat_in_room = existing_counts.get(&current_room.id).copied().unwrap_or(0);
             }
             seat_in_room += 1;
@@ -621,14 +624,16 @@ pub async fn assign_exam_seats(
     let pad_width = format!("{}", applicants.len()).len().max(4);
     let mut assignments: Vec<(Uuid, Uuid, i32, String)> = Vec::new(); // (app_id, room_id, seat_num, exam_id)
     let mut room_iter = rooms.iter();
-    let mut current_room = room_iter.next().unwrap();
+    let mut current_room = room_iter.next()
+        .ok_or_else(|| AppError::InternalServerError("ไม่พบห้องสอบสำหรับจัดที่นั่ง".to_string()))?;
     let mut seat_in_room = 0i32;
     let mut global_seq = 0i32;
 
     for app in &applicants {
         // ย้ายไปห้องถัดไปถ้าเต็ม
         while seat_in_room >= current_room.capacity {
-            current_room = room_iter.next().unwrap(); // ไม่ panic เพราะตรวจ capacity แล้ว
+            current_room = room_iter.next()
+                .ok_or_else(|| AppError::InternalServerError("ห้องสอบเต็ม — capacity calculation ไม่ตรง".to_string()))?;
             seat_in_room = 0;
         }
 

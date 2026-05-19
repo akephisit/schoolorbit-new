@@ -397,7 +397,8 @@ async fn main() {
 
     // Initialize Job Scheduler for background tasks
     // Run daily cleaning at 3:00 AM
-    let sched = JobScheduler::new().await.unwrap();
+    let sched = JobScheduler::new().await
+        .expect("Failed to initialize job scheduler");
     
     // Clone shared resources for the job
     let admin_client_for_job = Arc::clone(&state.admin_client);

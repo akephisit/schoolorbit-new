@@ -1609,7 +1609,9 @@ pub async fn create_batch_timetable_entries(
                     if !force {
                         for (iid, _name) in &conflicting_instructors {
                             // find existing entry that conflict with this instructor at this cell
-                            let conf_entry = cell_conflicts.iter().find(|e| e.instructor_ids.contains(iid)).unwrap();
+                            let Some(conf_entry) = cell_conflicts.iter().find(|e| e.instructor_ids.contains(iid)) else {
+                                continue;
+                            };
                             let entry_record = excluded_instructors_map.entry(*iid).or_insert_with(|| {
                                 let nm = cell_conflicts.iter()
                                     .filter_map(|e| {
@@ -1637,15 +1639,16 @@ pub async fn create_batch_timetable_entries(
 
                     if has_sync_conflict {
                         // ทับ sync activity — block ทั้ง no-force และ force
-                        let sync_blocker = cell_conflicts.iter().find(|e|
-                            e.scheduling_mode.as_deref() == Some("synchronized")
-                        ).unwrap();
+                        let sync_blocker_title = cell_conflicts.iter()
+                            .find(|e| e.scheduling_mode.as_deref() == Some("synchronized"))
+                            .map(|e| e.display_title.clone())
+                            .unwrap_or_else(|| "กิจกรรม sync".to_string());
                         blocked.push(json!({
                             "classroom_id": cr_id, "classroom_name": cell_cls_name,
                             "day_of_week": day, "period_id": p_id, "period_name": cell_period,
                             "reason": "SYNC_ACTIVITY_PRESENT",
                             "message": format!("{} {} {}: มีกิจกรรม sync '{}' อยู่ — ลบกิจกรรม sync ก่อน",
-                                               cell_cls_name, cell_day, cell_period, sync_blocker.display_title)
+                                               cell_cls_name, cell_day, cell_period, sync_blocker_title)
                         }));
                         continue;
                     }

@@ -261,7 +261,8 @@ pub async fn me(
          FROM users 
          WHERE id = $1"
     )
-        .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
+        .bind(uuid::Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
         .fetch_optional(&pool)
         .await?
         .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
@@ -385,7 +386,8 @@ pub async fn get_profile(
 
     // Fetch user from database
     let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
-        .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
+        .bind(uuid::Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
         .fetch_optional(&pool)
         .await?
         .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;

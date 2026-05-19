@@ -166,7 +166,8 @@ async fn check_user_permission(
          FROM users 
          WHERE id = $1"
     )
-    .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
+    .bind(uuid::Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
     .fetch_one(pool)
     .await
     .map_err(|e| {
@@ -985,12 +986,12 @@ pub async fn update_staff(
             ))
         }
         Ok(_) => {
-            let _ = tx.rollback().await;
+            if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
             Err(AppError::NotFound("ไม่พบบุคลากร".to_string()))
         }
         Err(e) => {
             eprintln!("❌ Database error: {}", e);
-            let _ = tx.rollback().await;
+            if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
             Err(AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string()))
         }
     }

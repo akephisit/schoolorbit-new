@@ -287,7 +287,7 @@ pub async fn create_role(
         Ok(id) => id,
         Err(e) => {
             eprintln!("❌ Failed to create role: {}", e);
-            let _ = tx.rollback().await;
+            if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
             
             let err_msg = e.to_string();
             if err_msg.contains("duplicate key value") {
@@ -327,7 +327,7 @@ pub async fn create_role(
                 Ok(ids) => ids,
                 Err(e) => {
                      eprintln!("❌ Failed to find permissions: {}", e);
-                     let _ = tx.rollback().await;
+                     if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
                      return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({
@@ -350,7 +350,7 @@ pub async fn create_role(
                 .await 
                 {
                      eprintln!("❌ Failed to assign permission: {}", e);
-                     let _ = tx.rollback().await;
+                     if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
                      return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({
@@ -480,13 +480,14 @@ pub async fn update_role(
     .execute(&mut *tx)
     .await;
 
-    if let Err(e) = result {
-         eprintln!("❌ Failed to update role: {}", e);
-         let _ = tx.rollback().await;
+    let query_result = match result {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("❌ Failed to update role: {}", e);
+            if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
 
-         let err_msg = e.to_string();
-         if err_msg.contains("duplicate key value") {
-             if err_msg.contains("code") {
+            let err_msg = e.to_string();
+            if err_msg.contains("duplicate key value") && err_msg.contains("code") {
                 return (
                     StatusCode::BAD_REQUEST,
                     Json(json!({
@@ -495,21 +496,21 @@ pub async fn update_role(
                     })),
                 ).into_response();
             }
-         }
 
-         return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "success": false,
-                "error": "เกิดข้อผิดพลาดในการอัปเดตบทบาท"
-            })),
-        )
-        .into_response();
-    }
-    
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "เกิดข้อผิดพลาดในการอัปเดตบทบาท"
+                })),
+            )
+            .into_response();
+        }
+    };
+
     // Check if role exists
-    if result.unwrap().rows_affected() == 0 {
-         let _ = tx.rollback().await;
+    if query_result.rows_affected() == 0 {
+         if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
          return (
             StatusCode::NOT_FOUND,
             Json(json!({
@@ -529,7 +530,7 @@ pub async fn update_role(
             .await 
         {
              eprintln!("❌ Failed to clear old permissions: {}", e);
-             let _ = tx.rollback().await;
+             if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
              return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -552,7 +553,7 @@ pub async fn update_role(
                 Ok(ids) => ids,
                 Err(e) => {
                      eprintln!("❌ Failed to find permissions: {}", e);
-                     let _ = tx.rollback().await;
+                     if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
                      return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({
@@ -575,7 +576,7 @@ pub async fn update_role(
                 .await 
                 {
                      eprintln!("❌ Failed to assign new permission: {}", e);
-                     let _ = tx.rollback().await;
+                     if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
                      return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({

@@ -293,7 +293,7 @@ pub async fn delete_menu_group(
     let moved_count = match move_result {
         Ok(result) => result.rows_affected(),
         Err(e) => {
-            let _ = tx.rollback().await;
+            if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
             return Err(AppError::InternalServerError(format!("Failed to move items: {}", e)));
         }
     };
@@ -322,7 +322,7 @@ pub async fn delete_menu_group(
             ))
         }
         Err(e) => {
-            let _ = tx.rollback().await;
+            if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
             Err(AppError::InternalServerError(format!("Failed to delete group: {}", e)))
         }
     }
@@ -888,7 +888,7 @@ pub async fn reorder_menu_groups(
     for item in &data.groups {
         if let Err(e) = sqlx::query("UPDATE menu_groups SET display_order = $1 WHERE id = $2")
             .bind(item.display_order).bind(item.id).execute(&mut *tx).await {
-            let _ = tx.rollback().await;
+            if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
             return Err(AppError::InternalServerError(format!("Failed to reorder: {}", e)));
         }
     }

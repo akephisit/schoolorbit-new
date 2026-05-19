@@ -94,7 +94,8 @@ pub async fn get_user_menu(
          FROM users 
          WHERE id = $1"
     )
-        .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
+        .bind(uuid::Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
         .fetch_one(&pool)
         .await
         .map_err(|e| {

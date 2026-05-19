@@ -112,7 +112,8 @@ pub async fn submit_application(
     // คำนวณ prefix เลขที่ใบสมัคร: YYMMDDRR (พ.ศ.)
     // เช่น 14/03/2569 รอบ 1 → "6903140100001", รอบ 2 → "6903140200001"
     let _ = year; // ยังคงใช้ year สำหรับ advisory lock ข้างบน
-    let bangkok = FixedOffset::east_opt(7 * 3600).unwrap();
+    let bangkok = FixedOffset::east_opt(7 * 3600)
+        .ok_or_else(|| AppError::InternalServerError("ไม่สามารถสร้าง timezone offset ได้".to_string()))?;
     let now = Utc::now().with_timezone(&bangkok);
     let be_year = now.year() + 543;
     let app_prefix = format!("{:02}{:02}{:02}{:02}", be_year % 100, now.month(), now.day(), round_number);

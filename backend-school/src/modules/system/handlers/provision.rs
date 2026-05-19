@@ -145,7 +145,7 @@ pub async fn provision_tenant(
         }
         Err(e) => {
             eprintln!("⚠️  Warning: Failed to assign admin role: {}", e);
-            let _ = tx.rollback().await;
+            if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
             return Err(AppError::InternalServerError(format!("Failed to assign admin role: {}", e)));
         }
     }

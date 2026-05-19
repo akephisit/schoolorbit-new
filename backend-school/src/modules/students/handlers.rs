@@ -79,7 +79,8 @@ async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Us
          FROM users 
          WHERE id = $1"
     )
-    .bind(uuid::Uuid::parse_str(&claims.sub).unwrap())
+    .bind(uuid::Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
     .fetch_one(pool)
     .await
     .map_err(|e| {
