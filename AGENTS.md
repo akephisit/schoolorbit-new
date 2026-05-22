@@ -38,3 +38,11 @@ All three resolve to the same `timetable_service::list_entries()` under the hood
 Business logic lives in `modules/<feature>/services/<feature>_service.rs`. Handlers should be thin: permission check → service call → format response (+ broadcast WS events). The `academic/timetable` module is the reference example — see `services/timetable_service.rs`. Other modules (admission, staff, study_plans) still have fat handlers and are pending refactor.
 
 Pattern: services receive `&PgPool` and return `Result<T, AppError>` or an outcome enum (`CreateEntryOutcome`, `SwapOutcome`, etc.) so handlers can decide HTTP/WS responses without coupling business logic to Axum.
+
+### Common analysis pitfalls in this repo
+
+Sweeping analysis (especially via AI sub-agents) has produced false claims here. When you see a sweep report something as unused/broken/needs-migration, verify with direct grep/Read against the current state first.
+
+- **"Components in `ui/calendar/` are unused"** — they re-export via `index.ts` aliases (`Day`, `Cell`, `Grid`), not by filename. Check the index re-exports before declaring dead code.
+- **"Column X needs a sync trigger / migration"** — read the migration *timeline*, not just the creation migration. Several columns (e.g. `subjects.level_scope`) were dropped in later migrations and replaced with junction tables.
+- **"`CLAUDE.md`/`AGENTS.md`/`GEMINI.md` are empty placeholders"** — these are auto-loaded entry points for AI tools; minimal content ≠ useless.
