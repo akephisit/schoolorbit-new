@@ -1,65 +1,39 @@
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
-    Json,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    http::HeaderMap,
+    Json,
 };
 use serde_json::json;
-use crate::middleware::permission::{check_permission, get_user_with_permissions};
-use crate::modules::academic::models::curriculum::{
-    Subject, SubjectGroup, CreateSubjectRequest, UpdateSubjectRequest, SubjectFilter,
-    SubjectDefaultInstructor, AddSubjectDefaultInstructorRequest, UpdateSubjectDefaultInstructorRoleRequest,
-};
 use uuid::Uuid;
-use crate::permissions::registry::codes;
-use crate::AppState;
-use crate::error::AppError;
-use crate::db::school_mapping::get_school_database_url;
-use crate::utils::subdomain::extract_subdomain_from_request;
 
-/// Helper function to get DB pool
+use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
+use crate::middleware::permission::get_user_with_permissions;
+use crate::modules::academic::models::curriculum::{
+    AddSubjectDefaultInstructorRequest, CreateSubjectRequest, SubjectFilter,
+    UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
+};
+use crate::modules::academic::services::subject_service;
+use crate::permissions::registry::codes;
+use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::AppState;
+
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    
     let db_url = get_school_database_url(&state.admin_client, &subdomain).await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-        
     state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
-/// Get the subject_group_id for a teacher based on their primary กลุ่มสาระ department membership.
-/// Returns None if the teacher is not a member of any กลุ่มสาระ department.
-async fn get_user_subject_group_id(user_id: Uuid, pool: &sqlx::PgPool) -> Option<Uuid> {
-    sqlx::query_scalar(
-        r#"
-        SELECT d.subject_group_id
-        FROM department_members dm
-        JOIN departments d ON d.id = dm.department_id
-        WHERE dm.user_id = $1
-          AND d.subject_group_id IS NOT NULL
-          AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-        ORDER BY dm.is_primary_department DESC NULLS LAST
-        LIMIT 1
-        "#,
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
-}
-
-/// List all subject groups (Learning Areas)
 pub async fn list_subject_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Accept: read.all (curriculum admin) OR manage.department (กลุ่มสาระ teacher)
     let (_, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
         Ok(r) => r,
         Err(resp) => return Ok(resp),
@@ -74,20 +48,10 @@ pub async fn list_subject_groups(
         ).into_response());
     }
 
-    let groups = sqlx::query_as::<_, SubjectGroup>(
-        "SELECT * FROM subject_groups WHERE is_active = true ORDER BY display_order ASC"
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Failed to fetch subject groups: {}", e);
-        AppError::InternalServerError("Failed to fetch subject groups".to_string())
-    })?;
-
+    let groups = subject_service::list_subject_groups(&pool).await?;
     Ok(Json(json!({ "success": true, "data": groups })).into_response())
 }
 
-/// List subjects with filtering
 pub async fn list_subjects(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -95,7 +59,6 @@ pub async fn list_subjects(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Accept: read.all OR manage.department
     let (user_id, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
         Ok(r) => r,
         Err(resp) => return Ok(resp),
@@ -110,9 +73,8 @@ pub async fn list_subjects(
         ).into_response());
     }
 
-    // dept-scope: auto-filter to teacher's กลุ่มสาระ, ignore any group_id from query
     let dept_group_id: Option<Uuid> = if !has_all && has_dept {
-        match get_user_subject_group_id(user_id, &pool).await {
+        match subject_service::get_user_subject_group_id(user_id, &pool).await {
             Some(gid) => Some(gid),
             None => {
                 return Ok((
@@ -121,118 +83,12 @@ pub async fn list_subjects(
                 ).into_response());
             }
         }
-    } else {
-        None
-    };
+    } else { None };
 
-    let mut query = String::from(
-        r#"
-        SELECT s.*, sg.name_th as group_name_th,
-               (SELECT COALESCE(array_agg(sgl.grade_level_id), '{}') 
-                FROM subject_grade_levels sgl 
-                WHERE sgl.subject_id = s.id) as grade_level_ids,
-               concat(u.first_name, ' ', u.last_name) as default_instructor_name
-        FROM subjects s
-        LEFT JOIN subject_groups sg ON s.group_id = sg.id
-        LEFT JOIN users u ON s.default_instructor_id = u.id
-        WHERE 1=1
-        "#
-    );
-
-    // Apply Filters using parameterized queries to prevent SQL injection
-    let mut idx = 0u32;
-
-    if let Some(active) = filter.active_only {
-        if active {
-            query.push_str(" AND s.is_active = true");
-        }
-    }
-
-    // dept-scope overrides any user-supplied group_id filter
-    let effective_group_id: Option<Uuid> = if dept_group_id.is_some() {
-        dept_group_id
-    } else {
-        filter.group_id
-    };
-    if effective_group_id.is_some() {
-        idx += 1;
-        query.push_str(&format!(" AND s.group_id = ${idx}"));
-    }
-
-    if filter.subject_type.is_some() {
-        idx += 1;
-        query.push_str(&format!(" AND s.type = ${idx}"));
-    }
-
-    let search_pattern = filter.search.as_ref().and_then(|s| {
-        if s.is_empty() { None } else { Some(format!("%{s}%")) }
-    });
-    if search_pattern.is_some() {
-        idx += 1;
-        query.push_str(&format!(
-            " AND (s.code ILIKE ${idx} OR s.name_th ILIKE ${idx} OR s.name_en ILIKE ${idx})"
-        ));
-    }
-
-    let active_in_year_id: Option<Uuid> = filter.active_in_year_id;
-
-    // Default to latest_only = true (show only latest version per code)
-    let latest_only = filter.latest_only.unwrap_or(true);
-
-    if active_in_year_id.is_some() {
-        idx += 1;
-        // แสดงวิชาทั้งหมดที่ใช้งานได้ในปีนั้น:
-        // สำหรับแต่ละ code ดึง version ล่าสุดที่ start_academic_year_id <= ปีเป้าหมาย
-        query.push_str(&format!(
-            r#" AND s.id IN (
-                SELECT DISTINCT ON (sub.code) sub.id
-                FROM subjects sub
-                JOIN academic_years ay  ON ay.id  = sub.start_academic_year_id
-                JOIN academic_years ayt ON ayt.id = ${idx}
-                WHERE ay.year <= ayt.year
-                ORDER BY sub.code, ay.year DESC
-            )"#
-        ));
-    } else if latest_only {
-        // No year filter but latest-only mode: latest version per code regardless of year
-        query.push_str(
-            r#" AND s.id IN (
-                SELECT DISTINCT ON (sub.code) sub.id
-                FROM subjects sub
-                JOIN academic_years ay ON ay.id = sub.start_academic_year_id
-                ORDER BY sub.code, ay.year DESC
-            )"#
-        );
-    }
-    // else: no filter applied — show all versions
-
-    if filter.term.is_some() {
-        idx += 1;
-        query.push_str(&format!(" AND (s.term = ${idx} OR s.term IS NULL)"));
-    }
-
-    query.push_str(" ORDER BY s.code ASC");
-
-    // Build query and bind parameters in the same order as $N placeholders
-    let mut q = sqlx::query_as::<_, Subject>(&query);
-    if let Some(gid) = effective_group_id { q = q.bind(gid); }
-    if let Some(ref stype) = filter.subject_type { q = q.bind(stype); }
-    if let Some(ref pattern) = search_pattern { q = q.bind(pattern); }
-    if let Some(year_id) = active_in_year_id { q = q.bind(year_id); }
-    if let Some(ref term) = filter.term { q = q.bind(term); }
-
-    let subjects = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to fetch subjects: {}", e);
-            AppError::InternalServerError("Failed to fetch subjects".to_string())
-        })?;
-
+    let subjects = subject_service::list_subjects(&pool, filter, dept_group_id).await?;
     Ok(Json(json!({ "success": true, "data": subjects })).into_response())
 }
 
-/// Create a new subject
 pub async fn create_subject(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -240,7 +96,6 @@ pub async fn create_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // 1. Check Permission (create.all OR manage.department)
     let (user_id, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
         Ok(r) => r,
         Err(resp) => return Ok(resp),
@@ -255,124 +110,18 @@ pub async fn create_subject(
         ).into_response());
     }
 
-    // dept-scope: validate that the subject's group matches the teacher's กลุ่มสาระ
     if !has_all && has_dept {
-        let teacher_group = get_user_subject_group_id(user_id, &pool).await
+        let teacher_group = subject_service::get_user_subject_group_id(user_id, &pool).await
             .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
         if payload.group_id != Some(teacher_group) {
             return Err(AppError::BadRequest("ไม่สามารถเพิ่มวิชาในกลุ่มสาระอื่นได้".to_string()));
         }
     }
 
-    // 2. Validate Code + Year Uniqueness (same code can exist in different start years)
-    let exists: Option<bool> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM subjects WHERE code = $1 AND start_academic_year_id = $2)"
-    )
-    .bind(&payload.code)
-    .bind(payload.start_academic_year_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(Some(false));
-
-    if exists.unwrap_or(false) {
-        let year_name: Option<String> = sqlx::query_scalar(
-            "SELECT name FROM academic_years WHERE id = $1"
-        )
-        .bind(payload.start_academic_year_id)
-        .fetch_optional(&pool)
-        .await
-        .unwrap_or(None);
-
-        return Err(AppError::BadRequest(format!(
-            "รหัสวิชา {} {} มีอยู่ในระบบแล้ว",
-            payload.code,
-            year_name.unwrap_or_else(|| "ในปีการศึกษานี้".to_string())
-        )));
-    }
-
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
-
-    // 3. Insert Subject
-    let mut subject = sqlx::query_as::<_, Subject>(
-        r#"
-        INSERT INTO subjects (
-            code, name_th, name_en,
-            credit, hours_per_semester, type, group_id, description,
-            start_academic_year_id, term, default_instructor_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        RETURNING *
-        "#
-    )
-    .bind(&payload.code)
-    .bind(&payload.name_th)
-    .bind(&payload.name_en)
-    .bind(payload.credit.unwrap_or(0.0))
-    .bind(payload.hours_per_semester)
-    .bind(&payload.subject_type)
-    .bind(payload.group_id)
-    .bind(&payload.description)
-    .bind(payload.start_academic_year_id)
-    .bind(&payload.term)
-    .bind(payload.default_instructor_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        eprintln!("Failed to create subject: {}", e);
-        AppError::InternalServerError("Failed to create subject".to_string())
-    })?;
-
-    // 4. Insert Grade Level Relations
-    if let Some(level_ids) = &payload.grade_level_ids {
-        for lid in level_ids {
-            sqlx::query("INSERT INTO subject_grade_levels (subject_id, grade_level_id) VALUES ($1, $2)")
-                .bind(subject.id)
-                .bind(lid)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    eprintln!("Failed to link grade level: {}", e);
-                    AppError::InternalServerError("Failed to save grade level links".to_string())
-                })?;
-        }
-        // Update response object
-        subject.grade_level_ids = Some(level_ids.clone());
-    }
-
-    // 5. Default instructor team (catalog-level team teaching defaults)
-    // When caller supplies `default_instructors`, that is the source of truth:
-    // clear any row auto-seeded by the subject_sync_junction trigger (from
-    // default_instructor_id) and insert the full team atomically.
-    if let Some(team) = &payload.default_instructors {
-        sqlx::query("DELETE FROM subject_default_instructors WHERE subject_id = $1")
-            .bind(subject.id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to clear team: {}", e)))?;
-        for t in team {
-            if t.role != "primary" && t.role != "secondary" {
-                return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
-            }
-            sqlx::query(
-                "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (subject_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
-            )
-            .bind(subject.id)
-            .bind(t.instructor_id)
-            .bind(&t.role)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
-        }
-    }
-
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
-
+    let subject = subject_service::create_subject(&pool, payload).await?;
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": subject }))).into_response())
 }
 
-/// Update a subject
 pub async fn update_subject(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -381,7 +130,6 @@ pub async fn update_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // 1. Check Permission (update.all OR manage.department)
     let (user_id, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
         Ok(r) => r,
         Err(resp) => return Ok(resp),
@@ -396,121 +144,19 @@ pub async fn update_subject(
         ).into_response());
     }
 
-    // dept-scope: verify subject belongs to teacher's กลุ่มสาระ before updating
     if !has_all && has_dept {
-        let teacher_group = get_user_subject_group_id(user_id, &pool).await
+        let teacher_group = subject_service::get_user_subject_group_id(user_id, &pool).await
             .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
-        let subject_group: Option<Uuid> = sqlx::query_scalar(
-            "SELECT group_id FROM subjects WHERE id = $1"
-        )
-        .bind(id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to fetch subject".to_string()))?
-        .flatten();
+        let subject_group = subject_service::get_subject_group_id(&pool, id).await?;
         if subject_group != Some(teacher_group) {
             return Err(AppError::BadRequest("ไม่สามารถแก้ไขวิชาในกลุ่มสาระอื่นได้".to_string()));
         }
     }
 
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
-    
-    // 2. Update
-    let mut subject = sqlx::query_as::<_, Subject>(
-        r#"
-        UPDATE subjects SET
-            code = COALESCE($1, code),
-            name_th = COALESCE($2, name_th),
-            name_en = COALESCE($3, name_en),
-            credit = COALESCE($4, credit),
-            hours_per_semester = COALESCE($5, hours_per_semester),
-            type = COALESCE($6, type),
-            group_id = COALESCE($7, group_id),
-            description = COALESCE($8, description),
-            is_active = COALESCE($9, is_active),
-            start_academic_year_id = COALESCE($10, start_academic_year_id),
-            -- term/default_instructor_id: null = "clear to NULL" (meaningful state),
-            -- not "keep old" — always overwrite with whatever caller sent.
-            term = $12,
-            default_instructor_id = $13,
-            updated_at = NOW()
-        WHERE id = $11
-        RETURNING *
-        "#
-    )
-    .bind(&payload.code)
-    .bind(&payload.name_th)
-    .bind(&payload.name_en)
-    .bind(payload.credit)
-    .bind(payload.hours_per_semester)
-    .bind(&payload.subject_type)
-    .bind(payload.group_id)
-    .bind(&payload.description)
-    .bind(payload.is_active)
-    .bind(payload.start_academic_year_id)
-    .bind(id)
-    .bind(&payload.term)
-    .bind(payload.default_instructor_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        eprintln!("Failed to update subject {}: {}", id, e);
-        AppError::InternalServerError("Failed to update subject".to_string())
-    })?;
-
-    // 3. Update Grade Levels if provided
-    if let Some(level_ids) = &payload.grade_level_ids {
-        // Clear existing
-        sqlx::query("DELETE FROM subject_grade_levels WHERE subject_id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to clear links: {}", e)))?;
-
-        // Insert new
-        for lid in level_ids {
-            sqlx::query("INSERT INTO subject_grade_levels (subject_id, grade_level_id) VALUES ($1, $2)")
-                .bind(id)
-                .bind(lid)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| AppError::InternalServerError(format!("Failed to link grade level: {}", e)))?;
-        }
-
-        subject.grade_level_ids = Some(level_ids.clone());
-    }
-
-    // 4. Replace default instructor team if provided (empty list = clear all)
-    if let Some(team) = &payload.default_instructors {
-        sqlx::query("DELETE FROM subject_default_instructors WHERE subject_id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to clear team: {}", e)))?;
-        for t in team {
-            if t.role != "primary" && t.role != "secondary" {
-                return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
-            }
-            sqlx::query(
-                "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (subject_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
-            )
-            .bind(id)
-            .bind(t.instructor_id)
-            .bind(&t.role)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
-        }
-    }
-
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
-
+    let subject = subject_service::update_subject(&pool, id, payload).await?;
     Ok(Json(json!({ "success": true, "data": subject })).into_response())
 }
 
-/// Delete subject
 pub async fn delete_subject(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -518,7 +164,6 @@ pub async fn delete_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // 1. Check Permission (delete.all OR manage.department)
     let (user_id, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
         Ok(r) => r,
         Err(resp) => return Ok(resp),
@@ -533,43 +178,20 @@ pub async fn delete_subject(
         ).into_response());
     }
 
-    // dept-scope: verify subject belongs to teacher's กลุ่มสาระ before deleting
     if !has_all && has_dept {
-        let teacher_group = get_user_subject_group_id(user_id, &pool).await
+        let teacher_group = subject_service::get_user_subject_group_id(user_id, &pool).await
             .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
-        let subject_group: Option<Uuid> = sqlx::query_scalar(
-            "SELECT group_id FROM subjects WHERE id = $1"
-        )
-        .bind(id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to fetch subject".to_string()))?
-        .flatten();
+        let subject_group = subject_service::get_subject_group_id(&pool, id).await?;
         if subject_group != Some(teacher_group) {
             return Err(AppError::BadRequest("ไม่สามารถลบวิชาในกลุ่มสาระอื่นได้".to_string()));
         }
     }
 
-    sqlx::query("DELETE FROM subjects WHERE id = $1")
-        .bind(id)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to delete subject {}: {}", id, e);
-            AppError::BadRequest("ไม่สามารถลบรายวิชาได้ (อาจมีการใช้งานอยู่)".to_string())
-        })?;
-
+    subject_service::delete_subject(&pool, id).await?;
     Ok(Json(json!({ "success": true })).into_response())
 }
 
-// ==========================================
-// Subject Default Instructors (team teaching at catalog level)
-// Pattern mirrors classroom_course_instructors — admin sets team
-// once per subject, assign_courses auto-copies into junction.
-// ==========================================
-
-/// Ensure the caller is allowed to read/write default instructors for this subject.
-/// Returns Ok(()) if allowed, Err(response) to short-circuit.
+/// Permission check for default instructors: read.all OR manage.department OR specified manage code.
 async fn check_subject_manage(
     state: &AppState,
     headers: &HeaderMap,
@@ -599,21 +221,14 @@ async fn check_subject_manage(
         ).into_response());
     }
     if !has_all && has_dept {
-        let teacher_group = match get_user_subject_group_id(user_id, pool).await {
+        let teacher_group = match subject_service::get_user_subject_group_id(user_id, pool).await {
             Some(gid) => gid,
             None => return Err((
                 StatusCode::FORBIDDEN,
                 Json(json!({ "success": false, "error": "ไม่พบกลุ่มสาระที่สังกัด" })),
             ).into_response()),
         };
-        let subject_group: Option<Uuid> = sqlx::query_scalar(
-            "SELECT group_id FROM subjects WHERE id = $1"
-        )
-        .bind(subject_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+        let subject_group = subject_service::get_subject_group_id(pool, subject_id).await.ok().flatten();
         if subject_group != Some(teacher_group) {
             return Err((
                 StatusCode::FORBIDDEN,
@@ -624,34 +239,19 @@ async fn check_subject_manage(
     Ok(())
 }
 
-/// GET /api/academic/subjects/:id/default-instructors
 pub async fn list_subject_default_instructors(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(subject_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_subject_manage(
-        &state, &headers, &pool, subject_id,
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL, true,
-    ).await { return Ok(resp); }
-
-    let rows: Vec<SubjectDefaultInstructor> = sqlx::query_as(
-        r#"SELECT sdi.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
-           FROM subject_default_instructors sdi
-           JOIN users u ON u.id = sdi.instructor_id
-           WHERE sdi.subject_id = $1
-           ORDER BY sdi.role, sdi.created_at"#
-    )
-    .bind(subject_id)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
+    if let Err(resp) = check_subject_manage(&state, &headers, &pool, subject_id, codes::ACADEMIC_CURRICULUM_UPDATE_ALL, true).await {
+        return Ok(resp);
+    }
+    let rows = subject_service::list_subject_default_instructors(&pool, subject_id).await?;
     Ok(Json(json!({ "data": rows })).into_response())
 }
 
-/// POST /api/academic/subjects/:id/default-instructors
 pub async fn add_subject_default_instructor(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -659,74 +259,26 @@ pub async fn add_subject_default_instructor(
     Json(body): Json<AddSubjectDefaultInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_subject_manage(
-        &state, &headers, &pool, subject_id,
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL, false,
-    ).await { return Ok(resp); }
-
-    let role = body.role.unwrap_or_else(|| "secondary".to_string());
-    if role != "primary" && role != "secondary" {
-        return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+    if let Err(resp) = check_subject_manage(&state, &headers, &pool, subject_id, codes::ACADEMIC_CURRICULUM_UPDATE_ALL, false).await {
+        return Ok(resp);
     }
-
-    // Demote any existing primary if this one is primary
-    let mut tx = pool.begin().await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
-
-    if role == "primary" {
-        sqlx::query(
-            "UPDATE subject_default_instructors SET role = 'secondary'
-             WHERE subject_id = $1 AND instructor_id <> $2 AND role = 'primary'"
-        )
-        .bind(subject_id)
-        .bind(body.instructor_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    }
-
-    sqlx::query(
-        "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (subject_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
-    )
-    .bind(subject_id)
-    .bind(body.instructor_id)
-    .bind(&role)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
-
+    subject_service::add_subject_default_instructor(&pool, subject_id, body).await?;
     Ok(Json(json!({ "success": true })).into_response())
 }
 
-/// DELETE /api/academic/subjects/:id/default-instructors/:uid
 pub async fn remove_subject_default_instructor(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((subject_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_subject_manage(
-        &state, &headers, &pool, subject_id,
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL, false,
-    ).await { return Ok(resp); }
-
-    sqlx::query(
-        "DELETE FROM subject_default_instructors WHERE subject_id = $1 AND instructor_id = $2"
-    )
-    .bind(subject_id)
-    .bind(instructor_id)
-    .execute(&pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
+    if let Err(resp) = check_subject_manage(&state, &headers, &pool, subject_id, codes::ACADEMIC_CURRICULUM_UPDATE_ALL, false).await {
+        return Ok(resp);
+    }
+    subject_service::remove_subject_default_instructor(&pool, subject_id, instructor_id).await?;
     Ok(Json(json!({ "success": true })).into_response())
 }
 
-/// PUT /api/academic/subjects/:id/default-instructors/:uid
 pub async fn update_subject_default_instructor_role(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -734,48 +286,13 @@ pub async fn update_subject_default_instructor_role(
     Json(body): Json<UpdateSubjectDefaultInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_subject_manage(
-        &state, &headers, &pool, subject_id,
-        codes::ACADEMIC_CURRICULUM_UPDATE_ALL, false,
-    ).await { return Ok(resp); }
-
-    if body.role != "primary" && body.role != "secondary" {
-        return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+    if let Err(resp) = check_subject_manage(&state, &headers, &pool, subject_id, codes::ACADEMIC_CURRICULUM_UPDATE_ALL, false).await {
+        return Ok(resp);
     }
-
-    let mut tx = pool.begin().await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
-
-    if body.role == "primary" {
-        sqlx::query(
-            "UPDATE subject_default_instructors SET role = 'secondary'
-             WHERE subject_id = $1 AND instructor_id <> $2 AND role = 'primary'"
-        )
-        .bind(subject_id)
-        .bind(instructor_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    }
-
-    sqlx::query(
-        "UPDATE subject_default_instructors SET role = $3
-         WHERE subject_id = $1 AND instructor_id = $2"
-    )
-    .bind(subject_id)
-    .bind(instructor_id)
-    .bind(&body.role)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
-
+    subject_service::update_subject_default_instructor_role(&pool, subject_id, instructor_id, &body.role).await?;
     Ok(Json(json!({ "success": true })).into_response())
 }
 
-/// GET /api/academic/subjects/default-instructors?subject_ids=uuid1,uuid2,...
-/// Batch fetch default instructors for multiple subjects. Returns object keyed by subject_id.
 #[derive(Debug, serde::Deserialize)]
 pub struct BatchListSubjectDefaultInstructorsQuery {
     pub subject_ids: String,
@@ -788,7 +305,6 @@ pub async fn batch_list_subject_default_instructors(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Any curriculum reader can view — consistent with list_subjects
     let (_, permissions) = match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
         Ok(r) => r,
         Err(resp) => return Ok(resp),
@@ -807,26 +323,6 @@ pub async fn batch_list_subject_default_instructors(
         .filter_map(|s| s.trim().parse::<Uuid>().ok())
         .collect();
 
-    if ids.is_empty() {
-        return Ok(Json(json!({ "data": {} })).into_response());
-    }
-
-    let rows: Vec<SubjectDefaultInstructor> = sqlx::query_as(
-        r#"SELECT sdi.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
-           FROM subject_default_instructors sdi
-           JOIN users u ON u.id = sdi.instructor_id
-           WHERE sdi.subject_id = ANY($1)
-           ORDER BY sdi.subject_id, sdi.role, sdi.created_at"#
-    )
-    .bind(&ids)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    let mut grouped: std::collections::HashMap<Uuid, Vec<SubjectDefaultInstructor>> = std::collections::HashMap::new();
-    for row in rows {
-        grouped.entry(row.subject_id).or_default().push(row);
-    }
-
+    let grouped = subject_service::batch_list_subject_default_instructors(&pool, ids).await?;
     Ok(Json(json!({ "data": grouped })).into_response())
 }
