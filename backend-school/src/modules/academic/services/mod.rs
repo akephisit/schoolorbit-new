@@ -8,6 +8,7 @@ pub mod subject_service;
 pub mod scheduling_config_service;
 pub mod scheduling_service;
 pub mod timetable_template_service;
+pub mod course_planning_service;
 
 // Re-export main types for convenience
 pub use scheduler::{
