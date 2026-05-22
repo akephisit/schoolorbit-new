@@ -2,6 +2,7 @@ pub mod scheduler;
 pub mod scheduler_data;
 pub mod timetable_service;
 pub mod period_service;
+pub mod activity_service;
 
 // Re-export main types for convenience
 pub use scheduler::{
