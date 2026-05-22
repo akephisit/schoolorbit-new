@@ -30,9 +30,9 @@ services:
     environment:
       - RUST_LOG=info
       - DATABASE_URL=postgres://admin_user:password@postgres:5432/schoolorbit_admin
-      - JWT_SECRET=your-secret-key-change-this-in-production
-      - INTERNAL_API_SECRET=internal-secret-change-this
-      - BACKEND_SCHOOL_URL=http://backend-school:8081
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-this-in-production}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-internal-secret-change-this}
+      - BACKEND_SCHOOL_URL=${BACKEND_SCHOOL_URL:-http://backend-school:8081}
       # Neon (ใช้ในการ provision tenant DB — ใน local dev อาจละไว้ได้)
       - NEON_API_KEY=${NEON_API_KEY:-}
       - NEON_PROJECT_ID=${NEON_PROJECT_ID:-}
@@ -65,9 +65,9 @@ services:
       - HOST=0.0.0.0
       - PORT=8081
       # ไม่มี ADMIN_DATABASE_URL แล้ว — ใช้ HTTP ผ่าน backend-admin แทน
-      - BACKEND_ADMIN_URL=http://backend-admin:8080
-      - INTERNAL_API_SECRET=internal-secret-change-this
-      - JWT_SECRET=your-secret-key-change-this-in-production
+      - BACKEND_ADMIN_URL=${BACKEND_ADMIN_URL:-http://backend-admin:8080}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-internal-secret-change-this}
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-this-in-production}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-this-encryption-key-in-production}
       - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
       # Cloudflare R2
