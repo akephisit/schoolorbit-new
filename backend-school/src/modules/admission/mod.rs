@@ -1,5 +1,6 @@
 pub mod models;
 pub mod handlers;
+pub mod services;
 
 use axum::{
     routing::{get, post, put, delete, patch},
