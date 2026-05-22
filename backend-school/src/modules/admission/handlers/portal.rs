@@ -7,13 +7,13 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::AppState;
-use crate::error::AppError;
 use crate::db::school_mapping::get_school_database_url;
-use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::utils::file_url::FileUrlBuilder;
-use crate::services::r2_client::R2Client;
+use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
+use crate::modules::admission::services::portal_service;
+use crate::services::r2_client::R2Client;
+use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::AppState;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
@@ -24,596 +24,66 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
-/// Helper: ตรวจสอบ credentials และคืน application id
-/// พารามิเตอร์: national_id + date_of_birth (DDMMYYYY เช่น "20082543")
-async fn verify_credentials(
-    pool: &sqlx::PgPool,
-    national_id: &str,
-    date_of_birth: &str,
-) -> Result<uuid::Uuid, AppError> {
-    if date_of_birth.len() != 8 {
-        return Err(AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (ต้องกรอก 8 หลัก ววดดปปปป เช่น 20082543)".to_string()));
-    }
-
-    let year_be: i32 = date_of_birth[4..].parse().unwrap_or(0);
-    // แปลง พ.ศ. เป็น ค.ศ.
-    let year_ce = year_be - 543;
-
-    // แปลง DDMMYYYY (พ.ศ.) เป็น NaiveDate
-    let dob = chrono::NaiveDate::parse_from_str(
-        &format!("{}/{}/{}", &date_of_birth[0..2], &date_of_birth[2..4], year_ce), 
-        "%d/%m/%Y"
-    ).ok();
-    
-    let Some(dob) = dob else {
-        return Err(AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (กรอก ววดดปปปป พ.ศ. เช่น 20082543)".to_string()));
-    };
-
-    let application_id: Option<uuid::Uuid> = sqlx::query_scalar(
-        "SELECT id FROM admission_applications WHERE national_id = $1 AND date_of_birth = $2 ORDER BY created_at DESC LIMIT 1"
-    )
-    .bind(national_id)
-    .bind(dob)
-    .fetch_optional(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    application_id.ok_or_else(|| AppError::AuthError("ไม่พบข้อมูลผู้สมัคร กรุณาตรวจสอบเลขบัตรประชาชนและวันเกิด".to_string()))
-}
-
-/// Helper: ดึง round status สำหรับ application นั้น
-async fn get_round_status_for_application(
-    pool: &sqlx::PgPool,
-    application_id: uuid::Uuid,
-) -> Result<String, AppError> {
-    sqlx::query_scalar(
-        r#"SELECT ar.status
-           FROM admission_applications aa
-           JOIN admission_rounds ar ON ar.id = aa.admission_round_id
-           WHERE aa.id = $1"#,
-    )
-    .bind(application_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
-}
-
-// ==========================================
-// Portal Endpoints (Stateless - Credentials ทุก request)
-// ==========================================
-
-/// POST /api/admission/portal/check
-/// ตรวจสอบว่า national_id + application_number ถูกต้องหรือเปล่า
 pub async fn check_application(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<PortalCredentials>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
-
-    let round_status = get_round_status_for_application(&pool, application_id).await?;
-    if round_status == "draft" {
-        return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
-    }
-
-    #[derive(sqlx::FromRow, serde::Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct StatusRow {
-        id: uuid::Uuid,
-        application_number: Option<String>,
-        first_name: String,
-        last_name: String,
-        status: String,
-        track_name: Option<String>,
-        round_name: Option<String>,
-        round_status: Option<String>,
-    }
-
-    let info = sqlx::query_as::<_, StatusRow>(
-        r#"
-        SELECT
-            aa.id,
-            aa.application_number,
-            aa.first_name,
-            aa.last_name,
-            aa.status,
-            at2.name AS track_name,
-            ar.name  AS round_name,
-            ar.status AS round_status
-        FROM admission_applications aa
-        LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
-        LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
-        WHERE aa.id = $1
-        "#
-    )
-    .bind(application_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    Ok(Json(json!({
-        "success": true,
-        "message": "ตรวจสอบสำเร็จ",
-        "data": info,
-    })).into_response())
+    let info = portal_service::check_application(&pool, payload).await?;
+    Ok(Json(json!({ "success": true, "message": "ตรวจสอบสำเร็จ", "data": info })).into_response())
 }
 
-/// POST /api/admission/portal/status
-/// ดูสถานะ + ผลการสมัคร (คะแนน, ห้อง) พร้อม credentials
 pub async fn get_status(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<PortalCredentials>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
-
-    let round_status = get_round_status_for_application(&pool, application_id).await?;
-    if round_status == "draft" {
-        return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
-    }
-
-    let selection_settings: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT selection_settings FROM admission_rounds WHERE id = (SELECT admission_round_id FROM admission_applications WHERE id = $1)"
-    )
-    .bind(application_id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap_or(None)
-    .flatten();
-
-    let show_scores = selection_settings
-        .as_ref()
-        .and_then(|s| s.get("showScores"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let assignment_mode = selection_settings
-        .as_ref()
-        .and_then(|s| s.get("assignmentMode"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("per_track")
-        .to_string();
-    let show_assignment = ["announced", "enrolling", "closed"].contains(&round_status.as_str());
-    let show_form       = ["enrolling", "closed"].contains(&round_status.as_str());
-
-    // ดึงข้อมูล application
-    let application = sqlx::query_as::<_, AdmissionApplication>(
-        r#"
-        SELECT aa.*,
-               at2.name    AS track_name,
-               at_asgn.name AS assigned_track_name,
-               ar.name     AS round_name
-        FROM admission_applications aa
-        LEFT JOIN admission_tracks at2     ON at2.id    = aa.admission_track_id
-        LEFT JOIN admission_tracks at_asgn ON at_asgn.id = aa.room_assignment_track_id
-        LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
-        WHERE aa.id = $1
-        "#
-    )
-    .bind(application_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    // ดึงผลการจัดห้อง (ถ้ามี)
-    #[derive(sqlx::FromRow, serde::Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct AssignmentRow {
-        rank_in_track: Option<i32>,
-        rank_in_room: Option<i32>,
-        total_score: Option<f64>,
-        room_name: Option<String>,
-        student_confirmed: bool,
-    }
-
-    let assignment = sqlx::query_as::<_, AssignmentRow>(
-        r#"
-        SELECT
-            ara.rank_in_track,
-            ara.rank_in_room,
-            ara.total_score,
-            cr.name AS room_name,
-            ara.student_confirmed
-        FROM admission_room_assignments ara
-        LEFT JOIN class_rooms cr ON ara.class_room_id = cr.id
-        WHERE ara.application_id = $1
-        "#
-    )
-    .bind(application_id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap_or(None);
-
-    // ดึงคะแนน (เฉพาะเมื่อ showScores เปิดอยู่)
-    let scores: Vec<ExamScore> = if show_scores {
-        sqlx::query_as::<_, ExamScore>(
-            r#"
-            SELECT
-                esc.id,
-                esc.application_id,
-                esc.exam_subject_id,
-                esc.score,
-                esc.entered_by,
-                esc.entered_at,
-                esc.updated_at,
-                aes.name AS subject_name,
-                aes.code AS subject_code,
-                aes.max_score::FLOAT8 AS max_score
-            FROM admission_exam_subjects aes
-            LEFT JOIN admission_exam_scores esc ON esc.exam_subject_id = aes.id AND esc.application_id = $1
-            WHERE aes.admission_round_id = $2
-            ORDER BY aes.display_order ASC
-            "#
-        )
-        .bind(application_id)
-        .bind(application.admission_round_id)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default()
-    } else {
-        vec![]
-    };
-
-    // form ที่กรอกไว้
-    let form = sqlx::query_as::<_, EnrollmentForm>(
-        "SELECT * FROM admission_enrollment_forms WHERE application_id = $1"
-    )
-    .bind(application_id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap_or(None);
-
-    // ดึงเอกสารที่แนบไว้
-    let documents = sqlx::query_as::<_, ApplicationDocument>(
-        r#"
-        SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
-               f.storage_path AS file_url,
-               f.original_filename, f.file_size, f.mime_type
-        FROM admission_application_documents d
-        JOIN files f ON f.id = d.file_id
-        WHERE d.application_id = $1 AND d.deleted_at IS NULL
-        ORDER BY d.created_at ASC
-        "#
-    )
-    .bind(application_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
-
-    let url_builder = FileUrlBuilder::new().unwrap_or_default();
-    let documents: Vec<ApplicationDocument> = documents
-        .into_iter()
-        .map(|mut doc| {
-            if let Some(path) = doc.file_url.as_deref() {
-                doc.file_url = Some(url_builder.build_url(path));
-            }
-            doc
-        })
-        .collect();
-
-    Ok(Json(json!({
-        "success": true,
-        "data": {
-            "application": application,
-            "roundStatus": round_status,
-            "assignmentMode": assignment_mode,
-            "assignment": if show_assignment { json!(assignment) } else { json!(null) },
-            "scores": if show_scores { json!(scores) } else { json!(null) },
-            "enrollmentForm": if show_form { json!(form) } else { json!(null) },
-            "documents": documents,
-        }
-    })).into_response())
+    let data = portal_service::get_status(&pool, payload).await?;
+    Ok(Json(json!({ "success": true, "data": data })).into_response())
 }
 
-/// POST /api/admission/portal/confirm
-/// ยืนยันเข้าเรียน (student_confirmed = true)
 pub async fn confirm_enrollment(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<PortalConfirmRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
-
-    let round_status = get_round_status_for_application(&pool, application_id).await?;
-    if round_status != "enrolling" {
-        return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว".to_string()));
-    }
-
-    // ตรวจสอบสถานะ
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM admission_applications WHERE id = $1"
-    )
-    .bind(application_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    if status != "accepted" {
-        return Err(AppError::BadRequest(
-            format!("ไม่สามารถยืนยันได้ (สถานะปัจจุบัน: {})", status)
-        ));
-    }
-
-    sqlx::query(
-        "UPDATE admission_room_assignments SET student_confirmed = true, student_confirmed_at = NOW() WHERE application_id = $1"
-    )
-    .bind(application_id)
-    .execute(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to confirm".to_string()))?;
-
-    Ok(Json(json!({
-        "success": true,
-        "message": "ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัวด้านล่าง",
-    })).into_response())
+    portal_service::confirm_enrollment(&pool, payload).await?;
+    Ok(Json(json!({ "success": true, "message": "ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัวด้านล่าง" })).into_response())
 }
 
-/// POST /api/admission/portal/form — ดูแบบฟอร์มมอบตัว
 pub async fn get_enrollment_form(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<PortalCredentials>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
-
-    let round_status = get_round_status_for_application(&pool, application_id).await?;
-    if !["enrolling", "closed"].contains(&round_status.as_str()) {
-        return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว".to_string()));
-    }
-
-    let form = sqlx::query_as::<_, EnrollmentForm>(
-        "SELECT * FROM admission_enrollment_forms WHERE application_id = $1"
-    )
-    .bind(application_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
+    let form = portal_service::get_enrollment_form(&pool, payload).await?;
     Ok(Json(json!({ "success": true, "data": form })).into_response())
 }
 
-/// PUT /api/admission/portal/form — กรอกแบบฟอร์มมอบตัว (ยืนยัน + บันทึกในขั้นตอนเดียว)
 pub async fn submit_enrollment_form(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<PortalFormRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
-
-    let round_status = get_round_status_for_application(&pool, application_id).await?;
-    if round_status != "enrolling" {
-        return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว หรือหมดเขตแล้ว".to_string()));
-    }
-
-    // ตรวจสอบว่าสถานะเป็น accepted
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM admission_applications WHERE id = $1"
-    )
-    .bind(application_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    if status != "accepted" {
-        return Err(AppError::BadRequest(
-            format!("ไม่สามารถยืนยันได้ (สถานะปัจจุบัน: {})", status)
-        ));
-    }
-
-    // ยืนยันเข้าเรียน (student_confirmed = true) ในขั้นตอนเดียวกับบันทึกฟอร์ม
-    sqlx::query(
-        "UPDATE admission_room_assignments SET student_confirmed = true, student_confirmed_at = NOW() WHERE application_id = $1"
-    )
-    .bind(application_id)
-    .execute(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to confirm".to_string()))?;
-
-    let form_data = payload.form_data.unwrap_or(json!({}));
-
-    sqlx::query(
-        r#"
-        INSERT INTO admission_enrollment_forms (application_id, form_data, pre_submitted_at)
-        VALUES ($1, $2, NOW())
-        ON CONFLICT (application_id) DO UPDATE SET
-            form_data = $2,
-            pre_submitted_at = NOW()
-        "#
-    )
-    .bind(application_id)
-    .bind(form_data)
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Failed to submit enrollment form: {}", e);
-        AppError::InternalServerError("ไม่สามารถบันทึกแบบฟอร์มได้".to_string())
-    })?;
-
-    Ok(Json(json!({
-        "success": true,
-        "message": "ยืนยันมอบตัวและบันทึกข้อมูลแล้ว",
-    })).into_response())
+    portal_service::submit_enrollment_form(&pool, payload).await?;
+    Ok(Json(json!({ "success": true, "message": "ยืนยันมอบตัวและบันทึกข้อมูลแล้ว" })).into_response())
 }
 
-/// PUT /api/admission/portal/application
-/// แก้ไขใบสมัคร (เฉพาะสถานะ submitted หรือ rejected)
 pub async fn update_application(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<UpdatePortalApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    let application_id = verify_credentials(&pool, &payload.auth_national_id, &payload.auth_date_of_birth).await?;
-
-    let round_status = get_round_status_for_application(&pool, application_id).await?;
-    if round_status != "open" {
-        return Err(AppError::BadRequest("ไม่สามารถแก้ไขใบสมัครได้ในช่วงเวลานี้".to_string()));
-    }
-
-    // ตรวจสอบสถานะก่อนแก้
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM admission_applications WHERE id = $1"
-    )
-    .bind(application_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    if status == "enrolled" || status == "withdrawn" {
-        return Err(AppError::BadRequest(
-            format!("ไม่สามารถแก้ไขใบสมัครได้เนื่องจากอยู่ในสถานะ '{}'", status)
-        ));
-    }
-
-    // ตรวจสอบ national_id แอบเปลี่ยนไปซ้ำกับใบอื่นรอบนี้ไหม (ถ้ามีการแก้เลขบัตร)
-    if payload.data.national_id != payload.auth_national_id {
-        let round_id: uuid::Uuid = sqlx::query_scalar(
-            "SELECT admission_round_id FROM admission_applications WHERE id = $1"
-        )
-        .bind(application_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or_default();
-
-        let already_applied: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE national_id = $1 AND admission_round_id = $2 AND id != $3)"
-        )
-        .bind(&payload.data.national_id)
-        .bind(round_id)
-        .bind(application_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(false);
-
-        if already_applied {
-            return Err(AppError::BadRequest("เลขบัตรประชาชนใหม่ที่กรอกได้สมัครรอบนี้ไปแล้ว (ซ้ำ)".to_string()));
-        }
-    }
-
-    // อัปเดตข้อมูล
-    sqlx::query(
-        r#"
-        UPDATE admission_applications SET
-            admission_track_id = $1, title = $2, first_name = $3, last_name = $4,
-            gender = $5, phone = $6, email = $7,
-            address_line = $8, sub_district = $9, district = $10, province = $11, postal_code = $12,
-            previous_school = $13, previous_grade = $14, previous_gpa = $15,
-            father_name = $16, father_phone = $17, father_occupation = $18, father_national_id = $19,
-            mother_name = $20, mother_phone = $21, mother_occupation = $22, mother_national_id = $23,
-            guardian_name = $24, guardian_phone = $25, guardian_relation = $26, guardian_national_id = $27,
-            national_id = $28, date_of_birth = $29,
-            guardian_occupation = $30, guardian_income = $31, guardian_is = $32,
-            religion = $33, ethnicity = $34, nationality = $35,
-            home_house_no = $36, home_moo = $37, home_soi = $38, home_road = $39, home_phone = $40,
-            current_house_no = $41, current_moo = $42, current_soi = $43, current_road = $44,
-            current_sub_district = $45, current_district = $46, current_province = $47,
-            current_postal_code = $48, current_phone = $49,
-            previous_study_year = $50, previous_school_province = $51,
-            father_income = $52, mother_income = $53,
-            parent_status = $54, parent_status_other = $55,
-            status = 'submitted',
-            rejection_reason = NULL,
-            updated_at = NOW()
-        WHERE id = $56
-        "#
-    )
-    .bind(payload.data.admission_track_id)
-    .bind(&payload.data.title)
-    .bind(&payload.data.first_name)
-    .bind(&payload.data.last_name)
-    .bind(&payload.data.gender)
-    .bind(&payload.data.phone)
-    .bind(&payload.data.email)
-    .bind(&payload.data.address_line)
-    .bind(&payload.data.sub_district)
-    .bind(&payload.data.district)
-    .bind(&payload.data.province)
-    .bind(&payload.data.postal_code)
-    .bind(&payload.data.previous_school)
-    .bind(&payload.data.previous_grade)
-    .bind(payload.data.previous_gpa)
-    .bind(&payload.data.father_name)
-    .bind(&payload.data.father_phone)
-    .bind(&payload.data.father_occupation)
-    .bind(&payload.data.father_national_id)
-    .bind(&payload.data.mother_name)
-    .bind(&payload.data.mother_phone)
-    .bind(&payload.data.mother_occupation)
-    .bind(&payload.data.mother_national_id)
-    .bind(&payload.data.guardian_name)
-    .bind(&payload.data.guardian_phone)
-    .bind(&payload.data.guardian_relation)
-    .bind(&payload.data.guardian_national_id)
-    .bind(&payload.data.national_id)
-    .bind(payload.data.date_of_birth)
-    .bind(&payload.data.guardian_occupation)
-    .bind(payload.data.guardian_income)
-    .bind(&payload.data.guardian_is)
-    .bind(&payload.data.religion)
-    .bind(&payload.data.ethnicity)
-    .bind(&payload.data.nationality)
-    .bind(&payload.data.home_house_no)
-    .bind(&payload.data.home_moo)
-    .bind(&payload.data.home_soi)
-    .bind(&payload.data.home_road)
-    .bind(&payload.data.home_phone)
-    .bind(&payload.data.current_house_no)
-    .bind(&payload.data.current_moo)
-    .bind(&payload.data.current_soi)
-    .bind(&payload.data.current_road)
-    .bind(&payload.data.current_sub_district)
-    .bind(&payload.data.current_district)
-    .bind(&payload.data.current_province)
-    .bind(&payload.data.current_postal_code)
-    .bind(&payload.data.current_phone)
-    .bind(&payload.data.previous_study_year)
-    .bind(&payload.data.previous_school_province)
-    .bind(payload.data.father_income)
-    .bind(payload.data.mother_income)
-    .bind(&payload.data.parent_status)
-    .bind(&payload.data.parent_status_other)
-    .bind(application_id)
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Failed to update application: {}", e);
-        AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
-    })?;
-
-    Ok(Json(json!({
-        "success": true,
-        "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว",
-    })).into_response())
+    portal_service::update_application(&pool, payload).await?;
+    Ok(Json(json!({ "success": true, "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว" })).into_response())
 }
 
-
-// ==========================================
-// Portal: Anonymous Document Upload
-// ==========================================
-
-const VALID_DOC_TYPES: &[&str] = &[
-    "photo_1_5inch", "transcript_por", "certificate_por7",
-    "id_card_student", "id_card_father", "id_card_mother", "id_card_guardian",
-    "house_reg_student", "house_reg_father", "house_reg_mother", "house_reg_guardian",
-    "name_change_doc", "birth_cert",
-];
-
-const ALLOWED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "pdf", "webp"];
-
-/// POST /api/admission/portal/upload
-/// Upload เอกสารหลักฐาน (ไม่ต้องการ JWT — applicant ยังไม่มี account)
-/// multipart: national_id (optional), date_of_birth (optional, DDMMYYYY), doc_type, file
-/// ถ้ามี credentials → auto-link กับ application, ใช้ {app_number} เป็น folder
 pub async fn portal_upload_document(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -623,7 +93,6 @@ pub async fn portal_upload_document(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    // Parse multipart
     let mut doc_type: Option<String> = None;
     let mut file_data: Option<Vec<u8>> = None;
     let mut original_filename: Option<String> = None;
@@ -634,20 +103,12 @@ pub async fn portal_upload_document(
     while let Some(field) = multipart.next_field().await
         .map_err(|_| AppError::BadRequest("Invalid multipart data".to_string()))? {
         match field.name().unwrap_or("") {
-            "doc_type" => {
-                doc_type = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string());
-            }
-            "national_id" => {
-                national_id = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string());
-            }
-            "date_of_birth" => {
-                date_of_birth = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string());
-            }
+            "doc_type" => doc_type = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string()),
+            "national_id" => national_id = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string()),
+            "date_of_birth" => date_of_birth = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string()),
             "file" => {
                 original_filename = field.file_name().map(|s| s.to_string()).or(Some("document".to_string()));
-                if let Some(ct) = field.content_type() {
-                    mime_type = ct.to_string();
-                }
+                if let Some(ct) = field.content_type() { mime_type = ct.to_string(); }
                 file_data = Some(field.bytes().await
                     .map_err(|_| AppError::BadRequest("Failed to read file".to_string()))?.to_vec());
             }
@@ -659,176 +120,55 @@ pub async fn portal_upload_document(
     let file_data = file_data.ok_or_else(|| AppError::BadRequest("Missing file".to_string()))?;
     let original_filename = original_filename.unwrap_or_else(|| "document".to_string());
 
-    // Validate doc_type
-    if !VALID_DOC_TYPES.contains(&doc_type.as_str()) {
+    if !portal_service::VALID_DOC_TYPES.contains(&doc_type.as_str()) {
         return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
     }
 
-    // Validate extension
     let ext = std::path::Path::new(&original_filename)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("bin")
-        .to_lowercase();
-    if !ALLOWED_EXTENSIONS.contains(&ext.as_str()) {
+        .extension().and_then(|e| e.to_str()).unwrap_or("bin").to_lowercase();
+    if !portal_service::ALLOWED_EXTENSIONS.contains(&ext.as_str()) {
         return Err(AppError::BadRequest(format!("File extension .{} not allowed. Use: jpg, png, pdf", ext)));
     }
-
-    // Validate size (20MB max for documents)
     if file_data.len() > 20 * 1024 * 1024 {
         return Err(AppError::BadRequest("File size exceeds 20MB".to_string()));
     }
 
-    let file_id = Uuid::new_v4();
-    let file_size = file_data.len() as i64;
-
     let r2_client = R2Client::new().await
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
 
-    // ถ้ามี credentials → verify + gate ตาม round status + ใช้ {app_number} เป็น folder + auto-link
-    if let (Some(nid), Some(dob)) = (&national_id, &date_of_birth) {
-        let application_id = verify_credentials(&pool, nid, dob).await?;
+    let input = portal_service::PortalUploadInput {
+        doc_type: doc_type.clone(),
+        file_data: file_data.clone(),
+        original_filename: original_filename.clone(),
+        mime_type: mime_type.clone(),
+        ext,
+        national_id,
+        date_of_birth,
+    };
 
-        let round_status = get_round_status_for_application(&pool, application_id).await?;
-        if !["open", "enrolling"].contains(&round_status.as_str()) {
-            return Err(AppError::BadRequest("ไม่สามารถอัปโหลดเอกสารได้ในช่วงเวลานี้".to_string()));
-        }
+    let (result, storage_path) = portal_service::save_portal_upload(&pool, &subdomain, &input).await?;
 
-        let (app_number, round_id): (String, Uuid) = sqlx::query_as(
-            "SELECT application_number, admission_round_id FROM admission_applications WHERE id = $1"
-        )
-        .bind(application_id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
-
-        let storage_path = format!(
-            "school-{}/admission/{}/{}/{}.{}",
-            subdomain, round_id, app_number, file_id, ext
-        );
-
-        // Upload to R2
-        r2_client.upload_file(&storage_path, file_data.clone(), &mime_type).await
-            .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;
-
-        // Save file metadata
-        sqlx::query(
-            r#"INSERT INTO files (id, user_id, school_id, filename, original_filename,
-                file_size, mime_type, storage_path, file_type,
-                is_temporary, is_public, expires_at, uploaded_by)
-               VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document', false, false, NULL, NULL)"#
-        )
-        .bind(file_id)
-        .bind(&subdomain)
-        .bind(format!("{}.{}", file_id, ext))
-        .bind(&original_filename)
-        .bind(file_size)
-        .bind(&mime_type)
-        .bind(&storage_path)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to save file metadata: {}", e);
-            AppError::InternalServerError("Failed to save file metadata".to_string())
-        })?;
-
-        // Hard-delete เอกสารเดิมของ doc_type นี้ (ถ้ามี)
-        let old_doc = sqlx::query_as::<_, (Uuid, Uuid, String)>(
-            r#"SELECT aad.id, aad.file_id, f.storage_path
-               FROM admission_application_documents aad
-               JOIN files f ON f.id = aad.file_id
-               WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
-               LIMIT 1"#
-        )
-        .bind(application_id)
-        .bind(&doc_type)
-        .fetch_optional(&pool)
-        .await
-        .ok()
-        .flatten();
-
-        if let Some((old_aad_id, old_file_id, old_path)) = old_doc {
-            let _ = sqlx::query("DELETE FROM admission_application_documents WHERE id = $1")
-                .bind(old_aad_id).execute(&pool).await;
-            let _ = sqlx::query("DELETE FROM files WHERE id = $1")
-                .bind(old_file_id).execute(&pool).await;
-            r2_client.delete_file(&old_path).await.ok();
-        }
-
-        // Link ไฟล์ใหม่กับ application
-        let _ = sqlx::query(
-            "INSERT INTO admission_application_documents (application_id, file_id, doc_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
-        )
-        .bind(application_id)
-        .bind(file_id)
-        .bind(&doc_type)
-        .execute(&pool)
-        .await;
-
-        let url_builder = FileUrlBuilder::new()
-            .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
-        let file_url = format!("{}/{}", url_builder.base_url(), storage_path);
-
-        return Ok(Json(json!({
-            "success": true,
-            "data": {
-                "fileId": file_id,
-                "originalFilename": original_filename,
-                "fileSize": file_size,
-                "docType": doc_type,
-                "fileUrl": file_url,
-            }
-        })).into_response());
-    }
-
-    // Fallback (ไม่มี credentials) — upload flat ไม่ auto-link
-    let storage_path = format!(
-        "school-{}/admission/documents/{}.{}",
-        subdomain, file_id, ext
-    );
-
-
-    r2_client.upload_file(&storage_path, file_data.clone(), &mime_type).await
+    // R2 upload (after DB success — handler scope)
+    r2_client.upload_file(&storage_path, file_data, &mime_type).await
         .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;
 
-    sqlx::query(
-        r#"INSERT INTO files (id, user_id, school_id, filename, original_filename,
-            file_size, mime_type, storage_path, file_type,
-            is_temporary, is_public, expires_at, uploaded_by)
-           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document', false, false, NULL, NULL)"#
-    )
-    .bind(file_id)
-    .bind(&subdomain)
-    .bind(format!("{}.{}", file_id, ext))
-    .bind(&original_filename)
-    .bind(file_size)
-    .bind(&mime_type)
-    .bind(&storage_path)
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Failed to save file metadata: {}", e);
-        AppError::InternalServerError("Failed to save file metadata".to_string())
-    })?;
+    if let Some(old) = &result.old_storage_path {
+        r2_client.delete_file(old).await.ok();
+    }
 
-    let url_builder = FileUrlBuilder::new()
-        .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
-    let file_url = format!("{}/{}", url_builder.base_url(), storage_path);
-
+    let file_url = portal_service::build_file_url_full(&result.storage_path)?;
     Ok(Json(json!({
         "success": true,
         "data": {
-            "fileId": file_id,
+            "fileId": result.file_id,
             "originalFilename": original_filename,
-            "fileSize": file_size,
+            "fileSize": result.file_size,
             "docType": doc_type,
             "fileUrl": file_url,
         }
     })).into_response())
 }
 
-/// DELETE /api/admission/portal/documents/:doc_type?national_id=...&date_of_birth=...
-/// ลบเอกสาร (soft-delete) ของ applicant ที่ผ่านการ verify credentials แล้ว
 pub async fn portal_delete_document(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -837,118 +177,25 @@ pub async fn portal_delete_document(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if !VALID_DOC_TYPES.contains(&doc_type.as_str()) {
+    if !portal_service::VALID_DOC_TYPES.contains(&doc_type.as_str()) {
         return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
     }
 
-    let application_id = verify_credentials(&pool, &query.national_id, &query.date_of_birth).await?;
+    let storage_path = portal_service::delete_portal_document(&pool, &doc_type, query).await?;
 
-    let round_status = get_round_status_for_application(&pool, application_id).await?;
-    if !["open", "enrolling"].contains(&round_status.as_str()) {
-        return Err(AppError::BadRequest("ไม่สามารถลบเอกสารได้ในช่วงเวลานี้".to_string()));
-    }
-
-    // หา active document พร้อม storage_path
-    let doc_row = sqlx::query_as::<_, (Uuid, Uuid, String)>(
-        r#"SELECT aad.id, aad.file_id, f.storage_path
-           FROM admission_application_documents aad
-           JOIN files f ON f.id = aad.file_id
-           WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
-           LIMIT 1"#
-    )
-    .bind(application_id)
-    .bind(&doc_type)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    let Some((doc_id, file_id, storage_path)) = doc_row else {
-        return Err(AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()));
-    };
-
-    // Hard delete document record
-    sqlx::query("DELETE FROM admission_application_documents WHERE id = $1")
-        .bind(doc_id)
-        .execute(&pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to delete document".to_string()))?;
-
-    // Hard delete file record
-    sqlx::query("DELETE FROM files WHERE id = $1")
-        .bind(file_id)
-        .execute(&pool)
-        .await
-        .ok();
-
-    // Delete file from R2
     let r2_client = R2Client::new().await
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
     r2_client.delete_file(&storage_path).await.ok();
 
-    Ok(Json(json!({
-        "success": true,
-        "message": "ลบเอกสารเรียบร้อยแล้ว",
-    })).into_response())
-}
-
-// ==========================================
-// Portal: GET /portal/exam-seat
-// ผู้สมัครดูห้องสอบ + เลขที่นั่ง ด้วย national_id + dob
-// ==========================================
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortalExamSeatRequest {
-    pub national_id: String,
-    pub date_of_birth: String, // DDMMYYYY พ.ศ.
+    Ok(Json(json!({ "success": true, "message": "ลบเอกสารเรียบร้อยแล้ว" })).into_response())
 }
 
 pub async fn portal_get_exam_seat(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<PortalExamSeatRequest>,
+    Json(payload): Json<portal_service::PortalExamSeatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    let application_id = verify_credentials(&pool, &payload.national_id, &payload.date_of_birth).await?;
-
-    let round_status = get_round_status_for_application(&pool, application_id).await?;
-    let allowed = ["exam_announced", "announced", "enrolling", "closed"];
-    if !allowed.contains(&round_status.as_str()) {
-        return Err(AppError::BadRequest("ยังไม่ถึงเวลาดูข้อมูลห้องสอบ".to_string()));
-    }
-
-    #[derive(sqlx::FromRow, serde::Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct ExamSeatInfo {
-        seat_number: i32,
-        exam_id: Option<String>,
-        room_name: String,
-        building_name: Option<String>,
-        exam_date: Option<chrono::NaiveDate>,
-    }
-
-    let seat = sqlx::query_as::<_, ExamSeatInfo>(
-        r#"SELECT
-            sa.seat_number,
-            sa.exam_id,
-            COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
-            b.name_th AS building_name,
-            ar.exam_date
-           FROM admission_exam_seat_assignments sa
-           JOIN admission_exam_rooms er ON er.id = sa.exam_room_id
-           JOIN admission_rounds ar ON ar.id = er.admission_round_id
-           LEFT JOIN rooms r ON r.id = er.room_id
-           LEFT JOIN buildings b ON b.id = r.building_id
-           WHERE sa.application_id = $1"#,
-    )
-    .bind(application_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    Ok(Json(json!({
-        "success": true,
-        "data": seat
-    })).into_response())
+    let seat = portal_service::get_exam_seat(&pool, &payload.national_id, &payload.date_of_birth).await?;
+    Ok(Json(json!({ "success": true, "data": seat })).into_response())
 }
