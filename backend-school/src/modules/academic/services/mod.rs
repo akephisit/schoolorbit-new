@@ -5,6 +5,7 @@ pub mod period_service;
 pub mod activity_service;
 pub mod study_plan_service;
 pub mod subject_service;
+pub mod scheduling_config_service;
 
 // Re-export main types for convenience
 pub use scheduler::{
