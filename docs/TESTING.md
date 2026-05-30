@@ -54,3 +54,39 @@ SMOKE_PASSWORD
 ```
 
 Run it from Actions with `run_authenticated=true` to test login and authenticated `/api/auth/me`. Use `run_authenticated=false` for public endpoint and CORS checks only.
+
+## Browser E2E
+
+The `frontend-school` app has a minimal Playwright test for the live sandbox login flow.
+
+Install the browser once on a local machine:
+
+```bash
+cd frontend-school
+npx playwright install chromium
+```
+
+On Ubuntu 26.04, Playwright may need the Ubuntu 24.04 browser fallback until official 26.04 browser builds are available:
+
+```bash
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium
+```
+
+If Chromium launches with missing shared libraries such as `libnspr4.so`, install the native dependencies:
+
+```bash
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install-deps chromium
+```
+
+Run the test:
+
+```bash
+E2E_BASE_URL=https://sandbox.schoolorbit.app \
+E2E_USERNAME=T0001 \
+E2E_PASSWORD='your-sandbox-password' \
+npm run test:e2e
+```
+
+The test also accepts `SMOKE_USERNAME` and `SMOKE_PASSWORD`, so the same secrets can be reused in GitHub Actions.
+
+The `E2E Sandbox` workflow runs the same Playwright test manually from GitHub Actions. It expects repository secrets named `SMOKE_USERNAME` and `SMOKE_PASSWORD`, and is pinned to `ubuntu-24.04` for Playwright browser support.
