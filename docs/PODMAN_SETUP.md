@@ -191,7 +191,7 @@ podman run --rm \
   -d admin-api.schoolorbit.app \
   --non-interactive \
   --agree-tos \
-  -m kruakemaths@gmail.com
+  -m admin@schoolorbit.app
 ```
 
 *   **-d:** ใส่เพิ่มได้เรื่อยๆ ถ้าคุณมีหลาย Subdomain
@@ -568,18 +568,17 @@ services:
       - BASE_DOMAIN=${BASE_DOMAIN:-schoolorbit.app}
 
       # Backend-School Communication
-      - BACKEND_SCHOOL_URL=${BACKEND_SCHOOL_URL:-http://backend-school:8081}
+      - BACKEND_SCHOOL_URL=${BACKEND_SCHOOL_URL:-http://schoolorbit-backend-school:8081}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
 
       # Deployment (GitHub Actions)
       - API_URL=${API_URL}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - GITHUB_REPO=${GITHUB_REPO:-akephisit/schoolorbit-new}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-akephisit/schoolorbit-new}
 
       # General
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - RUST_LOG=${RUST_LOG:-info}
-      - PORT=${ADMIN_PORT:-8080}
     networks:
       - web
     healthcheck:
@@ -606,7 +605,7 @@ services:
       # Server config
       - RUST_LOG=${RUST_LOG:-info}
       - HOST=${HOST:-0.0.0.0}
-      - PORT=${SCHOOL_PORT:-8081}
+      - PORT=${PORT:-8081}
       # Cloudflare R2 Configuration (required for file uploads)
       - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
       - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
@@ -627,9 +626,9 @@ services:
       # Web Push Configuration
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
-      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:kruakemaths@gmail.com}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@schoolorbit.app}
       # Note: DATABASE_URL is no longer needed (multi-tenant architecture)
-      # Note: ALLOWED_ORIGINS is only for backend-admin
+      # Note: ADMIN_DATABASE_URL is no longer needed; backend-school uses BACKEND_ADMIN_URL
     depends_on:
       backend-admin:
         condition: service_healthy
@@ -651,7 +650,66 @@ networks:
 ```bash
 nano /opt/stack/.env
 ```
-*(นำค่า Config ทั้งหมด เช่น DATABASE_URL, JWT_SECRET, PORT มาวางที่นี่)*
+
+ตัวอย่างค่าเริ่มต้นสำหรับ `/opt/stack/.env`:
+
+```env
+# Security keys
+ENCRYPTION_KEY=change-this-encryption-key-minimum-32-characters-long
+DEPLOY_KEY=local-dev-key-change-me-in-production
+JWT_SECRET=your-secret-key-change-this-in-production
+INTERNAL_API_SECRET=internal-secret-change-this
+
+# Internal service URLs for this single compose stack
+BACKEND_ADMIN_URL=http://schoolorbit-backend-admin:8080
+BACKEND_SCHOOL_URL=http://schoolorbit-backend-school:8081
+
+# Public backend-school API URL passed to tenant frontend deployments
+API_URL=https://school-api.schoolorbit.app
+
+# Backend-admin database
+DATABASE_URL=postgresql://user:password@your-neon-host.neon.tech/schoolorbit_admin?sslmode=require
+
+# Neon API for tenant database provisioning
+NEON_API_KEY=your-neon-api-key
+NEON_PROJECT_ID=your-neon-project-id
+NEON_BRANCH_ID=main
+NEON_HOST=your-project.neon.tech
+NEON_DB_PASSWORD=your-neondb-owner-password
+
+# Cloudflare + GitHub Actions deployment
+CLOUDFLARE_API_TOKEN=your-cloudflare-api-token
+CLOUDFLARE_ZONE_ID=your-zone-id
+CLOUDFLARE_ACCOUNT_ID=your-account-id
+BASE_DOMAIN=schoolorbit.app
+GITHUB_TOKEN=ghp_your-github-personal-access-token
+GITHUB_REPO=akephisit/schoolorbit-new
+GITHUB_REPOSITORY=akephisit/schoolorbit-new
+
+# Cloudflare R2 / S3-compatible storage
+R2_ACCOUNT_ID=your-r2-account-id
+R2_ACCESS_KEY_ID=your-r2-access-key-id
+R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
+R2_BUCKET_NAME=schoolorbit-files
+R2_PUBLIC_URL=https://pub-xxxxx.r2.dev
+R2_REGION=auto
+CDN_URL=
+
+# File upload limits
+MAX_FILE_SIZE_MB=10
+MAX_PROFILE_IMAGE_SIZE_MB=5
+MAX_DOCUMENT_SIZE_MB=20
+ALLOWED_IMAGE_TYPES=jpg,jpeg,png,webp,gif
+ALLOWED_DOCUMENT_TYPES=pdf,doc,docx,xls,xlsx
+
+# Web Push Notifications
+# Generate with: npx web-push generate-vapid-keys
+VAPID_PUBLIC_KEY=your-vapid-public-key
+VAPID_PRIVATE_KEY=your-vapid-private-key
+VAPID_SUBJECT=mailto:admin@schoolorbit.app
+```
+
+ไม่ต้องใส่ `ADMIN_DATABASE_URL`, `DB_USER`, หรือ `ALLOWED_ORIGINS` ใน stack นี้แล้ว
 
 จากนั้นสั่ง Update Stack:
 ```bash
