@@ -41,3 +41,16 @@ SMOKE_REMEMBER_ME=true
 ```
 
 Do not commit sandbox passwords or production credentials. Pass them as environment variables only.
+
+## GitHub Actions
+
+The `Smoke Test Sandbox` workflow can be run manually from GitHub Actions. It uses the same `scripts/smoke_test.sh` script and defaults to `sandbox.schoolorbit.app`.
+
+For authenticated checks, configure repository secrets:
+
+```bash
+SMOKE_USERNAME
+SMOKE_PASSWORD
+```
+
+Run it from Actions with `run_authenticated=true` to test login and authenticated `/api/auth/me`. Use `run_authenticated=false` for public endpoint and CORS checks only.
