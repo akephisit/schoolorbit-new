@@ -9,7 +9,7 @@ test.describe('sandbox login', () => {
 		'Set E2E_USERNAME/E2E_PASSWORD or SMOKE_USERNAME/SMOKE_PASSWORD to run login E2E.'
 	);
 
-	test('logs in and reaches an authenticated app route', async ({ page, context, baseURL }) => {
+	test('logs in and reaches an authenticated app route', async ({ page, context }) => {
 		await page.goto('/login');
 
 		await expect(page.getByRole('heading', { name: 'เข้าสู่ระบบ' })).toBeVisible();
@@ -23,7 +23,7 @@ test.describe('sandbox login', () => {
 
 		await expect(page).toHaveURL(/\/(staff|student|parent)\/?(?:[?#].*)?$/);
 
-		const cookies = await context.cookies(baseURL ?? undefined);
+		const cookies = await context.cookies();
 		expect(cookies.some((cookie) => cookie.name === 'auth_token')).toBe(true);
 	});
 });
