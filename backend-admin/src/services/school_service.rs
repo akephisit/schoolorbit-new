@@ -12,6 +12,19 @@ impl SchoolService {
         Self { pool }
     }
 
+    async fn mark_school_failed(&self, school_id: Uuid, status: &str, reason: &str) {
+        eprintln!("⚠️  Marking school {} as {}: {}", school_id, status, reason);
+
+        if let Err(e) = sqlx::query("UPDATE schools SET status = $1, updated_at = NOW() WHERE id = $2")
+            .bind(status)
+            .bind(school_id)
+            .execute(&self.pool)
+            .await
+        {
+            eprintln!("⚠️  Failed to update school status after provisioning error: {}", e);
+        }
+    }
+
     pub async fn create_school(&self, data: CreateSchool) -> Result<School, AppError> {
         // Validate subdomain format (lowercase, alphanumeric, hyphens)
         if !data.subdomain.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
@@ -53,18 +66,6 @@ impl SchoolService {
 
         println!("✅ Database created with ID: {}", db_id);
 
-        // Wait for database to be ready
-        neon_client
-            .wait_for_database_ready(&db_name)
-            .await
-            .map_err(|e| {
-                // Rollback: Delete database if wait fails
-                let _ = async {
-                    neon_client.delete_database(db_id).await
-                };
-                AppError::ExternalServiceError(format!("Database not ready: {}", e))
-            })?;
-
         // Get Neon database password from environment
         // This is the password for neondb_owner role in your Neon project
         let db_password = std::env::var("NEON_DB_PASSWORD")
@@ -77,6 +78,20 @@ impl SchoolService {
             "neondb_owner",
             &db_password,
         );
+
+        // Wait for Neon to finish creating the database and for Postgres to accept connections.
+        if let Err(e) = neon_client.wait_for_database_ready(&db_name).await {
+            let _ = neon_client.delete_database_by_name(&db_name).await;
+            return Err(AppError::ExternalServiceError(format!("Database not ready: {}", e)));
+        }
+
+        if let Err(e) = neon_client
+            .wait_for_database_connectable(&db_connection_string)
+            .await
+        {
+            let _ = neon_client.delete_database_by_name(&db_name).await;
+            return Err(AppError::ExternalServiceError(format!("Database connection not ready: {}", e)));
+        }
 
         // Create school record
         let school = sqlx::query_as::<_, School>(
@@ -122,7 +137,8 @@ impl SchoolService {
             Err(e) => {
                 eprintln!("❌ Failed to provision tenant: {}", e);
                 // Rollback: Delete database
-                let _ = neon_client.delete_database(db_id).await;
+                self.mark_school_failed(school_id, "provision_failed", &e).await;
+                let _ = neon_client.delete_database_by_name(&db_name).await;
                 return Err(AppError::ExternalServiceError(format!("Tenant provisioning failed: {}", e)));
             }
         }
@@ -607,15 +623,23 @@ impl SchoolService {
 
         // Wait for database to be ready
         logger.info("⏳ Waiting for database to be ready...").await;
-        neon_client
-            .wait_for_database_ready(&db_name)
+        if let Err(e) = neon_client.wait_for_database_ready(&db_name).await {
+            let reason = format!("Database not ready: {}", e);
+            self.mark_school_failed(school_id, "provision_failed", &reason).await;
+            let _ = neon_client.delete_database_by_name(&db_name).await;
+            return Err(AppError::ExternalServiceError(reason));
+        }
+
+        logger.info("⏳ Waiting for database connection to be ready...").await;
+        if let Err(e) = neon_client
+            .wait_for_database_connectable(&connection_string)
             .await
-            .map_err(|e| {
-                let _ = async {
-                    neon_client.delete_database_by_name(&db_name).await
-                };
-                AppError::ExternalServiceError(format!("Database not ready: {}", e))
-            })?;
+        {
+            let reason = format!("Database connection not ready: {}", e);
+            self.mark_school_failed(school_id, "provision_failed", &reason).await;
+            let _ = neon_client.delete_database_by_name(&db_name).await;
+            return Err(AppError::ExternalServiceError(reason));
+        }
 
         logger.success("✅ Database is ready").await;
 
@@ -628,7 +652,7 @@ impl SchoolService {
             .unwrap_or_else(|_| "default-secret".to_string());
 
         let client = reqwest::Client::new();
-        let response = client
+        let response = match client
             .post(format!("{}/internal/provision", backend_school_url))
             .header("X-Internal-Secret", internal_api_secret)
             .json(&serde_json::json!({
@@ -643,13 +667,26 @@ impl SchoolService {
             }))
             .send()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Provision request failed: {}", e)))?;
+        {
+            Ok(response) => response,
+            Err(e) => {
+                let reason = format!("Provision request failed: {}", e);
+                self.mark_school_failed(school_id, "provision_failed", &reason).await;
+                let _ = neon_client.delete_database_by_name(&db_name).await;
+                return Err(AppError::ExternalServiceError(reason));
+            }
+        };
 
         if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            let reason = format!("Tenant provisioning failed ({}): {}", status, error_text);
+            self.mark_school_failed(school_id, "provision_failed", &reason).await;
             let _ = neon_client.delete_database_by_name(&db_name).await;
-            return Err(AppError::ExternalServiceError(
-                format!("Tenant provisioning failed: {}", response.status())
-            ));
+            return Err(AppError::ExternalServiceError(reason));
         }
 
         logger.success("✅ Tenant database provisioned").await;

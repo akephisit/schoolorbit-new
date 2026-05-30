@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use sqlx::postgres::PgPoolOptions;
 use std::env;
 
 #[derive(Debug, Serialize)]
@@ -129,26 +130,48 @@ impl NeonClient {
             self.project_id, self.branch_id, db_name
         );
 
-        println!("      Neon API: DELETE {}", url);
+        let max_attempts = 12;
 
-        let response = self
-            .client
-            .delete(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .send()
-            .await
-            .map_err(|e| format!("Failed to delete database: {}", e))?;
+        for attempt in 1..=max_attempts {
+            println!("      Neon API: DELETE {} (attempt {}/{})", url, attempt, max_attempts);
 
-        let status = response.status();
-        println!("      Neon API Response: {}", status);
+            let response = self
+                .client
+                .delete(&url)
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .send()
+                .await
+                .map_err(|e| format!("Failed to delete database: {}", e))?;
 
-        if !status.is_success() {
+            let status = response.status();
+            println!("      Neon API Response: {}", status);
+
+            if status.is_success() {
+                let response_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "{}".to_string());
+
+                println!("      Neon API Success: {}", response_text);
+                return Ok(());
+            }
+
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             
             println!("      Neon API Error: {}", error_text);
+
+            let is_locked = status.as_u16() == 423
+                || error_text.contains("conflicting operations")
+                || error_text.contains("Locked");
+
+            if is_locked && attempt < max_attempts {
+                println!("      Neon project is locked by another operation; retrying in 5s...");
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                continue;
+            }
             
             return Err(format!(
                 "Failed to delete database ({}): {}",
@@ -156,15 +179,7 @@ impl NeonClient {
             ));
         }
 
-        // Get response body for verification
-        let response_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "{}".to_string());
-        
-        println!("      Neon API Success: {}", response_text);
-
-        Ok(())
+        Err("Failed to delete database: retry attempts exhausted".to_string())
     }
 
     /// Delete a database by ID (deprecated - use delete_database_by_name)
@@ -245,7 +260,7 @@ impl NeonClient {
                 
                 // Check if our database is in the list
                 if text.contains(db_name) {
-                    println!("✅ Database is ready!");
+                    println!("✅ Database is listed in Neon API");
                     return Ok(());
                 }
             }
@@ -259,5 +274,43 @@ impl NeonClient {
         }
         
         Err(format!("Timeout waiting for database '{}' to be ready", db_name))
+    }
+
+    /// Wait until PostgreSQL accepts connections to the newly created database.
+    ///
+    /// Neon can return the database in the API list while its create operation is
+    /// still running. A real connection check prevents provisioning from racing
+    /// ahead into a database that is listed but not usable yet.
+    pub async fn wait_for_database_connectable(&self, database_url: &str) -> Result<(), String> {
+        println!("⏳ Waiting for database to accept connections...");
+
+        let max_attempts = 60;
+
+        for attempt in 1..=max_attempts {
+            match PgPoolOptions::new()
+                .max_connections(1)
+                .acquire_timeout(std::time::Duration::from_secs(5))
+                .connect(database_url)
+                .await
+            {
+                Ok(pool) => {
+                    pool.close().await;
+                    println!("✅ Database accepts PostgreSQL connections");
+                    return Ok(());
+                }
+                Err(e) => {
+                    if attempt % 5 == 0 {
+                        println!(
+                            "   Still waiting for database connection... ({}/{}) last error: {}",
+                            attempt, max_attempts, e
+                        );
+                    }
+                }
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+
+        Err("Timeout waiting for database to accept PostgreSQL connections".to_string())
     }
 }
