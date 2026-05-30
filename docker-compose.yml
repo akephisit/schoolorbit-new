@@ -44,8 +44,10 @@ services:
       - CLOUDFLARE_ZONE_ID=${CLOUDFLARE_ZONE_ID:-}
       - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-}
       - BASE_DOMAIN=${BASE_DOMAIN:-schoolorbit.app}
+      - API_URL=${API_URL:-https://school-api.schoolorbit.app}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_REPO=${GITHUB_REPO:-akephisit/schoolorbit-new}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-akephisit/schoolorbit-new}
     depends_on:
       postgres:
         condition: service_healthy

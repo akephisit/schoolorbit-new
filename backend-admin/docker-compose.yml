@@ -33,9 +33,9 @@ services:
       - API_URL=${API_URL}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - GITHUB_REPO=${GITHUB_REPO:-akephisit/schoolorbit-new}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-akephisit/schoolorbit-new}
 
       # General
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - RUST_LOG=${RUST_LOG:-info}
     networks:
       - web_network

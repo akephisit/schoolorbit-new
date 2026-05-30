@@ -60,7 +60,7 @@ jobs:
             ],
             "vars": {
               "PUBLIC_BACKEND_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
-              "PUBLIC_VAPID_KEY": "${{ secrets.PUBLIC_VAPID_KEY }}",
+              "PUBLIC_VAPID_KEY": "${{ secrets.VAPID_PUBLIC_KEY }}",
               "SCHOOL_ID": "${{ inputs.school_id }}",
               "SUBDOMAIN": "${{ inputs.subdomain }}",
               "VITE_DEPLOY_KEY": "${{ secrets.DEPLOY_KEY }}"
@@ -72,7 +72,7 @@ jobs:
         working-directory: frontend-school
         env:
           PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
-          PUBLIC_VAPID_KEY: ${{ secrets.PUBLIC_VAPID_KEY }}
+          PUBLIC_VAPID_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VITE_DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           SUBDOMAIN: ${{ inputs.subdomain }}
         run: npm run build

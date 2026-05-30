@@ -15,7 +15,6 @@ services:
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - DB_USER=${DB_USER}
       # Server config
       - RUST_LOG=${RUST_LOG:-info}
       - HOST=${HOST:-0.0.0.0}
@@ -42,7 +41,7 @@ services:
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
       - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@schoolorbit.app}
       # Note: DATABASE_URL is no longer needed (multi-tenant architecture)
-      # Note: ALLOWED_ORIGINS is only for backend-admin
+      # Note: ADMIN_DATABASE_URL is no longer needed; backend-school uses BACKEND_ADMIN_URL
     networks:
       - web_network
     healthcheck:
