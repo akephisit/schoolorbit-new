@@ -98,6 +98,16 @@ If adding "User Profile Edit" feature:
 * **Configuration:** All secrets (Database URL, Salt, Keys) must come from Environment Variables (`std::env::var`).
 * **Ports:** Backend must listen on `0.0.0.0` (not `127.0.0.1`) inside Docker.
 
+## 7. Testing & Sandbox Verification
+* **Smoke tests:** Use `scripts/smoke_test.sh` for production-like sandbox checks. Pass credentials through environment variables only (`SMOKE_USERNAME`, `SMOKE_PASSWORD`); never commit sandbox passwords.
+* **Browser E2E:** `frontend-school` uses Playwright for live sandbox login checks. Run from `frontend-school` with `npm run test:e2e` and provide `E2E_BASE_URL`, `E2E_USERNAME`, and `E2E_PASSWORD` or the equivalent `SMOKE_*` variables.
+* **Cross-origin auth cookies:** The tenant frontend runs on `*.schoolorbit.app`, but the backend cookie is set by `school-api.schoolorbit.app`. Playwright tests that assert `auth_token` should inspect the browser context cookies, not only tenant-domain cookies.
+* **Ubuntu 26.04 local Playwright:** Until Playwright ships official Ubuntu 26.04 browser builds, use `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` for local install/run commands. Do not rely on `npx playwright install-deps` on Ubuntu 26.04 because it can request Ubuntu 24.04 package names that no longer exist. Install the needed native packages directly when required:
+  ```bash
+  sudo apt install -y libnspr4 libnss3 libasound2t64 libxss1 fonts-liberation
+  ```
+* **GitHub Actions:** The `E2E Sandbox` workflow is pinned to `ubuntu-24.04` for Playwright browser support.
+
 
 You are able to use the Svelte MCP server, where you have access to comprehensive Svelte 5 and SvelteKit documentation. Here's how to use the available tools effectively:
 

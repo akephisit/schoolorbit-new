@@ -8,6 +8,7 @@ Project conventions are documented in [`.rules`](./.rules). Please read that fil
 - **Realtime / WebSocket** — heartbeat ping/pong, reconnection strategy, ConnectedClients in AppState
 - **PDPA / Security** — `national_id` MUST be encrypted + blind-indexed, never logged plaintext
 - **Deployment** — env-driven config, container networking, port binding to `0.0.0.0`
+- **Testing** — sandbox smoke tests, Playwright E2E, Ubuntu 26.04 Playwright caveats
 
 ## Key references
 
@@ -38,6 +39,9 @@ All three resolve to the same `timetable_service::list_entries()` under the hood
 Business logic lives in `modules/<feature>/services/<feature>_service.rs`. Handlers should be thin: permission check → service call → format response (+ broadcast WS events). The `academic/timetable` module is the reference example — see `services/timetable_service.rs`. Other modules (admission, staff, study_plans) still have fat handlers and are pending refactor.
 
 Pattern: services receive `&PgPool` and return `Result<T, AppError>` or an outcome enum (`CreateEntryOutcome`, `SwapOutcome`, etc.) so handlers can decide HTTP/WS responses without coupling business logic to Axum.
+
+### Sandbox smoke/E2E testing
+Use `scripts/smoke_test.sh` for API/CORS/auth smoke checks and `frontend-school` Playwright tests for browser login checks. Credentials must come from env vars (`SMOKE_*` or `E2E_*`), never committed. On Ubuntu 26.04 local machines, use `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`; see `.rules` and `docs/TESTING.md` for the native package caveat.
 
 ### Common analysis pitfalls in this repo
 

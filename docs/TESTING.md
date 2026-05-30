@@ -75,7 +75,13 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromiu
 If Chromium launches with missing shared libraries such as `libnspr4.so`, install the native dependencies:
 
 ```bash
-PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install-deps chromium
+sudo apt install -y libnspr4 libnss3 libasound2t64 libxss1 fonts-liberation
+```
+
+Then verify the installed Playwright browser has no missing shared libraries:
+
+```bash
+ldd ~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell | grep "not found" || echo "deps ok"
 ```
 
 Run the test:
@@ -84,6 +90,16 @@ Run the test:
 E2E_BASE_URL=https://sandbox.schoolorbit.app \
 E2E_USERNAME=T0001 \
 E2E_PASSWORD='your-sandbox-password' \
+npm run test:e2e
+```
+
+On Ubuntu 26.04, include the same platform override when running the test:
+
+```bash
+E2E_BASE_URL=https://sandbox.schoolorbit.app \
+E2E_USERNAME=T0001 \
+E2E_PASSWORD='your-sandbox-password' \
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
 npm run test:e2e
 ```
 
