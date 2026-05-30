@@ -106,3 +106,44 @@ npm run test:e2e
 The test also accepts `SMOKE_USERNAME` and `SMOKE_PASSWORD`, so the same secrets can be reused in GitHub Actions.
 
 The `E2E Sandbox` workflow runs the same Playwright test manually from GitHub Actions. It expects repository secrets named `SMOKE_USERNAME` and `SMOKE_PASSWORD`, and is pinned to `ubuntu-24.04` for Playwright browser support.
+
+## Sandbox Seed
+
+Use the seed script when the sandbox tenant needs deterministic test data. The script is idempotent and only manages the sandbox fixtures it owns:
+
+- staff/admin login user: `T0001` by default, or `SANDBOX_ADMIN_USERNAME`
+- student login user: `SBX0001`
+- parent login user: `P0001`
+- active academic year and two semesters
+- one `ม.1/1` classroom with the seeded student enrolled
+- minimal study plan/version required by classroom creation
+
+The script refuses to run against a non-`sandbox` subdomain or a database URL that does not look like sandbox unless `SANDBOX_ALLOW_NON_SANDBOX=1` is set.
+
+Resolve the tenant database URL through backend-admin:
+
+```bash
+SANDBOX_SUBDOMAIN=sandbox \
+SANDBOX_ADMIN_API_URL=https://admin-api.schoolorbit.app \
+INTERNAL_API_SECRET='your-internal-secret' \
+SANDBOX_SEED_PASSWORD='your-sandbox-password' \
+./scripts/seed_sandbox.sh
+```
+
+Or pass the tenant database URL directly:
+
+```bash
+SANDBOX_DATABASE_URL='postgresql://...' \
+SANDBOX_SEED_PASSWORD='your-sandbox-password' \
+./scripts/seed_sandbox.sh
+```
+
+Optional overrides:
+
+```bash
+SANDBOX_ADMIN_USERNAME=T0001
+SANDBOX_ACADEMIC_YEAR=2569
+SANDBOX_STUDENT_PASSWORD='student-password'
+SANDBOX_PARENT_PASSWORD='parent-password'
+SANDBOX_SKIP_MIGRATIONS=1
+```
