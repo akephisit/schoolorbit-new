@@ -24,12 +24,12 @@
 | **แก้ไข** | เปลี่ยนเป็น `DashMap<String, Arc<tokio::sync::Mutex<bool>>>` เพื่อให้แต่ละ school มี lock ของตัวเอง |
 | **ความยาก** | Small |
 
-### C-2. Broken rollback เมื่อ provisioning ล้มเหลว
+### ✅ C-2. Broken rollback เมื่อ provisioning ล้มเหลว — เสร็จแล้ว
 | | |
 |---|---|
 | **ไฟล์** | `backend-admin/src/services/school_service.rs` (บรรทัด 60-66) |
-| **ปัญหา** | `let _ = async { neon_client.delete_database(...) };` สร้าง future แต่ **ไม่ได้ `.await`** ทำให้ Neon database ถูกสร้างค้างโดยไม่มีการลบ — เสียเงินและ subdomain ติด |
-| **แก้ไข** | เพิ่ม `.await` และเพิ่ม rollback สำหรับ school record ที่ค้างใน DB |
+| **ที่ทำ** | รวม provisioning rollback path ให้ `await` การลบ Neon DB จริง, report cleanup failure กลับไปกับ primary error, mark school เป็น `provision_failed` ก่อน cleanup, และลบ school record ออกเมื่อ Neon DB rollback สำเร็จเพื่อให้ subdomain ใช้ซ้ำได้ |
+| **ผลลัพธ์** | SSE และ non-SSE create flow ไม่กลบ rollback error ด้วย `let _ =` อีกต่อไป และ deployment failure ถูก mark เป็น `deployment_failed` แบบตรวจ error ได้ |
 | **ความยาก** | Small (fix bug) / Medium (rollback สมบูรณ์) |
 
 ### C-3. PII (national_id) ยังไม่ได้เข้ารหัสครบ
