@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     national_id TEXT, -- Encrypted (Base64 AES-GCM)
-    national_id_hash TEXT UNIQUE, -- Blind Index (HMAC-SHA256 Hex)
+    national_id_hash TEXT UNIQUE, -- Blind Index (SHA256 Hex)
     email VARCHAR(255) UNIQUE,
     username VARCHAR(100) UNIQUE, -- Added username field
     password_hash VARCHAR(255) NOT NULL,
