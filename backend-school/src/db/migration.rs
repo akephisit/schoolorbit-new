@@ -1,13 +1,17 @@
+use dashmap::DashMap;
 use sqlx::PgPool;
 use std::collections::HashSet;
+use std::future::Future;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 /// Track which schools have been migrated and synced in this session
 #[derive(Clone)]
 pub struct MigrationTracker {
     migrated: Arc<RwLock<HashSet<String>>>,
     permissions_synced: Arc<RwLock<HashSet<String>>>,
+    migration_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
+    permission_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl MigrationTracker {
@@ -15,31 +19,48 @@ impl MigrationTracker {
         Self {
             migrated: Arc::new(RwLock::new(HashSet::new())),
             permissions_synced: Arc::new(RwLock::new(HashSet::new())),
+            migration_locks: Arc::new(DashMap::new()),
+            permission_locks: Arc::new(DashMap::new()),
         }
     }
 
-    /// Check if school has been migrated
-    async fn is_migrated(&self, subdomain: &str) -> bool {
-        let migrated = self.migrated.read().await;
-        migrated.contains(subdomain)
-    }
+    async fn run_once<F, Fut>(
+        &self,
+        subdomain: &str,
+        completed: &RwLock<HashSet<String>>,
+        locks: &DashMap<String, Arc<Mutex<()>>>,
+        operation: F,
+    ) -> Result<bool, String>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<(), String>>,
+    {
+        {
+            let completed = completed.read().await;
+            if completed.contains(subdomain) {
+                return Ok(false);
+            }
+        }
 
-    /// Mark school as migrated
-    async fn mark_migrated(&self, subdomain: &str) {
-        let mut migrated = self.migrated.write().await;
-        migrated.insert(subdomain.to_string());
-    }
+        let lock = locks
+            .entry(subdomain.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        let _guard = lock.lock().await;
 
-    /// Check if permissions have been synced
-    async fn is_permissions_synced(&self, subdomain: &str) -> bool {
-        let synced = self.permissions_synced.read().await;
-        synced.contains(subdomain)
-    }
+        {
+            let completed = completed.read().await;
+            if completed.contains(subdomain) {
+                return Ok(false);
+            }
+        }
 
-    /// Mark permissions as synced
-    async fn mark_permissions_synced(&self, subdomain: &str) {
-        let mut synced = self.permissions_synced.write().await;
-        synced.insert(subdomain.to_string());
+        operation().await?;
+
+        let mut completed = completed.write().await;
+        completed.insert(subdomain.to_string());
+
+        Ok(true)
     }
 
     /// Run migrations for a school (once per session)
@@ -48,24 +69,18 @@ impl MigrationTracker {
         subdomain: &str,
         pool: &PgPool,
     ) -> Result<bool, String> {
-        // Check if already migrated
-        if self.is_migrated(subdomain).await {
-            return Ok(false); // Already migrated
-        }
+        self.run_once(subdomain, &self.migrated, &self.migration_locks, || async {
+            println!("🔄 Running migrations for school: {}", subdomain);
 
-        println!("🔄 Running migrations for school: {}", subdomain);
+            sqlx::migrate!("./migrations")
+                .run(pool)
+                .await
+                .map_err(|e| format!("Migration failed for {}: {}", subdomain, e))?;
 
-        // Run migrations
-        sqlx::migrate!("./migrations")
-            .run(pool)
-            .await
-            .map_err(|e| format!("Migration failed for {}: {}", subdomain, e))?;
-
-        // Mark as migrated
-        self.mark_migrated(subdomain).await;
-
-        println!("✅ Migrations completed for: {}", subdomain);
-        Ok(true) // Newly migrated
+            println!("✅ Migrations completed for: {}", subdomain);
+            Ok(())
+        })
+        .await
     }
 
     /// Sync permissions for a school (once per session)
@@ -74,23 +89,22 @@ impl MigrationTracker {
         subdomain: &str,
         pool: &PgPool,
     ) -> Result<bool, String> {
-        // Check if already synced
-        if self.is_permissions_synced(subdomain).await {
-            return Ok(false); // Already synced
-        }
+        self.run_once(
+            subdomain,
+            &self.permissions_synced,
+            &self.permission_locks,
+            || async {
+                println!("🔄 Syncing permissions for school: {}", subdomain);
 
-        println!("🔄 Syncing permissions for school: {}", subdomain);
+                crate::utils::permission_sync::sync_permissions(pool)
+                    .await
+                    .map_err(|e| format!("Permission sync failed for {}: {}", subdomain, e))?;
 
-        // Sync permissions
-        crate::utils::permission_sync::sync_permissions(pool)
-            .await
-            .map_err(|e| format!("Permission sync failed for {}: {}", subdomain, e))?;
-
-        // Mark as synced
-        self.mark_permissions_synced(subdomain).await;
-
-        println!("✅ Permissions synced for: {}", subdomain);
-        Ok(true) // Newly synced
+                println!("✅ Permissions synced for: {}", subdomain);
+                Ok(())
+            },
+        )
+        .await
     }
 
     /// Get list of migrated schools
@@ -109,5 +123,60 @@ impl MigrationTracker {
 impl Default for MigrationTracker {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use tokio::time::{sleep, Duration};
+
+    #[tokio::test]
+    async fn run_once_allows_only_one_concurrent_operation_per_subdomain() {
+        let tracker = MigrationTracker::new();
+        let operation_count = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
+
+        for _ in 0..20 {
+            let tracker = tracker.clone();
+            let operation_count = operation_count.clone();
+
+            handles.push(tokio::spawn(async move {
+                tracker
+                    .run_once(
+                        "sandbox",
+                        &tracker.migrated,
+                        &tracker.migration_locks,
+                        || {
+                            let operation_count = operation_count.clone();
+                            async move {
+                                operation_count.fetch_add(1, Ordering::SeqCst);
+                                sleep(Duration::from_millis(20)).await;
+                                Ok(())
+                            }
+                        },
+                    )
+                    .await
+            }));
+        }
+
+        let mut newly_run = 0;
+        for handle in handles {
+            if handle
+                .await
+                .expect("task should finish")
+                .expect("run_once should succeed")
+            {
+                newly_run += 1;
+            }
+        }
+
+        assert_eq!(newly_run, 1);
+        assert_eq!(operation_count.load(Ordering::SeqCst), 1);
+        assert_eq!(tracker.migration_count().await, 1);
     }
 }

@@ -16,12 +16,12 @@
 
 ## 🔴 Priority 1: Critical — แก้ไขทันที
 
-### C-1. Race condition ใน lazy migration/permission sync
+### ✅ C-1. Race condition ใน lazy migration/permission sync — เสร็จแล้ว
 | | |
 |---|---|
 | **ไฟล์** | `backend-school/src/db/migration.rs` |
-| **ปัญหา** | `MigrationTracker` ใช้ `RwLock<HashSet>` — check และ execute ไม่ atomic ถ้า 2 request มาพร้อมกันตอน cold start จะรัน migration ซ้ำ อาจทำให้ data seed ซ้ำหรือ error |
-| **แก้ไข** | เปลี่ยนเป็น `DashMap<String, Arc<tokio::sync::Mutex<bool>>>` เพื่อให้แต่ละ school มี lock ของตัวเอง |
+| **ที่ทำ** | เพิ่ม per-subdomain lock ด้วย `DashMap<String, Arc<tokio::sync::Mutex<()>>>` และ helper `run_once()` ที่ re-check สถานะหลังได้ lock ก่อน execute |
+| **ผลลัพธ์** | request tenant เดียวกันตอน cold start จะรัน migration/permission sync ได้แค่ครั้งเดียว ส่วน tenant คนละ subdomain ยังทำงานขนานกันได้ |
 | **ความยาก** | Small |
 
 ### ✅ C-2. Broken rollback เมื่อ provisioning ล้มเหลว — เสร็จแล้ว
