@@ -72,6 +72,8 @@
 | **ไฟล์** | `backend-admin/src/services/school_service.rs` |
 | **ปัญหา** | provisioning logic ซ้ำกัน 2 ชุด (SSE/non-SSE) — bug C-2 เกิดเพราะแก้ใน SSE version แต่ลืม non-SSE |
 | **แก้ไข** | แยก `ProvisioningOrchestrator` ที่รับ logger callback ทั้ง SSE และ non-SSE handler เรียกตัวเดียวกัน |
+| **ทำแล้วบางส่วน** | แยก helper สำหรับ validate subdomain, db name, active config และให้ SSE ใช้ `BackendSchoolClient` ร่วมกับ non-SSE แทนการยิง `reqwest` ตรง |
+| **เหลือ** | รวม orchestration ทั้งก้อนให้เป็น flow เดียว โดยต้องตัดสินใจลำดับสร้าง Neon DB/record และ behavior การรอ GitHub Actions ให้ชัดก่อน |
 | **ความยาก** | Large |
 
 ### H-3. `schools.config` เป็น untyped `serde_json::Value`

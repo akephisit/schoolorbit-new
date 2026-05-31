@@ -19,6 +19,35 @@ fn build_provisioning_failure_message(primary_error: &str, cleanup_errors: &[Str
     )
 }
 
+fn validate_school_subdomain(subdomain: &str) -> Result<(), AppError> {
+    if subdomain
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return Ok(());
+    }
+
+    Err(AppError::ValidationError(
+        "Subdomain must contain only lowercase letters, numbers, and hyphens".to_string(),
+    ))
+}
+
+fn build_school_database_name(subdomain: &str) -> String {
+    format!("schoolorbit_{}", subdomain)
+}
+
+fn build_active_school_config(
+    db_id: i64,
+    dns_record_id: &str,
+    deployment_url: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "db_id": db_id,
+        "dns_record_id": dns_record_id,
+        "deployment_url": deployment_url,
+    })
+}
+
 impl SchoolService {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
@@ -126,17 +155,31 @@ impl SchoolService {
         AppError::ExternalServiceError(build_provisioning_failure_message(&reason, &cleanup_errors))
     }
 
+    async fn provision_tenant_database(
+        &self,
+        client: &crate::clients::backend_school_client::BackendSchoolClient,
+        school_id: Uuid,
+        db_connection_string: &str,
+        data: &CreateSchool,
+    ) -> Result<(), String> {
+        client
+            .provision_tenant(
+                &school_id.to_string(),
+                db_connection_string,
+                &data.subdomain,
+                data.admin_username.as_deref(),
+                &data.admin_password,
+                &data.admin_title,
+                &data.admin_first_name,
+                &data.admin_last_name,
+            )
+            .await
+            .map(|_| ())
+    }
+
     pub async fn create_school(&self, data: CreateSchool) -> Result<School, AppError> {
         // Validate subdomain format (lowercase, alphanumeric, hyphens)
-        if !data
-            .subdomain
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
-            return Err(AppError::ValidationError(
-                "Subdomain must contain only lowercase letters, numbers, and hyphens".to_string(),
-            ));
-        }
+        validate_school_subdomain(&data.subdomain)?;
 
         // Check if subdomain already exists
         let exists = sqlx::query_scalar::<_, bool>(
@@ -154,7 +197,7 @@ impl SchoolService {
         }
 
         // Generate database name
-        let db_name = format!("schoolorbit_{}", data.subdomain);
+        let db_name = build_school_database_name(&data.subdomain);
 
         println!("🚀 Starting school provisioning for: {}", data.name);
 
@@ -261,16 +304,12 @@ impl SchoolService {
             }
         };
 
-        match backend_school_client
-            .provision_tenant(
-                &school_id.to_string(),
+        match self
+            .provision_tenant_database(
+                &backend_school_client,
+                school_id,
                 &db_connection_string,
-                &data.subdomain,
-                data.admin_username.as_deref(),
-                &data.admin_password,
-                &data.admin_title,
-                &data.admin_first_name,
-                &data.admin_last_name,
+                &data,
             )
             .await
         {
@@ -370,11 +409,7 @@ impl SchoolService {
         };
 
         // Update school record with deployment info
-        let config = serde_json::json!({
-            "db_id": db_id,
-            "dns_record_id": dns_record_id,
-            "deployment_url": subdomain_url,
-        });
+        let config = build_active_school_config(db_id, &dns_record_id, &subdomain_url);
 
         let updated_school = sqlx::query_as::<_, School>(
             r#"
@@ -725,16 +760,7 @@ impl SchoolService {
         logger.progress(0, 4, "Validating input...").await;
 
         // Validation (same as create_school)
-        // Validation (same as create_school)
-        if !data
-            .subdomain
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
-            return Err(AppError::ValidationError(
-                "Subdomain must contain only lowercase letters, numbers, and hyphens".to_string(),
-            ));
-        }
+        validate_school_subdomain(&data.subdomain)?;
 
         let exists = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM schools WHERE subdomain = $1)",
@@ -761,7 +787,7 @@ impl SchoolService {
         let neon_host = std::env::var("NEON_HOST")
             .unwrap_or_else(|_| "ep-xyz.us-east-1.aws.neon.tech".to_string());
 
-        let db_name = format!("schoolorbit_{}", data.subdomain);
+        let db_name = build_school_database_name(&data.subdomain);
         let connection_string = format!(
             "postgresql://neondb_owner:{}@{}/{}?sslmode=require",
             db_password, neon_host, db_name
@@ -851,46 +877,32 @@ impl SchoolService {
             .progress(2, 5, "Provisioning tenant database...")
             .await;
 
-        let backend_school_url = std::env::var("BACKEND_SCHOOL_URL")
-            .unwrap_or_else(|_| "https://school-api.schoolorbit.app".to_string());
-        let internal_api_secret =
-            std::env::var("INTERNAL_API_SECRET").unwrap_or_else(|_| "default-secret".to_string());
-
-        let client = reqwest::Client::new();
-        let response = match client
-            .post(format!("{}/internal/provision", backend_school_url))
-            .header("X-Internal-Secret", internal_api_secret)
-            .json(&serde_json::json!({
-                "schoolId": school_id.to_string(),
-                "dbConnectionString": connection_string,
-                "subdomain": data.subdomain,
-                "adminUsername": data.admin_username,
-                "adminPassword": data.admin_password,
-                "adminTitle": data.admin_title,
-                "adminFirstName": data.admin_first_name,
-                "adminLastName": data.admin_last_name,
-            }))
-            .send()
-            .await
-        {
-            Ok(response) => response,
+        use crate::clients::backend_school_client::BackendSchoolClient;
+        let backend_school_client = match BackendSchoolClient::new() {
+            Ok(client) => client,
             Err(e) => {
-                let reason = format!("Provision request failed: {}", e);
                 return Err(self
-                    .rollback_failed_provisioning(Some(school_id), &neon_client, &db_name, reason)
+                    .rollback_failed_provisioning(
+                        Some(school_id),
+                        &neon_client,
+                        &db_name,
+                        format!("Backend-school client error: {}", e),
+                    )
                     .await);
             }
         };
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            let reason = format!("Tenant provisioning failed ({}): {}", status, error_text);
+        if let Err(e) = self
+            .provision_tenant_database(&backend_school_client, school_id, &connection_string, &data)
+            .await
+        {
             return Err(self
-                .rollback_failed_provisioning(Some(school_id), &neon_client, &db_name, reason)
+                .rollback_failed_provisioning(
+                    Some(school_id),
+                    &neon_client,
+                    &db_name,
+                    format!("Tenant provisioning failed: {}", e),
+                )
                 .await);
         }
 
@@ -969,11 +981,7 @@ impl SchoolService {
         // Step 4: Update school status to active
         logger.progress(4, 5, "Finalizing school setup...").await;
 
-        let config = serde_json::json!({
-            "db_id": db_id,
-            "dns_record_id": "",
-            "deployment_url": subdomain_url,
-        });
+        let config = build_active_school_config(db_id, "", &subdomain_url);
 
         let school = sqlx::query_as::<_, School>(
             r#"
@@ -1086,7 +1094,10 @@ impl SchoolService {
 
 #[cfg(test)]
 mod tests {
-    use super::build_provisioning_failure_message;
+    use super::{
+        build_active_school_config, build_provisioning_failure_message, build_school_database_name,
+        validate_school_subdomain,
+    };
 
     #[test]
     fn provisioning_failure_message_keeps_primary_error_when_cleanup_succeeds() {
@@ -1109,5 +1120,28 @@ mod tests {
         assert!(message.contains("Rollback cleanup also failed"));
         assert!(message.contains("failed to delete Neon database 'schoolorbit_test': locked"));
         assert!(message.contains("failed to delete school record: connection closed"));
+    }
+
+    #[test]
+    fn school_database_name_uses_schoolorbit_prefix() {
+        assert_eq!(build_school_database_name("sandbox"), "schoolorbit_sandbox");
+    }
+
+    #[test]
+    fn active_school_config_records_database_and_deployment_url() {
+        let config = build_active_school_config(42, "", "https://sandbox.schoolorbit.app");
+
+        assert_eq!(config["db_id"], 42);
+        assert_eq!(config["dns_record_id"], "");
+        assert_eq!(config["deployment_url"], "https://sandbox.schoolorbit.app");
+    }
+
+    #[test]
+    fn subdomain_validation_rejects_symbols() {
+        let error = validate_school_subdomain("bad_domain").unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Subdomain must contain only lowercase letters"));
     }
 }
