@@ -6,15 +6,17 @@ Project conventions are documented in [`.rules`](./.rules). Please read that fil
 - **Backend (Rust + Axum + sqlx)** — error handling without panics, thin handlers, AppState patterns
 - **Frontend (SvelteKit 5 + TypeScript + Tailwind)** — `+page.server.ts` loaders, Svelte stores, custom API client
 - **Realtime / WebSocket** — heartbeat ping/pong, reconnection strategy, ConnectedClients in AppState
-- **PDPA / Security** — `national_id` MUST be encrypted + blind-indexed, never logged plaintext
+- **PDPA / Security** — `national_id` MUST be AES-GCM encrypted + HMAC blind-indexed, never logged plaintext
+- **Migration safety** — never edit applied migrations; add a new migration even for DB comments
 - **Deployment** — env-driven config, container networking, port binding to `0.0.0.0`
 - **Testing** — sandbox smoke tests, Playwright E2E, Ubuntu 26.04 Playwright caveats
 
 ## Key references
 
 - `/docs/` — architecture, feature guides, setup
+- `/docs/TESTING.md` — local backend checks, migration safety, smoke tests, browser E2E
 - `/IMPROVEMENT_PLAN.md` — outstanding refactor items (priority C/H/M/L)
-- `/TODO_ENCRYPTION.md` — pending encryption work in staff/student handlers (C-3)
+- `/TODO_ENCRYPTION.md` — current encryption standard and operational notes
 - `/backend-school/migrations/` — schema evolution
 - `/backend-school/src/modules/` — feature-based module structure (handlers + services + models)
 
@@ -26,7 +28,10 @@ These are easy-to-miss patterns that have tripped up dev/AI in the past.
 Sub-components (e.g. `calendar/calendar-day.svelte`) are imported via `index.ts` aliases, not by filename. Searching for `import.*calendar-day` will miss usage. To verify a component is used, grep the `index.ts` re-exports first, then grep for the aliased name (`Day`, `Cell`, `Grid`, ...).
 
 ### Encryption: AES-GCM app-side is the standard
-Use `backend-school/src/utils/field_encryption.rs` (AES-256-GCM, app-side) for new encrypted fields. The repo also contains `utils/encryption.rs` (PostgreSQL pgcrypto) — **legacy, do not extend**. Decryption helper: `utils/decrypt_helpers.rs`.
+Use `backend-school/src/utils/field_encryption.rs` for new encrypted fields. `national_id` values are stored as app-side AES-256-GCM ciphertext using `ENCRYPTION_KEY`; `*_national_id_hash` values are keyed HMAC-SHA256 blind indexes using `BLIND_INDEX_KEY`. The repo also contains `utils/encryption.rs` (PostgreSQL pgcrypto) — **legacy, do not extend**. Decryption helper: `utils/decrypt_helpers.rs`.
+
+### Migration files are immutable after apply
+Do not edit old migration files, even to fix comments. `sqlx` checks migration checksums and tenant startup will fail if an applied file changes. Add a new sequential migration for schema, index, data, or comment changes.
 
 ### Timetable API split: `/api/me/` vs `/api/academic/`
 - `GET /api/me/timetable` — self-view for student/staff (backend resolves user_id from JWT, no permission required)

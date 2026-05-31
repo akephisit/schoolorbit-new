@@ -2,6 +2,58 @@
 
 This project uses a sandbox tenant for production-like smoke tests without touching real school data.
 
+## Before Commit
+
+Always run a diff sanity check from the repository root:
+
+```bash
+git diff --check
+git status --short
+```
+
+Use focused tests for the code you changed. Do not run broad formatting or cleanup commands unless the task is specifically about formatting.
+
+## Backend Checks
+
+For `backend-school` changes:
+
+```bash
+cd backend-school
+cargo check
+```
+
+For encryption or `national_id` / admission PII changes, also run:
+
+```bash
+cd backend-school
+cargo test utils::field_encryption::tests --bin backend-school
+cargo test modules::admission::services::pii::tests --bin backend-school
+```
+
+These tests require no real secrets; they set test-only `ENCRYPTION_KEY` and `BLIND_INDEX_KEY` internally.
+
+For `backend-admin` changes:
+
+```bash
+cd backend-admin
+cargo check
+```
+
+Existing backend warnings are tracked separately. Do not run `cargo fix` as part of unrelated work.
+
+## Migration Safety
+
+Never edit a migration that may already have been applied, even for comments. `sqlx` stores migration checksums and tenant startup will fail if an applied migration file changes.
+
+Correct workflow:
+
+1. Add a new sequential migration file.
+2. Put schema, index, data, or comment changes in the new migration.
+3. Run `git diff --check`.
+4. Let backend-school apply the new migration during tenant startup or run the migration flow explicitly in a controlled environment.
+
+If a checksum mismatch appears, restore the original migration file content. Do not edit the database migration checksum to hide the mismatch.
+
 ## Sandbox Smoke Test
 
 Run the smoke test from the repository root:
