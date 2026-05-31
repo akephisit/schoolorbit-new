@@ -58,13 +58,13 @@
 
 ## 🟠 Priority 2: High — แก้ในระยะสั้น
 
-### H-1. OnceLock DB pool ป้องกัน testing
+### ✅ H-1. OnceLock DB pool ป้องกัน testing — เสร็จแล้ว
 | | |
 |---|---|
-| **ไฟล์** | `backend-admin/src/main.rs`, `backend-admin/src/handlers/*.rs` |
+| **ไฟล์** | `backend-admin/src/app.rs`, `backend-admin/src/state.rs`, `backend-admin/src/main.rs`, `backend-admin/src/handlers/*.rs` |
 | **ปัญหา** | handlers แต่ละไฟล์มี `static DB_POOL: OnceLock<PgPool>` ของตัวเอง ทดสอบไม่ได้ (`OnceLock::set` ครั้งที่ 2 silent fail) ต่างจาก backend-school ที่ใช้ `State<AppState>` ถูกต้อง |
-| **แก้ไข** | สร้าง `AppState { pool: PgPool }` และส่งผ่าน `.with_state()` — mechanical refactor ไม่เปลี่ยน behavior |
-| **ความยาก** | Medium |
+| **ที่ทำ** | เพิ่ม `AppState { pool: PgPool }`, ย้าย router ไป `build_app(state)`, ให้ handlers รับ `State<AppState>` และเพิ่ม integration test ว่า app สร้างจาก state ที่ส่งเข้าไปได้ |
+| **ตรวจสอบ** | `cargo test`, `cargo check`, grep ไม่พบ `OnceLock`/`DB_POOL` ใน backend-admin |
 
 ### H-2. `school_service.rs` 783 บรรทัด มี logic ซ้ำ
 | | |

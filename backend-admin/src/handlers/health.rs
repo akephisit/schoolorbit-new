@@ -1,13 +1,6 @@
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use crate::AppState;
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde_json::{json, Value};
-use sqlx::PgPool;
-use std::sync::OnceLock;
-
-static DB_POOL: OnceLock<PgPool> = OnceLock::new();
-
-pub fn init_pool(pool: PgPool) {
-    DB_POOL.set(pool).ok();
-}
 
 pub fn health_response_from_db_result(db_result: Result<(), String>) -> (StatusCode, Value) {
     match db_result {
@@ -31,15 +24,12 @@ pub fn health_response_from_db_result(db_result: Result<(), String>) -> (StatusC
     }
 }
 
-pub async fn health_check() -> impl IntoResponse {
-    let db_result = match DB_POOL.get() {
-        Some(pool) => sqlx::query("SELECT 1")
-            .execute(pool)
-            .await
-            .map(|_| ())
-            .map_err(|_| "database ping failed".to_string()),
-        None => Err("database not initialized".to_string()),
-    };
+pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let db_result = sqlx::query("SELECT 1")
+        .execute(&state.pool)
+        .await
+        .map(|_| ())
+        .map_err(|_| "database ping failed".to_string());
 
     let (status, body) = health_response_from_db_result(db_result);
     (status, Json(body))

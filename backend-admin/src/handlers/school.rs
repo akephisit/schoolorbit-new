@@ -1,22 +1,15 @@
 use crate::models::{CreateSchool, School, UpdateSchool};
 use crate::services::SchoolService;
+use crate::types::ApiResponse;
+use crate::AppState;
 use axum::{
-    extract::{Path, Query},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
 use serde::{Deserialize, Serialize};
-use crate::types::ApiResponse;
-use sqlx::PgPool;
-use std::sync::OnceLock;
 use uuid::Uuid;
-
-static DB_POOL: OnceLock<PgPool> = OnceLock::new();
-
-pub fn init_pool(pool: PgPool) {
-    DB_POOL.set(pool).ok();
-}
 
 #[derive(Debug, Deserialize)]
 pub struct PaginationQuery {
@@ -44,19 +37,11 @@ pub struct SchoolListResponse {
 }
 
 // Create school
-pub async fn create_school(Json(data): Json<CreateSchool>) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Database not initialized"})),
-            )
-                .into_response();
-        }
-    };
-
-    let service = SchoolService::new(pool);
+pub async fn create_school(
+    State(state): State<AppState>,
+    Json(data): Json<CreateSchool>,
+) -> Response {
+    let service = SchoolService::new(state.pool.clone());
 
     match service.create_school(data).await {
         Ok(school) => {
@@ -72,19 +57,11 @@ pub async fn create_school(Json(data): Json<CreateSchool>) -> Response {
 }
 
 // List schools with pagination
-pub async fn list_schools(Query(params): Query<PaginationQuery>) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Database not initialized"})),
-            )
-                .into_response();
-        }
-    };
-
-    let service = SchoolService::new(pool);
+pub async fn list_schools(
+    State(state): State<AppState>,
+    Query(params): Query<PaginationQuery>,
+) -> Response {
+    let service = SchoolService::new(state.pool.clone());
 
     match service.list_schools(params.page, params.limit).await {
         Ok((schools, total)) => {
@@ -107,19 +84,8 @@ pub async fn list_schools(Query(params): Query<PaginationQuery>) -> Response {
 }
 
 // Get school by ID
-pub async fn get_school(Path(id): Path<Uuid>) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Database not initialized"})),
-            )
-                .into_response();
-        }
-    };
-
-    let service = SchoolService::new(pool);
+pub async fn get_school(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
+    let service = SchoolService::new(state.pool.clone());
 
     match service.get_school(id).await {
         Ok(school) => {
@@ -135,19 +101,12 @@ pub async fn get_school(Path(id): Path<Uuid>) -> Response {
 }
 
 // Update school
-pub async fn update_school(Path(id): Path<Uuid>, Json(data): Json<UpdateSchool>) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Database not initialized"})),
-            )
-                .into_response();
-        }
-    };
-
-    let service = SchoolService::new(pool);
+pub async fn update_school(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(data): Json<UpdateSchool>,
+) -> Response {
+    let service = SchoolService::new(state.pool.clone());
 
     match service.update_school(id, data).await {
         Ok(school) => {
@@ -163,19 +122,8 @@ pub async fn update_school(Path(id): Path<Uuid>, Json(data): Json<UpdateSchool>)
 }
 
 // Delete school
-pub async fn delete_school(Path(id): Path<Uuid>) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Database not initialized"})),
-            )
-                .into_response();
-        }
-    };
-
-    let service = SchoolService::new(pool);
+pub async fn delete_school(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
+    let service = SchoolService::new(state.pool.clone());
 
     match service.delete_school(id).await {
         Ok(_) => (
@@ -192,19 +140,8 @@ pub async fn delete_school(Path(id): Path<Uuid>) -> Response {
 }
 
 // Deploy/Redeploy school frontend
-pub async fn deploy_school(Path(id): Path<Uuid>) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Database not initialized"})),
-            )
-                .into_response();
-        }
-    };
-
-    let service = SchoolService::new(pool);
+pub async fn deploy_school(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
+    let service = SchoolService::new(state.pool.clone());
 
     match service.deploy_school(id).await {
         Ok(result) => {
@@ -225,19 +162,11 @@ pub struct BulkDeployRequest {
 }
 
 // Bulk deploy multiple schools
-pub async fn bulk_deploy_schools(Json(data): Json<BulkDeployRequest>) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Database not initialized"})),
-            )
-                .into_response();
-        }
-    };
-
-    let service = SchoolService::new(pool);
+pub async fn bulk_deploy_schools(
+    State(state): State<AppState>,
+    Json(data): Json<BulkDeployRequest>,
+) -> Response {
+    let service = SchoolService::new(state.pool.clone());
 
     match service.bulk_deploy_schools(data.school_ids).await {
         Ok(results) => {
@@ -253,19 +182,11 @@ pub async fn bulk_deploy_schools(Json(data): Json<BulkDeployRequest>) -> Respons
 }
 
 // Get deployment history for a school
-pub async fn get_deployment_history(Path(id): Path<Uuid>) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Database not initialized"})),
-            )
-                .into_response();
-        }
-    };
-
-    let service = SchoolService::new(pool);
+pub async fn get_deployment_history(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let service = SchoolService::new(state.pool.clone());
 
     match service.get_deployment_history(id).await {
         Ok(history) => {

@@ -1,12 +1,7 @@
-use backend_admin::{handlers, middleware};
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use backend_admin::{build_app, AppState};
 use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use std::env;
-use tower_cookies::CookieManagerLayer;
 
 #[tokio::main]
 async fn main() {
@@ -16,7 +11,7 @@ async fn main() {
 
     // Database setup
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(std::time::Duration::from_secs(30))
@@ -35,52 +30,11 @@ async fn main() {
 
     println!("✅ Database migrations completed");
 
-    // Initialize handlers with database pool
-    handlers::auth::init_pool(pool.clone());
-    handlers::health::init_pool(pool.clone());
-    handlers::school::init_pool(pool.clone());
-    handlers::school_sse::init_pool(pool.clone());
-    handlers::internal::init_pool(pool.clone());
-
     println!("✅ Services initialized");
     println!("🔐 CORS handling delegated to nginx reverse proxy");
 
-    // Build application 
-    let app = Router::new()
-        // Public routes
-        .route("/", get(|| async {
-            serde_json::json!({
-                "service": "SchoolOrbit Backend Admin",
-                "version": "0.1.0",
-                "status": "running"
-            }).to_string()
-        }))
-        .route("/health", get(handlers::health::health_check))
-        .route("/api/v1/auth/login", post(handlers::auth::login_handler))
-        .route("/api/v1/auth/logout", post(handlers::auth::logout_handler))
-        .route("/api/v1/auth/me", get(handlers::auth::me_handler))
-        // Internal routes (protected by INTERNAL_API_SECRET header)
-        .route("/internal/schools", get(handlers::internal::list_schools_internal))
-        .route("/internal/schools/{subdomain}", get(handlers::internal::get_school_by_subdomain_internal))
-        .route("/internal/schools/{subdomain}/migration-status", axum::routing::put(handlers::internal::update_migration_status_internal))
-        // Protected routes (require authentication)
-        .nest("/api/v1/schools", Router::new()
-            .route("/", post(handlers::school::create_school))
-            .route("/", get(handlers::school::list_schools))
-            .route("/{id}", get(handlers::school::get_school))
-            .route("/{id}", axum::routing::put(handlers::school::update_school))
-            .route("/{id}", axum::routing::delete(handlers::school::delete_school))
-            // SSE endpoints for real-time logs
-            .route("/stream", post(handlers::school_sse::create_school_sse))
-            .route("/{id}/stream", axum::routing::delete(handlers::school_sse::delete_school_sse))
-            // Deployment endpoints
-            .route("/{id}/deploy", post(handlers::school::deploy_school))
-            .route("/deploy/bulk", post(handlers::school::bulk_deploy_schools))
-            .route("/{id}/deployments", get(handlers::school::get_deployment_history))
-            .layer(axum::middleware::from_fn(middleware::auth::require_auth))
-        )
-        // Global layers
-        .layer(CookieManagerLayer::new());
+    // Build application
+    let app = build_app(AppState::new(pool));
 
     println!("🌐 Server starting on http://0.0.0.0:8080");
     println!("\n✅ Available endpoints:");
@@ -101,7 +55,5 @@ async fn main() {
         .await
         .expect("Failed to bind to port 8080");
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server failed");
+    axum::serve(listener, app).await.expect("Server failed");
 }

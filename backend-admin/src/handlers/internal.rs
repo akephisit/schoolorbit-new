@@ -1,21 +1,18 @@
+use crate::AppState;
 use axum::{
-    extract::{Path, Query},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
-use std::sync::OnceLock;
-
-static DB_POOL: OnceLock<PgPool> = OnceLock::new();
-
-pub fn init_pool(pool: PgPool) {
-    DB_POOL.set(pool).ok();
-}
 
 fn verify_internal_secret(headers: &HeaderMap) -> Result<(), (StatusCode, String)> {
-    let internal_secret = std::env::var("INTERNAL_API_SECRET")
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Server configuration error".to_string()))?;
+    let internal_secret = std::env::var("INTERNAL_API_SECRET").map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Server configuration error".to_string(),
+        )
+    })?;
 
     let auth_header = headers
         .get("X-Internal-Secret")
@@ -83,15 +80,11 @@ struct SchoolRow {
 /// Internal endpoint to list schools - protected by INTERNAL_API_SECRET
 /// Used by GitHub Actions, backend-school cleanup, and migration tracking
 pub async fn list_schools_internal(
+    State(state): State<AppState>,
     headers: HeaderMap,
     Query(params): Query<ListSchoolsQuery>,
 ) -> Result<Json<ListSchoolsResponse>, (StatusCode, String)> {
     verify_internal_secret(&headers)?;
-
-    let pool = DB_POOL.get().ok_or((
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Database not initialized".to_string(),
-    ))?;
 
     let schools = sqlx::query_as::<_, SchoolRow>(
         "SELECT id, subdomain, name, status, db_connection_string,
@@ -99,7 +92,7 @@ pub async fn list_schools_internal(
          FROM schools
          ORDER BY created_at DESC",
     )
-    .fetch_all(pool)
+    .fetch_all(&state.pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -136,15 +129,11 @@ pub async fn list_schools_internal(
 /// Internal endpoint to get a single school by subdomain - protected by INTERNAL_API_SECRET
 /// Used by backend-school to resolve tenant database URL on each request
 pub async fn get_school_by_subdomain_internal(
+    State(state): State<AppState>,
     headers: HeaderMap,
     Path(subdomain): Path<String>,
 ) -> Result<Json<SchoolInfo>, (StatusCode, String)> {
     verify_internal_secret(&headers)?;
-
-    let pool = DB_POOL.get().ok_or((
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Database not initialized".to_string(),
-    ))?;
 
     let school = sqlx::query_as::<_, SchoolRow>(
         "SELECT id, subdomain, name, status, db_connection_string,
@@ -153,7 +142,7 @@ pub async fn get_school_by_subdomain_internal(
          WHERE subdomain = $1 AND status IN ('active', 'provisioning')",
     )
     .bind(&subdomain)
-    .fetch_optional(pool)
+    .fetch_optional(&state.pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .ok_or((
@@ -177,16 +166,12 @@ pub async fn get_school_by_subdomain_internal(
 /// Internal endpoint to update migration status - protected by INTERNAL_API_SECRET
 /// Called by backend-school after migrating a tenant database
 pub async fn update_migration_status_internal(
+    State(state): State<AppState>,
     headers: HeaderMap,
     Path(subdomain): Path<String>,
     Json(body): Json<UpdateMigrationStatusRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     verify_internal_secret(&headers)?;
-
-    let pool = DB_POOL.get().ok_or((
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Database not initialized".to_string(),
-    ))?;
 
     sqlx::query(
         "UPDATE schools
@@ -201,7 +186,7 @@ pub async fn update_migration_status_internal(
     .bind(&body.migration_status)
     .bind(&body.migration_error)
     .bind(&subdomain)
-    .execute(pool)
+    .execute(&state.pool)
     .await
     .map_err(|e| {
         (

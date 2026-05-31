@@ -2,43 +2,28 @@ use crate::auth::validate_token;
 use crate::models::LoginRequest;
 use crate::services::AuthService;
 use crate::types::ApiResponse;
+use crate::AppState;
 use axum::{
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
-use std::sync::OnceLock;
 use tower_cookies::{Cookie, Cookies};
 use uuid::Uuid;
-
-static DB_POOL: OnceLock<PgPool> = OnceLock::new();
-
-pub fn init_pool(pool: PgPool) {
-    DB_POOL.set(pool).ok();
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginResponse {
     pub user: serde_json::Value,
 }
 
-pub async fn login_handler(cookies: Cookies, Json(credentials): Json<LoginRequest>) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "Database not initialized"
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    let auth_service = AuthService::new(pool);
+pub async fn login_handler(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    Json(credentials): Json<LoginRequest>,
+) -> Response {
+    let auth_service = AuthService::new(state.pool.clone());
 
     match auth_service.login(credentials).await {
         Ok((admin, token)) => {
@@ -92,20 +77,7 @@ pub async fn logout_handler(cookies: Cookies) -> Response {
         .into_response()
 }
 
-pub async fn me_handler(cookies: Cookies) -> Response {
-    let pool = match DB_POOL.get() {
-        Some(pool) => pool.clone(),
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "Database not initialized"
-                })),
-            )
-                .into_response();
-        }
-    };
-
+pub async fn me_handler(State(state): State<AppState>, cookies: Cookies) -> Response {
     // Get auth_token from cookies
     let token = match cookies.get("auth_token") {
         Some(cookie) => cookie.value().to_string(),
@@ -145,7 +117,7 @@ pub async fn me_handler(cookies: Cookies) -> Response {
     }
 
     // Get user from database
-    let auth_service = AuthService::new(pool);
+    let auth_service = AuthService::new(state.pool.clone());
     let user_id = match Uuid::parse_str(&claims.sub) {
         Ok(id) => id,
         Err(_) => {
