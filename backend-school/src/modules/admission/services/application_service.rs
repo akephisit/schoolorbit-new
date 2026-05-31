@@ -1,10 +1,36 @@
 use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
+use crate::modules::admission::services::pii;
 use crate::utils::file_url::FileUrlBuilder;
 use chrono::{Datelike, FixedOffset, Utc};
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
+
+fn pii_error(context: &str, error: String) -> AppError {
+    eprintln!("Admission PII {} failed: {}", context, error);
+    AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
+}
+
+fn decrypt_application(
+    mut application: AdmissionApplication,
+) -> Result<AdmissionApplication, AppError> {
+    pii::decrypt_application_pii(&mut application)
+        .map_err(|error| pii_error("decrypt application", error))?;
+    Ok(application)
+}
+
+fn decrypt_national_id(value: &mut String) -> Result<(), AppError> {
+    *value =
+        pii::decrypt_required(value).map_err(|error| pii_error("decrypt national_id", error))?;
+    Ok(())
+}
+
+fn decrypt_optional_national_id(value: &mut Option<String>) -> Result<(), AppError> {
+    *value = pii::decrypt_optional(value.as_deref())
+        .map_err(|error| pii_error("decrypt optional national_id", error))?;
+    Ok(())
+}
 
 // ==========================================
 // Public submit
@@ -15,18 +41,22 @@ pub async fn submit_application(
     round_id: Uuid,
     payload: SubmitApplicationRequest,
 ) -> Result<(String, AdmissionApplication), AppError> {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM admission_rounds WHERE id = $1",
-    )
-    .bind(round_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM admission_rounds WHERE id = $1")
+            .bind(round_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
     match status.as_deref() {
         None => return Err(AppError::NotFound("ไม่พบรอบรับสมัคร".to_string())),
         Some("open") => {}
-        Some(s) => return Err(AppError::BadRequest(format!("รอบรับสมัครไม่ได้เปิดรับ (สถานะ: {})", s))),
+        Some(s) => {
+            return Err(AppError::BadRequest(format!(
+                "รอบรับสมัครไม่ได้เปิดรับ (สถานะ: {})",
+                s
+            )))
+        }
     }
 
     let track_exists: bool = sqlx::query_scalar(
@@ -42,7 +72,17 @@ pub async fn submit_application(
         return Err(AppError::BadRequest("สายการเรียนไม่ถูกต้อง".to_string()));
     }
 
-    let mut tx = pool.begin().await
+    let encrypted_pii = pii::encrypt_application_pii(
+        &payload.national_id,
+        payload.father_national_id.as_deref(),
+        payload.mother_national_id.as_deref(),
+        payload.guardian_national_id.as_deref(),
+    )
+    .map_err(|error| pii_error("encrypt submit application", error))?;
+
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     let (year, round_number): (i32, i64) = sqlx::query_as(
@@ -64,24 +104,33 @@ pub async fn submit_application(
         .map_err(|_| AppError::InternalServerError("Lock failed".to_string()))?;
 
     let already_applied: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE national_id = $1 AND admission_round_id = $2)",
+        "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE national_id_hash = $1 AND admission_round_id = $2)",
     )
-    .bind(&payload.national_id)
+    .bind(&encrypted_pii.national_id_hash)
     .bind(round_id)
     .fetch_one(&mut *tx)
     .await
     .unwrap_or(false);
 
     if already_applied {
-        return Err(AppError::BadRequest("เลขบัตรประชาชนนี้ได้สมัครรอบนี้ไปแล้ว".to_string()));
+        return Err(AppError::BadRequest(
+            "เลขบัตรประชาชนนี้ได้สมัครรอบนี้ไปแล้ว".to_string(),
+        ));
     }
 
     let _ = year;
-    let bangkok = FixedOffset::east_opt(7 * 3600)
-        .ok_or_else(|| AppError::InternalServerError("ไม่สามารถสร้าง timezone offset ได้".to_string()))?;
+    let bangkok = FixedOffset::east_opt(7 * 3600).ok_or_else(|| {
+        AppError::InternalServerError("ไม่สามารถสร้าง timezone offset ได้".to_string())
+    })?;
     let now = Utc::now().with_timezone(&bangkok);
     let be_year = now.year() + 543;
-    let app_prefix = format!("{:02}{:02}{:02}{:02}", be_year % 100, now.month(), now.day(), round_number);
+    let app_prefix = format!(
+        "{:02}{:02}{:02}{:02}",
+        be_year % 100,
+        now.month(),
+        now.day(),
+        round_number
+    );
     let app_pattern = format!("{}%", app_prefix);
 
     let max_seq: i64 = sqlx::query_scalar(
@@ -94,7 +143,9 @@ pub async fn submit_application(
     .bind(&app_pattern)
     .fetch_one(&mut *tx)
     .await
-    .map_err(|_| AppError::InternalServerError("Failed to compute application number".to_string()))?;
+    .map_err(|_| {
+        AppError::InternalServerError("Failed to compute application number".to_string())
+    })?;
 
     let application_number = format!("{}{:05}", app_prefix, max_seq + 1);
 
@@ -115,7 +166,8 @@ pub async fn submit_application(
             current_sub_district, current_district, current_province, current_postal_code, current_phone,
             previous_study_year, previous_school_province,
             father_income, mother_income,
-            parent_status, parent_status_other
+            parent_status, parent_status_other,
+            national_id_hash, father_national_id_hash, mother_national_id_hash, guardian_national_id_hash
         )
         VALUES (
             $1, $2, $3,
@@ -132,7 +184,8 @@ pub async fn submit_application(
             $47, $48, $49, $50, $51,
             $52, $53,
             $54, $55,
-            $56, $57
+            $56, $57,
+            $58, $59, $60, $61
         )
         RETURNING *,
             (SELECT name FROM admission_tracks WHERE id = $2) AS track_name,
@@ -143,7 +196,7 @@ pub async fn submit_application(
     .bind(round_id)
     .bind(payload.admission_track_id)
     .bind(&application_number)
-    .bind(&payload.national_id)
+    .bind(&encrypted_pii.national_id)
     .bind(&payload.title)
     .bind(&payload.first_name)
     .bind(&payload.last_name)
@@ -162,15 +215,15 @@ pub async fn submit_application(
     .bind(&payload.father_name)
     .bind(&payload.father_phone)
     .bind(&payload.father_occupation)
-    .bind(&payload.father_national_id)
+    .bind(&encrypted_pii.father_national_id)
     .bind(&payload.mother_name)
     .bind(&payload.mother_phone)
     .bind(&payload.mother_occupation)
-    .bind(&payload.mother_national_id)
+    .bind(&encrypted_pii.mother_national_id)
     .bind(&payload.guardian_name)
     .bind(&payload.guardian_phone)
     .bind(&payload.guardian_relation)
-    .bind(&payload.guardian_national_id)
+    .bind(&encrypted_pii.guardian_national_id)
     .bind(&payload.guardian_occupation)
     .bind(payload.guardian_income)
     .bind(&payload.guardian_is)
@@ -197,6 +250,10 @@ pub async fn submit_application(
     .bind(payload.mother_income)
     .bind(&payload.parent_status)
     .bind(&payload.parent_status_other)
+    .bind(&encrypted_pii.national_id_hash)
+    .bind(&encrypted_pii.father_national_id_hash)
+    .bind(&encrypted_pii.mother_national_id_hash)
+    .bind(&encrypted_pii.guardian_national_id_hash)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
@@ -204,8 +261,11 @@ pub async fn submit_application(
         AppError::InternalServerError("ไม่สามารถยื่นใบสมัครได้".to_string())
     })?;
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+
+    let application = decrypt_application(application)?;
 
     Ok((application_number, application))
 }
@@ -264,9 +324,13 @@ pub async fn list_applications(
     if let Some(ref search) = filter.search {
         if !search.is_empty() {
             let like_term = format!("%{}%", search);
-            query.push(" AND (aa.national_id ILIKE ");
-            query.push_bind(like_term.clone());
-            query.push(" OR aa.first_name ILIKE ");
+            let national_id_hash = pii::hash_required(search)
+                .map_err(|error| pii_error("hash application list search national_id", error))?;
+            query.push(" AND (");
+            query.push("aa.national_id_hash = ");
+            query.push_bind(national_id_hash);
+            query.push(" OR ");
+            query.push("aa.first_name ILIKE ");
             query.push_bind(like_term.clone());
             query.push(" OR aa.last_name ILIKE ");
             query.push_bind(like_term.clone());
@@ -277,13 +341,20 @@ pub async fn list_applications(
     }
     query.push(" ORDER BY aa.created_at ASC");
 
-    query.build_query_as::<AppListRow>()
+    let mut rows = query
+        .build_query_as::<AppListRow>()
         .fetch_all(pool)
         .await
         .map_err(|e| {
             eprintln!("Failed to list applications: {}", e);
             AppError::InternalServerError("Failed to fetch applications".to_string())
-        })
+        })?;
+
+    for row in &mut rows {
+        decrypt_national_id(&mut row.national_id)?;
+    }
+
+    Ok(rows)
 }
 
 pub async fn get_application_with_documents(
@@ -310,6 +381,7 @@ pub async fn get_application_with_documents(
         AppError::InternalServerError("Failed to fetch application".to_string())
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
+    let application = decrypt_application(application)?;
 
     let documents = sqlx::query_as::<_, ApplicationDocument>(
         r#"
@@ -345,7 +417,11 @@ pub async fn get_application_with_documents(
 // Verify / Reject / Absent / Update / Unverify / Delete
 // ==========================================
 
-pub async fn verify_application(pool: &PgPool, id: Uuid, verifier_id: Uuid) -> Result<(), AppError> {
+pub async fn verify_application(
+    pool: &PgPool,
+    id: Uuid,
+    verifier_id: Uuid,
+) -> Result<(), AppError> {
     let result = sqlx::query(
         r#"
         UPDATE admission_applications
@@ -364,7 +440,9 @@ pub async fn verify_application(pool: &PgPool, id: Uuid, verifier_id: Uuid) -> R
     })?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::BadRequest("ไม่พบใบสมัคร หรือสถานะไม่ใช่ 'รอตรวจสอบ'".to_string()));
+        return Err(AppError::BadRequest(
+            "ไม่พบใบสมัคร หรือสถานะไม่ใช่ 'รอตรวจสอบ'".to_string(),
+        ));
     }
     Ok(())
 }
@@ -409,7 +487,21 @@ pub async fn mark_absent(pool: &PgPool, id: Uuid, absent: bool) -> Result<(), Ap
     Ok(())
 }
 
-pub async fn update_application(pool: &PgPool, id: Uuid, payload: UpdateApplicationRequest) -> Result<(), AppError> {
+pub async fn update_application(
+    pool: &PgPool,
+    id: Uuid,
+    payload: UpdateApplicationRequest,
+) -> Result<(), AppError> {
+    let father_national_id = pii::encrypt_optional(payload.father_national_id.as_deref())
+        .map_err(|error| pii_error("encrypt father national_id", error))?;
+    let father_national_id_hash = pii::hash_optional(payload.father_national_id.as_deref());
+    let mother_national_id = pii::encrypt_optional(payload.mother_national_id.as_deref())
+        .map_err(|error| pii_error("encrypt mother national_id", error))?;
+    let mother_national_id_hash = pii::hash_optional(payload.mother_national_id.as_deref());
+    let guardian_national_id = pii::encrypt_optional(payload.guardian_national_id.as_deref())
+        .map_err(|error| pii_error("encrypt guardian national_id", error))?;
+    let guardian_national_id_hash = pii::hash_optional(payload.guardian_national_id.as_deref());
+
     let result = sqlx::query(
         r#"
         UPDATE admission_applications
@@ -427,8 +519,9 @@ pub async fn update_application(pool: &PgPool, id: Uuid, payload: UpdateApplicat
             guardian_name = $45, guardian_phone = $46, guardian_relation = $47, guardian_national_id = $48,
             guardian_occupation = $49, guardian_income = $50, guardian_is = $51,
             parent_status = $52, parent_status_other = $53,
+            father_national_id_hash = $54, mother_national_id_hash = $55, guardian_national_id_hash = $56,
             updated_at = NOW()
-        WHERE id = $54 AND status NOT IN ('enrolled', 'withdrawn')
+        WHERE id = $57 AND status NOT IN ('enrolled', 'withdrawn')
         "#,
     )
     .bind(&payload.title).bind(&payload.first_name).bind(&payload.last_name)
@@ -444,12 +537,13 @@ pub async fn update_application(pool: &PgPool, id: Uuid, payload: UpdateApplicat
     .bind(&payload.previous_school).bind(&payload.previous_grade).bind(payload.previous_gpa)
     .bind(&payload.previous_study_year).bind(&payload.previous_school_province)
     .bind(&payload.father_name).bind(&payload.father_phone).bind(&payload.father_occupation)
-    .bind(&payload.father_national_id).bind(payload.father_income)
+    .bind(&father_national_id).bind(payload.father_income)
     .bind(&payload.mother_name).bind(&payload.mother_phone).bind(&payload.mother_occupation)
-    .bind(&payload.mother_national_id).bind(payload.mother_income)
+    .bind(&mother_national_id).bind(payload.mother_income)
     .bind(&payload.guardian_name).bind(&payload.guardian_phone).bind(&payload.guardian_relation)
-    .bind(&payload.guardian_national_id).bind(&payload.guardian_occupation).bind(payload.guardian_income)
+    .bind(&guardian_national_id).bind(&payload.guardian_occupation).bind(payload.guardian_income)
     .bind(&payload.guardian_is).bind(&payload.parent_status).bind(&payload.parent_status_other)
+    .bind(&father_national_id_hash).bind(&mother_national_id_hash).bind(&guardian_national_id_hash)
     .bind(id)
     .execute(pool)
     .await
@@ -460,7 +554,7 @@ pub async fn update_application(pool: &PgPool, id: Uuid, payload: UpdateApplicat
 
     if result.rows_affected() == 0 {
         return Err(AppError::BadRequest(
-            "ไม่พบใบสมัคร หรือไม่สามารถแก้ไขได้ (สถานะเป็น enrolled หรือ withdrawn)".to_string()
+            "ไม่พบใบสมัคร หรือไม่สามารถแก้ไขได้ (สถานะเป็น enrolled หรือ withdrawn)".to_string(),
         ));
     }
     Ok(())
@@ -483,23 +577,27 @@ pub async fn unverify_application(pool: &PgPool, id: Uuid) -> Result<(), AppErro
     })?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::BadRequest("ไม่พบใบสมัคร หรือสถานะไม่ใช่ 'ผ่านการตรวจสอบ'".to_string()));
+        return Err(AppError::BadRequest(
+            "ไม่พบใบสมัคร หรือสถานะไม่ใช่ 'ผ่านการตรวจสอบ'".to_string(),
+        ));
     }
     Ok(())
 }
 
 /// Return files (id, storage_path) ที่ต้องลบ R2 — handler รับผิดชอบ R2 cleanup
-pub async fn fetch_application_files_then_delete(pool: &PgPool, id: Uuid) -> Result<Vec<(Uuid, String)>, AppError> {
-    let app_number: Option<String> = sqlx::query_scalar(
-        "SELECT application_number FROM admission_applications WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Failed to fetch application {}: {}", id, e);
-        AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
-    })?;
+pub async fn fetch_application_files_then_delete(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Vec<(Uuid, String)>, AppError> {
+    let app_number: Option<String> =
+        sqlx::query_scalar("SELECT application_number FROM admission_applications WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to fetch application {}: {}", id, e);
+                AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
+            })?;
 
     if app_number.is_none() {
         return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
@@ -561,8 +659,11 @@ pub struct EnrollmentPendingRow {
     pub form_data: Option<serde_json::Value>,
 }
 
-pub async fn list_enrollment_pending(pool: &PgPool, round_id: Uuid) -> Result<Vec<EnrollmentPendingRow>, AppError> {
-    let list = sqlx::query_as::<_, EnrollmentPendingRow>(
+pub async fn list_enrollment_pending(
+    pool: &PgPool,
+    round_id: Uuid,
+) -> Result<Vec<EnrollmentPendingRow>, AppError> {
+    let mut list = sqlx::query_as::<_, EnrollmentPendingRow>(
         r#"
         SELECT
             aa.id, aa.application_number, aa.national_id,
@@ -589,6 +690,10 @@ pub async fn list_enrollment_pending(pool: &PgPool, round_id: Uuid) -> Result<Ve
     .await
     .unwrap_or_default();
 
+    for row in &mut list {
+        decrypt_national_id(&mut row.national_id)?;
+    }
+
     Ok(list)
 }
 
@@ -604,7 +709,9 @@ pub async fn complete_enrollment(
     payload: CompleteEnrollmentRequest,
     enroller_id: Uuid,
 ) -> Result<EnrollmentResult, AppError> {
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     let application = sqlx::query_as::<_, AdmissionApplication>(
@@ -617,7 +724,10 @@ pub async fn complete_enrollment(
     .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
 
     if application.status != "accepted" {
-        return Err(AppError::BadRequest(format!("ใบสมัครมีสถานะ '{}' ไม่สามารถมอบตัวได้", application.status)));
+        return Err(AppError::BadRequest(format!(
+            "ใบสมัครมีสถานะ '{}' ไม่สามารถมอบตัวได้",
+            application.status
+        )));
     }
 
     let class_room_id: Option<Uuid> = sqlx::query_scalar(
@@ -633,7 +743,11 @@ pub async fn complete_enrollment(
 
     let student_code = if let Some(code) = payload.student_code.filter(|c| !c.is_empty()) {
         code
-    } else if let Some(pre) = application.assigned_student_id.clone().filter(|c| !c.is_empty()) {
+    } else if let Some(pre) = application
+        .assigned_student_id
+        .clone()
+        .filter(|c| !c.is_empty())
+    {
         pre
     } else {
         let max_id: i64 = sqlx::query_scalar(
@@ -654,22 +768,24 @@ pub async fn complete_enrollment(
             "male" | "m" => "male",
             "female" | "f" => "female",
             _ => "other",
-        }.to_string()
+        }
+        .to_string()
     });
 
     let new_user_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO users (
-            username, national_id, password_hash,
+            username, national_id, national_id_hash, password_hash,
             first_name, last_name, user_type, status,
             phone, date_of_birth, gender, address
         )
-        VALUES ($1, $2, $3, $4, $5, 'student', 'active', $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, 'student', 'active', $7, $8, $9, $10)
         RETURNING id
         "#,
     )
     .bind(&username)
     .bind(&application.national_id)
+    .bind(&application.national_id_hash)
     .bind(&password_hash)
     .bind(&application.first_name)
     .bind(&application.last_name)
@@ -757,24 +873,58 @@ pub async fn complete_enrollment(
             let mut parent_entries: Vec<(String, String, String, String, String)> = Vec::new();
 
             if let Some(father) = fd.get("father") {
-                let phone = father.get("phone").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                let phone = father
+                    .get("phone")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 if !phone.is_empty() {
                     parent_entries.push((
-                        father.get("title").and_then(|v| v.as_str()).unwrap_or("นาย").to_string(),
-                        father.get("firstName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        father.get("lastName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        father
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("นาย")
+                            .to_string(),
+                        father
+                            .get("firstName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        father
+                            .get("lastName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         phone,
                         "father".to_string(),
                     ));
                 }
             }
             if let Some(mother) = fd.get("mother") {
-                let phone = mother.get("phone").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                let phone = mother
+                    .get("phone")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 if !phone.is_empty() {
                     parent_entries.push((
-                        mother.get("title").and_then(|v| v.as_str()).unwrap_or("นาง").to_string(),
-                        mother.get("firstName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        mother.get("lastName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        mother
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("นาง")
+                            .to_string(),
+                        mother
+                            .get("firstName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        mother
+                            .get("lastName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         phone,
                         "mother".to_string(),
                     ));
@@ -782,38 +932,56 @@ pub async fn complete_enrollment(
             }
             if let Some(guardians) = fd.get("guardians").and_then(|v| v.as_array()) {
                 for g in guardians {
-                    let phone = g.get("phone").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                    let phone = g
+                        .get("phone")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
                     if !phone.is_empty() {
                         parent_entries.push((
-                            g.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            g.get("firstName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            g.get("lastName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            g.get("title")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            g.get("firstName")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            g.get("lastName")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
                             phone,
-                            g.get("relationship").and_then(|v| v.as_str()).unwrap_or("guardian").to_string(),
+                            g.get("relationship")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("guardian")
+                                .to_string(),
                         ));
                     }
                 }
             }
 
             let mut seen_phones = std::collections::HashSet::new();
-            let parent_entries: Vec<_> = parent_entries.into_iter().filter(|(_, _, _, phone, _)| {
-                seen_phones.insert(phone.clone())
-            }).collect();
+            let parent_entries: Vec<_> = parent_entries
+                .into_iter()
+                .filter(|(_, _, _, phone, _)| seen_phones.insert(phone.clone()))
+                .collect();
 
             for (title, first_name, last_name, phone, relationship) in parent_entries {
-                let existing_parent_id: Option<Uuid> = sqlx::query_scalar(
-                    "SELECT id FROM users WHERE username = $1",
-                )
-                .bind(&phone)
-                .fetch_optional(&mut *tx)
-                .await
-                .unwrap_or(None);
+                let existing_parent_id: Option<Uuid> =
+                    sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
+                        .bind(&phone)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .unwrap_or(None);
 
                 let parent_id = if let Some(pid) = existing_parent_id {
                     pid
                 } else {
-                    let parent_password_hash = bcrypt::hash(&phone, 8)
-                        .map_err(|_| AppError::InternalServerError("Parent password hash failed".to_string()))?;
+                    let parent_password_hash = bcrypt::hash(&phone, 8).map_err(|_| {
+                        AppError::InternalServerError("Parent password hash failed".to_string())
+                    })?;
 
                     let pid: Uuid = sqlx::query_scalar(
                         r#"
@@ -836,12 +1004,13 @@ pub async fn complete_enrollment(
                         AppError::InternalServerError("ไม่สามารถสร้าง account ผู้ปกครองได้".to_string())
                     })?;
 
-                    let parent_role_id: Option<Uuid> =
-                        sqlx::query_scalar("SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true")
-                            .fetch_optional(&mut *tx)
-                            .await
-                            .ok()
-                            .flatten();
+                    let parent_role_id: Option<Uuid> = sqlx::query_scalar(
+                        "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true",
+                    )
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .ok()
+                    .flatten();
 
                     if let Some(rid) = parent_role_id {
                         let _ = sqlx::query(
@@ -894,7 +1063,8 @@ pub async fn complete_enrollment(
         AppError::InternalServerError("ไม่สามารถอัปเดตสถานะได้".to_string())
     })?;
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok(EnrollmentResult {
@@ -904,7 +1074,11 @@ pub async fn complete_enrollment(
     })
 }
 
-pub async fn change_application_track(pool: &PgPool, application_id: Uuid, track_id: Option<Uuid>) -> Result<(), AppError> {
+pub async fn change_application_track(
+    pool: &PgPool,
+    application_id: Uuid,
+    track_id: Option<Uuid>,
+) -> Result<(), AppError> {
     sqlx::query(
         "UPDATE admission_applications SET room_assignment_track_id = $1, updated_at = NOW() WHERE id = $2",
     )
@@ -923,7 +1097,11 @@ pub async fn change_application_track(pool: &PgPool, application_id: Uuid, track
     Ok(())
 }
 
-pub async fn update_admission_track(pool: &PgPool, application_id: Uuid, track_id: Uuid) -> Result<(), AppError> {
+pub async fn update_admission_track(
+    pool: &PgPool,
+    application_id: Uuid,
+    track_id: Uuid,
+) -> Result<(), AppError> {
     let result = sqlx::query(
         "UPDATE admission_applications SET admission_track_id = $1, room_assignment_track_id = NULL, updated_at = NOW() WHERE id = $2",
     )
@@ -951,10 +1129,19 @@ pub async fn update_admission_track(pool: &PgPool, application_id: Uuid, track_i
 // ==========================================
 
 pub const VALID_DOC_TYPES: &[&str] = &[
-    "photo_1_5inch", "transcript_por", "certificate_por7",
-    "id_card_student", "id_card_father", "id_card_mother", "id_card_guardian",
-    "house_reg_student", "house_reg_father", "house_reg_mother", "house_reg_guardian",
-    "name_change_doc", "birth_cert",
+    "photo_1_5inch",
+    "transcript_por",
+    "certificate_por7",
+    "id_card_student",
+    "id_card_father",
+    "id_card_mother",
+    "id_card_guardian",
+    "house_reg_student",
+    "house_reg_father",
+    "house_reg_mother",
+    "house_reg_guardian",
+    "name_change_doc",
+    "birth_cert",
 ];
 
 pub const ALLOWED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "pdf", "webp"];
@@ -1091,8 +1278,8 @@ pub async fn delete_document_record(
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
-    let (storage_path, file_id) = doc_info
-        .ok_or_else(|| AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()))?;
+    let (storage_path, file_id) =
+        doc_info.ok_or_else(|| AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()))?;
 
     sqlx::query(
         "DELETE FROM admission_application_documents WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL",
@@ -1103,7 +1290,11 @@ pub async fn delete_document_record(
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
-    sqlx::query("DELETE FROM files WHERE id = $1").bind(file_id).execute(pool).await.ok();
+    sqlx::query("DELETE FROM files WHERE id = $1")
+        .bind(file_id)
+        .execute(pool)
+        .await
+        .ok();
 
     Ok(storage_path)
 }
@@ -1151,7 +1342,11 @@ pub async fn sort_room_students(pool: &PgPool, round_id: Uuid) -> Result<i64, Ap
     Ok(updated)
 }
 
-pub async fn auto_assign_student_ids(pool: &PgPool, round_id: Uuid, start_number: i64) -> Result<i64, AppError> {
+pub async fn auto_assign_student_ids(
+    pool: &PgPool,
+    round_id: Uuid,
+    start_number: i64,
+) -> Result<i64, AppError> {
     let existing: Vec<String> = sqlx::query_scalar(
         "SELECT assigned_student_id FROM admission_applications WHERE admission_round_id = $1 AND assigned_student_id IS NOT NULL AND assigned_student_id != ''"
     )
@@ -1166,7 +1361,9 @@ pub async fn auto_assign_student_ids(pool: &PgPool, round_id: Uuid, start_number
         .collect();
 
     #[derive(sqlx::FromRow)]
-    struct AppIdRow { application_id: Uuid }
+    struct AppIdRow {
+        application_id: Uuid,
+    }
 
     let students = sqlx::query_as::<_, AppIdRow>(
         r#"
@@ -1188,7 +1385,9 @@ pub async fn auto_assign_student_ids(pool: &PgPool, round_id: Uuid, start_number
         AppError::InternalServerError("Database error".to_string())
     })?;
 
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     let mut next = start_number;
@@ -1212,14 +1411,18 @@ pub async fn auto_assign_student_ids(pool: &PgPool, round_id: Uuid, start_number
         next += 1;
     }
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok(assigned)
 }
 
-pub async fn list_student_ids(pool: &PgPool, round_id: Uuid) -> Result<Vec<StudentIdRow>, AppError> {
-    sqlx::query_as::<_, StudentIdRow>(
+pub async fn list_student_ids(
+    pool: &PgPool,
+    round_id: Uuid,
+) -> Result<Vec<StudentIdRow>, AppError> {
+    let mut rows = sqlx::query_as::<_, StudentIdRow>(
         r#"
         SELECT
             a.id AS application_id, a.application_number, a.assigned_student_id,
@@ -1250,7 +1453,13 @@ pub async fn list_student_ids(pool: &PgPool, round_id: Uuid) -> Result<Vec<Stude
     .map_err(|e| {
         eprintln!("list_student_ids error: {}", e);
         AppError::InternalServerError("Database error".to_string())
-    })
+    })?;
+
+    for row in &mut rows {
+        decrypt_optional_national_id(&mut row.national_id)?;
+    }
+
+    Ok(rows)
 }
 
 pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Result<(), AppError> {
@@ -1263,10 +1472,14 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
     .unwrap_or(None);
 
     if old_room_id.is_none() {
-        return Err(AppError::BadRequest("ยังไม่มีการจัดห้อง กรุณาบันทึกการจัดห้องก่อน".to_string()));
+        return Err(AppError::BadRequest(
+            "ยังไม่มีการจัดห้อง กรุณาบันทึกการจัดห้องก่อน".to_string(),
+        ));
     }
 
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     sqlx::query(
@@ -1297,7 +1510,8 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
     )
     .bind(room_id)
     .execute(&mut *tx)
-    .await.ok();
+    .await
+    .ok();
 
     if let Some(old_id) = old_room_id {
         if old_id != room_id {
@@ -1321,7 +1535,8 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
         }
     }
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     sqlx::query(
@@ -1350,7 +1565,11 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
     Ok(())
 }
 
-pub async fn batch_update_student_ids(pool: &PgPool, round_id: Uuid, payload: Vec<UpdateStudentIdItem>) -> Result<i64, AppError> {
+pub async fn batch_update_student_ids(
+    pool: &PgPool,
+    round_id: Uuid,
+    payload: Vec<UpdateStudentIdItem>,
+) -> Result<i64, AppError> {
     let app_ids: Vec<Uuid> = payload.iter().map(|i| i.application_id).collect();
     let student_ids: Vec<Option<String>> = payload.iter().map(|i| i.student_id.clone()).collect();
 
@@ -1384,7 +1603,10 @@ pub fn build_full_file_url(storage_path: &str) -> Result<String, AppError> {
     Ok(format!("{}/{}", url_builder.base_url(), storage_path))
 }
 
-pub fn document_upload_response_json(result: &DocumentUploadResult, doc_type: &str) -> Result<serde_json::Value, AppError> {
+pub fn document_upload_response_json(
+    result: &DocumentUploadResult,
+    doc_type: &str,
+) -> Result<serde_json::Value, AppError> {
     let file_url = build_full_file_url(&result.storage_path)?;
     Ok(json!({
         "id": result.doc_id,

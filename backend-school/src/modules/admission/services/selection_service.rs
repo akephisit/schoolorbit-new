@@ -1,12 +1,19 @@
 use crate::error::AppError;
-use crate::modules::admission::models::applications::{AssignRoomsGlobalRequest, AssignRoomsRequest};
+use crate::modules::admission::models::applications::{
+    AssignRoomsGlobalRequest, AssignRoomsRequest,
+};
 use crate::modules::admission::models::rounds::UpdateSelectionSettingsRequest;
+use crate::modules::admission::services::pii;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Compute (room_idx, rank_in_room) for each student given room capacities + method.
-pub fn compute_room_assignments(count: usize, capacities: &[i32], method: &str) -> Vec<(usize, i32)> {
+pub fn compute_room_assignments(
+    count: usize,
+    capacities: &[i32],
+    method: &str,
+) -> Vec<(usize, i32)> {
     let n = capacities.len();
     let mut result = Vec::with_capacity(count);
     if n == 0 {
@@ -50,7 +57,9 @@ pub fn compute_room_assignments(count: usize, capacities: &[i32], method: &str) 
 }
 
 pub fn parse_subject_ids(s: &str) -> Vec<Uuid> {
-    s.split(',').filter_map(|p| Uuid::parse_str(p.trim()).ok()).collect()
+    s.split(',')
+        .filter_map(|p| Uuid::parse_str(p.trim()).ok())
+        .collect()
 }
 
 pub async fn all_subject_ids_for_track(pool: &PgPool, track_id: Uuid) -> Vec<Uuid> {
@@ -96,8 +105,28 @@ pub struct RankRowDetailed {
     pub gender: Option<String>,
 }
 
+fn pii_error(context: &str, error: String) -> AppError {
+    eprintln!("Admission selection PII {} failed: {}", context, error);
+    AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
+}
+
+fn decrypt_rank_row(mut row: RankRow) -> Result<RankRow, AppError> {
+    row.national_id = pii::decrypt_required(&row.national_id)
+        .map_err(|error| pii_error("decrypt national_id", error))?;
+    Ok(row)
+}
+
+fn decrypt_rank_row_detailed(mut row: RankRowDetailed) -> Result<RankRowDetailed, AppError> {
+    row.national_id = pii::decrypt_required(&row.national_id)
+        .map_err(|error| pii_error("decrypt national_id", error))?;
+    Ok(row)
+}
+
 /// GET /api/admission/rounds/:id/ranking
-pub async fn get_round_ranking(pool: &PgPool, round_id: Uuid) -> Result<Vec<serde_json::Value>, AppError> {
+pub async fn get_round_ranking(
+    pool: &PgPool,
+    round_id: Uuid,
+) -> Result<Vec<serde_json::Value>, AppError> {
     let tracks: Vec<(Uuid, String, serde_json::Value, String)> = sqlx::query_as(
         "SELECT id, name, scoring_subject_ids, tiebreak_method FROM admission_tracks WHERE admission_round_id = $1 ORDER BY display_order ASC"
     )
@@ -143,17 +172,26 @@ pub async fn get_round_ranking(pool: &PgPool, round_id: Uuid) -> Result<Vec<serd
             .await
             .unwrap_or_default();
 
-        let ranked: Vec<serde_json::Value> = rows.into_iter().enumerate().map(|(i, row)| {
-            json!({
-                "rank": i + 1,
-                "applicationId": row.application_id,
-                "applicationNumber": row.application_number,
-                "nationalId": row.national_id,
-                "fullName": row.full_name,
-                "totalScore": row.total_score.unwrap_or(0.0),
-                "selectionScore": row.selection_score.unwrap_or(0.0),
+        let rows: Vec<RankRow> = rows
+            .into_iter()
+            .map(decrypt_rank_row)
+            .collect::<Result<_, _>>()?;
+
+        let ranked: Vec<serde_json::Value> = rows
+            .into_iter()
+            .enumerate()
+            .map(|(i, row)| {
+                json!({
+                    "rank": i + 1,
+                    "applicationId": row.application_id,
+                    "applicationNumber": row.application_number,
+                    "nationalId": row.national_id,
+                    "fullName": row.full_name,
+                    "totalScore": row.total_score.unwrap_or(0.0),
+                    "selectionScore": row.selection_score.unwrap_or(0.0),
+                })
             })
-        }).collect();
+            .collect();
 
         all_rankings.push(json!({
             "trackId": track_id,
@@ -171,14 +209,13 @@ pub async fn get_track_ranking(
     selection_subject_ids_param: Option<String>,
     room_assignment_method: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
-    let (track_name, tiebreak): (String, String) = sqlx::query_as(
-        "SELECT name, tiebreak_method FROM admission_tracks WHERE id = $1"
-    )
-    .bind(track_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
-    .ok_or_else(|| AppError::NotFound("ไม่พบสายการเรียน".to_string()))?;
+    let (track_name, tiebreak): (String, String) =
+        sqlx::query_as("SELECT name, tiebreak_method FROM admission_tracks WHERE id = $1")
+            .bind(track_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+            .ok_or_else(|| AppError::NotFound("ไม่พบสายการเรียน".to_string()))?;
 
     let tiebreak_order = if tiebreak == "gpa" {
         "aa.previous_gpa DESC NULLS LAST"
@@ -213,7 +250,7 @@ pub async fn get_track_ranking(
               SELECT grade_level_id FROM admission_rounds WHERE id = t.admission_round_id
           )
         ORDER BY cr.name ASC
-        "#
+        "#,
     )
     .bind(track_id)
     .fetch_all(pool)
@@ -253,20 +290,31 @@ pub async fn get_track_ranking(
         .fetch_all(pool)
         .await
         .unwrap_or_default();
+    let rows: Vec<RankRowDetailed> = rows
+        .into_iter()
+        .map(decrypt_rank_row_detailed)
+        .collect::<Result<_, _>>()?;
 
     let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
-    let capacity_usize = if total_capacity > 0 { total_capacity as usize } else { usize::MAX };
+    let capacity_usize = if total_capacity > 0 {
+        total_capacity as usize
+    } else {
+        usize::MAX
+    };
     let any_saved = rows.iter().any(|r| r.saved_room_id.is_some());
-    let (accepted_rows, overflow_rows): (Vec<_>, Vec<_>) = rows
-        .into_iter()
-        .enumerate()
-        .partition(|(i, r)| {
-            if any_saved { r.saved_room_id.is_some() } else { *i < capacity_usize }
+    let (accepted_rows, overflow_rows): (Vec<_>, Vec<_>) =
+        rows.into_iter().enumerate().partition(|(i, r)| {
+            if any_saved {
+                r.saved_room_id.is_some()
+            } else {
+                *i < capacity_usize
+            }
         });
 
     let mut accepted_sorted: Vec<(usize, RankRowDetailed)> = accepted_rows;
     accepted_sorted.sort_by(|(_, a), (_, b)| {
-        b.total_score.unwrap_or(0.0)
+        b.total_score
+            .unwrap_or(0.0)
             .partial_cmp(&a.total_score.unwrap_or(0.0))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
@@ -275,7 +323,8 @@ pub async fn get_track_ranking(
     let room_caps: Vec<i32> = rooms.iter().map(|r| r.capacity).collect();
     let room_slots = compute_room_assignments(accepted_sorted.len(), &room_caps, method);
 
-    let mut room_stats: std::collections::HashMap<String, (i64, i64, i64)> = std::collections::HashMap::new();
+    let mut room_stats: std::collections::HashMap<String, (i64, i64, i64)> =
+        std::collections::HashMap::new();
 
     let accepted_json: Vec<serde_json::Value> = accepted_sorted
         .into_iter()
@@ -378,7 +427,7 @@ pub async fn assign_rooms(
     let track_id = payload.track_id;
 
     let tiebreak: String = sqlx::query_scalar(
-        "SELECT tiebreak_method FROM admission_tracks WHERE id = $1 AND admission_round_id = $2"
+        "SELECT tiebreak_method FROM admission_tracks WHERE id = $1 AND admission_round_id = $2",
     )
     .bind(track_id)
     .bind(round_id)
@@ -399,7 +448,10 @@ pub async fn assign_rooms(
     };
 
     #[derive(sqlx::FromRow)]
-    struct RoomRow { room_id: Uuid, capacity: i32 }
+    struct RoomRow {
+        room_id: Uuid,
+        capacity: i32,
+    }
 
     let rooms = sqlx::query_as::<_, RoomRow>(
         r#"
@@ -416,7 +468,7 @@ pub async fn assign_rooms(
               SELECT grade_level_id FROM admission_rounds WHERE id = t.admission_round_id
           )
         ORDER BY cr.name ASC
-        "#
+        "#,
     )
     .bind(track_id)
     .fetch_all(pool)
@@ -425,7 +477,7 @@ pub async fn assign_rooms(
 
     if rooms.is_empty() {
         return Err(AppError::BadRequest(
-            "ไม่พบห้องเรียนสำหรับสายนี้ กรุณาสร้างห้องเรียนก่อน".to_string()
+            "ไม่พบห้องเรียนสำหรับสายนี้ กรุณาสร้างห้องเรียนก่อน".to_string(),
         ));
     }
 
@@ -464,16 +516,22 @@ pub async fn assign_rooms(
         .partition(|(i, _)| *i < capacity_usize);
 
     accepted.sort_by(|(_, a), (_, b)| {
-        b.total_score.unwrap_or(0.0)
+        b.total_score
+            .unwrap_or(0.0)
             .partial_cmp(&a.total_score.unwrap_or(0.0))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let method = payload.room_assignment_method.as_deref().unwrap_or("sequential");
+    let method = payload
+        .room_assignment_method
+        .as_deref()
+        .unwrap_or("sequential");
     let room_caps: Vec<i32> = rooms.iter().map(|r| r.capacity).collect();
     let room_slots = compute_room_assignments(accepted.len(), &room_caps, method);
 
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     sqlx::query(
@@ -523,7 +581,7 @@ pub async fn assign_rooms(
                 full_score    = EXCLUDED.full_score,
                 assigned_by   = EXCLUDED.assigned_by,
                 assigned_at   = EXCLUDED.assigned_at
-            "#
+            "#,
         )
         .bind(&app_ids)
         .bind(&room_ids)
@@ -547,7 +605,8 @@ pub async fn assign_rooms(
         .ok();
     }
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     Ok(assigned_count)
@@ -564,7 +623,7 @@ pub async fn reset_all_room_assignments(pool: &PgPool, round_id: Uuid) -> Result
             RETURNING 1
         )
         SELECT COUNT(*) FROM deleted
-        "#
+        "#,
     )
     .bind(round_id)
     .fetch_one(pool)
@@ -605,7 +664,12 @@ pub async fn assign_rooms_global(
     user_id: Uuid,
 ) -> Result<usize, AppError> {
     #[derive(sqlx::FromRow)]
-    struct RoomRow { room_id: Uuid, room_name: String, capacity: i32, track_id: Uuid }
+    struct RoomRow {
+        room_id: Uuid,
+        room_name: String,
+        capacity: i32,
+        track_id: Uuid,
+    }
 
     let rooms_raw = sqlx::query_as::<_, RoomRow>(
         r#"
@@ -618,7 +682,7 @@ pub async fn assign_rooms_global(
           AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = $1)
           AND cr.grade_level_id   = (SELECT grade_level_id   FROM admission_rounds WHERE id = $1)
         ORDER BY cr.name ASC
-        "#
+        "#,
     )
     .bind(round_id)
     .fetch_all(pool)
@@ -635,12 +699,15 @@ pub async fn assign_rooms_global(
     rooms.sort_by(|a, b| a.room_name.cmp(&b.room_name));
 
     if rooms.is_empty() {
-        return Err(AppError::BadRequest("ไม่พบห้องเรียนในรอบนี้ กรุณาสร้างห้องเรียนก่อน".to_string()));
+        return Err(AppError::BadRequest(
+            "ไม่พบห้องเรียนในรอบนี้ กรุณาสร้างห้องเรียนก่อน".to_string(),
+        ));
     }
 
     if let Some(ref order) = payload.room_order {
         if !order.is_empty() {
-            let order_map: std::collections::HashMap<Uuid, usize> = order.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+            let order_map: std::collections::HashMap<Uuid, usize> =
+                order.iter().enumerate().map(|(i, id)| (*id, i)).collect();
             rooms.sort_by_key(|r| order_map.get(&r.room_id).copied().unwrap_or(usize::MAX));
         }
     }
@@ -670,13 +737,21 @@ pub async fn assign_rooms_global(
     let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
     let capacity_usize = total_capacity as usize;
 
-    let (accepted, _overflow): (Vec<_>, Vec<_>) = rows.into_iter().enumerate().partition(|(i, _)| *i < capacity_usize);
+    let (accepted, _overflow): (Vec<_>, Vec<_>) = rows
+        .into_iter()
+        .enumerate()
+        .partition(|(i, _)| *i < capacity_usize);
 
-    let method = payload.room_assignment_method.as_deref().unwrap_or("sequential");
+    let method = payload
+        .room_assignment_method
+        .as_deref()
+        .unwrap_or("sequential");
     let room_caps: Vec<i32> = rooms.iter().map(|r| r.capacity).collect();
     let room_slots = compute_room_assignments(accepted.len(), &room_caps, method);
 
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     sqlx::query(
@@ -728,7 +803,7 @@ pub async fn assign_rooms_global(
                 full_score    = EXCLUDED.full_score,
                 assigned_by   = EXCLUDED.assigned_by,
                 assigned_at   = EXCLUDED.assigned_at
-            "#
+            "#,
         )
         .bind(&app_ids)
         .bind(&room_ids)
@@ -752,7 +827,8 @@ pub async fn assign_rooms_global(
         .ok();
     }
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     if !app_ids.is_empty() {
@@ -764,7 +840,7 @@ pub async fn assign_rooms_global(
             FROM (SELECT * FROM UNNEST($1::uuid[], $2::uuid[]) AS t(app_id, track_id)) data
             WHERE aa.id = data.app_id
               AND data.track_id IS DISTINCT FROM aa.admission_track_id
-            "#
+            "#,
         )
         .bind(&app_ids)
         .bind(&track_ids)
@@ -776,7 +852,10 @@ pub async fn assign_rooms_global(
     Ok(assigned_count)
 }
 
-pub async fn get_global_ranking(pool: &PgPool, round_id: Uuid) -> Result<serde_json::Value, AppError> {
+pub async fn get_global_ranking(
+    pool: &PgPool,
+    round_id: Uuid,
+) -> Result<serde_json::Value, AppError> {
     let rows = sqlx::query_as::<_, RankRowDetailed>(
         r#"
         SELECT
@@ -807,9 +886,16 @@ pub async fn get_global_ranking(pool: &PgPool, round_id: Uuid) -> Result<serde_j
     .fetch_all(pool)
     .await
     .map_err(|_| AppError::InternalServerError("Failed to fetch global ranking".to_string()))?;
+    let rows: Vec<RankRowDetailed> = rows
+        .into_iter()
+        .map(decrypt_rank_row_detailed)
+        .collect::<Result<_, _>>()?;
 
     #[derive(sqlx::FromRow)]
-    struct CapRow { room_id: Uuid, capacity: i32 }
+    struct CapRow {
+        room_id: Uuid,
+        capacity: i32,
+    }
 
     let cap_rows = sqlx::query_as::<_, CapRow>(
         r#"
@@ -819,65 +905,85 @@ pub async fn get_global_ranking(pool: &PgPool, round_id: Uuid) -> Result<serde_j
         WHERE ara.application_id IN (
             SELECT id FROM admission_applications WHERE admission_round_id = $1
         )
-        "#
+        "#,
     )
     .bind(round_id)
     .fetch_all(pool)
     .await
     .unwrap_or_default();
 
-    let cap_map: std::collections::HashMap<String, i32> = cap_rows.into_iter().map(|r| (r.room_id.to_string(), r.capacity)).collect();
+    let cap_map: std::collections::HashMap<String, i32> = cap_rows
+        .into_iter()
+        .map(|r| (r.room_id.to_string(), r.capacity))
+        .collect();
 
-    let mut room_map: std::collections::BTreeMap<String, (String, i64, i64, i64, i64)> = std::collections::BTreeMap::new();
+    let mut room_map: std::collections::BTreeMap<String, (String, i64, i64, i64, i64)> =
+        std::collections::BTreeMap::new();
 
-    let apps_json: Vec<serde_json::Value> = rows.into_iter().enumerate().map(|(i, row)| {
-        let is_overflow = row.saved_room_id.is_none();
-        let room_saved = row.saved_room_id.is_some();
+    let apps_json: Vec<serde_json::Value> = rows
+        .into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let is_overflow = row.saved_room_id.is_none();
+            let room_saved = row.saved_room_id.is_some();
 
-        let (assigned_room, assigned_room_id, rank_in_room) =
-            if let (Some(name), Some(id)) = (&row.saved_room_name, &row.saved_room_id) {
-                let entry = room_map.entry(id.to_string()).or_insert((name.clone(), 0, 0, 0, 0));
+            let (assigned_room, assigned_room_id, rank_in_room) = if let (Some(name), Some(id)) =
+                (&row.saved_room_name, &row.saved_room_id)
+            {
+                let entry = room_map
+                    .entry(id.to_string())
+                    .or_insert((name.clone(), 0, 0, 0, 0));
                 entry.1 += 1;
                 entry.4 += 1;
                 let rank = entry.4;
                 match row.gender.as_deref() {
                     Some(g) if g.eq_ignore_ascii_case("male") || g == "ชาย" => entry.2 += 1,
-                    Some(g) if g.eq_ignore_ascii_case("female") || g == "หญิง" => entry.3 += 1,
+                    Some(g) if g.eq_ignore_ascii_case("female") || g == "หญิง" => {
+                        entry.3 += 1
+                    }
                     _ => {}
                 }
                 (json!(name), json!(id), json!(rank))
             } else {
-                (serde_json::Value::Null, serde_json::Value::Null, serde_json::Value::Null)
+                (
+                    serde_json::Value::Null,
+                    serde_json::Value::Null,
+                    serde_json::Value::Null,
+                )
             };
 
-        json!({
-            "applicationId": row.application_id,
-            "applicationNumber": row.application_number,
-            "nationalId": row.national_id,
-            "fullName": row.full_name,
-            "totalScore": row.total_score.unwrap_or(0.0),
-            "globalRank": (i + 1) as i64,
-            "rankInRoom": rank_in_room,
-            "assignedRoom": assigned_room,
-            "assignedRoomId": assigned_room_id,
-            "roomSaved": room_saved,
-            "isOverflow": is_overflow,
-            "originalTrackName": row.original_track_name,
-            "gender": row.gender,
+            json!({
+                "applicationId": row.application_id,
+                "applicationNumber": row.application_number,
+                "nationalId": row.national_id,
+                "fullName": row.full_name,
+                "totalScore": row.total_score.unwrap_or(0.0),
+                "globalRank": (i + 1) as i64,
+                "rankInRoom": rank_in_room,
+                "assignedRoom": assigned_room,
+                "assignedRoomId": assigned_room_id,
+                "roomSaved": room_saved,
+                "isOverflow": is_overflow,
+                "originalTrackName": row.original_track_name,
+                "gender": row.gender,
+            })
         })
-    }).collect();
+        .collect();
 
-    let rooms_json: Vec<serde_json::Value> = room_map.iter().map(|(rid, (name, total, male, female, _))| {
-        let cap = cap_map.get(rid).copied().unwrap_or(0);
-        json!({
-            "roomId": rid,
-            "roomName": name,
-            "capacity": cap,
-            "studentCount": total,
-            "maleCount": male,
-            "femaleCount": female,
+    let rooms_json: Vec<serde_json::Value> = room_map
+        .iter()
+        .map(|(rid, (name, total, male, female, _))| {
+            let cap = cap_map.get(rid).copied().unwrap_or(0);
+            json!({
+                "roomId": rid,
+                "roomName": name,
+                "capacity": cap,
+                "studentCount": total,
+                "maleCount": male,
+                "femaleCount": female,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(json!({
         "rooms": rooms_json,
@@ -905,7 +1011,7 @@ pub async fn get_round_rooms(pool: &PgPool, round_id: Uuid) -> Result<Vec<RoomBa
           AND cr.academic_year_id = (SELECT academic_year_id FROM admission_rounds WHERE id = $1)
           AND cr.grade_level_id   = (SELECT grade_level_id   FROM admission_rounds WHERE id = $1)
         ORDER BY cr.name ASC
-        "#
+        "#,
     )
     .bind(round_id)
     .fetch_all(pool)

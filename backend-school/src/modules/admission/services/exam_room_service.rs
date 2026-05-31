@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::modules::admission::services::pii;
 use serde::Serialize;
 use serde_json::json;
 use sqlx::PgPool;
@@ -465,8 +466,13 @@ pub struct RoomGroup {
     pub seats: Vec<SeatRow>,
 }
 
+fn pii_error(context: &str, error: String) -> AppError {
+    eprintln!("Admission exam room PII {} failed: {}", context, error);
+    AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
+}
+
 pub async fn get_exam_seats(pool: &PgPool, round_id: Uuid) -> Result<Vec<RoomGroup>, AppError> {
-    let rows = sqlx::query_as::<_, SeatRow>(
+    let mut rows = sqlx::query_as::<_, SeatRow>(
         r#"SELECT
             er.id AS exam_room_id,
             COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
@@ -490,6 +496,11 @@ pub async fn get_exam_seats(pool: &PgPool, round_id: Uuid) -> Result<Vec<RoomGro
         eprintln!("Failed to fetch exam seats: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลที่นั่งสอบได้".to_string())
     })?;
+
+    for row in &mut rows {
+        row.national_id = pii::decrypt_required(&row.national_id)
+            .map_err(|error| pii_error("decrypt national_id", error))?;
+    }
 
     let mut groups: Vec<RoomGroup> = Vec::new();
     for row in rows {

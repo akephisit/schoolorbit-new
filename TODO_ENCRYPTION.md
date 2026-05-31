@@ -1,135 +1,21 @@
-# 🚨 TODO: Encryption Updates Required
+# Encryption Status
 
-## Status: ⚠️ Incomplete
+## Current Standard
 
-### ✅ Completed:
-- [x] Migration 019 (encryption setup)
-- [x] Utils (encryption helpers)
-- [x] Auth handler (login with decrypt)
-- [x] Documentation
+Use app-side AES-256-GCM from `backend-school/src/utils/field_encryption.rs` for new encrypted fields.
 
-### ⏳ Pending (Critical):
+Do not extend `backend-school/src/utils/encryption.rs` / PostgreSQL `pgcrypto`; that path is legacy.
 
-#### handlers/staff.rs
+## Completed
 
-**Line ~575 - Add after permission check in create_staff:**
-```rust
-// Setup encryption key for encrypted columns
-if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
-    eprintln!("❌ Encryption setup failed: {}", e);
-    return (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(json!({"error": "System error"})),
-    ).into_response();
-}
-```
+- `users.national_id` stores encrypted data with `users.national_id_hash` as the blind index.
+- Staff/student/parent creation paths use `field_encryption`.
+- Admission applicant and parent national IDs now store encrypted data in `admission_applications` with `*_national_id_hash` blind indexes.
+- Migration `backend-school/migrations/117_encrypt_admission_pii.sql` widens admission national ID columns to `TEXT`, adds hash columns, and replaces the old plaintext uniqueness constraint.
 
-**Line ~610 - Update existing user check:**
-```rust
-// OLD:
-"SELECT id, status FROM users WHERE national_id = $1"
+## Operational Notes
 
-// NEW:
-"SELECT id, status FROM users 
- WHERE pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) = $1"
-```
-
-**Line ~703 - Update INSERT statement:**
-```rust
-// OLD:
-"INSERT INTO users (
-    national_id, email, password_hash, ...
-) VALUES ($1, $2, $3, ...)"
-
-// NEW:
-"INSERT INTO users (
-    national_id, email, password_hash, ...
-) VALUES (
-    pgp_sym_encrypt($1, current_setting('app.encryption_key')),
-    $2, $3, ...
-)"
-```
-
-**Line ~371 - Update SELECT in get_staff_profile:**
-```rust
-// OLD:
-"SELECT id, national_id, email, ..."
-
-// NEW:
-"SELECT id, 
-    pgp_sym_decrypt(national_id, current_setting('app.encryption_key')) as national_id,
-    email, ..."
-```
-
-**Add encryption setup at start of get_staff_profile (after permission check):**
-```rust
-if let Err(e) = crate::utils::encryption::setup_encryption_key(&pool).await {
-    return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "System error"}))).into_response();
-}
-```
-
----
-
-#### handlers/students.rs
-
-Similar changes needed for:
-- create_student()
-- get_student()  
-- update_student()
-
-**Additional:** encrypt `medical_conditions` field
-
----
-
-## Quick Implementation
-
-### Option 1: Manual (Recommended)
-1. Open file in editor
-2. Search for TODO locations above
-3. Apply changes manually
-4. Test with `cargo check`
-
-### Option 2: Pattern Search & Replace
-```bash
-# Find all national_id references
-rg "national_id" backend-school/src/handlers/staff.rs -n
-
-# For each INSERT/SELECT/WHERE:
-# - Add pgp_sym_encrypt() for VALUES
-# - Add pgp_sym_decrypt() for SELECT/WHERE
-```
-
----
-
-## Testing
-
-After updates, verify:
-```bash
-# 1. Build
-cargo check
-
-# 2. Test create staff (should encrypt)
-curl -X POST .../api/staff -d '{...}'
-
-# 3. Test get staff (should decrypt)
-curl .../api/staff/:id
-
-# 4. Check database (should see encrypted BYTEA)
-psql -c "SELECT national_id FROM users LIMIT 1"
-# Should see: \x... (binary data)
-```
-
----
-
-## Estimated Time
-- handlers/staff.rs: 30-45 min
-- handlers/students.rs: 30-45 min
-- Testing: 15-30 min
-- **Total: 1.5-2 hours**
-
----
-
-## Support
-See complete examples in:
-- `docs/ENCRYPTION_IMPLEMENTATION.md`
-- `backend-school/src/handlers/auth.rs` (login function)
+- Keep `ENCRYPTION_KEY` stable after encrypted data exists. Rotating it without a re-encryption job makes existing ciphertext unreadable.
+- Search/login/duplicate checks must use blind hashes, not plaintext columns.
+- Decrypt only at response boundaries where the UI is allowed to display the value.
+- Admission was migrated as a clean-slate change after existing application data was cleared. If old plaintext rows ever need migration, write a dedicated backfill job before enforcing encrypted-only reads.

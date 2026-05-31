@@ -1,7 +1,7 @@
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, NaiveDate, Utc};
 
 // ==========================================
 // Application Models
@@ -18,6 +18,8 @@ pub struct AdmissionApplication {
 
     // ข้อมูลส่วนตัว
     pub national_id: String,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub national_id_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     pub first_name: String,
@@ -319,11 +321,10 @@ pub struct PortalStatusQuery {
 pub struct UpdatePortalApplicationRequest {
     pub auth_national_id: String,
     pub auth_date_of_birth: String,
-    
+
     #[serde(flatten)]
     pub data: SubmitApplicationRequest,
 }
-
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -442,10 +443,10 @@ pub struct RankingEntry {
     pub national_id: String,
     pub full_name: String,
     pub track_name: Option<String>,
-    pub total_score: f64,      // คะแนนรวมจากวิชาที่ใช้เรียง
-    pub full_score: f64,       // คะแนนรวมทุกวิชา
+    pub total_score: f64, // คะแนนรวมจากวิชาที่ใช้เรียง
+    pub full_score: f64,  // คะแนนรวมทุกวิชา
     pub rank_in_track: i32,
-    pub assigned_room: Option<String>,  // ห้องที่ได้ (ถ้า preview)
+    pub assigned_room: Option<String>, // ห้องที่ได้ (ถ้า preview)
     pub scores: Vec<SubjectScore>,
 }
 
@@ -456,7 +457,7 @@ pub struct SubjectScore {
     pub subject_name: String,
     pub score: Option<f64>,
     pub max_score: f64,
-    pub is_scoring_subject: bool,  // ใช้ในการเรียงคะแนนหรือเปล่า
+    pub is_scoring_subject: bool, // ใช้ในการเรียงคะแนนหรือเปล่า
 }
 
 /// Request สำหรับ assign rooms หลังเรียงคะแนน
@@ -531,7 +532,7 @@ pub struct SubmitEnrollmentFormRequest {
 #[serde(rename_all = "camelCase")]
 pub struct PortalCredentials {
     pub national_id: String,
-    pub date_of_birth: String,  // format: DDMMYYYY e.g. "20082543"
+    pub date_of_birth: String, // format: DDMMYYYY e.g. "20082543"
 }
 
 #[derive(Debug, Deserialize)]

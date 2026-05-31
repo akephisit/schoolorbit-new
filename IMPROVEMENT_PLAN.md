@@ -32,12 +32,11 @@
 | **ผลลัพธ์** | SSE และ non-SSE create flow ไม่กลบ rollback error ด้วย `let _ =` อีกต่อไป และ deployment failure ถูก mark เป็น `deployment_failed` แบบตรวจ error ได้ |
 | **ความยาก** | Small (fix bug) / Medium (rollback สมบูรณ์) |
 
-### C-3. PII (national_id) ยังไม่ได้เข้ารหัสครบ
+### ✅ C-3. PII (national_id) ยังไม่ได้เข้ารหัสครบ — เสร็จแล้ว
 | | |
 |---|---|
-| **ไฟล์** | `backend-school/src/modules/staff/handlers/`, `backend-school/src/modules/students/` |
-| **ปัญหา** | `field_encryption.rs` มีพร้อมแล้ว แต่ staff/student handlers ยังเขียน national_id เป็น plaintext — ถ้า DB รั่ว PII ทั้งหมดถูกอ่านได้ ผิด PDPA |
-| **แก้ไข** | Apply `field_encryption::encrypt/decrypt` ใน write+read paths ตาม `TODO_ENCRYPTION.md` |
+| **ไฟล์** | `backend-school/src/modules/admission/`, `backend-school/src/modules/staff/`, `backend-school/src/modules/students/` |
+| **ที่ทำ** | ใช้ app-side `field_encryption.rs` สำหรับ `national_id`, เพิ่ม blind hash สำหรับ admission lookup/unique, และอัปเดต `TODO_ENCRYPTION.md` ให้เลิกอ้าง pgcrypto legacy |
 | **ความยาก** | Medium |
 
 ### C-4. INTERNAL_API_SECRET ไม่ timing-safe
