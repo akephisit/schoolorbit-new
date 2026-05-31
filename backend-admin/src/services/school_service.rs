@@ -48,6 +48,117 @@ fn build_active_school_config(
     })
 }
 
+enum ProvisioningReporter {
+    Console,
+    Sse(crate::utils::sse::SseLogger),
+}
+
+impl ProvisioningReporter {
+    async fn info(&self, message: &str) {
+        match self {
+            Self::Console => println!("{}", message),
+            Self::Sse(logger) => logger.info(message).await,
+        }
+    }
+
+    async fn success(&self, message: &str) {
+        match self {
+            Self::Console => println!("{}", message),
+            Self::Sse(logger) => logger.success(message).await,
+        }
+    }
+
+    async fn warning(&self, message: &str) {
+        match self {
+            Self::Console => eprintln!("{}", message),
+            Self::Sse(logger) => logger.warning(message).await,
+        }
+    }
+
+    async fn error(&self, message: &str) {
+        match self {
+            Self::Console => eprintln!("{}", message),
+            Self::Sse(logger) => logger.error(message).await,
+        }
+    }
+
+    async fn progress(&self, step: u8, total: u8, message: &str) {
+        match self {
+            Self::Console => println!("📦 Step {}/{}: {}", step, total, message),
+            Self::Sse(logger) => logger.progress(step, total, message).await,
+        }
+    }
+
+    async fn complete(&self, data: serde_json::Value) {
+        if let Self::Sse(logger) = self {
+            logger.complete(data).await;
+        }
+    }
+}
+
+struct ProvisioningRunOptions {
+    reporter: ProvisioningReporter,
+    wait_for_deployment: bool,
+    complete_on_success: bool,
+}
+
+impl ProvisioningRunOptions {
+    fn api() -> Self {
+        Self {
+            reporter: ProvisioningReporter::Console,
+            wait_for_deployment: false,
+            complete_on_success: false,
+        }
+    }
+
+    fn sse(logger: crate::utils::sse::SseLogger) -> Self {
+        Self {
+            reporter: ProvisioningReporter::Sse(logger),
+            wait_for_deployment: true,
+            complete_on_success: true,
+        }
+    }
+
+    #[cfg(test)]
+    fn sse_for_test() -> Self {
+        Self {
+            reporter: ProvisioningReporter::Console,
+            wait_for_deployment: true,
+            complete_on_success: true,
+        }
+    }
+
+    async fn info(&self, message: &str) {
+        self.reporter.info(message).await;
+    }
+
+    async fn success(&self, message: &str) {
+        self.reporter.success(message).await;
+    }
+
+    async fn warning(&self, message: &str) {
+        self.reporter.warning(message).await;
+    }
+
+    async fn error(&self, message: &str) {
+        self.reporter.error(message).await;
+    }
+
+    async fn progress(&self, step: u8, total: u8, message: &str) {
+        self.reporter.progress(step, total, message).await;
+    }
+
+    async fn complete_school(&self, school: &School) -> Result<(), AppError> {
+        if self.complete_on_success {
+            let payload = serde_json::to_value(school)
+                .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+            self.reporter.complete(payload).await;
+        }
+
+        Ok(())
+    }
+}
+
 impl SchoolService {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
@@ -178,6 +289,27 @@ impl SchoolService {
     }
 
     pub async fn create_school(&self, data: CreateSchool) -> Result<School, AppError> {
+        self.provision_school(data, ProvisioningRunOptions::api())
+            .await
+    }
+
+    async fn provision_school(
+        &self,
+        data: CreateSchool,
+        options: ProvisioningRunOptions,
+    ) -> Result<School, AppError> {
+        const TOTAL_STEPS: u8 = 5;
+
+        options
+            .info(&format!(
+                "🚀 Starting school provisioning for: {}",
+                data.name
+            ))
+            .await;
+        options
+            .progress(1, TOTAL_STEPS, "Validating input...")
+            .await;
+
         // Validate subdomain format (lowercase, alphanumeric, hyphens)
         validate_school_subdomain(&data.subdomain)?;
 
@@ -195,14 +327,15 @@ impl SchoolService {
                 "Subdomain นี้มีในระบบแล้ว กรุณาใช้ชื่ออื่น".to_string(),
             ));
         }
+        options.success("✅ Validation passed").await;
 
         // Generate database name
         let db_name = build_school_database_name(&data.subdomain);
 
-        println!("🚀 Starting school provisioning for: {}", data.name);
-
         // Step 1: Create database in Neon
-        println!("📦 Step 1/4: Creating database in Neon...");
+        options
+            .progress(2, TOTAL_STEPS, "Creating database in Neon...")
+            .await;
         use crate::clients::neon_client::NeonClient;
         let neon_client = NeonClient::new()
             .map_err(|e| AppError::ExternalServiceError(format!("Neon client error: {}", e)))?;
@@ -214,7 +347,9 @@ impl SchoolService {
                 AppError::ExternalServiceError(format!("Failed to create database: {}", e))
             })?;
 
-        println!("✅ Database created with ID: {}", db_id);
+        options
+            .success(&format!("✅ Database created with ID: {}", db_id))
+            .await;
 
         // Get Neon database password from environment
         // This is the password for neondb_owner role in your Neon project
@@ -232,6 +367,7 @@ impl SchoolService {
             neon_client.get_connection_string(&db_name, "neondb_owner", &db_password);
 
         // Wait for Neon to finish creating the database and for Postgres to accept connections.
+        options.info("⏳ Waiting for database to be ready...").await;
         if let Err(e) = neon_client.wait_for_database_ready(&db_name).await {
             return Err(self
                 .rollback_failed_provisioning(
@@ -243,6 +379,9 @@ impl SchoolService {
                 .await);
         }
 
+        options
+            .info("⏳ Waiting for database connection to be ready...")
+            .await;
         if let Err(e) = neon_client
             .wait_for_database_connectable(&db_connection_string)
             .await
@@ -256,8 +395,12 @@ impl SchoolService {
                 )
                 .await);
         }
+        options.success("✅ Database is ready").await;
 
         // Create school record
+        options
+            .progress(3, TOTAL_STEPS, "Creating school record...")
+            .await;
         let school = match sqlx::query_as::<_, School>(
             r#"
             INSERT INTO schools (name, subdomain, db_name, db_connection_string, status, config)
@@ -286,9 +429,18 @@ impl SchoolService {
         };
 
         let school_id = school.id;
+        options
+            .success("✅ School record created (provisioning)")
+            .await;
 
         // Step 2: Provision tenant via backend-school
-        println!("📦 Step 2/4: Provisioning tenant database via backend-school...");
+        options
+            .progress(
+                4,
+                TOTAL_STEPS,
+                "Provisioning tenant database via backend-school...",
+            )
+            .await;
         use crate::clients::backend_school_client::BackendSchoolClient;
         let backend_school_client = match BackendSchoolClient::new() {
             Ok(client) => client,
@@ -314,14 +466,20 @@ impl SchoolService {
             .await
         {
             Ok(_) => {
-                println!("✅ Tenant database provisioned successfully");
-                println!(
-                    "✅ Admin user created (Username: {:?})",
-                    data.admin_username
-                );
+                options
+                    .success("✅ Tenant database provisioned successfully")
+                    .await;
+                options
+                    .success(&format!(
+                        "✅ Admin user created (Username: {:?})",
+                        data.admin_username
+                    ))
+                    .await;
             }
             Err(e) => {
-                eprintln!("❌ Failed to provision tenant: {}", e);
+                options
+                    .error(&format!("❌ Failed to provision tenant: {}", e))
+                    .await;
                 return Err(self
                     .rollback_failed_provisioning(
                         Some(school_id),
@@ -336,7 +494,16 @@ impl SchoolService {
         // Step 3: Create DNS record in Cloudflare
         // NOTE: Skipped! Wrangler (GitHub Actions) will create and manage DNS automatically
         // when deploying with custom_domain configuration
-        println!("📦 Step 3/4: Skipping DNS creation (Wrangler will handle this)...");
+        options
+            .progress(
+                5,
+                TOTAL_STEPS,
+                "Deploying Cloudflare Worker and finalizing school setup...",
+            )
+            .await;
+        options
+            .info("Skipping DNS creation (Wrangler will handle this)")
+            .await;
         let dns_record_id = "".to_string(); // Managed by Wrangler
 
         /* Commented out - DNS is now managed by Wrangler
@@ -369,7 +536,7 @@ impl SchoolService {
         */
 
         // Step 4: Deploy Cloudflare Worker
-        println!("📦 Step 4/4: Deploying Cloudflare Worker...");
+        options.info("Deploying Cloudflare Worker...").await;
         let api_url = std::env::var("API_URL")
             .unwrap_or_else(|_| "https://school-api.schoolorbit.app".to_string());
 
@@ -392,12 +559,46 @@ impl SchoolService {
             .deploy_worker(&data.subdomain, &school_id.to_string(), &api_url)
             .await
         {
-            Ok((url, _trigger_time)) => {
-                println!("✅ Worker deployed successfully: {}", url);
+            Ok((url, trigger_time)) => {
+                options
+                    .success(&format!("✅ Worker deployment initiated: {}", url))
+                    .await;
+
+                if options.wait_for_deployment {
+                    options.info("GitHub Actions workflow triggered").await;
+                    options
+                        .info("⏳ Waiting for deployment to complete (3-5 minutes)...")
+                        .await;
+
+                    match cloudflare_client
+                        .wait_for_workflow_completion(&data.subdomain, trigger_time, 10)
+                        .await
+                    {
+                        Ok(_) => {
+                            options
+                                .success("✅ GitHub Actions deployment completed!")
+                                .await;
+                        }
+                        Err(e) => {
+                            options
+                                .warning(&format!("⚠️ Warning: Could not verify deployment: {}", e))
+                                .await;
+                            options
+                                .info("Workflow may still be processing in background")
+                                .await;
+                            options
+                                .info("Check: https://github.com/akephisit/schoolorbit-new/actions")
+                                .await;
+                        }
+                    }
+                }
+
                 url
             }
             Err(e) => {
-                eprintln!("❌ Failed to deploy worker: {}", e);
+                options
+                    .error(&format!("❌ Failed to deploy worker: {}", e))
+                    .await;
                 return Err(self
                     .mark_school_status_error(
                         school_id,
@@ -425,9 +626,15 @@ impl SchoolService {
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-        println!("🎉 School provisioning completed successfully!");
-        println!("   School ID: {}", school_id);
-        println!("   Subdomain URL: {}", subdomain_url);
+        options.success("✅ School activated").await;
+        options
+            .success("🎉 School provisioning completed successfully!")
+            .await;
+        options.info(&format!("School ID: {}", school_id)).await;
+        options
+            .info(&format!("Subdomain URL: {}", subdomain_url))
+            .await;
+        options.complete_school(&updated_school).await?;
 
         Ok(updated_school)
     }
@@ -756,253 +963,8 @@ impl SchoolService {
         data: CreateSchool,
         logger: crate::utils::sse::SseLogger,
     ) -> Result<School, AppError> {
-        logger.info("🚀 Starting school provisioning").await;
-        logger.progress(0, 4, "Validating input...").await;
-
-        // Validation (same as create_school)
-        validate_school_subdomain(&data.subdomain)?;
-
-        let exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM schools WHERE subdomain = $1)",
-        )
-        .bind(&data.subdomain)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        if exists {
-            return Err(AppError::ValidationError(
-                "Subdomain already exists".to_string(),
-            ));
-        }
-        logger.success("✅ Validation passed").await;
-
-        // Step 0: Create school record first (status='provisioning')
-        logger.progress(0, 5, "Creating school record...").await;
-
-        // Get database credentials early
-        let db_password = std::env::var("NEON_DB_PASSWORD")
-            .map_err(|_| AppError::ExternalServiceError("NEON_DB_PASSWORD not set".to_string()))?;
-
-        let neon_host = std::env::var("NEON_HOST")
-            .unwrap_or_else(|_| "ep-xyz.us-east-1.aws.neon.tech".to_string());
-
-        let db_name = build_school_database_name(&data.subdomain);
-        let connection_string = format!(
-            "postgresql://neondb_owner:{}@{}/{}?sslmode=require",
-            db_password, neon_host, db_name
-        );
-
-        // Create school record with status='provisioning'
-        let school = sqlx::query_as::<_, School>(
-            r#"
-            INSERT INTO schools (name, subdomain, status, db_name, db_connection_string, config)
-            VALUES ($1, $2, 'provisioning', $3, $4, '{}')
-            RETURNING *
-            "#,
-        )
-        .bind(&data.name)
-        .bind(&data.subdomain)
-        .bind(&db_name)
-        .bind(&connection_string)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        let school_id = school.id;
-        logger
-            .success("✅ School record created (provisioning)")
-            .await;
-
-        // Step 1: Create database in Neon
-        logger.progress(1, 5, "Creating database in Neon...").await;
-
-        use crate::clients::neon_client::NeonClient;
-        let neon_client = match NeonClient::new() {
-            Ok(client) => client,
-            Err(e) => {
-                return Err(self
-                    .mark_school_status_error(
-                        school_id,
-                        "provision_failed",
-                        format!("Neon client error: {}", e),
-                    )
-                    .await);
-            }
-        };
-
-        let db_id = match neon_client.create_database(&db_name, "neondb_owner").await {
-            Ok(db_id) => db_id,
-            Err(e) => {
-                return Err(self
-                    .mark_school_status_error(
-                        school_id,
-                        "provision_failed",
-                        format!("Failed to create database: {}", e),
-                    )
-                    .await);
-            }
-        };
-
-        logger
-            .success(&format!("✅ Database created with ID: {}", db_id))
-            .await;
-
-        // Wait for database to be ready
-        logger.info("⏳ Waiting for database to be ready...").await;
-        if let Err(e) = neon_client.wait_for_database_ready(&db_name).await {
-            let reason = format!("Database not ready: {}", e);
-            return Err(self
-                .rollback_failed_provisioning(Some(school_id), &neon_client, &db_name, reason)
-                .await);
-        }
-
-        logger
-            .info("⏳ Waiting for database connection to be ready...")
-            .await;
-        if let Err(e) = neon_client
-            .wait_for_database_connectable(&connection_string)
+        self.provision_school(data, ProvisioningRunOptions::sse(logger))
             .await
-        {
-            let reason = format!("Database connection not ready: {}", e);
-            return Err(self
-                .rollback_failed_provisioning(Some(school_id), &neon_client, &db_name, reason)
-                .await);
-        }
-
-        logger.success("✅ Database is ready").await;
-
-        // Step 2: Provision tenant database
-        logger
-            .progress(2, 5, "Provisioning tenant database...")
-            .await;
-
-        use crate::clients::backend_school_client::BackendSchoolClient;
-        let backend_school_client = match BackendSchoolClient::new() {
-            Ok(client) => client,
-            Err(e) => {
-                return Err(self
-                    .rollback_failed_provisioning(
-                        Some(school_id),
-                        &neon_client,
-                        &db_name,
-                        format!("Backend-school client error: {}", e),
-                    )
-                    .await);
-            }
-        };
-
-        if let Err(e) = self
-            .provision_tenant_database(&backend_school_client, school_id, &connection_string, &data)
-            .await
-        {
-            return Err(self
-                .rollback_failed_provisioning(
-                    Some(school_id),
-                    &neon_client,
-                    &db_name,
-                    format!("Tenant provisioning failed: {}", e),
-                )
-                .await);
-        }
-
-        logger.success("✅ Tenant database provisioned").await;
-
-        // Step 3: Deploy Cloudflare Worker
-        logger
-            .progress(3, 5, "Deploying Cloudflare Worker...")
-            .await;
-
-        let api_url = std::env::var("API_URL")
-            .unwrap_or_else(|_| "https://school-api.schoolorbit.app".to_string());
-
-        use crate::clients::cloudflare_client::CloudflareClient;
-        let cloudflare_client = match CloudflareClient::new() {
-            Ok(client) => client,
-            Err(e) => {
-                return Err(self
-                    .mark_school_status_error(
-                        school_id,
-                        "deployment_failed",
-                        format!("Cloudflare client error: {}", e),
-                    )
-                    .await);
-            }
-        };
-
-        let (subdomain_url, trigger_time) = match cloudflare_client
-            .deploy_worker(&data.subdomain, &school_id.to_string(), &api_url)
-            .await
-        {
-            Ok(result) => result,
-            Err(e) => {
-                return Err(self
-                    .mark_school_status_error(
-                        school_id,
-                        "deployment_failed",
-                        format!("Worker deployment failed: {}", e),
-                    )
-                    .await);
-            }
-        };
-
-        logger.info("GitHub Actions workflow triggered").await;
-        logger
-            .info("⏳ Waiting for deployment to complete (3-5 minutes)...")
-            .await;
-
-        // Wait for GitHub Actions workflow to complete
-        match cloudflare_client
-            .wait_for_workflow_completion(&data.subdomain, trigger_time, 10)
-            .await
-        {
-            Ok(_) => {
-                logger
-                    .success("✅ GitHub Actions deployment completed!")
-                    .await;
-            }
-            Err(e) => {
-                logger
-                    .error(&format!("⚠️ Warning: Could not verify deployment: {}", e))
-                    .await;
-                logger
-                    .info("Workflow may still be processing in background")
-                    .await;
-                logger
-                    .info("Check: https://github.com/akephisit/schoolorbit-new/actions")
-                    .await;
-            }
-        }
-
-        logger
-            .success(&format!("✅ Worker deployment initiated"))
-            .await;
-
-        // Step 4: Update school status to active
-        logger.progress(4, 5, "Finalizing school setup...").await;
-
-        let config = build_active_school_config(db_id, "", &subdomain_url);
-
-        let school = sqlx::query_as::<_, School>(
-            r#"
-            UPDATE schools 
-            SET status = 'active', config = $1, updated_at = NOW()
-            WHERE id = $2
-            RETURNING *
-            "#,
-        )
-        .bind(&config)
-        .bind(school_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        logger.success("✅ School activated").await;
-        let payload = serde_json::to_value(&school)
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-        logger.complete(payload).await;
-
-        Ok(school)
     }
 
     /// Delete school with SSE logging for real-time progress  
@@ -1096,7 +1058,7 @@ impl SchoolService {
 mod tests {
     use super::{
         build_active_school_config, build_provisioning_failure_message, build_school_database_name,
-        validate_school_subdomain,
+        validate_school_subdomain, ProvisioningRunOptions,
     };
 
     #[test]
@@ -1143,5 +1105,18 @@ mod tests {
         assert!(error
             .to_string()
             .contains("Subdomain must contain only lowercase letters"));
+    }
+
+    #[test]
+    fn provisioning_options_keep_api_and_sse_completion_behavior_separate() {
+        let api_options = ProvisioningRunOptions::api();
+
+        assert!(!api_options.wait_for_deployment);
+        assert!(!api_options.complete_on_success);
+
+        let sse_options = ProvisioningRunOptions::sse_for_test();
+
+        assert!(sse_options.wait_for_deployment);
+        assert!(sse_options.complete_on_success);
     }
 }

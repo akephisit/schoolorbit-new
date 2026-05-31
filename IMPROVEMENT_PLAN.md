@@ -66,15 +66,14 @@
 | **ที่ทำ** | เพิ่ม `AppState { pool: PgPool }`, ย้าย router ไป `build_app(state)`, ให้ handlers รับ `State<AppState>` และเพิ่ม integration test ว่า app สร้างจาก state ที่ส่งเข้าไปได้ |
 | **ตรวจสอบ** | `cargo test`, `cargo check`, grep ไม่พบ `OnceLock`/`DB_POOL` ใน backend-admin |
 
-### H-2. `school_service.rs` 783 บรรทัด มี logic ซ้ำ
+### ✅ H-2. `school_service.rs` 783 บรรทัด มี logic ซ้ำ — เสร็จแล้ว
 | | |
 |---|---|
 | **ไฟล์** | `backend-admin/src/services/school_service.rs` |
 | **ปัญหา** | provisioning logic ซ้ำกัน 2 ชุด (SSE/non-SSE) — bug C-2 เกิดเพราะแก้ใน SSE version แต่ลืม non-SSE |
-| **แก้ไข** | แยก `ProvisioningOrchestrator` ที่รับ logger callback ทั้ง SSE และ non-SSE handler เรียกตัวเดียวกัน |
-| **ทำแล้วบางส่วน** | แยก helper สำหรับ validate subdomain, db name, active config และให้ SSE ใช้ `BackendSchoolClient` ร่วมกับ non-SSE แทนการยิง `reqwest` ตรง |
-| **เหลือ** | รวม orchestration ทั้งก้อนให้เป็น flow เดียว โดยต้องตัดสินใจลำดับสร้าง Neon DB/record และ behavior การรอ GitHub Actions ให้ชัดก่อน |
-| **ความยาก** | Large |
+| **ที่ทำ** | รวม provisioning เป็น `provision_school()` flow เดียว แล้วให้ `create_school()`/`create_school_stream()` เป็น wrapper ผ่าน `ProvisioningRunOptions` |
+| **รายละเอียด** | API ปกติใช้ console logging และไม่รอ GitHub Actions; SSE ใช้ `SseLogger`, ส่ง complete event และยังรอ workflow completion เหมือนเดิม |
+| **ตรวจสอบ** | `cargo test`, `cargo check`, `git diff --check` |
 
 ### H-3. `schools.config` เป็น untyped `serde_json::Value`
 | | |
