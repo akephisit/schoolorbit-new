@@ -65,6 +65,7 @@ services:
 
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      BLIND_INDEX_KEY: ${BLIND_INDEX_KEY}
       DEPLOY_KEY: ${DEPLOY_KEY:-local-dev-key-change-me}
 
       # Cloudflare R2

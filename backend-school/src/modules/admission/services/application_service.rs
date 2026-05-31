@@ -494,13 +494,16 @@ pub async fn update_application(
 ) -> Result<(), AppError> {
     let father_national_id = pii::encrypt_optional(payload.father_national_id.as_deref())
         .map_err(|error| pii_error("encrypt father national_id", error))?;
-    let father_national_id_hash = pii::hash_optional(payload.father_national_id.as_deref());
+    let father_national_id_hash = pii::hash_optional(payload.father_national_id.as_deref())
+        .map_err(|error| pii_error("hash father national_id", error))?;
     let mother_national_id = pii::encrypt_optional(payload.mother_national_id.as_deref())
         .map_err(|error| pii_error("encrypt mother national_id", error))?;
-    let mother_national_id_hash = pii::hash_optional(payload.mother_national_id.as_deref());
+    let mother_national_id_hash = pii::hash_optional(payload.mother_national_id.as_deref())
+        .map_err(|error| pii_error("hash mother national_id", error))?;
     let guardian_national_id = pii::encrypt_optional(payload.guardian_national_id.as_deref())
         .map_err(|error| pii_error("encrypt guardian national_id", error))?;
-    let guardian_national_id_hash = pii::hash_optional(payload.guardian_national_id.as_deref());
+    let guardian_national_id_hash = pii::hash_optional(payload.guardian_national_id.as_deref())
+        .map_err(|error| pii_error("hash guardian national_id", error))?;
 
     let result = sqlx::query(
         r#"

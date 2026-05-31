@@ -91,7 +91,12 @@ pub async fn add_parent_to_student(
                         "เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string(),
                     )
                 })?;
-                let hash = field_encryption::hash_for_search(nid);
+                let hash = field_encryption::hash_for_search(nid).map_err(|e| {
+                    eprintln!("❌ Parent blind index failed: {}", e);
+                    AppError::InternalServerError(
+                        "เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string(),
+                    )
+                })?;
                 (Some(enc), Some(hash))
             } else {
                 (None, None)

@@ -71,6 +71,7 @@ services:
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-internal-secret-change-this}
       - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-this-in-production}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-this-encryption-key-in-production}
+      - BLIND_INDEX_KEY=${BLIND_INDEX_KEY:-change-this-blind-index-key-in-production}
       - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
       # Cloudflare R2
       - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}

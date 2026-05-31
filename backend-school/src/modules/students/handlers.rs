@@ -462,7 +462,10 @@ pub async fn create_student(
                 eprintln!("❌ Encryption failed: {}", e);
                 AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูล".to_string())
              })?;
-            let hash = field_encryption::hash_for_search(nid);
+            let hash = field_encryption::hash_for_search(nid).map_err(|e| {
+                eprintln!("❌ Blind index failed: {}", e);
+                AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูล".to_string())
+            })?;
             (Some(enc), Some(hash))
         } else {
             (None, None)
@@ -551,7 +554,10 @@ pub async fn create_student(
                             eprintln!("❌ Parent Encryption failed: {}", e);
                             AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
                          })?;
-                        let hash = field_encryption::hash_for_search(nid);
+                        let hash = field_encryption::hash_for_search(nid).map_err(|e| {
+                            eprintln!("❌ Parent blind index failed: {}", e);
+                            AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
+                        })?;
                         (Some(enc), Some(hash))
                     } else {
                         (None, None)

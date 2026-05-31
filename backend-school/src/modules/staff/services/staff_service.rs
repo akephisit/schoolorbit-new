@@ -381,10 +381,11 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
             AppError::InternalServerError("Encryption error".to_string())
         })?;
 
-    let national_id_hash = payload
-        .national_id
-        .as_deref()
-        .map(field_encryption::hash_for_search);
+    let national_id_hash =
+        field_encryption::hash_optional_for_search(payload.national_id.as_deref()).map_err(|e| {
+            eprintln!("Blind index failed: {}", e);
+            AppError::InternalServerError("Encryption error".to_string())
+        })?;
 
     // Generate username if not provided — T0001 pattern, first available slot
     let username = match payload.username.as_deref() {

@@ -602,6 +602,7 @@ services:
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - BLIND_INDEX_KEY=${BLIND_INDEX_KEY}
       # Server config
       - RUST_LOG=${RUST_LOG:-info}
       - HOST=${HOST:-0.0.0.0}
@@ -656,6 +657,7 @@ nano /opt/stack/.env
 ```env
 # Security keys
 ENCRYPTION_KEY=change-this-encryption-key-minimum-32-characters-long
+BLIND_INDEX_KEY=change-this-blind-index-key-minimum-32-characters-long
 DEPLOY_KEY=local-dev-key-change-me-in-production
 JWT_SECRET=your-secret-key-change-this-in-production
 INTERNAL_API_SECRET=internal-secret-change-this

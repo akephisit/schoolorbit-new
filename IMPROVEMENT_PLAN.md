@@ -36,7 +36,7 @@
 | | |
 |---|---|
 | **ไฟล์** | `backend-school/src/modules/admission/`, `backend-school/src/modules/staff/`, `backend-school/src/modules/students/` |
-| **ที่ทำ** | ใช้ app-side `field_encryption.rs` สำหรับ `national_id`, เพิ่ม blind hash สำหรับ admission lookup/unique, และอัปเดต `TODO_ENCRYPTION.md` ให้เลิกอ้าง pgcrypto legacy |
+| **ที่ทำ** | ใช้ app-side `field_encryption.rs` สำหรับ `national_id`, เพิ่ม keyed HMAC blind hash สำหรับ lookup/unique, และอัปเดต `TODO_ENCRYPTION.md` ให้เลิกอ้าง pgcrypto legacy |
 | **ความยาก** | Medium |
 
 ### C-4. INTERNAL_API_SECRET ไม่ timing-safe
