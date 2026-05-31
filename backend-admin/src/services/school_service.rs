@@ -1,6 +1,7 @@
 use crate::error::AppError;
-use crate::models::{CreateSchool, School, UpdateSchool};
-use sqlx::PgPool;
+use crate::models::{CreateSchool, School, SchoolConfig, UpdateSchool};
+use sqlx::{types::Json, PgPool};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 pub struct SchoolService {
@@ -40,12 +41,12 @@ fn build_active_school_config(
     db_id: i64,
     dns_record_id: &str,
     deployment_url: &str,
-) -> serde_json::Value {
-    serde_json::json!({
-        "db_id": db_id,
-        "dns_record_id": dns_record_id,
-        "deployment_url": deployment_url,
-    })
+) -> SchoolConfig {
+    SchoolConfig {
+        db_id: Some(db_id),
+        dns_record_id: Some(dns_record_id.to_string()),
+        deployment_url: Some(deployment_url.to_string()),
+    }
 }
 
 enum ProvisioningReporter {
@@ -56,35 +57,35 @@ enum ProvisioningReporter {
 impl ProvisioningReporter {
     async fn info(&self, message: &str) {
         match self {
-            Self::Console => println!("{}", message),
+            Self::Console => info!("{}", message),
             Self::Sse(logger) => logger.info(message).await,
         }
     }
 
     async fn success(&self, message: &str) {
         match self {
-            Self::Console => println!("{}", message),
+            Self::Console => info!("{}", message),
             Self::Sse(logger) => logger.success(message).await,
         }
     }
 
     async fn warning(&self, message: &str) {
         match self {
-            Self::Console => eprintln!("{}", message),
+            Self::Console => warn!("{}", message),
             Self::Sse(logger) => logger.warning(message).await,
         }
     }
 
     async fn error(&self, message: &str) {
         match self {
-            Self::Console => eprintln!("{}", message),
+            Self::Console => error!("{}", message),
             Self::Sse(logger) => logger.error(message).await,
         }
     }
 
     async fn progress(&self, step: u8, total: u8, message: &str) {
         match self {
-            Self::Console => println!("📦 Step {}/{}: {}", step, total, message),
+            Self::Console => info!(step, total, "{}", message),
             Self::Sse(logger) => logger.progress(step, total, message).await,
         }
     }
@@ -170,7 +171,7 @@ impl SchoolService {
         status: &str,
         reason: &str,
     ) -> Result<(), String> {
-        eprintln!("⚠️  Marking school {} as {}: {}", school_id, status, reason);
+        warn!(%school_id, status, reason, "marking school status after provisioning error");
 
         match sqlx::query("UPDATE schools SET status = $1, updated_at = NOW() WHERE id = $2")
             .bind(status)
@@ -180,10 +181,7 @@ impl SchoolService {
         {
             Ok(_) => Ok(()),
             Err(e) => {
-                eprintln!(
-                    "⚠️  Failed to update school status after provisioning error: {}",
-                    e
-                );
+                warn!(error = %e, "failed to update school status after provisioning error");
                 Err(e.to_string())
             }
         }
@@ -506,35 +504,6 @@ impl SchoolService {
             .await;
         let dns_record_id = "".to_string(); // Managed by Wrangler
 
-        /* Commented out - DNS is now managed by Wrangler
-        println!("📦 Step 3/4: Creating DNS record...");
-        use crate::clients::cloudflare_client::CloudflareClient;
-        let cloudflare_client = match CloudflareClient::new() {
-            Ok(client) => client,
-            Err(e) => {
-                return Err(self
-                    .mark_school_status_error(
-                        school_id,
-                        "deployment_failed",
-                        format!("Cloudflare client error: {}", e),
-                    )
-                    .await);
-            }
-        };
-
-        let dns_record_id = match cloudflare_client.create_dns_record(&data.subdomain).await {
-            Ok(id) => {
-                println!("✅ DNS record created with ID: {}", id);
-                id
-            }
-            Err(e) => {
-                eprintln!("❌ Failed to create DNS record: {}", e);
-                // Continue anyway - DNS can be fixed manually
-                "".to_string()
-            }
-        };
-        */
-
         // Step 4: Deploy Cloudflare Worker
         options.info("Deploying Cloudflare Worker...").await;
         let api_url = std::env::var("API_URL")
@@ -620,7 +589,7 @@ impl SchoolService {
             RETURNING *
             "#,
         )
-        .bind(&config)
+        .bind(Json(config))
         .bind(school_id)
         .fetch_one(&self.pool)
         .await
@@ -714,7 +683,7 @@ impl SchoolService {
             q = q.bind(status);
         }
         if let Some(config) = data.config {
-            q = q.bind(config);
+            q = q.bind(Json(config));
         }
 
         q = q.bind(id);
@@ -729,83 +698,74 @@ impl SchoolService {
     }
 
     pub async fn delete_school(&self, id: Uuid) -> Result<(), AppError> {
-        println!("🗑️  Starting school deletion for ID: {}", id);
+        info!(school_id = %id, "starting school deletion");
 
         // Get school info first
         let school = self.get_school(id).await?;
 
-        println!("   School: {}", school.name);
-        println!("   Subdomain: {}", school.subdomain);
+        info!(school = %school.name, subdomain = %school.subdomain, "loaded school for deletion");
 
-        // Parse config to get resource IDs
-        let config = school.config.as_object();
-        let db_id = config.and_then(|c| c.get("db_id")).and_then(|v| v.as_i64());
-        let dns_record_id = config
-            .and_then(|c| c.get("dns_record_id"))
-            .and_then(|v| v.as_str());
+        let db_id = school.config.db_id;
+        let dns_record_id = school.config.dns_record_id.as_deref();
 
         // Step 1: Delete Cloudflare Worker
-        println!("📦 Step 1/4: Deleting Cloudflare Worker...");
+        info!("deleting Cloudflare Worker");
         use crate::clients::cloudflare_client::CloudflareClient;
 
         if let Ok(cf_client) = CloudflareClient::new() {
             let worker_name = format!("schoolorbit-school-{}", school.subdomain);
             match cf_client.delete_worker(&worker_name).await {
-                Ok(_) => println!("   ✅ Worker deleted: {}", worker_name),
+                Ok(_) => info!(worker_name, "worker deleted"),
                 Err(e) => {
-                    eprintln!("   ⚠️  Failed to delete Worker: {}", e);
-                    eprintln!("   Continuing with deletion...");
+                    warn!(error = %e, "failed to delete Worker; continuing with deletion");
                 }
             }
         } else {
-            eprintln!("   ⚠️  Cloudflare client not available");
+            warn!("Cloudflare client not available");
         }
 
         // Step 2: Delete DNS record (if exists)
-        println!("📦 Step 2/4: Deleting DNS record...");
+        info!("deleting DNS record");
         if let Some(dns_id) = dns_record_id {
             if !dns_id.is_empty() {
                 if let Ok(cf_client) = CloudflareClient::new() {
                     match cf_client.delete_dns_record(dns_id).await {
-                        Ok(_) => println!("   ✅ DNS record deleted: {}", dns_id),
+                        Ok(_) => info!(dns_id, "DNS record deleted"),
                         Err(e) => {
-                            eprintln!("   ⚠️  Failed to delete DNS: {}", e);
+                            warn!(error = %e, "failed to delete DNS record");
                         }
                     }
                 }
             } else {
-                println!("   ⏭️  No DNS record ID (managed by Wrangler)");
+                info!("no DNS record ID (managed by Wrangler)");
             }
         } else {
-            println!("   ⏭️  No DNS record to delete");
+            info!("no DNS record to delete");
         }
 
         // Step 3: Delete Neon database
-        println!("📦 Step 3/4: Deleting Neon database...");
+        info!("deleting Neon database");
 
         // Construct database name from subdomain (same as creation)
         let db_name = format!("schoolorbit_{}", school.subdomain);
 
-        println!("   Database name: {}", db_name);
-        println!("   Debug: config = {:?}", config);
-        println!("   Debug: db_id (for reference only) = {:?}", db_id);
+        info!(db_name, db_id = ?db_id, "deleting tenant database");
 
         use crate::clients::neon_client::NeonClient;
 
         if let Ok(neon_client) = NeonClient::new() {
             match neon_client.delete_database_by_name(&db_name).await {
-                Ok(_) => println!("   ✅ Database deleted: {}", db_name),
+                Ok(_) => info!(db_name, "database deleted"),
                 Err(e) => {
-                    eprintln!("   ⚠️  Failed to delete database: {}", e);
-                    eprintln!("   You may need to delete manually from Neon console");
+                    warn!(error = %e, "failed to delete database; manual cleanup may be needed");
                 }
             }
         } else {
-            eprintln!("   ⚠️  Neon client not available");
+            warn!("Neon client not available");
         }
 
         // Step 4: Delete school record from database
-        println!("📦 Step 4/4: Deleting school record...");
+        info!("deleting school record");
         let result = sqlx::query("DELETE FROM schools WHERE id = $1")
             .bind(id)
             .execute(&self.pool)
@@ -816,8 +776,7 @@ impl SchoolService {
             return Err(AppError::NotFound("School not found".to_string()));
         }
 
-        println!("   ✅ School record deleted from database");
-        println!("🎉 School deletion completed!");
+        info!("school deletion completed");
 
         Ok(())
     }
@@ -985,8 +944,6 @@ impl SchoolService {
             .info(&format!("Subdomain: {}", school.subdomain))
             .await;
 
-        let _config = school.config.as_object();
-
         // Step 1: Delete Cloudflare Worker
         logger.progress(1, 4, "Deleting Cloudflare Worker...").await;
 
@@ -1093,9 +1050,12 @@ mod tests {
     fn active_school_config_records_database_and_deployment_url() {
         let config = build_active_school_config(42, "", "https://sandbox.schoolorbit.app");
 
-        assert_eq!(config["db_id"], 42);
-        assert_eq!(config["dns_record_id"], "");
-        assert_eq!(config["deployment_url"], "https://sandbox.schoolorbit.app");
+        assert_eq!(config.db_id, Some(42));
+        assert_eq!(config.dns_record_id.as_deref(), Some(""));
+        assert_eq!(
+            config.deployment_url.as_deref(),
+            Some("https://sandbox.schoolorbit.app")
+        );
     }
 
     #[test]

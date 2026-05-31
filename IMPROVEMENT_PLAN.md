@@ -75,13 +75,14 @@
 | **รายละเอียด** | API ปกติใช้ console logging และไม่รอ GitHub Actions; SSE ใช้ `SseLogger`, ส่ง complete event และยังรอ workflow completion เหมือนเดิม |
 | **ตรวจสอบ** | `cargo test`, `cargo check`, `git diff --check` |
 
-### H-3. `schools.config` เป็น untyped `serde_json::Value`
+### ✅ H-3. `schools.config` เป็น untyped `serde_json::Value` — เสร็จแล้ว
 | | |
 |---|---|
 | **ไฟล์** | `backend-admin/src/models/school.rs`, `backend-admin/src/services/school_service.rs` |
 | **ปัญหา** | typo เช่น `"db_id"` vs `"db-id"` ไม่ถูก catch ที่ compile time — return `None` เงียบๆ |
-| **แก้ไข** | สร้าง `SchoolConfig` struct และใช้ `sqlx::types::Json<SchoolConfig>` |
-| **ความยาก** | Small |
+| **ที่ทำ** | สร้าง `SchoolConfig` struct และใช้ `sqlx::types::Json<SchoolConfig>` ใน `School.config` พร้อม bind ผ่าน `Json(config)` ตอนเขียน DB |
+| **ผลลัพธ์** | code ที่อ่าน `db_id`/`dns_record_id` เป็น typed field แล้ว ลด typo จาก string key และทำให้ compiler ช่วยจับ schema drift |
+| **ตรวจสอบ** | `cargo test`, `cargo check`, `git diff --check` |
 
 ### ✅ H-4. Migration gap — ไม่มี migration 003 ใน backend-admin — เสร็จแล้ว
 | | |
@@ -126,13 +127,14 @@
 | **ที่ทำ** | ลบ `admin_pool: PgPool` ออกจาก `AppState` และแทนด้วย `admin_client: Arc<AdminClient>` — HTTP client ที่เรียก `GET /internal/schools/{subdomain}` บน backend-admin แทนการ query DB ตรง เพิ่ม endpoint `PUT /internal/schools/{subdomain}/migration-status` สำหรับ write-back |
 | **ผลลัพธ์** | backend-school ไม่มี admin DB credentials อีกต่อไป — isolation สมบูรณ์ |
 
-### M-5. `println!` แทน structured logging ใน backend-admin
+### ✅ M-5. `println!` แทน structured logging ใน backend-admin — เสร็จแล้ว
 | | |
 |---|---|
 | **ไฟล์** | `backend-admin/src/services/school_service.rs`, `backend-admin/src/clients/*.rs` |
 | **ปัญหา** | 111+ `println!` calls — ไม่สามารถ filter level หรือ aggregate ใน Grafana/Datadog ได้ และอาจ log sensitive data |
-| **แก้ไข** | เพิ่ม `tracing` ใน Cargo.toml และแทนที่ทุก `println!`/`eprintln!` |
-| **ความยาก** | Small |
+| **ที่ทำ** | เพิ่ม `tracing`/`tracing-subscriber`, init logger จาก `RUST_LOG`, และแทนที่ `println!`/`eprintln!` ใน backend-admin main/service/clients ด้วย `info!`/`warn!`/`error!`/`debug!` |
+| **ผลลัพธ์** | log filter ได้ตาม level/module และลดการพิมพ์ response ดิบจาก external APIs |
+| **ตรวจสอบ** | `cargo test`, `cargo check`, `git diff --check`, `rg "println!\|eprintln!" backend-admin/src/main.rs backend-admin/src/services/school_service.rs backend-admin/src/clients/*.rs` |
 
 ---
 

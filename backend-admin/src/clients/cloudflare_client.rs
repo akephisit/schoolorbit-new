@@ -1,6 +1,7 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Serialize)]
 struct CreateDnsRecordRequest {
@@ -14,12 +15,12 @@ struct CreateDnsRecordRequest {
 
 #[derive(Debug, Deserialize)]
 struct CreateDnsRecordResponse {
-    result: DnsRecord,  // Only field we use
+    result: DnsRecord, // Only field we use
 }
 
 #[derive(Debug, Deserialize)]
 struct DnsRecord {
-    id: String,  // Only field we use
+    id: String, // Only field we use
 }
 
 pub struct CloudflareClient {
@@ -34,12 +35,11 @@ impl CloudflareClient {
     pub fn new() -> Result<Self, String> {
         let api_token = env::var("CLOUDFLARE_API_TOKEN")
             .map_err(|_| "CLOUDFLARE_API_TOKEN not set".to_string())?;
-        let zone_id = env::var("CLOUDFLARE_ZONE_ID")
-            .map_err(|_| "CLOUDFLARE_ZONE_ID not set".to_string())?;
+        let zone_id =
+            env::var("CLOUDFLARE_ZONE_ID").map_err(|_| "CLOUDFLARE_ZONE_ID not set".to_string())?;
         let account_id = env::var("CLOUDFLARE_ACCOUNT_ID")
             .map_err(|_| "CLOUDFLARE_ACCOUNT_ID not set".to_string())?;
-        let base_domain = env::var("BASE_DOMAIN")
-            .unwrap_or_else(|_| "schoolorbit.app".to_string());
+        let base_domain = env::var("BASE_DOMAIN").unwrap_or_else(|_| "schoolorbit.app".to_string());
 
         Ok(Self {
             client: Client::new(),
@@ -52,10 +52,7 @@ impl CloudflareClient {
 
     /// Create a DNS record for the subdomain
     /// For Cloudflare Workers, we create a CNAME to workers.dev or an A record to Worker's IP
-    pub async fn create_dns_record(
-        &self,
-        subdomain: &str,
-    ) -> Result<String, String> {
+    pub async fn create_dns_record(&self, subdomain: &str) -> Result<String, String> {
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records",
             self.zone_id
@@ -69,8 +66,8 @@ impl CloudflareClient {
             record_type: "A".to_string(),
             name: full_domain.clone(),
             content: "192.0.2.1".to_string(), // Placeholder IP
-            ttl: 1, // Auto TTL
-            proxied: true, // Enable Cloudflare proxy
+            ttl: 1,                           // Auto TTL
+            proxied: true,                    // Enable Cloudflare proxy
         };
 
         let response = self
@@ -125,7 +122,6 @@ impl CloudflareClient {
         Ok(())
     }
 
-
     /// Deploy a Cloudflare Worker via GitHub Actions
     /// Triggers the deploy-school-tenant workflow
     /// Returns (deployment_url, trigger_timestamp)
@@ -135,37 +131,37 @@ impl CloudflareClient {
         school_id: &str,
         api_url: &str,
     ) -> Result<(String, chrono::DateTime<chrono::Utc>), String> {
-        println!("📦 Triggering GitHub Actions deployment for: {}", subdomain);
-        
+        info!(subdomain, "triggering GitHub Actions deployment");
+
         // Record the time before triggering (to account for any delays)
         let trigger_time = chrono::Utc::now();
-        
+
         // Get GitHub configuration
-        let github_token = env::var("GITHUB_TOKEN")
-            .map_err(|_| "GITHUB_TOKEN not set".to_string())?;
-        let github_repo = env::var("GITHUB_REPO")
-            .unwrap_or_else(|_| "akephisit/schoolorbit-new".to_string());
-        
+        let github_token =
+            env::var("GITHUB_TOKEN").map_err(|_| "GITHUB_TOKEN not set".to_string())?;
+        let github_repo =
+            env::var("GITHUB_REPO").unwrap_or_else(|_| "akephisit/schoolorbit-new".to_string());
+
         // Trigger workflow via GitHub API
         let url = format!(
             "https://api.github.com/repos/{}/actions/workflows/deploy-school-tenant.yml/dispatches",
             github_repo
         );
-        
+
         #[derive(Debug, Serialize)]
         struct WorkflowDispatch {
             #[serde(rename = "ref")]
             git_ref: String,
             inputs: WorkflowInputs,
         }
-        
+
         #[derive(Debug, Serialize)]
         struct WorkflowInputs {
             subdomain: String,
             school_id: String,
             api_url: String,
         }
-        
+
         let dispatch = WorkflowDispatch {
             git_ref: "main".to_string(),
             inputs: WorkflowInputs {
@@ -174,7 +170,7 @@ impl CloudflareClient {
                 api_url: api_url.to_string(),
             },
         };
-        
+
         let response = self
             .client
             .post(&url)
@@ -186,7 +182,7 @@ impl CloudflareClient {
             .send()
             .await
             .map_err(|e| format!("Failed to trigger GitHub Actions: {}", e))?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response
@@ -198,12 +194,14 @@ impl CloudflareClient {
                 status, error_text
             ));
         }
-        
-        println!("✅ GitHub Actions workflow triggered successfully");
-        println!("   Triggered at: {}", trigger_time);
-        println!("   Deployment will be processed by GitHub Actions");
-        println!("   Check: https://github.com/{}/actions", github_repo);
-        
+
+        info!(
+            subdomain,
+            %trigger_time,
+            github_repo,
+            "GitHub Actions workflow triggered successfully"
+        );
+
         // Return the expected URL and trigger time
         // Note: Actual deployment happens asynchronously in GitHub Actions
         let deployment_url = format!("https://{}.{}", subdomain, self.base_domain);
@@ -218,24 +216,23 @@ impl CloudflareClient {
         trigger_time: chrono::DateTime<chrono::Utc>,
         timeout_minutes: u64,
     ) -> Result<(), String> {
-        let github_token = std::env::var("GITHUB_TOKEN")
-            .map_err(|_| "GITHUB_TOKEN not set".to_string())?;
+        let github_token =
+            std::env::var("GITHUB_TOKEN").map_err(|_| "GITHUB_TOKEN not set".to_string())?;
         let github_repo = std::env::var("GITHUB_REPOSITORY")
             .unwrap_or_else(|_| "akephisit/schoolorbit-new".to_string());
 
-        let url = format!(
-            "https://api.github.com/repos/{}/actions/runs",
-            github_repo
-        );
+        let url = format!("https://api.github.com/repos/{}/actions/runs", github_repo);
 
         let start_time = std::time::Instant::now();
         let timeout = std::time::Duration::from_secs(timeout_minutes * 60);
         let poll_interval = std::time::Duration::from_secs(10); // Poll every 10 seconds
 
-        println!("⏳ Waiting for GitHub Actions workflow to complete...");
-        println!("   Subdomain: {}", subdomain);
-        println!("   Triggered at: {}", trigger_time);
-        println!("   Timeout: {} minutes", timeout_minutes);
+        info!(
+            subdomain,
+            %trigger_time,
+            timeout_minutes,
+            "waiting for GitHub Actions workflow to complete"
+        );
 
         loop {
             // Check timeout
@@ -260,10 +257,7 @@ impl CloudflareClient {
                 .map_err(|e| format!("Failed to fetch workflow runs: {}", e))?;
 
             if !response.status().is_success() {
-                return Err(format!(
-                    "GitHub API error: {}",
-                    response.status()
-                ));
+                return Err(format!("GitHub API error: {}", response.status()));
             }
 
             let runs: serde_json::Value = response
@@ -274,7 +268,7 @@ impl CloudflareClient {
             // Find the most recent run for deployment workflow that was created after our trigger
             if let Some(workflow_runs) = runs["workflow_runs"].as_array() {
                 if workflow_runs.is_empty() {
-                    println!("   No workflow runs found yet - waiting...");
+                    debug!("no workflow runs found yet");
                     tokio::time::sleep(poll_interval).await;
                     continue;
                 }
@@ -284,12 +278,15 @@ impl CloudflareClient {
                 for run in workflow_runs {
                     let name = run["name"].as_str().unwrap_or("");
                     let created_at_str = run["created_at"].as_str().unwrap_or("");
-                    
+
                     // Parse created_at timestamp
                     let created_at = match chrono::DateTime::parse_from_rfc3339(created_at_str) {
                         Ok(dt) => dt.with_timezone(&chrono::Utc),
                         Err(_) => {
-                            println!("   Warning: Could not parse created_at: {}", created_at_str);
+                            warn!(
+                                created_at = created_at_str,
+                                "could not parse workflow created_at"
+                            );
                             continue;
                         }
                     };
@@ -298,13 +295,16 @@ impl CloudflareClient {
                     // Allow 5 seconds buffer for clock differences
                     let trigger_with_buffer = trigger_time - chrono::Duration::seconds(5);
                     if created_at < trigger_with_buffer {
-                        println!("   Skipping old workflow: {} (created before trigger)", name);
+                        debug!(
+                            workflow = name,
+                            "skipping old workflow created before trigger"
+                        );
                         continue;
                     }
 
                     // Check if this is deployment workflow
                     if !name.contains("Deploy") || !name.contains("School") {
-                        println!("   Skipping non-deployment workflow: {}", name);
+                        debug!(workflow = name, "skipping non-deployment workflow");
                         continue;
                     }
 
@@ -314,36 +314,38 @@ impl CloudflareClient {
                     let conclusion = run["conclusion"].as_str();
                     let html_url = run["html_url"].as_str().unwrap_or("");
 
-                    println!("   Found matching workflow: {} - status: {}", name, status);
-                    println!("   Created at: {} (trigger: {})", created_at, trigger_time);
+                    info!(
+                        workflow = name,
+                        status,
+                        %created_at,
+                        %trigger_time,
+                        "found matching workflow"
+                    );
 
                     match status {
-                        "completed" => {
-                            match conclusion {
-                                Some("success") => {
-                                    println!("✅ Workflow completed successfully!");
-                                    println!("   URL: {}", html_url);
-                                    return Ok(());
-                                }
-                                Some("failure") | Some("cancelled") => {
-                                    return Err(format!(
-                                        "Workflow {} - Check: {}",
-                                        conclusion.unwrap_or("failed"),
-                                        html_url
-                                    ));
-                                }
-                                _ => {
-                                    println!("   Workflow completed with unknown conclusion: {:?}", conclusion);
-                                }
+                        "completed" => match conclusion {
+                            Some("success") => {
+                                info!(workflow_url = html_url, "workflow completed successfully");
+                                return Ok(());
                             }
-                        }
+                            Some("failure") | Some("cancelled") => {
+                                return Err(format!(
+                                    "Workflow {} - Check: {}",
+                                    conclusion.unwrap_or("failed"),
+                                    html_url
+                                ));
+                            }
+                            _ => {
+                                warn!(?conclusion, "workflow completed with unknown conclusion");
+                            }
+                        },
                         "in_progress" | "queued" | "waiting" => {
-                            println!("   Workflow {} - continuing to wait...", status);
+                            debug!(status, "workflow still running");
                             // Don't break - continue waiting
                             break; // Break inner loop to wait and poll again
                         }
                         _ => {
-                            println!("   Unknown status: {}", status);
+                            warn!(status, "unknown workflow status");
                         }
                     }
 
@@ -352,10 +354,13 @@ impl CloudflareClient {
                 }
 
                 if !found_matching_run {
-                    println!("   No matching workflow run found yet (checked {} runs)", workflow_runs.len());
+                    debug!(
+                        checked = workflow_runs.len(),
+                        "no matching workflow run found yet"
+                    );
                 }
             } else {
-                println!("   No workflow_runs array in response");
+                warn!("GitHub Actions response did not include workflow_runs array");
             }
 
             // Wait before next poll
@@ -365,13 +370,13 @@ impl CloudflareClient {
 
     /// Delete a Cloudflare Worker
     pub async fn delete_worker(&self, worker_name: &str) -> Result<(), String> {
-        println!("🗑️  Deleting Worker: {}", worker_name);
-        
+        info!(worker_name, "deleting Cloudflare Worker");
+
         let url = format!(
             "https://api.cloudflare.com/client/v4/accounts/{}/workers/scripts/{}",
             self.account_id, worker_name
         );
-        
+
         let response = self
             .client
             .delete(&url)
@@ -379,27 +384,27 @@ impl CloudflareClient {
             .send()
             .await
             .map_err(|e| format!("Failed to delete worker: {}", e))?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            
+
             // 404 is OK - worker already deleted
             if status == 404 {
-                println!("   ℹ️  Worker not found (already deleted)");
+                info!(worker_name, "Worker not found; already deleted");
                 return Ok(());
             }
-            
+
             return Err(format!(
                 "Failed to delete worker ({}): {}",
                 status, error_text
             ));
         }
-        
-        println!("   ✅ Worker deleted successfully");
+
+        info!(worker_name, "Worker deleted successfully");
         Ok(())
     }
 }

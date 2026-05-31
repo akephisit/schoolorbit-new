@@ -2,12 +2,18 @@ use backend_admin::{build_app, AppState};
 use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use std::env;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
 
-    println!("🚀 Starting SchoolOrbit Backend Admin Service...");
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
+    info!("starting SchoolOrbit Backend Admin Service");
 
     // Database setup
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -20,7 +26,7 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    println!("✅ Connected to Neon PostgreSQL");
+    info!("connected to Neon PostgreSQL");
 
     // Run migrations
     sqlx::migrate!("./migrations")
@@ -28,27 +34,18 @@ async fn main() {
         .await
         .expect("Failed to run migrations");
 
-    println!("✅ Database migrations completed");
+    info!("database migrations completed");
 
-    println!("✅ Services initialized");
-    println!("🔐 CORS handling delegated to nginx reverse proxy");
+    info!("services initialized");
+    info!("CORS handling delegated to nginx reverse proxy");
 
     // Build application
     let app = build_app(AppState::new(pool));
 
-    println!("🌐 Server starting on http://0.0.0.0:8080");
-    println!("\n✅ Available endpoints:");
-    println!("  GET  /                          - API info");
-    println!("  GET  /health                    - Health check");
-    println!("  POST /api/v1/auth/login         - Login with national ID");
-    println!("  POST /api/v1/auth/logout        - Logout");
-    println!("  GET  /api/v1/auth/me            - Get current user");
-    println!("  Internal APIs (Protected by Internal Secret):");
-    println!("  GET  /internal/schools          - List all schools (internal use)\n");
-    println!("  School Management (Protected):");
-    println!("  /api/v1/schools/*               - CRUD Schools");
-    println!("  /api/v1/schools/stream          - Create School with SSE Logs");
-    println!("  /api/v1/schools/{{id}}/deploy     - Trigger Deployment");
+    info!(
+        address = "http://0.0.0.0:8080",
+        "server starting with admin and school management endpoints"
+    );
 
     // Run server
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
