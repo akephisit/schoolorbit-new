@@ -1,6 +1,6 @@
-use crate::models::{AdminUser, CreateAdminUser, LoginRequest};
-use crate::auth::{generate_token, hash_password, verify_password, Claims, UserRole};
+use crate::auth::{generate_token, hash_password, verify_password, AdminClaims, AdminRole};
 use crate::error::AppError;
+use crate::models::{AdminUser, CreateAdminUser, LoginRequest};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ impl AuthService {
         // Validate national ID (13 digits)
         if !Self::validate_national_id(&data.national_id) {
             return Err(AppError::ValidationError(
-                "Invalid national ID format. Must be 13 digits.".to_string()
+                "Invalid national ID format. Must be 13 digits.".to_string(),
             ));
         }
 
@@ -30,7 +30,7 @@ impl AuthService {
             INSERT INTO admin_users (national_id, password_hash, name, role)
             VALUES ($1, $2, $3, 'super_admin')
             RETURNING *
-            "#
+            "#,
         )
         .bind(&data.national_id)
         .bind(&password_hash)
@@ -46,33 +46,41 @@ impl AuthService {
         // Validate national ID format
         if !Self::validate_national_id(&data.national_id) {
             return Err(AppError::ValidationError(
-                "Invalid national ID format".to_string()
+                "Invalid national ID format".to_string(),
             ));
         }
 
         // Find user by national_id
-        let admin = sqlx::query_as::<_, AdminUser>(
-            "SELECT * FROM admin_users WHERE national_id = $1"
-        )
-        .bind(&data.national_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?
-        .ok_or_else(|| AppError::Unauthorized("Invalid national ID or password".to_string()))?;
+        let admin =
+            sqlx::query_as::<_, AdminUser>("SELECT * FROM admin_users WHERE national_id = $1")
+                .bind(&data.national_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?
+                .ok_or_else(|| {
+                    AppError::Unauthorized("Invalid national ID or password".to_string())
+                })?;
 
         // Verify password
         let is_valid = verify_password(&data.password, &admin.password_hash)?;
         if !is_valid {
-            return Err(AppError::Unauthorized("Invalid national ID or password".to_string()));
+            return Err(AppError::Unauthorized(
+                "Invalid national ID or password".to_string(),
+            ));
         }
 
-        // Generate JWT
-        let claims = Claims {
+        let role = AdminRole::try_from(admin.role.as_str())
+            .map_err(|_| AppError::Unauthorized("Admin role is not allowed".to_string()))?;
+        if !role.can_access_admin_backend() {
+            return Err(AppError::Unauthorized(
+                "Admin role is not allowed".to_string(),
+            ));
+        }
+
+        let claims = AdminClaims {
             sub: admin.id.to_string(),
             email: admin.national_id.clone(), // Use national_id in email field for compatibility
-            role: UserRole::SuperAdmin,
-            school_id: None,
-            subdomain: None,
+            role,
             exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
             iat: chrono::Utc::now().timestamp() as usize,
         };
@@ -83,14 +91,12 @@ impl AuthService {
     }
 
     pub async fn get_admin_by_id(&self, id: Uuid) -> Result<AdminUser, AppError> {
-        let admin = sqlx::query_as::<_, AdminUser>(
-            "SELECT * FROM admin_users WHERE id = $1"
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound("Admin user not found".to_string()))?;
+        let admin = sqlx::query_as::<_, AdminUser>("SELECT * FROM admin_users WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| AppError::NotFound("Admin user not found".to_string()))?;
 
         Ok(admin)
     }

@@ -1,13 +1,13 @@
+use crate::auth::validate_token;
 use crate::models::LoginRequest;
 use crate::services::AuthService;
+use crate::types::ApiResponse;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
-use serde::{Serialize, Deserialize};
-use crate::auth::validate_token;
-use crate::types::ApiResponse;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::OnceLock;
 use tower_cookies::{Cookie, Cookies};
@@ -24,10 +24,7 @@ pub struct LoginResponse {
     pub user: serde_json::Value,
 }
 
-pub async fn login_handler(
-    cookies: Cookies,
-    Json(credentials): Json<LoginRequest>,
-) -> Response {
+pub async fn login_handler(cookies: Cookies, Json(credentials): Json<LoginRequest>) -> Response {
     let pool = match DB_POOL.get() {
         Some(pool) => pool.clone(),
         None => {
@@ -52,7 +49,7 @@ pub async fn login_handler(
             cookie.set_secure(true);
             cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
             cookie.set_max_age(tower_cookies::cookie::time::Duration::days(1));
-            
+
             cookies.add(cookie);
 
             let response_data = ApiResponse::success(LoginResponse {
@@ -83,7 +80,7 @@ pub async fn logout_handler(cookies: Cookies) -> Response {
     cookie.set_path("/");
     cookie.set_http_only(true);
     cookie.set_max_age(tower_cookies::cookie::time::Duration::seconds(0));
-    
+
     cookies.add(cookie);
 
     (
@@ -136,6 +133,16 @@ pub async fn me_handler(cookies: Cookies) -> Response {
                 .into_response();
         }
     };
+
+    if !claims.role.can_access_admin_backend() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "error": "Admin role required"
+            })),
+        )
+            .into_response();
+    }
 
     // Get user from database
     let auth_service = AuthService::new(pool);

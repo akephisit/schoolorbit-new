@@ -1,3 +1,4 @@
+use crate::auth::validate_token;
 use axum::{
     extract::Request,
     http::StatusCode,
@@ -5,7 +6,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use crate::auth::validate_token;
 use tower_cookies::Cookies;
 
 pub async fn require_auth(cookies: Cookies, request: Request, next: Next) -> Response {
@@ -25,10 +25,14 @@ pub async fn require_auth(cookies: Cookies, request: Request, next: Next) -> Res
 
     // Validate token
     match validate_token(&token) {
-        Ok(_claims) => {
-            // Token valid, proceed to handler
-            next.run(request).await
-        }
+        Ok(claims) if claims.role.can_access_admin_backend() => next.run(request).await,
+        Ok(_) => (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "error": "Forbidden - Admin role required"
+            })),
+        )
+            .into_response(),
         Err(_) => (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({

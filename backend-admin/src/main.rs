@@ -37,6 +37,7 @@ async fn main() {
 
     // Initialize handlers with database pool
     handlers::auth::init_pool(pool.clone());
+    handlers::health::init_pool(pool.clone());
     handlers::school::init_pool(pool.clone());
     handlers::school_sse::init_pool(pool.clone());
     handlers::internal::init_pool(pool.clone());

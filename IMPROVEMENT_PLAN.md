@@ -48,12 +48,11 @@
 | **แก้ไข** | ใช้ `subtle::ConstantTimeEq` และเพิ่ม `X-Internal-Caller` header เพื่อแยก secret ต่อ caller |
 | **ความยาก** | Small |
 
-### C-5. Admin JWT claims มี school-scoped fields ที่ไม่จำเป็น
+### ✅ C-5. Admin JWT claims มี school-scoped fields ที่ไม่จำเป็น — เสร็จแล้ว
 | | |
 |---|---|
 | **ไฟล์** | `backend-admin/src/auth/types.rs`, `backend-admin/src/middleware/auth.rs` |
-| **ปัญหา** | `Claims` struct มี `school_id` และ `subdomain` ทั้งที่ admin ไม่ควรมี และ middleware ไม่ validate `role` field เลย |
-| **แก้ไข** | แยก `AdminClaims` struct ออกมา ลบ school fields และเพิ่ม role check ใน middleware |
+| **ที่ทำ** | แยกเป็น `AdminClaims` ไม่มี `school_id/subdomain`, เพิ่ม `AdminRole::can_access_admin_backend()` และ enforce role ใน middleware + `/api/v1/auth/me` |
 | **ความยาก** | Small |
 
 ---
@@ -84,12 +83,11 @@
 | **แก้ไข** | สร้าง `SchoolConfig` struct และใช้ `sqlx::types::Json<SchoolConfig>` |
 | **ความยาก** | Small |
 
-### H-4. Migration gap — ไม่มี migration 003 ใน backend-admin
+### ✅ H-4. Migration gap — ไม่มี migration 003 ใน backend-admin — เสร็จแล้ว
 | | |
 |---|---|
 | **ไฟล์** | `backend-admin/migrations/` |
-| **ปัญหา** | ลำดับข้าม 002 → 004 ถ้าใครสร้าง `003_xxx.sql` ในอนาคต SQLx จะ reject ทุก tenant |
-| **แก้ไข** | สร้าง `003_placeholder.sql` ด้วย `SELECT 1;` พร้อม comment |
+| **ที่ทำ** | เพิ่ม `003_placeholder.sql` ด้วย `SELECT 1;` พร้อม comment เพื่อคงลำดับ migration |
 | **ความยาก** | Small |
 
 ### ✅ H-5. Permission check ทำ 2 DB round trips ต่อ request — เสร็จแล้ว
@@ -143,7 +141,7 @@
 | # | ปัญหา | แก้ไข | ความยาก |
 |---|---|---|---|
 | L-1 | ไม่มี circuit breaker สำหรับ Neon/Cloudflare | เพิ่ม timeout + exponential backoff ใน clients | Medium |
-| L-2 | `/health` return healthy เสมอ ไม่ตรวจ DB จริง | เพิ่ม `SELECT 1` ping + 503 on failure | Small |
+| ✅ L-2 | `/health` return healthy เสมอ ไม่ตรวจ DB จริง | เพิ่ม `SELECT 1` ping + 503 on failure แล้ว | Small |
 | L-3 | ไม่มี shared type contracts ระหว่าง services | สร้าง `schoolorbit-contracts` workspace crate | Medium |
 | L-4 | RBAC มีใน code แต่ไม่ enforce | เพิ่ม `require_role()` middleware factory ใน backend-admin | Small |
 
