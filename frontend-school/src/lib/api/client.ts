@@ -1,4 +1,6 @@
 // API Client base
+import { browser } from '$app/environment';
+import { resolve } from '$app/paths';
 import { PUBLIC_BACKEND_URL } from '$env/static/public';
 
 const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
@@ -17,32 +19,75 @@ class APIClient {
 		this.baseURL = baseURL;
 	}
 
+	private async parseResponse(response: Response): Promise<unknown> {
+		const contentType = response.headers.get('content-type') ?? '';
+		const text = await response.text();
+
+		if (!text) {
+			return {};
+		}
+
+		if (contentType.includes('application/json')) {
+			try {
+				return JSON.parse(text);
+			} catch {
+				return { error: 'รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง' };
+			}
+		}
+
+		return { error: text };
+	}
+
+	private errorMessage(data: unknown): string {
+		if (data && typeof data === 'object') {
+			const payload = data as { error?: unknown; message?: unknown };
+			if (typeof payload.error === 'string' && payload.error) return payload.error;
+			if (typeof payload.message === 'string' && payload.message) return payload.message;
+		}
+
+		return 'เกิดข้อผิดพลาด';
+	}
+
+	private handleUnauthorized() {
+		if (!browser) return;
+
+		const loginPath = resolve('/login');
+		const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+		if (currentPath.startsWith(loginPath)) return;
+
+		sessionStorage.setItem('redirectAfterLogin', currentPath);
+		window.location.assign(loginPath);
+	}
+
 	private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
 		const url = `${this.baseURL}${endpoint}`;
 
-		const defaultHeaders: HeadersInit = {
-			'Content-Type': 'application/json'
-		};
+		const headers = new Headers(options.headers);
+		if (options.body !== undefined && !headers.has('Content-Type')) {
+			headers.set('Content-Type', 'application/json');
+		}
 
 		const response = await fetch(url, {
 			...options,
 			credentials: 'include',
-			headers: {
-				...defaultHeaders,
-				...options.headers
-			}
+			headers
 		});
 
-		const data = await response.json();
+		const data = await this.parseResponse(response);
 
 		if (!response.ok) {
+			if (response.status === 401) {
+				this.handleUnauthorized();
+			}
+
 			return {
 				success: false,
-				error: data.error || 'เกิดข้อผิดพลาด'
+				error: this.errorMessage(data)
 			};
 		}
 
-		return data;
+		return data as ApiResponse<T>;
 	}
 
 	async get<T>(endpoint: string): Promise<ApiResponse<T>> {
@@ -82,11 +127,15 @@ class APIClient {
 			credentials: 'include',
 			body
 		});
-		const data = await response.json();
+		const data = await this.parseResponse(response);
 		if (!response.ok) {
-			return { success: false, error: data.error || 'เกิดข้อผิดพลาด' };
+			if (response.status === 401) {
+				this.handleUnauthorized();
+			}
+
+			return { success: false, error: this.errorMessage(data) };
 		}
-		return data;
+		return data as ApiResponse<T>;
 	}
 }
 

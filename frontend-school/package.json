@@ -10,6 +10,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test:static": "node --test tests/static/*.test.mjs",
 		"test:e2e": "playwright test",
 		"test:e2e:headed": "playwright test --headed",
 		"format": "prettier --write .",

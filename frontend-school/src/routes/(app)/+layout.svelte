@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import Header from '$lib/components/layout/Header.svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { authAPI } from '$lib/api/auth';
 
@@ -8,8 +10,11 @@
 	import { notificationStore } from '$lib/stores/notification';
 	let { children } = $props();
 
-	let sidebarRef: { toggleMobileSidebar?: () => void } | undefined;
+	type AuthStatus = 'checking' | 'authenticated' | 'redirecting';
+
+	let sidebarRef = $state<{ toggleMobileSidebar?: () => void }>();
 	let isSidebarCollapsed = $state($uiPreferences.sidebarCollapsed);
+	let authStatus = $state<AuthStatus>('checking');
 
 	function handleMenuClick() {
 		if (sidebarRef?.toggleMobileSidebar) {
@@ -17,24 +22,35 @@
 		}
 	}
 
-	// Check authentication for protected routes
-	onMount(async () => {
-		const isAuthenticated = await authAPI.checkAuth();
+	function currentPath() {
+		return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+	}
 
-		// Auto-subscribe to Web Push (Silent update if already allowed)
-		if (isAuthenticated) {
-			notificationStore.subscribeToPush();
-		}
-
-		// Mobile drag & drop support (Global Init)
+	async function enableMobileDragDrop() {
 		const { polyfill } = await import('mobile-drag-drop');
 		const { scrollBehaviourDragImageTranslateOverride } =
 			await import('mobile-drag-drop/scroll-behaviour');
 
 		polyfill({
 			dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
-			holdToDrag: 200 // Press and hold to drag, otherwise scroll
+			holdToDrag: 200
 		});
+	}
+
+	// Check authentication for protected routes
+	onMount(async () => {
+		const isAuthenticated = await authAPI.checkAuth();
+
+		if (!isAuthenticated) {
+			sessionStorage.setItem('redirectAfterLogin', currentPath());
+			authStatus = 'redirecting';
+			await goto(resolve('/login'), { replaceState: true });
+			return;
+		}
+
+		authStatus = 'authenticated';
+		notificationStore.subscribeToPush();
+		await enableMobileDragDrop();
 	});
 </script>
 
@@ -45,23 +61,32 @@
 	/>
 </svelte:head>
 
-<div class="h-screen flex flex-col bg-background overflow-hidden">
-	<Sidebar bind:this={sidebarRef} bind:isCollapsed={isSidebarCollapsed} />
+{#if authStatus === 'authenticated'}
+	<div class="h-screen flex flex-col bg-background overflow-hidden">
+		<Sidebar bind:this={sidebarRef} bind:isCollapsed={isSidebarCollapsed} />
 
-	<!-- Wrapper for Header and Main with sidebar offset -->
-	<div
-		class="flex flex-col flex-1 min-h-0 transition-[margin-left] duration-300 {isSidebarCollapsed
-			? 'lg:ml-[72px]'
-			: 'lg:ml-64'}"
-	>
-		<!-- Fixed Header - ไม่ scroll -->
-		<Header onMenuClick={handleMenuClick} sidebarCollapsed={isSidebarCollapsed} />
+		<!-- Wrapper for Header and Main with sidebar offset -->
+		<div
+			class="flex flex-col flex-1 min-h-0 transition-[margin-left] duration-300 {isSidebarCollapsed
+				? 'lg:ml-[72px]'
+				: 'lg:ml-64'}"
+		>
+			<!-- Fixed Header - ไม่ scroll -->
+			<Header onMenuClick={handleMenuClick} sidebarCollapsed={isSidebarCollapsed} />
 
-		<!-- Main Content - scroll อยู่ที่นี่ -->
-		<main class="flex-1 min-h-0 overflow-y-auto">
-			<div class="p-4 lg:p-6 h-full">
-				{@render children()}
-			</div>
-		</main>
+			<!-- Main Content - scroll อยู่ที่นี่ -->
+			<main class="flex-1 min-h-0 overflow-y-auto">
+				<div class="p-4 lg:p-6 h-full">
+					{@render children()}
+				</div>
+			</main>
+		</div>
 	</div>
-</div>
+{:else}
+	<div class="h-screen bg-background flex items-center justify-center" aria-live="polite">
+		<div class="flex flex-col items-center gap-4 text-muted-foreground">
+			<div class="h-10 w-10 rounded-full border-2 border-muted border-t-primary animate-spin"></div>
+			<p>{authStatus === 'redirecting' ? 'กำลังไปหน้าเข้าสู่ระบบ...' : 'กำลังตรวจสอบสิทธิ์...'}</p>
+		</div>
+	</div>
+{/if}
