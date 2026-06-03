@@ -2,6 +2,7 @@
 	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
 	import { getChildProfile } from '$lib/api/parents';
+	import type { Student } from '$lib/api/students';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -10,27 +11,16 @@
 	import { resolve } from '$app/paths';
 	import { formatDate } from '$lib/utils/date';
 
-	interface StudentProfile {
-		profile_image_url?: string;
-		title?: string;
-		first_name?: string;
-		last_name?: string;
-		grade_level?: string;
-		class_room?: string;
-		student_number?: string;
-		date_of_birth?: string;
-	}
-
 	let { params }: PageProps = $props();
 	let studentId = $derived(params.id);
-	let student = $state<StudentProfile | null>(null);
+	let student = $state<Student | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
 	onMount(async () => {
 		try {
 			const response = await getChildProfile(studentId);
-			student = response.data as StudentProfile;
+			student = response.data;
 		} catch (e) {
 			console.error('Failed to load student:', e);
 			error = e instanceof Error ? e.message : 'ไม่สามารถโหลดข้อมูลได้';

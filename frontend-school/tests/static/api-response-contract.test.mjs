@@ -113,3 +113,26 @@ test('admission application detail contract returns application and documents in
 	assert.match(frontendApi, /copyExamRoomsFromRound[\s\S]*res\.message \?\? 'copy ห้องสอบเรียบร้อย'/);
 	assert.match(frontendApi, /assignExamSeats[\s\S]*message: res\.message \?\? 'จัดที่นั่งสอบเรียบร้อย'/);
 });
+
+test('parent self-service API uses typed student and timetable responses', async () => {
+	const parentsApi = await readRepoFile('frontend-school/src/lib/api/parents.ts');
+	const childPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/parent/student/[id]/+page.svelte'
+	);
+	const timetablePage = await readRepoFile(
+		'frontend-school/src/routes/(app)/parent/student/[id]/timetable/+page.svelte'
+	);
+
+	assert.match(parentsApi, /import type \{ Student \} from '\.\/students'/);
+	assert.match(parentsApi, /getChildProfile[\s\S]*Promise<LoadedApiResponse<Student>>/);
+	assert.match(parentsApi, /apiClient\.get<Student>/);
+	assert.match(parentsApi, /getChildTimetable[\s\S]*Promise<LoadedApiResponse<TimetableEntry\[\]>>/);
+	assert.doesNotMatch(parentsApi, /apiClient\.get<unknown>/);
+	assert.doesNotMatch(parentsApi, /return response as/);
+
+	assert.match(childPage, /import type \{ Student \} from '\$lib\/api\/students'/);
+	assert.match(childPage, /student = response\.data/);
+	assert.doesNotMatch(childPage, /response\.data as/);
+	assert.match(timetablePage, /child = childRes\.data/);
+	assert.doesNotMatch(timetablePage, /childData as/);
+});

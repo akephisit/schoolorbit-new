@@ -1,5 +1,8 @@
 import { apiClient } from '$lib/api/client';
 import type { TimetableEntry } from './timetable';
+import type { Student } from './students';
+
+type LoadedApiResponse<T> = { success: true; data: T };
 
 export interface ChildDto {
 	id: string;
@@ -27,12 +30,12 @@ export interface ParentProfile {
 /**
  * Get own parent profile (Parent self-service)
  */
-export async function getOwnParentProfile(): Promise<{ success: boolean; data: ParentProfile }> {
+export async function getOwnParentProfile(): Promise<LoadedApiResponse<ParentProfile>> {
 	const response = await apiClient.get<ParentProfile>('/api/parent/profile');
 	if (!response.success || !response.data) {
 		throw new Error(response.error || 'Failed to get parent profile');
 	}
-	return response as { success: boolean; data: ParentProfile };
+	return { success: true, data: response.data };
 }
 
 /**
@@ -40,12 +43,12 @@ export async function getOwnParentProfile(): Promise<{ success: boolean; data: P
  */
 export async function getChildProfile(
 	studentId: string
-): Promise<{ success: boolean; data: unknown }> {
-	const response = await apiClient.get<unknown>(`/api/parent/students/${studentId}`);
+): Promise<LoadedApiResponse<Student>> {
+	const response = await apiClient.get<Student>(`/api/parent/students/${studentId}`);
 	if (!response.success || response.data === undefined) {
 		throw new Error(response.error || 'Failed to get student profile');
 	}
-	return response as { success: boolean; data: unknown };
+	return { success: true, data: response.data };
 }
 
 /**
@@ -54,7 +57,7 @@ export async function getChildProfile(
 export async function getChildTimetable(
 	studentId: string,
 	academicSemesterId?: string
-): Promise<{ success: boolean; data: TimetableEntry[] }> {
+): Promise<LoadedApiResponse<TimetableEntry[]>> {
 	const params = new URLSearchParams();
 	if (academicSemesterId) params.append('academic_semester_id', academicSemesterId);
 	const qs = params.toString() ? `?${params.toString()}` : '';
@@ -65,5 +68,5 @@ export async function getChildTimetable(
 	if (!response.success || !response.data) {
 		throw new Error(response.error || 'Failed to get child timetable');
 	}
-	return response as { success: boolean; data: TimetableEntry[] };
+	return { success: true, data: response.data };
 }

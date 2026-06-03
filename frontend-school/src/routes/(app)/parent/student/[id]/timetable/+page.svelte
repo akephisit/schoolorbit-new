@@ -64,13 +64,7 @@
 			]);
 			years = structRes.data.years;
 			semesters = structRes.data.semesters;
-
-			const childData = childRes.data as { info?: ChildSummary } | ChildSummary;
-			child =
-				'info' in (childData as { info?: ChildSummary }) &&
-				(childData as { info?: ChildSummary }).info
-					? (childData as { info: ChildSummary }).info
-					: (childData as ChildSummary);
+			child = childRes.data;
 
 			const activeYear = years.find((y) => y.is_active) ?? years[0];
 			if (activeYear) {
