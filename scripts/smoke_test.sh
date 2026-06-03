@@ -162,6 +162,9 @@ path, expected_username = sys.argv[1], sys.argv[2]
 with open(path, encoding="utf-8") as handle:
     data = json.load(handle)
 
+if isinstance(data, dict) and isinstance(data.get("data"), dict):
+    data = data["data"]
+
 user = data.get("user", data) if isinstance(data, dict) else {}
 actual = user.get("username") if isinstance(user, dict) else None
 raise SystemExit(0 if actual == expected_username else 1)
