@@ -8,7 +8,7 @@ use crate::utils::file_url::get_file_url_from_string;
 use crate::AppState;
 use crate::error::AppError;
 use axum::{
-    extract::{Request, State},
+    extract::{rejection::JsonRejection, Request, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
@@ -21,8 +21,11 @@ pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
     cookies: Cookies,
-    Json(payload): Json<LoginRequest>,
+    payload_result: Result<Json<LoginRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    let Json(payload) = payload_result
+        .map_err(|rejection| AppError::ValidationError(rejection.body_text()))?;
+
     // Extract subdomain from Origin header (secure, cannot be spoofed)
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;

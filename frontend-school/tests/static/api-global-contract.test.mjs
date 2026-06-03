@@ -195,6 +195,24 @@ test('backend consent type filter uses the user_type query parameter contract', 
 	assert.equal(source.includes('headers.get("user-type")'), false);
 });
 
+test('backend auth middleware and login validation errors use the response envelope', async () => {
+	const middleware = await readFile(
+		path.join(repoRoot, 'backend-school/src/middleware/auth.rs'),
+		'utf8'
+	);
+	const loginHandler = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/auth/handlers.rs'),
+		'utf8'
+	);
+
+	assert.match(middleware, /ApiErrorResponse::new\("No authentication token found"\)/);
+	assert.match(middleware, /ApiErrorResponse::new\(format!\("Invalid token:/);
+	assert.equal(middleware.includes('Json(json!'), false);
+
+	assert.match(loginHandler, /Result<Json<LoginRequest>, JsonRejection>/);
+	assert.match(loginHandler, /AppError::ValidationError\(rejection\.body_text\(\)\)/);
+});
+
 test('frontend application code routes backend API calls through apiClient', async () => {
 	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
 		/\.(svelte|ts)$/.test(file)

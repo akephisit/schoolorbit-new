@@ -1,3 +1,4 @@
+use crate::api_response::ApiErrorResponse;
 use crate::modules::auth::models::User;
 use crate::utils::jwt::JwtService;
 use crate::utils::field_encryption;
@@ -9,7 +10,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde_json::json;
 
 /// Middleware to verify JWT token and inject user claims
 /// Supports both Authorization header (Bearer token) and Cookie
@@ -42,9 +42,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "error": "No authentication token found"
-                })),
+                Json(ApiErrorResponse::new("No authentication token found")),
             )
                 .into_response();
         }
@@ -56,9 +54,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         Err(e) => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "error": format!("Invalid token: {}", e)
-                })),
+                Json(ApiErrorResponse::new(format!("Invalid token: {}", e))),
             )
                 .into_response();
         }
