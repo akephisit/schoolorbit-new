@@ -1,7 +1,12 @@
 import { apiClient, type ApiResponse } from '$lib/api/client';
 
+type LoadedApiResponse<T> = ApiResponse<T> & { success: true; data: T };
+
 // Helper for authenticated requests
-async function fetchApi<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+async function fetchApi<T = unknown>(
+	path: string,
+	options: RequestInit = {}
+): Promise<LoadedApiResponse<T>> {
 	const method = (options.method || 'GET').toUpperCase();
 	const body = options.body ? JSON.parse(options.body.toString()) : undefined;
 
@@ -17,7 +22,8 @@ async function fetchApi<T = unknown>(path: string, options: RequestInit = {}): P
 	}
 
 	if (!response.success) throw new Error(response.error || 'Request failed');
-	return response as T;
+	if (response.data === undefined) throw new Error('Response data missing');
+	return { success: true, data: response.data, message: response.message };
 }
 
 // Types
@@ -69,26 +75,33 @@ export interface CreateRoomRequest {
 // API Functions
 const BASE = '/api/facilities';
 
-export const listBuildings = async (): Promise<{ data: Building[] }> => {
-	return await fetchApi(`${BASE}/buildings`);
+export const listBuildings = async (): Promise<LoadedApiResponse<Building[]>> => {
+	return await fetchApi<Building[]>(`${BASE}/buildings`);
 };
 
-export const createBuilding = async (data: CreateBuildingRequest) => {
-	return await fetchApi(`${BASE}/buildings`, {
+export const createBuilding = async (
+	data: CreateBuildingRequest
+): Promise<LoadedApiResponse<Building>> => {
+	return await fetchApi<Building>(`${BASE}/buildings`, {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateBuilding = async (id: string, data: Partial<CreateBuildingRequest>) => {
-	return await fetchApi(`${BASE}/buildings/${id}`, {
+export const updateBuilding = async (
+	id: string,
+	data: Partial<CreateBuildingRequest>
+): Promise<LoadedApiResponse<Building>> => {
+	return await fetchApi<Building>(`${BASE}/buildings/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
 };
 
-export const deleteBuilding = async (id: string) => {
-	return await fetchApi(`${BASE}/buildings/${id}`, { method: 'DELETE' });
+export const deleteBuilding = async (
+	id: string
+): Promise<LoadedApiResponse<Record<string, never>>> => {
+	return await fetchApi<Record<string, never>>(`${BASE}/buildings/${id}`, { method: 'DELETE' });
 };
 
 export const listRooms = async (
@@ -97,30 +110,37 @@ export const listRooms = async (
 		room_type?: string;
 		search?: string;
 	} = {}
-): Promise<{ data: Room[] }> => {
+): Promise<LoadedApiResponse<Room[]>> => {
 	const params = new URLSearchParams();
 	if (filters.building_id) params.append('building_id', filters.building_id);
 	if (filters.room_type) params.append('room_type', filters.room_type);
 	if (filters.search) params.append('search', filters.search);
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(`${BASE}/rooms${queryString}`);
+	return await fetchApi<Room[]>(`${BASE}/rooms${queryString}`);
 };
 
-export const createRoom = async (data: CreateRoomRequest) => {
-	return await fetchApi(`${BASE}/rooms`, {
+export const createRoom = async (
+	data: CreateRoomRequest
+): Promise<LoadedApiResponse<Room>> => {
+	return await fetchApi<Room>(`${BASE}/rooms`, {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateRoom = async (id: string, data: Partial<CreateRoomRequest>) => {
-	return await fetchApi(`${BASE}/rooms/${id}`, {
+export const updateRoom = async (
+	id: string,
+	data: Partial<CreateRoomRequest>
+): Promise<LoadedApiResponse<Room>> => {
+	return await fetchApi<Room>(`${BASE}/rooms/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
 };
 
-export const deleteRoom = async (id: string) => {
-	return await fetchApi(`${BASE}/rooms/${id}`, { method: 'DELETE' });
+export const deleteRoom = async (
+	id: string
+): Promise<LoadedApiResponse<Record<string, never>>> => {
+	return await fetchApi<Record<string, never>>(`${BASE}/rooms/${id}`, { method: 'DELETE' });
 };

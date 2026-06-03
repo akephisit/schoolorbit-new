@@ -167,3 +167,15 @@ test('scheduling API uses backend envelope data types without response casts', a
 	assert.doesNotMatch(schedulingApi, /apiClient\.(put|delete)<unknown>/);
 	assert.doesNotMatch(schedulingApi, /return response as \{ success: boolean; data: \{ deleted: number \} \}/);
 });
+
+test('facility API returns typed loaded envelope data without helper casts', async () => {
+	const facilityApi = await readRepoFile('frontend-school/src/lib/api/facility.ts');
+
+	assert.match(facilityApi, /type\s+LoadedApiResponse<T>/);
+	assert.match(facilityApi, /Promise<LoadedApiResponse<T>>/);
+	assert.match(facilityApi, /return \{ success: true, data: response\.data, message: response\.message \}/);
+	assert.match(facilityApi, /fetchApi<Building\[\]>/);
+	assert.match(facilityApi, /fetchApi<Room\[\]>/);
+	assert.match(facilityApi, /fetchApi<Record<string, never>>/);
+	assert.doesNotMatch(facilityApi, /return response as T/);
+});
