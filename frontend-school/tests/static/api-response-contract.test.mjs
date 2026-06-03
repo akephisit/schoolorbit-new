@@ -51,3 +51,33 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 	assert.doesNotMatch(source, /\b(getRaw|postRaw|putRaw)\b/);
 	assert.match(source, /\.data\?\.user/);
 });
+
+test('user role assignment API contract stays aligned across backend and frontend', async () => {
+	const backendModels = await readRepoFile('backend-school/src/modules/staff/models.rs');
+	const backendService = await readRepoFile(
+		'backend-school/src/modules/staff/services/user_role_service.rs'
+	);
+	const frontendApi = await readRepoFile('frontend-school/src/lib/api/roles.ts');
+	const frontendComponent = await readRepoFile(
+		'frontend-school/src/lib/components/UserRoleManager.svelte'
+	);
+
+	assert.match(backendModels, /struct\s+UserRoleAssignmentResponse/);
+	assert.match(backendModels, /pub\s+role:\s+Role/);
+	assert.match(backendService, /Result<Vec<UserRoleAssignmentResponse>,\s*AppError>/);
+	assert.doesNotMatch(backendService, /Result<Vec<Role>/);
+	assert.match(backendService, /FROM user_roles ur/);
+	assert.match(backendService, /ur\.role_id/);
+	assert.match(backendService, /LEFT JOIN role_permissions rp/);
+	assert.match(backendService, /AS role_permissions/);
+	assert.match(backendService, /role:\s+Role\s*\{/);
+
+	assert.match(frontendApi, /interface\s+UserRoleAssignment/);
+	assert.match(frontendApi, /role:\s+Role/);
+	assert.match(frontendApi, /getUserRoles\(userId:\s*string\):\s*Promise<ApiResponse<UserRoleAssignment\[\]>>/);
+	assert.doesNotMatch(frontendApi, /interface\s+UserRole\s*\{/);
+
+	assert.match(frontendComponent, /type\s+UserRoleAssignment/);
+	assert.match(frontendComponent, /userRole\.role/);
+	assert.doesNotMatch(frontendComponent, /getRoleById\(userRole\.role_id\)/);
+});

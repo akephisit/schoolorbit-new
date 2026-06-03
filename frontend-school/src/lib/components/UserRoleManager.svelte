@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { userRoleAPI, roleAPI, type UserRole, type Role } from '$lib/api/roles';
+	import { userRoleAPI, roleAPI, type UserRoleAssignment, type Role } from '$lib/api/roles';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import {
@@ -28,7 +28,7 @@
 
 	let { userId }: Props = $props();
 
-	let userRoles = $state<UserRole[]>([]);
+	let userRoles = $state<UserRoleAssignment[]>([]);
 	let availableRoles = $state<Role[]>([]);
 	let permissions = $state<string[]>([]);
 	let loading = $state(true);
@@ -126,10 +126,6 @@
 		}
 	}
 
-	function getRoleById(roleId: string): Role | undefined {
-		return availableRoles.find((r) => r.id === roleId);
-	}
-
 	function getUnassignedRoles(): Role[] {
 		const assignedRoleIds = new Set(userRoles.map((ur) => ur.role_id));
 		return availableRoles.filter((r) => !assignedRoleIds.has(r.id));
@@ -174,41 +170,39 @@
 			{:else}
 				<div class="space-y-2">
 					{#each userRoles as userRole (userRole.id)}
-						{@const role = getRoleById(userRole.role_id)}
-						{#if role}
-							<div class="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-								<div class="flex items-center gap-3 flex-1">
-									{#if userRole.is_primary}
-										<Star class="h-4 w-4 text-yellow-500 fill-yellow-500" />
-									{:else}
-										<Shield class="h-4 w-4 text-gray-400" />
-									{/if}
-									<div class="flex-1 min-w-0">
-										<div class="flex items-center gap-2">
-											<p class="font-medium text-gray-900">{role.name}</p>
-											{#if userRole.is_primary}
-												<Badge variant="secondary" class="text-xs">หลัก</Badge>
-											{/if}
-										</div>
-										<p class="text-sm text-gray-500">{role.code}</p>
+						{@const role = userRole.role}
+						<div class="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+							<div class="flex items-center gap-3 flex-1">
+								{#if userRole.is_primary}
+									<Star class="h-4 w-4 text-yellow-500 fill-yellow-500" />
+								{:else}
+									<Shield class="h-4 w-4 text-gray-400" />
+								{/if}
+								<div class="flex-1 min-w-0">
+									<div class="flex items-center gap-2">
+										<p class="font-medium text-gray-900">{role.name}</p>
+										{#if userRole.is_primary}
+											<Badge variant="secondary" class="text-xs">หลัก</Badge>
+										{/if}
 									</div>
-									<div class="text-sm text-gray-600">
-										{role.permissions.includes('*')
-											? 'ทุกสิทธิ์'
-											: `${role.permissions.length} สิทธิ์`}
-									</div>
+									<p class="text-sm text-gray-500">{role.code}</p>
 								</div>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => handleRemoveRole(role.id, role.name)}
-									class="gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-								>
-									<Trash2 class="h-3 w-3" />
-									เพิกถอน
-								</Button>
+								<div class="text-sm text-gray-600">
+									{role.permissions.includes('*')
+										? 'ทุกสิทธิ์'
+										: `${role.permissions.length} สิทธิ์`}
+								</div>
 							</div>
-						{/if}
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={() => handleRemoveRole(role.id, role.name)}
+								class="gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+							>
+								<Trash2 class="h-3 w-3" />
+								เพิกถอน
+							</Button>
+						</div>
 					{/each}
 				</div>
 			{/if}

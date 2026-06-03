@@ -48,6 +48,21 @@ pub struct AssignRoleRequest {
     pub notes: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserRoleAssignmentResponse {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub role_id: Uuid,
+    pub department_id: Option<Uuid>,
+    pub role: Role,
+    pub is_primary: bool,
+    pub started_at: NaiveDate,
+    pub ended_at: Option<NaiveDate>,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 // ===================================================================
 // Department (ฝ่าย/แผนก)
 // ===================================================================

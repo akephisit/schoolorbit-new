@@ -1,20 +1,101 @@
 use crate::error::AppError;
 use crate::modules::staff::models::*;
-use sqlx::PgPool;
+use chrono::{DateTime, NaiveDate, Utc};
+use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
-pub async fn get_user_roles(pool: &PgPool, user_id: Uuid) -> Result<Vec<Role>, AppError> {
-    sqlx::query_as::<_, Role>(
-        "SELECT r.* FROM roles r
-         JOIN user_roles ur ON ur.role_id = r.id
+#[derive(Debug, FromRow)]
+struct UserRoleAssignmentRow {
+    id: Uuid,
+    user_id: Uuid,
+    role_id: Uuid,
+    department_id: Option<Uuid>,
+    is_primary: bool,
+    started_at: NaiveDate,
+    ended_at: Option<NaiveDate>,
+    notes: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    role_code: String,
+    role_name: String,
+    role_name_en: Option<String>,
+    role_description: Option<String>,
+    role_user_type: String,
+    role_level: i32,
+    role_permissions: Vec<String>,
+    role_is_active: bool,
+    role_created_at: DateTime<Utc>,
+    role_updated_at: DateTime<Utc>,
+}
+
+pub async fn get_user_roles(pool: &PgPool, user_id: Uuid) -> Result<Vec<UserRoleAssignmentResponse>, AppError> {
+    let rows = sqlx::query_as::<_, UserRoleAssignmentRow>(
+        r#"SELECT
+            ur.id,
+            ur.user_id,
+            ur.role_id,
+            ur.department_id,
+            ur.is_primary,
+            ur.started_at,
+            ur.ended_at,
+            ur.notes,
+            ur.created_at,
+            ur.updated_at,
+            r.code AS role_code,
+            r.name AS role_name,
+            r.name_en AS role_name_en,
+            r.description AS role_description,
+            r.user_type AS role_user_type,
+            r.level AS role_level,
+            COALESCE(
+                array_agg(p.code) FILTER (WHERE p.code IS NOT NULL),
+                '{}'
+            ) AS role_permissions,
+            r.is_active AS role_is_active,
+            r.created_at AS role_created_at,
+            r.updated_at AS role_updated_at
+         FROM user_roles ur
+         JOIN roles r ON ur.role_id = r.id
+         LEFT JOIN role_permissions rp ON r.id = rp.role_id
+         LEFT JOIN permissions p ON rp.permission_id = p.id
          WHERE ur.user_id = $1 AND ur.ended_at IS NULL AND r.is_active = true
-         ORDER BY ur.is_primary DESC, r.level DESC"
+         GROUP BY ur.id, r.id
+         ORDER BY ur.is_primary DESC, r.level DESC, r.name"#
     )
     .bind(user_id).fetch_all(pool).await
     .map_err(|e| {
         eprintln!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
-    })
+    })?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| UserRoleAssignmentResponse {
+            id: row.id,
+            user_id: row.user_id,
+            role_id: row.role_id,
+            department_id: row.department_id,
+            role: Role {
+                id: row.role_id,
+                code: row.role_code,
+                name: row.role_name,
+                name_en: row.role_name_en,
+                description: row.role_description,
+                user_type: row.role_user_type,
+                level: row.role_level,
+                permissions: row.role_permissions,
+                is_active: row.role_is_active,
+                created_at: row.role_created_at,
+                updated_at: row.role_updated_at,
+            },
+            is_primary: row.is_primary,
+            started_at: row.started_at,
+            ended_at: row.ended_at,
+            notes: row.notes,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
+        .collect())
 }
 
 pub enum AssignRoleOutcome {

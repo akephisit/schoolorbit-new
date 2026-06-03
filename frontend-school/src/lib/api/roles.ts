@@ -27,15 +27,18 @@ export interface Permission {
 	created_at: string;
 }
 
-export interface UserRole {
+export interface UserRoleAssignment {
 	id: string;
 	user_id: string;
 	role_id: string;
-	role?: Role;
+	department_id: string | null;
+	role: Role;
 	is_primary: boolean;
 	started_at: string;
-	ended_at?: string;
+	ended_at: string | null;
+	notes: string | null;
 	created_at: string;
+	updated_at: string;
 }
 
 export interface PermissionsByModule {
@@ -105,7 +108,7 @@ export const permissionAPI = {
 // User Role Assignment API
 export const userRoleAPI = {
 	// Get user's roles
-	async getUserRoles(userId: string): Promise<ApiResponse<UserRole[]>> {
+	async getUserRoles(userId: string): Promise<ApiResponse<UserRoleAssignment[]>> {
 		return apiClient.get(`/api/users/${userId}/roles`);
 	},
 
