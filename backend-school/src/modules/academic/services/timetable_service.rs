@@ -4,6 +4,7 @@ use crate::modules::academic::models::timetable::{
     MoveValidityCell, SwapTimetableEntriesRequest, TimetableEntry, TimetableQuery,
     TimetableValidationResponse, UpdateTimetableEntryRequest, ValidateMovesRequest,
 };
+use serde::Serialize;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -63,6 +64,24 @@ pub enum UpdateEntryOutcome {
         conflicts: Vec<serde_json::Value>,
         existing: TimetableEntry,
     },
+}
+
+#[derive(Serialize)]
+pub struct MyActivityInstructor {
+    pub id: Uuid,
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct MyActivityForEntry {
+    pub enrolled: bool,
+    pub slot_id: Uuid,
+    pub group_id: Option<Uuid>,
+    pub group_name: Option<String>,
+    pub max_capacity: Option<i32>,
+    pub member_count: Option<i64>,
+    pub instructor_name: Option<String>,
+    pub instructors: Option<Vec<MyActivityInstructor>>,
 }
 
 /// Filter สำหรับ list_entries — รวม use case ทุกมุมมอง:
@@ -782,12 +801,11 @@ pub async fn hide_instructor_from_slot_period(
 }
 
 /// คืน activity group ที่ user enrolled สำหรับ entry นี้ (สำหรับ student view)
-/// Return JSON Value แทนการ define struct เฉพาะ (handler ส่งต่อเป็น response ตรง ๆ)
 pub async fn get_my_activity_for_entry(
     pool: &PgPool,
     user_id: Uuid,
     entry_id: Uuid,
-) -> Result<serde_json::Value, AppError> {
+) -> Result<Option<MyActivityForEntry>, AppError> {
     let slot_id: Option<Uuid> = sqlx::query_scalar(
         "SELECT activity_slot_id FROM academic_timetable_entries WHERE id = $1",
     )
@@ -799,7 +817,7 @@ pub async fn get_my_activity_for_entry(
 
     let slot_id = match slot_id {
         Some(id) => id,
-        None => return Ok(serde_json::Value::Null),
+        None => return Ok(None),
     };
 
     let group = sqlx::query_as::<_, (Uuid, String, Option<i32>, Option<String>)>(
@@ -848,20 +866,29 @@ pub async fn get_my_activity_for_entry(
             .await
             .unwrap_or_default();
 
-            Ok(json!({
-                "enrolled": true,
-                "group_id": id,
-                "group_name": name,
-                "max_capacity": max_capacity,
-                "member_count": member_count,
-                "instructor_name": instructor_name,
-                "instructors": instructors.iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>(),
-                "slot_id": slot_id
+            Ok(Some(MyActivityForEntry {
+                enrolled: true,
+                slot_id,
+                group_id: Some(id),
+                group_name: Some(name),
+                max_capacity,
+                member_count: Some(member_count),
+                instructor_name,
+                instructors: Some(instructors.into_iter().map(|(id, name)| MyActivityInstructor {
+                    id,
+                    name,
+                }).collect()),
             }))
         }
-        None => Ok(json!({
-            "enrolled": false,
-            "slot_id": slot_id
+        None => Ok(Some(MyActivityForEntry {
+            enrolled: false,
+            slot_id,
+            group_id: None,
+            group_name: None,
+            max_capacity: None,
+            member_count: None,
+            instructor_name: None,
+            instructors: None,
         })),
     }
 }
