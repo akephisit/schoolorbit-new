@@ -203,3 +203,32 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.doesNotMatch(timetablePage, /await updateTimetableEntry\([^)]*\)\) as/);
 	assert.doesNotMatch(timetablePage, /res as \{ success\?: boolean; conflicts\?: ConflictInfo\[\] \}/);
 });
+
+test('academic API uses typed loaded responses and unwraps generate-plan payloads', async () => {
+	const academicApi = await readRepoFile('frontend-school/src/lib/api/academic.ts');
+	const planningPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/planning/+page.svelte'
+	);
+	const activitiesPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/activities/+page.svelte'
+	);
+
+	assert.match(academicApi, /type\s+LoadedApiResponse<T>/);
+	assert.match(academicApi, /Promise<LoadedApiResponse<T>>/);
+	assert.match(academicApi, /return \{ success: true, data: response\.data, message: response\.message \}/);
+	assert.match(academicApi, /fetchApi<AcademicStructureData>/);
+	assert.match(academicApi, /fetchApi<ClassroomCourse\[\]>/);
+	assert.match(academicApi, /fetchApi<StudyPlan\[\]>/);
+	assert.match(academicApi, /fetchApi<ActivitySlot\[\]>/);
+	assert.match(academicApi, /fetchApi<ActivityGroup\[\]>/);
+	assert.match(academicApi, /fetchApi<GenerateCoursesFromPlanResponse>/);
+	assert.match(academicApi, /return response\.data/);
+	assert.match(academicApi, /fetchApi<GenerateActivitiesFromPlanResponse>/);
+	assert.doesNotMatch(academicApi, /return response as T/);
+	assert.doesNotMatch(academicApi, /ApiResponse<unknown>/);
+	assert.doesNotMatch(academicApi, /res\.data as/);
+
+	assert.match(planningPage, /result\.courses_created \?\? result\.items\.added_count/);
+	assert.doesNotMatch(planningPage, /result\.data\.added_count/);
+	assert.match(activitiesPage, /res\.created/);
+});

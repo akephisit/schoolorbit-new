@@ -1,5 +1,8 @@
 import { apiClient, type ApiResponse } from '$lib/api/client';
 
+type LoadedApiResponse<T> = ApiResponse<T> & { success: true; data: T };
+type EmptyResponseData = Record<string, never>;
+
 // Types
 export interface AcademicYear {
 	id: string;
@@ -76,7 +79,10 @@ export interface LookupItem {
 // API Functions
 
 // Helper for authenticated requests
-async function fetchApi<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+async function fetchApi<T = EmptyResponseData>(
+	path: string,
+	options: RequestInit = {}
+): Promise<LoadedApiResponse<T>> {
 	const method = (options.method || 'GET').toUpperCase();
 	const body = options.body ? JSON.parse(options.body.toString()) : undefined;
 
@@ -92,11 +98,12 @@ async function fetchApi<T = unknown>(path: string, options: RequestInit = {}): P
 	}
 
 	if (!response.success) throw new Error(response.error || 'Request failed');
-	return response as T;
+	if (response.data === undefined) throw new Error('Response data missing');
+	return { success: true, data: response.data, message: response.message };
 }
 
 export const getAcademicStructure = async (): Promise<{ data: AcademicStructureData }> => {
-	return await fetchApi('/api/academic/structure');
+	return await fetchApi<AcademicStructureData>('/api/academic/structure');
 };
 
 export const createAcademicYear = async (data: {
@@ -106,14 +113,14 @@ export const createAcademicYear = async (data: {
 	end_date: string;
 	is_active: boolean;
 }) => {
-	return await fetchApi('/api/academic/years', {
+	return await fetchApi<AcademicYear>('/api/academic/years', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
 export const updateAcademicYear = async (id: string, data: Partial<AcademicYear>) => {
-	return await fetchApi(`/api/academic/years/${id}`, {
+	return await fetchApi<AcademicYear>(`/api/academic/years/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -133,7 +140,7 @@ export const createSemester = async (data: {
 	end_date: string;
 	is_active?: boolean;
 }) => {
-	return await fetchApi('/api/academic/semesters', {
+	return await fetchApi<Semester>('/api/academic/semesters', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
@@ -149,7 +156,7 @@ export const updateSemester = async (
 		is_active?: boolean;
 	}
 ) => {
-	return await fetchApi(`/api/academic/semesters/${id}`, {
+	return await fetchApi<Semester>(`/api/academic/semesters/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -166,7 +173,7 @@ export const createGradeLevel = async (data: {
 	year: number;
 	next_grade_level_id?: string;
 }) => {
-	return await fetchApi('/api/academic/levels', {
+	return await fetchApi<GradeLevel>('/api/academic/levels', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
@@ -185,7 +192,7 @@ export const listClassrooms = async (filters?: {
 	if (filters?.year_id) params.append('year_id', filters.year_id);
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(`/api/academic/classrooms${queryString}`);
+	return await fetchApi<Classroom[]>(`/api/academic/classrooms${queryString}`);
 };
 
 export const createClassroom = async (data: {
@@ -196,7 +203,7 @@ export const createClassroom = async (data: {
 	study_plan_version_id?: string;
 	advisors?: { user_id: string; role: 'primary' | 'secondary' }[];
 }) => {
-	return await fetchApi('/api/academic/classrooms', {
+	return await fetchApi<Classroom>('/api/academic/classrooms', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
@@ -213,7 +220,7 @@ export const updateClassroom = async (
 		advisors?: { user_id: string; role: 'primary' | 'secondary' }[];
 	}
 ) => {
-	return await fetchApi(`/api/academic/classrooms/${id}`, {
+	return await fetchApi<Classroom>(`/api/academic/classrooms/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -232,7 +239,7 @@ export interface StudentEnrollment {
 }
 
 export const getEnrollments = async (classId: string): Promise<{ data: StudentEnrollment[] }> => {
-	return await fetchApi(`/api/academic/enrollments/class/${classId}`);
+	return await fetchApi<StudentEnrollment[]>(`/api/academic/enrollments/class/${classId}`);
 };
 
 export const enrollStudents = async (data: {
@@ -305,7 +312,7 @@ export interface Subject {
 }
 
 export const listSubjectGroups = async (): Promise<{ data: SubjectGroup[] }> => {
-	return await fetchApi('/api/academic/subjects/groups');
+	return await fetchApi<SubjectGroup[]>('/api/academic/subjects/groups');
 };
 
 export const listSubjects = async (
@@ -331,18 +338,18 @@ export const listSubjects = async (
 	if (filters.latest_only !== undefined) params.append('latest_only', String(filters.latest_only));
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(`/api/academic/subjects${queryString}`);
+	return await fetchApi<Subject[]>(`/api/academic/subjects${queryString}`);
 };
 
 export const createSubject = async (data: Partial<Subject>) => {
-	return await fetchApi('/api/academic/subjects', {
+	return await fetchApi<Subject>('/api/academic/subjects', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
 export const updateSubject = async (id: string, data: Partial<Subject>) => {
-	return await fetchApi(`/api/academic/subjects/${id}`, {
+	return await fetchApi<Subject>(`/api/academic/subjects/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -360,19 +367,19 @@ export const lookupGradeLevels = async (
 	const sp = new URLSearchParams();
 	for (const [k, v] of Object.entries(params)) sp.append(k, String(v));
 	const queryString = sp.toString();
-	return await fetchApi(`/api/lookup/grade-levels?${queryString}`);
+	return await fetchApi<LookupItem[]>(`/api/lookup/grade-levels?${queryString}`);
 };
 
 export const lookupAcademicYears = async (
 	active_only: boolean = true
 ): Promise<{ data: LookupItem[] }> => {
-	return await fetchApi(`/api/lookup/academic-years?active_only=${active_only}`);
+	return await fetchApi<LookupItem[]>(`/api/lookup/academic-years?active_only=${active_only}`);
 };
 
 // Year-Level Configuration
 export const getYearLevelConfig = async (yearId: string): Promise<{ data: string[] }> => {
 	// Returns array of grade_level_ids
-	return await fetchApi(`/api/academic/years/${yearId}/levels`);
+	return await fetchApi<string[]>(`/api/academic/years/${yearId}/levels`);
 };
 
 export const saveYearLevelConfig = async (yearId: string, gradeLevelIds: string[]) => {
@@ -423,7 +430,7 @@ export const listClassroomCourses = async (
 	}
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(url + queryString);
+	return await fetchApi<ClassroomCourse[]>(url + queryString);
 };
 
 export const assignCourses = async (data: {
@@ -512,11 +519,11 @@ export const listStudyPlans = async (
 	if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(`/api/academic/study-plans${queryString}`);
+	return await fetchApi<StudyPlan[]>(`/api/academic/study-plans${queryString}`);
 };
 
 export const getStudyPlan = async (id: string): Promise<{ data: StudyPlan }> => {
-	return await fetchApi(`/api/academic/study-plans/${id}`);
+	return await fetchApi<StudyPlan>(`/api/academic/study-plans/${id}`);
 };
 
 export const createStudyPlan = async (data: {
@@ -526,14 +533,14 @@ export const createStudyPlan = async (data: {
 	description?: string;
 	grade_level_ids?: string[];
 }) => {
-	return await fetchApi('/api/academic/study-plans', {
+	return await fetchApi<StudyPlan>('/api/academic/study-plans', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
 export const updateStudyPlan = async (id: string, data: Partial<StudyPlan>) => {
-	return await fetchApi(`/api/academic/study-plans/${id}`, {
+	return await fetchApi<StudyPlan>(`/api/academic/study-plans/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -557,11 +564,11 @@ export const listStudyPlanVersions = async (
 	if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(`/api/academic/study-plan-versions${queryString}`);
+	return await fetchApi<StudyPlanVersion[]>(`/api/academic/study-plan-versions${queryString}`);
 };
 
 export const getStudyPlanVersion = async (id: string): Promise<{ data: StudyPlanVersion }> => {
-	return await fetchApi(`/api/academic/study-plan-versions/${id}`);
+	return await fetchApi<StudyPlanVersion>(`/api/academic/study-plan-versions/${id}`);
 };
 
 export const createStudyPlanVersion = async (data: {
@@ -571,14 +578,14 @@ export const createStudyPlanVersion = async (data: {
 	end_academic_year_id?: string;
 	description?: string;
 }) => {
-	return await fetchApi('/api/academic/study-plan-versions', {
+	return await fetchApi<StudyPlanVersion>('/api/academic/study-plan-versions', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
 export const updateStudyPlanVersion = async (id: string, data: Partial<StudyPlanVersion>) => {
-	return await fetchApi(`/api/academic/study-plan-versions/${id}`, {
+	return await fetchApi<StudyPlanVersion>(`/api/academic/study-plan-versions/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -605,7 +612,7 @@ export const listStudyPlanSubjects = async (
 	if (filters.term) params.append('term', filters.term);
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(
+	return await fetchApi<StudyPlanSubject[]>(
 		`/api/academic/study-plan-versions/${filters.study_plan_version_id}/subjects${queryString}`
 	);
 };
@@ -619,7 +626,7 @@ export const addSubjectsToVersion = async (
 		display_order?: number;
 	}[]
 ) => {
-	return await fetchApi(`/api/academic/study-plan-versions/${versionId}/subjects`, {
+	return await fetchApi<{ count: number }>(`/api/academic/study-plan-versions/${versionId}/subjects`, {
 		method: 'POST',
 		body: JSON.stringify({ subjects })
 	});
@@ -636,22 +643,24 @@ export const generateCoursesFromPlan = async (data: {
 	classroom_id: string;
 	academic_semester_id: string;
 	skip_existing?: boolean;
-}): Promise<{
-	data: { added_count: number; skipped_count: number; message: string };
-	courses_created?: number;
-	courses_skipped?: number;
-	activities_created?: number;
-	activities_skipped?: number;
-}> => {
-	return await fetchApi('/api/academic/planning/generate-from-plan', {
-		method: 'POST',
-		body: JSON.stringify(data)
-	});
+}): Promise<GenerateCoursesFromPlanResponse> => {
+	const response = await fetchApi<GenerateCoursesFromPlanResponse>(
+		'/api/academic/planning/generate-from-plan',
+		{
+			method: 'POST',
+			body: JSON.stringify(data)
+		}
+	);
+	return response.data;
 };
 
-// ==========================================
-// Activity Slots (ช่องกิจกรรม — Admin)
-// ==========================================
+export interface GenerateCoursesFromPlanResponse {
+	items: { added_count: number; skipped_count: number; message: string };
+	courses_created: number;
+	courses_skipped: number;
+	activities_created: number;
+	activities_skipped: number;
+}
 
 export interface ActivitySlot {
 	id: string;
@@ -719,7 +728,7 @@ export const listActivitySlots = async (
 		params.set('teacher_reg_open', String(filter.teacher_reg_open));
 	if (filter.student_reg_open !== undefined)
 		params.set('student_reg_open', String(filter.student_reg_open));
-	return await fetchApi(`/api/academic/activity-slots?${params}`);
+	return await fetchApi<ActivitySlot[]>(`/api/academic/activity-slots?${params}`);
 };
 
 // Slots must come from plan via generate_courses_from_plan — no standalone creation.
@@ -735,7 +744,7 @@ export const updateActivitySlot = async (
 		is_active?: boolean;
 	}
 ) => {
-	return await fetchApi(`/api/academic/activity-slots/${id}`, {
+	return await fetchApi<ActivitySlot>(`/api/academic/activity-slots/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -753,7 +762,7 @@ export interface SlotInstructor {
 }
 
 export const listSlotInstructors = async (slotId: string): Promise<{ data: SlotInstructor[] }> => {
-	return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors`);
+	return await fetchApi<SlotInstructor[]>(`/api/academic/activity-slots/${slotId}/instructors`);
 };
 
 export const addSlotInstructor = async (slotId: string, userId: string) => {
@@ -764,7 +773,7 @@ export const addSlotInstructor = async (slotId: string, userId: string) => {
 };
 
 export const addSlotInstructorsBatch = async (slotId: string, userIds: string[]) => {
-	return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors/batch`, {
+	return await fetchApi<{ added: number }>(`/api/academic/activity-slots/${slotId}/instructors/batch`, {
 		method: 'POST',
 		body: JSON.stringify({ user_ids: userIds })
 	});
@@ -777,17 +786,19 @@ export const removeSlotInstructor = async (slotId: string, userId: string) => {
 };
 
 export const removeAllSlotInstructors = async (slotId: string) => {
-	return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors/all`, {
+	return await fetchApi<{ deleted_count: number }>(`/api/academic/activity-slots/${slotId}/instructors/all`, {
 		method: 'DELETE'
 	});
 };
 
 export const deleteAllSlotGroups = async (slotId: string) => {
-	return await fetchApi(`/api/academic/activity-slots/${slotId}/groups`, { method: 'DELETE' });
+	return await fetchApi<{ deleted_count: number }>(`/api/academic/activity-slots/${slotId}/groups`, {
+		method: 'DELETE'
+	});
 };
 
 export const deleteSlotTimetableEntries = async (slotId: string) => {
-	return await fetchApi(`/api/academic/activity-slots/${slotId}/timetable-entries`, {
+	return await fetchApi<{ deleted_count: number }>(`/api/academic/activity-slots/${slotId}/timetable-entries`, {
 		method: 'DELETE'
 	});
 };
@@ -808,14 +819,16 @@ export interface SlotClassroomAssignment {
 export const listSlotClassroomAssignments = async (
 	slotId: string
 ): Promise<{ data: SlotClassroomAssignment[] }> => {
-	return await fetchApi(`/api/academic/activity-slots/${slotId}/classroom-assignments`);
+	return await fetchApi<SlotClassroomAssignment[]>(
+		`/api/academic/activity-slots/${slotId}/classroom-assignments`
+	);
 };
 
 export const batchUpsertSlotClassroomAssignments = async (
 	slotId: string,
 	assignments: { classroom_id: string; instructor_id: string }[]
 ) => {
-	return await fetchApi(`/api/academic/activity-slots/${slotId}/classroom-assignments`, {
+	return await fetchApi<{ count: number }>(`/api/academic/activity-slots/${slotId}/classroom-assignments`, {
 		method: 'POST',
 		body: JSON.stringify({ assignments })
 	});
@@ -829,9 +842,12 @@ export const deleteSlotClassroomAssignment = async (slotId: string, assignmentId
 };
 
 export const deleteAllSlotClassroomAssignments = async (slotId: string) => {
-	return await fetchApi(`/api/academic/activity-slots/${slotId}/classroom-assignments/all`, {
-		method: 'DELETE'
-	});
+	return await fetchApi<{ deleted_count: number }>(
+		`/api/academic/activity-slots/${slotId}/classroom-assignments/all`,
+		{
+			method: 'DELETE'
+		}
+	);
 };
 
 // ==========================================
@@ -889,7 +905,7 @@ export const listActivityGroups = async (
 	if (filter.registration_open !== undefined)
 		params.set('registration_open', String(filter.registration_open));
 	if (filter.search) params.set('search', filter.search);
-	return await fetchApi(`/api/academic/activities?${params}`);
+	return await fetchApi<ActivityGroup[]>(`/api/academic/activities?${params}`);
 };
 
 export const createActivityGroup = async (data: {
@@ -900,14 +916,14 @@ export const createActivityGroup = async (data: {
 	max_capacity?: number;
 	allowed_classroom_ids?: string[];
 }) => {
-	return await fetchApi('/api/academic/activities', {
+	return await fetchApi<ActivityGroup>('/api/academic/activities', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
 export const updateActivityGroup = async (id: string, data: Partial<ActivityGroup>) => {
-	return await fetchApi(`/api/academic/activities/${id}`, {
+	return await fetchApi<ActivityGroup>(`/api/academic/activities/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -920,7 +936,7 @@ export const deleteActivityGroup = async (id: string) => {
 export const listActivityMembers = async (
 	groupId: string
 ): Promise<{ data: ActivityGroupMember[] }> => {
-	return await fetchApi(`/api/academic/activities/${groupId}/members`);
+	return await fetchApi<ActivityGroupMember[]>(`/api/academic/activities/${groupId}/members`);
 };
 
 export const addActivityMembers = async (groupId: string, studentIds: string[]) => {
@@ -953,7 +969,7 @@ export interface ActivityInstructor {
 export const listActivityInstructors = async (
 	groupId: string
 ): Promise<{ data: ActivityInstructor[] }> => {
-	return await fetchApi(`/api/academic/activities/${groupId}/instructors`);
+	return await fetchApi<ActivityInstructor[]>(`/api/academic/activities/${groupId}/instructors`);
 };
 
 export const addActivityInstructor = async (
@@ -983,7 +999,7 @@ export const selfUnenrollActivity = async (groupId: string) => {
 };
 
 export const getMyActivityEnrollments = async (): Promise<{ data: string[] }> => {
-	return await fetchApi('/api/academic/activities/my-enrollments');
+	return await fetchApi<string[]>('/api/academic/activities/my-enrollments');
 };
 
 export interface CourseInstructor {
@@ -997,7 +1013,7 @@ export interface CourseInstructor {
 export const listCourseInstructors = async (
 	courseId: string
 ): Promise<{ data: CourseInstructor[] }> => {
-	return await fetchApi(`/api/academic/planning/courses/${courseId}/instructors`);
+	return await fetchApi<CourseInstructor[]>(`/api/academic/planning/courses/${courseId}/instructors`);
 };
 
 export const batchListCourseInstructors = async (
@@ -1005,7 +1021,9 @@ export const batchListCourseInstructors = async (
 ): Promise<{ data: Record<string, CourseInstructor[]> }> => {
 	if (courseIds.length === 0) return { data: {} };
 	const params = new URLSearchParams({ course_ids: courseIds.join(',') });
-	return await fetchApi(`/api/academic/planning/courses/instructors?${params}`);
+	return await fetchApi<Record<string, CourseInstructor[]>>(
+		`/api/academic/planning/courses/instructors?${params}`
+	);
 };
 
 export const addCourseInstructor = async (
@@ -1052,7 +1070,9 @@ export interface SubjectDefaultInstructor {
 export const listSubjectDefaultInstructors = async (
 	subjectId: string
 ): Promise<{ data: SubjectDefaultInstructor[] }> => {
-	return await fetchApi(`/api/academic/subjects/${subjectId}/default-instructors`);
+	return await fetchApi<SubjectDefaultInstructor[]>(
+		`/api/academic/subjects/${subjectId}/default-instructors`
+	);
 };
 
 export const batchListSubjectDefaultInstructors = async (
@@ -1060,7 +1080,9 @@ export const batchListSubjectDefaultInstructors = async (
 ): Promise<{ data: Record<string, SubjectDefaultInstructor[]> }> => {
 	if (subjectIds.length === 0) return { data: {} };
 	const params = new URLSearchParams({ subject_ids: subjectIds.join(',') });
-	return await fetchApi(`/api/academic/subjects/default-instructors?${params}`);
+	return await fetchApi<Record<string, SubjectDefaultInstructor[]>>(
+		`/api/academic/subjects/default-instructors?${params}`
+	);
 };
 
 export const addSubjectDefaultInstructor = async (
@@ -1120,7 +1142,9 @@ export interface StudyPlanVersionActivity {
 export const listPlanActivities = async (
 	versionId: string
 ): Promise<{ data: StudyPlanVersionActivity[] }> => {
-	return await fetchApi(`/api/academic/study-plan-versions/${versionId}/activities`);
+	return await fetchApi<StudyPlanVersionActivity[]>(
+		`/api/academic/study-plan-versions/${versionId}/activities`
+	);
 };
 
 export const addPlanActivity = async (
@@ -1133,10 +1157,13 @@ export const addPlanActivity = async (
 		display_order?: number;
 	}
 ) => {
-	return await fetchApi(`/api/academic/study-plan-versions/${versionId}/activities`, {
-		method: 'POST',
-		body: JSON.stringify(data)
-	});
+	return await fetchApi<StudyPlanVersionActivity>(
+		`/api/academic/study-plan-versions/${versionId}/activities`,
+		{
+			method: 'POST',
+			body: JSON.stringify(data)
+		}
+	);
 };
 
 export const updatePlanActivity = async (
@@ -1147,7 +1174,7 @@ export const updatePlanActivity = async (
 		display_order: number;
 	}>
 ) => {
-	return await fetchApi(`/api/academic/study-plan-activities/${id}`, {
+	return await fetchApi<StudyPlanVersionActivity>(`/api/academic/study-plan-activities/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -1181,7 +1208,7 @@ export const listActivityCatalog = async (
 	const params = new URLSearchParams();
 	if (opts.latest_only === false) params.set('latest_only', 'false');
 	const qs = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(`/api/academic/activity-catalog${qs}`);
+	return await fetchApi<ActivityCatalog[]>(`/api/academic/activity-catalog${qs}`);
 };
 
 export const createActivityCatalog = async (data: {
@@ -1196,14 +1223,14 @@ export const createActivityCatalog = async (data: {
 	/** Default team to insert atomically with catalog creation. */
 	default_instructors?: { instructor_id: string; role: 'primary' | 'secondary' }[];
 }) => {
-	return await fetchApi(`/api/academic/activity-catalog`, {
+	return await fetchApi<ActivityCatalog>(`/api/academic/activity-catalog`, {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
 export const updateActivityCatalog = async (id: string, data: Partial<ActivityCatalog>) => {
-	return await fetchApi(`/api/academic/activity-catalog/${id}`, {
+	return await fetchApi<ActivityCatalog>(`/api/academic/activity-catalog/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -1229,7 +1256,9 @@ export interface CatalogDefaultInstructor {
 export const listCatalogDefaultInstructors = async (
 	catalogId: string
 ): Promise<{ data: CatalogDefaultInstructor[] }> => {
-	return await fetchApi(`/api/academic/activity-catalog/${catalogId}/default-instructors`);
+	return await fetchApi<CatalogDefaultInstructor[]>(
+		`/api/academic/activity-catalog/${catalogId}/default-instructors`
+	);
 };
 
 export const addCatalogDefaultInstructor = async (
@@ -1275,12 +1304,22 @@ export const deletePlanActivity = async (id: string) => {
 export const generateActivitiesFromPlan = async (data: {
 	study_plan_version_id: string;
 	semester_id: string;
-}): Promise<{ success: boolean; created: number; skipped: number; total_templates: number }> => {
-	return await fetchApi(`/api/academic/activities/generate-from-plan`, {
-		method: 'POST',
-		body: JSON.stringify(data)
-	});
+}): Promise<GenerateActivitiesFromPlanResponse> => {
+	const response = await fetchApi<GenerateActivitiesFromPlanResponse>(
+		`/api/academic/activities/generate-from-plan`,
+		{
+			method: 'POST',
+			body: JSON.stringify(data)
+		}
+	);
+	return response.data;
 };
+
+export interface GenerateActivitiesFromPlanResponse {
+	created: number;
+	skipped: number;
+	total_templates: number;
+}
 
 // ==========================================
 // Classroom Activities (junction-backed)
@@ -1302,7 +1341,9 @@ export const listClassroomActivities = async (
 	semesterId: string
 ): Promise<{ data: ClassroomActivity[] }> => {
 	const params = new URLSearchParams({ semester_id: semesterId });
-	return await fetchApi(`/api/academic/planning/classrooms/${classroomId}/activities?${params}`);
+	return await fetchApi<ClassroomActivity[]>(
+		`/api/academic/planning/classrooms/${classroomId}/activities?${params}`
+	);
 };
 
 export const removeClassroomFromSlot = async (classroomId: string, slotId: string) => {
