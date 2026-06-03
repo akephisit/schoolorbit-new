@@ -1,8 +1,7 @@
 use crate::error::AppError;
 use crate::modules::admission::services::pii;
-use serde::Serialize;
-use serde_json::json;
-use sqlx::PgPool;
+use serde::{Deserialize, Serialize};
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 #[derive(sqlx::FromRow, Serialize)]
@@ -21,6 +20,38 @@ pub struct ListExamRoomsResult {
     pub rooms: Vec<ExamRoomRow>,
     pub total_capacity: i64,
     pub total_assigned: i64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+struct ExamConfigStorage {
+    exam_id_type: Option<String>,
+    exam_id_prefix: Option<String>,
+    sort_order: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamConfigResponse {
+    pub exam_id_type: Option<String>,
+    pub exam_id_prefix: Option<String>,
+    pub sort_order: Option<String>,
+}
+
+impl From<ExamConfigStorage> for ExamConfigResponse {
+    fn from(config: ExamConfigStorage) -> Self {
+        Self {
+            exam_id_type: config.exam_id_type,
+            exam_id_prefix: config.exam_id_prefix,
+            sort_order: config.sort_order,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignSeatsRoomSummary {
+    pub room_name: String,
+    pub count: i32,
 }
 
 pub async fn list_exam_rooms(pool: &PgPool, round_id: Uuid) -> Result<ListExamRoomsResult, AppError> {
@@ -147,6 +178,19 @@ pub async fn copy_exam_rooms_from_round(pool: &PgPool, round_id: Uuid, from_roun
     Ok(result.rows_affected())
 }
 
+async fn load_exam_config_storage(pool: &PgPool, round_id: Uuid) -> Result<Option<ExamConfigStorage>, AppError> {
+    let config = sqlx::query_scalar::<_, Json<ExamConfigStorage>>(
+        "SELECT COALESCE(exam_config, '{}'::jsonb) FROM admission_rounds WHERE id = $1"
+    ).bind(round_id).fetch_optional(pool).await
+    .map_err(|e| {
+        eprintln!("Failed to load exam config: {}", e);
+        AppError::InternalServerError("ไม่สามารถดึง config ได้".to_string())
+    })?;
+
+    let config = config.map(|Json(config)| config);
+    Ok(config)
+}
+
 pub async fn update_exam_config(
     pool: &PgPool,
     round_id: Uuid,
@@ -154,13 +198,15 @@ pub async fn update_exam_config(
     exam_id_prefix: Option<String>,
     sort_order: Option<String>,
 ) -> Result<(), AppError> {
-    let mut updates = serde_json::Map::new();
-    if let Some(v) = exam_id_type { updates.insert("exam_id_type".to_string(), json!(v)); }
-    if let Some(v) = exam_id_prefix { updates.insert("exam_id_prefix".to_string(), json!(v)); }
-    if let Some(v) = sort_order { updates.insert("sort_order".to_string(), json!(v)); }
+    let mut config = load_exam_config_storage(pool, round_id).await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))?;
 
-    sqlx::query("UPDATE admission_rounds SET exam_config = exam_config || $2 WHERE id = $1")
-        .bind(round_id).bind(serde_json::Value::Object(updates))
+    if let Some(value) = exam_id_type { config.exam_id_type = Some(value); }
+    if let Some(value) = exam_id_prefix { config.exam_id_prefix = Some(value); }
+    if let Some(value) = sort_order { config.sort_order = Some(value); }
+
+    sqlx::query("UPDATE admission_rounds SET exam_config = $2 WHERE id = $1")
+        .bind(round_id).bind(Json(config))
         .execute(pool).await
         .map_err(|e| {
             eprintln!("Failed to update exam config: {}", e);
@@ -169,18 +215,15 @@ pub async fn update_exam_config(
     Ok(())
 }
 
-pub async fn get_exam_config(pool: &PgPool, round_id: Uuid) -> Result<serde_json::Value, AppError> {
-    let config: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT exam_config FROM admission_rounds WHERE id = $1"
-    ).bind(round_id).fetch_optional(pool).await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
-    .flatten();
-    Ok(config.unwrap_or_else(|| json!({})))
+pub async fn get_exam_config(pool: &PgPool, round_id: Uuid) -> Result<ExamConfigResponse, AppError> {
+    let config = load_exam_config_storage(pool, round_id).await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))?;
+    Ok(config.into())
 }
 
 pub struct AssignSeatsResult {
     pub assigned_count: usize,
-    pub rooms: Vec<serde_json::Value>,
+    pub rooms: Vec<AssignSeatsRoomSummary>,
     pub message: String,
 }
 
@@ -193,20 +236,17 @@ pub async fn assign_exam_seats(
     sort_order_override: Option<String>,
     mode: Option<String>,
 ) -> Result<AssignSeatsResult, AppError> {
-    let config: serde_json::Value = sqlx::query_scalar(
-        "SELECT exam_config FROM admission_rounds WHERE id = $1"
-    ).bind(round_id).fetch_optional(pool).await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
-    .flatten().unwrap_or_else(|| json!({}));
+    let config = load_exam_config_storage(pool, round_id).await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))?;
 
     let exam_id_type = exam_id_type_override
-        .or_else(|| config["exam_id_type"].as_str().map(|s| s.to_string()))
+        .or(config.exam_id_type)
         .unwrap_or_else(|| "application_number".to_string());
     let exam_id_prefix = exam_id_prefix_override
-        .or_else(|| config["exam_id_prefix"].as_str().map(|s| s.to_string()))
+        .or(config.exam_id_prefix)
         .unwrap_or_default();
     let sort_order = sort_order_override
-        .or_else(|| config["sort_order"].as_str().map(|s| s.to_string()))
+        .or(config.sort_order)
         .unwrap_or_else(|| "by_application".to_string());
 
     #[derive(sqlx::FromRow)]
@@ -355,8 +395,11 @@ pub async fn assign_exam_seats(
         for (_, rid, _, _) in &new_assignments {
             if let Some(e) = room_summary.get_mut(rid) { e.1 += 1; }
         }
-        let summary: Vec<serde_json::Value> = rooms.iter()
-            .filter_map(|r| room_summary.get(&r.id).map(|(n, c)| json!({ "roomName": n, "count": c })))
+        let summary: Vec<AssignSeatsRoomSummary> = rooms.iter()
+            .filter_map(|r| room_summary.get(&r.id).map(|(room_name, count)| AssignSeatsRoomSummary {
+                room_name: room_name.clone(),
+                count: *count,
+            }))
             .collect();
 
         return Ok(AssignSeatsResult {
@@ -429,8 +472,11 @@ pub async fn assign_exam_seats(
     for (_, rid, _, _) in &assignments {
         if let Some(e) = room_summary.get_mut(rid) { e.1 += 1; }
     }
-    let summary: Vec<serde_json::Value> = rooms.iter()
-        .filter_map(|r| room_summary.get(&r.id).map(|(n, c)| json!({ "roomName": n, "count": c })))
+    let summary: Vec<AssignSeatsRoomSummary> = rooms.iter()
+        .filter_map(|r| room_summary.get(&r.id).map(|(room_name, count)| AssignSeatsRoomSummary {
+            room_name: room_name.clone(),
+            count: *count,
+        }))
         .collect();
 
     Ok(AssignSeatsResult {

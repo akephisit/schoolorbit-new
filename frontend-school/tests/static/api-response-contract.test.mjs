@@ -89,6 +89,9 @@ test('admission application detail contract returns application and documents in
 	const backendHandler = await readRepoFile(
 		'backend-school/src/modules/admission/handlers/applications.rs'
 	);
+	const examRoomService = await readRepoFile(
+		'backend-school/src/modules/admission/services/exam_room_service.rs'
+	);
 	const frontendApi = await readRepoFile('frontend-school/src/lib/api/admission.ts');
 
 	assert.match(backendHandler, /"data":\s*\{\s*"application": application,\s*"documents": documents\s*\}/);
@@ -121,6 +124,15 @@ test('admission application detail contract returns application and documents in
 	assert.match(frontendApi, /apiClient\.patch<\{\s*updated:\s*number\s*\}>/);
 	assert.doesNotMatch(frontendApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(frontendApi, /res\.data as/);
+
+	assert.match(examRoomService, /struct\s+ExamConfigStorage/);
+	assert.match(examRoomService, /struct\s+ExamConfigResponse/);
+	assert.match(examRoomService, /struct\s+AssignSeatsRoomSummary/);
+	assert.match(examRoomService, /Result<ExamConfigResponse,\s*AppError>/);
+	assert.match(examRoomService, /pub\s+rooms:\s+Vec<AssignSeatsRoomSummary>/);
+	assert.doesNotMatch(examRoomService, /get_exam_config[\s\S]*?Result<serde_json::Value,\s*AppError>/);
+	assert.doesNotMatch(examRoomService, /config\["exam_id_type"\]/);
+	assert.doesNotMatch(examRoomService, /json!\(\{\s*"roomName"/);
 });
 
 test('parent self-service API uses typed student and timetable responses', async () => {
