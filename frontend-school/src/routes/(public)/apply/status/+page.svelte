@@ -3,7 +3,8 @@
 		portalCheck,
 		portalGetStatus,
 		portalGetExamSeat,
-		portalSubmitForm
+		portalSubmitForm,
+		type PortalStatusResult
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -80,41 +81,7 @@
 		examDate?: string;
 	} | null = $state(null);
 
-	let portalData: {
-		roundStatus?: string;
-		assignmentMode?: string;
-		application?: {
-			id: string;
-			admissionRoundId: string;
-			applicationNumber?: string;
-			title?: string;
-			firstName: string;
-			lastName: string;
-			status: string;
-			dateOfBirth?: string;
-			trackName?: string;
-			assignedTrackName?: string;
-			roundName?: string;
-			rejectionReason?: string;
-			fatherName?: string;
-			fatherPhone?: string;
-			motherName?: string;
-			motherPhone?: string;
-			guardianName?: string;
-			guardianPhone?: string;
-			guardianRelation?: string;
-			guardianIs?: string;
-		};
-		assignment?: {
-			rankInTrack?: number;
-			rankInRoom?: number;
-			totalScore?: number;
-			roomName?: string;
-			studentConfirmed: boolean;
-		} | null;
-		scores?: { subjectName?: string; score?: number; maxScore?: number }[] | null;
-		enrollmentForm?: { formData: Record<string, unknown>; preSubmittedAt?: string } | null;
-	} | null = $state(null);
+	let portalData: PortalStatusResult | null = $state(null);
 
 	// ช่วง round ที่ถือว่า "ประกาศผลแล้ว" — ก่อนหน้านี้ไม่ควรโชว์ "ผ่านการคัดเลือก"
 	const RESULT_ANNOUNCED_STATUSES = ['announced', 'enrolling', 'closed'];

@@ -3,7 +3,7 @@ use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::pii;
 use crate::utils::file_url::FileUrlBuilder;
 use chrono::{Datelike, FixedOffset, Utc};
-use serde_json::json;
+use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -1606,16 +1606,26 @@ pub fn build_full_file_url(storage_path: &str) -> Result<String, AppError> {
     Ok(format!("{}/{}", url_builder.base_url(), storage_path))
 }
 
-pub fn document_upload_response_json(
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentUploadResponse {
+    pub id: Uuid,
+    pub file_id: Uuid,
+    pub doc_type: String,
+    pub file_url: String,
+    pub file_size: i64,
+}
+
+pub fn document_upload_response(
     result: &DocumentUploadResult,
     doc_type: &str,
-) -> Result<serde_json::Value, AppError> {
+) -> Result<DocumentUploadResponse, AppError> {
     let file_url = build_full_file_url(&result.storage_path)?;
-    Ok(json!({
-        "id": result.doc_id,
-        "fileId": result.file_id,
-        "docType": doc_type,
-        "fileUrl": file_url,
-        "fileSize": result.file_size,
-    }))
+    Ok(DocumentUploadResponse {
+        id: result.doc_id,
+        file_id: result.file_id,
+        doc_type: doc_type.to_string(),
+        file_url,
+        file_size: result.file_size,
+    })
 }

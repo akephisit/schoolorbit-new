@@ -100,6 +100,28 @@ pub struct CheckStatusRow {
     pub round_status: Option<String>,
 }
 
+#[derive(sqlx::FromRow, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortalAssignment {
+    pub rank_in_track: Option<i32>,
+    pub rank_in_room: Option<i32>,
+    pub total_score: Option<f64>,
+    pub room_name: Option<String>,
+    pub student_confirmed: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortalStatusResult {
+    pub application: AdmissionApplication,
+    pub round_status: String,
+    pub assignment_mode: String,
+    pub assignment: Option<PortalAssignment>,
+    pub scores: Option<Vec<ExamScore>>,
+    pub enrollment_form: Option<EnrollmentForm>,
+    pub documents: Vec<ApplicationDocument>,
+}
+
 pub async fn check_application(
     pool: &PgPool,
     payload: PortalCredentials,
@@ -127,7 +149,7 @@ pub async fn check_application(
 pub async fn get_status(
     pool: &PgPool,
     payload: PortalCredentials,
-) -> Result<serde_json::Value, AppError> {
+) -> Result<PortalStatusResult, AppError> {
     let application_id =
         verify_credentials(pool, &payload.national_id, &payload.date_of_birth).await?;
     let round_status = get_round_status(pool, application_id).await?;
@@ -165,17 +187,7 @@ pub async fn get_status(
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
     let application = decrypt_application(application)?;
 
-    #[derive(sqlx::FromRow, serde::Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct AssignmentRow {
-        rank_in_track: Option<i32>,
-        rank_in_room: Option<i32>,
-        total_score: Option<f64>,
-        room_name: Option<String>,
-        student_confirmed: bool,
-    }
-
-    let assignment = sqlx::query_as::<_, AssignmentRow>(
+    let assignment = sqlx::query_as::<_, PortalAssignment>(
         r#"SELECT ara.rank_in_track, ara.rank_in_room, ara.total_score,
                   cr.name AS room_name, ara.student_confirmed
            FROM admission_room_assignments ara
@@ -236,15 +248,15 @@ pub async fn get_status(
         })
         .collect();
 
-    Ok(json!({
-        "application": application,
-        "roundStatus": round_status,
-        "assignmentMode": assignment_mode,
-        "assignment": if show_assignment { json!(assignment) } else { json!(null) },
-        "scores": if show_scores { json!(scores) } else { json!(null) },
-        "enrollmentForm": if show_form { json!(form) } else { json!(null) },
-        "documents": documents,
-    }))
+    Ok(PortalStatusResult {
+        application,
+        round_status,
+        assignment_mode,
+        assignment: if show_assignment { assignment } else { None },
+        scores: if show_scores { Some(scores) } else { None },
+        enrollment_form: if show_form { form } else { None },
+        documents,
+    })
 }
 
 pub async fn confirm_enrollment(

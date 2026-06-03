@@ -150,6 +150,7 @@ export interface AdmissionApplication {
 	updatedAt: string;
 	// Joined
 	trackName?: string;
+	assignedTrackName?: string;
 	roundName?: string;
 }
 
@@ -716,8 +717,13 @@ export async function portalCheck(nationalId: string, dateOfBirth: string) {
 }
 
 export interface PortalStatusResult {
-	application?: AdmissionApplication;
-	documents?: ApplicationDocument[];
+	application: AdmissionApplication;
+	roundStatus: string;
+	assignmentMode: string;
+	assignment: RoomAssignment | null;
+	scores: ExamScore[] | null;
+	enrollmentForm: EnrollmentForm | null;
+	documents: ApplicationDocument[];
 }
 
 export async function portalGetStatus(
@@ -729,7 +735,7 @@ export async function portalGetStatus(
 		dateOfBirth
 	});
 	if (!res.success) throw new Error(res.error);
-	return res.data ?? {};
+	return requireApiData(res, 'ไม่สามารถโหลดสถานะใบสมัครได้');
 }
 
 export async function portalGetExamSeat(

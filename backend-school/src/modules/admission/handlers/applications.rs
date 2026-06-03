@@ -332,7 +332,7 @@ pub async fn staff_upload_document(
         r2_client.delete_file(old_path).await.ok();
     }
 
-    let response = application_service::document_upload_response_json(&result, &doc_type)?;
+    let response = application_service::document_upload_response(&result, &doc_type)?;
     Ok(Json(json!({ "success": true, "data": response })).into_response())
 }
 
