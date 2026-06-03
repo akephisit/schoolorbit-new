@@ -110,4 +110,6 @@ test('admission application detail contract returns application and documents in
 	assert.doesNotMatch(backendHandler, /"student_code": result\.student_code/);
 	assert.match(frontendApi, /interface\s+CompleteEnrollmentResponse/);
 	assert.match(frontendApi, /apiClient\.post<CompleteEnrollmentResponse>/);
+	assert.match(frontendApi, /copyExamRoomsFromRound[\s\S]*res\.message \?\? 'copy ห้องสอบเรียบร้อย'/);
+	assert.match(frontendApi, /assignExamSeats[\s\S]*message: res\.message \?\? 'จัดที่นั่งสอบเรียบร้อย'/);
 });

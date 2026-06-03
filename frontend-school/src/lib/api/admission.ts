@@ -1081,7 +1081,8 @@ export async function copyExamRoomsFromRound(roundId: string, fromRoundId: strin
 	const res = await apiClient.post(
 		`/api/admission/rounds/${roundId}/exam-rooms/copy-from/${fromRoundId}`
 	);
-	return res.data as { message: string };
+	if (!res.success) throw new Error(res.error);
+	return { message: res.message ?? 'copy ห้องสอบเรียบร้อย' };
 }
 
 export async function getExamConfig(roundId: string) {
@@ -1107,7 +1108,11 @@ export async function assignExamSeats(
 		`/api/admission/rounds/${roundId}/assign-exam-seats`,
 		options ?? {}
 	);
-	return res.data as {
+	if (!res.success || !res.data) throw new Error(res.error);
+	return {
+		...res.data,
+		message: res.message ?? 'จัดที่นั่งสอบเรียบร้อย'
+	} as {
 		message: string;
 		assignedCount: number;
 		rooms: { roomName: string; count: number }[];
