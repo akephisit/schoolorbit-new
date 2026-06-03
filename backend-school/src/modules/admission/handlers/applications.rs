@@ -72,7 +72,7 @@ pub async fn get_application(
         return Ok(r);
     }
     let (application, documents) = application_service::get_application_with_documents(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": { "items": application, "documents": documents } })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "application": application, "documents": documents } })).into_response())
 }
 
 // ==========================================

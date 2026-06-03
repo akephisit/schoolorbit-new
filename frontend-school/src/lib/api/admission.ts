@@ -197,6 +197,11 @@ export interface ApplicationListItem {
 	createdAt: string;
 }
 
+export interface ApplicationDetailResponse {
+	application: AdmissionApplication;
+	documents: ApplicationDocument[];
+}
+
 export interface ExamScore {
 	id: string;
 	applicationId: string;
@@ -445,11 +450,9 @@ export async function listApplications(
 export async function getApplication(
 	id: string
 ): Promise<{ application: AdmissionApplication; documents: ApplicationDocument[] }> {
-	const res = (await apiClient.get<AdmissionApplication>(
-		`/api/admission/applications/${id}`
-	)) as ApiResponse<AdmissionApplication> & { documents?: ApplicationDocument[] };
+	const res = await apiClient.get<ApplicationDetailResponse>(`/api/admission/applications/${id}`);
 	if (!res.success || !res.data) throw new Error(res.error);
-	return { application: res.data, documents: res.documents ?? [] };
+	return res.data;
 }
 
 export async function verifyApplication(id: string) {

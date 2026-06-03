@@ -84,3 +84,19 @@ test('user role assignment API contract stays aligned across backend and fronten
 	assert.match(frontendComponent, /userRole\.role/);
 	assert.doesNotMatch(frontendComponent, /getRoleById\(userRole\.role_id\)/);
 });
+
+test('admission application detail contract returns application and documents in data', async () => {
+	const backendHandler = await readRepoFile(
+		'backend-school/src/modules/admission/handlers/applications.rs'
+	);
+	const frontendApi = await readRepoFile('frontend-school/src/lib/api/admission.ts');
+
+	assert.match(backendHandler, /"data":\s*\{\s*"application": application,\s*"documents": documents\s*\}/);
+	assert.doesNotMatch(backendHandler, /"data":\s*\{\s*"items": application,\s*"documents": documents\s*\}/);
+
+	assert.match(frontendApi, /interface\s+ApplicationDetailResponse/);
+	assert.match(frontendApi, /application:\s*AdmissionApplication/);
+	assert.match(frontendApi, /documents:\s*ApplicationDocument\[\]/);
+	assert.match(frontendApi, /apiClient\.get<ApplicationDetailResponse>/);
+	assert.doesNotMatch(frontendApi, /ApiResponse<AdmissionApplication>[\s\S]*documents\?: ApplicationDocument\[\]/);
+});
