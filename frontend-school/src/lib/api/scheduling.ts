@@ -209,7 +209,7 @@ export async function updateInstructorConstraints(
 	id: UUID,
 	req: UpdateInstructorConstraintRequest
 ) {
-	return apiClient.put<unknown>(`/api/academic/scheduling/instructors/${id}`, req);
+	return apiClient.put<string>(`/api/academic/scheduling/instructors/${id}`, req);
 }
 
 export async function reorderInstructorPriority(instructor_ids: UUID[]) {
@@ -231,7 +231,7 @@ export async function listSubjectConstraints() {
 }
 
 export async function updateSubjectConstraints(id: UUID, req: UpdateSubjectConstraintRequest) {
-	return apiClient.put<unknown>(`/api/academic/scheduling/subjects/${id}`, req);
+	return apiClient.put<string>(`/api/academic/scheduling/subjects/${id}`, req);
 }
 
 // Phase B: Classroom Course Constraints
@@ -350,11 +350,11 @@ export async function updateTimetableTemplate(
 	id: UUID,
 	req: { name?: string; description?: string }
 ) {
-	return apiClient.put<unknown>(`/api/academic/timetable-templates/${id}`, req);
+	return apiClient.put<Record<string, never>>(`/api/academic/timetable-templates/${id}`, req);
 }
 
 export async function deleteTimetableTemplate(id: UUID) {
-	return apiClient.delete<unknown>(`/api/academic/timetable-templates/${id}`);
+	return apiClient.delete<Record<string, never>>(`/api/academic/timetable-templates/${id}`);
 }
 
 export async function createTemplateFromCurrent(req: {
@@ -382,7 +382,7 @@ export async function clearTimetable(req: { semester_id: UUID; entry_types?: str
 		req
 	);
 	if (!response.success) throw new Error(response.error || 'Clear timetable failed');
-	return response as { success: boolean; data: { deleted: number } };
+	return response;
 }
 
 export async function listPeriods(academicYearId?: UUID) {

@@ -155,3 +155,15 @@ test('school settings API consumes typed envelope data without casts', async () 
 	assert.match(schoolApi, /apiClient\.get<PublicSchoolInfo>/);
 	assert.doesNotMatch(schoolApi, /res\.data as/);
 });
+
+test('scheduling API uses backend envelope data types without response casts', async () => {
+	const schedulingApi = await readRepoFile('frontend-school/src/lib/api/scheduling.ts');
+
+	assert.match(schedulingApi, /updateInstructorConstraints[\s\S]*apiClient\.put<string>/);
+	assert.match(schedulingApi, /updateSubjectConstraints[\s\S]*apiClient\.put<string>/);
+	assert.match(schedulingApi, /updateTimetableTemplate[\s\S]*apiClient\.put<Record<string, never>>/);
+	assert.match(schedulingApi, /deleteTimetableTemplate[\s\S]*apiClient\.delete<Record<string, never>>/);
+	assert.match(schedulingApi, /apiClient\.deleteWithBody<\{\s*deleted:\s*number\s*\}>/);
+	assert.doesNotMatch(schedulingApi, /apiClient\.(put|delete)<unknown>/);
+	assert.doesNotMatch(schedulingApi, /return response as \{ success: boolean; data: \{ deleted: number \} \}/);
+});
