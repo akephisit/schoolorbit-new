@@ -177,7 +177,7 @@ export interface Role {
 	description?: string;
 	user_type: string; // Changed from category to user_type
 	level: number;
-	permissions: Record<string, unknown>;
+	permissions: string[];
 	is_active: boolean;
 	created_at: string;
 	updated_at: string;

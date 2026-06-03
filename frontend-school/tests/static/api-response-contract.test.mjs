@@ -58,6 +58,7 @@ test('user role assignment API contract stays aligned across backend and fronten
 		'backend-school/src/modules/staff/services/user_role_service.rs'
 	);
 	const frontendApi = await readRepoFile('frontend-school/src/lib/api/roles.ts');
+	const frontendStaffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
 	const frontendComponent = await readRepoFile(
 		'frontend-school/src/lib/components/UserRoleManager.svelte'
 	);
@@ -76,6 +77,8 @@ test('user role assignment API contract stays aligned across backend and fronten
 	assert.match(frontendApi, /role:\s+Role/);
 	assert.match(frontendApi, /getUserRoles\(userId:\s*string\):\s*Promise<ApiResponse<UserRoleAssignment\[\]>>/);
 	assert.doesNotMatch(frontendApi, /interface\s+UserRole\s*\{/);
+	assert.match(frontendStaffApi, /permissions:\s*string\[\]/);
+	assert.doesNotMatch(frontendStaffApi, /permissions:\s*Record<string,\s*unknown>/);
 
 	assert.match(frontendComponent, /type\s+UserRoleAssignment/);
 	assert.match(frontendComponent, /userRole\.role/);
