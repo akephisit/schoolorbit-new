@@ -274,6 +274,12 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.match(timetableService, /struct\s+MyActivityForEntry/);
 	assert.match(timetableService, /get_my_activity_for_entry[\s\S]*?Result<Option<MyActivityForEntry>,\s*AppError>/);
 	assert.doesNotMatch(timetableService, /get_my_activity_for_entry[\s\S]*?Result<serde_json::Value,\s*AppError>/);
+	assert.match(timetableService, /struct\s+BatchSkippedCell/);
+	assert.match(timetableService, /pub\s+skipped:\s+Vec<BatchSkippedCell>/);
+	assert.match(timetableService, /pub\s+blocked:\s+Vec<BatchBlockedCell>/);
+	assert.match(timetableService, /pub\s+deleted:\s+Vec<BatchDeletedEntry>/);
+	assert.match(timetableService, /pub\s+excluded_instructors:\s+Vec<BatchExcludedInstructor>/);
+	assert.doesNotMatch(timetableService, /pub\s+skipped:\s+Vec<serde_json::Value>/);
 
 	assert.doesNotMatch(timetablePage, /await createTimetableEntry\([^)]*\)\) as/);
 	assert.doesNotMatch(timetablePage, /await updateTimetableEntry\([^)]*\)\) as/);

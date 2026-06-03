@@ -12,11 +12,60 @@ use uuid::Uuid;
 /// ผลของ create_batch_entries — handler ใช้ semester_id broadcast WS event
 pub struct BatchCreateOutcome {
     pub inserted_count: i64,
-    pub skipped: Vec<serde_json::Value>,
-    pub blocked: Vec<serde_json::Value>,
-    pub deleted: Vec<serde_json::Value>,
-    pub excluded_instructors: Vec<serde_json::Value>,
+    pub skipped: Vec<BatchSkippedCell>,
+    pub blocked: Vec<BatchBlockedCell>,
+    pub deleted: Vec<BatchDeletedEntry>,
+    pub excluded_instructors: Vec<BatchExcludedInstructor>,
     pub semester_id: Uuid,
+}
+
+#[derive(Serialize)]
+pub struct BatchSkippedCell {
+    pub classroom_id: Option<Uuid>,
+    pub classroom_name: Option<String>,
+    pub day_of_week: String,
+    pub period_id: Uuid,
+    pub period_name: Option<String>,
+    pub reason: String,
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct BatchBlockedCell {
+    pub classroom_id: Uuid,
+    pub classroom_name: Option<String>,
+    pub day_of_week: String,
+    pub period_id: Uuid,
+    pub period_name: Option<String>,
+    pub reason: String,
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct BatchDeletedEntry {
+    pub id: Uuid,
+    pub classroom_name: Option<String>,
+    pub day_of_week: String,
+    pub period_id: Uuid,
+    pub period_name: Option<String>,
+    pub title: String,
+    pub entry_type: String,
+    pub instructor_names: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct BatchInstructorConflict {
+    pub day_of_week: String,
+    pub period_id: Uuid,
+    pub period_name: Option<String>,
+    pub existing_title: String,
+}
+
+#[derive(Serialize)]
+pub struct BatchExcludedInstructor {
+    pub instructor_id: Uuid,
+    pub instructor_name: String,
+    pub conflicting_at: Vec<BatchInstructorConflict>,
 }
 
 /// ข้อมูลสำหรับ DropRejected broadcast เมื่อ swap fail
@@ -1830,10 +1879,10 @@ pub async fn create_batch_entries(
         }
     };
 
-    let mut skipped: Vec<serde_json::Value> = Vec::new();
-    let mut blocked: Vec<serde_json::Value> = Vec::new();
-    let mut deleted: Vec<serde_json::Value> = Vec::new();
-    let mut excluded_instructors_map: std::collections::HashMap<Uuid, (String, Vec<serde_json::Value>)> =
+    let mut skipped: Vec<BatchSkippedCell> = Vec::new();
+    let mut blocked: Vec<BatchBlockedCell> = Vec::new();
+    let mut deleted: Vec<BatchDeletedEntry> = Vec::new();
+    let mut excluded_instructors_map: std::collections::HashMap<Uuid, (String, Vec<BatchInstructorConflict>)> =
         std::collections::HashMap::new();
     let mut entries_to_delete: Vec<Uuid> = Vec::new();
     let mut insert_tuples: Vec<(Uuid, String, Uuid)> = Vec::new();
@@ -1875,31 +1924,41 @@ pub async fn create_batch_entries(
                     if let Some(blocker) = classroom_busy {
                         if force {
                             if blocker.scheduling_mode.as_deref() == Some("synchronized") {
-                                blocked.push(json!({
-                                    "classroom_id": cr_id, "classroom_name": cell_cls_name,
-                                    "day_of_week": day, "period_id": p_id, "period_name": cell_period,
-                                    "reason": "SYNC_VS_SYNC",
-                                    "message": format!("{} {} {}: ทับกิจกรรม sync '{}' — sync ทับ sync ไม่ได้",
-                                                       cell_cls_name, cell_day, cell_period, blocker.display_title)
-                                }));
+                                blocked.push(BatchBlockedCell {
+                                    classroom_id: *cr_id,
+                                    classroom_name: Some(cell_cls_name.clone()),
+                                    day_of_week: day.clone(),
+                                    period_id: *p_id,
+                                    period_name: Some(cell_period.clone()),
+                                    reason: "SYNC_VS_SYNC".to_string(),
+                                    message: format!("{} {} {}: ทับกิจกรรม sync '{}' — sync ทับ sync ไม่ได้",
+                                                       cell_cls_name, cell_day, cell_period, blocker.display_title),
+                                });
                                 continue;
                             }
                             entries_to_delete.push(blocker.id);
-                            deleted.push(json!({
-                                "id": blocker.id, "classroom_name": cell_cls_name,
-                                "day_of_week": day, "period_id": p_id, "period_name": cell_period,
-                                "title": blocker.display_title, "entry_type": blocker.entry_type,
-                                "instructor_names": blocker.instructor_names
-                            }));
+                            deleted.push(BatchDeletedEntry {
+                                id: blocker.id,
+                                classroom_name: Some(cell_cls_name.clone()),
+                                day_of_week: day.clone(),
+                                period_id: *p_id,
+                                period_name: Some(cell_period.clone()),
+                                title: blocker.display_title.clone(),
+                                entry_type: blocker.entry_type.clone(),
+                                instructor_names: blocker.instructor_names.clone(),
+                            });
                             insert_tuples.push((*cr_id, day.clone(), *p_id));
                         } else {
-                            blocked.push(json!({
-                                "classroom_id": cr_id, "classroom_name": cell_cls_name,
-                                "day_of_week": day, "period_id": p_id, "period_name": cell_period,
-                                "reason": "STUDENT_BUSY",
-                                "message": format!("{} {} {}: นักเรียนติด '{}' — ลบของเดิมก่อน",
-                                                   cell_cls_name, cell_day, cell_period, blocker.display_title)
-                            }));
+                            blocked.push(BatchBlockedCell {
+                                classroom_id: *cr_id,
+                                classroom_name: Some(cell_cls_name.clone()),
+                                day_of_week: day.clone(),
+                                period_id: *p_id,
+                                period_name: Some(cell_period.clone()),
+                                reason: "STUDENT_BUSY".to_string(),
+                                message: format!("{} {} {}: นักเรียนติด '{}' — ลบของเดิมก่อน",
+                                                   cell_cls_name, cell_day, cell_period, blocker.display_title),
+                            });
                         }
                         continue;
                     }
@@ -1909,22 +1968,28 @@ pub async fn create_batch_entries(
                     if let Some(blocker) = room_busy {
                         if force {
                             entries_to_delete.push(blocker.id);
-                            deleted.push(json!({
-                                "id": blocker.id, "classroom_name": blocker.classroom_name,
-                                "day_of_week": day, "period_id": p_id, "period_name": blocker.period_name,
-                                "title": blocker.display_title, "entry_type": blocker.entry_type,
-                                "instructor_names": blocker.instructor_names
-                            }));
+                            deleted.push(BatchDeletedEntry {
+                                id: blocker.id,
+                                classroom_name: blocker.classroom_name.clone(),
+                                day_of_week: day.clone(),
+                                period_id: *p_id,
+                                period_name: blocker.period_name.clone(),
+                                title: blocker.display_title.clone(),
+                                entry_type: blocker.entry_type.clone(),
+                                instructor_names: blocker.instructor_names.clone(),
+                            });
                             insert_tuples.push((*cr_id, day.clone(), *p_id));
                         } else {
-                            skipped.push(json!({
-                                "classroom_id": cr_id, "classroom_name": cell_cls_name,
-                                "day_of_week": day, "period_id": p_id,
-                                "period_name": cell_period,
-                                "reason": "ROOM_BUSY",
-                                "message": format!("{} {} {}: ห้องสอนถูกใช้โดย '{}' อยู่ — ข้ามไม่ลง",
-                                                   cell_cls_name, cell_day, cell_period, blocker.display_title)
-                            }));
+                            skipped.push(BatchSkippedCell {
+                                classroom_id: Some(*cr_id),
+                                classroom_name: Some(cell_cls_name.clone()),
+                                day_of_week: day.clone(),
+                                period_id: *p_id,
+                                period_name: Some(cell_period.clone()),
+                                reason: "ROOM_BUSY".to_string(),
+                                message: format!("{} {} {}: ห้องสอนถูกใช้โดย '{}' อยู่ — ข้ามไม่ลง",
+                                                   cell_cls_name, cell_day, cell_period, blocker.display_title),
+                            });
                         }
                         continue;
                     }
@@ -1937,12 +2002,16 @@ pub async fn create_batch_entries(
                                 if force {
                                     if !entries_to_delete.contains(&e.id) {
                                         entries_to_delete.push(e.id);
-                                        deleted.push(json!({
-                                            "id": e.id, "classroom_name": e.classroom_name,
-                                            "day_of_week": day, "period_id": p_id, "period_name": e.period_name,
-                                            "title": e.display_title, "entry_type": e.entry_type,
-                                            "instructor_names": e.instructor_names
-                                        }));
+                                        deleted.push(BatchDeletedEntry {
+                                            id: e.id,
+                                            classroom_name: e.classroom_name.clone(),
+                                            day_of_week: day.clone(),
+                                            period_id: *p_id,
+                                            period_name: e.period_name.clone(),
+                                            title: e.display_title.clone(),
+                                            entry_type: e.entry_type.clone(),
+                                            instructor_names: e.instructor_names.clone(),
+                                        });
                                     }
                                 }
                             }
@@ -1967,11 +2036,12 @@ pub async fn create_batch_entries(
                                     .unwrap_or_default();
                                 (nm, Vec::new())
                             });
-                            entry_record.1.push(json!({
-                                "day_of_week": day, "period_id": p_id,
-                                "period_name": conf_entry.period_name,
-                                "existing_title": conf_entry.display_title
-                            }));
+                            entry_record.1.push(BatchInstructorConflict {
+                                day_of_week: day.clone(),
+                                period_id: *p_id,
+                                period_name: conf_entry.period_name.clone(),
+                                existing_title: conf_entry.display_title.clone(),
+                            });
                         }
                     }
                     insert_tuples.push((*cr_id, day.clone(), *p_id));
@@ -1986,25 +2056,32 @@ pub async fn create_batch_entries(
                             .find(|e| e.scheduling_mode.as_deref() == Some("synchronized"))
                             .map(|e| e.display_title.clone())
                             .unwrap_or_else(|| "กิจกรรม sync".to_string());
-                        blocked.push(json!({
-                            "classroom_id": cr_id, "classroom_name": cell_cls_name,
-                            "day_of_week": day, "period_id": p_id, "period_name": cell_period,
-                            "reason": "SYNC_ACTIVITY_PRESENT",
-                            "message": format!("{} {} {}: มีกิจกรรม sync '{}' อยู่ — ลบกิจกรรม sync ก่อน",
-                                               cell_cls_name, cell_day, cell_period, sync_blocker_title)
-                        }));
+                        blocked.push(BatchBlockedCell {
+                            classroom_id: *cr_id,
+                            classroom_name: Some(cell_cls_name.clone()),
+                            day_of_week: day.clone(),
+                            period_id: *p_id,
+                            period_name: Some(cell_period.clone()),
+                            reason: "SYNC_ACTIVITY_PRESENT".to_string(),
+                            message: format!("{} {} {}: มีกิจกรรม sync '{}' อยู่ — ลบกิจกรรม sync ก่อน",
+                                               cell_cls_name, cell_day, cell_period, sync_blocker_title),
+                        });
                         continue;
                     }
                     if force {
                         for e in &cell_conflicts {
                             if !entries_to_delete.contains(&e.id) {
                                 entries_to_delete.push(e.id);
-                                deleted.push(json!({
-                                    "id": e.id, "classroom_name": e.classroom_name,
-                                    "day_of_week": day, "period_id": p_id, "period_name": e.period_name,
-                                    "title": e.display_title, "entry_type": e.entry_type,
-                                    "instructor_names": e.instructor_names
-                                }));
+                                deleted.push(BatchDeletedEntry {
+                                    id: e.id,
+                                    classroom_name: e.classroom_name.clone(),
+                                    day_of_week: day.clone(),
+                                    period_id: *p_id,
+                                    period_name: e.period_name.clone(),
+                                    title: e.display_title.clone(),
+                                    entry_type: e.entry_type.clone(),
+                                    instructor_names: e.instructor_names.clone(),
+                                });
                             }
                         }
                         insert_tuples.push((*cr_id, day.clone(), *p_id));
@@ -2030,12 +2107,15 @@ pub async fn create_batch_entries(
                                 primary.display_title,
                                 primary.classroom_name.as_deref().unwrap_or("?")))
                         };
-                        skipped.push(json!({
-                            "classroom_id": cr_id, "classroom_name": cell_cls_name,
-                            "day_of_week": day, "period_id": p_id, "period_name": cell_period,
-                            "reason": reason,
-                            "message": message
-                        }));
+                        skipped.push(BatchSkippedCell {
+                            classroom_id: Some(*cr_id),
+                            classroom_name: Some(cell_cls_name.clone()),
+                            day_of_week: day.clone(),
+                            period_id: *p_id,
+                            period_name: Some(cell_period.clone()),
+                            reason: reason.to_string(),
+                            message,
+                        });
                     }
                 }
             }
@@ -2175,32 +2255,34 @@ pub async fn create_batch_entries(
                         if !force {
                             let instr_name = instr_names.get(i_id).cloned().unwrap_or_else(|| "ครู".to_string());
                             let p_name = period_labels.get(p_id).cloned().unwrap_or_default();
-                            skipped.push(json!({
-                                "classroom_id": null,
-                                "classroom_name": null,
-                                "day_of_week": d,
-                                "period_id": p_id,
-                                "period_name": p_name,
-                                "reason": "INSTRUCTOR_BUSY",
-                                "message": format!(
+                            skipped.push(BatchSkippedCell {
+                                classroom_id: None,
+                                classroom_name: None,
+                                day_of_week: d.clone(),
+                                period_id: *p_id,
+                                period_name: Some(p_name.clone()),
+                                reason: "INSTRUCTOR_BUSY".to_string(),
+                                message: format!(
                                     "ครู {} {} {}: ติดสอน '{}' ที่ {} อยู่ — ไม่สร้างคาบครูเปล่า",
                                     instr_name, day_label(d), p_name,
                                     blocker.display_title,
                                     blocker.classroom_name.as_deref().unwrap_or("?")
-                                )
-                            }));
+                                ),
+                            });
                             continue;
                         }
                         if !entries_to_delete.contains(&blocker.id) {
                             entries_to_delete.push(blocker.id);
-                            deleted.push(json!({
-                                "id": blocker.id,
-                                "classroom_name": blocker.classroom_name,
-                                "day_of_week": d, "period_id": p_id, "period_name": blocker.period_name,
-                                "title": blocker.display_title,
-                                "entry_type": blocker.entry_type,
-                                "instructor_names": blocker.instructor_names
-                            }));
+                            deleted.push(BatchDeletedEntry {
+                                id: blocker.id,
+                                classroom_name: blocker.classroom_name.clone(),
+                                day_of_week: d.clone(),
+                                period_id: *p_id,
+                                period_name: blocker.period_name.clone(),
+                                title: blocker.display_title.clone(),
+                                entry_type: blocker.entry_type.clone(),
+                                instructor_names: blocker.instructor_names.clone(),
+                            });
                         }
                     }
                     entry_ids.push(Uuid::new_v4());
@@ -2258,13 +2340,13 @@ pub async fn create_batch_entries(
 
     tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let excluded_instructors: Vec<serde_json::Value> = excluded_instructors_map
+    let excluded_instructors: Vec<BatchExcludedInstructor> = excluded_instructors_map
         .into_iter()
-        .map(|(iid, (name, conflicts))| json!({
-            "instructor_id": iid,
-            "instructor_name": name,
-            "conflicting_at": conflicts
-        }))
+        .map(|(iid, (name, conflicts))| BatchExcludedInstructor {
+            instructor_id: iid,
+            instructor_name: name,
+            conflicting_at: conflicts,
+        })
         .collect();
 
     Ok(BatchCreateOutcome {
