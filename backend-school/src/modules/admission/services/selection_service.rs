@@ -4,7 +4,7 @@ use crate::modules::admission::models::applications::{
 };
 use crate::modules::admission::models::rounds::UpdateSelectionSettingsRequest;
 use crate::modules::admission::services::pii;
-use serde_json::json;
+use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -105,6 +105,91 @@ pub struct RankRowDetailed {
     pub gender: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoundRankingEntry {
+    pub rank: usize,
+    pub application_id: Uuid,
+    pub application_number: Option<String>,
+    pub national_id: String,
+    pub full_name: String,
+    pub total_score: f64,
+    pub selection_score: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoundRankingResult {
+    pub track_id: Uuid,
+    pub track_name: String,
+    pub applications: Vec<RoundRankingEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RankingRoomSummary {
+    pub room_id: String,
+    pub room_name: String,
+    pub capacity: i32,
+    pub student_count: i64,
+    pub male_count: i64,
+    pub female_count: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackRankingEntry {
+    pub application_id: Uuid,
+    pub application_number: Option<String>,
+    pub national_id: String,
+    pub full_name: String,
+    pub selection_score: f64,
+    pub total_score: f64,
+    pub selection_rank: i64,
+    pub final_rank: Option<i64>,
+    pub assigned_room: Option<String>,
+    pub assigned_room_id: Option<Uuid>,
+    pub room_saved: bool,
+    pub is_overflow: bool,
+    pub is_track_overridden: bool,
+    pub original_track_name: Option<String>,
+    pub gender: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackRankingResult {
+    pub track_id: Uuid,
+    pub track_name: String,
+    pub rooms: Vec<RankingRoomSummary>,
+    pub applications: Vec<TrackRankingEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalRankingEntry {
+    pub application_id: Uuid,
+    pub application_number: Option<String>,
+    pub national_id: String,
+    pub full_name: String,
+    pub total_score: f64,
+    pub global_rank: i64,
+    pub rank_in_room: Option<i64>,
+    pub assigned_room: Option<String>,
+    pub assigned_room_id: Option<Uuid>,
+    pub room_saved: bool,
+    pub is_overflow: bool,
+    pub original_track_name: Option<String>,
+    pub gender: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalRankingResult {
+    pub rooms: Vec<RankingRoomSummary>,
+    pub applications: Vec<GlobalRankingEntry>,
+}
+
 fn pii_error(context: &str, error: String) -> AppError {
     eprintln!("Admission selection PII {} failed: {}", context, error);
     AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
@@ -126,7 +211,7 @@ fn decrypt_rank_row_detailed(mut row: RankRowDetailed) -> Result<RankRowDetailed
 pub async fn get_round_ranking(
     pool: &PgPool,
     round_id: Uuid,
-) -> Result<Vec<serde_json::Value>, AppError> {
+) -> Result<Vec<RoundRankingResult>, AppError> {
     let tracks: Vec<(Uuid, String, serde_json::Value, String)> = sqlx::query_as(
         "SELECT id, name, scoring_subject_ids, tiebreak_method FROM admission_tracks WHERE admission_round_id = $1 ORDER BY display_order ASC"
     )
@@ -135,7 +220,7 @@ pub async fn get_round_ranking(
     .await
     .map_err(|_| AppError::InternalServerError("Failed to fetch tracks".to_string()))?;
 
-    let mut all_rankings: Vec<serde_json::Value> = Vec::new();
+    let mut all_rankings: Vec<RoundRankingResult> = Vec::new();
 
     for (track_id, track_name, _scoring_ids, tiebreak) in tracks {
         let tiebreak_order = if tiebreak == "gpa" {
@@ -177,27 +262,27 @@ pub async fn get_round_ranking(
             .map(decrypt_rank_row)
             .collect::<Result<_, _>>()?;
 
-        let ranked: Vec<serde_json::Value> = rows
+        let ranked: Vec<RoundRankingEntry> = rows
             .into_iter()
             .enumerate()
             .map(|(i, row)| {
-                json!({
-                    "rank": i + 1,
-                    "applicationId": row.application_id,
-                    "applicationNumber": row.application_number,
-                    "nationalId": row.national_id,
-                    "fullName": row.full_name,
-                    "totalScore": row.total_score.unwrap_or(0.0),
-                    "selectionScore": row.selection_score.unwrap_or(0.0),
-                })
+                RoundRankingEntry {
+                    rank: i + 1,
+                    application_id: row.application_id,
+                    application_number: row.application_number,
+                    national_id: row.national_id,
+                    full_name: row.full_name,
+                    total_score: row.total_score.unwrap_or(0.0),
+                    selection_score: row.selection_score.unwrap_or(0.0),
+                }
             })
             .collect();
 
-        all_rankings.push(json!({
-            "trackId": track_id,
-            "trackName": track_name,
-            "applications": ranked,
-        }));
+        all_rankings.push(RoundRankingResult {
+            track_id,
+            track_name,
+            applications: ranked,
+        });
     }
 
     Ok(all_rankings)
@@ -208,7 +293,7 @@ pub async fn get_track_ranking(
     track_id: Uuid,
     selection_subject_ids_param: Option<String>,
     room_assignment_method: Option<String>,
-) -> Result<serde_json::Value, AppError> {
+) -> Result<TrackRankingResult, AppError> {
     let (track_name, tiebreak): (String, String) =
         sqlx::query_as("SELECT name, tiebreak_method FROM admission_tracks WHERE id = $1")
             .bind(track_id)
@@ -326,7 +411,7 @@ pub async fn get_track_ranking(
     let mut room_stats: std::collections::HashMap<String, (i64, i64, i64)> =
         std::collections::HashMap::new();
 
-    let accepted_json: Vec<serde_json::Value> = accepted_sorted
+    let accepted_json: Vec<TrackRankingEntry> = accepted_sorted
         .into_iter()
         .enumerate()
         .map(|(final_i, (sel_i, row))| {
@@ -335,16 +420,16 @@ pub async fn get_track_ranking(
 
             let room_saved = row.saved_room_id.is_some();
             let (assigned_room, assigned_room_id) = if let (Some(name), Some(id)) = (&row.saved_room_name, &row.saved_room_id) {
-                (json!(name), json!(id))
+                (Some(name.clone()), Some(*id))
             } else if rooms.is_empty() {
-                (serde_json::Value::Null, serde_json::Value::Null)
+                (None, None)
             } else {
                 let (ri, _rir) = room_slots[final_i];
-                (json!(rooms[ri].room_name), json!(rooms[ri].room_id))
+                (Some(rooms[ri].room_name.clone()), Some(rooms[ri].room_id))
             };
 
-            if let serde_json::Value::String(rid) = &assigned_room_id {
-                let entry = room_stats.entry(rid.clone()).or_insert((0, 0, 0));
+            if let Some(rid) = assigned_room_id {
+                let entry = room_stats.entry(rid.to_string()).or_insert((0, 0, 0));
                 entry.0 += 1;
                 match row.gender.as_deref() {
                     Some(g) if g.eq_ignore_ascii_case("male") || g == "ชาย" => entry.1 += 1,
@@ -354,68 +439,70 @@ pub async fn get_track_ranking(
             }
 
             let is_overridden = row.is_track_overridden.unwrap_or(false);
-            json!({
-                "applicationId": row.application_id,
-                "applicationNumber": row.application_number,
-                "nationalId": row.national_id,
-                "fullName": row.full_name,
-                "selectionScore": row.selection_score.unwrap_or(0.0),
-                "totalScore": row.total_score.unwrap_or(0.0),
-                "selectionRank": selection_rank,
-                "finalRank": final_rank,
-                "assignedRoom": assigned_room,
-                "assignedRoomId": assigned_room_id,
-                "roomSaved": room_saved,
-                "isOverflow": false,
-                "isTrackOverridden": is_overridden,
-                "originalTrackName": if is_overridden { json!(row.original_track_name) } else { serde_json::Value::Null },
-                "gender": row.gender,
-            })
+            TrackRankingEntry {
+                application_id: row.application_id,
+                application_number: row.application_number,
+                national_id: row.national_id,
+                full_name: row.full_name,
+                selection_score: row.selection_score.unwrap_or(0.0),
+                total_score: row.total_score.unwrap_or(0.0),
+                selection_rank,
+                final_rank: Some(final_rank),
+                assigned_room,
+                assigned_room_id,
+                room_saved,
+                is_overflow: false,
+                is_track_overridden: is_overridden,
+                original_track_name: if is_overridden { row.original_track_name } else { None },
+                gender: row.gender,
+            }
         })
         .collect();
 
-    let overflow_json: Vec<serde_json::Value> = overflow_rows
+    let overflow_json: Vec<TrackRankingEntry> = overflow_rows
         .into_iter()
         .map(|(sel_i, row)| {
             let is_overridden = row.is_track_overridden.unwrap_or(false);
-            json!({
-                "applicationId": row.application_id,
-                "applicationNumber": row.application_number,
-                "nationalId": row.national_id,
-                "fullName": row.full_name,
-                "selectionScore": row.selection_score.unwrap_or(0.0),
-                "totalScore": row.total_score.unwrap_or(0.0),
-                "selectionRank": (sel_i + 1) as i64,
-                "finalRank": serde_json::Value::Null,
-                "assignedRoom": serde_json::Value::Null,
-                "assignedRoomId": serde_json::Value::Null,
-                "isOverflow": true,
-                "isTrackOverridden": is_overridden,
-                "originalTrackName": if is_overridden { json!(row.original_track_name) } else { serde_json::Value::Null },
-            })
+            TrackRankingEntry {
+                application_id: row.application_id,
+                application_number: row.application_number,
+                national_id: row.national_id,
+                full_name: row.full_name,
+                selection_score: row.selection_score.unwrap_or(0.0),
+                total_score: row.total_score.unwrap_or(0.0),
+                selection_rank: (sel_i + 1) as i64,
+                final_rank: None,
+                assigned_room: None,
+                assigned_room_id: None,
+                room_saved: false,
+                is_overflow: true,
+                is_track_overridden: is_overridden,
+                original_track_name: if is_overridden { row.original_track_name } else { None },
+                gender: row.gender,
+            }
         })
         .collect();
 
     let mut all_apps = accepted_json;
     all_apps.extend(overflow_json);
 
-    Ok(json!({
-        "trackId": track_id,
-        "trackName": track_name,
-        "rooms": rooms.iter().map(|r| {
-            let key = r.room_id.to_string();
-            let (total, male, female) = room_stats.get(&key).copied().unwrap_or((0, 0, 0));
-            json!({
-                "roomId": r.room_id,
-                "roomName": r.room_name,
-                "capacity": r.capacity,
-                "studentCount": total,
-                "maleCount": male,
-                "femaleCount": female,
-            })
-        }).collect::<Vec<_>>(),
-        "applications": all_apps,
-    }))
+    Ok(TrackRankingResult {
+        track_id,
+        track_name,
+        rooms: rooms.iter().map(|r| {
+            let room_id = r.room_id.to_string();
+            let (total, male, female) = room_stats.get(&room_id).copied().unwrap_or((0, 0, 0));
+            RankingRoomSummary {
+                room_id,
+                room_name: r.room_name.clone(),
+                capacity: r.capacity,
+                student_count: total,
+                male_count: male,
+                female_count: female,
+            }
+        }).collect(),
+        applications: all_apps,
+    })
 }
 
 pub async fn assign_rooms(
@@ -855,7 +942,7 @@ pub async fn assign_rooms_global(
 pub async fn get_global_ranking(
     pool: &PgPool,
     round_id: Uuid,
-) -> Result<serde_json::Value, AppError> {
+) -> Result<GlobalRankingResult, AppError> {
     let rows = sqlx::query_as::<_, RankRowDetailed>(
         r#"
         SELECT
@@ -920,7 +1007,7 @@ pub async fn get_global_ranking(
     let mut room_map: std::collections::BTreeMap<String, (String, i64, i64, i64, i64)> =
         std::collections::BTreeMap::new();
 
-    let apps_json: Vec<serde_json::Value> = rows
+    let apps_json: Vec<GlobalRankingEntry> = rows
         .into_iter()
         .enumerate()
         .map(|(i, row)| {
@@ -943,52 +1030,48 @@ pub async fn get_global_ranking(
                     }
                     _ => {}
                 }
-                (json!(name), json!(id), json!(rank))
+                (Some(name.clone()), Some(*id), Some(rank))
             } else {
-                (
-                    serde_json::Value::Null,
-                    serde_json::Value::Null,
-                    serde_json::Value::Null,
-                )
+                (None, None, None)
             };
 
-            json!({
-                "applicationId": row.application_id,
-                "applicationNumber": row.application_number,
-                "nationalId": row.national_id,
-                "fullName": row.full_name,
-                "totalScore": row.total_score.unwrap_or(0.0),
-                "globalRank": (i + 1) as i64,
-                "rankInRoom": rank_in_room,
-                "assignedRoom": assigned_room,
-                "assignedRoomId": assigned_room_id,
-                "roomSaved": room_saved,
-                "isOverflow": is_overflow,
-                "originalTrackName": row.original_track_name,
-                "gender": row.gender,
-            })
+            GlobalRankingEntry {
+                application_id: row.application_id,
+                application_number: row.application_number,
+                national_id: row.national_id,
+                full_name: row.full_name,
+                total_score: row.total_score.unwrap_or(0.0),
+                global_rank: (i + 1) as i64,
+                rank_in_room,
+                assigned_room,
+                assigned_room_id,
+                room_saved,
+                is_overflow,
+                original_track_name: row.original_track_name,
+                gender: row.gender,
+            }
         })
         .collect();
 
-    let rooms_json: Vec<serde_json::Value> = room_map
+    let rooms_json: Vec<RankingRoomSummary> = room_map
         .iter()
         .map(|(rid, (name, total, male, female, _))| {
             let cap = cap_map.get(rid).copied().unwrap_or(0);
-            json!({
-                "roomId": rid,
-                "roomName": name,
-                "capacity": cap,
-                "studentCount": total,
-                "maleCount": male,
-                "femaleCount": female,
-            })
+            RankingRoomSummary {
+                room_id: rid.clone(),
+                room_name: name.clone(),
+                capacity: cap,
+                student_count: *total,
+                male_count: *male,
+                female_count: *female,
+            }
         })
         .collect();
 
-    Ok(json!({
-        "rooms": rooms_json,
-        "applications": apps_json,
-    }))
+    Ok(GlobalRankingResult {
+        rooms: rooms_json,
+        applications: apps_json,
+    })
 }
 
 #[derive(serde::Serialize, sqlx::FromRow)]

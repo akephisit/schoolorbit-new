@@ -92,6 +92,9 @@ test('admission application detail contract returns application and documents in
 	const examRoomService = await readRepoFile(
 		'backend-school/src/modules/admission/services/exam_room_service.rs'
 	);
+	const selectionService = await readRepoFile(
+		'backend-school/src/modules/admission/services/selection_service.rs'
+	);
 	const frontendApi = await readRepoFile('frontend-school/src/lib/api/admission.ts');
 
 	assert.match(backendHandler, /"data":\s*\{\s*"application": application,\s*"documents": documents\s*\}/);
@@ -121,8 +124,13 @@ test('admission application detail contract returns application and documents in
 	assert.match(frontendApi, /autoAssignStudentIds[\s\S]*res\.data\?\.assigned \?\? 0/);
 	assert.match(frontendApi, /apiClient\.post<ExamSeatDetail \| null>\('\/api\/admission\/portal\/exam-seat'/);
 	assert.match(frontendApi, /apiClient\.get<ExamRoomsResponse>/);
+	assert.match(frontendApi, /interface\s+RoundRankingResult/);
+	assert.match(frontendApi, /apiClient\.get<RoundRankingResult\[\]>/);
+	assert.match(frontendApi, /apiClient\.get<TrackRankingResult>/);
+	assert.match(frontendApi, /apiClient\.get<GlobalRankingResult>/);
 	assert.match(frontendApi, /apiClient\.patch<\{\s*updated:\s*number\s*\}>/);
 	assert.doesNotMatch(frontendApi, /ApiResponse<unknown>/);
+	assert.doesNotMatch(frontendApi, /apiClient\.get<unknown\[\]>/);
 	assert.doesNotMatch(frontendApi, /res\.data as/);
 
 	assert.match(examRoomService, /struct\s+ExamConfigStorage/);
@@ -133,6 +141,16 @@ test('admission application detail contract returns application and documents in
 	assert.doesNotMatch(examRoomService, /get_exam_config[\s\S]*?Result<serde_json::Value,\s*AppError>/);
 	assert.doesNotMatch(examRoomService, /config\["exam_id_type"\]/);
 	assert.doesNotMatch(examRoomService, /json!\(\{\s*"roomName"/);
+
+	assert.match(selectionService, /struct\s+RoundRankingResult/);
+	assert.match(selectionService, /struct\s+TrackRankingResult/);
+	assert.match(selectionService, /struct\s+GlobalRankingResult/);
+	assert.match(selectionService, /get_round_ranking[\s\S]*?Result<Vec<RoundRankingResult>,\s*AppError>/);
+	assert.match(selectionService, /get_track_ranking[\s\S]*?Result<TrackRankingResult,\s*AppError>/);
+	assert.match(selectionService, /get_global_ranking[\s\S]*?Result<GlobalRankingResult,\s*AppError>/);
+	assert.doesNotMatch(selectionService, /get_round_ranking[\s\S]*?Result<Vec<serde_json::Value>,\s*AppError>/);
+	assert.doesNotMatch(selectionService, /get_track_ranking[\s\S]*?Result<serde_json::Value,\s*AppError>/);
+	assert.doesNotMatch(selectionService, /get_global_ranking[\s\S]*?Result<serde_json::Value,\s*AppError>/);
 });
 
 test('parent self-service API uses typed student and timetable responses', async () => {

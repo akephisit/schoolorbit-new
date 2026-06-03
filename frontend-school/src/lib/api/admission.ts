@@ -245,6 +245,22 @@ export interface RankingEntry {
 	gender?: string;
 }
 
+export interface RoundRankingEntry {
+	rank: number;
+	applicationId: string;
+	applicationNumber?: string;
+	nationalId: string;
+	fullName: string;
+	totalScore: number;
+	selectionScore: number;
+}
+
+export interface RoundRankingResult {
+	trackId: string;
+	trackName: string;
+	applications: RoundRankingEntry[];
+}
+
 export interface TrackRankingResult {
 	trackId: string;
 	trackName: string;
@@ -523,7 +539,7 @@ export async function bulkUpdateScores(
 // ==========================================
 
 export async function getRanking(roundId: string) {
-	const res = await apiClient.get<unknown[]>(`/api/admission/rounds/${roundId}/ranking`);
+	const res = await apiClient.get<RoundRankingResult[]>(`/api/admission/rounds/${roundId}/ranking`);
 	if (!res.success) throw new Error(res.error);
 	return res.data ?? [];
 }
