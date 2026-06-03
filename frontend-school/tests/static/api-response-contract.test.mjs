@@ -112,6 +112,15 @@ test('admission application detail contract returns application and documents in
 	assert.match(frontendApi, /apiClient\.post<CompleteEnrollmentResponse>/);
 	assert.match(frontendApi, /copyExamRoomsFromRound[\s\S]*res\.message \?\? 'copy ห้องสอบเรียบร้อย'/);
 	assert.match(frontendApi, /assignExamSeats[\s\S]*message: res\.message \?\? 'จัดที่นั่งสอบเรียบร้อย'/);
+	assert.match(frontendApi, /apiClient\.post<\{\s*updated:\s*number\s*\}>/);
+	assert.match(frontendApi, /sortRoomStudents[\s\S]*res\.data\?\.updated \?\? 0/);
+	assert.match(frontendApi, /apiClient\.post<\{\s*assigned:\s*number\s*\}>/);
+	assert.match(frontendApi, /autoAssignStudentIds[\s\S]*res\.data\?\.assigned \?\? 0/);
+	assert.match(frontendApi, /apiClient\.post<ExamSeatDetail \| null>\('\/api\/admission\/portal\/exam-seat'/);
+	assert.match(frontendApi, /apiClient\.get<ExamRoomsResponse>/);
+	assert.match(frontendApi, /apiClient\.patch<\{\s*updated:\s*number\s*\}>/);
+	assert.doesNotMatch(frontendApi, /ApiResponse<unknown>/);
+	assert.doesNotMatch(frontendApi, /res\.data as/);
 });
 
 test('parent self-service API uses typed student and timetable responses', async () => {

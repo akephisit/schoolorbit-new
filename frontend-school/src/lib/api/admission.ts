@@ -1,4 +1,4 @@
-import { apiClient, requireApiData, type ApiResponse } from './client';
+import { apiClient, requireApiData } from './client';
 
 // ==========================================
 // Types
@@ -627,19 +627,20 @@ export async function assignRoomsGlobal(roundId: string, method?: string, roomOr
 }
 
 export async function sortRoomStudents(roundId: string): Promise<{ updated: number }> {
-	const res = (await apiClient.post(
+	const res = await apiClient.post<{ updated: number }>(
 		`/api/admission/rounds/${roundId}/sort-room-students`
-	)) as ApiResponse<unknown> & { updated?: number };
+	);
 	if (!res.success) throw new Error(res.error);
-	return { updated: res.updated ?? 0 };
+	return { updated: res.data?.updated ?? 0 };
 }
 
 export async function autoAssignStudentIds(roundId: string, startNumber: number) {
-	const res = await apiClient.post(`/api/admission/rounds/${roundId}/auto-assign-student-ids`, {
-		startNumber
-	});
+	const res = await apiClient.post<{ assigned: number }>(
+		`/api/admission/rounds/${roundId}/auto-assign-student-ids`,
+		{ startNumber }
+	);
 	if (!res.success) throw new Error(res.error);
-	return res.data as { assigned: number };
+	return { assigned: res.data?.assigned ?? 0 };
 }
 
 export async function updateSelectionSettings(
@@ -725,20 +726,12 @@ export async function portalGetExamSeat(
 	buildingName?: string;
 	examDate?: string;
 } | null> {
-	const res = await apiClient.post('/api/admission/portal/exam-seat', {
+	const res = await apiClient.post<ExamSeatDetail | null>('/api/admission/portal/exam-seat', {
 		nationalId,
 		dateOfBirth
 	});
 	if (!res.success) throw new Error(res.error || 'ไม่สามารถโหลดข้อมูลที่นั่งสอบได้');
-	return (
-		(res.data as {
-			seatNumber: number;
-			examId?: string;
-			roomName: string;
-			buildingName?: string;
-			examDate?: string;
-		} | null) ?? null
-	);
+	return res.data ?? null;
 }
 
 export async function portalConfirm(nationalId: string, dateOfBirth: string) {
@@ -1037,13 +1030,26 @@ export interface ExamSeatDetail {
 	examDate?: string;
 }
 
+export interface ExamRoomsResponse {
+	rooms: ExamRoom[];
+	totalCapacity: number;
+	totalAssigned: number;
+}
+
+export interface AssignExamSeatsResponse {
+	message: string;
+	assignedCount: number;
+	rooms: { roomName: string; count: number }[];
+}
+
 // ==========================================
 // Exam Room API Functions
 // ==========================================
 
 export async function listExamRooms(roundId: string) {
-	const res = await apiClient.get(`/api/admission/rounds/${roundId}/exam-rooms`);
-	return res.data as { rooms: ExamRoom[]; totalCapacity: number; totalAssigned: number };
+	const res = await apiClient.get<ExamRoomsResponse>(`/api/admission/rounds/${roundId}/exam-rooms`);
+	if (!res.success || !res.data) throw new Error(res.error);
+	return res.data;
 }
 
 export async function addExamRoom(
@@ -1086,8 +1092,9 @@ export async function copyExamRoomsFromRound(roundId: string, fromRoundId: strin
 }
 
 export async function getExamConfig(roundId: string) {
-	const res = await apiClient.get(`/api/admission/rounds/${roundId}/exam-config`);
-	return res.data as ExamConfig;
+	const res = await apiClient.get<ExamConfig>(`/api/admission/rounds/${roundId}/exam-config`);
+	if (!res.success || !res.data) throw new Error(res.error);
+	return res.data;
 }
 
 export async function updateExamConfig(roundId: string, config: ExamConfig) {
@@ -1104,7 +1111,7 @@ export async function assignExamSeats(
 		mode?: 'full' | 'append';
 	}
 ) {
-	const res = await apiClient.post(
+	const res = await apiClient.post<Omit<AssignExamSeatsResponse, 'message'>>(
 		`/api/admission/rounds/${roundId}/assign-exam-seats`,
 		options ?? {}
 	);
@@ -1112,21 +1119,21 @@ export async function assignExamSeats(
 	return {
 		...res.data,
 		message: res.message ?? 'จัดที่นั่งสอบเรียบร้อย'
-	} as {
-		message: string;
-		assignedCount: number;
-		rooms: { roomName: string; count: number }[];
 	};
 }
 
 export async function getExamSeats(roundId: string) {
-	const res = await apiClient.get(`/api/admission/rounds/${roundId}/exam-seats`);
-	return res.data as ExamRoomGroup[];
+	const res = await apiClient.get<ExamRoomGroup[]>(`/api/admission/rounds/${roundId}/exam-seats`);
+	if (!res.success || !res.data) throw new Error(res.error);
+	return res.data;
 }
 
 export async function getApplicationExamSeat(applicationId: string) {
-	const res = await apiClient.get(`/api/admission/applications/${applicationId}/exam-seat`);
-	return res.data as ExamSeatDetail | null;
+	const res = await apiClient.get<ExamSeatDetail | null>(
+		`/api/admission/applications/${applicationId}/exam-seat`
+	);
+	if (!res.success) throw new Error(res.error);
+	return res.data ?? null;
 }
 
 // ==========================================
@@ -1152,19 +1159,19 @@ export interface StudentIdEntry {
 }
 
 export async function listStudentIds(roundId: string): Promise<{ data: StudentIdEntry[] }> {
-	const res = await apiClient.get(`/api/admission/rounds/${roundId}/student-ids`);
+	const res = await apiClient.get<StudentIdEntry[]>(`/api/admission/rounds/${roundId}/student-ids`);
 	if (!res.success) throw new Error(res.error);
-	return { data: res.data as StudentIdEntry[] };
+	return { data: res.data ?? [] };
 }
 
 export async function batchUpdateStudentIds(
 	roundId: string,
 	updates: { applicationId: string; studentId: string | null }[]
 ): Promise<{ updated: number }> {
-	const res = (await apiClient.patch(
+	const res = await apiClient.patch<{ updated: number }>(
 		`/api/admission/rounds/${roundId}/student-ids`,
 		updates
-	)) as ApiResponse<unknown> & { updated?: number };
+	);
 	if (!res.success) throw new Error(res.error);
-	return { updated: res.updated ?? 0 };
+	return { updated: res.data?.updated ?? 0 };
 }
