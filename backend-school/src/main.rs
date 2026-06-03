@@ -44,8 +44,12 @@ pub struct AppState {
 async fn main() {
     dotenv().ok();
     
-    // Initialize structured logging
-    utils::logging::init_pretty();
+    // Default to readable local logs; set LOG_FORMAT=json for structured production logs.
+    if env::var("LOG_FORMAT").as_deref() == Ok("json") {
+        utils::logging::init();
+    } else {
+        utils::logging::init_pretty();
+    }
     
     tracing::info!("🚀 Starting SchoolOrbit Backend School Service...");
 

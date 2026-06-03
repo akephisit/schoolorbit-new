@@ -9,12 +9,6 @@ pub struct ConstraintValidator {
     // Instructor preferences
     instructor_prefs: HashMap<Uuid, InstructorPrefData>,
 
-    // Periods by day
-    periods_by_day: HashMap<String, Vec<PeriodInfo>>,
-
-    // Rooms info
-    rooms: HashMap<Uuid, RoomInfo>,
-
     // Phase A/B: global cap ของจำนวนคาบติดต่อกัน (คาบสอนติดของครูคนเดียว)
     pub default_max_consecutive: i32,
 }
@@ -23,25 +17,13 @@ pub struct ConstraintValidator {
 struct LockedSlotInfo {
     pub subject_id: Uuid,
     pub classroom_ids: Vec<Uuid>, // Empty = all
-    pub scope_type: String,
 }
 
 impl ConstraintValidator {
-    pub fn new(
-        locked_slots: Vec<LockedSlotData>,
-        instructor_prefs: HashMap<Uuid, InstructorPrefData>,
-        periods: Vec<PeriodInfo>,
-        rooms: HashMap<Uuid, RoomInfo>,
-    ) -> Self {
-        Self::with_settings(locked_slots, instructor_prefs, periods, rooms, 4)
-    }
-
     /// Constructor variant ที่รับ default_max_consecutive จาก scheduler_settings
     pub fn with_settings(
         locked_slots: Vec<LockedSlotData>,
         instructor_prefs: HashMap<Uuid, InstructorPrefData>,
-        periods: Vec<PeriodInfo>,
-        rooms: HashMap<Uuid, RoomInfo>,
         default_max_consecutive: i32,
     ) -> Self {
         let mut locked_map = HashMap::new();
@@ -54,22 +36,14 @@ impl ConstraintValidator {
                     LockedSlotInfo {
                         subject_id: locked.subject_id,
                         classroom_ids: locked.classroom_ids.clone(),
-                        scope_type: locked.scope_type.clone(),
                     },
                 );
             }
         }
 
-        let mut periods_by_day = HashMap::new();
-        for day in &["MON", "TUE", "WED", "THU", "FRI"] {
-            periods_by_day.insert(day.to_string(), periods.clone());
-        }
-
         Self {
             locked_slots: locked_map,
             instructor_prefs,
-            periods_by_day,
-            rooms,
             default_max_consecutive,
         }
     }
@@ -364,7 +338,6 @@ pub struct LockedSlotData {
     pub day: String,
     pub period_ids: Vec<Uuid>,
     pub classroom_ids: Vec<Uuid>, // Empty = all
-    pub scope_type: String,
 }
 
 #[cfg(test)]

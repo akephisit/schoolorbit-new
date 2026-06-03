@@ -3,93 +3,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-// ===================================================================
-// Core User Types & Enums
-// ===================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "text")]
-pub enum UserType {
-    #[serde(rename = "student")]
-    Student,
-    #[serde(rename = "staff")]
-    Staff,
-    #[serde(rename = "parent")]
-    Parent,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "text")]
-pub enum EmploymentType {
-    #[serde(rename = "permanent")]
-    Permanent,
-    #[serde(rename = "contract")]
-    Contract,
-    #[serde(rename = "temporary")]
-    Temporary,
-    #[serde(rename = "part_time")]
-    PartTime,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "text")]
-pub enum RoleCategory {
-    #[serde(rename = "administrative")]
-    Administrative,
-    #[serde(rename = "teaching")]
-    Teaching,
-    #[serde(rename = "operational")]
-    Operational,
-    #[serde(rename = "support")]
-    Support,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "text")]
-pub enum TeacherType {
-    #[serde(rename = "main_teacher")]
-    MainTeacher,
-    #[serde(rename = "co_teacher")]
-    CoTeacher,
-    #[serde(rename = "substitute")]
-    Substitute,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "text")]
-pub enum DepartmentPosition {
-    #[serde(rename = "head")]
-    Head,
-    #[serde(rename = "member")]
-    Member,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "text")]
-pub enum DepartmentCategory {
-    #[serde(rename = "administrative")]
-    Administrative,
-    #[serde(rename = "academic")]
-    Academic,
-    #[serde(rename = "special")]
-    Special,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "text")]
-pub enum OrganizationType {
-    #[serde(rename = "group")]
-    Group,      // กล่องแม่ (Cluster)
-    #[serde(rename = "unit")]
-    Unit,       // กล่องลูก (Department)
-    #[serde(rename = "team")]
-    Team,       // ทีมย่อย
-}
-
-// ===================================================================
-// Role (บทบาท)
-// ===================================================================
-
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Role {
     pub id: Uuid,
@@ -125,23 +38,6 @@ pub struct UpdateRoleRequest {
     pub level: Option<i32>,
     pub permissions: Option<Vec<String>>,
     pub is_active: Option<bool>,
-}
-
-// ===================================================================
-// User Role (ความสัมพันธ์ User-Role)
-// ===================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct UserRole {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub role_id: Uuid,
-    pub is_primary: bool,
-    pub started_at: NaiveDate,
-    pub ended_at: Option<NaiveDate>,
-    pub notes: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,53 +97,6 @@ pub struct UpdateDepartmentRequest {
     pub is_active: Option<bool>,
     pub category: Option<String>,
     pub org_type: Option<String>,
-}
-
-// ===================================================================
-// Department Member (สมาชิกในฝ่าย)
-// ===================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct DepartmentMember {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub department_id: Uuid,
-    pub position: String,
-    pub is_primary_department: bool,
-    pub responsibilities: Option<String>,
-    pub started_at: NaiveDate,
-    pub ended_at: Option<NaiveDate>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AddDepartmentMemberRequest {
-    pub user_id: Uuid,
-    pub position: String,
-    pub is_primary_department: Option<bool>,
-    pub responsibilities: Option<String>,
-    pub started_at: Option<NaiveDate>,
-}
-
-// ===================================================================
-// Staff Info (ข้อมูลเฉพาะบุคลากร)
-// ===================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct StaffInfo {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub education_level: Option<String>,
-    pub major: Option<String>,
-    pub university: Option<String>,
-    // Teaching License
-    pub teaching_license_number: Option<String>,
-    pub teaching_license_expiry: Option<NaiveDate>,
-    // Additional Data
-    pub metadata: serde_json::Value,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -480,17 +329,7 @@ pub struct Permission {
 
 
 // ===================================================================
-// ===================================================================
-// Department Permissions (สิทธิ์การเข้าใช้งานของฝ่าย)
-// ===================================================================
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateDepartmentPermissionsRequest {
     pub permission_ids: Vec<Uuid>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct DepartmentPermission {
-    pub department_id: Uuid,
-    pub permission_id: Uuid,
 }

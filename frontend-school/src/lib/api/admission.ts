@@ -153,11 +153,6 @@ export interface AdmissionApplication {
 	roundName?: string;
 }
 
-export interface DocumentRef {
-	tempFileId: string;
-	docType: string;
-}
-
 export interface ApplicationDocument {
 	id: string;
 	applicationId: string;
@@ -168,14 +163,6 @@ export interface ApplicationDocument {
 	originalFilename?: string;
 	fileSize?: number;
 	mimeType?: string;
-}
-
-export interface TempUploadResponse {
-	tempFileId: string;
-	originalFilename: string;
-	fileSize: number;
-	docType: string;
-	url: string;
 }
 
 export const DOC_TYPE_LABELS: Record<string, { label: string; required: boolean }> = {
@@ -869,8 +856,6 @@ export type SubmitApplicationData = {
 	// Family status
 	parentStatus?: string[];
 	parentStatusOther?: string;
-	// Documents
-	documents?: DocumentRef[];
 };
 
 export async function submitApplication(roundId: string, data: SubmitApplicationData) {

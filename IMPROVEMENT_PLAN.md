@@ -127,6 +127,14 @@
 | **ที่ทำ** | ลบ `admin_pool: PgPool` ออกจาก `AppState` และแทนด้วย `admin_client: Arc<AdminClient>` — HTTP client ที่เรียก `GET /internal/schools/{subdomain}` บน backend-admin แทนการ query DB ตรง เพิ่ม endpoint `PUT /internal/schools/{subdomain}/migration-status` สำหรับ write-back |
 | **ผลลัพธ์** | backend-school ไม่มี admin DB credentials อีกต่อไป — isolation สมบูรณ์ |
 
+### M-4. User role assignment API contract ยังไม่ชัด
+| | |
+|---|---|
+| **ไฟล์** | `backend-school/src/modules/staff/services/user_role_service.rs`, `backend-school/src/modules/staff/handlers/user_roles.rs`, `frontend-school/src/lib/api/roles.ts`, `frontend-school/src/lib/components/UserRoleManager.svelte` |
+| **ปัญหา** | `GET /api/users/{id}/roles` ฝั่ง backend ส่ง `Role[]` จาก `roles JOIN user_roles` แต่ frontend type ชื่อ `UserRole[]` และ component ใช้ field แบบ assignment (`role_id`, `is_primary`) ทำให้ contract ไม่ตรงกับ payload จริง |
+| **แก้ไข** | เพิ่ม response DTO เช่น `UserRoleAssignmentResponse` ที่รวม assignment fields + role summary หรือปรับ frontend ให้รับ `Role[]` จริง โดยเลือก contract เดียวแล้วบันทึกไว้ใน type/API client |
+| **ความยาก** | Small |
+
 ### ✅ M-5. `println!` แทน structured logging ใน backend-admin — เสร็จแล้ว
 | | |
 |---|---|

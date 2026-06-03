@@ -136,13 +136,21 @@ pub async fn update_academic_year(
     let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
+    if payload.is_active.unwrap_or(false) {
+        sqlx::query("UPDATE academic_years SET is_active = false")
+            .execute(&pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Failed to reset active year".to_string()))?;
+    }
+
     let result = sqlx::query_as::<_, AcademicYear>(
         r#"UPDATE academic_years SET
             year = COALESCE($2, year),
             name = COALESCE($3, name),
             start_date = COALESCE($4, start_date),
             end_date = COALESCE($5, end_date),
-            school_days = COALESCE($6, school_days),
+            is_active = COALESCE($6, is_active),
+            school_days = COALESCE($7, school_days),
             updated_at = NOW()
         WHERE id = $1
         RETURNING *"#
@@ -152,6 +160,7 @@ pub async fn update_academic_year(
     .bind(&payload.name)
     .bind(payload.start_date)
     .bind(payload.end_date)
+    .bind(payload.is_active)
     .bind(&payload.school_days)
     .fetch_one(&pool)
     .await;

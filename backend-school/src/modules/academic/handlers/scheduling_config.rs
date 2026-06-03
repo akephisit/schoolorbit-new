@@ -24,7 +24,6 @@ pub struct ApiResponse<T> {
 
 impl<T> ApiResponse<T> {
     pub fn success(data: T) -> Self { Self { success: true, data: Some(data), error: None } }
-    pub fn error(msg: String) -> Self { Self { success: false, data: None, error: Some(msg) } }
 }
 
 #[derive(Serialize, sqlx::FromRow)]

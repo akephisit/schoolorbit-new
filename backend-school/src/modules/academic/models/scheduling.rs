@@ -55,17 +55,6 @@ pub struct CreateInstructorPreferenceRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct UpdateInstructorPreferenceRequest {
-    pub hard_unavailable_slots: Option<Vec<TimeSlot>>,
-    pub preferred_slots: Option<Vec<TimeSlot>>,
-    pub max_periods_per_day: Option<i32>,
-    pub min_periods_per_day: Option<i32>,
-    pub preferred_days: Option<Vec<String>>,
-    pub avoid_days: Option<Vec<String>>,
-    pub notes: Option<String>,
-}
-
 // ==================== Instructor Room Assignments ====================
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -95,14 +84,6 @@ pub struct CreateInstructorRoomAssignmentRequest {
     pub is_preferred: Option<bool>,
     pub is_required: Option<bool>,
     pub for_subjects: Option<Vec<String>>, // Subject codes
-    pub reason: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateInstructorRoomAssignmentRequest {
-    pub is_preferred: Option<bool>,
-    pub is_required: Option<bool>,
-    pub for_subjects: Option<Vec<String>>,
     pub reason: Option<String>,
 }
 
@@ -150,17 +131,6 @@ pub struct CreateLockedSlotRequest {
     pub subject_id: Uuid,
     pub day_of_week: String,
     pub period_ids: Vec<Uuid>,
-    pub room_id: Option<Uuid>,
-    pub instructor_id: Option<Uuid>,
-    pub reason: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateLockedSlotRequest {
-    pub scope_type: Option<LockedSlotScope>,
-    pub scope_ids: Option<Vec<Uuid>>,
-    pub day_of_week: Option<String>,
-    pub period_ids: Option<Vec<Uuid>>,
     pub room_id: Option<Uuid>,
     pub instructor_id: Option<Uuid>,
     pub reason: Option<String>,

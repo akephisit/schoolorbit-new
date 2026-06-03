@@ -28,7 +28,7 @@ These are easy-to-miss patterns that have tripped up dev/AI in the past.
 Sub-components (e.g. `calendar/calendar-day.svelte`) are imported via `index.ts` aliases, not by filename. Searching for `import.*calendar-day` will miss usage. To verify a component is used, grep the `index.ts` re-exports first, then grep for the aliased name (`Day`, `Cell`, `Grid`, ...).
 
 ### Encryption: AES-GCM app-side is the standard
-Use `backend-school/src/utils/field_encryption.rs` for new encrypted fields. `national_id` values are stored as app-side AES-256-GCM ciphertext using `ENCRYPTION_KEY`; `*_national_id_hash` values are keyed HMAC-SHA256 blind indexes using `BLIND_INDEX_KEY`. The repo also contains `utils/encryption.rs` (PostgreSQL pgcrypto) — **legacy, do not extend**. Decryption helper: `utils/decrypt_helpers.rs`.
+Use `backend-school/src/utils/field_encryption.rs` for encrypted fields. `national_id` values are stored as app-side AES-256-GCM ciphertext using `ENCRYPTION_KEY`; `*_national_id_hash` values are keyed HMAC-SHA256 blind indexes using `BLIND_INDEX_KEY`. Legacy PostgreSQL `pgcrypto` helpers were removed; do not reintroduce that path.
 
 ### Migration files are immutable after apply
 Do not edit old migration files, even to fix comments. `sqlx` checks migration checksums and tenant startup will fail if an applied file changes. Add a new sequential migration for schema, index, data, or comment changes.

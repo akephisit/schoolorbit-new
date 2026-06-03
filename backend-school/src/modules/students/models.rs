@@ -1,25 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, Utc, NaiveDate};
-
-// Student Info (database model)
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct StudentInfo {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub student_id: String,
-    pub student_number: Option<i32>,
-    // parent_id removed, use student_parents table linked by user_id
-    pub enrollment_date: Option<NaiveDate>,
-    pub expected_graduation_date: Option<NaiveDate>,
-    pub blood_type: Option<String>,
-    pub allergies: Option<String>,
-    pub medical_conditions: Option<String>,
-    pub metadata: serde_json::Value,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
+use chrono::NaiveDate;
 
 // =========================================
 // API Models (from handlers/students.rs)
@@ -127,8 +109,6 @@ pub struct UpdateStudentRequest {
     pub last_name: Option<String>,
     pub phone: Option<String>,
     pub address: Option<String>,
-    pub grade_level: Option<String>,
-    pub class_room: Option<String>,
     pub student_number: Option<i32>,
 }
 

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
+
 use chrono::{DateTime, Utc};
 
 // ==========================================
@@ -134,11 +135,6 @@ pub struct SubjectInPlan {
     pub grade_level_id: Uuid,
     pub term: String,
     pub subject_id: Uuid,
-    pub display_order: Option<i32>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateStudyPlanSubjectRequest {
     pub display_order: Option<i32>,
 }
 

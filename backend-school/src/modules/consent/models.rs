@@ -63,16 +63,6 @@ pub struct CreateConsentRequest {
     pub parent_relationship: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct WithdrawConsentRequest {
-    pub reason: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BulkConsentRequest {
-    pub consents: Vec<CreateConsentRequest>,
-}
-
 // ===================================================================
 // Consent Type (ประเภทความยินยอม)
 // ===================================================================

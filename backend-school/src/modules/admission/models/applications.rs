@@ -260,15 +260,6 @@ pub struct SubmitApplicationRequest {
     pub parent_status: Option<serde_json::Value>,
     pub parent_status_other: Option<String>,
 
-    // เอกสารประกอบ (temp file ids จาก portal upload)
-    pub documents: Option<Vec<DocumentRef>>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentRef {
-    pub temp_file_id: Uuid,
-    pub doc_type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -292,26 +283,9 @@ pub struct ApplicationDocument {
     pub mime_type: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TempUploadResponse {
-    pub temp_file_id: Uuid,
-    pub original_filename: String,
-    pub file_size: i64,
-    pub doc_type: String,
-    pub url: String,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortalDeleteDocumentQuery {
-    pub national_id: String,
-    pub date_of_birth: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortalStatusQuery {
     pub national_id: String,
     pub date_of_birth: String,
 }
@@ -336,21 +310,6 @@ pub struct RejectApplicationRequest {
 #[serde(rename_all = "camelCase")]
 pub struct MarkAbsentRequest {
     pub absent: bool,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplicationListItem {
-    pub id: Uuid,
-    pub application_number: Option<String>,
-    pub national_id: String,
-    pub full_name: String,
-    pub track_name: Option<String>,
-    pub status: String,
-    pub phone: Option<String>,
-    pub previous_school: Option<String>,
-    pub previous_gpa: Option<f64>,
-    pub created_at: DateTime<Utc>,
 }
 
 // ==========================================
@@ -402,62 +361,6 @@ pub struct BulkScoreEntry {
 #[serde(rename_all = "camelCase")]
 pub struct BulkUpdateScoresRequest {
     pub entries: Vec<BulkScoreEntry>,
-}
-
-// ==========================================
-// Room Assignment Models
-// ==========================================
-
-#[derive(Debug, Serialize, Deserialize, FromRow)]
-#[serde(rename_all = "camelCase")]
-pub struct RoomAssignment {
-    pub id: Uuid,
-    pub application_id: Uuid,
-    pub class_room_id: Uuid,
-    pub rank_in_track: Option<i32>,
-    pub rank_in_room: Option<i32>,
-    pub total_score: Option<f64>,
-    pub full_score: Option<f64>,
-    pub assigned_at: Option<DateTime<Utc>>,
-    pub assigned_by: Option<Uuid>,
-    pub student_confirmed: bool,
-    pub student_confirmed_at: Option<DateTime<Utc>>,
-
-    // Joined fields
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub room_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub student_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub application_number: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub national_id: Option<String>,
-}
-
-/// ผลการเรียงคะแนน (Preview ก่อน assign)
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RankingEntry {
-    pub application_id: Uuid,
-    pub application_number: Option<String>,
-    pub national_id: String,
-    pub full_name: String,
-    pub track_name: Option<String>,
-    pub total_score: f64, // คะแนนรวมจากวิชาที่ใช้เรียง
-    pub full_score: f64,  // คะแนนรวมทุกวิชา
-    pub rank_in_track: i32,
-    pub assigned_room: Option<String>, // ห้องที่ได้ (ถ้า preview)
-    pub scores: Vec<SubjectScore>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SubjectScore {
-    pub subject_id: Uuid,
-    pub subject_name: String,
-    pub score: Option<f64>,
-    pub max_score: f64,
-    pub is_scoring_subject: bool, // ใช้ในการเรียงคะแนนหรือเปล่า
 }
 
 /// Request สำหรับ assign rooms หลังเรียงคะแนน
@@ -514,12 +417,6 @@ pub struct EnrollmentForm {
     pub pre_submitted_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub completed_by: Option<Uuid>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SubmitEnrollmentFormRequest {
-    pub form_data: serde_json::Value,
 }
 
 // ==========================================

@@ -48,11 +48,6 @@ impl FileUrlBuilder {
         format!("{}/{}", base.trim_end_matches('/'), path.trim_start_matches('/'))
     }
     
-    /// Build URL from optional storage path
-    pub fn build_url_option(&self, path: Option<&str>) -> Option<String> {
-        path.map(|p| self.build_url(p))
-    }
-    
     /// Get the effective base URL (CDN if available, otherwise R2)
     pub fn base_url(&self) -> &str {
         self.cdn_url.as_deref().unwrap_or(&self.base_url)
@@ -113,17 +108,4 @@ mod tests {
         std::env::remove_var("CDN_URL");
     }
     
-    #[test]
-    fn test_build_url_option() {
-        std::env::set_var("R2_PUBLIC_URL", "https://pub-test.r2.dev");
-        
-        let builder = FileUrlBuilder::new().unwrap();
-        
-        assert_eq!(
-            builder.build_url_option(Some("test.jpg")),
-            Some("https://pub-test.r2.dev/test.jpg".to_string())
-        );
-        
-        assert_eq!(builder.build_url_option(None), None);
-    }
 }

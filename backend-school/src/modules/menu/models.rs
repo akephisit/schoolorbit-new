@@ -42,18 +42,6 @@ pub struct FeatureToggle {
     pub is_enabled: bool,
 }
 
-/// Menu Item with Group Info (for API response)
-#[derive(Debug, Serialize)]
-pub struct MenuItemWithGroup {
-    pub id: Uuid,
-    pub code: String,
-    pub name: String,
-    pub path: String,
-    pub icon: Option<String>,
-    pub group_code: String,
-    pub group_name: String,
-}
-
 /// Menu Item Response (for user menu API)
 #[derive(Debug, Serialize)]
 pub struct MenuItemResponse {
@@ -79,7 +67,6 @@ pub struct MenuGroupResponse {
 #[derive(Debug, Deserialize)]
 pub struct RouteRegistration {
     pub routes: Vec<RouteItem>,
-    pub timestamp: Option<String>,
     pub environment: Option<String>,
 }
 

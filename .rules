@@ -101,7 +101,7 @@ If adding "User Profile Edit" feature:
   * Store readable values encrypted with app-side AES-256-GCM via `backend-school/src/utils/field_encryption.rs` and `ENCRYPTION_KEY`.
   * Store searchable values in `*_national_id_hash` using keyed HMAC-SHA256 blind indexes via `BLIND_INDEX_KEY`.
   * Keep `ENCRYPTION_KEY` and `BLIND_INDEX_KEY` stable after data exists. Rotating either key requires a dedicated re-encryption/reindex job.
-  * Do not extend `backend-school/src/utils/encryption.rs` / PostgreSQL `pgcrypto`; that path is legacy.
+  * Do not reintroduce PostgreSQL `pgcrypto` helpers for app fields; that path was legacy and has been removed.
   * Clear memory of sensitive variables as soon as they are used (where applicable in Rust).
 
 ## 6. Deployment (Coolify/Docker)

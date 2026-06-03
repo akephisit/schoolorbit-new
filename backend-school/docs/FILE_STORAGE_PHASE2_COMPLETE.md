@@ -31,7 +31,6 @@ Phase 2 ของการพัฒนาระบบจัดเก็บไฟ
   - ProfileImage, Document, Transcript, Certificate, etc.
   - มี helper methods: `max_size_mb()`, `storage_folder()`
 - `FileResponse` - API response model พร้อม URL conversion
-- `FileUploadMetadata` - Upload metadata
 - `FileValidationConfig` - Validation configuration จาก env
 
 ### 3. Services (`src/services/`)
@@ -39,10 +38,7 @@ Phase 2 ของการพัฒนาระบบจัดเก็บไฟ
 - `R2Config` - Configuration จาก environment
 - `R2Client` - S3-compatible client สำหรับ Cloudflare R2
   - `upload_file()` - อัพโหลดไฟล์
-  - `download_file()` - ดาวน์โหลดไฟล์
   - `delete_file()` - ลบไฟล์
-  - `file_exists()` - ตรวจสอบว่าไฟล์มีอยู่
-  - `get_public_url()` - สร้าง public URL
 - Support async/await
 - Proper error handling with logging
 
@@ -59,19 +55,14 @@ Phase 2 ของการพัฒนาระบบจัดเก็บไฟ
   - `resize_image()` - Resize พร้อม maintain aspect ratio
   - `create_thumbnail()` - สร้าง square thumbnails
   - `get_dimensions()` - ดึงขนาดรูปภาพ
-  - `convert_to_webp()` - แปลงรูปภาพ
   - `is_valid_image()` - Validate image data
-  - `detect_format()` - ตรวจสอบ format
 - `FileValidator` - File validation
   - `validate_size()` - ตรวจสอบขนาดไฟล์
-  - `validate_mime_type()` - ตรวจสอบ MIME type
-  - `validate_extension()` - ตรวจสอบ extension
 - Unit tests included
 
 ✅ **File Hasher** (`file_hash.rs` - 65+ lines)
 - `FileHasher` - SHA-256 checksum generation
   - `sha256()` - สร้าง checksum
-  - `verify_checksum()` - ยืนยัน integrity
 - Unit tests included
 
 ### 5. Integration
@@ -114,14 +105,8 @@ r2.upload_file(
     "image/jpeg"
 ).await?;
 
-// Download file
-let data = r2.download_file("school-abc/users/profiles/uuid.jpg").await?;
-
 // Delete file
 r2.delete_file("school-abc/users/profiles/uuid.jpg").await?;
-
-// Get public URL
-let url = r2.get_public_url("school-abc/users/profiles/uuid.jpg");
 ```
 
 ### Image Processing
@@ -143,12 +128,6 @@ assert!(ImageProcessor::is_valid_image(&data));
 ```rust
 // Validate size
 FileValidator::validate_size(file.len(), 5)?; // Max 5MB
-
-// Validate extension
-FileValidator::validate_extension("photo.jpg", &allowed_exts)?;
-
-// Validate MIME type
-FileValidator::validate_mime_type("image/jpeg", &allowed_types)?;
 ```
 
 ### URL Building
@@ -166,9 +145,6 @@ let url = get_file_url(Some("school-abc/test.jpg"));
 ```rust
 // Generate checksum
 let checksum = FileHasher::sha256(&file_data);
-
-// Verify integrity
-assert!(FileHasher::verify_checksum(&file_data, &checksum));
 ```
 
 ## 🎯 Key Design Decisions

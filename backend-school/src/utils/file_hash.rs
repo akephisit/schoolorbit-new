@@ -25,18 +25,6 @@ impl FileHasher {
         hex::encode(result)
     }
     
-    /// Verify if data matches a given checksum
-    ///
-    /// # Arguments
-    /// * `data` - File data to verify
-    /// * `expected_checksum` - Expected SHA-256 checksum
-    ///
-    /// # Returns
-    /// true if checksums match, false otherwise
-    pub fn verify_checksum(data: &[u8], expected_checksum: &str) -> bool {
-        let actual = Self::sha256(data);
-        actual.eq_ignore_ascii_case(expected_checksum)
-    }
 }
 
 #[cfg(test)]
@@ -63,21 +51,4 @@ mod tests {
         assert_eq!(hash, expected);
     }
     
-    #[test]
-    fn test_verify_checksum() {
-        let data = b"test data";
-        let checksum = FileHasher::sha256(data);
-        
-        assert!(FileHasher::verify_checksum(data, &checksum));
-        assert!(!FileHasher::verify_checksum(data, "invalid_checksum"));
-    }
-    
-    #[test]
-    fn test_verify_checksum_case_insensitive() {
-        let data = b"test";
-        let checksum = FileHasher::sha256(data);
-        let upper = checksum.to_uppercase();
-        
-        assert!(FileHasher::verify_checksum(data, &upper));
-    }
 }

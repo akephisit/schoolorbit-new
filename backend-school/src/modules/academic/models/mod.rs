@@ -172,14 +172,6 @@ pub struct CreateGradeLevelRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct UpdateGradeLevelRequest {
-    pub level_type: Option<String>,
-    pub year: Option<i32>,
-    pub next_grade_level_id: Option<Uuid>,
-    pub is_active: Option<bool>,
-}
-
 // ==========================================
 // Classroom Models
 // ==========================================
@@ -276,10 +268,3 @@ pub struct EnrollStudentRequest {
 pub struct UpdateYearLevelsRequest {
     pub grade_level_ids: Vec<Uuid>,
 }
-
-#[derive(Debug, Serialize, FromRow)]
-pub struct YearLevelMapping {
-    pub academic_year_id: Uuid,
-    pub grade_level_id: Uuid,
-}
-

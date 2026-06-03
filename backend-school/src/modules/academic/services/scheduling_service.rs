@@ -193,14 +193,12 @@ pub async fn run_scheduling_job(
     courses.extend(activities);
 
     let available_slots = loader.load_available_slots(semester_id).await?;
-    let periods = loader.load_periods(academic_year_id).await?;
 
     let mut locked_slots = loader.load_locked_slots(semester_id, &classroom_ids).await?;
     let existing = loader.load_existing_entries_as_locked(semester_id, &classroom_ids).await?;
     locked_slots.extend(existing);
 
     let instructor_prefs = loader.load_instructor_preferences(academic_year_id).await?;
-    let rooms = loader.load_rooms().await?;
     let default_max_consecutive = loader.load_default_max_consecutive().await.unwrap_or(4);
 
     sqlx::query("UPDATE timetable_scheduling_jobs SET progress = 10, updated_at = NOW() WHERE id = $1")
@@ -211,7 +209,6 @@ pub async fn run_scheduling_job(
     scheduler_config.timeout_seconds = config.timeout_seconds.unwrap_or(300);
     scheduler_config.min_quality_score = config.min_quality_score.unwrap_or(70.0);
     scheduler_config.allow_partial = config.allow_partial.unwrap_or(false);
-    scheduler_config.force_overwrite = config.force_overwrite.unwrap_or(false);
 
     let scheduler = SchedulerBuilder::new()
         .algorithm(algorithm)
@@ -224,7 +221,7 @@ pub async fn run_scheduling_job(
         .bind(job_id).execute(pool).await?;
 
     let result = scheduler.schedule_with_settings(
-        courses, available_slots, locked_slots, instructor_prefs, periods, rooms, default_max_consecutive,
+        courses, available_slots, locked_slots, instructor_prefs, default_max_consecutive,
     );
 
     if config.force_overwrite.unwrap_or(false) {

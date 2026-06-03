@@ -4,7 +4,7 @@
 
 Use app-side AES-256-GCM from `backend-school/src/utils/field_encryption.rs` for new encrypted fields.
 
-Do not extend `backend-school/src/utils/encryption.rs` / PostgreSQL `pgcrypto`; that path is legacy.
+Do not reintroduce PostgreSQL `pgcrypto` helpers for app fields; that path was legacy and has been removed.
 
 ## Completed
 

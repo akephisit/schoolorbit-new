@@ -6,7 +6,7 @@ SchoolOrbit stores sensitive national ID values with app-side AES-256-GCM encryp
 
 - `ENCRYPTION_KEY` is used to encrypt/decrypt fields that must be read back.
 - `BLIND_INDEX_KEY` is used to generate deterministic HMAC-SHA256 hashes for exact-match lookup and uniqueness checks.
-- Do not extend the legacy PostgreSQL `pgcrypto` helpers in `backend-school/src/utils/encryption.rs`.
+- Do not reintroduce legacy PostgreSQL `pgcrypto` helpers for app fields.
 
 ## Protected Fields
 

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
+
 use chrono::{DateTime, Utc};
 
 // ==========================================
@@ -190,11 +191,6 @@ pub struct ActivityGroupMember {
 #[derive(Debug, Deserialize)]
 pub struct AddMembersRequest {
     pub student_ids: Vec<Uuid>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SelfEnrollRequest {
-    // นักเรียนสมัครเอง — ไม่ต้องส่ง student_id (ดึงจาก token)
 }
 
 #[derive(Debug, Deserialize)]

@@ -255,19 +255,13 @@ pub struct SchedulerConfig {
     pub max_iterations: u32,
     pub timeout_seconds: u32,
     
-    // Hard constraints
-    pub enforce_period_requirements: bool,
-    pub enforce_instructor_unavailability: bool,
-    
     // Soft constraints
     pub optimize_distribution: bool,
     pub optimize_consecutive_limit: bool,
     pub optimize_time_of_day: bool,
-    pub respect_preferences: bool,
     pub balance_daily_load: bool,
     
     // Options
-    pub force_overwrite: bool,
     pub allow_partial: bool,
     pub min_quality_score: f64,
     
@@ -278,10 +272,7 @@ pub struct SchedulerConfig {
     pub weight_distribution: f64,      // 30%
     pub weight_consecutive: f64,        // 20%
     pub weight_time_of_day: f64,       // 15%
-    pub weight_instructor_pref: f64,   // 15%
     pub weight_daily_load: f64,        // 10%
-    pub weight_instructor_load: f64,   // 5%
-    pub weight_avoid_edge: f64,        // 3%
     pub weight_spacing: f64,           // 2%
 }
 
@@ -299,16 +290,11 @@ impl Default for SchedulerConfig {
             max_iterations: 10000,
             timeout_seconds: 300,
             
-            enforce_period_requirements: true,
-            enforce_instructor_unavailability: true,
-            
             optimize_distribution: true,
             optimize_consecutive_limit: true,
             optimize_time_of_day: true,
-            respect_preferences: true,
             balance_daily_load: true,
             
-            force_overwrite: false,
             allow_partial: false,
             min_quality_score: 70.0,
             
@@ -317,10 +303,7 @@ impl Default for SchedulerConfig {
             weight_distribution: 30.0,
             weight_consecutive: 20.0,
             weight_time_of_day: 15.0,
-            weight_instructor_pref: 15.0,
             weight_daily_load: 10.0,
-            weight_instructor_load: 5.0,
-            weight_avoid_edge: 3.0,
             weight_spacing: 2.0,
         }
     }
@@ -353,9 +336,7 @@ pub struct FailedCourse {
 
 #[derive(Debug, Clone)]
 pub struct InstructorPrefData {
-    pub instructor_id: Uuid,
     pub hard_unavailable: HashSet<String>, // Set of slot keys
-    pub preferred_slots: HashSet<String>,  // Set of slot keys
     pub max_periods_per_day: i32,
 }
 
@@ -365,19 +346,4 @@ pub struct InstructorPrefData {
 pub struct PeriodInfo {
     pub id: Uuid,
     pub order: i32,
-    pub name: String,
-    pub start_time: String,
-    pub end_time: String,
 }
-
-#[derive(Debug, Clone)]
-pub struct RoomInfo {
-    pub id: Uuid,
-    pub name: String,
-    pub room_type: Option<String>,
-    pub capacity: i32,
-}
-
-// ==================== Available Slots ====================
-
-pub type AvailableSlots = Vec<TimeSlot>;

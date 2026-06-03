@@ -461,7 +461,6 @@ pub struct PortalUploadDbResult {
     pub storage_path: String,
     pub file_size: i64,
     pub old_storage_path: Option<String>,
-    pub linked_to_application: bool,
 }
 
 /// DB-side ของ portal upload — R2 client อยู่ที่ handler
@@ -560,7 +559,6 @@ pub async fn save_portal_upload(
                 storage_path: storage_path.clone(),
                 file_size,
                 old_storage_path: old_storage,
-                linked_to_application: true,
             },
             storage_path,
         ))
@@ -596,7 +594,6 @@ pub async fn save_portal_upload(
                 storage_path: storage_path.clone(),
                 file_size,
                 old_storage_path: None,
-                linked_to_application: false,
             },
             storage_path,
         ))

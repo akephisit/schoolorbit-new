@@ -289,7 +289,7 @@ impl<'a> SchedulerDataLoader<'a> {
         .await?;
 
         let periods = sqlx::query_as::<_, PeriodRow>(
-            r#"SELECT id, order_index as period_order, name, start_time::text, end_time::text
+            r#"SELECT id, order_index as period_order
                FROM academic_periods
                WHERE is_active = true AND academic_year_id = $1
                ORDER BY order_index"#
@@ -316,7 +316,7 @@ impl<'a> SchedulerDataLoader<'a> {
     /// Load periods info filtered by academic year
     pub async fn load_periods(&self, academic_year_id: Uuid) -> Result<Vec<PeriodInfo>, sqlx::Error> {
         let rows = sqlx::query_as::<_, PeriodRow>(
-            r#"SELECT id, order_index as period_order, name, start_time::text, end_time::text
+            r#"SELECT id, order_index as period_order
                FROM academic_periods
                WHERE is_active = true AND academic_year_id = $1
                ORDER BY order_index"#
@@ -328,9 +328,6 @@ impl<'a> SchedulerDataLoader<'a> {
         Ok(rows.into_iter().map(|r| PeriodInfo {
             id: r.id,
             order: r.period_order,
-            name: r.name.unwrap_or_default(),
-            start_time: r.start_time,
-            end_time: r.end_time,
         }).collect())
     }
     
@@ -393,7 +390,6 @@ impl<'a> SchedulerDataLoader<'a> {
                     day: row.day_of_week,
                     period_ids,
                     classroom_ids: applicable_classrooms,
-                    scope_type: row.scope_type,
                 });
             }
         }
@@ -427,7 +423,6 @@ impl<'a> SchedulerDataLoader<'a> {
             SELECT 
                 instructor_id,
                 hard_unavailable_slots,
-                preferred_slots,
                 COALESCE(max_periods_per_day, 7) as max_periods_per_day
             FROM instructor_preferences
             WHERE academic_year_id = $1
@@ -453,22 +448,8 @@ impl<'a> SchedulerDataLoader<'a> {
                 }
             }
             
-            // Parse preferred slots
-            let preferred: Vec<TimeSlotJson> = serde_json::from_value(
-                row.preferred_slots
-            ).unwrap_or_default();
-            
-            let mut preferred_set = HashSet::new();
-            for slot in preferred {
-                if let Some(pid) = resolve_period_id(&slot) {
-                    preferred_set.insert(format!("{}__{}", slot.day, pid));
-                }
-            }
-            
             prefs.insert(row.instructor_id, InstructorPrefData {
-                instructor_id: row.instructor_id,
                 hard_unavailable: hard_unavailable_set,
-                preferred_slots: preferred_set,
                 max_periods_per_day: row.max_periods_per_day,
             });
         }
@@ -528,7 +509,6 @@ impl<'a> SchedulerDataLoader<'a> {
                 day,
                 period_ids: vec![period_id],
                 classroom_ids: vec![classroom_id],
-                scope_type: "EXISTING_ENTRY".to_string(),
             }
         }).collect();
 
@@ -546,40 +526,9 @@ impl<'a> SchedulerDataLoader<'a> {
         Ok(val.and_then(|v| v.as_i64()).unwrap_or(4) as i32)
     }
 
-    /// Load all rooms with details
-    pub async fn load_rooms(&self) -> Result<HashMap<Uuid, RoomInfo>, sqlx::Error> {
-        // COALESCE: บางห้องอาจไม่มีชื่อ (name_th NULL) → fallback เป็น code, แล้วเป็น "ห้อง"
-        let query = r#"
-            SELECT id,
-                   COALESCE(NULLIF(name_th, ''), code, 'ห้อง') AS name,
-                   room_type,
-                   capacity
-            FROM rooms
-            WHERE status = 'ACTIVE'
-        "#;
-
-        let rows = sqlx::query_as::<_, RoomRow>(query)
-            .fetch_all(self.pool)
-            .await?;
-            
-        Ok(rows.into_iter().map(|r| (r.id, RoomInfo {
-            id: r.id,
-            name: r.name,
-            room_type: r.room_type,
-            capacity: r.capacity.unwrap_or(0),
-        })).collect())
-    }
 }
 
 // Database row types
-
-#[derive(sqlx::FromRow)]
-struct RoomRow {
-    id: Uuid,
-    name: String,
-    room_type: Option<String>,
-    capacity: Option<i32>,
-}
 
 #[derive(sqlx::FromRow)]
 struct CourseRow {
@@ -618,9 +567,6 @@ struct IndepActivityRow {
 struct PeriodRow {
     id: Uuid,
     period_order: i32,
-    name: Option<String>,
-    start_time: String,
-    end_time: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -636,7 +582,6 @@ struct LockedSlotRow {
 struct InstructorPrefRow {
     instructor_id: Uuid,
     hard_unavailable_slots: serde_json::Value,
-    preferred_slots: serde_json::Value,
     max_periods_per_day: i32,
 }
 

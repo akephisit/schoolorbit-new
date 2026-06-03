@@ -1,5 +1,3 @@
-use aws_sdk_s3::presigning::PresigningConfig;
-use std::time::Duration;
 use aws_config::meta::region::RegionProviderChain;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::config::Region;
@@ -15,7 +13,6 @@ pub struct R2Config {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub bucket_name: String,
-    pub public_url: String,
     pub region: String,
 }
 
@@ -31,8 +28,6 @@ impl R2Config {
                 .map_err(|_| "R2_SECRET_ACCESS_KEY not set")?,
             bucket_name: env::var("R2_BUCKET_NAME")
                 .map_err(|_| "R2_BUCKET_NAME not set")?,
-            public_url: env::var("R2_PUBLIC_URL")
-                .map_err(|_| "R2_PUBLIC_URL not set")?,
             region: env::var("R2_REGION").unwrap_or_else(|_| "auto".to_string()),
         })
     }
@@ -126,40 +121,6 @@ impl R2Client {
         Ok(())
     }
     
-    /// Download a file from R2
-    ///
-    /// # Arguments
-    /// * `key` - Storage path
-    ///
-    /// # Returns
-    /// File data as Vec<u8>
-    pub async fn download_file(&self, key: &str) -> Result<Vec<u8>, String> {
-        info!("Downloading file from R2: {}", key);
-        
-        let response = self
-            .client
-            .get_object()
-            .bucket(&self.config.bucket_name)
-            .key(key)
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Failed to download file from R2: {}", e);
-                format!("Failed to download file: {}", e)
-            })?;
-        
-        let data = response
-            .body
-            .collect()
-            .await
-            .map_err(|e| format!("Failed to read file data: {}", e))?
-            .into_bytes()
-            .to_vec();
-        
-        info!("File downloaded successfully: {} ({} bytes)", key, data.len());
-        Ok(data)
-    }
-    
     /// Delete a file from R2
     ///
     /// # Arguments
@@ -182,46 +143,6 @@ impl R2Client {
         Ok(())
     }
     
-    /// Check if a file exists in R2
-    ///
-    /// # Arguments
-    /// * `key` - Storage path
-    pub async fn file_exists(&self, key: &str) -> bool {
-        self.client
-            .head_object()
-            .bucket(&self.config.bucket_name)
-            .key(key)
-            .send()
-            .await
-            .is_ok()
-    }
-    
-    /// Generate a presigned URL for downloading a file
-    /// Only the key holder can access the file via this URL
-    pub async fn generate_presigned_url(&self, key: &str, expires_in_secs: u64) -> Result<String, String> {
-        let presigning_config = PresigningConfig::expires_in(Duration::from_secs(expires_in_secs))
-            .map_err(|e| format!("Failed to create presigning config: {}", e))?;
-
-        let presigned_req = self.client
-            .get_object()
-            .bucket(&self.config.bucket_name)
-            .key(key)
-            .presigned(presigning_config)
-            .await
-            .map_err(|e| format!("Failed to generate presigned URL: {}", e))?;
-
-        Ok(presigned_req.uri().to_string())
-    }
-
-    /// Get the public URL for a file
-    pub fn get_public_url(&self, key: &str) -> String {
-        format!("{}/{}", self.config.public_url.trim_end_matches('/'), key)
-    }
-
-    /// Get the bucket name
-    pub fn bucket_name(&self) -> &str {
-        &self.config.bucket_name
-    }
 }
 
 #[cfg(test)]
@@ -235,7 +156,6 @@ mod tests {
             access_key_id: "key".to_string(),
             secret_access_key: "secret".to_string(),
             bucket_name: "test-bucket".to_string(),
-            public_url: "https://pub.r2.dev".to_string(),
             region: "auto".to_string(),
         };
         
@@ -243,26 +163,5 @@ mod tests {
             config.endpoint_url(),
             "https://test123.r2.cloudflarestorage.com"
         );
-    }
-    
-    #[test]
-    fn test_public_url_generation() {
-        let config = R2Config {
-            account_id: "test".to_string(),
-            access_key_id: "key".to_string(),
-            secret_access_key: "secret".to_string(),
-            bucket_name: "bucket".to_string(),
-            public_url: "https://pub.r2.dev".to_string(),
-            region: "auto".to_string(),
-        };
-        
-        // Note: Can't test full R2Client without credentials
-        let url = format!(
-            "{}/{}",
-            config.public_url.trim_end_matches('/'),
-            "school-abc/test.jpg"
-        );
-        
-        assert_eq!(url, "https://pub.r2.dev/school-abc/test.jpg");
     }
 }

@@ -126,13 +126,6 @@ impl FileType {
 // ===================================================================
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UploadFileRequest {
-    pub file_type: String,
-    pub is_temporary: Option<bool>,
-    pub is_public: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct FileResponse {
     pub id: Uuid,
     pub filename: String,
@@ -194,29 +187,11 @@ pub struct DeleteFileResponse {
 }
 
 // ===================================================================
-// File Upload Metadata
-// ===================================================================
-
-#[derive(Debug, Clone)]
-pub struct FileUploadMetadata {
-    pub user_id: Uuid,
-    pub school_id: String,
-    pub file_type: FileType,
-    pub original_filename: String,
-    pub content_type: String,
-    pub is_temporary: bool,
-    pub is_public: bool,
-}
-
-// ===================================================================
 // File Validation
 // ===================================================================
 
 #[derive(Debug, Clone)]
 pub struct FileValidationConfig {
-    pub max_file_size_mb: u64,
-    pub max_profile_image_size_mb: u64,
-    pub max_document_size_mb: u64,
     pub allowed_image_types: Vec<String>,
     pub allowed_document_types: Vec<String>,
 }
@@ -226,18 +201,6 @@ impl FileValidationConfig {
         use std::env;
         
         Self {
-            max_file_size_mb: env::var("MAX_FILE_SIZE_MB")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(10),
-            max_profile_image_size_mb: env::var("MAX_PROFILE_IMAGE_SIZE_MB")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(5),
-            max_document_size_mb: env::var("MAX_DOCUMENT_SIZE_MB")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(20),
             allowed_image_types: env::var("ALLOWED_IMAGE_TYPES")
                 .ok()
                 .map(|s| s.split(',').map(|t| t.trim().to_string()).collect())

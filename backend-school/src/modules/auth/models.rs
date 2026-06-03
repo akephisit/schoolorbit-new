@@ -206,30 +206,3 @@ pub struct Claims {
     pub exp: i64,              // Expiry timestamp
     pub iat: i64,              // Issued at timestamp
 }
-
-// Notification model
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-#[serde(rename_all = "camelCase")]
-pub struct Notification {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub title: String,
-    pub message: String,
-    #[serde(rename = "type")]
-    pub notification_type: String,
-    pub link: Option<String>,
-    pub read_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-}
-
-// Create notification request
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateNotification {
-    pub user_id: Option<Uuid>, // If None, broadcast to all
-    pub title: String,
-    pub message: String,
-    #[serde(rename = "type")]
-    pub notification_type: String,
-    pub link: Option<String>,
-}

@@ -1,6 +1,8 @@
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::env;
 
+static MIGRATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Create a test database pool
 pub async fn create_test_pool() -> PgPool {
     dotenvy::dotenv().ok();
@@ -18,6 +20,7 @@ pub async fn create_test_pool() -> PgPool {
 
 /// Run migrations on test database
 pub async fn run_test_migrations(pool: &PgPool) {
+    let _guard = MIGRATION_LOCK.lock().await;
     sqlx::migrate!("./migrations")
         .run(pool)
         .await
@@ -63,8 +66,8 @@ pub async fn create_test_user(
     
     let user_id: uuid::Uuid = sqlx::query_scalar(
         r#"
-        INSERT INTO users (email, password_hash, first_name, last_name, user_type, is_active)
-        VALUES ($1, $2, 'Test', 'User', 'staff', true)
+        INSERT INTO users (username, email, password_hash, first_name, last_name, user_type, status)
+        VALUES ($1, $1, $2, 'Test', 'User', 'staff', 'active')
         RETURNING id
         "#
     )
@@ -74,64 +77,4 @@ pub async fn create_test_user(
     .await?;
     
     Ok(user_id)
-}
-
-/// Create a test role
-pub async fn create_test_role(
-    pool: &PgPool,
-    name: &str,
-) -> Result<uuid::Uuid, sqlx::Error> {
-    let role_id: uuid::Uuid = sqlx::query_scalar(
-        r#"
-        INSERT INTO roles (name, description)
-        VALUES ($1, $2)
-        RETURNING id
-        "#
-    )
-    .bind(name)
-    .bind("Test role")
-    .fetch_one(pool)
-    .await?;
-    
-    Ok(role_id)
-}
-
-/// Create a test department
-pub async fn create_test_department(
-    pool: &PgPool,
-    name: &str,
-) -> Result<uuid::Uuid, sqlx::Error> {
-    let dept_id: uuid::Uuid = sqlx::query_scalar(
-        r#"
-        INSERT INTO departments (name, description)
-        VALUES ($1, $2)
-        RETURNING id
-        "#
-    )
-    .bind(name)
-    .bind("Test department")
-    .fetch_one(pool)
-    .await?;
-    
-    Ok(dept_id)
-}
-
-/// Assign role to user
-pub async fn assign_role_to_user(
-    pool: &PgPool,
-    user_id: uuid::Uuid,
-    role_id: uuid::Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
-        VALUES ($1, $2, true, NOW())
-        "#
-    )
-    .bind(user_id)
-    .bind(role_id)
-    .execute(pool)
-    .await?;
-    
-    Ok(())
 }

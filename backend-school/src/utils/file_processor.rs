@@ -99,35 +99,11 @@ impl ImageProcessor {
         Ok((img.width(), img.height()))
     }
     
-    /// Convert image to WebP format (for better compression)
-    pub fn convert_to_webp(data: &[u8]) -> Result<Vec<u8>, String> {
-        info!("Converting image to WebP format");
-        
-        let img = image::load_from_memory(data)
-            .map_err(|e| format!("Failed to load image: {}", e))?;
-        
-        let mut buffer = Vec::new();
-        let mut cursor = Cursor::new(&mut buffer);
-        
-        // WebP support requires the "webp" feature, for now we'll use PNG
-        // In production, consider using the webp crate directly
-        img.write_to(&mut cursor, ImageFormat::Png)
-            .map_err(|e| format!("Failed to convert image: {}", e))?;
-        
-        info!("Image converted successfully");
-        
-        Ok(buffer)
-    }
-    
     /// Validate if data is a valid image
     pub fn is_valid_image(data: &[u8]) -> bool {
         image::load_from_memory(data).is_ok()
     }
     
-    /// Get image format from data
-    pub fn detect_format(data: &[u8]) -> Option<ImageFormat> {
-        image::guess_format(data).ok()
-    }
 }
 
 /// File validation utilities
@@ -147,35 +123,6 @@ impl FileValidator {
         Ok(())
     }
     
-    /// Validate MIME type against allowed types
-    pub fn validate_mime_type(mime_type: &str, allowed_types: &[&str]) -> Result<(), String> {
-        if allowed_types.contains(&mime_type) {
-            Ok(())
-        } else {
-            Err(format!(
-                "MIME type '{}' is not allowed. Allowed types: {:?}",
-                mime_type, allowed_types
-            ))
-        }
-    }
-    
-    /// Validate file extension
-    pub fn validate_extension(filename: &str, allowed_extensions: &[String]) -> Result<(), String> {
-        let extension = std::path::Path::new(filename)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase())
-            .ok_or_else(|| "File has no extension".to_string())?;
-        
-        if allowed_extensions.iter().any(|ext| ext == &extension) {
-            Ok(())
-        } else {
-            Err(format!(
-                "File extension '.{}' is not allowed. Allowed extensions: {:?}",
-                extension, allowed_extensions
-            ))
-        }
-    }
 }
 
 #[cfg(test)]
@@ -188,19 +135,4 @@ mod tests {
         assert!(FileValidator::validate_size(10 * 1024 * 1024, 5).is_err()); // 10 MB > 5 MB
     }
     
-    #[test]
-    fn test_validate_mime_type() {
-        let allowed = vec!["image/jpeg", "image/png"];
-        assert!(FileValidator::validate_mime_type("image/jpeg", &allowed).is_ok());
-        assert!(FileValidator::validate_mime_type("image/gif", &allowed).is_err());
-    }
-    
-    #[test]
-    fn test_validate_extension() {
-        let allowed = vec!["jpg".to_string(), "png".to_string()];
-        assert!(FileValidator::validate_extension("photo.jpg", &allowed).is_ok());
-        assert!(FileValidator::validate_extension("photo.JPG", &allowed).is_ok()); // Case insensitive
-        assert!(FileValidator::validate_extension("photo.gif", &allowed).is_err());
-        assert!(FileValidator::validate_extension("photo", &allowed).is_err()); // No extension
-    }
 }

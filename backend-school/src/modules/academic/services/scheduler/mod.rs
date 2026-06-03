@@ -20,35 +20,18 @@ impl TimetableScheduler {
         Self { config }
     }
     
-    /// Main entry point for scheduling
-    pub fn schedule(
-        &self,
-        courses: Vec<CourseToSchedule>,
-        available_slots: Vec<TimeSlot>,
-        locked_slots: Vec<LockedSlotData>,
-        instructor_prefs: HashMap<Uuid, InstructorPrefData>,
-        periods: Vec<PeriodInfo>,
-        rooms: HashMap<Uuid, RoomInfo>,
-    ) -> SchedulingResult {
-        self.schedule_with_settings(courses, available_slots, locked_slots, instructor_prefs, periods, rooms, 4)
-    }
-
     pub fn schedule_with_settings(
         &self,
         mut courses: Vec<CourseToSchedule>,
         available_slots: Vec<TimeSlot>,
         locked_slots: Vec<LockedSlotData>,
         instructor_prefs: HashMap<Uuid, InstructorPrefData>,
-        periods: Vec<PeriodInfo>,
-        rooms: HashMap<Uuid, RoomInfo>,
         default_max_consecutive: i32,
     ) -> SchedulingResult {
         // Build validator
         let validator = ConstraintValidator::with_settings(
             locked_slots,
             instructor_prefs,
-            periods,
-            rooms,
             default_max_consecutive,
         );
         
@@ -91,11 +74,6 @@ impl SchedulerBuilder {
         self
     }
     
-    pub fn max_iterations(mut self, max: u32) -> Self {
-        self.config.max_iterations = max;
-        self
-    }
-    
     pub fn timeout_seconds(mut self, seconds: u32) -> Self {
         self.config.timeout_seconds = seconds;
         self
@@ -108,16 +86,6 @@ impl SchedulerBuilder {
     
     pub fn allow_partial(mut self, allow: bool) -> Self {
         self.config.allow_partial = allow;
-        self
-    }
-    
-    pub fn force_overwrite(mut self, force: bool) -> Self {
-        self.config.force_overwrite = force;
-        self
-    }
-    
-    pub fn respect_preferences(mut self, respect: bool) -> Self {
-        self.config.respect_preferences = respect;
         self
     }
     
@@ -140,13 +108,11 @@ mod tests {
     fn test_builder() {
         let scheduler = SchedulerBuilder::new()
             .algorithm(SchedulingAlgorithm::Backtracking)
-            .max_iterations(5000)
             .timeout_seconds(60)
             .min_quality_score(80.0)
             .build();
         
         assert_eq!(scheduler.config.algorithm, SchedulingAlgorithm::Backtracking);
-        assert_eq!(scheduler.config.max_iterations, 5000);
         assert_eq!(scheduler.config.timeout_seconds, 60);
         assert_eq!(scheduler.config.min_quality_score, 80.0);
     }
