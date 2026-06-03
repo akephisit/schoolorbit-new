@@ -1954,11 +1954,8 @@
 
 			handleDragEnd();
 			try {
-				const result = (await updateTimetableEntry(existingEntry.id, payload)) as {
-					success?: boolean;
-					conflicts?: ConflictInfo[];
-				};
-				if (result?.success === false) {
+				const result = await updateTimetableEntry(existingEntry.id, payload);
+				if (result.success === false) {
 					// Rollback content
 					if (snapshot) applyEntryMutation(existingEntry.id, snapshot);
 					const restored = timetableEntries.find((e) => e.id === existingEntry.id)
@@ -2153,12 +2150,8 @@
 				isDropPending = false;
 				handleDragEnd();
 				try {
-					const res = (await createTimetableEntry(payload)) as {
-						success?: boolean;
-						conflicts?: ConflictInfo[];
-						data?: TimetableEntry;
-					};
-					if (res?.success === false) {
+					const res = await createTimetableEntry(payload);
+					if (res.success === false) {
 						// Remove temp + show conflicts
 						timetableEntries = timetableEntries.filter((e) => e.id !== tempId);
 						removeOccupancy(tempId);
@@ -2167,7 +2160,7 @@
 						toast.error(msgs.length > 0 ? msgs.join(' · ') : 'ลงตารางไม่สำเร็จ');
 					} else {
 						// API success = confirm. Swap temp → real (id เปลี่ยน, joined fields เก็บที่คำนวณไว้)
-						const realId = res?.data?.id;
+						const realId = res.data.id;
 						if (realId) {
 							const swap = (e: TimetableEntry) =>
 								e.id === tempId ? { ...e, id: realId } : e;
@@ -2219,11 +2212,8 @@
 				isDropPending = false;
 				handleDragEnd();
 				try {
-					const res = (await updateTimetableEntry(entryId, payload)) as {
-						success?: boolean;
-						conflicts?: ConflictInfo[];
-					};
-					if (res?.success === false) {
+					const res = await updateTimetableEntry(entryId, payload);
+					if (res.success === false) {
 						if (original) {
 							applyEntryMutation(entryId, {
 								day_of_week: original.day_of_week as TimetableEntry['day_of_week'],
@@ -2262,23 +2252,6 @@
 			pendingDropContext = null;
 			isDropPending = false;
 			handleDragEnd();
-		}
-	}
-
-	async function handleResponse(
-		res: { success?: boolean; conflicts?: ConflictInfo[] } | unknown,
-		successMessage: string
-	) {
-		if ((res as { success?: boolean }).success === false) {
-			// รวบ conflict messages เป็นไทยเดียว ไม่โชว์ "Conflict detected"
-			const r = res as { success?: boolean; conflicts?: ConflictInfo[] };
-			const msgs: string[] = (r.conflicts ?? [])
-				.map((c: ConflictInfo) => c.message)
-				.filter(Boolean);
-			toast.error(msgs.length > 0 ? msgs.join(' · ') : 'พบข้อขัดแย้งในตาราง');
-		} else {
-			await loadTimetable();
-			toast.success(successMessage);
 		}
 	}
 

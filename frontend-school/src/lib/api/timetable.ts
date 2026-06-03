@@ -1,7 +1,12 @@
 import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
 
+type LoadedApiResponse<T> = ApiResponse<T> & { success: true; data: T };
+
 // Helper for authenticated requests
-async function fetchApi<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+async function fetchApi<T = unknown>(
+	path: string,
+	options: RequestInit = {}
+): Promise<LoadedApiResponse<T>> {
 	const method = (options.method || 'GET').toUpperCase();
 	const body = options.body ? JSON.parse(options.body.toString()) : undefined;
 
@@ -19,7 +24,8 @@ async function fetchApi<T = unknown>(path: string, options: RequestInit = {}): P
 	}
 
 	if (!response.success) throw new Error(response.error || 'Request failed');
-	return response as T;
+	if (response.data === undefined) throw new Error('Response data missing');
+	return { success: true, data: response.data, message: response.message };
 }
 
 // ============================================
@@ -153,11 +159,29 @@ function normalizeTimetableListResponse(
 	};
 }
 
-function normalizeConflictResponse(response: ApiResponse<unknown>) {
+interface ConflictPayload {
+	conflicts?: ConflictInfo[];
+}
+
+export interface TimetableConflictResponse {
+	success: false;
+	conflicts: ConflictInfo[];
+	message: string;
+}
+
+type TimetableMutationResponse = LoadedApiResponse<TimetableEntry> | TimetableConflictResponse;
+
+function isConflictPayload(data: TimetableEntry | ConflictPayload | undefined): data is ConflictPayload {
+	return !!data && typeof data === 'object' && 'conflicts' in data;
+}
+
+function normalizeConflictResponse(
+	response: ApiResponse<TimetableEntry | ConflictPayload>
+): TimetableConflictResponse {
+	const payload = response.data;
 	return {
 		success: false,
-		conflicts:
-			(response.data as { conflicts?: ConflictInfo[] } | undefined)?.conflicts ?? [],
+		conflicts: isConflictPayload(payload) ? (payload.conflicts ?? []) : [],
 		message: response.message || response.error || 'พบข้อขัดแย้งในตาราง'
 	};
 }
@@ -179,25 +203,32 @@ export const listPeriods = async (
 	if (filters.active_only !== undefined) params.append('active_only', String(filters.active_only));
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(`/api/academic/periods${queryString}`);
+	return await fetchApi<AcademicPeriod[]>(`/api/academic/periods${queryString}`);
 };
 
-export const createPeriod = async (data: CreatePeriodRequest) => {
-	return await fetchApi('/api/academic/periods', {
+export const createPeriod = async (
+	data: CreatePeriodRequest
+): Promise<LoadedApiResponse<AcademicPeriod>> => {
+	return await fetchApi<AcademicPeriod>('/api/academic/periods', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updatePeriod = async (id: string, data: Partial<CreatePeriodRequest>) => {
-	return await fetchApi(`/api/academic/periods/${id}`, {
+export const updatePeriod = async (
+	id: string,
+	data: Partial<CreatePeriodRequest>
+): Promise<LoadedApiResponse<AcademicPeriod>> => {
+	return await fetchApi<AcademicPeriod>(`/api/academic/periods/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
 };
 
-export const deletePeriod = async (id: string) => {
-	return await fetchApi(`/api/academic/periods/${id}`, { method: 'DELETE' });
+export const deletePeriod = async (
+	id: string
+): Promise<LoadedApiResponse<Record<string, never>>> => {
+	return await fetchApi<Record<string, never>>(`/api/academic/periods/${id}`, { method: 'DELETE' });
 };
 
 export interface ReorderPeriodItem {
@@ -205,8 +236,11 @@ export interface ReorderPeriodItem {
 	order_index: number;
 }
 
-export const reorderPeriods = async (academic_year_id: string, items: ReorderPeriodItem[]) => {
-	return await fetchApi('/api/academic/periods/reorder', {
+export const reorderPeriods = async (
+	academic_year_id: string,
+	items: ReorderPeriodItem[]
+): Promise<LoadedApiResponse<{ updated: number }>> => {
+	return await fetchApi<{ updated: number }>('/api/academic/periods/reorder', {
 		method: 'POST',
 		body: JSON.stringify({ academic_year_id, items })
 	});
@@ -360,7 +394,7 @@ export interface MoveValidityCell {
 }
 
 export const swapTimetableEntries = async (entryAId: string, entryBId: string) => {
-	return await fetchApi('/api/academic/timetable/swap', {
+	return await fetchApi<Record<string, never>>('/api/academic/timetable/swap', {
 		method: 'POST',
 		body: JSON.stringify({ entry_a_id: entryAId, entry_b_id: entryBId })
 	});
@@ -369,7 +403,7 @@ export const swapTimetableEntries = async (entryAId: string, entryBId: string) =
 export const validateTimetableMoves = async (
 	entryId: string
 ): Promise<{ data: MoveValidityCell[] }> => {
-	return await fetchApi('/api/academic/timetable/validate-moves', {
+	return await fetchApi<MoveValidityCell[]>('/api/academic/timetable/validate-moves', {
 		method: 'POST',
 		body: JSON.stringify({ entry_id: entryId })
 	});
@@ -388,25 +422,40 @@ export interface OccupancyEntry {
 export const getTimetableOccupancy = async (
 	semesterId: string
 ): Promise<{ data: OccupancyEntry[] }> => {
-	return await fetchApi(
+	return await fetchApi<OccupancyEntry[]>(
 		`/api/academic/timetable/occupancy?semester_id=${encodeURIComponent(semesterId)}`
 	);
 };
 
-export const createTimetableEntry = async (data: CreateTimetableEntryRequest) => {
-	const response = await apiClient.post<TimetableEntry>('/api/academic/timetable', data);
+export const createTimetableEntry = async (
+	data: CreateTimetableEntryRequest
+): Promise<TimetableMutationResponse> => {
+	const response = await apiClient.post<TimetableEntry | ConflictPayload>(
+		'/api/academic/timetable',
+		data
+	);
 	if (!response.success) return normalizeConflictResponse(response);
-	return response;
+	const entry = requireApiData(response, 'Request failed');
+	if (isConflictPayload(entry)) return normalizeConflictResponse({ ...response, success: false });
+	return { success: true, data: entry, message: response.message };
 };
 
-export const updateTimetableEntry = async (id: string, data: UpdateTimetableEntryRequest) => {
-	const response = await apiClient.put<TimetableEntry>(`/api/academic/timetable/${id}`, data);
+export const updateTimetableEntry = async (
+	id: string,
+	data: UpdateTimetableEntryRequest
+): Promise<TimetableMutationResponse> => {
+	const response = await apiClient.put<TimetableEntry | ConflictPayload>(
+		`/api/academic/timetable/${id}`,
+		data
+	);
 	if (!response.success) return normalizeConflictResponse(response);
-	return response;
+	const entry = requireApiData(response, 'Request failed');
+	if (isConflictPayload(entry)) return normalizeConflictResponse({ ...response, success: false });
+	return { success: true, data: entry, message: response.message };
 };
 
 export const deleteTimetableEntry = async (id: string) => {
-	return await fetchApi(`/api/academic/timetable/${id}`, { method: 'DELETE' });
+	return await fetchApi<Record<string, never>>(`/api/academic/timetable/${id}`, { method: 'DELETE' });
 };
 
 export const deleteBatchGroup = async (
@@ -445,7 +494,7 @@ export interface MyActivityForEntry {
 export const getMyActivityForEntry = async (
 	entryId: string
 ): Promise<{ data: MyActivityForEntry | null }> => {
-	return await fetchApi(`/api/academic/timetable/${entryId}/my-activity`);
+	return await fetchApi<MyActivityForEntry | null>(`/api/academic/timetable/${entryId}/my-activity`);
 };
 
 export const addEntryInstructor = async (
@@ -453,20 +502,23 @@ export const addEntryInstructor = async (
 	instructorId: string,
 	role: 'primary' | 'secondary' = 'secondary'
 ) => {
-	return await fetchApi(`/api/academic/timetable/${entryId}/instructors`, {
+	return await fetchApi<Record<string, never>>(`/api/academic/timetable/${entryId}/instructors`, {
 		method: 'POST',
 		body: JSON.stringify({ instructor_id: instructorId, role })
 	});
 };
 
 export const removeEntryInstructor = async (entryId: string, instructorId: string) => {
-	return await fetchApi(`/api/academic/timetable/${entryId}/instructors/${instructorId}`, {
-		method: 'DELETE'
-	});
+	return await fetchApi<Record<string, never>>(
+		`/api/academic/timetable/${entryId}/instructors/${instructorId}`,
+		{
+			method: 'DELETE'
+		}
+	);
 };
 
 export const restoreInstructorToSlot = async (slotId: string, instructorId: string) => {
-	return await fetchApi(
+	return await fetchApi<{ inserted: number }>(
 		`/api/academic/timetable/slots/${slotId}/instructors/${instructorId}/restore`,
 		{
 			method: 'POST'
@@ -475,9 +527,12 @@ export const restoreInstructorToSlot = async (slotId: string, instructorId: stri
 };
 
 export const hideInstructorFromSlot = async (slotId: string, instructorId: string) => {
-	return await fetchApi(`/api/academic/timetable/slots/${slotId}/instructors/${instructorId}`, {
-		method: 'DELETE'
-	});
+	return await fetchApi<{ deleted: number }>(
+		`/api/academic/timetable/slots/${slotId}/instructors/${instructorId}`,
+		{
+			method: 'DELETE'
+		}
+	);
 };
 
 export const hideInstructorFromSlotPeriod = async (
@@ -487,7 +542,7 @@ export const hideInstructorFromSlotPeriod = async (
 	periodId: string
 ) => {
 	const params = new URLSearchParams({ day_of_week: dayOfWeek, period_id: periodId });
-	return await fetchApi(
+	return await fetchApi<{ deleted: number }>(
 		`/api/academic/timetable/slots/${slotId}/instructors/${instructorId}/period?${params.toString()}`,
 		{ method: 'DELETE' }
 	);

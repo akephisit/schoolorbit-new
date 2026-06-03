@@ -179,3 +179,27 @@ test('facility API returns typed loaded envelope data without helper casts', asy
 	assert.match(facilityApi, /fetchApi<Record<string, never>>/);
 	assert.doesNotMatch(facilityApi, /return response as T/);
 });
+
+test('timetable API exposes typed loaded responses and conflict unions without response casts', async () => {
+	const timetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
+	const timetablePage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte'
+	);
+
+	assert.match(timetableApi, /type\s+LoadedApiResponse<T>/);
+	assert.match(timetableApi, /Promise<LoadedApiResponse<T>>/);
+	assert.match(timetableApi, /interface\s+TimetableConflictResponse/);
+	assert.match(timetableApi, /type\s+TimetableMutationResponse/);
+	assert.match(timetableApi, /apiClient\.post<TimetableEntry \| ConflictPayload>/);
+	assert.match(timetableApi, /apiClient\.put<TimetableEntry \| ConflictPayload>/);
+	assert.match(timetableApi, /fetchApi<AcademicPeriod\[\]>/);
+	assert.match(timetableApi, /fetchApi<MoveValidityCell\[\]>/);
+	assert.match(timetableApi, /fetchApi<OccupancyEntry\[\]>/);
+	assert.doesNotMatch(timetableApi, /return response as T/);
+	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);
+	assert.doesNotMatch(timetableApi, /response\.data as/);
+
+	assert.doesNotMatch(timetablePage, /await createTimetableEntry\([^)]*\)\) as/);
+	assert.doesNotMatch(timetablePage, /await updateTimetableEntry\([^)]*\)\) as/);
+	assert.doesNotMatch(timetablePage, /res as \{ success\?: boolean; conflicts\?: ConflictInfo\[\] \}/);
+});
