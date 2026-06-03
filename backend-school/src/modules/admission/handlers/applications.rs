@@ -204,9 +204,9 @@ pub async fn complete_enrollment(
 
     let result = application_service::complete_enrollment(&pool, id, payload, enroller_id).await?;
     Ok(Json(json!({ "success": true, "data": {
-            "user_id": result.user_id,
+            "userId": result.user_id,
             "username": result.username,
-            "student_code": result.student_code,
+            "studentCode": result.student_code,
         }, "message": "มอบตัวสำเร็จ สร้าง account แล้ว" })).into_response())
 }
 

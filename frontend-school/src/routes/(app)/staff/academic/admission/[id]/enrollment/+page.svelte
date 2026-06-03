@@ -190,11 +190,11 @@
 		try {
 			const fd = needsForm ? enrollFormData : undefined;
 
-			const res = (await completeEnrollment(
+			const res = await completeEnrollment(
 				enrollingApp.id,
 				studentCode || undefined,
 				fd as Record<string, unknown> | undefined
-			)) as { username?: string };
+			);
 			toast.success(`มอบตัวสำเร็จ! Username: ${res?.username}`);
 			showEnrollDialog = false;
 			resetDialog();

@@ -288,6 +288,12 @@ export interface EnrollmentForm {
 	completedAt?: string;
 }
 
+export interface CompleteEnrollmentResponse {
+	userId: string;
+	username: string;
+	studentCode: string;
+}
+
 // ==========================================
 // Rounds API
 // ==========================================
@@ -667,12 +673,15 @@ export async function completeEnrollment(
 	id: string,
 	studentCode?: string,
 	formData?: Record<string, unknown>
-) {
-	const res = await apiClient.post(`/api/admission/applications/${id}/enroll`, {
-		studentCode,
-		formData
-	});
-	if (!res.success) throw new Error(res.error);
+): Promise<CompleteEnrollmentResponse> {
+	const res = await apiClient.post<CompleteEnrollmentResponse>(
+		`/api/admission/applications/${id}/enroll`,
+		{
+			studentCode,
+			formData
+		}
+	);
+	if (!res.success || !res.data) throw new Error(res.error);
 	return res.data;
 }
 

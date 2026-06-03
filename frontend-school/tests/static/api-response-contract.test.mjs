@@ -103,4 +103,11 @@ test('admission application detail contract returns application and documents in
 	assert.match(backendHandler, /"applicationNumber": application_number/);
 	assert.doesNotMatch(backendHandler, /"application_number": application_number/);
 	assert.match(frontendApi, /apiClient\.post<\{\s*applicationNumber:\s*string\s*\}>/);
+
+	assert.match(backendHandler, /"userId": result\.user_id/);
+	assert.match(backendHandler, /"studentCode": result\.student_code/);
+	assert.doesNotMatch(backendHandler, /"user_id": result\.user_id/);
+	assert.doesNotMatch(backendHandler, /"student_code": result\.student_code/);
+	assert.match(frontendApi, /interface\s+CompleteEnrollmentResponse/);
+	assert.match(frontendApi, /apiClient\.post<CompleteEnrollmentResponse>/);
 });
