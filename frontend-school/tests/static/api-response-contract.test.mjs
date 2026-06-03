@@ -99,4 +99,8 @@ test('admission application detail contract returns application and documents in
 	assert.match(frontendApi, /documents:\s*ApplicationDocument\[\]/);
 	assert.match(frontendApi, /apiClient\.get<ApplicationDetailResponse>/);
 	assert.doesNotMatch(frontendApi, /ApiResponse<AdmissionApplication>[\s\S]*documents\?: ApplicationDocument\[\]/);
+
+	assert.match(backendHandler, /"applicationNumber": application_number/);
+	assert.doesNotMatch(backendHandler, /"application_number": application_number/);
+	assert.match(frontendApi, /apiClient\.post<\{\s*applicationNumber:\s*string\s*\}>/);
 });

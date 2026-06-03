@@ -39,7 +39,7 @@ pub async fn submit_application(
     let pool = get_pool(&state, &headers).await?;
     let (application_number, application) = application_service::submit_application(&pool, round_id, payload).await?;
     Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": {
-            "application_number": application_number,
+            "applicationNumber": application_number,
             "application": application,
         }, "message": "ยื่นใบสมัครสำเร็จ" }))).into_response())
 }
