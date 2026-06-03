@@ -314,5 +314,5 @@ pub async fn delete_achievement(
             AppError::InternalServerError("ลบข้อมูลไม่สำเร็จ".to_string())
         })?;
 
-    Ok((StatusCode::OK, Json(json!({ "success": true }))))
+    Ok((StatusCode::OK, Json(json!({ "success": true, "data": {} }))))
 }

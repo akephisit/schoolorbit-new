@@ -1,4 +1,4 @@
-import { apiClient, type ApiResponse } from './client';
+import { apiClient, requireApiData, type ApiResponse } from './client';
 
 // ==========================================
 // Types
@@ -892,24 +892,19 @@ export async function portalUploadTempFile(
 	authNationalId?: string,
 	authDateOfBirth?: string
 ): Promise<{ fileId: string; fileUrl: string; fileSize: number; docType: string }> {
-	const { PUBLIC_BACKEND_URL } = await import('$env/static/public');
 	const formData = new FormData();
 	formData.append('file', file);
 	formData.append('doc_type', docType);
 	if (authNationalId) formData.append('national_id', authNationalId);
 	if (authDateOfBirth) formData.append('date_of_birth', authDateOfBirth);
 
-	const res = await fetch(`${PUBLIC_BACKEND_URL}/api/admission/portal/upload`, {
-		method: 'POST',
-		credentials: 'include',
-		body: formData
-	});
-	if (!res.ok) {
-		const err = await res.json().catch(() => ({}));
-		throw new Error((err as { error?: string })?.error || 'ไม่สามารถอัปโหลดไฟล์ได้');
-	}
-	const json = await res.json();
-	return json.data;
+	const response = await apiClient.postMultipart<{
+		fileId: string;
+		fileUrl: string;
+		fileSize: number;
+		docType: string;
+	}>('/api/admission/portal/upload', formData);
+	return requireApiData(response, 'ไม่สามารถอัปโหลดไฟล์ได้');
 }
 
 // ==========================================

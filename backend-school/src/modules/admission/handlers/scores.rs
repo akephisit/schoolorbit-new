@@ -62,7 +62,7 @@ pub async fn update_scores(
         Ok(u) => u, Err(r) => return Ok(r),
     };
     score_service::update_application_scores(&pool, id, user_id, &payload.scores).await?;
-    Ok(Json(json!({ "success": true, "message": "อัปเดตคะแนนแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตคะแนนแล้ว" })).into_response())
 }
 
 pub async fn bulk_update_scores(
@@ -76,9 +76,5 @@ pub async fn bulk_update_scores(
         Ok(u) => u, Err(r) => return Ok(r),
     };
     let updated = score_service::bulk_update_scores(&pool, round_id, user_id, &payload.entries).await?;
-    Ok(Json(json!({
-        "success": true,
-        "message": format!("อัปเดต {} รายการ", updated),
-        "data": { "updated_count": updated }
-    })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "updated_count": updated }, "message": format!("อัปเดต {} รายการ", updated) })).into_response())
 }

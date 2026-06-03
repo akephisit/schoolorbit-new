@@ -73,11 +73,7 @@ pub async fn assign_rooms(
         Err(r) => return Ok(r),
     };
     let assigned_count = selection_service::assign_rooms(&pool, round_id, payload, user_id).await?;
-    Ok(Json(json!({
-        "success": true,
-        "message": format!("จัดห้องสำเร็จ {} คน", assigned_count),
-        "data": { "assigned_count": assigned_count }
-    })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "assigned_count": assigned_count }, "message": format!("จัดห้องสำเร็จ {} คน", assigned_count) })).into_response())
 }
 
 pub async fn reset_all_room_assignments(
@@ -90,7 +86,7 @@ pub async fn reset_all_room_assignments(
         return Ok(r);
     }
     let deleted = selection_service::reset_all_room_assignments(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "deleted": deleted } })).into_response())
 }
 
 pub async fn assign_rooms_global(
@@ -105,11 +101,7 @@ pub async fn assign_rooms_global(
         Err(r) => return Ok(r),
     };
     let assigned_count = selection_service::assign_rooms_global(&pool, round_id, payload, user_id).await?;
-    Ok(Json(json!({
-        "success": true,
-        "message": format!("จัดห้องรวมสำเร็จ {} คน", assigned_count),
-        "data": { "assigned_count": assigned_count }
-    })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "assigned_count": assigned_count }, "message": format!("จัดห้องรวมสำเร็จ {} คน", assigned_count) })).into_response())
 }
 
 pub async fn get_global_ranking(
@@ -149,5 +141,5 @@ pub async fn update_selection_settings(
         return Ok(r);
     }
     selection_service::update_selection_settings(&pool, round_id, payload).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }

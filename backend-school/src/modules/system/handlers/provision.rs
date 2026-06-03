@@ -1,4 +1,4 @@
-use crate::modules::system::models::{ProvisionRequest, ProvisionResponse};
+use crate::modules::system::models::ProvisionRequest;
 use crate::error::AppError;
 use axum::{
     http::StatusCode,
@@ -6,7 +6,6 @@ use axum::{
     Json,
 };
 use sqlx::postgres::PgPoolOptions;
-use chrono::Datelike;
 
 /// Handler for provisioning a new school tenant database
 /// 
@@ -158,11 +157,14 @@ pub async fn provision_tenant(
 
     println!("🎉 Tenant provisioning completed for school: {}", payload.school_id);
 
-    let response = ProvisionResponse {
-        success: true,
-        message: format!("Tenant database provisioned successfully. Admin Username: {}", username),
-        school_id: payload.school_id,
-    };
-
-    Ok((StatusCode::OK, Json(response)))
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "data": {
+                "school_id": payload.school_id,
+            },
+            "message": format!("Tenant database provisioned successfully. Admin Username: {}", username),
+        })),
+    ))
 }

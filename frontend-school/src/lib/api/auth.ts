@@ -1,8 +1,6 @@
+import { apiClient, requireApiData } from '$lib/api/client';
 import { authStore, type User } from '$lib/stores/auth';
 import { toast } from 'svelte-sonner';
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
-
-const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 
 export interface LoginRequest {
 	username: string;
@@ -37,39 +35,42 @@ export interface ProfileResponse {
 	hiredDate?: string;
 }
 
+interface BackendUser extends Omit<User, 'role' | 'user_type'> {
+	role?: string;
+	userType?: string;
+	user_type?: string;
+}
+
+interface LoginData {
+	user: BackendUser;
+}
+
+function normalizeUser(userData: BackendUser): User {
+	const userType = userData.userType || userData.user_type;
+
+	return {
+		...userData,
+		role: userData.role || userData.primaryRoleName || userType || '',
+		user_type: userType
+	};
+}
+
 class AuthAPI {
 	/**
-	 * Login - Direct to backend (client-side)
+	 * Login - Direct to backend through the shared client-side API wrapper.
 	 */
 	async login(data: LoginRequest): Promise<User> {
 		authStore.setLoading(true);
 
 		try {
-			const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
-				method: 'POST',
-				credentials: 'include', // Send/receive cookies
-				headers: {
-					'Content-Type': 'application/json'
-					// No X-School-Subdomain needed - backend extracts from Origin
-				},
-				body: JSON.stringify(data)
-			});
-
-			const result = await response.json();
-
-			if (!response.ok) {
-				throw new Error(result.error || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+			const response = await apiClient.post<LoginData>('/api/auth/login', data);
+			if (!response.success || !response.data?.user) {
+				throw new Error(response.error || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
 			}
+			const user = normalizeUser(response.data.user);
 
-			// Map backend response to User interface
-			const user: User = {
-				...result.user,
-				user_type: result.user.userType || result.user.user_type
-			};
-
-			// Update store
 			authStore.setUser(user);
-			toast.success(result.message || 'เข้าสู่ระบบสำเร็จ');
+			toast.success(response.message || 'เข้าสู่ระบบสำเร็จ');
 
 			return user;
 		} catch (error: unknown) {
@@ -83,52 +84,30 @@ class AuthAPI {
 	}
 
 	/**
-	 * Logout - Direct to backend (client-side)
+	 * Logout - Direct to backend through the shared client-side API wrapper.
 	 */
 	async logout(): Promise<void> {
 		try {
-			const response = await fetch(`${BACKEND_URL}/api/auth/logout`, {
-				method: 'POST',
-				credentials: 'include'
-			});
-
-			if (response.ok) {
-				authStore.clearUser();
-				toast.success('ออกจากระบบสำเร็จ');
-			}
+			const response = await apiClient.post<Record<string, never>>('/api/auth/logout');
+			if (!response.success) throw new Error(response.error || 'ออกจากระบบไม่สำเร็จ');
+			toast.success(response.message || 'ออกจากระบบสำเร็จ');
 		} catch (error) {
 			console.error('Logout error:', error);
-			// Clear store anyway
+		} finally {
 			authStore.clearUser();
 		}
 	}
 
 	/**
-	 * Check authentication status - Direct to backend (client-side)
+	 * Check authentication status - Direct to backend through the shared client-side API wrapper.
 	 */
 	async checkAuth(): Promise<boolean> {
 		authStore.setLoading(true);
 
 		try {
-			const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
-				credentials: 'include'
-			});
-
-			if (!response.ok) {
-				if (response.status === 401) {
-					authStore.clearUser();
-					return false;
-				}
-				throw new Error('Failed to check auth');
-			}
-
-			const userData = await response.json();
-
-			// Map backend response to User interface
-			const user: User = {
-				...userData,
-				user_type: userData.userType || userData.user_type
-			};
+			const response = await apiClient.get<BackendUser>('/api/auth/me');
+			const userData = requireApiData(response, 'Failed to check auth');
+			const user = normalizeUser(userData);
 
 			authStore.setUser(user);
 			return true;
@@ -147,19 +126,8 @@ class AuthAPI {
 	 * Get full user profile with all fields
 	 */
 	async getFullProfile(): Promise<ProfileResponse> {
-		const response = await fetch(`${BACKEND_URL}/api/auth/me/profile`, {
-			credentials: 'include'
-		});
-
-		if (!response.ok) {
-			if (response.status === 401) {
-				authStore.clearUser();
-				throw new Error('กรุณาเข้าสู่ระบบอีกครั้ง');
-			}
-			throw new Error('ไม่สามารถโหลดข้อมูลได้');
-		}
-
-		return await response.json();
+		const response = await apiClient.get<ProfileResponse>('/api/auth/me/profile');
+		return requireApiData(response, 'ไม่สามารถโหลดข้อมูลได้');
 	}
 
 	/**
@@ -177,25 +145,8 @@ class AuthAPI {
 		address?: string;
 		profileImageUrl?: string;
 	}): Promise<ProfileResponse> {
-		const response = await fetch(`${BACKEND_URL}/api/auth/me/profile`, {
-			method: 'PUT',
-			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(data)
-		});
-
-		if (!response.ok) {
-			if (response.status === 401) {
-				authStore.clearUser();
-				throw new Error('กรุณาเข้าสู่ระบบอีกครั้ง');
-			}
-			const error = await response.json();
-			throw new Error(error.error || 'ไม่สามารถบันทึกข้อมูลได้');
-		}
-
-		return await response.json();
+		const response = await apiClient.put<ProfileResponse>('/api/auth/me/profile', data);
+		return requireApiData(response, 'ไม่สามารถบันทึกข้อมูลได้');
 	}
 
 	/**
@@ -205,25 +156,16 @@ class AuthAPI {
 		currentPassword: string;
 		newPassword: string;
 	}): Promise<{ success: boolean; message: string }> {
-		const response = await fetch(`${BACKEND_URL}/api/auth/me/change-password`, {
-			method: 'POST',
-			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(data)
-		});
+		const response = await apiClient.post<Record<string, never>>(
+			'/api/auth/me/change-password',
+			data
+		);
+		if (!response.success) throw new Error(response.error || 'ไม่สามารถเปลี่ยนรหัสผ่านได้');
 
-		if (!response.ok) {
-			if (response.status === 401) {
-				const error = await response.json();
-				throw new Error(error.error || 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
-			}
-			const error = await response.json();
-			throw new Error(error.error || 'ไม่สามารถเปลี่ยนรหัสผ่านได้');
-		}
-
-		return await response.json();
+		return {
+			success: true,
+			message: response.message || 'เปลี่ยนรหัสผ่านสำเร็จ'
+		};
 	}
 }
 

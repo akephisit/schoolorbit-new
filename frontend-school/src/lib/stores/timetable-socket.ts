@@ -1,5 +1,5 @@
 import { writable, type Writable } from 'svelte/store';
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
+import { apiClient, BACKEND_WS_URL } from '$lib/api/client';
 import type { TimetableEntry } from '$lib/api/timetable';
 
 // Types matching backend
@@ -234,15 +234,17 @@ async function triggerReconcile(semesterId: string) {
 	if (reconcileInFlight) return;
 	reconcileInFlight = true;
 	try {
-		const baseUrl = PUBLIC_BACKEND_URL || 'http://localhost:8081';
-		const url = `${baseUrl}/api/academic/timetable/replay?semester_id=${semesterId}&after_seq=${lastSeq}`;
-		const res = await fetch(url, { credentials: 'include' }).catch(() => null);
-		if (!res || !res.ok) {
+		const response = await apiClient
+			.get<{ events?: SeqEvent[]; current_seq?: number; needs_refetch?: boolean }>(
+				`/api/academic/timetable/replay?semester_id=${semesterId}&after_seq=${lastSeq}`
+			)
+			.catch(() => null);
+		if (!response?.success || !response.data) {
 			// ล้มเหลว → fallback full-fetch ผ่าน refreshTrigger
 			refreshTrigger.update((n) => n + 1);
 			return;
 		}
-		const data = await res.json();
+		const data = response.data;
 		if (data.needs_refetch) {
 			// Buffer หมด → full-fetch
 			lastSeq = data.current_seq ?? 0;
@@ -507,9 +509,6 @@ export function connectTimetableSocket(params: {
 		}
 		currentUserId = params.user_id;
 
-		const baseUrl = PUBLIC_BACKEND_URL || 'http://localhost:8081';
-		const wsUrl = baseUrl.replace(/^http/, 'ws');
-
 		// Auto-detect school_key from hostname
 		let schoolKey = 'default';
 		if (typeof window !== 'undefined') {
@@ -528,7 +527,7 @@ export function connectTimetableSocket(params: {
 		};
 
 		const qs = new URLSearchParams(safeParams).toString();
-		const url = `${wsUrl}/ws/timetable?${qs}`;
+		const url = `${BACKEND_WS_URL}/ws/timetable?${qs}`;
 
 		console.log('Connecting to WS:', url);
 		socket = new WebSocket(url);

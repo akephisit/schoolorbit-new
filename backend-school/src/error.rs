@@ -3,7 +3,8 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde_json::json;
+
+use crate::api_response::ApiErrorResponse;
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppError {
@@ -12,7 +13,7 @@ pub enum AppError {
 
     #[error("Authentication error: {0}")]
     AuthError(String),
-    
+
     #[error("Authorization error: {0}")]
     Forbidden(String),
 
@@ -24,7 +25,7 @@ pub enum AppError {
 
     #[error("Internal server error: {0}")]
     InternalServerError(String),
-    
+
     #[error("Bad request: {0}")]
     BadRequest(String),
 
@@ -43,16 +44,28 @@ impl IntoResponse for AppError {
                     sqlx::Error::Database(db_err) => {
                         let code = db_err.code().unwrap_or_default();
                         if code == "23503" || code == "23001" {
-                            (StatusCode::BAD_REQUEST, format!("ไม่สามารถทำรายการได้ (ข้อมูลอ้างอิงไม่ถูกต้องหรือถูกใช้งานอยู่): {}", db_err.message()))
+                            (
+                                StatusCode::BAD_REQUEST,
+                                format!(
+                                    "ไม่สามารถทำรายการได้ (ข้อมูลอ้างอิงไม่ถูกต้องหรือถูกใช้งานอยู่): {}",
+                                    db_err.message()
+                                ),
+                            )
                         } else if code == "23505" {
                             (StatusCode::CONFLICT, "ข้อมูลซ้ำกับที่มีอยู่ในระบบแล้ว".to_string())
                         } else {
-                            (StatusCode::INTERNAL_SERVER_ERROR, "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string())
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string(),
+                            )
                         }
-                    },
-                    _ => (StatusCode::INTERNAL_SERVER_ERROR, "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string()),
+                    }
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string(),
+                    ),
                 }
-            },
+            }
             AppError::AuthError(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
@@ -60,18 +73,21 @@ impl IntoResponse for AppError {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::ConfigError(msg) => {
                 tracing::error!("Configuration error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "System configuration error".to_string())
-            },
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "System configuration error".to_string(),
+                )
+            }
             AppError::InternalServerError(msg) => {
                 tracing::error!("Internal server error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
-            },
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+            }
         };
 
-        let body = Json(json!({
-            "success": false,
-            "error": error_message,
-        }));
+        let body = Json(ApiErrorResponse::new(error_message));
 
         (status, body).into_response()
     }

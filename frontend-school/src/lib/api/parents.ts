@@ -1,6 +1,5 @@
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
-
-const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+import { apiClient } from '$lib/api/client';
+import type { TimetableEntry } from './timetable';
 
 export interface ChildDto {
 	id: string;
@@ -29,16 +28,11 @@ export interface ParentProfile {
  * Get own parent profile (Parent self-service)
  */
 export async function getOwnParentProfile(): Promise<{ success: boolean; data: ParentProfile }> {
-	const response = await fetch(`${BACKEND_URL}/api/parent/profile`, {
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to get parent profile');
+	const response = await apiClient.get<ParentProfile>('/api/parent/profile');
+	if (!response.success || !response.data) {
+		throw new Error(response.error || 'Failed to get parent profile');
 	}
-
-	return await response.json();
+	return response as { success: boolean; data: ParentProfile };
 }
 
 /**
@@ -47,20 +41,12 @@ export async function getOwnParentProfile(): Promise<{ success: boolean; data: P
 export async function getChildProfile(
 	studentId: string
 ): Promise<{ success: boolean; data: unknown }> {
-	// Using unknown for StudentProfile matching backend
-	const response = await fetch(`${BACKEND_URL}/api/parent/students/${studentId}`, {
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to get student profile');
+	const response = await apiClient.get<unknown>(`/api/parent/students/${studentId}`);
+	if (!response.success || response.data === undefined) {
+		throw new Error(response.error || 'Failed to get student profile');
 	}
-
-	return await response.json();
+	return response as { success: boolean; data: unknown };
 }
-
-import type { TimetableEntry } from './timetable';
 
 /**
  * Get child's timetable (parent self-service)
@@ -73,14 +59,11 @@ export async function getChildTimetable(
 	if (academicSemesterId) params.append('academic_semester_id', academicSemesterId);
 	const qs = params.toString() ? `?${params.toString()}` : '';
 
-	const response = await fetch(`${BACKEND_URL}/api/parent/students/${studentId}/timetable${qs}`, {
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		const error = await response.json().catch(() => ({ error: 'Failed to get timetable' }));
-		throw new Error(error.error || 'Failed to get child timetable');
+	const response = await apiClient.get<TimetableEntry[]>(
+		`/api/parent/students/${studentId}/timetable${qs}`
+	);
+	if (!response.success || !response.data) {
+		throw new Error(response.error || 'Failed to get child timetable');
 	}
-
-	return await response.json();
+	return response as { success: boolean; data: TimetableEntry[] };
 }

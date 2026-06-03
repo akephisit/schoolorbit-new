@@ -2,8 +2,7 @@ pub mod models;
 pub mod handlers;
 
 // Export routes
-use axum::{Router, middleware as axum_middleware};
-use crate::middleware;
+use axum::Router;
 use crate::AppState;
 
 pub fn facility_routes() -> Router<AppState> {

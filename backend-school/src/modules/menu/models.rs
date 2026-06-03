@@ -73,13 +73,6 @@ pub struct MenuGroupResponse {
     pub items: Vec<MenuItemResponse>,
 }
 
-/// User Menu API Response
-#[derive(Debug, Serialize)]
-pub struct UserMenuResponse {
-    pub success: bool,
-    pub groups: Vec<MenuGroupResponse>,
-}
-
 // ==================== Route Registration (Build-time) ====================
 
 /// Request payload for route registration from frontend build

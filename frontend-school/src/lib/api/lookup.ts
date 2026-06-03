@@ -2,9 +2,7 @@
 // API for fetching minimal data for dropdowns (only requires authentication)
 // These endpoints return id + name only, safe for any authenticated user
 
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
-
-const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+import { apiClient, requireApiData } from '$lib/api/client';
 
 // ===================================================================
 // Types
@@ -110,20 +108,8 @@ function buildQueryString(options?: LookupOptions): string {
 
 async function fetchLookup<T>(endpoint: string, options?: LookupOptions): Promise<T[]> {
 	const query = buildQueryString(options);
-	const response = await fetch(`${BACKEND_URL}/api/lookup/${endpoint}${query}`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		throw new Error(`Failed to fetch ${endpoint}: ${response.statusText}`);
-	}
-
-	const result: LookupResponse<T> = await response.json();
-	return result.data;
+	const response = await apiClient.get<T[]>(`/api/lookup/${endpoint}${query}`);
+	return requireApiData(response, `Failed to fetch ${endpoint}`);
 }
 
 // ===================================================================

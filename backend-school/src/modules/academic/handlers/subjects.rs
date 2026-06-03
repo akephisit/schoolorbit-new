@@ -188,7 +188,7 @@ pub async fn delete_subject(
     }
 
     subject_service::delete_subject(&pool, id).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 /// Permission check for default instructors: read.all OR manage.department OR specified manage code.
@@ -249,7 +249,7 @@ pub async fn list_subject_default_instructors(
         return Ok(resp);
     }
     let rows = subject_service::list_subject_default_instructors(&pool, subject_id).await?;
-    Ok(Json(json!({ "data": rows })).into_response())
+    Ok(Json(json!({ "success": true, "data": rows })).into_response())
 }
 
 pub async fn add_subject_default_instructor(
@@ -263,7 +263,7 @@ pub async fn add_subject_default_instructor(
         return Ok(resp);
     }
     subject_service::add_subject_default_instructor(&pool, subject_id, body).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn remove_subject_default_instructor(
@@ -276,7 +276,7 @@ pub async fn remove_subject_default_instructor(
         return Ok(resp);
     }
     subject_service::remove_subject_default_instructor(&pool, subject_id, instructor_id).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn update_subject_default_instructor_role(
@@ -290,7 +290,7 @@ pub async fn update_subject_default_instructor_role(
         return Ok(resp);
     }
     subject_service::update_subject_default_instructor_role(&pool, subject_id, instructor_id, &body.role).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -324,5 +324,5 @@ pub async fn batch_list_subject_default_instructors(
         .collect();
 
     let grouped = subject_service::batch_list_subject_default_instructors(&pool, ids).await?;
-    Ok(Json(json!({ "data": grouped })).into_response())
+    Ok(Json(json!({ "success": true, "data": grouped })).into_response())
 }

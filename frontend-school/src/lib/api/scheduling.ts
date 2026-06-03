@@ -377,20 +377,12 @@ export async function applyTimetableTemplate(id: UUID, req: { semester_id: UUID 
 }
 
 export async function clearTimetable(req: { semester_id: UUID; entry_types?: string[] }) {
-	// DELETE with body — use raw fetch since apiClient.delete doesn't support body
-	const { PUBLIC_BACKEND_URL } = await import('$env/static/public');
-	const baseURL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
-	const res = await fetch(`${baseURL}/api/academic/timetable/clear`, {
-		method: 'DELETE',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(req)
-	});
-	const json = await res.json();
-	if (!res.ok || !json.success) {
-		throw new Error(json.error || 'Clear timetable failed');
-	}
-	return json as { success: boolean; data: { deleted: number } };
+	const response = await apiClient.deleteWithBody<{ deleted: number }>(
+		'/api/academic/timetable/clear',
+		req
+	);
+	if (!response.success) throw new Error(response.error || 'Clear timetable failed');
+	return response as { success: boolean; data: { deleted: number } };
 }
 
 export async function listPeriods(academicYearId?: UUID) {

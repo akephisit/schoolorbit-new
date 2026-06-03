@@ -1,24 +1,25 @@
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
-
-const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
 
 // Helper for authenticated requests
 async function fetchApi<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
-	const response = await fetch(`${BACKEND_URL}${path}`, {
-		...options,
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json',
-			...options.headers
-		}
-	});
+	const method = (options.method || 'GET').toUpperCase();
+	const body = options.body ? JSON.parse(options.body.toString()) : undefined;
 
-	if (!response.ok) {
-		const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-		throw new Error(error.error || `Request failed with status ${response.status}`);
+	let response: ApiResponse<T>;
+	if (method === 'POST') {
+		response = await apiClient.post<T>(path, body);
+	} else if (method === 'PUT') {
+		response = await apiClient.put<T>(path, body);
+	} else if (method === 'DELETE' && body !== undefined) {
+		response = await apiClient.deleteWithBody<T>(path, body);
+	} else if (method === 'DELETE') {
+		response = await apiClient.delete<T>(path);
+	} else {
+		response = await apiClient.get<T>(path);
 	}
 
-	return (await response.json()) as T;
+	if (!response.success) throw new Error(response.error || 'Request failed');
+	return response as T;
 }
 
 // ============================================
@@ -134,6 +135,33 @@ export interface TimetableValidationResponse {
 	conflicts: ConflictInfo[];
 }
 
+interface TimetableListData {
+	items?: TimetableEntry[];
+	current_seq?: number;
+}
+
+function normalizeTimetableListResponse(
+	response: ApiResponse<TimetableEntry[] | TimetableListData>
+): { data: TimetableEntry[]; current_seq?: number } {
+	const payload = requireApiData(response, 'ไม่สามารถโหลดตารางสอนได้');
+	if (Array.isArray(payload)) {
+		return { data: payload };
+	}
+	return {
+		data: payload.items ?? [],
+		current_seq: payload.current_seq
+	};
+}
+
+function normalizeConflictResponse(response: ApiResponse<unknown>) {
+	return {
+		success: false,
+		conflicts:
+			(response.data as { conflicts?: ConflictInfo[] } | undefined)?.conflicts ?? [],
+		message: response.message || response.error || 'พบข้อขัดแย้งในตาราง'
+	};
+}
+
 // ============================================
 // Period API
 // ============================================
@@ -213,7 +241,10 @@ export const listTimetableEntries = async (
 	if (filters.include_team_ghosts) params.append('include_team_ghosts', 'true');
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(`/api/academic/timetable${queryString}`);
+	const response = await apiClient.get<TimetableEntry[] | TimetableListData>(
+		`/api/academic/timetable${queryString}`
+	);
+	return normalizeTimetableListResponse(response);
 };
 
 export const listTimetableEntriesWithSeq = listTimetableEntries;
@@ -238,7 +269,10 @@ export const getMyTimetable = async (
 	if (filters.include_team_ghosts) params.append('include_team_ghosts', 'true');
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi(`/api/me/timetable${queryString}`);
+	const response = await apiClient.get<TimetableEntry[] | TimetableListData>(
+		`/api/me/timetable${queryString}`
+	);
+	return normalizeTimetableListResponse(response);
 };
 
 export interface BatchSkippedCell {
@@ -294,20 +328,12 @@ export interface BatchSummary {
 export const createBatchTimetableEntries = async (
 	data: CreateBatchTimetableEntriesRequest
 ): Promise<{ success: boolean; summary?: BatchSummary; message?: string }> => {
-	const response = await fetch(`${BACKEND_URL}/api/academic/timetable/batch`, {
-		method: 'POST',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(data)
-	});
-
-	const result = await response.json();
-
-	if (!response.ok) {
-		throw new Error(result.error || result.message || `Request failed with status ${response.status}`);
-	}
-
-	return result;
+	const response = await apiClient.post<{ summary: BatchSummary }>(
+		'/api/academic/timetable/batch',
+		data
+	);
+	const payload = requireApiData(response, 'Request failed');
+	return { success: true, summary: payload.summary, message: response.message };
 };
 
 export interface UpdateTimetableEntryRequest {
@@ -368,59 +394,15 @@ export const getTimetableOccupancy = async (
 };
 
 export const createTimetableEntry = async (data: CreateTimetableEntryRequest) => {
-	const response = await fetch(`${BACKEND_URL}/api/academic/timetable`, {
-		method: 'POST',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	const result = await response.json();
-
-	// Handle 409 Conflict specially
-	if (response.status === 409) {
-		return {
-			success: false,
-			conflicts: result.conflicts || [],
-			message: result.message || 'พบข้อขัดแย้งในตาราง'
-		};
-	}
-
-	if (!response.ok) {
-		throw new Error(result.error || `Request failed with status ${response.status}`);
-	}
-
-	return result;
+	const response = await apiClient.post<TimetableEntry>('/api/academic/timetable', data);
+	if (!response.success) return normalizeConflictResponse(response);
+	return response;
 };
 
 export const updateTimetableEntry = async (id: string, data: UpdateTimetableEntryRequest) => {
-	const response = await fetch(`${BACKEND_URL}/api/academic/timetable/${id}`, {
-		method: 'PUT',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	const result = await response.json();
-
-	// Handle 409 Conflict specially
-	if (response.status === 409) {
-		return {
-			success: false,
-			conflicts: result.conflicts || [],
-			message: result.message || 'พบข้อขัดแย้งในตาราง'
-		};
-	}
-
-	if (!response.ok) {
-		throw new Error(result.error || `Request failed with status ${response.status}`);
-	}
-
-	return result;
+	const response = await apiClient.put<TimetableEntry>(`/api/academic/timetable/${id}`, data);
+	if (!response.success) return normalizeConflictResponse(response);
+	return response;
 };
 
 export const deleteTimetableEntry = async (id: string) => {
@@ -430,7 +412,11 @@ export const deleteTimetableEntry = async (id: string) => {
 export const deleteBatchGroup = async (
 	batchId: string
 ): Promise<{ success: boolean; deleted_count: number }> => {
-	return await fetchApi(`/api/academic/timetable/batch-group/${batchId}`, { method: 'DELETE' });
+	const response = await apiClient.delete<{ deleted_count: number }>(
+		`/api/academic/timetable/batch-group/${batchId}`
+	);
+	const data = requireApiData(response, 'Request failed');
+	return { success: true, deleted_count: data.deleted_count };
 };
 
 export const deleteBatchTimetableEntries = async (data: {
@@ -438,10 +424,11 @@ export const deleteBatchTimetableEntries = async (data: {
 	day_of_week: string;
 	academic_semester_id: string;
 }): Promise<{ deleted_count: number }> => {
-	return await fetchApi('/api/academic/timetable/batch', {
-		method: 'DELETE',
-		body: JSON.stringify(data)
-	});
+	const response = await apiClient.deleteWithBody<{ deleted_count: number }>(
+		'/api/academic/timetable/batch',
+		data
+	);
+	return requireApiData(response, 'Request failed');
 };
 
 export interface MyActivityForEntry {

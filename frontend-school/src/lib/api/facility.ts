@@ -1,24 +1,23 @@
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
-
-const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+import { apiClient, type ApiResponse } from '$lib/api/client';
 
 // Helper for authenticated requests
 async function fetchApi<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
-	const response = await fetch(`${BACKEND_URL}${path}`, {
-		...options,
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json',
-			...options.headers
-		}
-	});
+	const method = (options.method || 'GET').toUpperCase();
+	const body = options.body ? JSON.parse(options.body.toString()) : undefined;
 
-	if (!response.ok) {
-		const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-		throw new Error(error.error || `Request failed with status ${response.status}`);
+	let response: ApiResponse<T>;
+	if (method === 'POST') {
+		response = await apiClient.post<T>(path, body);
+	} else if (method === 'PUT') {
+		response = await apiClient.put<T>(path, body);
+	} else if (method === 'DELETE') {
+		response = await apiClient.delete<T>(path);
+	} else {
+		response = await apiClient.get<T>(path);
 	}
 
-	return await response.json();
+	if (!response.success) throw new Error(response.error || 'Request failed');
+	return response as T;
 }
 
 // Types

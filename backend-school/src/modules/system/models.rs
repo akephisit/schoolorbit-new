@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,11 +12,4 @@ pub struct ProvisionRequest {
     pub admin_title: String,
     pub admin_first_name: String,
     pub admin_last_name: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ProvisionResponse {
-    pub success: bool,
-    pub message: String,
-    pub school_id: String,
 }

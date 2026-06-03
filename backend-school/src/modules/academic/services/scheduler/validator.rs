@@ -1,5 +1,5 @@
 use super::types::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 pub struct ConstraintValidator {

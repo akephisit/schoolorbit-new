@@ -38,14 +38,10 @@ pub async fn submit_application(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let (application_number, application) = application_service::submit_application(&pool, round_id, payload).await?;
-    Ok((StatusCode::CREATED, Json(json!({
-        "success": true,
-        "message": "ยื่นใบสมัครสำเร็จ",
-        "data": {
+    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": {
             "application_number": application_number,
             "application": application,
-        }
-    }))).into_response())
+        }, "message": "ยื่นใบสมัครสำเร็จ" }))).into_response())
 }
 
 // ==========================================
@@ -76,7 +72,7 @@ pub async fn get_application(
         return Ok(r);
     }
     let (application, documents) = application_service::get_application_with_documents(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": application, "documents": documents })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "items": application, "documents": documents } })).into_response())
 }
 
 // ==========================================
@@ -94,7 +90,7 @@ pub async fn verify_application(
         Err(r) => return Ok(r),
     };
     application_service::verify_application(&pool, id, verifier_id).await?;
-    Ok(Json(json!({ "success": true, "message": "ยืนยันใบสมัครแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ยืนยันใบสมัครแล้ว" })).into_response())
 }
 
 pub async fn reject_application(
@@ -108,7 +104,7 @@ pub async fn reject_application(
         return Ok(r);
     }
     application_service::reject_application(&pool, id, &payload.rejection_reason).await?;
-    Ok(Json(json!({ "success": true, "message": "ปฏิเสธใบสมัครแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ปฏิเสธใบสมัครแล้ว" })).into_response())
 }
 
 pub async fn mark_absent(
@@ -123,7 +119,7 @@ pub async fn mark_absent(
     }
     application_service::mark_absent(&pool, id, payload.absent).await?;
     let msg = if payload.absent { "ทำเครื่องหมายขาดสอบแล้ว" } else { "ยกเลิกขาดสอบแล้ว" };
-    Ok(Json(json!({ "success": true, "message": msg })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": msg })).into_response())
 }
 
 pub async fn update_application(
@@ -137,7 +133,7 @@ pub async fn update_application(
         return Ok(r);
     }
     application_service::update_application(&pool, id, payload).await?;
-    Ok(Json(json!({ "success": true, "message": "แก้ไขใบสมัครแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "แก้ไขใบสมัครแล้ว" })).into_response())
 }
 
 pub async fn unverify_application(
@@ -150,7 +146,7 @@ pub async fn unverify_application(
         return Ok(r);
     }
     application_service::unverify_application(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "message": "ยกเลิกการอนุมัติแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ยกเลิกการอนุมัติแล้ว" })).into_response())
 }
 
 pub async fn delete_application(
@@ -174,7 +170,7 @@ pub async fn delete_application(
         }
     }
 
-    Ok(Json(json!({ "success": true, "message": "ลบใบสมัครแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบใบสมัครแล้ว" })).into_response())
 }
 
 // ==========================================
@@ -207,15 +203,11 @@ pub async fn complete_enrollment(
     };
 
     let result = application_service::complete_enrollment(&pool, id, payload, enroller_id).await?;
-    Ok(Json(json!({
-        "success": true,
-        "message": "มอบตัวสำเร็จ สร้าง account แล้ว",
-        "data": {
+    Ok(Json(json!({ "success": true, "data": {
             "user_id": result.user_id,
             "username": result.username,
             "student_code": result.student_code,
-        }
-    })).into_response())
+        }, "message": "มอบตัวสำเร็จ สร้าง account แล้ว" })).into_response())
 }
 
 pub async fn change_application_track(
@@ -229,7 +221,7 @@ pub async fn change_application_track(
         return Ok(r);
     }
     application_service::change_application_track(&pool, application_id, payload.track_id).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn update_admission_track(
@@ -243,7 +235,7 @@ pub async fn update_admission_track(
         return Ok(r);
     }
     application_service::update_admission_track(&pool, application_id, payload.track_id).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 // ==========================================
@@ -364,7 +356,7 @@ pub async fn staff_delete_document(
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
     r2_client.delete_file(&storage_path).await.ok();
 
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 // ==========================================
@@ -381,7 +373,7 @@ pub async fn sort_room_students(
         return Ok(r);
     }
     let updated = application_service::sort_room_students(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "updated": updated })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "updated": updated } })).into_response())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -401,7 +393,7 @@ pub async fn auto_assign_student_ids(
         return Ok(r);
     }
     let assigned = application_service::auto_assign_student_ids(&pool, round_id, payload.start_number).await?;
-    Ok(Json(json!({ "success": true, "assigned": assigned })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "assigned": assigned } })).into_response())
 }
 
 pub async fn list_student_ids(
@@ -428,7 +420,7 @@ pub async fn move_application_room(
         return Ok(r);
     }
     application_service::move_application_room(&pool, id, payload.room_id).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn batch_update_student_ids(
@@ -442,5 +434,5 @@ pub async fn batch_update_student_ids(
         return Ok(r);
     }
     let updated = application_service::batch_update_student_ids(&pool, round_id, payload).await?;
-    Ok(Json(json!({ "success": true, "updated": updated })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "updated": updated } })).into_response())
 }

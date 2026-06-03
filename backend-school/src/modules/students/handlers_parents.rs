@@ -11,7 +11,7 @@ use crate::error::AppError;
 use crate::middleware::permission::check_permission;
 use crate::db::school_mapping::get_school_database_url;
 use crate::utils::{
-    encryption as bcrypt, field_encryption,
+    field_encryption,
     subdomain::extract_subdomain_from_request,
 };
 use ::bcrypt::hash;
@@ -181,10 +181,7 @@ pub async fn add_parent_to_student(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "message": "เพิ่มผู้ปกครองสำเร็จ"
-        })),
+        Json(json!({ "success": true, "data": {}, "message": "เพิ่มผู้ปกครองสำเร็จ" })),
     ).into_response())
 }
 
@@ -237,9 +234,6 @@ pub async fn remove_parent_from_student(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "message": "ลบผู้ปกครองสำเร็จ"
-        })),
+        Json(json!({ "success": true, "data": {}, "message": "ลบผู้ปกครองสำเร็จ" })),
     ).into_response())
 }

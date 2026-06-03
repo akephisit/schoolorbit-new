@@ -60,6 +60,7 @@ If adding "User Profile Edit" feature:
   * **State:** Use `AppState` wrapped in `Arc` for sharing DB pools and config.
   * **Handlers:** Keep handlers thin. Move business logic to `services/` or `logic/` modules.
   * **DTOs:** Use `serde` structs for Request/Response bodies. Use `#[serde(rename_all = "camelCase")]` for JSON response compatibility with frontend.
+  * **API Response Contract:** JSON API endpoints must return a single envelope shape. Success responses use `{ success: true, data: T, message?: string }`. Error responses use `{ success: false, error: string, message?: string, data?: T }` when structured error details are needed. Do not return raw objects such as `User`, feature DTOs, or ad-hoc top-level fields directly from API routes. Exceptions are only for non-JSON responses such as file downloads, binary/image responses, WebSocket upgrades, and low-level health probes.
   * **Database:** Use `sqlx` for PostgreSQL interactions. Prefer compile-time checked queries (`sqlx::query_as!`) where possible.
 
 * **Project Structure (Rust):**
@@ -83,6 +84,7 @@ If adding "User Profile Edit" feature:
   * Use **TailwindCSS** for styling. Utility classes first, extracted components second.
 * **API Integration:**
   * Use the custom API client wrapper (e.g., `api.ts`) that handles `credentials: 'include'` for CORS/Cookies.
+  * API client code should consume the standard backend envelope `{ success, data, error?, message? }`. Avoid adding raw-response variants just to support inconsistent backend responses; fix the backend contract instead.
   * Do not `fetch` directly in components if possible; use Loaders.
 
 ## 4. Realtime & WebSocket (Project Specific)

@@ -76,7 +76,7 @@ pub async fn update_settings(
         AppError::InternalServerError("Database error".to_string())
     })?;
 
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 /// GET /api/school/public — no auth required
@@ -105,13 +105,10 @@ pub async fn get_public_info(
     let logo_url = get_file_url_from_string(&row.logo_path);
     let school_name = state.admin_client.get_school_name(&subdomain).await.ok();
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {
+    Ok(Json(json!({ "success": true, "data": {
             "logoUrl": logo_url,
             "schoolName": school_name,
-        }
-    })).into_response())
+        } })).into_response())
 }
 
 /// DELETE /api/school/settings/logo — staff only (SETTINGS_UPDATE)
@@ -165,5 +162,5 @@ pub async fn delete_logo(
             AppError::InternalServerError("Database error".to_string())
         })?;
 
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }

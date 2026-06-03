@@ -6,7 +6,7 @@ use crate::error::AppError;
 
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::{IntoResponse, Json},
 };
 use serde_json::json;
@@ -51,7 +51,7 @@ pub async fn get_department_permissions(
         .map(|row| row.get("permission_id"))
         .collect();
 
-    Ok(Json(permission_ids))
+    Ok(Json(json!({ "success": true, "data": permission_ids })))
 }
 
 // PUT /api/departments/{id}/permissions
@@ -66,11 +66,11 @@ pub async fn update_department_permissions(
 
     let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
-        .map_err(|e| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
+        .map_err(|_e| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
-        .map_err(|e| AppError::InternalServerError("Database connection error".to_string()))?;
+        .map_err(|_e| AppError::InternalServerError("Database connection error".to_string()))?;
 
     // Transaction
     let mut tx = pool.begin().await?;
@@ -97,8 +97,5 @@ pub async fn update_department_permissions(
     // Department permissions changed — all members of this department have stale cache
     state.permission_cache.clear_all();
 
-    Ok(Json(json!({
-        "success": true,
-        "message": "Update department permissions successfully"
-    })))
+    Ok(Json(json!({ "success": true, "data": {}, "message": "Update department permissions successfully" })))
 }

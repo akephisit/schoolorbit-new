@@ -74,14 +74,11 @@ pub async fn list_academic_structure(
     // Convert to response format with computed fields
     let levels: Vec<GradeLevelResponse> = levels_raw.into_iter().map(|l| l.into()).collect();
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {
+    Ok(Json(json!({ "success": true, "data": {
             "years": years,
             "semesters": semesters,
             "levels": levels
-        }
-    })))
+        } })))
 }
 
 pub async fn create_academic_year(
@@ -118,7 +115,7 @@ pub async fn create_academic_year(
     .await;
 
     match result {
-        Ok(year) => Ok((StatusCode::CREATED, Json(json!({"success": true, "data": year})))),
+        Ok(year) => Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": year })))),
         Err(e) => {
             eprintln!("Failed to create year: {}", e);
             Err(AppError::InternalServerError("Failed to create academic year".to_string()))
@@ -160,7 +157,7 @@ pub async fn update_academic_year(
     .await;
 
     match result {
-        Ok(year) => Ok(Json(json!({"success": true, "data": year})).into_response()),
+        Ok(year) => Ok(Json(json!({ "success": true, "data": year })).into_response()),
         Err(e) => {
             eprintln!("Failed to update year: {}", e);
             Err(AppError::NotFound("Academic year not found".to_string()))
@@ -197,7 +194,7 @@ pub async fn toggle_active_year(
 
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    Ok(Json(json!({"success": true, "message": "Updated active year"})))
+    Ok(Json(json!({ "success": true, "data": {}, "message": "Updated active year" })))
 }
 
 // ==========================================
@@ -239,7 +236,7 @@ pub async fn create_semester(
     .await;
 
     match result {
-        Ok(semester) => Ok((StatusCode::CREATED, Json(json!({"success": true, "data": semester})))),
+        Ok(semester) => Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": semester })))),
         Err(e) => {
             eprintln!("Failed to create semester: {}", e);
             Err(AppError::InternalServerError("Failed to create semester".to_string()))
@@ -289,7 +286,7 @@ pub async fn update_semester(
     .await;
 
     match result {
-        Ok(semester) => Ok(Json(json!({"success": true, "data": semester}))),
+        Ok(semester) => Ok(Json(json!({ "success": true, "data": semester }))),
         Err(e) => {
              eprintln!("Failed to update semester: {}", e);
              Err(AppError::InternalServerError("Failed to update semester".to_string()))
@@ -315,7 +312,7 @@ pub async fn delete_semester(
         .await;
 
     match result {
-        Ok(_) => Ok(Json(json!({"success": true, "message": "Semester deleted"}))),
+        Ok(_) => Ok(Json(json!({ "success": true, "data": {}, "message": "Semester deleted" }))),
         Err(e) => {
             eprintln!("Failed to delete semester: {}", e);
              if e.to_string().contains("foreign key constraint") {
@@ -398,10 +395,7 @@ pub async fn list_classrooms(
         .await
         .unwrap_or_default();
 
-    Ok(Json(json!({
-        "success": true,
-        "data": classrooms
-    })))
+    Ok(Json(json!({ "success": true, "data": classrooms })))
 }
 
 pub async fn create_classroom(
@@ -482,7 +476,7 @@ pub async fn create_classroom(
     // Re-fetch with joined fields
     let classroom = fetch_classroom_full(&pool, classroom_id).await?;
 
-    Ok((StatusCode::CREATED, Json(json!({"success": true, "data": classroom}))))
+    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": classroom }))))
 }
 
 /// Validate advisor list: valid roles, max 1 primary, all are staff users.
@@ -688,7 +682,7 @@ pub async fn update_classroom(
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     let result = fetch_classroom_full(&pool, id).await?;
-    Ok(Json(json!({"success": true, "data": result})))
+    Ok(Json(json!({ "success": true, "data": result })))
 }
 
 // ==========================================
@@ -727,7 +721,7 @@ pub async fn create_grade_level(
     match result {
         Ok(level) => {
             let response: GradeLevelResponse = level.into();
-            Ok((StatusCode::CREATED, Json(json!({"success": true, "data": response}))))
+            Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": response }))))
         },
         Err(e) => {
             eprintln!("Failed to create grade level: {}", e);
@@ -771,7 +765,7 @@ pub async fn delete_grade_level(
         .await;
 
     match result {
-        Ok(_) => Ok(Json(json!({"success": true, "message": "Grade level deleted"}))),
+        Ok(_) => Ok(Json(json!({ "success": true, "data": {}, "message": "Grade level deleted" }))),
         Err(e) => {
             eprintln!("Failed to delete grade level: {}", e);
             Err(AppError::InternalServerError("Failed to delete grade level".to_string()))
@@ -796,7 +790,7 @@ pub async fn enroll_students(
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Validate Classroom
-    let classroom = sqlx::query_as::<_, Classroom>(
+    sqlx::query_as::<_, Classroom>(
         "SELECT c.*, 
                 CASE gl.level_type 
                     WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
@@ -980,10 +974,7 @@ pub async fn enroll_students(
         }
     }
 
-    Ok(Json(json!({
-        "success": true,
-        "message": format!("Enrolled {} students successfully", enrolled_count)
-    })))
+    Ok(Json(json!({ "success": true, "data": {}, "message": format!("Enrolled {} students successfully", enrolled_count) })))
 }
 
 pub async fn get_class_enrollments(
@@ -1015,10 +1006,7 @@ pub async fn get_class_enrollments(
     .await
     .unwrap_or_default();
 
-    Ok(Json(json!({
-        "success": true,
-        "data": enrollments
-    })))
+    Ok(Json(json!({ "success": true, "data": enrollments })))
 }
 
 pub async fn remove_enrollment(
@@ -1035,22 +1023,15 @@ pub async fn remove_enrollment(
 
     let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    // Define temporary struct for fetching student_id
-    #[derive(sqlx::FromRow)]
-    struct EnrollmentRecord {
-        student_id: Uuid,
-    }
-
-    // Get student ID before deleting to update denormalized data
-    let enrollment = sqlx::query_as::<_, EnrollmentRecord>(
-        "SELECT student_id FROM student_class_enrollments WHERE id = $1"
+    let enrollment_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM student_class_enrollments WHERE id = $1)"
     )
     .bind(id)
-    .fetch_optional(&mut *tx)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
-    if let Some(record) = enrollment {
+    if enrollment_exists {
         // Soft delete (set status to removed or just delete?) -> Let's hard delete for mistaken enrollment, 
         // OR better: set status to 'cancelled' so we keep history?
         // Let's hard delete for now if it's "removing from class" without moving to another
@@ -1065,7 +1046,7 @@ pub async fn remove_enrollment(
 
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    Ok(Json(json!({"success": true, "message": "Enrollment removed"})))
+    Ok(Json(json!({ "success": true, "data": {}, "message": "Enrollment removed" })))
 }
 
 #[derive(serde::Deserialize)]
@@ -1098,7 +1079,7 @@ pub async fn update_enrollment_number(
     .await;
 
     match result {
-        Ok(_) => Ok(Json(json!({"success": true, "message": "Class number updated"}))),
+        Ok(_) => Ok(Json(json!({ "success": true, "data": {}, "message": "Class number updated" }))),
         Err(e) => {
             eprintln!("Failed to update class number: {}", e);
             Err(AppError::InternalServerError("Failed to update class number".to_string()))
@@ -1207,10 +1188,7 @@ pub async fn auto_assign_class_numbers(
     tx.commit().await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    Ok(Json(json!({
-        "success": true,
-        "message": format!("เรียงเลขที่สำหรับ {} คนเรียบร้อยแล้ว", students.len())
-    })))
+    Ok(Json(json!({ "success": true, "data": {}, "message": format!("เรียงเลขที่สำหรับ {} คนเรียบร้อยแล้ว", students.len()) })))
 }
 
 
@@ -1240,10 +1218,7 @@ pub async fn get_year_levels(
     .await
     .unwrap_or_default();
 
-    Ok(Json(json!({
-        "success": true,
-        "data": level_ids
-    })))
+    Ok(Json(json!({ "success": true, "data": level_ids })))
 }
 
 pub async fn update_year_levels(
@@ -1280,5 +1255,5 @@ pub async fn update_year_levels(
 
     tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    Ok(Json(json!({"success": true, "message": "Year levels updated"})))
+    Ok(Json(json!({ "success": true, "data": {}, "message": "Year levels updated" })))
 }

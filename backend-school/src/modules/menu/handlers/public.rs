@@ -49,7 +49,13 @@ pub async fn get_user_menu(
     let rows = public_menu_service::fetch_menu_items(&pool, &user.user_type).await?;
     let groups = group_and_filter_menu(rows, &user_permissions);
 
-    Ok((StatusCode::OK, Json(UserMenuResponse { success: true, groups })))
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "data": { "groups": groups }
+        })),
+    ))
 }
 
 fn user_has_module_permission(user_permissions: &[String], module: &str) -> bool {

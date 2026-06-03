@@ -3,13 +3,22 @@ import { browser } from '$app/environment';
 import { resolve } from '$app/paths';
 import { PUBLIC_BACKEND_URL } from '$env/static/public';
 
-const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+export const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+export const BACKEND_WS_URL = BACKEND_URL.replace(/^http/, 'ws');
 
 export interface ApiResponse<T> {
 	success: boolean;
 	data?: T;
 	error?: string;
 	message?: string;
+}
+
+export function requireApiData<T>(response: ApiResponse<T>, fallbackError: string): T {
+	if (!response.success || response.data === undefined) {
+		throw new Error(response.error || fallbackError);
+	}
+
+	return response.data;
 }
 
 class APIClient {
@@ -117,6 +126,13 @@ class APIClient {
 
 	async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
 		return this.request<T>(endpoint, { method: 'DELETE' });
+	}
+
+	async deleteWithBody<T>(endpoint: string, body: unknown): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, {
+			method: 'DELETE',
+			body: JSON.stringify(body)
+		});
 	}
 
 	async postMultipart<T>(endpoint: string, body: FormData): Promise<ApiResponse<T>> {

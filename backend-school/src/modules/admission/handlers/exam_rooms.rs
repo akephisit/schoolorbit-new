@@ -69,14 +69,11 @@ pub async fn list_exam_rooms(
         return Ok(r);
     }
     let result = exam_room_service::list_exam_rooms(&pool, round_id).await?;
-    Ok(Json(json!({
-        "success": true,
-        "data": {
+    Ok(Json(json!({ "success": true, "data": {
             "rooms": result.rooms,
             "totalCapacity": result.total_capacity,
             "totalAssigned": result.total_assigned,
-        }
-    })).into_response())
+        } })).into_response())
 }
 
 pub async fn add_exam_room(
@@ -90,7 +87,7 @@ pub async fn add_exam_room(
         return Ok(r);
     }
     exam_room_service::add_exam_room(&pool, round_id, payload.room_id, payload.custom_name, payload.capacity_override, payload.display_order).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn update_exam_room(
@@ -104,7 +101,7 @@ pub async fn update_exam_room(
         return Ok(r);
     }
     exam_room_service::update_exam_room(&pool, round_id, room_id, payload.capacity_override, payload.display_order, payload.custom_name).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn remove_exam_room(
@@ -117,7 +114,7 @@ pub async fn remove_exam_room(
         return Ok(r);
     }
     exam_room_service::remove_exam_room(&pool, round_id, room_id).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn copy_exam_rooms_from_round(
@@ -130,7 +127,7 @@ pub async fn copy_exam_rooms_from_round(
         return Ok(r);
     }
     let n = exam_room_service::copy_exam_rooms_from_round(&pool, round_id, from_round_id).await?;
-    Ok(Json(json!({ "success": true, "message": format!("copy ห้องสอบ {} ห้องเรียบร้อย", n) })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": format!("copy ห้องสอบ {} ห้องเรียบร้อย", n) })).into_response())
 }
 
 pub async fn update_exam_config(
@@ -144,7 +141,7 @@ pub async fn update_exam_config(
         return Ok(r);
     }
     exam_room_service::update_exam_config(&pool, round_id, payload.exam_id_type, payload.exam_id_prefix, payload.sort_order).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn get_exam_config(
@@ -175,11 +172,7 @@ pub async fn assign_exam_seats(
         &pool, round_id, user_id,
         payload.exam_id_type, payload.exam_id_prefix, payload.sort_order, payload.mode,
     ).await?;
-    Ok(Json(json!({
-        "success": true,
-        "message": result.message,
-        "data": { "assignedCount": result.assigned_count, "rooms": result.rooms }
-    })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "assignedCount": result.assigned_count, "rooms": result.rooms }, "message": result.message })).into_response())
 }
 
 pub async fn get_exam_seats(

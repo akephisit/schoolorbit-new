@@ -32,10 +32,7 @@ pub async fn list_permissions(
             eprintln!("❌ Failed to get school database: {}", e);
             return (
                 StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียน"
-                })),
+                Json(json!({ "success": false, "error": "ไม่พบโรงเรียน" })),
             )
                 .into_response();
         }
@@ -47,10 +44,7 @@ pub async fn list_permissions(
             eprintln!("❌ Failed to get database pool: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
+                Json(json!({ "success": false, "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้" })),
             )
                 .into_response();
         }
@@ -73,10 +67,7 @@ pub async fn list_permissions(
             eprintln!("❌ Database error: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการดึงข้อมูล"
-                })), 
+                Json(json!({ "success": false, "error": "เกิดข้อผิดพลาดในการดึงข้อมูล" })),
             )
                 .into_response();
         }
@@ -84,10 +75,7 @@ pub async fn list_permissions(
 
     (
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "data": permissions
-        })),
+        Json(json!({ "success": true, "data": permissions })),
     )
         .into_response()
 }
@@ -111,10 +99,7 @@ pub async fn list_permissions_by_module(
             eprintln!("❌ Failed to get school database: {}", e);
             return (
                 StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่พบโรงเรียน"
-                })),
+                Json(json!({ "success": false, "error": "ไม่พบโรงเรียน" })),
             )
                 .into_response();
         }
@@ -126,10 +111,7 @@ pub async fn list_permissions_by_module(
             eprintln!("❌ Failed to get database pool: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้"
-                })),
+                Json(json!({ "success": false, "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้" })),
             )
                 .into_response();
         }
@@ -152,10 +134,7 @@ pub async fn list_permissions_by_module(
             eprintln!("❌ Database error: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "error": "เกิดข้อผิดพลาดในการดึงข้อมูล"
-                })),
+                Json(json!({ "success": false, "error": "เกิดข้อผิดพลาดในการดึงข้อมูล" })),
             )
                 .into_response();
         }
@@ -172,10 +151,7 @@ pub async fn list_permissions_by_module(
 
     (
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "data": grouped
-        })),
+        Json(json!({ "success": true, "data": grouped })),
     )
         .into_response()
 }

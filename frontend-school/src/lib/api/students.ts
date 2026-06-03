@@ -3,9 +3,7 @@
  * Handles all student-related API calls (both admin and self-service)
  */
 
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
-
-const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
+import { apiClient, requireApiData } from '$lib/api/client';
 
 export interface StudentParent {
 	id: string;
@@ -125,32 +123,31 @@ export async function listStudents(params?: ListStudentsParams): Promise<ListStu
 	if (params?.search) queryParams.append('search', params.search);
 	if (params?.status) queryParams.append('status', params.status);
 
-	const response = await fetch(`${BACKEND_URL}/api/students?${queryParams.toString()}`, {
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to list students');
-	}
-
-	return await response.json();
+	const response = await apiClient.get<{
+		items: StudentListItem[];
+		page: number;
+		page_size: number;
+		total?: number;
+		total_pages?: number;
+	}>(`/api/students?${queryParams.toString()}`);
+	const data = requireApiData(response, 'Failed to list students');
+	return {
+		success: true,
+		data: data.items,
+		page: data.page,
+		page_size: data.page_size,
+		total: data.total,
+		total_pages: data.total_pages
+	};
 }
 
 /**
  * Get student by ID (Admin)
  */
 export async function getStudent(id: string): Promise<{ success: boolean; data: Student }> {
-	const response = await fetch(`${BACKEND_URL}/api/students/${id}`, {
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to get student');
-	}
-
-	return await response.json();
+	const response = await apiClient.get<Student>(`/api/students/${id}`);
+	const data = requireApiData(response, 'Failed to get student');
+	return { success: true, data };
 }
 
 /**
@@ -159,29 +156,9 @@ export async function getStudent(id: string): Promise<{ success: boolean; data: 
 export async function createStudent(
 	data: CreateStudentRequest
 ): Promise<{ success: boolean; id: string }> {
-	const response = await fetch(`${BACKEND_URL}/api/students`, {
-		method: 'POST',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	if (!response.ok) {
-		// Try to parse as JSON first
-		const contentType = response.headers.get('content-type');
-		if (contentType && contentType.includes('application/json')) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to create student');
-		} else {
-			// If not JSON, use the text response
-			const errorText = await response.text();
-			throw new Error(errorText || `Failed to create student (${response.status})`);
-		}
-	}
-
-	return await response.json();
+	const response = await apiClient.post<{ id: string; username?: string }>('/api/students', data);
+	const result = requireApiData(response, 'Failed to create student');
+	return { success: true, id: result.id };
 }
 
 /**
@@ -191,54 +168,27 @@ export async function updateStudent(
 	id: string,
 	data: UpdateStudentRequest
 ): Promise<{ success: boolean }> {
-	const response = await fetch(`${BACKEND_URL}/api/students/${id}`, {
-		method: 'PUT',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to update student');
-	}
-
-	return await response.json();
+	const response = await apiClient.put<Record<string, never>>(`/api/students/${id}`, data);
+	if (!response.success) throw new Error(response.error || 'Failed to update student');
+	return { success: true };
 }
 
 /**
  * Delete student (Admin)
  */
 export async function deleteStudent(id: string): Promise<{ success: boolean }> {
-	const response = await fetch(`${BACKEND_URL}/api/students/${id}`, {
-		method: 'DELETE',
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to delete student');
-	}
-
-	return await response.json();
+	const response = await apiClient.delete<Record<string, never>>(`/api/students/${id}`);
+	if (!response.success) throw new Error(response.error || 'Failed to delete student');
+	return { success: true };
 }
 
 /**
  * Get own profile (Student self-service)
  */
 export async function getOwnProfile(): Promise<{ success: boolean; data: Student }> {
-	const response = await fetch(`${BACKEND_URL}/api/student/profile`, {
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to get profile');
-	}
-
-	return await response.json();
+	const response = await apiClient.get<Student>('/api/student/profile');
+	const data = requireApiData(response, 'Failed to get profile');
+	return { success: true, data };
 }
 
 /**
@@ -247,21 +197,9 @@ export async function getOwnProfile(): Promise<{ success: boolean; data: Student
 export async function updateOwnProfile(
 	data: UpdateOwnProfileRequest
 ): Promise<{ success: boolean }> {
-	const response = await fetch(`${BACKEND_URL}/api/student/profile`, {
-		method: 'PUT',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to update profile');
-	}
-
-	return await response.json();
+	const response = await apiClient.put<Record<string, never>>('/api/student/profile', data);
+	if (!response.success) throw new Error(response.error || 'Failed to update profile');
+	return { success: true };
 }
 
 /**
@@ -271,21 +209,12 @@ export async function addParentToStudent(
 	studentId: string,
 	data: CreateParentRequest
 ): Promise<{ success: boolean; message: string }> {
-	const response = await fetch(`${BACKEND_URL}/api/students/${studentId}/parents`, {
-		method: 'POST',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to add parent');
-	}
-
-	return await response.json();
+	const response = await apiClient.post<Record<string, never>>(
+		`/api/students/${studentId}/parents`,
+		data
+	);
+	if (!response.success) throw new Error(response.error || 'Failed to add parent');
+	return { success: true, message: response.message || 'เพิ่มผู้ปกครองสำเร็จ' };
 }
 
 /**
@@ -295,15 +224,9 @@ export async function removeParentFromStudent(
 	studentId: string,
 	parentId: string
 ): Promise<{ success: boolean; message: string }> {
-	const response = await fetch(`${BACKEND_URL}/api/students/${studentId}/parents/${parentId}`, {
-		method: 'DELETE',
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to remove parent');
-	}
-
-	return await response.json();
+	const response = await apiClient.delete<Record<string, never>>(
+		`/api/students/${studentId}/parents/${parentId}`
+	);
+	if (!response.success) throw new Error(response.error || 'Failed to remove parent');
+	return { success: true, message: response.message || 'ลบผู้ปกครองสำเร็จ' };
 }

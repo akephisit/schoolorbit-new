@@ -111,7 +111,7 @@ pub async fn update_round_status(
         return Ok(r);
     }
     round_service::update_round_status(&pool, id, &payload.status).await?;
-    Ok(Json(json!({ "success": true, "message": format!("อัปเดตสถานะเป็น '{}'", payload.status) })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": format!("อัปเดตสถานะเป็น '{}'", payload.status) })).into_response())
 }
 
 pub async fn delete_round(
@@ -124,7 +124,7 @@ pub async fn delete_round(
         return Ok(r);
     }
     round_service::delete_round(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "message": "ลบรอบรับสมัครและใบสมัครที่เกี่ยวข้องเรียบร้อยแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบรอบรับสมัครและใบสมัครที่เกี่ยวข้องเรียบร้อยแล้ว" })).into_response())
 }
 
 pub async fn toggle_round_visibility(
@@ -194,7 +194,7 @@ pub async fn delete_subject(
         return Ok(r);
     }
     round_service::delete_exam_subject(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "message": "ลบวิชาแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบวิชาแล้ว" })).into_response())
 }
 
 // ----- Tracks CRUD -----
@@ -250,7 +250,7 @@ pub async fn delete_track(
         return Ok(r);
     }
     round_service::delete_track(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "message": "ลบสายการเรียนแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบสายการเรียนแล้ว" })).into_response())
 }
 
 pub async fn get_track_capacity(
@@ -264,8 +264,5 @@ pub async fn get_track_capacity(
     }
     let rooms = round_service::get_track_capacity(&pool, id).await?;
     let room_count = rooms.len();
-    Ok(Json(json!({
-        "success": true,
-        "data": { "rooms": rooms, "room_count": room_count }
-    })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "rooms": rooms, "room_count": room_count } })).into_response())
 }

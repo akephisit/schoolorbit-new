@@ -450,16 +450,6 @@ pub struct StaffListFilter {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StaffListResponse {
-    pub success: bool,
-    pub data: Vec<StaffListItem>,
-    pub total: i64,
-    pub page: i64,
-    pub page_size: i64,
-    pub total_pages: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaffListItem {
     pub id: Uuid,
     pub username: String,

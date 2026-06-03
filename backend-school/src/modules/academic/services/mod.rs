@@ -12,14 +12,8 @@ pub mod course_planning_service;
 
 // Re-export main types for convenience
 pub use scheduler::{
-    TimetableScheduler,
     SchedulerBuilder,
     types::{
         SchedulingAlgorithm,
-        SchedulingResult,
-        CourseToSchedule,
-        TimeSlot,
-        Assignment,
-        FailedCourse,
     },
 };

@@ -63,7 +63,7 @@ pub async fn assign_courses(
         return Ok(r);
     }
     let added = course_planning_service::assign_courses(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "message": format!("Assigned {} courses", added) })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": format!("Assigned {} courses", added) })).into_response())
 }
 
 pub async fn remove_course(
@@ -76,7 +76,7 @@ pub async fn remove_course(
         return Ok(r);
     }
     course_planning_service::remove_course(&pool, id).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn update_course(
@@ -90,7 +90,7 @@ pub async fn update_course(
         return Ok(r);
     }
     course_planning_service::update_course(&pool, id, payload).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -110,7 +110,7 @@ pub async fn batch_list_course_instructors(
     let ids: Vec<Uuid> = query.course_ids.split(',')
         .filter_map(|s| s.trim().parse::<Uuid>().ok()).collect();
     let grouped = course_planning_service::batch_list_course_instructors(&pool, &ids).await?;
-    Ok(Json(json!({ "data": grouped })).into_response())
+    Ok(Json(json!({ "success": true, "data": grouped })).into_response())
 }
 
 pub async fn list_course_instructors(
@@ -123,7 +123,7 @@ pub async fn list_course_instructors(
         return Ok(r);
     }
     let rows = course_planning_service::list_course_instructors(&pool, course_id).await?;
-    Ok(Json(json!({ "data": rows })).into_response())
+    Ok(Json(json!({ "success": true, "data": rows })).into_response())
 }
 
 pub async fn add_course_instructor(
@@ -139,7 +139,7 @@ pub async fn add_course_instructor(
     let role = body.role.unwrap_or_else(|| "secondary".to_string());
     course_planning_service::add_course_instructor(&pool, course_id, body.instructor_id, &role).await?;
     broadcast_course_refresh(&state, &headers, &pool, course_id).await;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn remove_course_instructor(
@@ -153,7 +153,7 @@ pub async fn remove_course_instructor(
     }
     course_planning_service::remove_course_instructor(&pool, course_id, instructor_id).await?;
     broadcast_course_refresh(&state, &headers, &pool, course_id).await;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn update_course_instructor_role(
@@ -168,7 +168,7 @@ pub async fn update_course_instructor_role(
     }
     course_planning_service::update_course_instructor_role(&pool, course_id, instructor_id, &body.role).await?;
     broadcast_course_refresh(&state, &headers, &pool, course_id).await;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 #[derive(serde::Serialize, sqlx::FromRow)]
@@ -198,7 +198,7 @@ pub async fn list_classroom_activities(
         return Ok(r);
     }
     let rows = course_planning_service::list_classroom_activities(&pool, classroom_id, query.semester_id).await?;
-    Ok(Json(json!({ "data": rows })).into_response())
+    Ok(Json(json!({ "success": true, "data": rows })).into_response())
 }
 
 pub async fn remove_classroom_from_slot(
@@ -211,5 +211,5 @@ pub async fn remove_classroom_from_slot(
         return Ok(r);
     }
     course_planning_service::remove_classroom_from_slot(&pool, classroom_id, slot_id).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }

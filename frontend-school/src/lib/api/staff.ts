@@ -1,9 +1,7 @@
 // API Client for Staff Management
 // ติดต่อกับ backend-school service
 
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
-
-const API_BASE_URL = PUBLIC_BACKEND_URL || 'http://localhost:8081';
+import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
 
 export interface StaffListItem {
 	id: string;
@@ -213,16 +211,17 @@ interface StaffFilter {
 	page_size?: number;
 }
 
-export interface ApiResponse<T> {
-	success: boolean;
-	data?: T;
-	error?: string;
-	message?: string;
-}
-
 // ===================================================================
 // Staff APIs
 // ===================================================================
+
+interface StaffListData {
+	items: StaffListItem[];
+	total: number;
+	page: number;
+	page_size: number;
+	total_pages: number;
+}
 
 export async function listStaff(filter?: StaffFilter): Promise<StaffListResponse> {
 	const params = new URLSearchParams();
@@ -231,110 +230,42 @@ export async function listStaff(filter?: StaffFilter): Promise<StaffListResponse
 	if (filter?.page) params.append('page', filter.page.toString());
 	if (filter?.page_size) params.append('page_size', filter.page_size.toString());
 
-	const response = await fetch(`${API_BASE_URL}/api/staff?${params.toString()}`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
+	const response = await apiClient.get<StaffListData>(`/api/staff?${params.toString()}`);
+	const data = requireApiData(response, 'Failed to fetch staff list');
 
-	if (!response.ok) {
-		throw new Error('Failed to fetch staff list');
-	}
-
-	return response.json();
+	return {
+		success: true,
+		data: data.items,
+		total: data.total,
+		page: data.page,
+		page_size: data.page_size,
+		total_pages: data.total_pages
+	};
 }
 
 export async function getStaffProfile(staffId: string): Promise<ApiResponse<StaffProfileResponse>> {
-	const response = await fetch(`${API_BASE_URL}/api/staff/${staffId}`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		throw new Error('Failed to fetch staff profile');
-	}
-
-	return response.json();
+	return apiClient.get<StaffProfileResponse>(`/api/staff/${staffId}`);
 }
 
 export async function getPublicStaffProfile(
 	staffId: string
 ): Promise<ApiResponse<StaffProfileResponse>> {
-	const response = await fetch(`${API_BASE_URL}/api/staff/${staffId}/public-profile`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		// Return null or throw? Throwing allows catch block in UI to handle
-		throw new Error('Failed to fetch public staff profile');
-	}
-
-	return response.json();
+	return apiClient.get<StaffProfileResponse>(`/api/staff/${staffId}/public-profile`);
 }
 
 export async function createStaff(data: CreateStaffRequest): Promise<ApiResponse<{ id: string }>> {
-	const response = await fetch(`${API_BASE_URL}/api/staff`, {
-		method: 'POST',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to create staff');
-	}
-
-	return response.json();
+	return apiClient.post<{ id: string }>('/api/staff', data);
 }
 
 export async function updateStaff(
 	staffId: string,
 	data: UpdateStaffRequest
 ): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/staff/${staffId}`, {
-		method: 'PUT',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to update staff');
-	}
-
-	return response.json();
+	return apiClient.put<void>(`/api/staff/${staffId}`, data);
 }
 
 export async function deleteStaff(staffId: string): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/staff/${staffId}`, {
-		method: 'DELETE',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to delete staff');
-	}
-
-	return response.json();
+	return apiClient.delete<void>(`/api/staff/${staffId}`);
 }
 
 // ===================================================================
@@ -342,35 +273,11 @@ export async function deleteStaff(staffId: string): Promise<ApiResponse<void>> {
 // ===================================================================
 
 export async function listRoles(): Promise<ApiResponse<Role[]>> {
-	const response = await fetch(`${API_BASE_URL}/api/roles`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		throw new Error('Failed to fetch roles');
-	}
-
-	return response.json();
+	return apiClient.get<Role[]>('/api/roles');
 }
 
 export async function getRole(roleId: string): Promise<ApiResponse<Role>> {
-	const response = await fetch(`${API_BASE_URL}/api/roles/${roleId}`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		throw new Error('Failed to fetch role');
-	}
-
-	return response.json();
+	return apiClient.get<Role>(`/api/roles/${roleId}`);
 }
 
 // ===================================================================
@@ -378,19 +285,7 @@ export async function getRole(roleId: string): Promise<ApiResponse<Role>> {
 // ===================================================================
 
 export async function listDepartments(): Promise<ApiResponse<Department[]>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		throw new Error('Failed to fetch departments');
-	}
-
-	return response.json();
+	return apiClient.get<Department[]>('/api/departments');
 }
 
 // Auth-only version (no roles.read.all required) — for non-admin pages
@@ -400,40 +295,16 @@ export async function listDepartmentsLookup(options?: {
 	const params = new URLSearchParams();
 	if (options?.member_only) params.set('member_only', 'true');
 	const qs = params.toString() ? `?${params}` : '';
-	const response = await fetch(`${API_BASE_URL}/api/lookup/departments${qs}`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' }
-	});
-	if (!response.ok) throw new Error('Failed to fetch departments');
-	return response.json();
+	return apiClient.get<Department[]>(`/api/lookup/departments${qs}`);
 }
 
 // Get single department (auth only, no roles.read.all required)
 export async function getDepartmentLookup(id: string): Promise<ApiResponse<Department>> {
-	const response = await fetch(`${API_BASE_URL}/api/lookup/departments/${id}`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' }
-	});
-	if (!response.ok) throw new Error('Failed to fetch department');
-	return response.json();
+	return apiClient.get<Department>(`/api/lookup/departments/${id}`);
 }
 
 export async function getDepartment(deptId: string): Promise<ApiResponse<Department>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		throw new Error('Failed to fetch department');
-	}
-
-	return response.json();
+	return apiClient.get<Department>(`/api/departments/${deptId}`);
 }
 
 export interface CreateDepartmentRequest {
@@ -468,59 +339,18 @@ export interface UpdateDepartmentRequest {
 export async function createDepartment(
 	data: CreateDepartmentRequest
 ): Promise<ApiResponse<{ id: string }>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments`, {
-		method: 'POST',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to create department');
-	}
-
-	return response.json();
+	return apiClient.post<{ id: string }>('/api/departments', data);
 }
 
 export async function updateDepartment(
 	deptId: string,
 	data: UpdateDepartmentRequest
 ): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}`, {
-		method: 'PUT',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(data)
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to update department');
-	}
-
-	return response.json();
+	return apiClient.put<void>(`/api/departments/${deptId}`, data);
 }
 
 export async function deleteDepartment(deptId: string): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}`, {
-		method: 'DELETE',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to delete department');
-	}
-
-	return response.json();
+	return apiClient.delete<void>(`/api/departments/${deptId}`);
 }
 
 // ===================================================================
@@ -528,40 +358,15 @@ export async function deleteDepartment(deptId: string): Promise<ApiResponse<void
 // ===================================================================
 
 export async function getDepartmentPermissions(deptId: string): Promise<string[]> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/permissions`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!response.ok) {
-		throw new Error('Failed to fetch department permissions');
-	}
-
-	return response.json();
+	const response = await apiClient.get<string[]>(`/api/departments/${deptId}/permissions`);
+	return requireApiData(response, 'Failed to fetch department permissions');
 }
 
 export async function updateDepartmentPermissions(
 	deptId: string,
 	permission_ids: string[]
 ): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/permissions`, {
-		method: 'PUT',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify({ permission_ids })
-	});
-
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || 'Failed to update department permissions');
-	}
-
-	return response.json();
+	return apiClient.put<void>(`/api/departments/${deptId}/permissions`, { permission_ids });
 }
 
 // ===================================================================
@@ -598,48 +403,29 @@ export interface DelegatablePermission {
 export async function listDelegatablePermissions(
 	departmentId: string
 ): Promise<ApiResponse<DelegatablePermission[]>> {
-	const response = await fetch(
-		`${API_BASE_URL}/api/departments/${departmentId}/delegatable-permissions`,
-		{
-			method: 'GET',
-			credentials: 'include',
-			headers: { 'Content-Type': 'application/json' }
-		}
+	return apiClient.get<DelegatablePermission[]>(
+		`/api/departments/${departmentId}/delegatable-permissions`
 	);
-	return response.json();
 }
 
 export async function listDelegations(
 	departmentId: string
 ): Promise<ApiResponse<DelegationItem[]>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${departmentId}/delegations`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' }
-	});
-	return response.json();
+	return apiClient.get<DelegationItem[]>(`/api/departments/${departmentId}/delegations`);
 }
 
 export async function createDelegation(
 	departmentId: string,
 	body: CreateDelegationBody
 ): Promise<ApiResponse<{ delegation_id: string }>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${departmentId}/delegations`, {
-		method: 'POST',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	return response.json();
+	return apiClient.post<{ delegation_id: string }>(
+		`/api/departments/${departmentId}/delegations`,
+		body
+	);
 }
 
 export async function revokeDelegation(delegationId: string): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/delegations/${delegationId}`, {
-		method: 'DELETE',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' }
-	});
-	return response.json();
+	return apiClient.delete<void>(`/api/delegations/${delegationId}`);
 }
 
 // ===================================================================
@@ -677,25 +463,14 @@ export async function listDeptMembers(
 	options?: { include_children?: boolean }
 ): Promise<ApiResponse<DeptMemberItem[]>> {
 	const params = options?.include_children ? '?include_children=true' : '';
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members${params}`, {
-		method: 'GET',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' }
-	});
-	return response.json();
+	return apiClient.get<DeptMemberItem[]>(`/api/departments/${deptId}/members${params}`);
 }
 
 export async function addDeptMember(
 	deptId: string,
 	body: AddMemberBody
 ): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members`, {
-		method: 'POST',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	return response.json();
+	return apiClient.post<void>(`/api/departments/${deptId}/members`, body);
 }
 
 export async function updateDeptMember(
@@ -703,20 +478,9 @@ export async function updateDeptMember(
 	userId: string,
 	body: UpdateMemberBody
 ): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members/${userId}`, {
-		method: 'PUT',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	return response.json();
+	return apiClient.put<void>(`/api/departments/${deptId}/members/${userId}`, body);
 }
 
 export async function removeDeptMember(deptId: string, userId: string): Promise<ApiResponse<void>> {
-	const response = await fetch(`${API_BASE_URL}/api/departments/${deptId}/members/${userId}`, {
-		method: 'DELETE',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' }
-	});
-	return response.json();
+	return apiClient.delete<void>(`/api/departments/${deptId}/members/${userId}`);
 }

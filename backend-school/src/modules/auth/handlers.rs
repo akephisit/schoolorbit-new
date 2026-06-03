@@ -1,5 +1,6 @@
 use crate::db::school_mapping::get_school_database_url;
-use super::models::{Claims, LoginRequest, LoginResponse, LoginUser, User, UserResponse, ProfileResponse, UpdateProfileRequest, ChangePasswordRequest};
+use super::models::{Claims, LoginData, LoginRequest, LoginUser, User, UserResponse, ProfileResponse, UpdateProfileRequest, ChangePasswordRequest};
+use crate::api_response::ApiResponse;
 use crate::utils::jwt::JwtService;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
@@ -175,11 +176,12 @@ pub async fn login(
 
     Ok((
         StatusCode::OK,
-        Json(LoginResponse {
-            success: true,
-            message: "เข้าสู่ระบบสำเร็จ".to_string(),
-            user: user_response,
-        }),
+        Json(ApiResponse::with_message(
+            LoginData {
+                user: user_response,
+            },
+            "เข้าสู่ระบบสำเร็จ",
+        )),
     ))
 }
 
@@ -194,10 +196,10 @@ pub async fn logout(cookies: Cookies) -> Result<impl IntoResponse, AppError> {
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "message": "ออกจากระบบสำเร็จ"
-        })),
+        Json(ApiResponse::with_message(
+            serde_json::json!({}),
+            "ออกจากระบบสำเร็จ",
+        )),
     ))
 }
 
@@ -347,7 +349,7 @@ pub async fn me(
     user_response.primary_role_name = primary_role_name;
     user_response.permissions = Some(permissions);
 
-    Ok((StatusCode::OK, Json(user_response)))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(user_response))))
 }
 
 /// Get full profile handler (GET /me/profile)
@@ -417,7 +419,7 @@ pub async fn get_profile(
     let mut profile_response = ProfileResponse::from(user);
     profile_response.primary_role_name = primary_role_name;
 
-    Ok((StatusCode::OK, Json(profile_response)))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(profile_response))))
 }
 
 /// Update profile handler (PUT /me/profile)
@@ -550,7 +552,7 @@ pub async fn update_profile(
     let mut profile_response = ProfileResponse::from(user);
     profile_response.primary_role_name = primary_role_name;
 
-    Ok((StatusCode::OK, Json(profile_response)))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(profile_response))))
 }
 
 /// Change password handler (POST /me/change-password)
@@ -650,9 +652,9 @@ pub async fn change_password(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "message": "เปลี่ยนรหัสผ่านสำเร็จ"
-        })),
+        Json(ApiResponse::with_message(
+            serde_json::json!({}),
+            "เปลี่ยนรหัสผ่านสำเร็จ",
+        )),
     ))
 }

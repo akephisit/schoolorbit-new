@@ -287,10 +287,7 @@ pub async fn upload_file(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "file": file_response
-        })),
+        Json(json!({ "success": true, "data": { "file": file_response } })),
     ))
 }
 

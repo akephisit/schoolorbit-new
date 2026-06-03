@@ -81,7 +81,7 @@ impl NotificationService {
         link: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // 1. Get VAPID config from .env
-        let vapid_public = env::var("VAPID_PUBLIC_KEY")?;
+        let _vapid_public = env::var("VAPID_PUBLIC_KEY")?;
         let vapid_private = env::var("VAPID_PRIVATE_KEY")?;
         let vapid_subject = env::var("VAPID_SUBJECT").unwrap_or_else(|_| "mailto:admin@localhost".to_string());
 

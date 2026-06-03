@@ -613,7 +613,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
     }
 
     // Spawn a task to handle incoming messages from this client (Broadcast Listener)
-    let mut send_task = tokio::spawn(async move {
+    let send_task = tokio::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(msg) => {

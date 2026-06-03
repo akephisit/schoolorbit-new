@@ -86,11 +86,7 @@ pub async fn create_role(
     let role_id = role_service::create_role(&pool, payload).await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({
-            "success": true,
-            "message": "สร้างบทบาทสำเร็จ",
-            "data": { "id": role_id }
-        })),
+        Json(json!({ "success": true, "data": { "id": role_id }, "message": "สร้างบทบาทสำเร็จ" })),
     )
         .into_response())
 }
@@ -113,10 +109,7 @@ pub async fn update_role(
     // Role permissions changed — every user with this role has stale cache
     state.permission_cache.clear_all();
 
-    Ok(Json(json!({
-        "success": true,
-        "message": "อัปเดตบทบาทสำเร็จ"
-    }))
+    Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตบทบาทสำเร็จ" }))
     .into_response())
 }
 
@@ -170,11 +163,7 @@ pub async fn create_department(
     let dept_id = department_service::create_department(&pool, payload).await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({
-            "success": true,
-            "message": "สร้างฝ่ายสำเร็จ",
-            "data": { "id": dept_id }
-        })),
+        Json(json!({ "success": true, "data": { "id": dept_id }, "message": "สร้างฝ่ายสำเร็จ" })),
     )
         .into_response())
 }
@@ -193,9 +182,6 @@ pub async fn update_department(
     }
 
     department_service::update_department(&pool, dept_id, payload).await?;
-    Ok(Json(json!({
-        "success": true,
-        "message": "อัปเดตฝ่ายสำเร็จ"
-    }))
+    Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตฝ่ายสำเร็จ" }))
     .into_response())
 }

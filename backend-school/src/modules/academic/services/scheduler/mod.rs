@@ -23,7 +23,7 @@ impl TimetableScheduler {
     /// Main entry point for scheduling
     pub fn schedule(
         &self,
-        mut courses: Vec<CourseToSchedule>,
+        courses: Vec<CourseToSchedule>,
         available_slots: Vec<TimeSlot>,
         locked_slots: Vec<LockedSlotData>,
         instructor_prefs: HashMap<Uuid, InstructorPrefData>,

@@ -109,10 +109,7 @@ pub async fn get_template(
         return Ok(r);
     }
     let (template, entries) = timetable_template_service::get_template(&pool, id).await?;
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "data": { "template": template, "entries": entries }
-    })).into_response())
+    Ok(Json(serde_json::json!({ "success": true, "data": { "template": template, "entries": entries } })).into_response())
 }
 
 pub async fn create_template(
@@ -126,7 +123,7 @@ pub async fn create_template(
     }
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
     let id = timetable_template_service::create_template(&pool, &payload.name, payload.description.as_deref(), user_id).await?;
-    Ok(Json(serde_json::json!({ "success": true, "data": { "id": id }})).into_response())
+    Ok(Json(serde_json::json!({ "success": true, "data": { "id": id } })).into_response())
 }
 
 pub async fn update_template(
@@ -140,7 +137,7 @@ pub async fn update_template(
         return Ok(r);
     }
     timetable_template_service::update_template(&pool, id, payload.name.as_deref(), payload.description.as_deref()).await?;
-    Ok(Json(serde_json::json!({ "success": true })).into_response())
+    Ok(Json(serde_json::json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn delete_template(
@@ -153,7 +150,7 @@ pub async fn delete_template(
         return Ok(r);
     }
     timetable_template_service::delete_template(&pool, id).await?;
-    Ok(Json(serde_json::json!({ "success": true })).into_response())
+    Ok(Json(serde_json::json!({ "success": true, "data": {} })).into_response())
 }
 
 pub async fn from_current(

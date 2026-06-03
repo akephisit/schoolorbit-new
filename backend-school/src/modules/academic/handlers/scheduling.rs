@@ -71,7 +71,7 @@ pub async fn auto_schedule_timetable(
 
     Ok((
         StatusCode::ACCEPTED,
-        Json(serde_json::json!({ "job_id": job_id, "status": "PENDING", "message": "Scheduling job started" }))
+        Json(serde_json::json!({ "success": true, "data": { "job_id": job_id, "status": "PENDING" }, "message": "Scheduling job started" }))
     ).into_response())
 }
 
@@ -180,7 +180,11 @@ pub async fn create_instructor_preference(
         return Ok(r);
     }
     let pref = scheduling_service::create_instructor_preference(&pool, payload).await?;
-    Ok((StatusCode::CREATED, Json(pref)).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({ "success": true, "data": pref })),
+    )
+        .into_response())
 }
 
 pub async fn create_instructor_room_assignment(
@@ -193,7 +197,11 @@ pub async fn create_instructor_room_assignment(
         return Ok(r);
     }
     let a = scheduling_service::create_instructor_room_assignment(&pool, payload).await?;
-    Ok((StatusCode::CREATED, Json(a)).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({ "success": true, "data": a })),
+    )
+        .into_response())
 }
 
 pub async fn create_locked_slot(
@@ -207,7 +215,11 @@ pub async fn create_locked_slot(
     }
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
     let locked = scheduling_service::create_locked_slot(&pool, payload, user_id).await?;
-    Ok((StatusCode::CREATED, Json(locked)).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({ "success": true, "data": locked })),
+    )
+        .into_response())
 }
 
 pub async fn list_locked_slots(
@@ -220,7 +232,7 @@ pub async fn list_locked_slots(
         return Ok(r);
     }
     let slots = scheduling_service::list_locked_slots(&pool, query.semester_id).await?;
-    Ok(Json(slots).into_response())
+    Ok(Json(serde_json::json!({ "success": true, "data": slots })).into_response())
 }
 
 pub async fn delete_locked_slot(

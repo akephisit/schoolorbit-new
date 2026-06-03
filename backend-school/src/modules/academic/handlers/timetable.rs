@@ -99,7 +99,7 @@ pub async fn delete_period(
     }
 
     period_service::delete_period(&pool, id).await?;
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 /// POST /api/academic/periods/reorder
@@ -115,7 +115,7 @@ pub async fn reorder_periods(
     }
 
     let updated = period_service::reorder_periods(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "updated": updated })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "updated": updated } })).into_response())
 }
 
 // ============================================
@@ -145,7 +145,7 @@ pub async fn list_timetable_entries(
         0
     };
 
-    Ok(Json(json!({ "success": true, "data": entries, "current_seq": current_seq })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "items": entries, "current_seq": current_seq } })).into_response())
 }
 
 /// GET /api/academic/timetable/replay
@@ -171,15 +171,8 @@ pub async fn replay_events(
     let current_seq = state.websocket_manager.current_seq(subdomain.clone(), query.semester_id);
 
     match state.websocket_manager.replay(subdomain, query.semester_id, query.after_seq) {
-        Some(events) => Ok(Json(json!({
-            "events": events,
-            "current_seq": current_seq,
-            "needs_refetch": false,
-        })).into_response()),
-        None => Ok(Json(json!({
-            "needs_refetch": true,
-            "current_seq": current_seq,
-        })).into_response()),
+        Some(events) => Ok(Json(json!({ "success": true, "data": { "events": events, "current_seq": current_seq, "needs_refetch": false } })).into_response()),
+        None => Ok(Json(json!({ "success": true, "data": { "needs_refetch": true, "current_seq": current_seq } })).into_response()),
     }
 }
 
@@ -231,7 +224,7 @@ pub async fn get_my_timetable(
         0
     };
 
-    Ok(Json(json!({ "success": true, "data": entries, "current_seq": current_seq })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "items": entries, "current_seq": current_seq } })).into_response())
 }
 
 /// POST /api/academic/timetable
@@ -286,11 +279,7 @@ pub async fn create_timetable_entry(
             }
             Ok((
                 StatusCode::CONFLICT,
-                Json(json!({
-                    "success": false,
-                    "message": "Timetable conflict detected",
-                    "conflicts": conflicts
-                }))
+                Json(json!({ "success": false, "error": "Timetable conflict detected", "message": "Timetable conflict detected", "data": { "conflicts": conflicts } }))
             ).into_response())
         }
         timetable_service::CreateEntryOutcome::Created(entry) => {
@@ -346,7 +335,7 @@ pub async fn delete_batch_timetable_entries(
         TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
     );
 
-    Ok(Json(json!({ "success": true, "deleted_count": deleted_count })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "deleted_count": deleted_count } })).into_response())
 }
 
 /// DELETE /api/academic/timetable/{id}
@@ -373,7 +362,7 @@ pub async fn delete_timetable_entry(
         );
     }
 
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 /// DELETE /api/academic/timetable/batch-group/{batch_id}
@@ -400,7 +389,7 @@ pub async fn delete_batch_group(
         );
     }
 
-    Ok(Json(json!({ "success": true, "deleted_count": deleted_count })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "deleted_count": deleted_count } })).into_response())
 }
 
 // Conflict detection ย้ายไป timetable_service::validate_entry
@@ -447,11 +436,7 @@ pub async fn update_timetable_entry(
             );
             Ok((
                 StatusCode::CONFLICT,
-                Json(json!({
-                    "success": false,
-                    "message": "Conflict detected",
-                    "conflicts": conflicts
-                }))
+                Json(json!({ "success": false, "error": "Conflict detected", "message": "Conflict detected", "data": { "conflicts": conflicts } }))
             ).into_response())
         }
         timetable_service::UpdateEntryOutcome::Updated { updated, existing } => {
@@ -495,16 +480,13 @@ pub async fn create_batch_timetable_entries(
         TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
     );
 
-    Ok(Json(json!({
-        "success": true,
-        "summary": {
+    Ok(Json(json!({ "success": true, "data": { "summary": {
             "inserted_count": outcome.inserted_count,
             "skipped": outcome.skipped,
             "blocked": outcome.blocked,
             "deleted": outcome.deleted,
             "excluded_instructors": outcome.excluded_instructors
-        }
-    })).into_response())
+        } } })).into_response())
 }
 
 
@@ -562,7 +544,7 @@ pub async fn add_entry_instructor(
         }
     }
 
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 /// DELETE /api/academic/timetable/:id/instructors/:uid
@@ -593,7 +575,7 @@ pub async fn remove_entry_instructor(
         );
     }
 
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 /// POST /api/academic/timetable/slots/:slot_id/instructors/:uid/restore
@@ -607,7 +589,7 @@ pub async fn restore_instructor_to_slot_entries(
         return Ok(r);
     }
     let inserted = timetable_service::restore_instructor_to_slot(&pool, slot_id, instructor_id).await?;
-    Ok(Json(json!({ "success": true, "inserted": inserted })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "inserted": inserted } })).into_response())
 }
 
 /// DELETE /api/academic/timetable/slots/:slot_id/instructors/:uid
@@ -631,7 +613,7 @@ pub async fn hide_instructor_from_slot_entries(
         );
     }
 
-    Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "deleted": deleted } })).into_response())
 }
 
 /// DELETE /api/academic/timetable/slots/:slot_id/instructors/:uid/period
@@ -664,7 +646,7 @@ pub async fn hide_instructor_from_slot_period_entries(
         );
     }
 
-    Ok(Json(json!({ "success": true, "deleted": deleted })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "deleted": deleted } })).into_response())
 }
 
 // ============================================
@@ -715,7 +697,7 @@ pub async fn swap_timetable_entries(
                 semester_id,
                 TimetableEvent::TableRefresh { user_id },
             );
-            Ok(Json(json!({ "success": true, "message": "Swapped" })).into_response())
+            Ok(Json(json!({ "success": true, "data": {}, "message": "Swapped" })).into_response())
         }
     }
 }
@@ -736,7 +718,7 @@ pub async fn validate_timetable_moves(
     }
 
     let cells = timetable_service::validate_moves(&pool, body).await?;
-    Ok(Json(json!({ "data": cells })).into_response())
+    Ok(Json(json!({ "success": true, "data": cells })).into_response())
 }
 
 
@@ -758,5 +740,5 @@ pub async fn get_timetable_occupancy(
     }
 
     let rows = timetable_service::get_occupancy(&pool, q.semester_id).await?;
-    Ok(Json(json!({ "data": rows })).into_response())
+    Ok(Json(json!({ "success": true, "data": rows })).into_response())
 }

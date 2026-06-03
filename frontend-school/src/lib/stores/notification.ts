@@ -1,8 +1,7 @@
-import { PUBLIC_BACKEND_URL, PUBLIC_VAPID_KEY } from '$env/static/public';
+import { PUBLIC_VAPID_KEY } from '$env/static/public';
+import { apiClient, BACKEND_URL } from '$lib/api/client';
 import { toast } from 'svelte-sonner';
 import { writable } from 'svelte/store';
-
-const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 
 // Helper for VAPID key conversion
 function urlBase64ToUint8Array(base64String: string) {
@@ -49,15 +48,15 @@ function createNotificationStore() {
 		async fetchNotifications(limit = 10) {
 			update((s) => ({ ...s, loading: true }));
 			try {
-				const res = await fetch(`${BACKEND_URL}/api/notifications?limit=${limit}`, {
-					credentials: 'include'
-				});
+				const response = await apiClient.get<{
+					items: Notification[];
+					unread_count: number;
+				}>(`/api/notifications?limit=${limit}`);
 
-				if (res.ok) {
-					const data = await res.json();
+				if (response.success && response.data) {
 					set({
-						notifications: data.data,
-						unreadCount: data.unread_count,
+						notifications: response.data.items,
+						unreadCount: response.data.unread_count,
 						loading: false
 					});
 				}
@@ -162,10 +161,7 @@ function createNotificationStore() {
 					return { ...s, notifications: notifs, unreadCount: unread };
 				});
 
-				await fetch(`${BACKEND_URL}/api/notifications/${id}/read`, {
-					method: 'POST',
-					credentials: 'include'
-				});
+				await apiClient.post<Record<string, never>>(`/api/notifications/${id}/read`);
 			} catch (err) {
 				console.error('Failed to mark as read', err);
 			}
@@ -179,10 +175,7 @@ function createNotificationStore() {
 					return { ...s, notifications: notifs, unreadCount: 0 };
 				});
 
-				await fetch(`${BACKEND_URL}/api/notifications/read-all`, {
-					method: 'POST',
-					credentials: 'include'
-				});
+				await apiClient.post<Record<string, never>>('/api/notifications/read-all');
 
 				toast.success('อ่านทั้งหมดแล้ว');
 			} catch (err) {
@@ -260,12 +253,7 @@ function createNotificationStore() {
 					auth: arrayBufferToUrlSafeBase64(auth)
 				};
 
-				await fetch(`${BACKEND_URL}/api/notifications/subscribe`, {
-					method: 'POST',
-					body: JSON.stringify(body),
-					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include'
-				});
+				await apiClient.post<Record<string, never>>('/api/notifications/subscribe', body);
 
 				console.log('✅ Push Notification Subscribed (Synced to Backend)');
 				return true;

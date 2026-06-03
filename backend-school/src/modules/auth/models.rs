@@ -190,12 +190,10 @@ impl From<User> for ProfileResponse {
     }
 }
 
-// Login response
+// Login response data
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LoginResponse {
-    pub success: bool,
-    pub message: String,
+pub struct LoginData {
     pub user: UserResponse,
 }
 

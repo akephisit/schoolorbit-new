@@ -4,6 +4,7 @@ mod permissions;
 mod services;
 mod utils;
 mod modules;
+pub mod api_response;
 pub mod error;
 
 #[cfg(test)]

@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::NaiveDate;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ParentProfile {

@@ -69,6 +69,8 @@ export interface ConsentSummary {
 // Consent API Client
 // ===================================================================
 
+import { apiClient, requireApiData } from '$lib/api/client';
+
 const API_BASE = '/api';
 
 export const consentApi = {
@@ -76,32 +78,18 @@ export const consentApi = {
 	 * Get all consent types for a user type
 	 */
 	async getConsentTypes(userType: string = 'student'): Promise<ConsentType[]> {
-		const response = await fetch(`${API_BASE}/consent/types`, {
-			headers: {
-				'user-type': userType
-			}
-		});
-
-		if (!response.ok) {
-			throw new Error('Failed to fetch consent types');
-		}
-
-		return response.json();
+		const response = await apiClient.get<ConsentType[]>(
+			`${API_BASE}/consent/types?user_type=${encodeURIComponent(userType)}`
+		);
+		return requireApiData(response, 'Failed to fetch consent types');
 	},
 
 	/**
 	 * Get current user's consent status
 	 */
 	async getMyConsentStatus(): Promise<UserConsentStatus> {
-		const response = await fetch(`${API_BASE}/consent/my-status`, {
-			credentials: 'include'
-		});
-
-		if (!response.ok) {
-			throw new Error('Failed to fetch consent status');
-		}
-
-		return response.json();
+		const response = await apiClient.get<UserConsentStatus>(`${API_BASE}/consent/my-status`);
+		return requireApiData(response, 'Failed to fetch consent status');
 	},
 
 	/**
@@ -110,21 +98,13 @@ export const consentApi = {
 	async giveConsent(
 		request: CreateConsentRequest
 	): Promise<{ success: boolean; message: string; consent_id: string }> {
-		const response = await fetch(`${API_BASE}/consent`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			credentials: 'include',
-			body: JSON.stringify(request)
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to give consent');
-		}
-
-		return response.json();
+		const response = await apiClient.post<{ consent_id: string }>(`${API_BASE}/consent`, request);
+		const data = requireApiData(response, 'Failed to give consent');
+		return {
+			success: true,
+			message: response.message || 'บันทึกความยินยอมสำเร็จ',
+			consent_id: data.consent_id
+		};
 	},
 
 	/**
@@ -142,35 +122,19 @@ export const consentApi = {
 		consentId: string,
 		reason?: string
 	): Promise<{ success: boolean; message: string }> {
-		const response = await fetch(`${API_BASE}/consent/${consentId}/withdraw`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			credentials: 'include',
-			body: JSON.stringify({ reason })
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to withdraw consent');
-		}
-
-		return response.json();
+		const response = await apiClient.post<Record<string, never>>(
+			`${API_BASE}/consent/${consentId}/withdraw`,
+			{ reason }
+		);
+		if (!response.success) throw new Error(response.error || 'Failed to withdraw consent');
+		return { success: true, message: response.message || 'ถอนความยินยอมสำเร็จ' };
 	},
 
 	/**
 	 * Get consent summary (Admin only)
 	 */
 	async getConsentSummary(): Promise<ConsentSummary> {
-		const response = await fetch(`${API_BASE}/consent/summary`, {
-			credentials: 'include'
-		});
-
-		if (!response.ok) {
-			throw new Error('Failed to fetch consent summary');
-		}
-
-		return response.json();
+		const response = await apiClient.get<ConsentSummary>(`${API_BASE}/consent/summary`);
+		return requireApiData(response, 'Failed to fetch consent summary');
 	}
 };

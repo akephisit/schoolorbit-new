@@ -1,10 +1,10 @@
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
-    Json,
-    response::IntoResponse,
     http::HeaderMap,
-    routing::{get, post, put, delete},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, put},
+    Json,
     Router,
 };
 use serde_json::json;
@@ -146,7 +146,7 @@ pub async fn delete_building(
         .await
         .map_err(|_| AppError::InternalServerError("Failed to delete building".to_string()))?;
 
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 
@@ -311,7 +311,7 @@ pub async fn delete_room(
         .await
         .map_err(|_| AppError::InternalServerError("Failed to delete room".to_string()))?;
 
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
 pub fn routes() -> Router<AppState> {

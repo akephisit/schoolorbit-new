@@ -182,11 +182,7 @@ pub async fn delete_menu_group(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = auth_check_module(&state, &headers, "settings").await?;
     let moved = menu_service::delete_menu_group(&pool, id).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({
-        "success": true,
-        "message": format!("Deleted group and moved {} items to 'other'", moved),
-        "moved_count": moved
-    }))))
+    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": { "moved_count": moved }, "message": format!("Deleted group and moved {} items to 'other'", moved) }))))
 }
 
 // ==================== Menu Items ====================
@@ -258,9 +254,7 @@ pub async fn delete_menu_item(
         }
     }
     menu_service::delete_menu_item(&pool, id).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({
-        "success": true, "message": "Menu item deleted successfully"
-    }))))
+    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": {}, "message": "Menu item deleted successfully" }))))
 }
 
 pub async fn reorder_menu_items(
@@ -269,17 +263,13 @@ pub async fn reorder_menu_items(
     JsonResponse(data): JsonResponse<ReorderRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     if data.items.is_empty() {
-        return Ok((StatusCode::OK, JsonResponse(serde_json::json!({
-            "success": true, "message": "No items to reorder"
-        }))));
+        return Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": {}, "message": "No items to reorder" }))));
     }
     let (pool, permissions) = auth(&state, &headers).await?;
     let items: Vec<(Uuid, i32, Option<Uuid>)> = data.items.into_iter()
         .map(|i| (i.id, i.display_order, i.group_id)).collect();
     let count = menu_service::reorder_menu_items(&pool, items, &permissions).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({
-        "success": true, "message": format!("Reordered {} items successfully", count)
-    }))))
+    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": {}, "message": format!("Reordered {} items successfully", count) }))))
 }
 
 pub async fn reorder_menu_groups(
@@ -290,9 +280,7 @@ pub async fn reorder_menu_groups(
     let pool = auth_check_module(&state, &headers, "settings").await?;
     let groups: Vec<(Uuid, i32)> = data.groups.into_iter().map(|g| (g.id, g.display_order)).collect();
     let count = menu_service::reorder_menu_groups(&pool, groups).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({
-        "success": true, "message": format!("Reordered {} groups", count)
-    }))))
+    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": {}, "message": format!("Reordered {} groups", count) }))))
 }
 
 pub async fn move_item_to_group(
@@ -307,7 +295,5 @@ pub async fn move_item_to_group(
         None => return Err(AppError::BadRequest("group_id required".to_string())),
     };
     let item = menu_service::move_item_to_group(&pool, id, group_id).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({
-        "success": true, "data": item
-    }))))
+    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": item }))))
 }

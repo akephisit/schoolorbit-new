@@ -12,10 +12,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use axum::response::sse::{Event, Sse, KeepAlive};
-use futures::stream::{self, Stream};
+use futures::stream::Stream;
 use std::convert::Infallible;
-use std::time::Duration;
-use tokio_stream::StreamExt as _;
 use tokio::sync::broadcast;
 
 // Models
@@ -115,13 +113,7 @@ pub async fn list_notifications(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "data": notifications,
-            "unread_count": unread_count,
-            "page": page,
-            "limit": limit
-        })),
+        Json(serde_json::json!({ "success": true, "data": { "items": notifications, "unread_count": unread_count, "page": page, "limit": limit } })),
     ))
 }
 
@@ -166,10 +158,7 @@ pub async fn mark_as_read(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "message": "อ่านแล้ว"
-        })),
+        Json(serde_json::json!({ "success": true, "data": {}, "message": "อ่านแล้ว" })),
     ))
 }
 
@@ -212,10 +201,7 @@ pub async fn mark_all_as_read(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "message": "อ่านทั้งหมดแล้ว"
-        })),
+        Json(serde_json::json!({ "success": true, "data": {}, "message": "อ่านทั้งหมดแล้ว" })),
     ))
 }
 
@@ -233,14 +219,14 @@ pub async fn stream_notifications(
     
     let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
-        .map_err(|e| {
+        .map_err(|_e| {
              // If DB lookup fails, we can't authenticate, so unauthorized or not found
              AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
         
     let pool = state.pool_manager.get_pool(&db_url, &subdomain)
         .await
-        .map_err(|e| AppError::InternalServerError("Database error".to_string()))?;
+        .map_err(|_e| AppError::InternalServerError("Database error".to_string()))?;
 
     let user_id = extract_user_id(&headers, &pool)
         .await
@@ -324,10 +310,7 @@ pub async fn create_notification(
 
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({
-            "success": true,
-            "message": "Notification created"
-        })),
+        Json(serde_json::json!({ "success": true, "data": {}, "message": "Notification created" })),
     ))
 }
 
@@ -383,12 +366,8 @@ pub async fn subscribe_push(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "message": "Subscribed to push notifications"
-        })),
+        Json(serde_json::json!({ "success": true, "data": {}, "message": "Subscribed to push notifications" })),
     ))
 }
-
 
 

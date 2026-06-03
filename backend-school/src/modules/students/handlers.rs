@@ -230,10 +230,7 @@ pub async fn get_own_profile(
     
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "data": student
-        })),
+        Json(json!({ "success": true, "data": student })),
     ))
 }
 
@@ -292,10 +289,7 @@ pub async fn update_own_profile(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "message": "อัพเดตข้อมูลสำเร็จ"
-        })),
+        Json(json!({ "success": true, "data": {}, "message": "อัพเดตข้อมูลสำเร็จ" })),
     ))
 }
 
@@ -395,12 +389,7 @@ pub async fn list_students(
     
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "data": students,
-            "page": page,
-            "page_size": page_size
-        })),
+        Json(json!({ "success": true, "data": { "items": students, "page": page, "page_size": page_size } })),
     ))
 }
 
@@ -690,12 +679,7 @@ pub async fn create_student(
 
     Ok((
         StatusCode::CREATED,
-        Json(json!({
-            "success": true,
-            "id": user_id,
-            "username": username,
-            "message": "เพิ่มนักเรียนสำเร็จ"
-        })),
+        Json(json!({ "success": true, "data": { "id": user_id, "username": username }, "message": "เพิ่มนักเรียนสำเร็จ" })),
     ))
 }
 
@@ -798,10 +782,7 @@ pub async fn get_student(
     
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "data": student
-        })),
+        Json(json!({ "success": true, "data": student })),
     ))
 }
 
@@ -890,10 +871,7 @@ pub async fn update_student(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "message": "อัพเดตข้อมูลนักเรียนสำเร็จ"
-        })),
+        Json(json!({ "success": true, "data": {}, "message": "อัพเดตข้อมูลนักเรียนสำเร็จ" })),
     ))
 }
 
@@ -970,9 +948,6 @@ pub async fn delete_student(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "message": "ลบนักเรียนสำเร็จ"
-        })),
+        Json(json!({ "success": true, "data": {}, "message": "ลบนักเรียนสำเร็จ" })),
     ))
 }

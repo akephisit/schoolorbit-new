@@ -128,16 +128,19 @@ pub async fn list_staff(
     let (items, total, page, page_size) = staff_service::list_staff(&pool, filter).await?;
     let total_pages = (total as f64 / page_size as f64).ceil() as i64;
 
-    let response = StaffListResponse {
-        success: true,
-        data: items,
-        total,
-        page,
-        page_size,
-        total_pages,
-    };
-
-    Ok((StatusCode::OK, Json(response)))
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "success": true,
+            "data": {
+                "items": items,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages
+            }
+        })),
+    ))
 }
 
 pub async fn get_staff_profile(
@@ -163,11 +166,7 @@ pub async fn create_staff(
     let user_id = staff_service::create_staff(&pool, payload).await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({
-            "success": true,
-            "message": "สร้างบุคลากรสำเร็จ",
-            "data": { "id": user_id }
-        })),
+        Json(json!({ "success": true, "data": { "id": user_id }, "message": "สร้างบุคลากรสำเร็จ" })),
     ))
 }
 
@@ -187,10 +186,7 @@ pub async fn update_staff(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "message": "อัปเดตข้อมูลสำเร็จ"
-        })),
+        Json(json!({ "success": true, "data": {}, "message": "อัปเดตข้อมูลสำเร็จ" })),
     ))
 }
 
@@ -205,10 +201,7 @@ pub async fn delete_staff(
     staff_service::soft_delete_staff(&pool, staff_id).await?;
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "message": "ลบบุคลากรสำเร็จ"
-        })),
+        Json(json!({ "success": true, "data": {}, "message": "ลบบุคลากรสำเร็จ" })),
     ))
 }
 

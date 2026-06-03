@@ -5,7 +5,6 @@ use axum::{
     Json,
 };
 use serde_json::json;
-use uuid::Uuid;
 
 use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
@@ -31,7 +30,7 @@ pub async fn check_application(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let info = portal_service::check_application(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "message": "ตรวจสอบสำเร็จ", "data": info })).into_response())
+    Ok(Json(json!({ "success": true, "data": info, "message": "ตรวจสอบสำเร็จ" })).into_response())
 }
 
 pub async fn get_status(
@@ -51,7 +50,7 @@ pub async fn confirm_enrollment(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     portal_service::confirm_enrollment(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "message": "ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัวด้านล่าง" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัวด้านล่าง" })).into_response())
 }
 
 pub async fn get_enrollment_form(
@@ -71,7 +70,7 @@ pub async fn submit_enrollment_form(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     portal_service::submit_enrollment_form(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "message": "ยืนยันมอบตัวและบันทึกข้อมูลแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ยืนยันมอบตัวและบันทึกข้อมูลแล้ว" })).into_response())
 }
 
 pub async fn update_application(
@@ -81,7 +80,7 @@ pub async fn update_application(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     portal_service::update_application(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว" })).into_response())
 }
 
 pub async fn portal_upload_document(
@@ -157,16 +156,13 @@ pub async fn portal_upload_document(
     }
 
     let file_url = portal_service::build_file_url_full(&result.storage_path)?;
-    Ok(Json(json!({
-        "success": true,
-        "data": {
+    Ok(Json(json!({ "success": true, "data": {
             "fileId": result.file_id,
             "originalFilename": original_filename,
             "fileSize": result.file_size,
             "docType": doc_type,
             "fileUrl": file_url,
-        }
-    })).into_response())
+        } })).into_response())
 }
 
 pub async fn portal_delete_document(
@@ -187,7 +183,7 @@ pub async fn portal_delete_document(
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
     r2_client.delete_file(&storage_path).await.ok();
 
-    Ok(Json(json!({ "success": true, "message": "ลบเอกสารเรียบร้อยแล้ว" })).into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบเอกสารเรียบร้อยแล้ว" })).into_response())
 }
 
 pub async fn portal_get_exam_seat(

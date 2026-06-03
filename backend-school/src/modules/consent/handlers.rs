@@ -8,11 +8,12 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 use crate::error::AppError;
 use axum::{
-    extract::{Path, Request, State},
+    extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
+use std::collections::HashMap;
 use uuid::Uuid;
 
 // ===================================================================
@@ -24,6 +25,7 @@ use uuid::Uuid;
 pub async fn get_consent_types(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
@@ -42,10 +44,9 @@ pub async fn get_consent_types(
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
-    // Get user_type from query params
-    let user_type = headers
-        .get("user-type")
-        .and_then(|v| v.to_str().ok())
+    let user_type = query
+        .get("user_type")
+        .map(String::as_str)
         .unwrap_or("student");
 
     let consent_types = sqlx::query_as::<_, ConsentType>(
@@ -67,7 +68,10 @@ pub async fn get_consent_types(
         .map(ConsentTypeResponse::from)
         .collect();
 
-    Ok((StatusCode::OK, Json(responses)))
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "success": true, "data": responses })),
+    ))
 }
 
 // ===================================================================
@@ -200,7 +204,10 @@ pub async fn get_my_consent_status(
         consents: consent_responses,
     };
 
-    Ok((StatusCode::OK, Json(status)))
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "success": true, "data": status })),
+    ))
 }
 
 /// Give consent (single or bulk)
@@ -235,7 +242,7 @@ pub async fn create_consent(
         .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
 
     // Extract request body
-    let (parts, body) = req.into_parts();
+    let (_parts, body) = req.into_parts();
     let bytes = axum::body::to_bytes(body, usize::MAX).await
         .map_err(|e| {
             eprintln!("❌ Failed to read request body: {}", e);
@@ -329,11 +336,7 @@ pub async fn create_consent(
 
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({
-            "success": true,
-            "message": "บันทึกความยินยอมสำเร็จ",
-            "consent_id": consent_id
-        })),
+        Json(serde_json::json!({ "success": true, "data": { "consent_id": consent_id }, "message": "บันทึกความยินยอมสำเร็จ" })),
     ))
 }
 
@@ -412,10 +415,7 @@ pub async fn withdraw_consent(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "message": "ถอนความยินยอมสำเร็จ"
-        })),
+        Json(serde_json::json!({ "success": true, "data": {}, "message": "ถอนความยินยอมสำเร็จ" })),
     ))
 }
 
@@ -496,5 +496,8 @@ pub async fn get_consent_summary(
         compliance_rate,
     };
 
-    Ok((StatusCode::OK, Json(summary)))
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "success": true, "data": summary })),
+    ))
 }

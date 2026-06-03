@@ -1,4 +1,4 @@
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
+import { apiClient, requireApiData } from '$lib/api/client';
 
 export interface FileUploadResponse {
 	success: boolean;
@@ -43,18 +43,12 @@ export async function uploadFile(
 	// Append file last
 	formData.append('file', file);
 
-	const response = await fetch(`${PUBLIC_BACKEND_URL}/api/files/upload`, {
-		method: 'POST',
-		credentials: 'include', // Use cookie-based auth
-		body: formData
-	});
-
-	if (!response.ok) {
-		const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-		throw new Error(error.error || `Upload failed: ${response.statusText}`);
-	}
-
-	return response.json();
+	const response = await apiClient.postMultipart<{ file: FileUploadResponse['file'] }>(
+		'/api/files/upload',
+		formData
+	);
+	const data = requireApiData(response, 'Upload failed');
+	return { success: true, file: data.file };
 }
 
 /**
@@ -75,29 +69,18 @@ export async function uploadDocument(file: File): Promise<FileUploadResponse> {
  * List user's files
  */
 export async function listUserFiles(): Promise<FileListResponse> {
-	const response = await fetch(`${PUBLIC_BACKEND_URL}/api/files`, {
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		throw new Error(`Failed to fetch files: ${response.statusText}`);
-	}
-
-	return response.json();
+	const response = await apiClient.get<{ files: FileUploadResponse['file'][]; total: number }>(
+		'/api/files'
+	);
+	const data = requireApiData(response, 'Failed to fetch files');
+	return { success: true, files: data.files, total: data.total };
 }
 
 /**
  * Delete a file
  */
 export async function deleteFile(fileId: string): Promise<DeleteFileResponse> {
-	const response = await fetch(`${PUBLIC_BACKEND_URL}/api/files/${fileId}`, {
-		method: 'DELETE',
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		throw new Error(`Failed to delete file: ${response.statusText}`);
-	}
-
-	return response.json();
+	const response = await apiClient.delete<Record<string, never>>(`/api/files/${fileId}`);
+	if (!response.success) throw new Error(response.error || 'Failed to delete file');
+	return { success: true, message: response.message || 'ลบไฟล์สำเร็จ' };
 }

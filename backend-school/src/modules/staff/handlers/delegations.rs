@@ -121,7 +121,7 @@ pub async fn create_delegation(
 
     state.permission_cache.invalidate(&body.to_user_id);
 
-    Ok(Json(json!({ "success": true, "delegation_id": id })).into_response())
+    Ok(Json(json!({ "success": true, "data": { "delegation_id": id } })).into_response())
 }
 
 pub async fn revoke_delegation(
@@ -150,5 +150,5 @@ pub async fn revoke_delegation(
     delegation_service::revoke_delegation(&pool, delegation_id).await?;
     state.permission_cache.invalidate(&to_user_id);
 
-    Ok(Json(json!({ "success": true })).into_response())
+    Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }

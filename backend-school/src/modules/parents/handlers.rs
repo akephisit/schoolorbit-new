@@ -115,10 +115,7 @@ pub async fn get_own_parent_profile(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "data": profile
-        })),
+        Json(json!({ "success": true, "data": profile })),
     ))
 }
 
@@ -238,7 +235,7 @@ pub async fn get_child_profile(
         parents,
     };
 
-    Ok((StatusCode::OK, Json(json!({"success": true, "data": student}))))
+    Ok((StatusCode::OK, Json(json!({ "success": true, "data": student }))))
 }
 
 #[derive(Debug, serde::Deserialize)]
