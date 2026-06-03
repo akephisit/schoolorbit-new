@@ -65,6 +65,17 @@ SMOKE_PASSWORD='your-sandbox-password' \
 ./scripts/smoke_test.sh
 ```
 
+Or copy the local env template and run the script without inline secrets:
+
+```bash
+cp .env.smoke.example .env.smoke.local
+# edit .env.smoke.local and set SMOKE_PASSWORD
+./scripts/smoke_test.sh
+```
+
+`scripts/smoke_test.sh` automatically loads `.env.smoke.local` by default. Override with
+`SMOKE_ENV_FILE=/path/to/file` when needed.
+
 The script checks:
 
 - tenant frontend page loads

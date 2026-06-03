@@ -1,6 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+smoke_env_file="${SMOKE_ENV_FILE:-$repo_root/.env.smoke.local}"
+
+if [[ -f "$smoke_env_file" ]]; then
+    smoke_env_keys=(
+        SMOKE_SUBDOMAIN
+        SMOKE_API_URL
+        SMOKE_ADMIN_API_URL
+        SMOKE_TENANT_URL
+        SMOKE_ORIGIN
+        SMOKE_TIMEOUT_SECONDS
+        SMOKE_USERNAME
+        SMOKE_PASSWORD
+        SMOKE_REMEMBER_ME
+    )
+    declare -A smoke_env_overrides=()
+
+    for key in "${smoke_env_keys[@]}"; do
+        if [[ -v $key ]]; then
+            smoke_env_overrides["$key"]="${!key}"
+        fi
+    done
+
+    set -a
+    # shellcheck disable=SC1090
+    source "$smoke_env_file"
+    set +a
+
+    for key in "${!smoke_env_overrides[@]}"; do
+        export "$key=${smoke_env_overrides[$key]}"
+    done
+fi
+
 SMOKE_SUBDOMAIN="${SMOKE_SUBDOMAIN:-sandbox}"
 SMOKE_API_URL="${SMOKE_API_URL:-https://school-api.schoolorbit.app}"
 SMOKE_ADMIN_API_URL="${SMOKE_ADMIN_API_URL:-https://admin-api.schoolorbit.app}"
