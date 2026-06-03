@@ -28,14 +28,14 @@
 	} from 'lucide-svelte';
 	import { getPublicStaffProfile } from '$lib/api/staff';
 	import { getAchievements } from '$lib/api/achievement';
-	import type { StaffProfileResponse } from '$lib/api/staff';
+	import type { PublicStaffProfileResponse } from '$lib/api/staff';
 	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
 	import { LoaderCircle } from 'lucide-svelte';
 
 	const { params }: PageProps = $props();
 	let staffId = $derived(params.id);
-	let staff = $state<StaffProfileResponse | null>(null);
+	let staff = $state<PublicStaffProfileResponse | null>(null);
 	let achievements = $state<Achievement[]>([]);
 	let loading = $state(true);
 	let loadingAchievements = $state(true);

@@ -103,6 +103,37 @@ export interface StaffProfileResponse {
 	permissions: string[];
 }
 
+export interface PublicStaffRoleResponse {
+	id: string;
+	code: string;
+	name: string;
+	level?: number;
+}
+
+export interface PublicStaffDepartmentResponse {
+	id: string;
+	code: string;
+	name: string;
+	position: string;
+}
+
+export interface PublicStaffProfileResponse {
+	id: string;
+	username: string;
+	email?: string;
+	title?: string;
+	first_name: string;
+	last_name: string;
+	nickname?: string;
+	phone?: string;
+	hired_date?: string;
+	user_type: string;
+	status: string;
+	profile_image_url?: string | null;
+	roles: PublicStaffRoleResponse[];
+	departments: PublicStaffDepartmentResponse[];
+}
+
 export interface CreateStaffRequest {
 	username?: string;
 	national_id?: string;
@@ -249,8 +280,8 @@ export async function getStaffProfile(staffId: string): Promise<ApiResponse<Staf
 
 export async function getPublicStaffProfile(
 	staffId: string
-): Promise<ApiResponse<StaffProfileResponse>> {
-	return apiClient.get<StaffProfileResponse>(`/api/staff/${staffId}/public-profile`);
+): Promise<ApiResponse<PublicStaffProfileResponse>> {
+	return apiClient.get<PublicStaffProfileResponse>(`/api/staff/${staffId}/public-profile`);
 }
 
 export async function createStaff(data: CreateStaffRequest): Promise<ApiResponse<{ id: string }>> {

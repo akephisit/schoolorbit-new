@@ -1,25 +1,31 @@
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::modules::staff::handlers::delegations::DelegationItem;
 
-pub async fn list_delegatable_permissions(pool: &PgPool, department_id: Uuid) -> Result<Vec<serde_json::Value>, AppError> {
-    let rows = sqlx::query(
+#[derive(Serialize, sqlx::FromRow)]
+pub struct DelegatablePermission {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+}
+
+pub async fn list_delegatable_permissions(pool: &PgPool, department_id: Uuid) -> Result<Vec<DelegatablePermission>, AppError> {
+    sqlx::query_as::<_, DelegatablePermission>(
         "SELECT p.id, p.code, p.name
          FROM department_permissions dp
          JOIN permissions p ON p.id = dp.permission_id
          WHERE dp.department_id = $1
          ORDER BY p.module, p.code"
     )
-    .bind(department_id).fetch_all(pool).await?;
-
-    Ok(rows.into_iter().map(|r| serde_json::json!({
-        "id": r.get::<Uuid, _>("id"),
-        "code": r.get::<String, _>("code"),
-        "name": r.get::<String, _>("name"),
-    })).collect())
+    .bind(department_id).fetch_all(pool).await
+    .map_err(|e| {
+        eprintln!("Failed to list delegatable permissions: {}", e);
+        AppError::InternalServerError("ไม่สามารถดึงสิทธิ์ที่มอบหมายได้".to_string())
+    })
 }
 
 pub async fn list_delegations(pool: &PgPool, department_id: Uuid) -> Result<Vec<DelegationItem>, AppError> {

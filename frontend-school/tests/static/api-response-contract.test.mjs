@@ -57,10 +57,17 @@ test('user role assignment API contract stays aligned across backend and fronten
 	const backendService = await readRepoFile(
 		'backend-school/src/modules/staff/services/user_role_service.rs'
 	);
+	const delegationService = await readRepoFile(
+		'backend-school/src/modules/staff/services/delegation_service.rs'
+	);
+	const staffService = await readRepoFile('backend-school/src/modules/staff/services/staff_service.rs');
 	const frontendApi = await readRepoFile('frontend-school/src/lib/api/roles.ts');
 	const frontendStaffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
 	const frontendComponent = await readRepoFile(
 		'frontend-school/src/lib/components/UserRoleManager.svelte'
+	);
+	const publicStaffPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/view/[id]/+page.svelte'
 	);
 
 	assert.match(backendModels, /struct\s+UserRoleAssignmentResponse/);
@@ -79,10 +86,19 @@ test('user role assignment API contract stays aligned across backend and fronten
 	assert.doesNotMatch(frontendApi, /interface\s+UserRole\s*\{/);
 	assert.match(frontendStaffApi, /permissions:\s*string\[\]/);
 	assert.doesNotMatch(frontendStaffApi, /permissions:\s*Record<string,\s*unknown>/);
+	assert.match(delegationService, /struct\s+DelegatablePermission/);
+	assert.match(delegationService, /Result<Vec<DelegatablePermission>,\s*AppError>/);
+	assert.doesNotMatch(delegationService, /Result<Vec<serde_json::Value>,\s*AppError>/);
+	assert.match(staffService, /struct\s+PublicStaffProfile/);
+	assert.match(staffService, /Result<PublicStaffProfile,\s*AppError>/);
+	assert.doesNotMatch(staffService, /get_public_staff_profile[\s\S]*?Result<serde_json::Value,\s*AppError>/);
+	assert.match(frontendStaffApi, /interface\s+PublicStaffProfileResponse/);
+	assert.match(frontendStaffApi, /getPublicStaffProfile[\s\S]*ApiResponse<PublicStaffProfileResponse>/);
 
 	assert.match(frontendComponent, /type\s+UserRoleAssignment/);
 	assert.match(frontendComponent, /userRole\.role/);
 	assert.doesNotMatch(frontendComponent, /getRoleById\(userRole\.role_id\)/);
+	assert.match(publicStaffPage, /PublicStaffProfileResponse/);
 });
 
 test('admission application detail contract returns application and documents in data', async () => {

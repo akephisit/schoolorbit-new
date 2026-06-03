@@ -2,7 +2,7 @@ use crate::error::AppError;
 use crate::modules::staff::models::*;
 use crate::utils::field_encryption;
 use chrono::NaiveDate;
-use serde_json::json;
+use serde::Serialize;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
@@ -56,6 +56,40 @@ struct DepartmentRow {
     is_primary_department: bool,
     category: Option<String>,
     org_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicStaffRole {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub level: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicStaffDepartment {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub position: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicStaffProfile {
+    pub id: Uuid,
+    pub username: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub nickname: Option<String>,
+    pub title: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub hired_date: Option<NaiveDate>,
+    pub profile_image_url: Option<String>,
+    pub user_type: String,
+    pub status: String,
+    pub roles: Vec<PublicStaffRole>,
+    pub departments: Vec<PublicStaffDepartment>,
 }
 
 #[derive(Debug, FromRow)]
@@ -748,10 +782,11 @@ pub async fn soft_delete_staff(pool: &PgPool, staff_id: Uuid) -> Result<(), AppE
 pub async fn get_public_staff_profile(
     pool: &PgPool,
     staff_id: Uuid,
-) -> Result<serde_json::Value, AppError> {
+) -> Result<PublicStaffProfile, AppError> {
     #[derive(sqlx::FromRow)]
     struct PublicUserRow {
         id: Uuid,
+        username: String,
         first_name: String,
         last_name: String,
         nickname: Option<String>,
@@ -765,7 +800,7 @@ pub async fn get_public_staff_profile(
     }
 
     let user_rec = sqlx::query_as::<_, PublicUserRow>(
-        "SELECT id, first_name, last_name, nickname, email, user_type, status, profile_image_url, title, phone, hired_date
+        "SELECT id, username, first_name, last_name, nickname, email, user_type, status, profile_image_url, title, phone, hired_date
          FROM users WHERE id = $1 AND user_type = 'staff'",
     )
     .bind(staff_id)
@@ -815,29 +850,30 @@ pub async fn get_public_staff_profile(
     .await
     .unwrap_or_default();
 
-    Ok(json!({
-        "id": user_rec.id,
-        "first_name": user_rec.first_name,
-        "last_name": user_rec.last_name,
-        "nickname": user_rec.nickname,
-        "title": user_rec.title,
-        "email": user_rec.email,
-        "phone": user_rec.phone,
-        "hired_date": user_rec.hired_date,
-        "profile_image_url": user_rec.profile_image_url,
-        "user_type": user_rec.user_type,
-        "status": user_rec.status,
-        "roles": roles.into_iter().map(|r| json!({
-            "id": r.id,
-            "code": r.code,
-            "name": r.name,
-            "level": r.level
-        })).collect::<Vec<_>>(),
-        "departments": departments.into_iter().map(|d| json!({
-            "id": d.id,
-            "code": d.code,
-            "name": d.name,
-            "position": d.position
-        })).collect::<Vec<_>>()
-    }))
+    Ok(PublicStaffProfile {
+        id: user_rec.id,
+        username: user_rec.username,
+        first_name: user_rec.first_name,
+        last_name: user_rec.last_name,
+        nickname: user_rec.nickname,
+        title: user_rec.title,
+        email: user_rec.email,
+        phone: user_rec.phone,
+        hired_date: user_rec.hired_date,
+        profile_image_url: user_rec.profile_image_url,
+        user_type: user_rec.user_type,
+        status: user_rec.status,
+        roles: roles.into_iter().map(|r| PublicStaffRole {
+            id: r.id,
+            code: r.code,
+            name: r.name,
+            level: r.level,
+        }).collect(),
+        departments: departments.into_iter().map(|d| PublicStaffDepartment {
+            id: d.id,
+            code: d.code,
+            name: d.name,
+            position: d.position,
+        }).collect(),
+    })
 }
