@@ -136,3 +136,13 @@ test('parent self-service API uses typed student and timetable responses', async
 	assert.match(timetablePage, /child = childRes\.data/);
 	assert.doesNotMatch(timetablePage, /childData as/);
 });
+
+test('school settings API consumes typed envelope data without casts', async () => {
+	const schoolApi = await readRepoFile('frontend-school/src/lib/api/school.ts');
+
+	assert.match(schoolApi, /apiClient\.get<SchoolSettings>/);
+	assert.match(schoolApi, /apiClient\.patch<Record<string, never>>/);
+	assert.match(schoolApi, /apiClient\.delete<Record<string, never>>/);
+	assert.match(schoolApi, /apiClient\.get<PublicSchoolInfo>/);
+	assert.doesNotMatch(schoolApi, /res\.data as/);
+});

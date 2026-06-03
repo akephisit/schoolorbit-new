@@ -16,23 +16,23 @@ export interface PublicSchoolInfo {
 }
 
 export async function getSchoolSettings(): Promise<SchoolSettings> {
-	const res = await apiClient.get('/api/school/settings');
+	const res = await apiClient.get<SchoolSettings>('/api/school/settings');
 	if (!res.success) throw new Error(res.error);
-	return (res.data as SchoolSettings) ?? {};
+	return res.data ?? {};
 }
 
 export async function updateSchoolSettings(data: UpdateSchoolSettingsRequest): Promise<void> {
-	const res = await apiClient.patch('/api/school/settings', data);
+	const res = await apiClient.patch<Record<string, never>>('/api/school/settings', data);
 	if (!res.success) throw new Error(res.error);
 }
 
 export async function deleteSchoolLogo(): Promise<void> {
-	const res = await apiClient.delete('/api/school/settings/logo');
+	const res = await apiClient.delete<Record<string, never>>('/api/school/settings/logo');
 	if (!res.success) throw new Error(res.error);
 }
 
 export async function getPublicSchoolInfo(): Promise<PublicSchoolInfo> {
-	const res = await apiClient.get('/api/school/public');
+	const res = await apiClient.get<PublicSchoolInfo>('/api/school/public');
 	if (!res.success) return {};
-	return (res.data as PublicSchoolInfo) ?? {};
+	return res.data ?? {};
 }
