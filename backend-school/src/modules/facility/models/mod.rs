@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Building {
@@ -44,7 +44,7 @@ pub struct Room {
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    
+
     // Joined
     #[sqlx(default)]
     pub building_name: Option<String>,

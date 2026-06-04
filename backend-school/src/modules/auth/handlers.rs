@@ -1,12 +1,15 @@
-use crate::db::school_mapping::get_school_database_url;
-use super::models::{Claims, LoginData, LoginRequest, LoginUser, User, UserResponse, ProfileResponse, UpdateProfileRequest, ChangePasswordRequest};
+use super::models::{
+    ChangePasswordRequest, Claims, LoginData, LoginRequest, LoginUser, ProfileResponse,
+    UpdateProfileRequest, User, UserResponse,
+};
 use crate::api_response::ApiResponse;
-use crate::utils::jwt::JwtService;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
 use crate::utils::field_encryption;
 use crate::utils::file_url::get_file_url_from_string;
+use crate::utils::jwt::JwtService;
+use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
-use crate::error::AppError;
 use axum::{
     extract::{rejection::JsonRejection, Request, State},
     http::{HeaderMap, StatusCode},
@@ -15,7 +18,6 @@ use axum::{
 };
 use tower_cookies::{Cookie, Cookies};
 
-
 /// Login handler
 pub async fn login(
     State(state): State<AppState>,
@@ -23,14 +25,17 @@ pub async fn login(
     cookies: Cookies,
     payload_result: Result<Json<LoginRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
-    let Json(payload) = payload_result
-        .map_err(|rejection| AppError::ValidationError(rejection.body_text()))?;
+    let Json(payload) =
+        payload_result.map_err(|rejection| AppError::ValidationError(rejection.body_text()))?;
 
     // Extract subdomain from Origin header (secure, cannot be spoofed)
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    println!("🔐 Login attempt for school: {}, username: {}", subdomain, payload.username);
+    println!(
+        "🔐 Login attempt for school: {}, username: {}",
+        subdomain, payload.username
+    );
 
     // Get school database URL from mapping
     let db_url = get_school_database_url(&state.admin_client, &subdomain)
@@ -41,7 +46,9 @@ pub async fn login(
         })?;
 
     // Connect to school database
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to connect to school database: {}", e);
@@ -69,11 +76,8 @@ pub async fn login(
     }
 
     // Generate JWT token
-    let token = JwtService::generate_token(
-        &user.id.to_string(),
-        &user.username,
-        &user.user_type,
-    ).map_err(|e| {
+    let token = JwtService::generate_token(&user.id.to_string(), &user.username, &user.user_type)
+        .map_err(|e| {
         eprintln!("❌ Failed to generate token: {}", e);
         AppError::InternalServerError("ไม่สามารถสร้าง token ได้".to_string())
     })?;
@@ -86,7 +90,7 @@ pub async fn login(
          WHERE ur.user_id = $1 
            AND ur.is_primary = true 
            AND ur.ended_at IS NULL
-         LIMIT 1"
+         LIMIT 1",
     )
     .bind(&user.id)
     .fetch_optional(&pool)
@@ -194,7 +198,7 @@ pub async fn logout(cookies: Cookies) -> Result<impl IntoResponse, AppError> {
     let mut cookie = Cookie::new("auth_token", "");
     cookie.set_path("/");
     cookie.set_max_age(time::Duration::seconds(0)); // Expire immediately
-    
+
     cookies.add(cookie);
 
     Ok((
@@ -217,7 +221,9 @@ pub async fn me(
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     // Extract claims from middleware
-    let claims = req.extensions().get::<Claims>()
+    let claims = req
+        .extensions()
+        .get::<Claims>()
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
@@ -230,7 +236,9 @@ pub async fn me(
         })?;
 
     // Get pool
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -264,13 +272,15 @@ pub async fn me(
             hired_date,
             resigned_date
          FROM users 
-         WHERE id = $1"
+         WHERE id = $1",
     )
-        .bind(uuid::Uuid::parse_str(&claims.sub)
-            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
-        .fetch_optional(&pool)
-        .await?
-        .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
+    .bind(
+        uuid::Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?,
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
 
     // Decrypt national_id
     // Decrypt national_id
@@ -280,7 +290,6 @@ pub async fn me(
         }
     }
 
-
     // Fetch primary role name
     let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
         "SELECT r.name 
@@ -289,7 +298,7 @@ pub async fn me(
          WHERE ur.user_id = $1 
            AND ur.is_primary = true 
            AND ur.ended_at IS NULL
-         LIMIT 1"
+         LIMIT 1",
     )
     .bind(&user.id)
     .fetch_optional(&pool)
@@ -369,7 +378,9 @@ pub async fn get_profile(
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     // Extract claims from middleware
-    let claims = req.extensions().get::<Claims>()
+    let claims = req
+        .extensions()
+        .get::<Claims>()
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
@@ -382,7 +393,9 @@ pub async fn get_profile(
         })?;
 
     // Get pool
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -391,8 +404,10 @@ pub async fn get_profile(
 
     // Fetch user from database
     let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
-        .bind(uuid::Uuid::parse_str(&claims.sub)
-            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
+        .bind(
+            uuid::Uuid::parse_str(&claims.sub)
+                .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?,
+        )
         .fetch_optional(&pool)
         .await?
         .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
@@ -411,7 +426,7 @@ pub async fn get_profile(
          WHERE ur.user_id = $1 
            AND ur.is_primary = true 
            AND ur.ended_at IS NULL
-         LIMIT 1"
+         LIMIT 1",
     )
     .bind(&user.id)
     .fetch_optional(&pool)
@@ -456,7 +471,9 @@ pub async fn update_profile(
                         .find_map(|c| c.trim().strip_prefix("auth_token="))
                 })
         })
-        .ok_or(AppError::AuthError("Missing authentication token".to_string()))?;
+        .ok_or(AppError::AuthError(
+            "Missing authentication token".to_string(),
+        ))?;
 
     // Validate JWT
     let claims = JwtService::verify_token(token)
@@ -471,23 +488,25 @@ pub async fn update_profile(
         })?;
 
     // Get pool
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
-    let user_id = uuid::Uuid::parse_str(&claims.sub)
-        .map_err(|e| {
-            eprintln!("❌ Invalid user ID: {}", e);
-            AppError::BadRequest("Invalid user ID".to_string())
-        })?;
+    let user_id = uuid::Uuid::parse_str(&claims.sub).map_err(|e| {
+        eprintln!("❌ Invalid user ID: {}", e);
+        AppError::BadRequest("Invalid user ID".to_string())
+    })?;
 
     // Parse date_of_birth if provided
-    let date_of_birth = payload.date_of_birth.as_ref().and_then(|dob| {
-        chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok()
-    });
+    let date_of_birth = payload
+        .date_of_birth
+        .as_ref()
+        .and_then(|dob| chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok());
 
     // Update user profile
     sqlx::query(
@@ -503,7 +522,7 @@ pub async fn update_profile(
              address = COALESCE($9, address),
              profile_image_url = COALESCE($10, profile_image_url),
              updated_at = NOW()
-         WHERE id = $11"
+         WHERE id = $11",
     )
     .bind(&payload.title)
     .bind(&payload.nickname)
@@ -544,7 +563,7 @@ pub async fn update_profile(
             WHERE ur.user_id = $1 
             AND ur.is_primary = true 
             AND ur.ended_at IS NULL
-            LIMIT 1"
+            LIMIT 1",
     )
     .bind(&user.id)
     .fetch_optional(&pool)
@@ -587,7 +606,9 @@ pub async fn change_password(
                         .find_map(|c| c.trim().strip_prefix("auth_token="))
                 })
         })
-        .ok_or(AppError::AuthError("Missing authentication token".to_string()))?;
+        .ok_or(AppError::AuthError(
+            "Missing authentication token".to_string(),
+        ))?;
 
     // Validate JWT
     let claims = JwtService::verify_token(token)
@@ -602,18 +623,19 @@ pub async fn change_password(
         })?;
 
     // Get pool
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
-    let user_id = uuid::Uuid::parse_str(&claims.sub)
-        .map_err(|e| {
-            eprintln!("❌ Invalid user ID: {}", e);
-            AppError::BadRequest("Invalid user ID".to_string())
-        })?;
+    let user_id = uuid::Uuid::parse_str(&claims.sub).map_err(|e| {
+        eprintln!("❌ Invalid user ID: {}", e);
+        AppError::BadRequest("Invalid user ID".to_string())
+    })?;
 
     // Find user by id to verify current password
     let user = sqlx::query_as::<_, LoginUser>(
@@ -636,11 +658,10 @@ pub async fn change_password(
     }
 
     // Hash new password
-    let new_password_hash = bcrypt::hash(&payload.new_password, 10)
-        .map_err(|e| {
-            eprintln!("❌ Failed to hash password: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let new_password_hash = bcrypt::hash(&payload.new_password, 10).map_err(|e| {
+        eprintln!("❌ Failed to hash password: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
     // Update password
     sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")

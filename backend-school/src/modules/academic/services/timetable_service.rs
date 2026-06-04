@@ -265,13 +265,27 @@ pub async fn list_entries(
     sql.push_str(" ORDER BY te.day_of_week, ap.order_index");
 
     let mut q = sqlx::query_as::<_, TimetableEntry>(&sql);
-    if let Some(v) = filter.classroom_id { q = q.bind(v); }
-    if let Some(v) = filter.student_id { q = q.bind(v); }
-    if let Some(v) = filter.instructor_id { q = q.bind(v); }
-    if let Some(v) = filter.room_id { q = q.bind(v); }
-    if let Some(v) = filter.academic_semester_id { q = q.bind(v); }
-    if let Some(v) = filter.day_of_week { q = q.bind(v); }
-    if let Some(v) = filter.entry_type { q = q.bind(v); }
+    if let Some(v) = filter.classroom_id {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.student_id {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.instructor_id {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.room_id {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.academic_semester_id {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.day_of_week {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.entry_type {
+        q = q.bind(v);
+    }
 
     q.fetch_all(pool).await.map_err(|e| {
         eprintln!("Failed to fetch timetable entries: {}", e);
@@ -372,14 +386,13 @@ pub async fn validate_entry(
 
     // Classroom conflict check (resolves classroom_id from course if needed)
     let classroom_for_check: Option<Uuid> = if let Some(course_id) = payload.classroom_course_id {
-        let cls: Option<Uuid> = sqlx::query_scalar(
-            "SELECT classroom_id FROM classroom_courses WHERE id = $1",
-        )
-        .bind(course_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+        let cls: Option<Uuid> =
+            sqlx::query_scalar("SELECT classroom_id FROM classroom_courses WHERE id = $1")
+                .bind(course_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten();
         if cls.is_none() {
             return Err(AppError::NotFound("Classroom course not found".to_string()));
         }
@@ -539,7 +552,10 @@ pub async fn create_entry(
             .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
             let title = payload.title.clone().or(slot_name);
-            let et = payload.entry_type.clone().unwrap_or_else(|| "ACTIVITY".to_string());
+            let et = payload
+                .entry_type
+                .clone()
+                .unwrap_or_else(|| "ACTIVITY".to_string());
             (cls, sem, et, title, Some(slot_id))
         } else {
             return Err(AppError::BadRequest(
@@ -548,7 +564,10 @@ pub async fn create_entry(
         };
 
     // 3. Insert + populate junction in transaction
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let entry = sqlx::query_as::<_, TimetableEntry>(
         r#"
@@ -639,7 +658,9 @@ pub async fn create_entry(
         }
     }
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(CreateEntryOutcome::Created(entry))
 }
 
@@ -676,13 +697,12 @@ pub async fn add_entry_instructor(
     .ok()
     .flatten();
 
-    let instructor_name: String = sqlx::query_scalar(
-        "SELECT CONCAT(first_name, ' ', last_name) FROM users WHERE id = $1",
-    )
-    .bind(instructor_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or_default();
+    let instructor_name: String =
+        sqlx::query_scalar("SELECT CONCAT(first_name, ' ', last_name) FROM users WHERE id = $1")
+            .bind(instructor_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or_default();
 
     Ok(AddInstructorResult {
         semester_id,
@@ -711,20 +731,21 @@ pub async fn remove_entry_instructor(
     .ok()
     .flatten();
 
-    sqlx::query("DELETE FROM timetable_entry_instructors WHERE entry_id = $1 AND instructor_id = $2")
-        .bind(entry_id)
-        .bind(instructor_id)
-        .execute(pool)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
-    let remaining: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM timetable_entry_instructors WHERE entry_id = $1",
+    sqlx::query(
+        "DELETE FROM timetable_entry_instructors WHERE entry_id = $1 AND instructor_id = $2",
     )
     .bind(entry_id)
-    .fetch_one(pool)
+    .bind(instructor_id)
+    .execute(pool)
     .await
-    .unwrap_or(1);
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM timetable_entry_instructors WHERE entry_id = $1")
+            .bind(entry_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(1);
 
     let mut entry_deleted = false;
     if remaining == 0 {
@@ -854,14 +875,13 @@ pub async fn get_my_activity_for_entry(
     user_id: Uuid,
     entry_id: Uuid,
 ) -> Result<Option<MyActivityForEntry>, AppError> {
-    let slot_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT activity_slot_id FROM academic_timetable_entries WHERE id = $1",
-    )
-    .bind(entry_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Query failed".to_string()))?
-    .flatten();
+    let slot_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT activity_slot_id FROM academic_timetable_entries WHERE id = $1")
+            .bind(entry_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Query failed".to_string()))?
+            .flatten();
 
     let slot_id = match slot_id {
         Some(id) => id,
@@ -922,10 +942,12 @@ pub async fn get_my_activity_for_entry(
                 max_capacity,
                 member_count: Some(member_count),
                 instructor_name,
-                instructors: Some(instructors.into_iter().map(|(id, name)| MyActivityInstructor {
-                    id,
-                    name,
-                }).collect()),
+                instructors: Some(
+                    instructors
+                        .into_iter()
+                        .map(|(id, name)| MyActivityInstructor { id, name })
+                        .collect(),
+                ),
             }))
         }
         None => Ok(Some(MyActivityForEntry {
@@ -947,7 +969,15 @@ pub async fn swap_entries(
     pool: &PgPool,
     body: SwapTimetableEntriesRequest,
 ) -> Result<SwapOutcome, AppError> {
-    let entries: Vec<(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>, Uuid, Option<Uuid>)> = sqlx::query_as(
+    let entries: Vec<(
+        Uuid,
+        String,
+        Uuid,
+        Option<Uuid>,
+        Option<Uuid>,
+        Uuid,
+        Option<Uuid>,
+    )> = sqlx::query_as(
         r#"SELECT id, day_of_week, period_id, room_id, classroom_id, academic_semester_id, batch_id
            FROM academic_timetable_entries
            WHERE id = ANY($1) AND is_active = true"#,
@@ -958,7 +988,9 @@ pub async fn swap_entries(
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     if entries.len() != 2 {
-        return Err(AppError::NotFound("Entry not found or inactive".to_string()));
+        return Err(AppError::NotFound(
+            "Entry not found or inactive".to_string(),
+        ));
     }
 
     // Block: ถ้า entry ใด entry หนึ่งสร้างจาก batch (pinned) → ไม่ให้สลับ
@@ -1148,7 +1180,10 @@ pub async fn swap_entries(
     }
 
     // 3-step transaction to bypass trigger race (migration 097)
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     sqlx::query("UPDATE academic_timetable_entries SET is_active = false WHERE id = $1")
         .bind(a_id)
@@ -1176,7 +1211,9 @@ pub async fn swap_entries(
     .await
     .map_err(|e| AppError::InternalServerError(format!("swap step 3: {}", e)))?;
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(SwapOutcome::Swapped { semester_id })
 }
@@ -1234,7 +1271,10 @@ pub async fn validate_moves(
         by_entry.entry(*eid).or_default().push(*iid);
     }
 
-    let mut cell_entries: HashMap<(String, Uuid), Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)>> = HashMap::new();
+    let mut cell_entries: HashMap<
+        (String, Uuid),
+        Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)>,
+    > = HashMap::new();
     for e in &all_entries {
         cell_entries.entry((e.1.clone(), e.2)).or_default().push(e);
     }
@@ -1271,14 +1311,19 @@ pub async fn validate_moves(
 
             let occupants: Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)> =
                 cell_entries.get(&key).cloned().unwrap_or_default();
-            let others: Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)> =
-                occupants.iter().filter(|e| e.0 != body.entry_id).copied().collect();
+            let others: Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)> = occupants
+                .iter()
+                .filter(|e| e.0 != body.entry_id)
+                .copied()
+                .collect();
 
             if others.is_empty() {
                 let mut valid = true;
                 let mut reason = String::new();
 
-                if all_entries.iter().any(|e| e.0 != body.entry_id && e.3 == src_classroom && e.1 == *day && e.2 == *pid) {
+                if all_entries.iter().any(|e| {
+                    e.0 != body.entry_id && e.3 == src_classroom && e.1 == *day && e.2 == *pid
+                }) {
                     valid = false;
                     reason = "ห้องเรียนมี entry อื่น".to_string();
                 }
@@ -1300,7 +1345,9 @@ pub async fn validate_moves(
 
                 if valid {
                     if let Some(r) = src_room {
-                        if all_entries.iter().any(|e| e.0 != body.entry_id && e.4 == Some(r) && e.1 == *day && e.2 == *pid) {
+                        if all_entries.iter().any(|e| {
+                            e.0 != body.entry_id && e.4 == Some(r) && e.1 == *day && e.2 == *pid
+                        }) {
                             valid = false;
                             reason = "ห้องถูกใช้".to_string();
                         }
@@ -1321,11 +1368,25 @@ pub async fn validate_moves(
                 let mut valid = true;
                 let mut reason = String::new();
 
-                if all_entries.iter().any(|e| e.0 != body.entry_id && e.0 != target_id && e.3 == src_classroom && e.1 == *day && e.2 == *pid) {
+                if all_entries.iter().any(|e| {
+                    e.0 != body.entry_id
+                        && e.0 != target_id
+                        && e.3 == src_classroom
+                        && e.1 == *day
+                        && e.2 == *pid
+                }) {
                     valid = false;
                     reason = "ห้องของต้นทางถูกใช้ที่คาบนี้".to_string();
                 }
-                if valid && all_entries.iter().any(|e| e.0 != body.entry_id && e.0 != target_id && e.3 == target.3 && e.1 == src_day && e.2 == src_period) {
+                if valid
+                    && all_entries.iter().any(|e| {
+                        e.0 != body.entry_id
+                            && e.0 != target_id
+                            && e.3 == target.3
+                            && e.1 == src_day
+                            && e.2 == src_period
+                    })
+                {
                     valid = false;
                     reason = "ห้องของปลายทางถูกใช้ที่คาบต้นทาง".to_string();
                 }
@@ -1346,7 +1407,8 @@ pub async fn validate_moves(
                     }
                 }
                 if valid {
-                    let target_instr: Vec<Uuid> = by_entry.get(&target_id).cloned().unwrap_or_default();
+                    let target_instr: Vec<Uuid> =
+                        by_entry.get(&target_id).cloned().unwrap_or_default();
                     for iid in &target_instr {
                         if all_entries.iter().any(|e| {
                             e.0 != body.entry_id
@@ -1364,7 +1426,13 @@ pub async fn validate_moves(
 
                 if valid {
                     if let Some(r) = src_room {
-                        if all_entries.iter().any(|e| e.0 != body.entry_id && e.0 != target_id && e.4 == Some(r) && e.1 == *day && e.2 == *pid) {
+                        if all_entries.iter().any(|e| {
+                            e.0 != body.entry_id
+                                && e.0 != target_id
+                                && e.4 == Some(r)
+                                && e.1 == *day
+                                && e.2 == *pid
+                        }) {
                             valid = false;
                             reason = "ห้องต้นทางถูกใช้ที่คาบปลายทาง".to_string();
                         }
@@ -1372,7 +1440,13 @@ pub async fn validate_moves(
                 }
                 if valid {
                     if let Some(r) = target.4 {
-                        if all_entries.iter().any(|e| e.0 != body.entry_id && e.0 != target_id && e.4 == Some(r) && e.1 == src_day && e.2 == src_period) {
+                        if all_entries.iter().any(|e| {
+                            e.0 != body.entry_id
+                                && e.0 != target_id
+                                && e.4 == Some(r)
+                                && e.1 == src_day
+                                && e.2 == src_period
+                        }) {
                             valid = false;
                             reason = "ห้องปลายทางถูกใช้ที่คาบต้นทาง".to_string();
                         }
@@ -1662,8 +1736,15 @@ pub async fn update_entry(
         let msg = e.to_string();
         if msg.contains("unique_entry_per_slot") {
             AppError::BadRequest("This slot is already occupied".to_string())
-        } else if msg.contains("instructor double-book") || msg.contains("ไม่สามารถย้าย") {
-            AppError::BadRequest(msg.split("ERROR:").last().unwrap_or(&msg).trim().to_string())
+        } else if msg.contains("instructor double-book") || msg.contains("ไม่สามารถย้าย")
+        {
+            AppError::BadRequest(
+                msg.split("ERROR:")
+                    .last()
+                    .unwrap_or(&msg)
+                    .trim()
+                    .to_string(),
+            )
         } else {
             AppError::InternalServerError("Failed to update entry".to_string())
         }
@@ -1849,15 +1930,14 @@ pub async fn create_batch_entries(
     .map_err(|e| AppError::InternalServerError(format!("fetch existing entries: {}", e)))?;
 
     // Pre-fetch classroom/period names
-    let classroom_names: std::collections::HashMap<Uuid, String> = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, name FROM class_rooms WHERE id = ANY($1)",
-    )
-    .bind(&payload.classroom_ids)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .collect();
+    let classroom_names: std::collections::HashMap<Uuid, String> =
+        sqlx::query_as::<_, (Uuid, String)>("SELECT id, name FROM class_rooms WHERE id = ANY($1)")
+            .bind(&payload.classroom_ids)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
     let period_labels: std::collections::HashMap<Uuid, String> = sqlx::query_as::<_, (Uuid, String)>(
         "SELECT id, COALESCE(name, 'คาบ ' || order_index::text) FROM academic_periods WHERE id = ANY($1)",
     )
@@ -1884,8 +1964,10 @@ pub async fn create_batch_entries(
     let mut skipped: Vec<BatchSkippedCell> = Vec::new();
     let mut blocked: Vec<BatchBlockedCell> = Vec::new();
     let mut deleted: Vec<BatchDeletedEntry> = Vec::new();
-    let mut excluded_instructors_map: std::collections::HashMap<Uuid, (String, Vec<BatchInstructorConflict>)> =
-        std::collections::HashMap::new();
+    let mut excluded_instructors_map: std::collections::HashMap<
+        Uuid,
+        (String, Vec<BatchInstructorConflict>),
+    > = std::collections::HashMap::new();
     let mut entries_to_delete: Vec<Uuid> = Vec::new();
     let mut insert_tuples: Vec<(Uuid, String, Uuid)> = Vec::new();
 
@@ -1904,7 +1986,9 @@ pub async fn create_batch_entries(
                         e.classroom_id == Some(*cr_id)
                             || (payload.room_id.is_some() && e.room_id == payload.room_id)
                             || (instructors_attach_to_classroom
-                                && e.instructor_ids.iter().any(|i| candidate_instructors.contains(i)))
+                                && e.instructor_ids
+                                    .iter()
+                                    .any(|i| candidate_instructors.contains(i)))
                     })
                     .collect();
 
@@ -1918,11 +2002,16 @@ pub async fn create_batch_entries(
                     .any(|e| e.scheduling_mode.as_deref() == Some("synchronized"));
 
                 if is_sync_batch {
-                    let cell_cls_name = classroom_names.get(cr_id).cloned().unwrap_or_else(|| "?".to_string());
+                    let cell_cls_name = classroom_names
+                        .get(cr_id)
+                        .cloned()
+                        .unwrap_or_else(|| "?".to_string());
                     let cell_period = period_labels.get(p_id).cloned().unwrap_or_default();
                     let cell_day = day_label(day);
 
-                    let classroom_busy = cell_conflicts.iter().find(|e| e.classroom_id == Some(*cr_id));
+                    let classroom_busy = cell_conflicts
+                        .iter()
+                        .find(|e| e.classroom_id == Some(*cr_id));
                     if let Some(blocker) = classroom_busy {
                         if force {
                             if blocker.scheduling_mode.as_deref() == Some("synchronized") {
@@ -1933,8 +2022,10 @@ pub async fn create_batch_entries(
                                     period_id: *p_id,
                                     period_name: Some(cell_period.clone()),
                                     reason: "SYNC_VS_SYNC".to_string(),
-                                    message: format!("{} {} {}: ทับกิจกรรม sync '{}' — sync ทับ sync ไม่ได้",
-                                                       cell_cls_name, cell_day, cell_period, blocker.display_title),
+                                    message: format!(
+                                        "{} {} {}: ทับกิจกรรม sync '{}' — sync ทับ sync ไม่ได้",
+                                        cell_cls_name, cell_day, cell_period, blocker.display_title
+                                    ),
                                 });
                                 continue;
                             }
@@ -1958,14 +2049,18 @@ pub async fn create_batch_entries(
                                 period_id: *p_id,
                                 period_name: Some(cell_period.clone()),
                                 reason: "STUDENT_BUSY".to_string(),
-                                message: format!("{} {} {}: นักเรียนติด '{}' — ลบของเดิมก่อน",
-                                                   cell_cls_name, cell_day, cell_period, blocker.display_title),
+                                message: format!(
+                                    "{} {} {}: นักเรียนติด '{}' — ลบของเดิมก่อน",
+                                    cell_cls_name, cell_day, cell_period, blocker.display_title
+                                ),
                             });
                         }
                         continue;
                     }
                     let room_busy = cell_conflicts.iter().find(|e| {
-                        payload.room_id.is_some() && e.room_id == payload.room_id && e.classroom_id != Some(*cr_id)
+                        payload.room_id.is_some()
+                            && e.room_id == payload.room_id
+                            && e.classroom_id != Some(*cr_id)
                     });
                     if let Some(blocker) = room_busy {
                         if force {
@@ -1989,8 +2084,10 @@ pub async fn create_batch_entries(
                                 period_id: *p_id,
                                 period_name: Some(cell_period.clone()),
                                 reason: "ROOM_BUSY".to_string(),
-                                message: format!("{} {} {}: ห้องสอนถูกใช้โดย '{}' อยู่ — ข้ามไม่ลง",
-                                                   cell_cls_name, cell_day, cell_period, blocker.display_title),
+                                message: format!(
+                                    "{} {} {}: ห้องสอนถูกใช้โดย '{}' อยู่ — ข้ามไม่ลง",
+                                    cell_cls_name, cell_day, cell_period, blocker.display_title
+                                ),
                             });
                         }
                         continue;
@@ -2021,23 +2118,27 @@ pub async fn create_batch_entries(
                     }
                     if !force {
                         for (iid, _name) in &conflicting_instructors {
-                            let Some(conf_entry) = cell_conflicts.iter().find(|e| e.instructor_ids.contains(iid)) else {
+                            let Some(conf_entry) = cell_conflicts
+                                .iter()
+                                .find(|e| e.instructor_ids.contains(iid))
+                            else {
                                 continue;
                             };
-                            let entry_record = excluded_instructors_map.entry(*iid).or_insert_with(|| {
-                                let nm = cell_conflicts
-                                    .iter()
-                                    .filter_map(|e| {
-                                        e.instructor_ids
-                                            .iter()
-                                            .position(|x| x == iid)
-                                            .and_then(|idx| e.instructor_names.get(idx))
-                                    })
-                                    .next()
-                                    .cloned()
-                                    .unwrap_or_default();
-                                (nm, Vec::new())
-                            });
+                            let entry_record =
+                                excluded_instructors_map.entry(*iid).or_insert_with(|| {
+                                    let nm = cell_conflicts
+                                        .iter()
+                                        .filter_map(|e| {
+                                            e.instructor_ids
+                                                .iter()
+                                                .position(|x| x == iid)
+                                                .and_then(|idx| e.instructor_names.get(idx))
+                                        })
+                                        .next()
+                                        .cloned()
+                                        .unwrap_or_default();
+                                    (nm, Vec::new())
+                                });
                             entry_record.1.push(BatchInstructorConflict {
                                 day_of_week: day.clone(),
                                 period_id: *p_id,
@@ -2048,7 +2149,10 @@ pub async fn create_batch_entries(
                     }
                     insert_tuples.push((*cr_id, day.clone(), *p_id));
                 } else {
-                    let cell_cls_name = classroom_names.get(cr_id).cloned().unwrap_or_else(|| "?".to_string());
+                    let cell_cls_name = classroom_names
+                        .get(cr_id)
+                        .cloned()
+                        .unwrap_or_else(|| "?".to_string());
                     let cell_period = period_labels.get(p_id).cloned().unwrap_or_default();
                     let cell_day = day_label(day);
 
@@ -2065,8 +2169,10 @@ pub async fn create_batch_entries(
                             period_id: *p_id,
                             period_name: Some(cell_period.clone()),
                             reason: "SYNC_ACTIVITY_PRESENT".to_string(),
-                            message: format!("{} {} {}: มีกิจกรรม sync '{}' อยู่ — ลบกิจกรรม sync ก่อน",
-                                               cell_cls_name, cell_day, cell_period, sync_blocker_title),
+                            message: format!(
+                                "{} {} {}: มีกิจกรรม sync '{}' อยู่ — ลบกิจกรรม sync ก่อน",
+                                cell_cls_name, cell_day, cell_period, sync_blocker_title
+                            ),
                         });
                         continue;
                     }
@@ -2090,24 +2196,53 @@ pub async fn create_batch_entries(
                     } else {
                         let primary = &cell_conflicts[0];
                         let (reason, message) = if primary.classroom_id == Some(*cr_id) {
-                            let r = if primary.entry_type == "COURSE" { "CLASSROOM_COURSE" } else { "CLASSROOM_ACTIVITY" };
-                            (r, format!("{} {} {}: ห้องนี้มี '{}' อยู่แล้ว — ข้ามไม่ลง",
-                                cell_cls_name, cell_day, cell_period, primary.display_title))
-                        } else if let Some(busy_instr) = primary.instructor_ids.iter().enumerate()
-                                .find(|(_, iid)| candidate_instructors.contains(iid)) {
-                            let instr_name = primary.instructor_names.get(busy_instr.0)
-                                .map(|s| s.as_str()).unwrap_or("ครู");
-                            ("INSTRUCTOR_BUSY", format!(
-                                "{} {} {}: ครู {} ติดสอน '{}' (ที่ {}) — ข้ามไม่ลง",
-                                cell_cls_name, cell_day, cell_period,
-                                instr_name, primary.display_title,
-                                primary.classroom_name.as_deref().unwrap_or("?")))
+                            let r = if primary.entry_type == "COURSE" {
+                                "CLASSROOM_COURSE"
+                            } else {
+                                "CLASSROOM_ACTIVITY"
+                            };
+                            (
+                                r,
+                                format!(
+                                    "{} {} {}: ห้องนี้มี '{}' อยู่แล้ว — ข้ามไม่ลง",
+                                    cell_cls_name, cell_day, cell_period, primary.display_title
+                                ),
+                            )
+                        } else if let Some(busy_instr) = primary
+                            .instructor_ids
+                            .iter()
+                            .enumerate()
+                            .find(|(_, iid)| candidate_instructors.contains(iid))
+                        {
+                            let instr_name = primary
+                                .instructor_names
+                                .get(busy_instr.0)
+                                .map(|s| s.as_str())
+                                .unwrap_or("ครู");
+                            (
+                                "INSTRUCTOR_BUSY",
+                                format!(
+                                    "{} {} {}: ครู {} ติดสอน '{}' (ที่ {}) — ข้ามไม่ลง",
+                                    cell_cls_name,
+                                    cell_day,
+                                    cell_period,
+                                    instr_name,
+                                    primary.display_title,
+                                    primary.classroom_name.as_deref().unwrap_or("?")
+                                ),
+                            )
                         } else {
-                            ("ROOM_BUSY", format!(
-                                "{} {} {}: ห้องสอนถูกใช้โดย '{}' ที่ {} — ข้ามไม่ลง",
-                                cell_cls_name, cell_day, cell_period,
-                                primary.display_title,
-                                primary.classroom_name.as_deref().unwrap_or("?")))
+                            (
+                                "ROOM_BUSY",
+                                format!(
+                                    "{} {} {}: ห้องสอนถูกใช้โดย '{}' ที่ {} — ข้ามไม่ลง",
+                                    cell_cls_name,
+                                    cell_day,
+                                    cell_period,
+                                    primary.display_title,
+                                    primary.classroom_name.as_deref().unwrap_or("?")
+                                ),
+                            )
                         };
                         skipped.push(BatchSkippedCell {
                             classroom_id: Some(*cr_id),
@@ -2136,7 +2271,10 @@ pub async fn create_batch_entries(
     };
 
     // ===== Execute transaction =====
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     let batch_uuid = Uuid::new_v4();
 
     if !entries_to_delete.is_empty() {
@@ -2233,15 +2371,16 @@ pub async fn create_batch_entries(
 
     // === INSTRUCTOR-only entries — skip ถ้าเป็น SLOT mode (attach ผ่าน CTE ด้านบนแล้ว) ===
     if !payload.instructor_ids.is_empty() && payload.activity_slot_id.is_none() {
-        let instr_names: std::collections::HashMap<Uuid, String> = sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, concat(first_name, ' ', last_name) FROM users WHERE id = ANY($1)",
-        )
-        .bind(&payload.instructor_ids)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
+        let instr_names: std::collections::HashMap<Uuid, String> =
+            sqlx::query_as::<_, (Uuid, String)>(
+                "SELECT id, concat(first_name, ' ', last_name) FROM users WHERE id = ANY($1)",
+            )
+            .bind(&payload.instructor_ids)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
 
         let mut entry_ids: Vec<Uuid> = Vec::new();
         let mut instr_ids: Vec<Uuid> = Vec::new();
@@ -2251,11 +2390,16 @@ pub async fn create_batch_entries(
             for d in &payload.days_of_week {
                 for p_id in &payload.period_ids {
                     let busy = existing.iter().find(|e| {
-                        e.day_of_week == *d && e.period_id == *p_id && e.instructor_ids.contains(i_id)
+                        e.day_of_week == *d
+                            && e.period_id == *p_id
+                            && e.instructor_ids.contains(i_id)
                     });
                     if let Some(blocker) = busy {
                         if !force {
-                            let instr_name = instr_names.get(i_id).cloned().unwrap_or_else(|| "ครู".to_string());
+                            let instr_name = instr_names
+                                .get(i_id)
+                                .cloned()
+                                .unwrap_or_else(|| "ครู".to_string());
                             let p_name = period_labels.get(p_id).cloned().unwrap_or_default();
                             skipped.push(BatchSkippedCell {
                                 classroom_id: None,
@@ -2266,7 +2410,9 @@ pub async fn create_batch_entries(
                                 reason: "INSTRUCTOR_BUSY".to_string(),
                                 message: format!(
                                     "ครู {} {} {}: ติดสอน '{}' ที่ {} อยู่ — ไม่สร้างคาบครูเปล่า",
-                                    instr_name, day_label(d), p_name,
+                                    instr_name,
+                                    day_label(d),
+                                    p_name,
                                     blocker.display_title,
                                     blocker.classroom_name.as_deref().unwrap_or("?")
                                 ),
@@ -2299,7 +2445,9 @@ pub async fn create_batch_entries(
                 .bind(&entries_to_delete)
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| AppError::InternalServerError(format!("delete teacher conflicts: {}", e)))?;
+                .map_err(|e| {
+                    AppError::InternalServerError(format!("delete teacher conflicts: {}", e))
+                })?;
             entries_to_delete.clear();
         }
 
@@ -2340,7 +2488,9 @@ pub async fn create_batch_entries(
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let excluded_instructors: Vec<BatchExcludedInstructor> = excluded_instructors_map
         .into_iter()

@@ -1,14 +1,10 @@
-use crate::modules::system::models::ProvisionRequest;
 use crate::error::AppError;
-use axum::{
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use crate::modules::system::models::ProvisionRequest;
+use axum::{http::StatusCode, response::IntoResponse, Json};
 use sqlx::postgres::PgPoolOptions;
 
 /// Handler for provisioning a new school tenant database
-/// 
+///
 /// This endpoint:
 /// 1. Connects to the provided database URL
 /// 2. Runs all migrations
@@ -29,7 +25,7 @@ pub async fn provision_tenant(
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to connect to tenant database: {}", e);
-             AppError::InternalServerError(format!("Database connection failed: {}", e))
+            AppError::InternalServerError(format!("Database connection failed: {}", e))
         })?;
 
     println!("✅ Connected to tenant database");
@@ -60,22 +56,25 @@ pub async fn provision_tenant(
 
     // Get admin role (created by migration)
     println!("🔍 Getting admin role...");
-    
+
     let admin_role_id = sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
         SELECT id FROM roles WHERE code = 'ADMIN'
-        "#
+        "#,
     )
     .fetch_one(&pool)
     .await
     .map_err(|e| {
         eprintln!("❌ Failed to find admin role: {}", e);
-        AppError::InternalServerError(format!("Failed to find admin role (migrations may not have run): {}", e))
+        AppError::InternalServerError(format!(
+            "Failed to find admin role (migrations may not have run): {}",
+            e
+        ))
     })?;
 
     // Create admin user (must be in transaction for encryption to work)
     println!("👤 Creating admin user...");
-    
+
     // Start transaction
     let mut tx = pool.begin().await.map_err(|e| {
         eprintln!("❌ Failed to start transaction: {}", e);
@@ -83,8 +82,8 @@ pub async fn provision_tenant(
     })?;
 
     // Hash the password using bcrypt
-    let password_hash = bcrypt::hash(&payload.admin_password, bcrypt::DEFAULT_COST)
-        .map_err(|e| {
+    let password_hash =
+        bcrypt::hash(&payload.admin_password, bcrypt::DEFAULT_COST).map_err(|e| {
             eprintln!("❌ Password hashing failed: {}", e);
             AppError::InternalServerError("Password hashing failed".to_string())
         })?;
@@ -94,8 +93,12 @@ pub async fn provision_tenant(
         r#"SELECT MIN(n)::bigint FROM generate_series(1, 9999) AS n
            WHERE NOT EXISTS (
                SELECT 1 FROM users WHERE username = 'T' || LPAD(n::text, 4, '0')
-           )"#
-    ).fetch_one(&pool).await.unwrap_or(Some(1)).unwrap_or(1);
+           )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(Some(1))
+    .unwrap_or(1);
     let username = format!("T{:04}", next_num);
     println!("   Generated Admin Username: {}", username);
 
@@ -131,7 +134,7 @@ pub async fn provision_tenant(
         INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
         VALUES ($1, $2, $3, CURRENT_DATE)
         ON CONFLICT (user_id, role_id, department_id, started_at) DO NOTHING
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(admin_role_id)
@@ -144,18 +147,28 @@ pub async fn provision_tenant(
         }
         Err(e) => {
             eprintln!("⚠️  Warning: Failed to assign admin role: {}", e);
-            if let Err(rb_err) = tx.rollback().await { eprintln!("⚠️ Transaction rollback failed: {}", rb_err); }
-            return Err(AppError::InternalServerError(format!("Failed to assign admin role: {}", e)));
+            if let Err(rb_err) = tx.rollback().await {
+                eprintln!("⚠️ Transaction rollback failed: {}", rb_err);
+            }
+            return Err(AppError::InternalServerError(format!(
+                "Failed to assign admin role: {}",
+                e
+            )));
         }
     }
 
     // Commit transaction
     if let Err(e) = tx.commit().await {
         eprintln!("❌ Failed to commit transaction: {}", e);
-        return Err(AppError::InternalServerError("Failed to commit transaction".to_string()));
+        return Err(AppError::InternalServerError(
+            "Failed to commit transaction".to_string(),
+        ));
     }
 
-    println!("🎉 Tenant provisioning completed for school: {}", payload.school_id);
+    println!(
+        "🎉 Tenant provisioning completed for school: {}",
+        payload.school_id
+    );
 
     Ok((
         StatusCode::OK,

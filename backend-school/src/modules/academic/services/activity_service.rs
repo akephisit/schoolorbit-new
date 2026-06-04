@@ -8,7 +8,10 @@ use uuid::Uuid;
 // Activity Slots
 // ============================================
 
-pub async fn list_slots(pool: &PgPool, filter: ActivitySlotFilter) -> Result<Vec<ActivitySlot>, AppError> {
+pub async fn list_slots(
+    pool: &PgPool,
+    filter: ActivitySlotFilter,
+) -> Result<Vec<ActivitySlot>, AppError> {
     let mut sql = String::from(
         r#"SELECT
             s.*,
@@ -34,18 +37,38 @@ pub async fn list_slots(pool: &PgPool, filter: ActivitySlotFilter) -> Result<Vec
     );
 
     let mut idx = 0u32;
-    if filter.semester_id.is_some() { idx += 1; sql.push_str(&format!(" AND s.semester_id = ${idx}")); }
-    if filter.activity_type.is_some() { idx += 1; sql.push_str(&format!(" AND ac.activity_type = ${idx}")); }
-    if filter.teacher_reg_open.is_some() { idx += 1; sql.push_str(&format!(" AND s.teacher_reg_open = ${idx}")); }
-    if filter.student_reg_open.is_some() { idx += 1; sql.push_str(&format!(" AND s.student_reg_open = ${idx}")); }
+    if filter.semester_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND s.semester_id = ${idx}"));
+    }
+    if filter.activity_type.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND ac.activity_type = ${idx}"));
+    }
+    if filter.teacher_reg_open.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND s.teacher_reg_open = ${idx}"));
+    }
+    if filter.student_reg_open.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND s.student_reg_open = ${idx}"));
+    }
 
     sql.push_str(" GROUP BY s.id, ac.id, sem.name ORDER BY ac.activity_type, ac.name");
 
     let mut q = sqlx::query_as::<_, ActivitySlot>(&sql);
-    if let Some(v) = filter.semester_id { q = q.bind(v); }
-    if let Some(ref v) = filter.activity_type { q = q.bind(v); }
-    if let Some(v) = filter.teacher_reg_open { q = q.bind(v); }
-    if let Some(v) = filter.student_reg_open { q = q.bind(v); }
+    if let Some(v) = filter.semester_id {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = filter.activity_type {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.teacher_reg_open {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.student_reg_open {
+        q = q.bind(v);
+    }
 
     q.fetch_all(pool).await.map_err(|e| {
         eprintln!("list_activity_slots error: {e}");
@@ -53,7 +76,11 @@ pub async fn list_slots(pool: &PgPool, filter: ActivitySlotFilter) -> Result<Vec
     })
 }
 
-pub async fn update_slot(pool: &PgPool, id: Uuid, body: UpdateActivitySlotRequest) -> Result<ActivitySlot, AppError> {
+pub async fn update_slot(
+    pool: &PgPool,
+    id: Uuid,
+    body: UpdateActivitySlotRequest,
+) -> Result<ActivitySlot, AppError> {
     sqlx::query_as(
         r#"WITH upd AS (
             UPDATE activity_slots SET
@@ -115,7 +142,10 @@ pub async fn delete_slot(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
 // Activity Groups
 // ============================================
 
-pub async fn list_groups(pool: &PgPool, filter: ActivityGroupFilter) -> Result<Vec<ActivityGroup>, AppError> {
+pub async fn list_groups(
+    pool: &PgPool,
+    filter: ActivityGroupFilter,
+) -> Result<Vec<ActivityGroup>, AppError> {
     let mut sql = String::from(
         r#"SELECT
             ag.*,
@@ -134,25 +164,55 @@ pub async fn list_groups(pool: &PgPool, filter: ActivityGroupFilter) -> Result<V
     );
 
     let mut idx = 0u32;
-    if filter.slot_id.is_some() { idx += 1; sql.push_str(&format!(" AND ag.slot_id = ${idx}")); }
-    if filter.semester_id.is_some() { idx += 1; sql.push_str(&format!(" AND s.semester_id = ${idx}")); }
-    if filter.activity_type.is_some() { idx += 1; sql.push_str(&format!(" AND ac.activity_type = ${idx}")); }
-    if filter.instructor_id.is_some() { idx += 1; sql.push_str(&format!(" AND ag.instructor_id = ${idx}")); }
-    if filter.registration_open.is_some() { idx += 1; sql.push_str(&format!(" AND ag.registration_open = ${idx}")); }
+    if filter.slot_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND ag.slot_id = ${idx}"));
+    }
+    if filter.semester_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND s.semester_id = ${idx}"));
+    }
+    if filter.activity_type.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND ac.activity_type = ${idx}"));
+    }
+    if filter.instructor_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND ag.instructor_id = ${idx}"));
+    }
+    if filter.registration_open.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND ag.registration_open = ${idx}"));
+    }
     if let Some(ref search) = filter.search {
-        if !search.is_empty() { idx += 1; sql.push_str(&format!(" AND ag.name ILIKE ${idx}")); }
+        if !search.is_empty() {
+            idx += 1;
+            sql.push_str(&format!(" AND ag.name ILIKE ${idx}"));
+        }
     }
 
     sql.push_str(" GROUP BY ag.id, u.first_name, u.last_name, ac.name, ac.activity_type, sem.name ORDER BY ac.activity_type, ag.name");
 
     let mut q = sqlx::query_as::<_, ActivityGroup>(&sql);
-    if let Some(v) = filter.slot_id { q = q.bind(v); }
-    if let Some(v) = filter.semester_id { q = q.bind(v); }
-    if let Some(ref v) = filter.activity_type { q = q.bind(v); }
-    if let Some(v) = filter.instructor_id { q = q.bind(v); }
-    if let Some(v) = filter.registration_open { q = q.bind(v); }
+    if let Some(v) = filter.slot_id {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.semester_id {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = filter.activity_type {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.instructor_id {
+        q = q.bind(v);
+    }
+    if let Some(v) = filter.registration_open {
+        q = q.bind(v);
+    }
     if let Some(ref search) = filter.search {
-        if !search.is_empty() { q = q.bind(format!("%{search}%")); }
+        if !search.is_empty() {
+            q = q.bind(format!("%{search}%"));
+        }
     }
 
     q.fetch_all(pool).await.map_err(|e| {
@@ -232,7 +292,11 @@ pub async fn create_group(
     Ok(CreateGroupOutcome::Created(row))
 }
 
-pub async fn update_group(pool: &PgPool, id: Uuid, body: UpdateActivityGroupRequest) -> Result<ActivityGroup, AppError> {
+pub async fn update_group(
+    pool: &PgPool,
+    id: Uuid,
+    body: UpdateActivityGroupRequest,
+) -> Result<ActivityGroup, AppError> {
     let allowed = body
         .allowed_classroom_ids
         .as_ref()
@@ -284,7 +348,10 @@ pub async fn delete_group(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
 // Members
 // ============================================
 
-pub async fn list_members(pool: &PgPool, group_id: Uuid) -> Result<Vec<ActivityGroupMember>, AppError> {
+pub async fn list_members(
+    pool: &PgPool,
+    group_id: Uuid,
+) -> Result<Vec<ActivityGroupMember>, AppError> {
     sqlx::query_as(
         r#"SELECT
             agm.*,
@@ -321,22 +388,24 @@ pub enum AddMembersOutcome {
     OverCapacity(i32),
 }
 
-pub async fn add_members(pool: &PgPool, group_id: Uuid, student_ids: Vec<Uuid>) -> Result<AddMembersOutcome, AppError> {
-    let (current_count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM activity_group_members WHERE activity_group_id = $1",
-    )
-    .bind(group_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+pub async fn add_members(
+    pool: &PgPool,
+    group_id: Uuid,
+    student_ids: Vec<Uuid>,
+) -> Result<AddMembersOutcome, AppError> {
+    let (current_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM activity_group_members WHERE activity_group_id = $1")
+            .bind(group_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let (max_cap,): (Option<i32>,) = sqlx::query_as(
-        "SELECT max_capacity FROM activity_groups WHERE id = $1",
-    )
-    .bind(group_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
+    let (max_cap,): (Option<i32>,) =
+        sqlx::query_as("SELECT max_capacity FROM activity_groups WHERE id = $1")
+            .bind(group_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|_| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
 
     if let Some(cap) = max_cap {
         if current_count + student_ids.len() as i64 > cap as i64 {
@@ -362,13 +431,11 @@ pub async fn add_members(pool: &PgPool, group_id: Uuid, student_ids: Vec<Uuid>) 
 }
 
 pub async fn my_enrollments(pool: &PgPool, user_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar(
-        "SELECT activity_group_id FROM activity_group_members WHERE student_id = $1",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))
+    sqlx::query_scalar("SELECT activity_group_id FROM activity_group_members WHERE student_id = $1")
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
 /// Outcome ของ self_enroll — caller format error message ตามสถานะ
@@ -381,7 +448,11 @@ pub enum SelfEnrollOutcome {
     ClassroomNotAllowed,
 }
 
-pub async fn self_enroll(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<SelfEnrollOutcome, AppError> {
+pub async fn self_enroll(
+    pool: &PgPool,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<SelfEnrollOutcome, AppError> {
     let row: Option<(bool, Option<i32>, String)> = sqlx::query_as(
         r#"SELECT s.student_reg_open, ag.max_capacity, s.registration_type
            FROM activity_groups ag
@@ -393,7 +464,8 @@ pub async fn self_enroll(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let (open, cap, reg_type) = row.ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
+    let (open, cap, reg_type) =
+        row.ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
 
     if reg_type != "self" {
         return Ok(SelfEnrollOutcome::NotSelfRegistrationType);
@@ -469,16 +541,22 @@ pub async fn self_enroll(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result
 }
 
 pub async fn self_unenroll(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM activity_group_members WHERE activity_group_id = $1 AND student_id = $2")
-        .bind(group_id)
-        .bind(user_id)
-        .execute(pool)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    sqlx::query(
+        "DELETE FROM activity_group_members WHERE activity_group_id = $1 AND student_id = $2",
+    )
+    .bind(group_id)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
 }
 
-pub async fn remove_member(pool: &PgPool, group_id: Uuid, student_id: Uuid) -> Result<(), AppError> {
+pub async fn remove_member(
+    pool: &PgPool,
+    group_id: Uuid,
+    student_id: Uuid,
+) -> Result<(), AppError> {
     sqlx::query(
         "DELETE FROM activity_group_members WHERE activity_group_id = $1 AND student_id = $2",
     )
@@ -490,9 +568,15 @@ pub async fn remove_member(pool: &PgPool, group_id: Uuid, student_id: Uuid) -> R
     Ok(())
 }
 
-pub async fn update_member_result(pool: &PgPool, member_id: Uuid, result: &str) -> Result<(), AppError> {
+pub async fn update_member_result(
+    pool: &PgPool,
+    member_id: Uuid,
+    result: &str,
+) -> Result<(), AppError> {
     if result != "pass" && result != "fail" {
-        return Err(AppError::BadRequest("result ต้องเป็น pass หรือ fail".to_string()));
+        return Err(AppError::BadRequest(
+            "result ต้องเป็น pass หรือ fail".to_string(),
+        ));
     }
     sqlx::query("UPDATE activity_group_members SET result = $1 WHERE id = $2")
         .bind(result)
@@ -515,7 +599,10 @@ pub struct InstructorInfo {
     pub instructor_name: Option<String>,
 }
 
-pub async fn list_group_instructors(pool: &PgPool, group_id: Uuid) -> Result<Vec<InstructorInfo>, AppError> {
+pub async fn list_group_instructors(
+    pool: &PgPool,
+    group_id: Uuid,
+) -> Result<Vec<InstructorInfo>, AppError> {
     sqlx::query_as(
         r#"SELECT agi.id, agi.instructor_id, agi.role,
                   u.first_name || ' ' || u.last_name AS instructor_name
@@ -530,7 +617,12 @@ pub async fn list_group_instructors(pool: &PgPool, group_id: Uuid) -> Result<Vec
     .map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
-pub async fn add_group_instructor(pool: &PgPool, group_id: Uuid, instructor_id: Uuid, role: &str) -> Result<(), AppError> {
+pub async fn add_group_instructor(
+    pool: &PgPool,
+    group_id: Uuid,
+    instructor_id: Uuid,
+    role: &str,
+) -> Result<(), AppError> {
     sqlx::query(
         "INSERT INTO activity_group_instructors (activity_group_id, instructor_id, role)
          VALUES ($1, $2, $3) ON CONFLICT (activity_group_id, instructor_id) DO UPDATE SET role = $3",
@@ -544,7 +636,11 @@ pub async fn add_group_instructor(pool: &PgPool, group_id: Uuid, instructor_id: 
     Ok(())
 }
 
-pub async fn remove_group_instructor(pool: &PgPool, group_id: Uuid, instructor_id: Uuid) -> Result<(), AppError> {
+pub async fn remove_group_instructor(
+    pool: &PgPool,
+    group_id: Uuid,
+    instructor_id: Uuid,
+) -> Result<(), AppError> {
     sqlx::query(
         "DELETE FROM activity_group_instructors WHERE activity_group_id = $1 AND instructor_id = $2",
     )
@@ -567,7 +663,10 @@ pub struct SlotInstructorInfo {
     pub instructor_name: Option<String>,
 }
 
-pub async fn list_slot_instructors(pool: &PgPool, slot_id: Uuid) -> Result<Vec<SlotInstructorInfo>, AppError> {
+pub async fn list_slot_instructors(
+    pool: &PgPool,
+    slot_id: Uuid,
+) -> Result<Vec<SlotInstructorInfo>, AppError> {
     sqlx::query_as(
         r#"SELECT asi.id, asi.user_id,
                   u.first_name || ' ' || u.last_name AS instructor_name
@@ -583,8 +682,15 @@ pub async fn list_slot_instructors(pool: &PgPool, slot_id: Uuid) -> Result<Vec<S
 }
 
 /// Add slot instructor + propagate ไป timetable_entry_instructors
-pub async fn add_slot_instructor(pool: &PgPool, slot_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+pub async fn add_slot_instructor(
+    pool: &PgPool,
+    slot_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     sqlx::query(
         "INSERT INTO activity_slot_instructors (slot_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
@@ -616,16 +722,25 @@ pub async fn add_slot_instructor(pool: &PgPool, slot_id: Uuid, user_id: Uuid) ->
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
 }
 
-pub async fn add_slot_instructors_batch(pool: &PgPool, slot_id: Uuid, user_ids: Vec<Uuid>) -> Result<usize, AppError> {
+pub async fn add_slot_instructors_batch(
+    pool: &PgPool,
+    slot_id: Uuid,
+    user_ids: Vec<Uuid>,
+) -> Result<usize, AppError> {
     if user_ids.is_empty() {
         return Ok(0);
     }
 
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     sqlx::query(
         r#"INSERT INTO activity_slot_instructors (slot_id, user_id)
@@ -660,12 +775,21 @@ pub async fn add_slot_instructors_batch(pool: &PgPool, slot_id: Uuid, user_ids: 
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(user_ids.len())
 }
 
-pub async fn remove_slot_instructor(pool: &PgPool, slot_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+pub async fn remove_slot_instructor(
+    pool: &PgPool,
+    slot_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     sqlx::query("DELETE FROM activity_slot_instructors WHERE slot_id = $1 AND user_id = $2")
         .bind(slot_id)
@@ -687,7 +811,9 @@ pub async fn remove_slot_instructor(pool: &PgPool, slot_id: Uuid, user_id: Uuid)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
 }
 
@@ -710,7 +836,10 @@ pub async fn delete_all_slot_groups(pool: &PgPool, slot_id: Uuid) -> Result<u64,
 }
 
 pub async fn remove_all_slot_instructors(pool: &PgPool, slot_id: Uuid) -> Result<u64, AppError> {
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let result = sqlx::query("DELETE FROM activity_slot_instructors WHERE slot_id = $1")
         .bind(slot_id)
@@ -729,7 +858,9 @@ pub async fn remove_all_slot_instructors(pool: &PgPool, slot_id: Uuid) -> Result
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(result.rows_affected())
 }
 
@@ -737,7 +868,10 @@ pub async fn remove_all_slot_instructors(pool: &PgPool, slot_id: Uuid) -> Result
 // Slot Classroom Assignments
 // ============================================
 
-pub async fn list_slot_classroom_assignments(pool: &PgPool, slot_id: Uuid) -> Result<Vec<SlotClassroomAssignment>, AppError> {
+pub async fn list_slot_classroom_assignments(
+    pool: &PgPool,
+    slot_id: Uuid,
+) -> Result<Vec<SlotClassroomAssignment>, AppError> {
     sqlx::query_as::<_, SlotClassroomAssignment>(
         r#"SELECT asca.*, cr.name AS classroom_name,
                   concat(u.first_name, ' ', u.last_name) AS instructor_name
@@ -761,7 +895,10 @@ pub async fn batch_upsert_slot_classroom_assignments(
     slot_id: Uuid,
     body: BatchUpsertSlotClassroomAssignmentsRequest,
 ) -> Result<usize, AppError> {
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     for a in &body.assignments {
         sqlx::query(
@@ -808,12 +945,20 @@ pub async fn batch_upsert_slot_classroom_assignments(
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(body.assignments.len())
 }
 
-pub async fn delete_all_slot_classroom_assignments(pool: &PgPool, slot_id: Uuid) -> Result<u64, AppError> {
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+pub async fn delete_all_slot_classroom_assignments(
+    pool: &PgPool,
+    slot_id: Uuid,
+) -> Result<u64, AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let result = sqlx::query("DELETE FROM activity_slot_classroom_assignments WHERE slot_id = $1")
         .bind(slot_id)
@@ -832,12 +977,21 @@ pub async fn delete_all_slot_classroom_assignments(pool: &PgPool, slot_id: Uuid)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(result.rows_affected())
 }
 
-pub async fn delete_slot_classroom_assignment(pool: &PgPool, slot_id: Uuid, assignment_id: Uuid) -> Result<(), AppError> {
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+pub async fn delete_slot_classroom_assignment(
+    pool: &PgPool,
+    slot_id: Uuid,
+    assignment_id: Uuid,
+) -> Result<(), AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let classroom_id: Option<Uuid> = sqlx::query_scalar(
         "DELETE FROM activity_slot_classroom_assignments WHERE id = $1 AND slot_id = $2 RETURNING classroom_id",
@@ -863,6 +1017,8 @@ pub async fn delete_slot_classroom_assignment(pool: &PgPool, slot_id: Uuid, assi
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
 }

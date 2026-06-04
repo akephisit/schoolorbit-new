@@ -9,52 +9,113 @@ use uuid::Uuid;
 
 pub async fn list_plans(pool: &PgPool, query: StudyPlanQuery) -> Result<Vec<StudyPlan>, AppError> {
     let mut sql = String::from("SELECT * FROM study_plans WHERE 1=1");
-    if query.active_only.unwrap_or(false) { sql.push_str(" AND is_active = true"); }
+    if query.active_only.unwrap_or(false) {
+        sql.push_str(" AND is_active = true");
+    }
     sql.push_str(" ORDER BY code");
-    Ok(sqlx::query_as::<_, StudyPlan>(&sql).fetch_all(pool).await.unwrap_or_default())
+    Ok(sqlx::query_as::<_, StudyPlan>(&sql)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default())
 }
 
 pub async fn get_plan(pool: &PgPool, plan_id: Uuid) -> Result<StudyPlan, AppError> {
     sqlx::query_as::<_, StudyPlan>("SELECT * FROM study_plans WHERE id = $1")
-        .bind(plan_id).fetch_one(pool).await
+        .bind(plan_id)
+        .fetch_one(pool)
+        .await
         .map_err(AppError::from)
 }
 
-pub async fn create_plan(pool: &PgPool, req: CreateStudyPlanRequest) -> Result<StudyPlan, AppError> {
-    let grade_ids = req.grade_level_ids.map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+pub async fn create_plan(
+    pool: &PgPool,
+    req: CreateStudyPlanRequest,
+) -> Result<StudyPlan, AppError> {
+    let grade_ids = req
+        .grade_level_ids
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
     sqlx::query_as::<_, StudyPlan>(
         "INSERT INTO study_plans (code, name_th, name_en, description, grade_level_ids)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *"
+         VALUES ($1, $2, $3, $4, $5) RETURNING *",
     )
-    .bind(&req.code).bind(&req.name_th).bind(&req.name_en).bind(&req.description).bind(&grade_ids)
-    .fetch_one(pool).await.map_err(AppError::from)
+    .bind(&req.code)
+    .bind(&req.name_th)
+    .bind(&req.name_en)
+    .bind(&req.description)
+    .bind(&grade_ids)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
 }
 
-pub async fn update_plan(pool: &PgPool, plan_id: Uuid, req: UpdateStudyPlanRequest) -> Result<StudyPlan, AppError> {
+pub async fn update_plan(
+    pool: &PgPool,
+    plan_id: Uuid,
+    req: UpdateStudyPlanRequest,
+) -> Result<StudyPlan, AppError> {
     let mut updates = Vec::new();
     let mut param_count = 1;
-    if req.code.is_some() { updates.push(format!("code = ${}", param_count)); param_count += 1; }
-    if req.name_th.is_some() { updates.push(format!("name_th = ${}", param_count)); param_count += 1; }
-    if req.name_en.is_some() { updates.push(format!("name_en = ${}", param_count)); param_count += 1; }
-    if req.description.is_some() { updates.push(format!("description = ${}", param_count)); param_count += 1; }
-    if req.grade_level_ids.is_some() { updates.push(format!("grade_level_ids = ${}", param_count)); param_count += 1; }
-    if req.is_active.is_some() { updates.push(format!("is_active = ${}", param_count)); param_count += 1; }
-    if updates.is_empty() { return Err(AppError::BadRequest("No fields to update".to_string())); }
+    if req.code.is_some() {
+        updates.push(format!("code = ${}", param_count));
+        param_count += 1;
+    }
+    if req.name_th.is_some() {
+        updates.push(format!("name_th = ${}", param_count));
+        param_count += 1;
+    }
+    if req.name_en.is_some() {
+        updates.push(format!("name_en = ${}", param_count));
+        param_count += 1;
+    }
+    if req.description.is_some() {
+        updates.push(format!("description = ${}", param_count));
+        param_count += 1;
+    }
+    if req.grade_level_ids.is_some() {
+        updates.push(format!("grade_level_ids = ${}", param_count));
+        param_count += 1;
+    }
+    if req.is_active.is_some() {
+        updates.push(format!("is_active = ${}", param_count));
+        param_count += 1;
+    }
+    if updates.is_empty() {
+        return Err(AppError::BadRequest("No fields to update".to_string()));
+    }
 
-    let sql = format!("UPDATE study_plans SET {} WHERE id = ${} RETURNING *", updates.join(", "), param_count);
+    let sql = format!(
+        "UPDATE study_plans SET {} WHERE id = ${} RETURNING *",
+        updates.join(", "),
+        param_count
+    );
     let mut q = sqlx::query_as::<_, StudyPlan>(&sql);
-    if let Some(ref v) = req.code { q = q.bind(v); }
-    if let Some(ref v) = req.name_th { q = q.bind(v); }
-    if let Some(ref v) = req.name_en { q = q.bind(v); }
-    if let Some(ref v) = req.description { q = q.bind(v); }
-    if let Some(ref v) = req.grade_level_ids { q = q.bind(serde_json::to_value(v).unwrap_or(serde_json::Value::Null)); }
-    if let Some(v) = req.is_active { q = q.bind(v); }
+    if let Some(ref v) = req.code {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = req.name_th {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = req.name_en {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = req.description {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = req.grade_level_ids {
+        q = q.bind(serde_json::to_value(v).unwrap_or(serde_json::Value::Null));
+    }
+    if let Some(v) = req.is_active {
+        q = q.bind(v);
+    }
     q = q.bind(plan_id);
     q.fetch_one(pool).await.map_err(AppError::from)
 }
 
 pub async fn delete_plan(pool: &PgPool, plan_id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM study_plans WHERE id = $1").bind(plan_id).execute(pool).await?;
+    sqlx::query("DELETE FROM study_plans WHERE id = $1")
+        .bind(plan_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -62,21 +123,31 @@ pub async fn delete_plan(pool: &PgPool, plan_id: Uuid) -> Result<(), AppError> {
 // Study Plan Versions
 // ============================================
 
-pub async fn list_versions(pool: &PgPool, query: StudyPlanVersionQuery) -> Result<Vec<StudyPlanVersion>, AppError> {
+pub async fn list_versions(
+    pool: &PgPool,
+    query: StudyPlanVersionQuery,
+) -> Result<Vec<StudyPlanVersion>, AppError> {
     let mut sql = String::from(
         "SELECT spv.*, sp.name_th as study_plan_name_th, ay.name as start_year_name
          FROM study_plan_versions spv
          LEFT JOIN study_plans sp ON sp.id = spv.study_plan_id
          LEFT JOIN academic_years ay ON ay.id = spv.start_academic_year_id
-         WHERE 1=1"
+         WHERE 1=1",
     );
     let mut idx = 0u32;
-    if query.study_plan_id.is_some() { idx += 1; sql.push_str(&format!(" AND spv.study_plan_id = ${idx}")); }
-    if query.active_only.unwrap_or(false) { sql.push_str(" AND spv.is_active = true"); }
+    if query.study_plan_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND spv.study_plan_id = ${idx}"));
+    }
+    if query.active_only.unwrap_or(false) {
+        sql.push_str(" AND spv.is_active = true");
+    }
     sql.push_str(" ORDER BY spv.created_at DESC");
 
     let mut q = sqlx::query_as::<_, StudyPlanVersion>(&sql);
-    if let Some(v) = query.study_plan_id { q = q.bind(v); }
+    if let Some(v) = query.study_plan_id {
+        q = q.bind(v);
+    }
     Ok(q.fetch_all(pool).await.unwrap_or_default())
 }
 
@@ -86,22 +157,38 @@ pub async fn get_version(pool: &PgPool, version_id: Uuid) -> Result<StudyPlanVer
          FROM study_plan_versions spv
          LEFT JOIN study_plans sp ON sp.id = spv.study_plan_id
          LEFT JOIN academic_years ay ON ay.id = spv.start_academic_year_id
-         WHERE spv.id = $1"
-    ).bind(version_id).fetch_one(pool).await.map_err(AppError::from)
+         WHERE spv.id = $1",
+    )
+    .bind(version_id)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
 }
 
-pub async fn create_version(pool: &PgPool, req: CreateStudyPlanVersionRequest) -> Result<StudyPlanVersion, AppError> {
+pub async fn create_version(
+    pool: &PgPool,
+    req: CreateStudyPlanVersionRequest,
+) -> Result<StudyPlanVersion, AppError> {
     sqlx::query_as::<_, StudyPlanVersion>(
         "INSERT INTO study_plan_versions
          (study_plan_id, version_name, start_academic_year_id, end_academic_year_id, description)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *"
+         VALUES ($1, $2, $3, $4, $5) RETURNING *",
     )
-    .bind(req.study_plan_id).bind(&req.version_name)
-    .bind(req.start_academic_year_id).bind(req.end_academic_year_id).bind(&req.description)
-    .fetch_one(pool).await.map_err(AppError::from)
+    .bind(req.study_plan_id)
+    .bind(&req.version_name)
+    .bind(req.start_academic_year_id)
+    .bind(req.end_academic_year_id)
+    .bind(&req.description)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
 }
 
-pub async fn update_version(pool: &PgPool, version_id: Uuid, req: UpdateStudyPlanVersionRequest) -> Result<StudyPlanVersion, AppError> {
+pub async fn update_version(
+    pool: &PgPool,
+    version_id: Uuid,
+    req: UpdateStudyPlanVersionRequest,
+) -> Result<StudyPlanVersion, AppError> {
     sqlx::query_as::<_, StudyPlanVersion>(
         "UPDATE study_plan_versions SET
             version_name = COALESCE($1, version_name),
@@ -109,15 +196,24 @@ pub async fn update_version(pool: &PgPool, version_id: Uuid, req: UpdateStudyPla
             end_academic_year_id = COALESCE($3, end_academic_year_id),
             description = COALESCE($4, description),
             is_active = COALESCE($5, is_active)
-         WHERE id = $6 RETURNING *"
+         WHERE id = $6 RETURNING *",
     )
-    .bind(&req.version_name).bind(req.start_academic_year_id).bind(req.end_academic_year_id)
-    .bind(&req.description).bind(req.is_active).bind(version_id)
-    .fetch_one(pool).await.map_err(AppError::from)
+    .bind(&req.version_name)
+    .bind(req.start_academic_year_id)
+    .bind(req.end_academic_year_id)
+    .bind(&req.description)
+    .bind(req.is_active)
+    .bind(version_id)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
 }
 
 pub async fn delete_version(pool: &PgPool, version_id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM study_plan_versions WHERE id = $1").bind(version_id).execute(pool).await?;
+    sqlx::query("DELETE FROM study_plan_versions WHERE id = $1")
+        .bind(version_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -125,7 +221,10 @@ pub async fn delete_version(pool: &PgPool, version_id: Uuid) -> Result<(), AppEr
 // Study Plan Subjects
 // ============================================
 
-pub async fn list_plan_subjects(pool: &PgPool, query: StudyPlanSubjectQuery) -> Result<Vec<StudyPlanSubject>, AppError> {
+pub async fn list_plan_subjects(
+    pool: &PgPool,
+    query: StudyPlanSubjectQuery,
+) -> Result<Vec<StudyPlanSubject>, AppError> {
     let mut sql = String::from(
         "SELECT sps.id, sps.study_plan_version_id, sps.grade_level_id, sps.term,
                 sps.subject_id, s.code as subject_code, sps.display_order, sps.metadata,
@@ -142,33 +241,56 @@ pub async fn list_plan_subjects(pool: &PgPool, query: StudyPlanSubjectQuery) -> 
          FROM study_plan_subjects sps
          LEFT JOIN subjects s ON s.id = sps.subject_id
          LEFT JOIN grade_levels gl ON gl.id = sps.grade_level_id
-         WHERE 1=1"
+         WHERE 1=1",
     );
     let mut idx = 0u32;
-    if query.study_plan_version_id.is_some() { idx += 1; sql.push_str(&format!(" AND sps.study_plan_version_id = ${idx}")); }
-    if query.grade_level_id.is_some() { idx += 1; sql.push_str(&format!(" AND sps.grade_level_id = ${idx}")); }
-    if query.term.is_some() { idx += 1; sql.push_str(&format!(" AND sps.term = ${idx}")); }
+    if query.study_plan_version_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND sps.study_plan_version_id = ${idx}"));
+    }
+    if query.grade_level_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND sps.grade_level_id = ${idx}"));
+    }
+    if query.term.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND sps.term = ${idx}"));
+    }
     sql.push_str(" ORDER BY sps.display_order, s.code");
 
     let mut q = sqlx::query_as::<_, StudyPlanSubject>(&sql);
-    if let Some(v) = query.study_plan_version_id { q = q.bind(v); }
-    if let Some(v) = query.grade_level_id { q = q.bind(v); }
-    if let Some(ref v) = query.term { q = q.bind(v); }
+    if let Some(v) = query.study_plan_version_id {
+        q = q.bind(v);
+    }
+    if let Some(v) = query.grade_level_id {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = query.term {
+        q = q.bind(v);
+    }
     Ok(q.fetch_all(pool).await.unwrap_or_default())
 }
 
-pub async fn add_subjects_to_version(pool: &PgPool, version_id: Uuid, req: AddSubjectsToVersionRequest) -> Result<usize, AppError> {
+pub async fn add_subjects_to_version(
+    pool: &PgPool,
+    version_id: Uuid,
+    req: AddSubjectsToVersionRequest,
+) -> Result<usize, AppError> {
     let mut tx = pool.begin().await?;
     for subject in &req.subjects {
         sqlx::query(
             "INSERT INTO study_plan_subjects
              (study_plan_version_id, grade_level_id, term, subject_id, display_order)
              VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (study_plan_version_id, grade_level_id, term, subject_id) DO NOTHING"
+             ON CONFLICT (study_plan_version_id, grade_level_id, term, subject_id) DO NOTHING",
         )
-        .bind(version_id).bind(subject.grade_level_id).bind(&subject.term)
-        .bind(subject.subject_id).bind(subject.display_order.unwrap_or(0))
-        .execute(&mut *tx).await?;
+        .bind(version_id)
+        .bind(subject.grade_level_id)
+        .bind(&subject.term)
+        .bind(subject.subject_id)
+        .bind(subject.display_order.unwrap_or(0))
+        .execute(&mut *tx)
+        .await?;
     }
     tx.commit().await?;
     Ok(req.subjects.len())
@@ -177,12 +299,21 @@ pub async fn add_subjects_to_version(pool: &PgPool, version_id: Uuid, req: AddSu
 pub async fn delete_plan_subject(pool: &PgPool, sps_id: Uuid) -> Result<(), AppError> {
     let context: Option<(Uuid, Uuid, String, Uuid)> = sqlx::query_as(
         "SELECT study_plan_version_id, grade_level_id, term, subject_id
-         FROM study_plan_subjects WHERE id = $1"
-    ).bind(sps_id).fetch_optional(pool).await
+         FROM study_plan_subjects WHERE id = $1",
+    )
+    .bind(sps_id)
+    .fetch_optional(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    sqlx::query("DELETE FROM study_plan_subjects WHERE id = $1").bind(sps_id).execute(&mut *tx).await?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    sqlx::query("DELETE FROM study_plan_subjects WHERE id = $1")
+        .bind(sps_id)
+        .execute(&mut *tx)
+        .await?;
 
     if let Some((plan_id, grade_id, term, subject_id)) = context {
         sqlx::query(
@@ -194,14 +325,20 @@ pub async fn delete_plan_subject(pool: &PgPool, sps_id: Uuid) -> Result<(), AppE
                AND cr.grade_level_id = $2
                AND sem.term = $3
                AND cc.subject_id = $4
-               AND sem.end_date >= CURRENT_DATE"
+               AND sem.end_date >= CURRENT_DATE",
         )
-        .bind(plan_id).bind(grade_id).bind(&term).bind(subject_id)
-        .execute(&mut *tx).await
+        .bind(plan_id)
+        .bind(grade_id)
+        .bind(&term)
+        .bind(subject_id)
+        .execute(&mut *tx)
+        .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
 }
 
@@ -224,17 +361,22 @@ pub async fn generate_courses_from_plan(
     let mut tx = pool.begin().await?;
 
     let classroom: (Option<Uuid>, Uuid) = sqlx::query_as(
-        "SELECT study_plan_version_id, grade_level_id FROM class_rooms WHERE id = $1"
-    ).bind(req.classroom_id).fetch_one(&mut *tx).await?;
+        "SELECT study_plan_version_id, grade_level_id FROM class_rooms WHERE id = $1",
+    )
+    .bind(req.classroom_id)
+    .fetch_one(&mut *tx)
+    .await?;
 
     let plan_version_id = classroom.0.ok_or_else(|| {
         AppError::BadRequest("Classroom does not have a study plan assigned".to_string())
     })?;
     let grade_level_id = classroom.1;
 
-    let (semester_term, target_academic_year_id): (String, Uuid) = sqlx::query_as(
-        "SELECT term, academic_year_id FROM academic_semesters WHERE id = $1"
-    ).bind(req.academic_semester_id).fetch_one(&mut *tx).await?;
+    let (semester_term, target_academic_year_id): (String, Uuid) =
+        sqlx::query_as("SELECT term, academic_year_id FROM academic_semesters WHERE id = $1")
+            .bind(req.academic_semester_id)
+            .fetch_one(&mut *tx)
+            .await?;
 
     let counts: (i64, i64) = sqlx::query_as(
         r#"
@@ -271,11 +413,15 @@ pub async fn generate_courses_from_plan(
         SELECT
             (SELECT COUNT(*) FROM plan_subjects) AS total,
             (SELECT COUNT(*) FROM inserted) AS added
-        "#
+        "#,
     )
-    .bind(plan_version_id).bind(grade_level_id).bind(&semester_term)
-    .bind(req.classroom_id).bind(req.academic_semester_id)
-    .fetch_one(&mut *tx).await
+    .bind(plan_version_id)
+    .bind(grade_level_id)
+    .bind(&semester_term)
+    .bind(req.classroom_id)
+    .bind(req.academic_semester_id)
+    .fetch_one(&mut *tx)
+    .await
     .map_err(|e| {
         eprintln!("generate_courses_from_plan failed: {}", e);
         AppError::InternalServerError("Failed to generate courses".to_string())
@@ -390,7 +536,10 @@ pub async fn generate_courses_from_plan(
 // Study Plan Version Activities
 // ============================================
 
-pub async fn list_plan_activities(pool: &PgPool, version_id: Uuid) -> Result<Vec<StudyPlanVersionActivity>, AppError> {
+pub async fn list_plan_activities(
+    pool: &PgPool,
+    version_id: Uuid,
+) -> Result<Vec<StudyPlanVersionActivity>, AppError> {
     sqlx::query_as::<_, StudyPlanVersionActivity>(
         "SELECT sva.*,
                 ac.name AS catalog_name,
@@ -403,37 +552,55 @@ pub async fn list_plan_activities(pool: &PgPool, version_id: Uuid) -> Result<Vec
          FROM study_plan_version_activities sva
          JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
          WHERE sva.study_plan_version_id = $1
-         ORDER BY sva.display_order, ac.name"
-    ).bind(version_id).fetch_all(pool).await
+         ORDER BY sva.display_order, ac.name",
+    )
+    .bind(version_id)
+    .fetch_all(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
-pub async fn add_plan_activity(pool: &PgPool, version_id: Uuid, req: CreatePlanActivityRequest) -> Result<StudyPlanVersionActivity, AppError> {
+pub async fn add_plan_activity(
+    pool: &PgPool,
+    version_id: Uuid,
+    req: CreatePlanActivityRequest,
+) -> Result<StudyPlanVersionActivity, AppError> {
     sqlx::query_as::<_, StudyPlanVersionActivity>(
         "INSERT INTO study_plan_version_activities
          (study_plan_version_id, activity_catalog_id, grade_level_id, term, display_order)
          SELECT $1, ac.id, $5, COALESCE($4, ac.term), COALESCE($3, 0)
          FROM activity_catalog ac WHERE ac.id = $2
          ON CONFLICT (study_plan_version_id, grade_level_id, term, activity_catalog_id) DO NOTHING
-         RETURNING *"
+         RETURNING *",
     )
-    .bind(version_id).bind(req.activity_catalog_id).bind(req.display_order)
-    .bind(&req.term).bind(req.grade_level_id)
-    .fetch_optional(pool).await
+    .bind(version_id)
+    .bind(req.activity_catalog_id)
+    .bind(req.display_order)
+    .bind(&req.term)
+    .bind(req.grade_level_id)
+    .fetch_optional(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?
     .ok_or_else(|| AppError::BadRequest("กิจกรรมนี้อยู่ในหลักสูตรสำหรับชั้น+เทอมนี้แล้ว".to_string()))
 }
 
-pub async fn update_plan_activity(pool: &PgPool, id: Uuid, req: UpdatePlanActivityRequest) -> Result<StudyPlanVersionActivity, AppError> {
+pub async fn update_plan_activity(
+    pool: &PgPool,
+    id: Uuid,
+    req: UpdatePlanActivityRequest,
+) -> Result<StudyPlanVersionActivity, AppError> {
     sqlx::query_as::<_, StudyPlanVersionActivity>(
         "UPDATE study_plan_version_activities SET
             display_order = COALESCE($2, display_order),
             term = $3,
             updated_at = NOW()
-         WHERE id = $1 RETURNING *"
+         WHERE id = $1 RETURNING *",
     )
-    .bind(id).bind(req.display_order).bind(&req.term)
-    .fetch_one(pool).await
+    .bind(id)
+    .bind(req.display_order)
+    .bind(&req.term)
+    .fetch_one(pool)
+    .await
     .map_err(|e| AppError::NotFound(e.to_string()))
 }
 
@@ -442,12 +609,21 @@ pub async fn delete_plan_activity(pool: &PgPool, id: Uuid) -> Result<(), AppErro
         "SELECT ac.name, sva.study_plan_version_id, sva.grade_level_id
          FROM study_plan_version_activities sva
          JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
-         WHERE sva.id = $1"
-    ).bind(id).fetch_optional(pool).await
+         WHERE sva.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    sqlx::query("DELETE FROM study_plan_version_activities WHERE id = $1").bind(id).execute(&mut *tx).await
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    sqlx::query("DELETE FROM study_plan_version_activities WHERE id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     if let Some((catalog_name, plan_id, grade_id)) = context {
@@ -461,12 +637,19 @@ pub async fn delete_plan_activity(pool: &PgPool, id: Uuid) -> Result<(), AppErro
                AND ac.name = $1
                AND cr.study_plan_version_id = $2
                AND cr.grade_level_id = $3
-               AND sem.end_date >= CURRENT_DATE"
-        ).bind(&catalog_name).bind(plan_id).bind(grade_id).execute(&mut *tx).await
+               AND sem.end_date >= CURRENT_DATE",
+        )
+        .bind(&catalog_name)
+        .bind(plan_id)
+        .bind(grade_id)
+        .execute(&mut *tx)
+        .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
 }
 
@@ -588,7 +771,10 @@ pub struct ActivityCatalogFilter {
     pub latest_only: Option<bool>,
 }
 
-pub async fn list_activity_catalog(pool: &PgPool, latest_only: bool) -> Result<Vec<ActivityCatalog>, AppError> {
+pub async fn list_activity_catalog(
+    pool: &PgPool,
+    latest_only: bool,
+) -> Result<Vec<ActivityCatalog>, AppError> {
     let sql = if latest_only {
         "SELECT DISTINCT ON (ac.name) ac.*
          FROM activity_catalog ac
@@ -602,49 +788,79 @@ pub async fn list_activity_catalog(pool: &PgPool, latest_only: bool) -> Result<V
          WHERE ac.is_active = true
          ORDER BY ac.name, ay.year DESC"
     };
-    sqlx::query_as::<_, ActivityCatalog>(sql).fetch_all(pool).await
+    sqlx::query_as::<_, ActivityCatalog>(sql)
+        .fetch_all(pool)
+        .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
-pub async fn create_activity_catalog(pool: &PgPool, req: CreateCatalogRequest) -> Result<ActivityCatalog, AppError> {
-    let allowed = req.grade_level_ids.map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+pub async fn create_activity_catalog(
+    pool: &PgPool,
+    req: CreateCatalogRequest,
+) -> Result<ActivityCatalog, AppError> {
+    let allowed = req
+        .grade_level_ids
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     let row: ActivityCatalog = sqlx::query_as(
         "INSERT INTO activity_catalog
              (name, start_academic_year_id, activity_type, description,
               periods_per_week, scheduling_mode, term, grade_level_ids)
          VALUES ($1, $2, $3, $4, COALESCE($5, 1), COALESCE($6, 'synchronized'), $7, $8)
-         RETURNING *"
+         RETURNING *",
     )
-    .bind(&req.name).bind(req.start_academic_year_id).bind(&req.activity_type)
-    .bind(&req.description).bind(req.periods_per_week).bind(&req.scheduling_mode)
-    .bind(&req.term).bind(&allowed)
-    .fetch_one(&mut *tx).await
+    .bind(&req.name)
+    .bind(req.start_academic_year_id)
+    .bind(&req.activity_type)
+    .bind(&req.description)
+    .bind(req.periods_per_week)
+    .bind(&req.scheduling_mode)
+    .bind(&req.term)
+    .bind(&allowed)
+    .fetch_one(&mut *tx)
+    .await
     .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     if let Some(team) = &req.default_instructors {
         for t in team {
             if t.role != "primary" && t.role != "secondary" {
-                return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+                return Err(AppError::BadRequest(
+                    "role must be 'primary' or 'secondary'".to_string(),
+                ));
             }
             sqlx::query(
                 "INSERT INTO activity_catalog_default_instructors (catalog_id, instructor_id, role)
                  VALUES ($1, $2, $3)
-                 ON CONFLICT (catalog_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
+                 ON CONFLICT (catalog_id, instructor_id) DO UPDATE SET role = EXCLUDED.role",
             )
-            .bind(row.id).bind(t.instructor_id).bind(&t.role)
-            .execute(&mut *tx).await
+            .bind(row.id)
+            .bind(t.instructor_id)
+            .bind(&t.role)
+            .execute(&mut *tx)
+            .await
             .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
         }
     }
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
     Ok(row)
 }
 
-pub async fn update_activity_catalog(pool: &PgPool, id: Uuid, req: UpdateCatalogRequest) -> Result<ActivityCatalog, AppError> {
-    let allowed = req.grade_level_ids.as_ref().map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+pub async fn update_activity_catalog(
+    pool: &PgPool,
+    id: Uuid,
+    req: UpdateCatalogRequest,
+) -> Result<ActivityCatalog, AppError> {
+    let allowed = req
+        .grade_level_ids
+        .as_ref()
+        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
     sqlx::query_as::<_, ActivityCatalog>(
         "UPDATE activity_catalog SET
             name = COALESCE($2, name),
@@ -656,22 +872,34 @@ pub async fn update_activity_catalog(pool: &PgPool, id: Uuid, req: UpdateCatalog
             term = $8,
             grade_level_ids = COALESCE($9, grade_level_ids),
             updated_at = NOW()
-         WHERE id = $1 RETURNING *"
+         WHERE id = $1 RETURNING *",
     )
-    .bind(id).bind(&req.name).bind(&req.activity_type).bind(&req.description)
-    .bind(req.periods_per_week).bind(&req.scheduling_mode).bind(req.is_active)
-    .bind(&req.term).bind(&allowed)
-    .fetch_one(pool).await
+    .bind(id)
+    .bind(&req.name)
+    .bind(&req.activity_type)
+    .bind(&req.description)
+    .bind(req.periods_per_week)
+    .bind(&req.scheduling_mode)
+    .bind(req.is_active)
+    .bind(&req.term)
+    .bind(&allowed)
+    .fetch_one(pool)
+    .await
     .map_err(|e| AppError::NotFound(e.to_string()))
 }
 
 pub async fn delete_activity_catalog(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM activity_catalog WHERE id = $1").bind(id).execute(pool).await
-        .map_err(|e| AppError::BadRequest(
-            if e.to_string().contains("foreign key") {
+    sqlx::query("DELETE FROM activity_catalog WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            AppError::BadRequest(if e.to_string().contains("foreign key") {
                 "ไม่สามารถลบได้ มีหลักสูตรที่ใช้กิจกรรมนี้อยู่".to_string()
-            } else { e.to_string() }
-        ))?;
+            } else {
+                e.to_string()
+            })
+        })?;
     Ok(())
 }
 
@@ -679,43 +907,74 @@ pub async fn delete_activity_catalog(pool: &PgPool, id: Uuid) -> Result<(), AppE
 // Activity Catalog Default Instructors
 // ============================================
 
-pub async fn list_catalog_default_instructors(pool: &PgPool, catalog_id: Uuid) -> Result<Vec<CatalogDefaultInstructor>, AppError> {
+pub async fn list_catalog_default_instructors(
+    pool: &PgPool,
+    catalog_id: Uuid,
+) -> Result<Vec<CatalogDefaultInstructor>, AppError> {
     sqlx::query_as::<_, CatalogDefaultInstructor>(
         "SELECT acdi.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
          FROM activity_catalog_default_instructors acdi
          JOIN users u ON u.id = acdi.instructor_id
          WHERE acdi.catalog_id = $1
-         ORDER BY acdi.role, acdi.created_at"
-    ).bind(catalog_id).fetch_all(pool).await
+         ORDER BY acdi.role, acdi.created_at",
+    )
+    .bind(catalog_id)
+    .fetch_all(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
-pub async fn add_catalog_default_instructor(pool: &PgPool, catalog_id: Uuid, instructor_id: Uuid, role: &str) -> Result<(), AppError> {
+pub async fn add_catalog_default_instructor(
+    pool: &PgPool,
+    catalog_id: Uuid,
+    instructor_id: Uuid,
+    role: &str,
+) -> Result<(), AppError> {
     if role != "primary" && role != "secondary" {
-        return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+        return Err(AppError::BadRequest(
+            "role must be 'primary' or 'secondary'".to_string(),
+        ));
     }
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     if role == "primary" {
         sqlx::query(
             "UPDATE activity_catalog_default_instructors SET role = 'secondary'
-             WHERE catalog_id = $1 AND instructor_id <> $2 AND role = 'primary'"
-        ).bind(catalog_id).bind(instructor_id).execute(&mut *tx).await
+             WHERE catalog_id = $1 AND instructor_id <> $2 AND role = 'primary'",
+        )
+        .bind(catalog_id)
+        .bind(instructor_id)
+        .execute(&mut *tx)
+        .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
     sqlx::query(
         "INSERT INTO activity_catalog_default_instructors (catalog_id, instructor_id, role)
          VALUES ($1, $2, $3)
-         ON CONFLICT (catalog_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"
-    ).bind(catalog_id).bind(instructor_id).bind(role).execute(&mut *tx).await
+         ON CONFLICT (catalog_id, instructor_id) DO UPDATE SET role = EXCLUDED.role",
+    )
+    .bind(catalog_id)
+    .bind(instructor_id)
+    .bind(role)
+    .execute(&mut *tx)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
     Ok(())
 }
 
-pub async fn remove_catalog_default_instructor(pool: &PgPool, catalog_id: Uuid, instructor_id: Uuid) -> Result<(), AppError> {
+pub async fn remove_catalog_default_instructor(
+    pool: &PgPool,
+    catalog_id: Uuid,
+    instructor_id: Uuid,
+) -> Result<(), AppError> {
     sqlx::query(
         "DELETE FROM activity_catalog_default_instructors WHERE catalog_id = $1 AND instructor_id = $2"
     ).bind(catalog_id).bind(instructor_id).execute(pool).await
@@ -723,26 +982,47 @@ pub async fn remove_catalog_default_instructor(pool: &PgPool, catalog_id: Uuid, 
     Ok(())
 }
 
-pub async fn update_catalog_default_instructor_role(pool: &PgPool, catalog_id: Uuid, instructor_id: Uuid, role: &str) -> Result<(), AppError> {
+pub async fn update_catalog_default_instructor_role(
+    pool: &PgPool,
+    catalog_id: Uuid,
+    instructor_id: Uuid,
+    role: &str,
+) -> Result<(), AppError> {
     if role != "primary" && role != "secondary" {
-        return Err(AppError::BadRequest("role must be 'primary' or 'secondary'".to_string()));
+        return Err(AppError::BadRequest(
+            "role must be 'primary' or 'secondary'".to_string(),
+        ));
     }
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     if role == "primary" {
         sqlx::query(
             "UPDATE activity_catalog_default_instructors SET role = 'secondary'
-             WHERE catalog_id = $1 AND instructor_id <> $2 AND role = 'primary'"
-        ).bind(catalog_id).bind(instructor_id).execute(&mut *tx).await
+             WHERE catalog_id = $1 AND instructor_id <> $2 AND role = 'primary'",
+        )
+        .bind(catalog_id)
+        .bind(instructor_id)
+        .execute(&mut *tx)
+        .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
     sqlx::query(
         "UPDATE activity_catalog_default_instructors SET role = $3
-         WHERE catalog_id = $1 AND instructor_id = $2"
-    ).bind(catalog_id).bind(instructor_id).bind(role).execute(&mut *tx).await
+         WHERE catalog_id = $1 AND instructor_id = $2",
+    )
+    .bind(catalog_id)
+    .bind(instructor_id)
+    .bind(role)
+    .execute(&mut *tx)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
     Ok(())
 }

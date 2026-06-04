@@ -3,10 +3,10 @@
 // Only require authentication, no specific permission needed
 
 use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
 use crate::modules::lookup::models::*;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
-use crate::error::AppError;
 use axum::{
     extract::{Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -22,23 +22,19 @@ use uuid::Uuid;
 // Helper: Verify user is authenticated (no permission check)
 // ===================================================================
 
-async fn verify_authenticated(
-    headers: &HeaderMap,
-    pool: &sqlx::PgPool,
-) -> Result<Uuid, AppError> {
+async fn verify_authenticated(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Uuid, AppError> {
     // Try to extract token from Authorization header first
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
 
-    let token_from_header = auth_header
-        .and_then(|h| {
-            if h.starts_with("Bearer ") {
-                Some(h[7..].to_string())
-            } else {
-                None
-            }
-        });
+    let token_from_header = auth_header.and_then(|h| {
+        if h.starts_with("Bearer ") {
+            Some(h[7..].to_string())
+        } else {
+            None
+        }
+    });
 
     // Fallback to cookie
     let token_from_cookie = headers
@@ -47,7 +43,8 @@ async fn verify_authenticated(
         .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
 
     // Use Authorization header first, then cookie
-    let token = token_from_header.or(token_from_cookie)
+    let token = token_from_header
+        .or(token_from_cookie)
         .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
 
     // Verify token
@@ -59,7 +56,7 @@ async fn verify_authenticated(
         .map_err(|_| AppError::AuthError("Invalid user ID".to_string()))?;
 
     let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND status = 'active')"
+        "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND status = 'active')",
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -103,7 +100,9 @@ pub async fn lookup_staff(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -119,7 +118,7 @@ pub async fn lookup_staff(
     let mut sql = String::from(
         "SELECT id, title, first_name, last_name, username
          FROM users
-         WHERE user_type = 'staff'"
+         WHERE user_type = 'staff'",
     );
 
     if active_only {
@@ -128,9 +127,7 @@ pub async fn lookup_staff(
 
     let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
     if search_pattern.is_some() {
-        sql.push_str(
-            " AND (first_name ILIKE $1 OR last_name ILIKE $1 OR username ILIKE $1)",
-        );
+        sql.push_str(" AND (first_name ILIKE $1 OR last_name ILIKE $1 OR username ILIKE $1)");
     }
 
     sql.push_str(&format!(" ORDER BY first_name, last_name LIMIT {}", limit));
@@ -139,25 +136,31 @@ pub async fn lookup_staff(
     if let Some(ref pattern) = search_pattern {
         q = q.bind(pattern);
     }
-    let rows = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let rows = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
-    let data: Vec<StaffLookupItem> = rows.into_iter().map(|r| {
-        let name = format!("{} {}", r.first_name, r.last_name);
-        StaffLookupItem {
-            id: r.id,
-            name,
-            title: r.title,
-            username: Some(r.username),
-        }
-    }).collect();
+    let data: Vec<StaffLookupItem> = rows
+        .into_iter()
+        .map(|r| {
+            let name = format!("{} {}", r.first_name, r.last_name);
+            StaffLookupItem {
+                id: r.id,
+                name,
+                title: r.title,
+                username: Some(r.username),
+            }
+        })
+        .collect();
 
-    Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+    Ok((
+        StatusCode::OK,
+        Json(LookupResponse {
+            success: true,
+            data,
+        }),
+    ))
 }
 
 // ===================================================================
@@ -186,7 +189,9 @@ pub async fn lookup_roles(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -212,22 +217,28 @@ pub async fn lookup_roles(
     if let Some(ref pattern) = search_pattern {
         q = q.bind(pattern);
     }
-    let rows = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let rows = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
-    let data: Vec<RoleLookupItem> = rows.into_iter().map(|r| RoleLookupItem {
-        id: r.id,
-        code: r.code,
-        name: r.name,
-        user_type: r.user_type,
-    }).collect();
+    let data: Vec<RoleLookupItem> = rows
+        .into_iter()
+        .map(|r| RoleLookupItem {
+            id: r.id,
+            code: r.code,
+            name: r.name,
+            user_type: r.user_type,
+        })
+        .collect();
 
-    Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+    Ok((
+        StatusCode::OK,
+        Json(LookupResponse {
+            success: true,
+            data,
+        }),
+    ))
 }
 
 // ===================================================================
@@ -261,7 +272,9 @@ pub async fn lookup_departments(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -288,7 +301,10 @@ pub async fn lookup_departments(
     let search_pattern = query.search.as_ref().map(|s| format!("%{}%", s));
     if search_pattern.is_some() {
         let param_idx = if member_only { 2 } else { 1 };
-        sql.push_str(&format!(" AND (name ILIKE ${0} OR code ILIKE ${0})", param_idx));
+        sql.push_str(&format!(
+            " AND (name ILIKE ${0} OR code ILIKE ${0})",
+            param_idx
+        ));
     }
 
     sql.push_str(&format!(" ORDER BY display_order, name LIMIT {}", limit));
@@ -300,27 +316,33 @@ pub async fn lookup_departments(
     if let Some(ref pattern) = search_pattern {
         q = q.bind(pattern);
     }
-    let rows = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let rows = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
-    let data: Vec<DepartmentLookupItem> = rows.into_iter().map(|r| DepartmentLookupItem {
-        id: r.id,
-        code: r.code,
-        name: r.name,
-        name_en: r.name_en,
-        description: r.description,
-        category: r.category,
-        display_order: r.display_order,
-        is_active: r.is_active,
-        parent_department_id: r.parent_department_id,
-    }).collect();
+    let data: Vec<DepartmentLookupItem> = rows
+        .into_iter()
+        .map(|r| DepartmentLookupItem {
+            id: r.id,
+            code: r.code,
+            name: r.name,
+            name_en: r.name_en,
+            description: r.description,
+            category: r.category,
+            display_order: r.display_order,
+            is_active: r.is_active,
+            parent_department_id: r.parent_department_id,
+        })
+        .collect();
 
-    Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+    Ok((
+        StatusCode::OK,
+        Json(LookupResponse {
+            success: true,
+            data,
+        }),
+    ))
 }
 
 /// GET /api/lookup/departments/:id
@@ -337,7 +359,9 @@ pub async fn lookup_department_by_id(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -398,7 +422,9 @@ pub async fn lookup_grade_levels(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -412,14 +438,13 @@ pub async fn lookup_grade_levels(
     // Default to current active year if not specified and current_year is not explicitly false
     // (This ensures dropdowns show only configured levels by default)
     if target_year_id.is_none() && query.current_year.unwrap_or(true) {
-         let active_year_id: Option<Uuid> = sqlx::query_scalar(
-             "SELECT id FROM academic_years WHERE is_active = true LIMIT 1"
-         )
-         .fetch_optional(&pool)
-         .await
-         .unwrap_or(None);
+        let active_year_id: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
+                .fetch_optional(&pool)
+                .await
+                .unwrap_or(None);
 
-         target_year_id = active_year_id;
+        target_year_id = active_year_id;
     }
 
     // Build SQL with parameterized queries
@@ -451,12 +476,14 @@ pub async fn lookup_grade_levels(
     }
 
     let _ = param_idx; // suppress unused warning
-    sql.push_str(" ORDER BY CASE gl.level_type
+    sql.push_str(
+        " ORDER BY CASE gl.level_type
             WHEN 'kindergarten' THEN 1
             WHEN 'primary' THEN 2
             WHEN 'secondary' THEN 3
             ELSE 4
-         END, gl.year ASC LIMIT 500");
+         END, gl.year ASC LIMIT 500",
+    );
 
     let mut q = sqlx::query_as::<_, GradeLevelRow>(&sql);
     if let Some(yid) = bind_year_id {
@@ -465,47 +492,72 @@ pub async fn lookup_grade_levels(
     if let Some(ref ltype) = bind_level_type {
         q = q.bind(ltype);
     }
-    let rows = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let rows = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
-    let data: Vec<GradeLevelLookupItem> = rows.into_iter().map(|r| {
-        let (name, code, short_name) = match r.level_type.as_str() {
-            "kindergarten" => (format!("อนุบาลปีที่ {}", r.year), format!("K{}", r.year), format!("อ.{}", r.year)),
-            "primary" => (format!("ประถมศึกษาปีที่ {}", r.year), format!("P{}", r.year), format!("ป.{}", r.year)),
-            "secondary" => (format!("มัธยมศึกษาปีที่ {}", r.year), format!("M{}", r.year), format!("ม.{}", r.year)),
-            _ => (format!("Other {}", r.year), format!("O{}", r.year), format!("?{}", r.year)),
-        };
+    let data: Vec<GradeLevelLookupItem> = rows
+        .into_iter()
+        .map(|r| {
+            let (name, code, short_name) = match r.level_type.as_str() {
+                "kindergarten" => (
+                    format!("อนุบาลปีที่ {}", r.year),
+                    format!("K{}", r.year),
+                    format!("อ.{}", r.year),
+                ),
+                "primary" => (
+                    format!("ประถมศึกษาปีที่ {}", r.year),
+                    format!("P{}", r.year),
+                    format!("ป.{}", r.year),
+                ),
+                "secondary" => (
+                    format!("มัธยมศึกษาปีที่ {}", r.year),
+                    format!("M{}", r.year),
+                    format!("ม.{}", r.year),
+                ),
+                _ => (
+                    format!("Other {}", r.year),
+                    format!("O{}", r.year),
+                    format!("?{}", r.year),
+                ),
+            };
 
-        let order_base = match r.level_type.as_str() {
-            "kindergarten" => 1,
-            "primary" => 2,
-            "secondary" => 3,
-            _ => 4,
-        };
+            let order_base = match r.level_type.as_str() {
+                "kindergarten" => 1,
+                "primary" => 2,
+                "secondary" => 3,
+                _ => 4,
+            };
 
-        GradeLevelLookupItem {
-            id: r.id,
-            code,
-            name,
-            short_name: Some(short_name),
-            level_type: r.level_type,
-            level_order: order_base * 100 + r.year,
-        }
-    }).collect();
+            GradeLevelLookupItem {
+                id: r.id,
+                code,
+                name,
+                short_name: Some(short_name),
+                level_type: r.level_type,
+                level_order: order_base * 100 + r.year,
+            }
+        })
+        .collect();
 
     // Filter by search in memory if needed
     let final_data = if let Some(search) = query.search {
-         data.into_iter().filter(|i| i.name.contains(&search) || i.code.contains(&search)).take(limit as usize).collect()
+        data.into_iter()
+            .filter(|i| i.name.contains(&search) || i.code.contains(&search))
+            .take(limit as usize)
+            .collect()
     } else {
-         data
+        data
     };
 
-    Ok((StatusCode::OK, Json(LookupResponse { success: true, data: final_data })))
+    Ok((
+        StatusCode::OK,
+        Json(LookupResponse {
+            success: true,
+            data: final_data,
+        }),
+    ))
 }
 
 // ===================================================================
@@ -535,7 +587,9 @@ pub async fn lookup_classrooms(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -548,7 +602,7 @@ pub async fn lookup_classrooms(
          FROM class_rooms c
          LEFT JOIN grade_levels g ON c.grade_level_id = g.id
          LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
-         WHERE 1=1"
+         WHERE 1=1",
     );
 
     // Filter by active academic year by default
@@ -568,31 +622,37 @@ pub async fn lookup_classrooms(
     if let Some(ref pattern) = search_pattern {
         q = q.bind(pattern);
     }
-    let rows = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let rows = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
-    let data: Vec<ClassroomLookupItem> = rows.into_iter().map(|r| {
-        let grade_level_name = match (r.level_type.as_deref(), r.year) {
-            (Some("kindergarten"), Some(y)) => Some(format!("อ.{}", y)),
-            (Some("primary"), Some(y)) => Some(format!("ป.{}", y)),
-            (Some("secondary"), Some(y)) => Some(format!("ม.{}", y)),
-            _ => None,
-        };
+    let data: Vec<ClassroomLookupItem> = rows
+        .into_iter()
+        .map(|r| {
+            let grade_level_name = match (r.level_type.as_deref(), r.year) {
+                (Some("kindergarten"), Some(y)) => Some(format!("อ.{}", y)),
+                (Some("primary"), Some(y)) => Some(format!("ป.{}", y)),
+                (Some("secondary"), Some(y)) => Some(format!("ม.{}", y)),
+                _ => None,
+            };
 
-        ClassroomLookupItem {
-            id: r.id,
-            name: r.name,
-            grade_level: grade_level_name,
-            grade_level_id: r.grade_level_id,
-        }
-    }).collect();
+            ClassroomLookupItem {
+                id: r.id,
+                name: r.name,
+                grade_level: grade_level_name,
+                grade_level_id: r.grade_level_id,
+            }
+        })
+        .collect();
 
-    Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+    Ok((
+        StatusCode::OK,
+        Json(LookupResponse {
+            success: true,
+            data,
+        }),
+    ))
 }
 
 // ===================================================================
@@ -621,7 +681,9 @@ pub async fn lookup_academic_years(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -642,28 +704,37 @@ pub async fn lookup_academic_years(
     }
 
     // Order by active first, then by year descending (latest year first)
-    sql.push_str(&format!(" ORDER BY is_active DESC, year DESC LIMIT {}", limit));
+    sql.push_str(&format!(
+        " ORDER BY is_active DESC, year DESC LIMIT {}",
+        limit
+    ));
 
     let mut q = sqlx::query_as::<_, AcademicYearRow>(&sql);
     if let Some(ref pattern) = search_pattern {
         q = q.bind(pattern);
     }
-    let rows = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let rows = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
-    let data: Vec<AcademicYearLookupItem> = rows.into_iter().map(|r| AcademicYearLookupItem {
-        id: r.id,
-        name: r.name,
-        year: r.year,
-        is_current: r.is_active, // Map is_active to is_current for API compatibility
-    }).collect();
+    let data: Vec<AcademicYearLookupItem> = rows
+        .into_iter()
+        .map(|r| AcademicYearLookupItem {
+            id: r.id,
+            name: r.name,
+            year: r.year,
+            is_current: r.is_active, // Map is_active to is_current for API compatibility
+        })
+        .collect();
 
-    Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+    Ok((
+        StatusCode::OK,
+        Json(LookupResponse {
+            success: true,
+            data,
+        }),
+    ))
 }
 
 // ===================================================================
@@ -684,7 +755,9 @@ pub async fn lookup_students(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -702,7 +775,7 @@ pub async fn lookup_students(
          LEFT JOIN student_info si ON u.id = si.user_id
          LEFT JOIN student_class_enrollments e ON u.id = e.student_id AND e.status = 'active'
          LEFT JOIN class_rooms c ON e.class_room_id = c.id
-         WHERE u.user_type = 'student'"
+         WHERE u.user_type = 'student'",
     );
 
     if active_only {
@@ -716,7 +789,10 @@ pub async fn lookup_students(
         );
     }
 
-    sql.push_str(&format!(" ORDER BY u.first_name, u.last_name LIMIT {}", limit));
+    sql.push_str(&format!(
+        " ORDER BY u.first_name, u.last_name LIMIT {}",
+        limit
+    ));
 
     #[derive(Debug, FromRow)]
     struct StudentWithInfoRow {
@@ -734,26 +810,32 @@ pub async fn lookup_students(
     if let Some(ref pattern) = search_pattern {
         q = q.bind(pattern);
     }
-    let rows = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let rows = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
-    let data: Vec<StudentLookupItem> = rows.into_iter().map(|r| {
-        let name = format!("{} {}", r.first_name, r.last_name);
-        StudentLookupItem {
-            id: r.id,
-            name,
-            title: r.title,
-            student_id: r.student_id,
-            class_room: r.class_room,
-        }
-    }).collect();
+    let data: Vec<StudentLookupItem> = rows
+        .into_iter()
+        .map(|r| {
+            let name = format!("{} {}", r.first_name, r.last_name);
+            StudentLookupItem {
+                id: r.id,
+                name,
+                title: r.title,
+                student_id: r.student_id,
+                class_room: r.class_room,
+            }
+        })
+        .collect();
 
-    Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+    Ok((
+        StatusCode::OK,
+        Json(LookupResponse {
+            success: true,
+            data,
+        }),
+    ))
 }
 
 // ===================================================================
@@ -773,7 +855,9 @@ pub async fn lookup_rooms(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -792,7 +876,7 @@ pub async fn lookup_rooms(
         LEFT JOIN buildings b ON r.building_id = b.id
         WHERE r.status = 'ACTIVE'
         ORDER BY b.code NULLS LAST, r.floor NULLS FIRST, r.code ASC
-        "#
+        "#,
     )
     .fetch_all(&pool)
     .await
@@ -803,7 +887,6 @@ pub async fn lookup_rooms(
 
     Ok(Json(json!({ "success": true, "data": rooms })).into_response())
 }
-
 
 // ===================================================================
 // Subjects Lookup
@@ -832,7 +915,9 @@ pub async fn lookup_subjects(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -859,7 +944,10 @@ pub async fn lookup_subjects(
     }
 
     if let Some(ref s) = query.search {
-        sql.push_str(&format!(" AND (name_th ILIKE ${0} OR code ILIKE ${0})", param_idx));
+        sql.push_str(&format!(
+            " AND (name_th ILIKE ${0} OR code ILIKE ${0})",
+            param_idx
+        ));
         bind_search = Some(format!("%{}%", s));
         param_idx += 1;
     }
@@ -874,20 +962,26 @@ pub async fn lookup_subjects(
     if let Some(ref pattern) = bind_search {
         q = q.bind(pattern);
     }
-    let rows = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let rows = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
-    let data: Vec<LookupItem> = rows.into_iter().map(|r| LookupItem {
-        id: r.id,
-        name: r.name_th,
-        code: Some(r.code),
-        grade_level_ids: r.grade_level_ids,
-    }).collect();
+    let data: Vec<LookupItem> = rows
+        .into_iter()
+        .map(|r| LookupItem {
+            id: r.id,
+            name: r.name_th,
+            code: Some(r.code),
+            grade_level_ids: r.grade_level_ids,
+        })
+        .collect();
 
-    Ok((StatusCode::OK, Json(LookupResponse { success: true, data })))
+    Ok((
+        StatusCode::OK,
+        Json(LookupResponse {
+            success: true,
+            data,
+        }),
+    ))
 }

@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 // ==========================================
 // Curriculum: Subject Group Models
@@ -42,7 +42,7 @@ pub struct Subject {
     pub updated_at: DateTime<Utc>,
     pub term: Option<String>,
     pub default_instructor_id: Option<Uuid>,
-    
+
     // Joined Fields (Optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
@@ -147,4 +147,3 @@ pub struct SubjectFilter {
     /// When false, return all versions (for history/management views).
     pub latest_only: Option<bool>,
 }
-

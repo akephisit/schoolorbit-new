@@ -11,7 +11,7 @@ pub struct ClassroomCourse {
     pub primary_instructor_id: Option<Uuid>,
     #[sqlx(default)]
     pub settings: serde_json::Value,
-    
+
     // Joined Fields
     #[sqlx(default)]
     pub subject_code: Option<String>,

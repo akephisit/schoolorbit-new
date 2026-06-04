@@ -14,9 +14,8 @@ impl JwtService {
         username: &str,
         user_type: &str,
     ) -> Result<String, String> {
-        let secret = env::var("JWT_SECRET")
-            .expect("JWT_SECRET environment variable must be set");
-        
+        let secret = env::var("JWT_SECRET").expect("JWT_SECRET environment variable must be set");
+
         let now = Utc::now().timestamp();
         let exp = now + (TOKEN_EXPIRY_DAYS * 24 * 60 * 60);
 
@@ -38,8 +37,7 @@ impl JwtService {
 
     /// Verify and decode JWT token
     pub fn verify_token(token: &str) -> Result<Claims, String> {
-        let secret = env::var("JWT_SECRET")
-            .expect("JWT_SECRET environment variable must be set");
+        let secret = env::var("JWT_SECRET").expect("JWT_SECRET environment variable must be set");
 
         decode::<Claims>(
             token,
@@ -53,16 +51,14 @@ impl JwtService {
     /// Extract token from cookie header
     pub fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<String> {
         cookie_header.and_then(|cookies| {
-            cookies
-                .split(';')
-                .find_map(|cookie| {
-                    let parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
-                    if parts.len() == 2 && parts[0] == "auth_token" {
-                        Some(parts[1].to_string())
-                    } else {
-                        None
-                    }
-                })
+            cookies.split(';').find_map(|cookie| {
+                let parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
+                if parts.len() == 2 && parts[0] == "auth_token" {
+                    Some(parts[1].to_string())
+                } else {
+                    None
+                }
+            })
         })
     }
 }

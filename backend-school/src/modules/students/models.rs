@@ -1,7 +1,7 @@
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::NaiveDate;
 
 // =========================================
 // API Models (from handlers/students.rs)
@@ -34,14 +34,14 @@ pub struct StudentDbRow {
     pub gender: Option<String>,
     pub address: Option<String>,
     pub profile_image_url: Option<String>,
-    
+
     // Student info fields
     pub student_id: Option<String>,
     pub student_number: Option<i32>,
     pub blood_type: Option<String>,
     pub allergies: Option<String>,
     pub medical_conditions: Option<String>,
-    
+
     // Additional fields needed for Detail View
     pub status: Option<String>,
     pub grade_level: Option<String>,

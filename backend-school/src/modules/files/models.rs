@@ -12,33 +12,33 @@ pub struct File {
     pub id: Uuid,
     pub user_id: Option<Uuid>,
     pub school_id: Option<String>,
-    
+
     // File Information
     pub filename: String,
     pub original_filename: String,
     pub file_size: i64,
     pub mime_type: String,
-    
+
     // Storage (PATH-BASED)
     pub storage_path: String,
-    
+
     // File Classification
     pub file_type: String,
-    
+
     // Image Metadata
     pub width: Option<i32>,
     pub height: Option<i32>,
     pub has_thumbnail: bool,
     pub thumbnail_path: Option<String>,
-    
+
     // Lifecycle
     pub is_temporary: bool,
     pub is_public: bool,
     pub expires_at: Option<DateTime<Utc>>,
-    
+
     // Security
     pub checksum: Option<String>,
-    
+
     // Audit
     pub uploaded_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
@@ -80,7 +80,7 @@ impl FileType {
             FileType::Other => "other",
         }
     }
-    
+
     pub fn from_str(s: &str) -> Self {
         match s {
             "profile_image" => FileType::ProfileImage,
@@ -95,7 +95,7 @@ impl FileType {
             _ => FileType::Other,
         }
     }
-    
+
     /// Get the maximum allowed file size in MB for this file type
     pub fn max_size_mb(&self) -> u64 {
         match self {
@@ -108,12 +108,15 @@ impl FileType {
             FileType::Other => 10,
         }
     }
-    
+
     /// Get the storage subfolder for this file type
     pub fn storage_folder(&self) -> &str {
         match self {
             FileType::ProfileImage => "users/profiles",
-            FileType::Document | FileType::Transcript | FileType::Certificate | FileType::IdCard => "users/documents",
+            FileType::Document
+            | FileType::Transcript
+            | FileType::Certificate
+            | FileType::IdCard => "users/documents",
             FileType::CourseMaterial | FileType::Assignment => "courses",
             FileType::SchoolLogo | FileType::SchoolBanner => "school",
             FileType::Other => "files",
@@ -152,10 +155,11 @@ impl FileResponse {
     /// Convert File model to FileResponse with URLs
     pub fn from_file(file: File, base_url: &str) -> Self {
         let url = format!("{}/{}", base_url.trim_end_matches('/'), file.storage_path);
-        let thumbnail_url = file.thumbnail_path
+        let thumbnail_url = file
+            .thumbnail_path
             .map(|path| format!("{}/{}", base_url.trim_end_matches('/'), path));
         let storage_path = file.storage_path.clone();
-        
+
         Self {
             id: file.id,
             filename: file.filename,
@@ -199,26 +203,42 @@ pub struct FileValidationConfig {
 impl FileValidationConfig {
     pub fn from_env() -> Self {
         use std::env;
-        
+
         Self {
             allowed_image_types: env::var("ALLOWED_IMAGE_TYPES")
                 .ok()
                 .map(|s| s.split(',').map(|t| t.trim().to_string()).collect())
-                .unwrap_or_else(|| vec!["jpg".into(), "jpeg".into(), "png".into(), "webp".into(), "gif".into()]),
+                .unwrap_or_else(|| {
+                    vec![
+                        "jpg".into(),
+                        "jpeg".into(),
+                        "png".into(),
+                        "webp".into(),
+                        "gif".into(),
+                    ]
+                }),
             allowed_document_types: env::var("ALLOWED_DOCUMENT_TYPES")
                 .ok()
                 .map(|s| s.split(',').map(|t| t.trim().to_string()).collect())
-                .unwrap_or_else(|| vec!["pdf".into(), "doc".into(), "docx".into(), "xls".into(), "xlsx".into()]),
+                .unwrap_or_else(|| {
+                    vec![
+                        "pdf".into(),
+                        "doc".into(),
+                        "docx".into(),
+                        "xls".into(),
+                        "xlsx".into(),
+                    ]
+                }),
         }
     }
-    
+
     pub fn is_allowed_extension(&self, filename: &str, file_type: &FileType) -> bool {
         let extension = std::path::Path::new(filename)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_lowercase();
-        
+
         match file_type {
             FileType::ProfileImage | FileType::SchoolLogo | FileType::SchoolBanner => {
                 self.allowed_image_types.contains(&extension)

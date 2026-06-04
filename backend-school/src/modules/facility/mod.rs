@@ -1,9 +1,9 @@
-pub mod models;
 pub mod handlers;
+pub mod models;
 
 // Export routes
-use axum::Router;
 use crate::AppState;
+use axum::Router;
 
 pub fn facility_routes() -> Router<AppState> {
     handlers::routes()

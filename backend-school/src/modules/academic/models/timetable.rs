@@ -28,8 +28,8 @@ pub struct AcademicPeriod {
 pub struct CreatePeriodRequest {
     pub academic_year_id: Uuid,
     pub name: Option<String>,
-    pub start_time: String,  // Format: "HH:MM"
-    pub end_time: String,    // Format: "HH:MM"
+    pub start_time: String, // Format: "HH:MM"
+    pub end_time: String,   // Format: "HH:MM"
 
     /// ถ้าไม่ส่ง backend จะ auto-set เป็น MAX(order_index) + 1 ของปีการศึกษานั้น
     pub order_index: Option<i32>,
@@ -96,7 +96,7 @@ pub struct TimetableEntry {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_by: Option<Uuid>,
     pub updated_by: Option<Uuid>,
-    
+
     // Joined fields (for display)
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,7 +140,6 @@ pub struct TimetableEntry {
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<NaiveTime>,
-
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,7 +222,7 @@ pub struct CreateBatchTimetableEntriesRequest {
 #[derive(Debug, Deserialize)]
 pub struct TimetableQuery {
     pub classroom_id: Option<Uuid>,
-    pub student_id: Option<Uuid>,          // ดึงตารางของนักเรียน (classroom + activity)
+    pub student_id: Option<Uuid>, // ดึงตารางของนักเรียน (classroom + activity)
     pub instructor_id: Option<Uuid>,
     pub room_id: Option<Uuid>,
     pub academic_semester_id: Option<Uuid>,

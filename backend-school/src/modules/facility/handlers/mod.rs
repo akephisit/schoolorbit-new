@@ -1,34 +1,37 @@
+use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
+use crate::middleware::permission::{check_permission, get_user_with_permissions};
+use crate::modules::facility::models::{
+    Building, CreateBuildingRequest, CreateRoomRequest, Room, RoomFilter, UpdateBuildingRequest,
+    UpdateRoomRequest,
+};
+use crate::permissions::registry::codes;
+use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
     http::HeaderMap,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, put},
-    Json,
-    Router,
+    Json, Router,
 };
 use serde_json::json;
-use crate::middleware::permission::{check_permission, get_user_with_permissions};
-use crate::modules::facility::models::{
-    Building, CreateBuildingRequest, UpdateBuildingRequest,
-    Room, CreateRoomRequest, UpdateRoomRequest, RoomFilter
-};
 use uuid::Uuid;
-use crate::permissions::registry::codes;
-use crate::AppState;
-use crate::error::AppError;
-use crate::db::school_mapping::get_school_database_url;
-use crate::utils::subdomain::extract_subdomain_from_request;
 
 /// Helper
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-        
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
@@ -45,19 +48,24 @@ pub async fn list_buildings(
     // Using a general FACILITY_READ code or similar. Let's use ACADEMIC_READ for now or create new codes.
     // For now, let's assume if they can access academic, they can see rooms.
     // Or better, create codes::FACILITY_READ
-    
+
     // For now using ACADEMIC_READ as fallback if FACILITY not defined, but user requested new codes.
     // I will use placeholders and define codes later.
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_READ_ALL, &state.permission_cache).await {
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::FACILITY_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(response);
     }
 
-    let buildings = sqlx::query_as::<_, Building>(
-        "SELECT * FROM buildings ORDER BY name_th ASC"
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to fetch buildings".to_string()))?;
+    let buildings = sqlx::query_as::<_, Building>("SELECT * FROM buildings ORDER BY name_th ASC")
+        .fetch_all(&pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to fetch buildings".to_string()))?;
 
     Ok(Json(json!({ "success": true, "data": buildings })).into_response())
 }
@@ -68,7 +76,14 @@ pub async fn create_building(
     Json(payload): Json<CreateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_CREATE_ALL, &state.permission_cache).await {
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::FACILITY_CREATE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(response);
     }
 
@@ -77,7 +92,7 @@ pub async fn create_building(
         INSERT INTO buildings (name_th, name_en, code, description)
         VALUES ($1, $2, $3, $4)
         RETURNING *
-        "#
+        "#,
     )
     .bind(payload.name_th)
     .bind(payload.name_en)
@@ -90,7 +105,11 @@ pub async fn create_building(
         AppError::InternalServerError("Failed to create building".to_string())
     })?;
 
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": building }))).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": building })),
+    )
+        .into_response())
 }
 
 pub async fn update_building(
@@ -100,9 +119,16 @@ pub async fn update_building(
     Json(payload): Json<UpdateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    match check_permission(&headers, &pool, codes::FACILITY_UPDATE_ALL, &state.permission_cache).await {
-       Ok(_) => {},
-       Err(r) => return Ok(r)
+    match check_permission(
+        &headers,
+        &pool,
+        codes::FACILITY_UPDATE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(r) => return Ok(r),
     }
 
     let building = sqlx::query_as::<_, Building>(
@@ -115,7 +141,7 @@ pub async fn update_building(
             updated_at = NOW()
         WHERE id = $5
         RETURNING *
-        "#
+        "#,
     )
     .bind(payload.name_th)
     .bind(payload.name_en)
@@ -135,9 +161,16 @@ pub async fn delete_building(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    match check_permission(&headers, &pool, codes::FACILITY_DELETE_ALL, &state.permission_cache).await {
-       Ok(_) => {},
-       Err(r) => return Ok(r)
+    match check_permission(
+        &headers,
+        &pool,
+        codes::FACILITY_DELETE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(r) => return Ok(r),
     }
 
     sqlx::query("DELETE FROM buildings WHERE id = $1")
@@ -148,7 +181,6 @@ pub async fn delete_building(
 
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
-
 
 // ----------------------
 // Rooms
@@ -161,7 +193,8 @@ pub async fn list_rooms(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     // Any authenticated staff can list rooms (used for timetable, exam rooms, etc.)
-    if let Err(response) = get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
+    if let Err(response) = get_user_with_permissions(&headers, &pool, &state.permission_cache).await
+    {
         return Ok(response);
     }
 
@@ -171,7 +204,7 @@ pub async fn list_rooms(
         FROM rooms r
         LEFT JOIN buildings b ON r.building_id = b.id
         WHERE 1=1
-        "#
+        "#,
     );
 
     let mut idx = 0u32;
@@ -187,26 +220,31 @@ pub async fn list_rooms(
     if let Some(ref search) = filter.search {
         if !search.is_empty() {
             idx += 1;
-            sql.push_str(&format!(" AND (r.name_th ILIKE ${idx} OR r.code ILIKE ${idx})"));
+            sql.push_str(&format!(
+                " AND (r.name_th ILIKE ${idx} OR r.code ILIKE ${idx})"
+            ));
         }
     }
 
     sql.push_str(" ORDER BY b.code NULLS LAST, r.floor NULLS FIRST, r.code ASC");
 
     let mut q = sqlx::query_as::<_, Room>(&sql);
-    if let Some(bid) = filter.building_id { q = q.bind(bid); }
-    if let Some(rtype) = &filter.room_type { q = q.bind(rtype); }
+    if let Some(bid) = filter.building_id {
+        q = q.bind(bid);
+    }
+    if let Some(rtype) = &filter.room_type {
+        q = q.bind(rtype);
+    }
     if let Some(ref search) = filter.search {
-        if !search.is_empty() { q = q.bind(format!("%{search}%")); }
+        if !search.is_empty() {
+            q = q.bind(format!("%{search}%"));
+        }
     }
 
-    let rooms = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("List Rooms Error: {}", e);
-            AppError::InternalServerError("Failed to fetch rooms".to_string())
-        })?;
+    let rooms = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("List Rooms Error: {}", e);
+        AppError::InternalServerError("Failed to fetch rooms".to_string())
+    })?;
 
     Ok(Json(json!({ "success": true, "data": rooms })).into_response())
 }
@@ -217,7 +255,14 @@ pub async fn create_room(
     Json(payload): Json<CreateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_CREATE_ALL, &state.permission_cache).await {
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::FACILITY_CREATE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(response);
     }
 
@@ -229,7 +274,7 @@ pub async fn create_room(
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *, (SELECT name_th FROM buildings WHERE id = $1) as building_name
-        "#
+        "#,
     )
     .bind(payload.building_id)
     .bind(payload.name_th)
@@ -247,7 +292,11 @@ pub async fn create_room(
         AppError::InternalServerError("Failed to create room".to_string())
     })?;
 
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": room }))).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": room })),
+    )
+        .into_response())
 }
 
 pub async fn update_room(
@@ -257,7 +306,14 @@ pub async fn update_room(
     Json(payload): Json<UpdateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_UPDATE_ALL, &state.permission_cache).await {
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::FACILITY_UPDATE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(response);
     }
 
@@ -276,7 +332,7 @@ pub async fn update_room(
             updated_at = NOW()
         WHERE id = $10
         RETURNING *, (SELECT name_th FROM buildings WHERE id = rooms.building_id) as building_name
-        "#
+        "#,
     )
     .bind(payload.building_id)
     .bind(payload.name_th)
@@ -301,7 +357,14 @@ pub async fn delete_room(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(&headers, &pool, codes::FACILITY_DELETE_ALL, &state.permission_cache).await {
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::FACILITY_DELETE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(response);
     }
 
@@ -317,7 +380,10 @@ pub async fn delete_room(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/buildings", get(list_buildings).post(create_building))
-        .route("/buildings/{id}", put(update_building).delete(delete_building))
+        .route(
+            "/buildings/{id}",
+            put(update_building).delete(delete_building),
+        )
         .route("/rooms", get(list_rooms).post(create_room))
         .route("/rooms/{id}", put(update_room).delete(delete_room))
 }

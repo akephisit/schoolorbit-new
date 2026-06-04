@@ -1,10 +1,13 @@
-use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, PgPool};
-use std::str::FromStr;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use std::time::{Duration, Instant};
 use super::migration::MigrationTracker;
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    PgPool,
+};
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
 /// Pool cache entry
 struct PoolEntry {
@@ -71,23 +74,26 @@ impl PoolManager {
                     .test_before_acquire(true)
                     .connect_with(connect_opts)
                     .await
-                    .map_err(|e| format!("Failed to connect to database for {}: {}", subdomain, e))?;
+                    .map_err(|e| {
+                        format!("Failed to connect to database for {}: {}", subdomain, e)
+                    })?;
 
                 // Store in cache
                 {
                     let mut pools = self.pools.write().await;
-                    pools.insert(key, PoolEntry {
-                        pool: pool.clone(),
-                        last_used: Instant::now(),
-                    });
+                    pools.insert(
+                        key,
+                        PoolEntry {
+                            pool: pool.clone(),
+                            last_used: Instant::now(),
+                        },
+                    );
                 }
 
                 println!("✅ New pool created for: {}", subdomain);
                 pool
             }
         };
-
-
 
         // Run migrations (lazy - only once per school per session)
         self.migration_tracker

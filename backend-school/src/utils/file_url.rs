@@ -1,7 +1,7 @@
 use std::env;
 
 /// File URL Builder - Converts storage paths to full URLs
-/// 
+///
 /// This utility handles path → URL conversion using configured base URLs.
 /// It supports CDN failover and environment-specific URLs.
 #[derive(Debug, Clone)]
@@ -14,28 +14,28 @@ impl FileUrlBuilder {
     /// Create a new FileUrlBuilder from environment variables
     pub fn new() -> Result<Self, String> {
         let env_val = env::var("R2_PUBLIC_URL").unwrap_or_default();
-        
+
         // Use hardcoded fallback if env is missing or empty
         let base_url = if env_val.is_empty() {
-             tracing::warn!("⚠️ R2_PUBLIC_URL is missing! Using default: https://files.schoolorbit.app");
-             "https://files.schoolorbit.app".to_string() 
+            tracing::warn!(
+                "⚠️ R2_PUBLIC_URL is missing! Using default: https://files.schoolorbit.app"
+            );
+            "https://files.schoolorbit.app".to_string()
         } else {
-             env_val
+            env_val
         };
-        
+
         // Filter out empty string for CDN_URL
-        let cdn_url = env::var("CDN_URL")
-            .ok()
-            .filter(|s| !s.is_empty()); // Important: Ignore empty string
-            
+        let cdn_url = env::var("CDN_URL").ok().filter(|s| !s.is_empty()); // Important: Ignore empty string
+
         Ok(Self { base_url, cdn_url })
     }
-    
+
     /// Build URL from storage path
-    /// 
+    ///
     /// # Arguments
     /// * `path` - Storage path (e.g., "school-abc/users/profiles/uuid.jpg")
-    /// 
+    ///
     /// # Returns
     /// Full URL (e.g., "https://cdn.schoolorbit.app/school-abc/users/profiles/uuid.jpg")
     pub fn build_url(&self, path: &str) -> String {
@@ -45,9 +45,13 @@ impl FileUrlBuilder {
         }
 
         let base = self.cdn_url.as_ref().unwrap_or(&self.base_url);
-        format!("{}/{}", base.trim_end_matches('/'), path.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            base.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
     }
-    
+
     /// Get the effective base URL (CDN if available, otherwise R2)
     pub fn base_url(&self) -> &str {
         self.cdn_url.as_deref().unwrap_or(&self.base_url)
@@ -61,7 +65,7 @@ impl Default for FileUrlBuilder {
 }
 
 /// Helper function to quickly convert path to URL
-/// 
+///
 /// # Example
 /// ```
 /// let url = get_file_url(Some("school-abc/users/profiles/uuid.jpg"));
@@ -84,28 +88,33 @@ pub fn get_file_url_from_string(path: &Option<String>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_build_url() {
         std::env::set_var("R2_PUBLIC_URL", "https://pub-test.r2.dev");
-        
+
         let builder = FileUrlBuilder::new().unwrap();
         let url = builder.build_url("school-abc/users/profiles/test.jpg");
-        
-        assert_eq!(url, "https://pub-test.r2.dev/school-abc/users/profiles/test.jpg");
+
+        assert_eq!(
+            url,
+            "https://pub-test.r2.dev/school-abc/users/profiles/test.jpg"
+        );
     }
-    
+
     #[test]
     fn test_build_url_with_cdn() {
         std::env::set_var("R2_PUBLIC_URL", "https://pub-test.r2.dev");
         std::env::set_var("CDN_URL", "https://cdn.schoolorbit.app");
-        
+
         let builder = FileUrlBuilder::new().unwrap();
         let url = builder.build_url("school-abc/users/profiles/test.jpg");
-        
-        assert_eq!(url, "https://cdn.schoolorbit.app/school-abc/users/profiles/test.jpg");
-        
+
+        assert_eq!(
+            url,
+            "https://cdn.schoolorbit.app/school-abc/users/profiles/test.jpg"
+        );
+
         std::env::remove_var("CDN_URL");
     }
-    
 }

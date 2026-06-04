@@ -1,17 +1,17 @@
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::NaiveDate;
 
 // ==========================================
 // Curriculum Models
 // ==========================================
-pub mod curriculum;
-pub mod course_planning;
-pub mod timetable;
-pub mod study_plans;
-pub mod scheduling;
 pub mod activity;
+pub mod course_planning;
+pub mod curriculum;
+pub mod scheduling;
+pub mod study_plans;
+pub mod timetable;
 
 // ==========================================
 // Academic Year Models
@@ -95,8 +95,8 @@ pub struct UpdateSemesterRequest {
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct GradeLevel {
     pub id: Uuid,
-    pub level_type: String,  // "kindergarten", "primary", "secondary"
-    pub year: i32,           // 1, 2, 3...
+    pub level_type: String, // "kindergarten", "primary", "secondary"
+    pub year: i32,          // 1, 2, 3...
     pub next_grade_level_id: Option<Uuid>,
     pub is_active: bool,
 }
@@ -166,8 +166,8 @@ impl From<GradeLevel> for GradeLevelResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateGradeLevelRequest {
-    pub level_type: String,  // "kindergarten", "primary", "secondary"
-    pub year: i32,           // 1, 2, 3...
+    pub level_type: String, // "kindergarten", "primary", "secondary"
+    pub year: i32,          // 1, 2, 3...
     pub next_grade_level_id: Option<Uuid>,
     pub is_active: Option<bool>,
 }

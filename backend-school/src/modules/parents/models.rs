@@ -13,7 +13,7 @@ pub struct ParentProfile {
     pub phone: Option<String>,
     pub email: Option<String>,
     pub national_id: Option<String>, // Encrypted
-    
+
     // Children
     pub children: Vec<ChildDto>,
 }

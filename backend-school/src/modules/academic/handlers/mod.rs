@@ -5,15 +5,16 @@ use crate::AppState;
 // ==========================================
 // Handlers Module
 // ==========================================
-pub mod subjects;
+pub mod activity;
 pub mod course_planning;
-pub mod timetable;
-pub mod study_plans;
 pub mod scheduling;
 pub mod scheduling_config;
-pub mod activity;
+pub mod study_plans;
+pub mod subjects;
+pub mod timetable;
 pub mod timetable_templates;
 
+use super::models::*;
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -22,7 +23,6 @@ use axum::{
 };
 use serde_json::json;
 use uuid::Uuid;
-use super::models::*;
 
 // ==========================================
 // Academic Structure Handlers (Years, Semesters, Levels)
@@ -35,26 +35,28 @@ pub async fn list_academic_structure(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Fetch Years
-    let years = sqlx::query_as::<_, AcademicYear>(
-        "SELECT * FROM academic_years ORDER BY year DESC"
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    let years =
+        sqlx::query_as::<_, AcademicYear>("SELECT * FROM academic_years ORDER BY year DESC")
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default();
 
     // Fetch Semesters
-    let semesters = sqlx::query_as::<_, Semester>(
-        "SELECT * FROM academic_semesters ORDER BY start_date DESC"
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    let semesters =
+        sqlx::query_as::<_, Semester>("SELECT * FROM academic_semesters ORDER BY start_date DESC")
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default();
 
     // Fetch Grade Levels (with computed fields)
     let levels_raw = sqlx::query_as::<_, GradeLevel>(
@@ -65,12 +67,12 @@ pub async fn list_academic_structure(
             WHEN 'secondary' THEN 3 
             ELSE 4 
          END, 
-         year ASC"
+         year ASC",
     )
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
-    
+
     // Convert to response format with computed fields
     let levels: Vec<GradeLevelResponse> = levels_raw.into_iter().map(|l| l.into()).collect();
 
@@ -88,22 +90,30 @@ pub async fn create_academic_year(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // If setting as active, deactivate others
     if payload.is_active.unwrap_or(false) {
-        let _ = sqlx::query("UPDATE academic_years SET is_active = false").execute(&pool).await;
+        let _ = sqlx::query("UPDATE academic_years SET is_active = false")
+            .execute(&pool)
+            .await;
     }
 
-    let school_days = payload.school_days.unwrap_or_else(|| "MON,TUE,WED,THU,FRI".to_string());
+    let school_days = payload
+        .school_days
+        .unwrap_or_else(|| "MON,TUE,WED,THU,FRI".to_string());
 
     let result = sqlx::query_as::<_, AcademicYear>(
         "INSERT INTO academic_years (year, name, start_date, end_date, is_active, school_days)
          VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *"
+         RETURNING *",
     )
     .bind(payload.year)
     .bind(payload.name)
@@ -115,10 +125,15 @@ pub async fn create_academic_year(
     .await;
 
     match result {
-        Ok(year) => Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": year })))),
+        Ok(year) => Ok((
+            StatusCode::CREATED,
+            Json(json!({ "success": true, "data": year })),
+        )),
         Err(e) => {
             eprintln!("Failed to create year: {}", e);
-            Err(AppError::InternalServerError("Failed to create academic year".to_string()))
+            Err(AppError::InternalServerError(
+                "Failed to create academic year".to_string(),
+            ))
         }
     }
 }
@@ -131,16 +146,22 @@ pub async fn update_academic_year(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     if payload.is_active.unwrap_or(false) {
         sqlx::query("UPDATE academic_years SET is_active = false")
             .execute(&pool)
             .await
-            .map_err(|_| AppError::InternalServerError("Failed to reset active year".to_string()))?;
+            .map_err(|_| {
+                AppError::InternalServerError("Failed to reset active year".to_string())
+            })?;
     }
 
     let result = sqlx::query_as::<_, AcademicYear>(
@@ -153,7 +174,7 @@ pub async fn update_academic_year(
             school_days = COALESCE($7, school_days),
             updated_at = NOW()
         WHERE id = $1
-        RETURNING *"#
+        RETURNING *"#,
     )
     .bind(id)
     .bind(payload.year)
@@ -181,12 +202,19 @@ pub async fn toggle_active_year(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     // Deactivate all
     sqlx::query("UPDATE academic_years SET is_active = false")
@@ -201,9 +229,13 @@ pub async fn toggle_active_year(
         .await
         .map_err(|_| AppError::InternalServerError("Failed to set active year".to_string()))?;
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": "Updated active year" })))
+    Ok(Json(
+        json!({ "success": true, "data": {}, "message": "Updated active year" }),
+    ))
 }
 
 // ==========================================
@@ -217,9 +249,13 @@ pub async fn create_semester(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // If setting as active, deactivate others globally
@@ -227,7 +263,9 @@ pub async fn create_semester(
         sqlx::query("UPDATE academic_semesters SET is_active = false")
             .execute(&pool)
             .await
-            .map_err(|_| AppError::InternalServerError("Failed to reset active semester".to_string()))?;
+            .map_err(|_| {
+                AppError::InternalServerError("Failed to reset active semester".to_string())
+            })?;
     }
 
     let result = sqlx::query_as::<_, Semester>(
@@ -245,10 +283,15 @@ pub async fn create_semester(
     .await;
 
     match result {
-        Ok(semester) => Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": semester })))),
+        Ok(semester) => Ok((
+            StatusCode::CREATED,
+            Json(json!({ "success": true, "data": semester })),
+        )),
         Err(e) => {
             eprintln!("Failed to create semester: {}", e);
-            Err(AppError::InternalServerError("Failed to create semester".to_string()))
+            Err(AppError::InternalServerError(
+                "Failed to create semester".to_string(),
+            ))
         }
     }
 }
@@ -261,9 +304,13 @@ pub async fn update_semester(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // If setting as active, deactivate others globally
@@ -271,7 +318,9 @@ pub async fn update_semester(
         sqlx::query("UPDATE academic_semesters SET is_active = false")
             .execute(&pool)
             .await
-            .map_err(|_| AppError::InternalServerError("Failed to reset active semester".to_string()))?;
+            .map_err(|_| {
+                AppError::InternalServerError("Failed to reset active semester".to_string())
+            })?;
     }
 
     let result = sqlx::query_as::<_, Semester>(
@@ -283,7 +332,7 @@ pub async fn update_semester(
             is_active = COALESCE($5, is_active),
             updated_at = NOW()
          WHERE id = $6
-         RETURNING *"
+         RETURNING *",
     )
     .bind(payload.term)
     .bind(payload.name)
@@ -297,8 +346,10 @@ pub async fn update_semester(
     match result {
         Ok(semester) => Ok(Json(json!({ "success": true, "data": semester }))),
         Err(e) => {
-             eprintln!("Failed to update semester: {}", e);
-             Err(AppError::InternalServerError("Failed to update semester".to_string()))
+            eprintln!("Failed to update semester: {}", e);
+            Err(AppError::InternalServerError(
+                "Failed to update semester".to_string(),
+            ))
         }
     }
 }
@@ -310,9 +361,13 @@ pub async fn delete_semester(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     let result = sqlx::query("DELETE FROM academic_semesters WHERE id = $1")
@@ -321,14 +376,20 @@ pub async fn delete_semester(
         .await;
 
     match result {
-        Ok(_) => Ok(Json(json!({ "success": true, "data": {}, "message": "Semester deleted" }))),
+        Ok(_) => Ok(Json(
+            json!({ "success": true, "data": {}, "message": "Semester deleted" }),
+        )),
         Err(e) => {
             eprintln!("Failed to delete semester: {}", e);
-             if e.to_string().contains("foreign key constraint") {
-                Err(AppError::BadRequest("ไม่สามารถลบภาคเรียนที่มีการใช้งานได้".to_string()))
-             } else {
-                Err(AppError::InternalServerError("Failed to delete semester".to_string()))
-             }
+            if e.to_string().contains("foreign key constraint") {
+                Err(AppError::BadRequest(
+                    "ไม่สามารถลบภาคเรียนที่มีการใช้งานได้".to_string(),
+                ))
+            } else {
+                Err(AppError::InternalServerError(
+                    "Failed to delete semester".to_string(),
+                ))
+            }
         }
     }
 }
@@ -344,9 +405,13 @@ pub async fn list_classrooms(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     let year_id_filter = filter.year_id;
@@ -386,7 +451,8 @@ pub async fn list_classrooms(
         query.push_str(&format!(" AND c.academic_year_id = ${idx}"));
     }
 
-    query.push_str(" ORDER BY
+    query.push_str(
+        " ORDER BY
          CASE gl.level_type
             WHEN 'kindergarten' THEN 1
             WHEN 'primary' THEN 2
@@ -394,15 +460,15 @@ pub async fn list_classrooms(
             ELSE 4
          END,
          gl.year ASC,
-         c.room_number ASC");
+         c.room_number ASC",
+    );
 
     let mut q = sqlx::query_as::<_, Classroom>(&query);
-    if let Some(yid) = year_id_filter { q = q.bind(yid); }
+    if let Some(yid) = year_id_filter {
+        q = q.bind(yid);
+    }
 
-    let classrooms = q
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
+    let classrooms = q.fetch_all(&pool).await.unwrap_or_default();
 
     Ok(Json(json!({ "success": true, "data": classrooms })))
 }
@@ -414,28 +480,28 @@ pub async fn create_classroom(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // 1. Get Grade Level Info for Name Generation
-    let grade_level = sqlx::query_as::<_, GradeLevel>(
-        "SELECT * FROM grade_levels WHERE id = $1"
-    )
-    .bind(payload.grade_level_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| AppError::BadRequest("Invalid grade level".to_string()))?;
+    let grade_level = sqlx::query_as::<_, GradeLevel>("SELECT * FROM grade_levels WHERE id = $1")
+        .bind(payload.grade_level_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|_| AppError::BadRequest("Invalid grade level".to_string()))?;
 
     // 2. Get Year Info for Code Generation
-    let year = sqlx::query_as::<_, AcademicYear>(
-        "SELECT * FROM academic_years WHERE id = $1"
-    )
-    .bind(payload.academic_year_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| AppError::BadRequest("Invalid academic year".to_string()))?;
+    let year = sqlx::query_as::<_, AcademicYear>("SELECT * FROM academic_years WHERE id = $1")
+        .bind(payload.academic_year_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|_| AppError::BadRequest("Invalid academic year".to_string()))?;
 
     // 3. Validate advisors (roles + staff check)
     let advisors = validate_advisors(&payload.advisors, &pool).await?;
@@ -446,9 +512,16 @@ pub async fn create_classroom(
 
     // Code: "67-M1-2" (Year-Level-Room)
     let short_year = year.year % 100;
-    let code = format!("{}-{}-{}", short_year, grade_level.code(), payload.room_number.replace(" ", ""));
+    let code = format!(
+        "{}-{}-{}",
+        short_year,
+        grade_level.code(),
+        payload.room_number.replace(" ", "")
+    );
 
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     // 5. Insert classroom
@@ -480,12 +553,17 @@ pub async fn create_classroom(
     // 6. Insert advisors (if any)
     insert_advisors(&mut tx, classroom_id, &advisors).await?;
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     // Re-fetch with joined fields
     let classroom = fetch_classroom_full(&pool, classroom_id).await?;
 
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": classroom }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": classroom })),
+    ))
 }
 
 /// Validate advisor list: valid roles, max 1 primary, all are staff users.
@@ -494,16 +572,22 @@ async fn validate_advisors(
     advisors: &Option<Vec<ClassroomAdvisorInput>>,
     pool: &sqlx::PgPool,
 ) -> Result<Vec<ClassroomAdvisorInput>, AppError> {
-    let Some(list) = advisors else { return Ok(vec![]) };
+    let Some(list) = advisors else {
+        return Ok(vec![]);
+    };
 
     // Role validation — in-memory, ไม่แตะ DB
     let primary_count = list.iter().filter(|a| a.role == "primary").count();
     if primary_count > 1 {
-        return Err(AppError::BadRequest("ครูที่ปรึกษาหลักต้องมีได้ไม่เกิน 1 คน".to_string()));
+        return Err(AppError::BadRequest(
+            "ครูที่ปรึกษาหลักต้องมีได้ไม่เกิน 1 คน".to_string(),
+        ));
     }
     for a in list {
         if a.role != "primary" && a.role != "secondary" {
-            return Err(AppError::BadRequest("role ต้องเป็น 'primary' หรือ 'secondary' เท่านั้น".to_string()));
+            return Err(AppError::BadRequest(
+                "role ต้องเป็น 'primary' หรือ 'secondary' เท่านั้น".to_string(),
+            ));
         }
     }
 
@@ -516,16 +600,17 @@ async fn validate_advisors(
     let unique_ids: std::collections::HashSet<Uuid> = list.iter().map(|a| a.user_id).collect();
     let ids_vec: Vec<Uuid> = unique_ids.iter().copied().collect();
 
-    let staff_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM users WHERE id = ANY($1) AND user_type = 'staff'"
-    )
-    .bind(&ids_vec)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let staff_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id = ANY($1) AND user_type = 'staff'")
+            .bind(&ids_vec)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
 
     if staff_count != unique_ids.len() as i64 {
-        return Err(AppError::BadRequest("ครูที่ปรึกษาต้องเป็นบุคลากร (Staff)".to_string()));
+        return Err(AppError::BadRequest(
+            "ครูที่ปรึกษาต้องเป็นบุคลากร (Staff)".to_string(),
+        ));
     }
 
     Ok(list.clone())
@@ -541,7 +626,7 @@ async fn insert_advisors(
         sqlx::query(
             "INSERT INTO classroom_advisors (classroom_id, user_id, role)
              VALUES ($1, $2, $3)
-             ON CONFLICT (classroom_id, user_id) DO UPDATE SET role = EXCLUDED.role"
+             ON CONFLICT (classroom_id, user_id) DO UPDATE SET role = EXCLUDED.role",
         )
         .bind(classroom_id)
         .bind(a.user_id)
@@ -596,9 +681,13 @@ pub async fn update_classroom(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Validate advisors list if provided
@@ -608,20 +697,23 @@ pub async fn update_classroom(
         None
     };
 
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     // If room_number changes, update name and code
     if let Some(ref new_room) = payload.room_number {
-         // ดึงเฉพาะ field ที่ต้องใช้ (grade_level_id, academic_year_id)
-         let current: (Uuid, Uuid) = sqlx::query_as(
-            "SELECT grade_level_id, academic_year_id FROM class_rooms WHERE id = $1"
-         )
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|_| AppError::NotFound("Classroom not found".to_string()))?;
+        // ดึงเฉพาะ field ที่ต้องใช้ (grade_level_id, academic_year_id)
+        let current: (Uuid, Uuid) = sqlx::query_as(
+            "SELECT grade_level_id, academic_year_id FROM class_rooms WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| AppError::NotFound("Classroom not found".to_string()))?;
 
-         let grade_level = sqlx::query_as::<_, GradeLevel>(
+        let grade_level = sqlx::query_as::<_, GradeLevel>(
             "SELECT id, level_type, year, next_grade_level_id, is_active FROM grade_levels WHERE id = $1"
          )
             .bind(current.0)
@@ -629,7 +721,7 @@ pub async fn update_classroom(
             .await
             .map_err(|_| AppError::InternalServerError("Failed to fetch grade level".to_string()))?;
 
-         let year = sqlx::query_as::<_, AcademicYear>(
+        let year = sqlx::query_as::<_, AcademicYear>(
             "SELECT id, year, name, start_date, end_date, is_active, school_days, metadata, created_at, updated_at FROM academic_years WHERE id = $1"
          )
             .bind(current.1)
@@ -639,7 +731,12 @@ pub async fn update_classroom(
 
         let full_name = format!("{}/{}", grade_level.short_name(), new_room);
         let short_year = year.year % 100;
-        let code = format!("{}-{}-{}", short_year, grade_level.code(), new_room.replace(" ", ""));
+        let code = format!(
+            "{}-{}-{}",
+            short_year,
+            grade_level.code(),
+            new_room.replace(" ", "")
+        );
 
         sqlx::query("UPDATE class_rooms SET name = $1, code = $2, room_number = $3 WHERE id = $4")
             .bind(full_name)
@@ -664,7 +761,7 @@ pub async fn update_classroom(
             capacity = COALESCE($2, capacity),
             is_active = COALESCE($3, is_active),
             updated_at = NOW()
-         WHERE id = $4"
+         WHERE id = $4",
     )
     .bind(payload.study_plan_version_id)
     .bind(payload.capacity)
@@ -673,8 +770,8 @@ pub async fn update_classroom(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-         eprintln!("Failed to update classroom: {}", e);
-         AppError::InternalServerError("Failed to update classroom".to_string())
+        eprintln!("Failed to update classroom: {}", e);
+        AppError::InternalServerError("Failed to update classroom".to_string())
     })?;
 
     // Replace advisors atomically (DELETE + INSERT) only when caller provided list.
@@ -684,11 +781,15 @@ pub async fn update_classroom(
             .bind(id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to clear advisors: {}", e)))?;
+            .map_err(|e| {
+                AppError::InternalServerError(format!("Failed to clear advisors: {}", e))
+            })?;
         insert_advisors(&mut tx, id, &advisors).await?;
     }
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     let result = fetch_classroom_full(&pool, id).await?;
     Ok(Json(json!({ "success": true, "data": result })))
@@ -705,9 +806,13 @@ pub async fn create_grade_level(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Validate level_type
@@ -718,7 +823,7 @@ pub async fn create_grade_level(
     let result = sqlx::query_as::<_, GradeLevel>(
         "INSERT INTO grade_levels (level_type, year, next_grade_level_id, is_active)
          VALUES ($1, $2, $3, $4)
-         RETURNING *"
+         RETURNING *",
     )
     .bind(&payload.level_type)
     .bind(payload.year)
@@ -730,14 +835,19 @@ pub async fn create_grade_level(
     match result {
         Ok(level) => {
             let response: GradeLevelResponse = level.into();
-            Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": response }))))
-        },
+            Ok((
+                StatusCode::CREATED,
+                Json(json!({ "success": true, "data": response })),
+            ))
+        }
         Err(e) => {
             eprintln!("Failed to create grade level: {}", e);
             if e.to_string().contains("unique") {
                 Err(AppError::BadRequest("ระดับชั้นนี้มีอยู่แล้ว".to_string()))
             } else {
-                Err(AppError::InternalServerError("Failed to create grade level".to_string()))
+                Err(AppError::InternalServerError(
+                    "Failed to create grade level".to_string(),
+                ))
             }
         }
     }
@@ -750,22 +860,28 @@ pub async fn delete_grade_level(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Check usage
-    let usage_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM class_rooms WHERE grade_level_id = $1"
-    )
-    .bind(id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
+    let usage_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM class_rooms WHERE grade_level_id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0);
 
     if usage_count > 0 {
-        return Err(AppError::BadRequest(format!("ไม่สามารถลบระดับชั้นได้เนื่องจากมีการใช้งานอยู่ {} ห้องเรียน", usage_count)));
+        return Err(AppError::BadRequest(format!(
+            "ไม่สามารถลบระดับชั้นได้เนื่องจากมีการใช้งานอยู่ {} ห้องเรียน",
+            usage_count
+        )));
     }
 
     let result = sqlx::query("DELETE FROM grade_levels WHERE id = $1")
@@ -774,10 +890,14 @@ pub async fn delete_grade_level(
         .await;
 
     match result {
-        Ok(_) => Ok(Json(json!({ "success": true, "data": {}, "message": "Grade level deleted" }))),
+        Ok(_) => Ok(Json(
+            json!({ "success": true, "data": {}, "message": "Grade level deleted" }),
+        )),
         Err(e) => {
             eprintln!("Failed to delete grade level: {}", e);
-            Err(AppError::InternalServerError("Failed to delete grade level".to_string()))
+            Err(AppError::InternalServerError(
+                "Failed to delete grade level".to_string(),
+            ))
         }
     }
 }
@@ -793,9 +913,13 @@ pub async fn enroll_students(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Validate Classroom
@@ -811,7 +935,7 @@ pub async fn enroll_students(
                 NULL::bigint as student_count
          FROM class_rooms c
          JOIN grade_levels gl ON c.grade_level_id = gl.id
-         WHERE c.id = $1"
+         WHERE c.id = $1",
     )
     .bind(payload.class_room_id)
     .fetch_optional(&pool)
@@ -819,17 +943,22 @@ pub async fn enroll_students(
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
     .ok_or(AppError::NotFound("Classroom not found".to_string()))?;
 
-    let enroll_date = payload.enrollment_date.unwrap_or(chrono::Local::now().date_naive());
+    let enroll_date = payload
+        .enrollment_date
+        .unwrap_or(chrono::Local::now().date_naive());
 
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     let mut enrolled_count = 0;
-    
+
     for student_id in &payload.student_ids {
         // Deactivate old active enrollments for this student (if any)
         sqlx::query(
             "UPDATE student_class_enrollments SET status = 'moved_out', updated_at = NOW() 
-             WHERE student_id = $1 AND status = 'active'"
+             WHERE student_id = $1 AND status = 'active'",
         )
         .bind(student_id)
         .execute(&mut *tx)
@@ -856,16 +985,16 @@ pub async fn enroll_students(
             AppError::InternalServerError("Failed to enroll student".to_string())
         })?;
 
-
-
         enrolled_count += 1;
     }
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     // Handle class numbering based on method
     let numbering_method = payload.numbering_method.as_deref().unwrap_or("append");
-    
+
     match numbering_method {
         "none" => {
             // Do nothing - no class numbers assigned
@@ -874,7 +1003,7 @@ pub async fn enroll_students(
             // Get max class_number in the classroom
             let max_number: Option<i32> = sqlx::query_scalar(
                 "SELECT MAX(class_number) FROM student_class_enrollments 
-                 WHERE class_room_id = $1 AND status = 'active'"
+                 WHERE class_room_id = $1 AND status = 'active'",
             )
             .bind(payload.class_room_id)
             .fetch_one(&pool)
@@ -886,11 +1015,11 @@ pub async fn enroll_students(
             // Assign numbers to newly enrolled students
             for (index, student_id) in payload.student_ids.iter().enumerate() {
                 let class_number = start_number + index as i32;
-                
+
                 sqlx::query(
                     "UPDATE student_class_enrollments 
                      SET class_number = $1, updated_at = NOW()
-                     WHERE student_id = $2 AND class_room_id = $3 AND status = 'active'"
+                     WHERE student_id = $2 AND class_room_id = $3 AND status = 'active'",
                 )
                 .bind(class_number)
                 .bind(student_id)
@@ -918,7 +1047,7 @@ pub async fn enroll_students(
                  FROM student_class_enrollments ske
                  LEFT JOIN users u ON ske.student_id = u.id
                  LEFT JOIN student_info s ON u.id = s.user_id
-                 WHERE ske.class_room_id = $1 AND ske.status = 'active'"
+                 WHERE ske.class_room_id = $1 AND ske.status = 'active'",
             )
             .bind(payload.class_room_id)
             .fetch_all(&pool)
@@ -952,7 +1081,7 @@ pub async fn enroll_students(
                         match (a_male, b_male) {
                             (true, false) => std::cmp::Ordering::Less,
                             (false, true) => std::cmp::Ordering::Greater,
-                            _ => a.first_name.cmp(&b.first_name)
+                            _ => a.first_name.cmp(&b.first_name),
                         }
                     });
                 }
@@ -962,11 +1091,11 @@ pub async fn enroll_students(
             // Update all class numbers
             for (index, student) in students.iter().enumerate() {
                 let class_number = (index + 1) as i32;
-                
+
                 sqlx::query(
                     "UPDATE student_class_enrollments 
                      SET class_number = $1, updated_at = NOW() 
-                     WHERE id = $2"
+                     WHERE id = $2",
                 )
                 .bind(class_number)
                 .bind(student.id)
@@ -983,7 +1112,9 @@ pub async fn enroll_students(
         }
     }
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": format!("Enrolled {} students successfully", enrolled_count) })))
+    Ok(Json(
+        json!({ "success": true, "data": {}, "message": format!("Enrolled {} students successfully", enrolled_count) }),
+    ))
 }
 
 pub async fn get_class_enrollments(
@@ -993,9 +1124,13 @@ pub async fn get_class_enrollments(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     let enrollments = sqlx::query_as::<_, StudentEnrollment>(
@@ -1008,7 +1143,7 @@ pub async fn get_class_enrollments(
          LEFT JOIN student_info s ON u.id = s.user_id
          LEFT JOIN class_rooms c ON ske.class_room_id = c.id
          WHERE ske.class_room_id = $1 AND ske.status = 'active'
-         ORDER BY ske.class_number ASC NULLS LAST, s.student_id ASC"
+         ORDER BY ske.class_number ASC NULLS LAST, s.student_id ASC",
     )
     .bind(class_id)
     .fetch_all(&pool)
@@ -1025,37 +1160,47 @@ pub async fn remove_enrollment(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    let enrollment_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM student_class_enrollments WHERE id = $1)"
-    )
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    let enrollment_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM student_class_enrollments WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
     if enrollment_exists {
-        // Soft delete (set status to removed or just delete?) -> Let's hard delete for mistaken enrollment, 
+        // Soft delete (set status to removed or just delete?) -> Let's hard delete for mistaken enrollment,
         // OR better: set status to 'cancelled' so we keep history?
         // Let's hard delete for now if it's "removing from class" without moving to another
         sqlx::query("DELETE FROM student_class_enrollments WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
             .await
-            .map_err(|_| AppError::InternalServerError("Failed to delete enrollment".to_string()))?;
-
-
+            .map_err(|_| {
+                AppError::InternalServerError("Failed to delete enrollment".to_string())
+            })?;
     }
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": "Enrollment removed" })))
+    Ok(Json(
+        json!({ "success": true, "data": {}, "message": "Enrollment removed" }),
+    ))
 }
 
 #[derive(serde::Deserialize)]
@@ -1071,16 +1216,20 @@ pub async fn update_enrollment_number(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Check duplicate number in same class? optional, but good practice.
     // However, it might be annoying during re-ordering. Let's allow simple update first.
-    
+
     let result = sqlx::query(
-        "UPDATE student_class_enrollments SET class_number = $1, updated_at = NOW() WHERE id = $2"
+        "UPDATE student_class_enrollments SET class_number = $1, updated_at = NOW() WHERE id = $2",
     )
     .bind(payload.class_number)
     .bind(id)
@@ -1088,10 +1237,14 @@ pub async fn update_enrollment_number(
     .await;
 
     match result {
-        Ok(_) => Ok(Json(json!({ "success": true, "data": {}, "message": "Class number updated" }))),
+        Ok(_) => Ok(Json(
+            json!({ "success": true, "data": {}, "message": "Class number updated" }),
+        )),
         Err(e) => {
             eprintln!("Failed to update class number: {}", e);
-            Err(AppError::InternalServerError("Failed to update class number".to_string()))
+            Err(AppError::InternalServerError(
+                "Failed to update class number".to_string(),
+            ))
         }
     }
 }
@@ -1109,9 +1262,13 @@ pub async fn auto_assign_class_numbers(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Define struct for fetching student data with title
@@ -1129,7 +1286,7 @@ pub async fn auto_assign_class_numbers(
          FROM student_class_enrollments ske
          LEFT JOIN users u ON ske.student_id = u.id
          LEFT JOIN student_info s ON u.id = s.user_id
-         WHERE ske.class_room_id = $1 AND ske.status = 'active'"
+         WHERE ske.class_room_id = $1 AND ske.status = 'active'",
     )
     .bind(class_id)
     .fetch_all(&pool)
@@ -1162,27 +1319,31 @@ pub async fn auto_assign_class_numbers(
                 let b_male = is_male(&b.title);
 
                 match (a_male, b_male) {
-                    (true, false) => std::cmp::Ordering::Less,    // Male before female
+                    (true, false) => std::cmp::Ordering::Less, // Male before female
                     (false, true) => std::cmp::Ordering::Greater, // Female after male
-                    _ => a.first_name.cmp(&b.first_name)          // Same gender, sort by name
+                    _ => a.first_name.cmp(&b.first_name),      // Same gender, sort by name
                 }
             });
         }
         _ => {
-            return Err(AppError::BadRequest("Invalid sort_by parameter".to_string()));
+            return Err(AppError::BadRequest(
+                "Invalid sort_by parameter".to_string(),
+            ));
         }
     }
 
     // Update class numbers in transaction
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     for (index, student) in students.iter().enumerate() {
         let class_number = (index + 1) as i32;
-        
+
         sqlx::query(
             "UPDATE student_class_enrollments SET class_number = $1, updated_at = NOW() 
-             WHERE id = $2"
+             WHERE id = $2",
         )
         .bind(class_number)
         .bind(student.id)
@@ -1194,13 +1355,14 @@ pub async fn auto_assign_class_numbers(
         })?;
     }
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": format!("เรียงเลขที่สำหรับ {} คนเรียบร้อยแล้ว", students.len()) })))
+    Ok(Json(
+        json!({ "success": true, "data": {}, "message": format!("เรียงเลขที่สำหรับ {} คนเรียบร้อยแล้ว", students.len()) }),
+    ))
 }
-
-
 
 // ==========================================
 // Year-Level Configuration Handlers
@@ -1213,14 +1375,18 @@ pub async fn get_year_levels(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
     // Return list of grade_level_ids that are active for this year
     let level_ids = sqlx::query_scalar::<_, Uuid>(
-        "SELECT grade_level_id FROM academic_year_grade_levels WHERE academic_year_id = $1"
+        "SELECT grade_level_id FROM academic_year_grade_levels WHERE academic_year_id = $1",
     )
     .bind(year_id)
     .fetch_all(&pool)
@@ -1238,19 +1404,28 @@ pub async fn update_year_levels(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain).await
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
 
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     // 1. Clear existing mappings for this year
     sqlx::query("DELETE FROM academic_year_grade_levels WHERE academic_year_id = $1")
         .bind(year_id)
         .execute(&mut *tx)
         .await
-        .map_err(|_| AppError::InternalServerError("Failed to clear existing mappings".to_string()))?;
+        .map_err(|_| {
+            AppError::InternalServerError("Failed to clear existing mappings".to_string())
+        })?;
 
     // 2. Insert new mappings
     for level_id in payload.grade_level_ids {
@@ -1262,7 +1437,11 @@ pub async fn update_year_levels(
             .map_err(|_| AppError::InternalServerError("Failed to insert mapping".to_string()))?;
     }
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": "Year levels updated" })))
+    Ok(Json(
+        json!({ "success": true, "data": {}, "message": "Year levels updated" }),
+    ))
 }

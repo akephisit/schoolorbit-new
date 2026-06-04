@@ -17,9 +17,13 @@ use crate::AppState;
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
@@ -70,7 +74,10 @@ pub async fn submit_enrollment_form(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     portal_service::submit_enrollment_form(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ยืนยันมอบตัวและบันทึกข้อมูลแล้ว" })).into_response())
+    Ok(
+        Json(json!({ "success": true, "data": {}, "message": "ยืนยันมอบตัวและบันทึกข้อมูลแล้ว" }))
+            .into_response(),
+    )
 }
 
 pub async fn update_application(
@@ -80,7 +87,10 @@ pub async fn update_application(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     portal_service::update_application(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว" })).into_response())
+    Ok(
+        Json(json!({ "success": true, "data": {}, "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว" }))
+            .into_response(),
+    )
 }
 
 pub async fn portal_upload_document(
@@ -99,19 +109,46 @@ pub async fn portal_upload_document(
     let mut national_id: Option<String> = None;
     let mut date_of_birth: Option<String> = None;
 
-    while let Some(field) = multipart.next_field().await
-        .map_err(|_| AppError::BadRequest("Invalid multipart data".to_string()))? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::BadRequest("Invalid multipart data".to_string()))?
+    {
         match field.name().unwrap_or("") {
-            "doc_type" => doc_type = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string()),
-            "national_id" => national_id = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string()),
-            "date_of_birth" => date_of_birth = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string()),
-            "file" => {
-                original_filename = field.file_name().map(|s| s.to_string()).or(Some("document".to_string()));
-                if let Some(ct) = field.content_type() { mime_type = ct.to_string(); }
-                file_data = Some(field.bytes().await
-                    .map_err(|_| AppError::BadRequest("Failed to read file".to_string()))?.to_vec());
+            "doc_type" => {
+                doc_type = Some(
+                    String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string(),
+                )
             }
-            _ => { let _ = field.bytes().await; }
+            "national_id" => {
+                national_id = Some(
+                    String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string(),
+                )
+            }
+            "date_of_birth" => {
+                date_of_birth = Some(
+                    String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string(),
+                )
+            }
+            "file" => {
+                original_filename = field
+                    .file_name()
+                    .map(|s| s.to_string())
+                    .or(Some("document".to_string()));
+                if let Some(ct) = field.content_type() {
+                    mime_type = ct.to_string();
+                }
+                file_data = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|_| AppError::BadRequest("Failed to read file".to_string()))?
+                        .to_vec(),
+                );
+            }
+            _ => {
+                let _ = field.bytes().await;
+            }
         }
     }
 
@@ -120,19 +157,29 @@ pub async fn portal_upload_document(
     let original_filename = original_filename.unwrap_or_else(|| "document".to_string());
 
     if !portal_service::VALID_DOC_TYPES.contains(&doc_type.as_str()) {
-        return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
+        return Err(AppError::BadRequest(format!(
+            "Invalid doc_type: {}",
+            doc_type
+        )));
     }
 
     let ext = std::path::Path::new(&original_filename)
-        .extension().and_then(|e| e.to_str()).unwrap_or("bin").to_lowercase();
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin")
+        .to_lowercase();
     if !portal_service::ALLOWED_EXTENSIONS.contains(&ext.as_str()) {
-        return Err(AppError::BadRequest(format!("File extension .{} not allowed. Use: jpg, png, pdf", ext)));
+        return Err(AppError::BadRequest(format!(
+            "File extension .{} not allowed. Use: jpg, png, pdf",
+            ext
+        )));
     }
     if file_data.len() > 20 * 1024 * 1024 {
         return Err(AppError::BadRequest("File size exceeds 20MB".to_string()));
     }
 
-    let r2_client = R2Client::new().await
+    let r2_client = R2Client::new()
+        .await
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
 
     let input = portal_service::PortalUploadInput {
@@ -145,10 +192,13 @@ pub async fn portal_upload_document(
         date_of_birth,
     };
 
-    let (result, storage_path) = portal_service::save_portal_upload(&pool, &subdomain, &input).await?;
+    let (result, storage_path) =
+        portal_service::save_portal_upload(&pool, &subdomain, &input).await?;
 
     // R2 upload (after DB success — handler scope)
-    r2_client.upload_file(&storage_path, file_data, &mime_type).await
+    r2_client
+        .upload_file(&storage_path, file_data, &mime_type)
+        .await
         .map_err(|_| AppError::InternalServerError("Failed to upload file".to_string()))?;
 
     if let Some(old) = &result.old_storage_path {
@@ -162,7 +212,8 @@ pub async fn portal_upload_document(
             "fileSize": result.file_size,
             "docType": doc_type,
             "fileUrl": file_url,
-        } })).into_response())
+        } }))
+    .into_response())
 }
 
 pub async fn portal_delete_document(
@@ -174,16 +225,23 @@ pub async fn portal_delete_document(
     let pool = get_pool(&state, &headers).await?;
 
     if !portal_service::VALID_DOC_TYPES.contains(&doc_type.as_str()) {
-        return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
+        return Err(AppError::BadRequest(format!(
+            "Invalid doc_type: {}",
+            doc_type
+        )));
     }
 
     let storage_path = portal_service::delete_portal_document(&pool, &doc_type, query).await?;
 
-    let r2_client = R2Client::new().await
+    let r2_client = R2Client::new()
+        .await
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
     r2_client.delete_file(&storage_path).await.ok();
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบเอกสารเรียบร้อยแล้ว" })).into_response())
+    Ok(
+        Json(json!({ "success": true, "data": {}, "message": "ลบเอกสารเรียบร้อยแล้ว" }))
+            .into_response(),
+    )
 }
 
 pub async fn portal_get_exam_seat(
@@ -192,6 +250,7 @@ pub async fn portal_get_exam_seat(
     Json(payload): Json<portal_service::PortalExamSeatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let seat = portal_service::get_exam_seat(&pool, &payload.national_id, &payload.date_of_birth).await?;
+    let seat =
+        portal_service::get_exam_seat(&pool, &payload.national_id, &payload.date_of_birth).await?;
     Ok(Json(json!({ "success": true, "data": seat })).into_response())
 }

@@ -54,9 +54,13 @@ pub struct UpdateMemberRequest {
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection error".to_string()))
 }
 
@@ -68,8 +72,11 @@ pub async fn list_members(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let members = department_member_service::list_members(
-        &pool, department_id, query.include_children.unwrap_or(false)
-    ).await?;
+        &pool,
+        department_id,
+        query.include_children.unwrap_or(false),
+    )
+    .await?;
     Ok(Json(json!({ "success": true, "data": members })).into_response())
 }
 
@@ -80,18 +87,33 @@ pub async fn add_member(
     Json(body): Json<AddMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_permission(&headers, &pool, codes::ROLES_ASSIGN_ALL, &state.permission_cache).await {
+    if let Err(resp) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_ASSIGN_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(resp);
     }
 
     if department_member_service::already_member(&pool, body.user_id, department_id).await? {
-        return Ok(Json(json!({ "success": false, "error": "บุคลากรนี้เป็นสมาชิกของกลุ่มนี้อยู่แล้ว" })).into_response());
+        return Ok(
+            Json(json!({ "success": false, "error": "บุคลากรนี้เป็นสมาชิกของกลุ่มนี้อยู่แล้ว" }))
+                .into_response(),
+        );
     }
 
     department_member_service::add_member(
-        &pool, body.user_id, department_id,
-        &body.position, body.is_primary.unwrap_or(false), body.responsibilities,
-    ).await?;
+        &pool,
+        body.user_id,
+        department_id,
+        &body.position,
+        body.is_primary.unwrap_or(false),
+        body.responsibilities,
+    )
+    .await?;
 
     state.permission_cache.invalidate(&body.user_id);
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
@@ -104,16 +126,28 @@ pub async fn update_member(
     Json(body): Json<UpdateMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_permission(&headers, &pool, codes::ROLES_ASSIGN_ALL, &state.permission_cache).await {
+    if let Err(resp) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_ASSIGN_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(resp);
     }
 
     let target_dept = body.new_department_id.unwrap_or(department_id);
     let updated = department_member_service::update_member(
-        &pool, department_id, user_id,
-        &body.position, body.is_primary.unwrap_or(false), body.responsibilities,
+        &pool,
+        department_id,
+        user_id,
+        &body.position,
+        body.is_primary.unwrap_or(false),
+        body.responsibilities,
         target_dept,
-    ).await?;
+    )
+    .await?;
 
     if updated == 0 {
         return Ok(Json(json!({ "success": false, "error": "ไม่พบสมาชิกนี้ในกลุ่ม" })).into_response());
@@ -129,7 +163,14 @@ pub async fn remove_member(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_permission(&headers, &pool, codes::ROLES_ASSIGN_ALL, &state.permission_cache).await {
+    if let Err(resp) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_ASSIGN_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(resp);
     }
     department_member_service::remove_member(&pool, department_id, user_id).await?;

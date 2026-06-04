@@ -7,14 +7,17 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
+use super::models::{
+    CreateStudentRequest, ListStudentsQuery, StudentDbRow, StudentListItem, StudentProfile,
+    UpdateOwnProfileRequest, UpdateStudentRequest,
+};
 use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
 use crate::modules::auth::models::User;
 use crate::modules::auth::permissions::UserPermissions;
-use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::utils::field_encryption;
+use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
-use crate::error::AppError;
-use super::models::{CreateStudentRequest, ListStudentsQuery, StudentListItem, StudentProfile, StudentDbRow, UpdateOwnProfileRequest, UpdateStudentRequest};
 
 // =========================================
 // Helper Functions
@@ -26,15 +29,14 @@ async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Us
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
-    
-    let token_from_header = auth_header
-        .and_then(|h| {
-            if h.starts_with("Bearer ") {
-                Some(h[7..].to_string())
-            } else {
-                None
-            }
-        });
+
+    let token_from_header = auth_header.and_then(|h| {
+        if h.starts_with("Bearer ") {
+            Some(h[7..].to_string())
+        } else {
+            None
+        }
+    });
 
     // Fallback to cookie
     let token_from_cookie = headers
@@ -43,13 +45,14 @@ async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Us
         .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
 
     // Use Authorization header first, then cookie
-    let token = token_from_header.or(token_from_cookie)
+    let token = token_from_header
+        .or(token_from_cookie)
         .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
-    
+
     // Verify token
     let claims = crate::utils::jwt::JwtService::verify_token(&token)
         .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
-    
+
     // Get user from database
     let mut user: User = sqlx::query_as(
         "SELECT 
@@ -77,24 +80,26 @@ async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Us
             hired_date,
             resigned_date
          FROM users 
-         WHERE id = $1"
+         WHERE id = $1",
     )
-    .bind(uuid::Uuid::parse_str(&claims.sub)
-        .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
+    .bind(
+        uuid::Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?,
+    )
     .fetch_one(pool)
     .await
     .map_err(|e| {
         eprintln!("❌ Failed to get user: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string())
     })?;
-    
+
     // Decrypt national_id
     if let Some(ref nid) = user.national_id {
         if let Ok(dec) = field_encryption::decrypt(nid) {
             user.national_id = Some(dec);
         }
     }
-    
+
     Ok(user)
 }
 
@@ -105,14 +110,19 @@ async fn check_user_permission(
     required_permission: &str,
 ) -> Result<User, AppError> {
     let user = get_current_user(headers, pool).await?;
-    
+
     // Check permission
     match user.has_permission(pool, required_permission).await {
         Ok(true) => Ok(user),
-        Ok(false) => Err(AppError::Forbidden(format!("คุณไม่มีสิทธิ์ (ต้องการ {} permission)", required_permission))),
+        Ok(false) => Err(AppError::Forbidden(format!(
+            "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
+            required_permission
+        ))),
         Err(e) => {
             eprintln!("❌ Permission check error: {}", e);
-            Err(AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string()))
+            Err(AppError::InternalServerError(
+                "เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string(),
+            ))
         }
     }
 }
@@ -136,13 +146,15 @@ pub async fn get_own_profile(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-    
+
     // Get current user
     let user = get_current_user(&headers, &pool).await?;
 
@@ -180,7 +192,7 @@ pub async fn get_own_profile(
         LEFT JOIN class_rooms c ON sce.class_room_id = c.id
         LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE u.id = $1 AND u.user_type = 'student' AND u.status = 'active'
-        "#
+        "#,
     )
     .bind(user.id)
     .fetch_optional(&pool)
@@ -216,18 +228,18 @@ pub async fn get_own_profile(
         INNER JOIN users p ON sp.parent_user_id = p.id
         WHERE sp.student_user_id = $1
         ORDER BY sp.is_primary DESC, p.first_name ASC
-        "#
+        "#,
     )
     .bind(user.id)
     .fetch_all(&pool)
     .await
     .unwrap_or_else(|_| Vec::new());
-    
+
     let student = StudentProfile {
         info: student_row,
         parents,
     };
-    
+
     Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": student })),
@@ -250,13 +262,15 @@ pub async fn update_own_profile(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-    
+
     // Get current user
     let user = get_current_user(&headers, &pool).await?;
 
@@ -274,7 +288,7 @@ pub async fn update_own_profile(
             nickname = COALESCE($4, nickname),
             updated_at = NOW()
         WHERE id = $1 AND user_type = 'student'
-        "#
+        "#,
     )
     .bind(user.id)
     .bind(&payload.phone)
@@ -313,20 +327,22 @@ pub async fn list_students(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-    
+
     // Check permission
     check_user_permission(&headers, &pool, "student.read.all").await?;
-    
+
     let page = filter.page.unwrap_or(1);
     let page_size = filter.page_size.unwrap_or(20).min(100);
     let offset = (page - 1) * page_size;
-    
+
     // Build query with filters
     // JOIN with enrollments, class_rooms, and grade_levels to get current academic info
     let mut query = String::from(
@@ -348,9 +364,9 @@ pub async fn list_students(
         LEFT JOIN class_rooms c ON sce.class_room_id = c.id
         LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE u.user_type = 'student'
-        "#
+        "#,
     );
-    
+
     let mut idx = 0u32;
 
     if let Some(ref _status) = filter.status {
@@ -372,24 +388,27 @@ pub async fn list_students(
     query.push_str(&format!(" LIMIT ${limit_idx} OFFSET ${offset_idx}"));
 
     let mut q = sqlx::query_as::<_, StudentListItem>(&query);
-    if let Some(ref status) = filter.status { q = q.bind(status); }
+    if let Some(ref status) = filter.status {
+        q = q.bind(status);
+    }
     if let Some(ref search) = filter.search {
-        if !search.is_empty() { q = q.bind(format!("%{search}%")); }
+        if !search.is_empty() {
+            q = q.bind(format!("%{search}%"));
+        }
     }
     q = q.bind(page_size as i64);
     q = q.bind(offset as i64);
 
-    let students = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
-        })?;
-    
+    let students = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+    })?;
+
     Ok((
         StatusCode::OK,
-        Json(json!({ "success": true, "data": { "items": students, "page": page, "page_size": page_size } })),
+        Json(
+            json!({ "success": true, "data": { "items": students, "page": page, "page_size": page_size } }),
+        ),
     ))
 }
 
@@ -411,46 +430,49 @@ pub async fn create_student(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-    
+
     // Check permission
     check_user_permission(&headers, &pool, "student.create").await?;
-    
+
     let mut tx = pool.begin().await.map_err(|e| {
         eprintln!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่ม Transaction".to_string())
     })?;
-    
+
     // 1. Hash password
     let password_hash = bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST).map_err(|e| {
         eprintln!("❌ Password hashing failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
     })?;
-    
+
     // Parse date_of_birth if provided
     let date_of_birth = match &payload.date_of_birth {
         Some(date_str) if !date_str.is_empty() => {
-            chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map(Some).map_err(|e| {
-                eprintln!("❌ Invalid date format: {} (error: {})", date_str, e);
-                AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)".to_string())
-            })?
+            chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                .map(Some)
+                .map_err(|e| {
+                    eprintln!("❌ Invalid date format: {} (error: {})", date_str, e);
+                    AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)".to_string())
+                })?
         }
         _ => None,
     };
-    
-    
+
     // Encrypt national_id if provided
     let (encrypted_national_id, national_id_hash) = if let Some(nid) = &payload.national_id {
         if !nid.is_empty() {
-             let enc = field_encryption::encrypt(nid).map_err(|e| {
+            let enc = field_encryption::encrypt(nid).map_err(|e| {
                 eprintln!("❌ Encryption failed: {}", e);
                 AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูล".to_string())
-             })?;
+            })?;
             let hash = field_encryption::hash_for_search(nid).map_err(|e| {
                 eprintln!("❌ Blind index failed: {}", e);
                 AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูล".to_string())
@@ -462,13 +484,17 @@ pub async fn create_student(
     } else {
         (None, None)
     };
-    
+
     // Determine Username
     // Priority: Supplied Username > Student ID
     let username = if let Some(u) = &payload.username {
-         if !u.is_empty() { u.clone() } else { payload.student_id.clone() }
+        if !u.is_empty() {
+            u.clone()
+        } else {
+            payload.student_id.clone()
+        }
     } else {
-         payload.student_id.clone()
+        payload.student_id.clone()
     };
 
     // 2. Create user
@@ -480,7 +506,7 @@ pub async fn create_student(
             user_type, status, date_of_birth, gender
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'student', 'active', $9, $10)
         RETURNING id
-        "#
+        "#,
     )
     .bind(&username)
     .bind(&encrypted_national_id)
@@ -494,19 +520,20 @@ pub async fn create_student(
     .bind(&payload.gender)
     .fetch_one(&mut *tx)
     .await
-
     .map_err(|e| {
         eprintln!("❌ Failed to create user: {}", e);
-        if e.to_string().contains("duplicate key value violates unique constraint") {
-             if e.to_string().contains("users_username_key") {
+        if e.to_string()
+            .contains("duplicate key value violates unique constraint")
+        {
+            if e.to_string().contains("users_username_key") {
                 AppError::BadRequest("รหัสผู้ใช้งาน (Username) นี้มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น".to_string())
-             } else if e.to_string().contains("users_national_id_hash_key") {
-                 AppError::BadRequest("รหัสบัตรประชาชนนี้มีอยู่ในระบบแล้ว".to_string())
-             } else if e.to_string().contains("users_email_key") {
-                  AppError::BadRequest("อีเมลนี้มีอยู่ในระบบแล้ว".to_string())
-             } else {
-                 AppError::BadRequest("ข้อมูลบางอย่างซ้ำกับที่มีในระบบ".to_string())
-             }
+            } else if e.to_string().contains("users_national_id_hash_key") {
+                AppError::BadRequest("รหัสบัตรประชาชนนี้มีอยู่ในระบบแล้ว".to_string())
+            } else if e.to_string().contains("users_email_key") {
+                AppError::BadRequest("อีเมลนี้มีอยู่ในระบบแล้ว".to_string())
+            } else {
+                AppError::BadRequest("ข้อมูลบางอย่างซ้ำกับที่มีในระบบ".to_string())
+            }
         } else {
             AppError::InternalServerError("ไม่สามารถสร้างผู้ใช้งานได้".to_string())
         }
@@ -516,36 +543,42 @@ pub async fn create_student(
     if let Some(parents) = &payload.parents {
         for (index, parent) in parents.iter().enumerate() {
             // Check if parent exists by phone (username)
-            let existing_parent = sqlx::query_scalar::<_, Uuid>(
-                "SELECT id FROM users WHERE username = $1"
-            )
-            .bind(&parent.phone)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| {
-                 eprintln!("❌ Failed to check for existing parent: {}", e);
-                 AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
-            })?;
+            let existing_parent =
+                sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE username = $1")
+                    .bind(&parent.phone)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(|e| {
+                        eprintln!("❌ Failed to check for existing parent: {}", e);
+                        AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
+                    })?;
 
             let parent_id = if let Some(pid) = existing_parent {
                 pid
             } else {
-                 // Create new parent user
-                 let parent_password_hash = bcrypt::hash(&parent.phone, bcrypt::DEFAULT_COST).map_err(|e| {
-                    eprintln!("❌ Parent password hashing failed: {}", e);
-                    AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string())
-                })?;
-                
+                // Create new parent user
+                let parent_password_hash = bcrypt::hash(&parent.phone, bcrypt::DEFAULT_COST)
+                    .map_err(|e| {
+                        eprintln!("❌ Parent password hashing failed: {}", e);
+                        AppError::InternalServerError(
+                            "เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string(),
+                        )
+                    })?;
+
                 // Encrypt parent national id if provided
-                 let (parent_enc_nid, parent_nid_hash) = if let Some(nid) = &parent.national_id {
+                let (parent_enc_nid, parent_nid_hash) = if let Some(nid) = &parent.national_id {
                     if !nid.is_empty() {
-                         let enc = field_encryption::encrypt(nid).map_err(|e| {
+                        let enc = field_encryption::encrypt(nid).map_err(|e| {
                             eprintln!("❌ Parent Encryption failed: {}", e);
-                            AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
-                         })?;
+                            AppError::InternalServerError(
+                                "เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string(),
+                            )
+                        })?;
                         let hash = field_encryption::hash_for_search(nid).map_err(|e| {
                             eprintln!("❌ Parent blind index failed: {}", e);
-                            AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
+                            AppError::InternalServerError(
+                                "เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string(),
+                            )
                         })?;
                         (Some(enc), Some(hash))
                     } else {
@@ -563,7 +596,7 @@ pub async fn create_student(
                         user_type, status
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'parent', 'active')
                     RETURNING id
-                    "#
+                    "#,
                 )
                 .bind(&parent.phone) // Username as phone
                 .bind(parent_enc_nid)
@@ -576,13 +609,13 @@ pub async fn create_student(
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| {
-                     eprintln!("❌ Failed to create parent: {}", e);
-                     AppError::InternalServerError("ไม่สามารถสร้างบัญชีผู้ปกครองได้".to_string())
+                    eprintln!("❌ Failed to create parent: {}", e);
+                    AppError::InternalServerError("ไม่สามารถสร้างบัญชีผู้ปกครองได้".to_string())
                 })?;
-                
-                 // Assign PARENT role
-                 let parent_role_id: Option<Uuid> = sqlx::query_scalar(
-                    "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true"
+
+                // Assign PARENT role
+                let parent_role_id: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true",
                 )
                 .fetch_optional(&mut *tx)
                 .await
@@ -590,11 +623,11 @@ pub async fn create_student(
                 .flatten();
 
                 if let Some(rid) = parent_role_id {
-                     let _ = sqlx::query(
+                    let _ = sqlx::query(
                         r#"
                         INSERT INTO user_roles (user_id, role_id, is_primary)
                         VALUES ($1, $2, true)
-                        "#
+                        "#,
                     )
                     .bind(new_parent_id)
                     .bind(rid)
@@ -607,8 +640,8 @@ pub async fn create_student(
 
             // Link parent to student
             // First parent in list is primary by default, or you can add checks
-            let is_primary = index == 0; 
-            
+            let is_primary = index == 0;
+
             sqlx::query(
                 r#"
                 INSERT INTO student_parents (student_user_id, parent_user_id, relationship, is_primary)
@@ -628,14 +661,14 @@ pub async fn create_student(
             })?;
         }
     }
-    
+
     // 3. Create student_info
     sqlx::query(
         r#"
         INSERT INTO student_info (
             user_id, student_id, student_number
         ) VALUES ($1, $2, $3)
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(&payload.student_id)
@@ -647,30 +680,27 @@ pub async fn create_student(
         AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
     })?;
 
-
-
     // 4. Assign STUDENT role
-    let student_role_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM roles WHERE code = 'STUDENT' AND is_active = true"
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .ok()
-    .flatten();
-    
+    let student_role_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM roles WHERE code = 'STUDENT' AND is_active = true")
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+
     if let Some(role_id) = student_role_id {
         let _ = sqlx::query(
             r#"
             INSERT INTO user_roles (user_id, role_id, is_primary)
             VALUES ($1, $2, true)
-            "#
+            "#,
         )
         .bind(user_id)
         .bind(role_id)
         .execute(&mut *tx)
         .await;
     }
-    
+
     // Commit transaction
     tx.commit().await.map_err(|e| {
         eprintln!("❌ Failed to commit transaction: {}", e);
@@ -679,7 +709,9 @@ pub async fn create_student(
 
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "success": true, "data": { "id": user_id, "username": username }, "message": "เพิ่มนักเรียนสำเร็จ" })),
+        Json(
+            json!({ "success": true, "data": { "id": user_id, "username": username }, "message": "เพิ่มนักเรียนสำเร็จ" }),
+        ),
     ))
 }
 
@@ -699,16 +731,18 @@ pub async fn get_student(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-    
+
     // Check permission
     check_user_permission(&headers, &pool, "student.read.all").await?;
-    
+
     // Query student profile with joined class info
     let mut student_row = sqlx::query_as::<_, StudentDbRow>(
         r#"
@@ -732,7 +766,7 @@ pub async fn get_student(
         LEFT JOIN class_rooms c ON sce.class_room_id = c.id
         LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE u.id = $1 AND u.user_type = 'student'
-        "#
+        "#,
     )
     .bind(student_id)
     .fetch_optional(&pool)
@@ -753,13 +787,13 @@ pub async fn get_student(
         INNER JOIN users p ON sp.parent_user_id = p.id
         WHERE sp.student_user_id = $1
         ORDER BY sp.is_primary DESC, p.first_name ASC
-        "#
+        "#,
     )
     .bind(student_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_else(|_| Vec::new());
-    
+
     // student_row.parents = parents; // Removed, StudentDbRow doesn't have parents
 
     // Decrypt fields
@@ -774,12 +808,12 @@ pub async fn get_student(
             student_row.medical_conditions = Some(dec);
         }
     }
-    
+
     let student = StudentProfile {
         info: student_row,
         parents,
     };
-    
+
     Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": student })),
@@ -803,21 +837,23 @@ pub async fn update_student(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-    
+
     // Check permission
     check_user_permission(&headers, &pool, "student.update.all").await?;
-    
+
     let mut tx = pool.begin().await.map_err(|e| {
         eprintln!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่ม Transaction".to_string())
     })?;
-    
+
     // Update users table
     sqlx::query(
         r#"
@@ -830,7 +866,7 @@ pub async fn update_student(
             address = COALESCE($6, address),
             updated_at = NOW()
         WHERE id = $1 AND user_type = 'student'
-        "#
+        "#,
     )
     .bind(student_id)
     .bind(&payload.email)
@@ -844,7 +880,7 @@ pub async fn update_student(
         eprintln!("❌ Failed to update user: {}", e);
         AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
     })?;
-    
+
     // Update student_info table
     sqlx::query(
         r#"
@@ -853,7 +889,7 @@ pub async fn update_student(
             student_number = COALESCE($2, student_number),
             updated_at = NOW()
         WHERE user_id = $1
-        "#
+        "#,
     )
     .bind(student_id)
     .bind(&payload.student_number)
@@ -863,7 +899,7 @@ pub async fn update_student(
         eprintln!("❌ Failed to update student_info: {}", e);
         AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
     })?;
-    
+
     tx.commit().await.map_err(|e| {
         eprintln!("❌ Failed to commit transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
@@ -891,22 +927,23 @@ pub async fn delete_student(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-    
+
     // Check permission
     check_user_permission(&headers, &pool, "student.delete").await?;
-    
+
     // Soft delete — wrap in transaction to also drop enrollments
-    let mut tx = pool.begin().await
-        .map_err(|e| {
-            eprintln!("❌ Failed to begin transaction: {}", e);
-            AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
-        })?;
+    let mut tx = pool.begin().await.map_err(|e| {
+        eprintln!("❌ Failed to begin transaction: {}", e);
+        AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
+    })?;
 
     sqlx::query(
         r#"
@@ -915,7 +952,7 @@ pub async fn delete_student(
             username = username || '_del_' || CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT),
             updated_at = NOW()
         WHERE id = $1 AND user_type = 'student'
-        "#
+        "#,
     )
     .bind(student_id)
     .execute(&mut *tx)
@@ -930,7 +967,7 @@ pub async fn delete_student(
         UPDATE student_class_enrollments
         SET status = 'dropped', updated_at = NOW()
         WHERE student_id = $1 AND status = 'active'
-        "#
+        "#,
     )
     .bind(student_id)
     .execute(&mut *tx)
@@ -940,11 +977,10 @@ pub async fn delete_student(
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
 
-    tx.commit().await
-        .map_err(|e| {
-            eprintln!("❌ Failed to commit transaction: {}", e);
-            AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
-        })?;
+    tx.commit().await.map_err(|e| {
+        eprintln!("❌ Failed to commit transaction: {}", e);
+        AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
+    })?;
 
     Ok((
         StatusCode::OK,

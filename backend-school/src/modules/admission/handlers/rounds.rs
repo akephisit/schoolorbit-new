@@ -19,9 +19,13 @@ use crate::AppState;
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
@@ -43,7 +47,9 @@ pub async fn get_public_round_info(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let (round, tracks) = round_service::get_public_round_info(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": { "round": round, "tracks": tracks } })))
+    Ok(Json(
+        json!({ "success": true, "data": { "round": round, "tracks": tracks } }),
+    ))
 }
 
 // ----- Rounds CRUD -----
@@ -53,7 +59,14 @@ pub async fn list_rounds(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rounds = round_service::list_rounds(&pool).await?;
@@ -66,7 +79,14 @@ pub async fn get_round(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let round = round_service::get_round(&pool, id).await?;
@@ -79,11 +99,22 @@ pub async fn create_round(
     Json(payload): Json<CreateAdmissionRoundRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let round = round_service::create_round(&pool, payload).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": round }))).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": round })),
+    )
+        .into_response())
 }
 
 pub async fn update_round(
@@ -93,7 +124,14 @@ pub async fn update_round(
     Json(payload): Json<UpdateAdmissionRoundRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let round = round_service::update_round(&pool, id, payload).await?;
@@ -107,7 +145,14 @@ pub async fn update_round_status(
     Json(payload): Json<UpdateRoundStatusRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     round_service::update_round_status(&pool, id, &payload.status).await?;
@@ -120,11 +165,21 @@ pub async fn delete_round(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     round_service::delete_round(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบรอบรับสมัครและใบสมัครที่เกี่ยวข้องเรียบร้อยแล้ว" })).into_response())
+    Ok(Json(
+        json!({ "success": true, "data": {}, "message": "ลบรอบรับสมัครและใบสมัครที่เกี่ยวข้องเรียบร้อยแล้ว" }),
+    )
+    .into_response())
 }
 
 pub async fn toggle_round_visibility(
@@ -134,7 +189,14 @@ pub async fn toggle_round_visibility(
     Json(payload): Json<UpdateRoundVisibilityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let updated = round_service::toggle_round_visibility(&pool, id, payload.is_visible).await?;
@@ -149,7 +211,14 @@ pub async fn list_subjects(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let subjects = round_service::list_exam_subjects(&pool, round_id).await?;
@@ -163,11 +232,22 @@ pub async fn create_subject(
     Json(payload): Json<CreateExamSubjectRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let subject = round_service::create_exam_subject(&pool, round_id, payload).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": subject }))).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": subject })),
+    )
+        .into_response())
 }
 
 pub async fn update_subject(
@@ -177,7 +257,14 @@ pub async fn update_subject(
     Json(payload): Json<UpdateExamSubjectRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let subject = round_service::update_exam_subject(&pool, id, payload).await?;
@@ -190,7 +277,14 @@ pub async fn delete_subject(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     round_service::delete_exam_subject(&pool, id).await?;
@@ -205,7 +299,14 @@ pub async fn list_tracks(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let tracks = round_service::list_tracks(&pool, round_id).await?;
@@ -219,11 +320,22 @@ pub async fn create_track(
     Json(payload): Json<CreateAdmissionTrackRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let track = round_service::create_track(&pool, round_id, payload).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": track }))).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": track })),
+    )
+        .into_response())
 }
 
 pub async fn update_track(
@@ -233,7 +345,14 @@ pub async fn update_track(
     Json(payload): Json<UpdateAdmissionTrackRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let track = round_service::update_track(&pool, id, payload).await?;
@@ -246,7 +365,14 @@ pub async fn delete_track(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     round_service::delete_track(&pool, id).await?;
@@ -259,10 +385,20 @@ pub async fn get_track_capacity(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rooms = round_service::get_track_capacity(&pool, id).await?;
     let room_count = rooms.len();
-    Ok(Json(json!({ "success": true, "data": { "rooms": rooms, "room_count": room_count } })).into_response())
+    Ok(
+        Json(json!({ "success": true, "data": { "rooms": rooms, "room_count": room_count } }))
+            .into_response(),
+    )
 }

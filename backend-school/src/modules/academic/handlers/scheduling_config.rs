@@ -23,7 +23,13 @@ pub struct ApiResponse<T> {
 }
 
 impl<T> ApiResponse<T> {
-    pub fn success(data: T) -> Self { Self { success: true, data: Some(data), error: None } }
+    pub fn success(data: T) -> Self {
+        Self {
+            success: true,
+            data: Some(data),
+            error: None,
+        }
+    }
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -150,9 +156,13 @@ pub struct RoomView {
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
@@ -162,10 +172,18 @@ pub async fn list_classroom_course_constraints(
     Query(q): Query<ListCcConstraintsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let rows = scheduling_config_service::list_classroom_course_constraints(&pool, q.instructor_id).await?;
+    let rows = scheduling_config_service::list_classroom_course_constraints(&pool, q.instructor_id)
+        .await?;
     Ok(Json(ApiResponse::success(rows)).into_response())
 }
 
@@ -176,16 +194,31 @@ pub async fn update_classroom_course_constraints(
     Json(payload): Json<UpdateClassroomCourseConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     if let Some(ref pattern) = payload.consecutive_pattern {
         scheduling_config_service::validate_consecutive_pattern(&pool, cc_id, pattern).await?;
     }
     scheduling_config_service::update_classroom_course_constraints(
-        &pool, cc_id, payload.consecutive_pattern, payload.same_day_unique, payload.hard_unavailable_slots
-    ).await?;
-    Ok(Json(ApiResponse::success("Updated classroom course constraints".to_string())).into_response())
+        &pool,
+        cc_id,
+        payload.consecutive_pattern,
+        payload.same_day_unique,
+        payload.hard_unavailable_slots,
+    )
+    .await?;
+    Ok(Json(ApiResponse::success(
+        "Updated classroom course constraints".to_string(),
+    ))
+    .into_response())
 }
 
 pub async fn list_cc_preferred_rooms(
@@ -194,7 +227,14 @@ pub async fn list_cc_preferred_rooms(
     Path(cc_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rows = scheduling_config_service::list_cc_preferred_rooms(&pool, cc_id).await?;
@@ -208,11 +248,21 @@ pub async fn set_cc_preferred_rooms(
     Json(payload): Json<SetCcRoomsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let rooms: Vec<(Uuid, i32, bool)> = payload.rooms.into_iter()
-        .map(|r| (r.room_id, r.rank, r.is_required.unwrap_or(false))).collect();
+    let rooms: Vec<(Uuid, i32, bool)> = payload
+        .rooms
+        .into_iter()
+        .map(|r| (r.room_id, r.rank, r.is_required.unwrap_or(false)))
+        .collect();
     let count = scheduling_config_service::set_cc_preferred_rooms(&pool, cc_id, rooms).await?;
     Ok(Json(ApiResponse::success(format!("Updated {} rooms", count))).into_response())
 }
@@ -222,7 +272,14 @@ pub async fn list_all_rooms(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rows = scheduling_config_service::list_all_rooms(&pool).await?;
@@ -234,7 +291,14 @@ pub async fn list_instructor_constraints(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rows = scheduling_config_service::list_instructor_constraints(&pool).await?;
@@ -247,11 +311,23 @@ pub async fn reorder_instructor_priority(
     Json(payload): Json<ReorderInstructorPriorityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let n = scheduling_config_service::reorder_instructor_priority(&pool, payload.instructor_ids).await?;
-    let msg = if n == 0 { "No changes".to_string() } else { format!("Reordered {} instructors", n) };
+    let n = scheduling_config_service::reorder_instructor_priority(&pool, payload.instructor_ids)
+        .await?;
+    let msg = if n == 0 {
+        "No changes".to_string()
+    } else {
+        format!("Reordered {} instructors", n)
+    };
     Ok(Json(ApiResponse::success(msg)).into_response())
 }
 
@@ -260,11 +336,21 @@ pub async fn get_scheduler_settings(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let default_max_consecutive = scheduling_config_service::get_scheduler_settings(&pool).await?;
-    Ok(Json(ApiResponse::success(SchedulerSettingsView { default_max_consecutive })).into_response())
+    Ok(Json(ApiResponse::success(SchedulerSettingsView {
+        default_max_consecutive,
+    }))
+    .into_response())
 }
 
 pub async fn update_scheduler_settings(
@@ -273,11 +359,22 @@ pub async fn update_scheduler_settings(
     Json(payload): Json<UpdateSchedulerSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    scheduling_config_service::update_scheduler_settings(&pool, payload.default_max_consecutive).await?;
-    Ok(Json(ApiResponse::success("Updated scheduler settings".to_string())).into_response())
+    scheduling_config_service::update_scheduler_settings(&pool, payload.default_max_consecutive)
+        .await?;
+    Ok(Json(ApiResponse::success(
+        "Updated scheduler settings".to_string(),
+    ))
+    .into_response())
 }
 
 pub async fn update_instructor_constraints(
@@ -287,16 +384,31 @@ pub async fn update_instructor_constraints(
     Json(payload): Json<UpdateInstructorConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     scheduling_config_service::update_instructor_constraints(
-        &pool, instructor_id,
-        payload.hard_unavailable_slots, payload.max_periods_per_day,
-        payload.preferred_slots, payload.priority,
-        payload.assigned_room_id, payload.clear_assigned_room.unwrap_or(false),
-    ).await?;
-    Ok(Json(ApiResponse::success("Updated instructor constraints".to_string())).into_response())
+        &pool,
+        instructor_id,
+        payload.hard_unavailable_slots,
+        payload.max_periods_per_day,
+        payload.preferred_slots,
+        payload.priority,
+        payload.assigned_room_id,
+        payload.clear_assigned_room.unwrap_or(false),
+    )
+    .await?;
+    Ok(Json(ApiResponse::success(
+        "Updated instructor constraints".to_string(),
+    ))
+    .into_response())
 }
 
 pub async fn list_subject_constraints(
@@ -304,7 +416,14 @@ pub async fn list_subject_constraints(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rows = scheduling_config_service::list_subject_constraints(&pool).await?;
@@ -318,13 +437,28 @@ pub async fn update_subject_constraints(
     Json(payload): Json<UpdateSubjectConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     scheduling_config_service::update_subject_constraints(
-        &pool, subject_id,
-        payload.min_consecutive_periods, payload.max_consecutive_periods,
-        payload.allow_single_period, payload.allowed_period_ids, payload.allowed_days,
-    ).await?;
-    Ok(Json(ApiResponse::success("Updated subject constraints".to_string())).into_response())
+        &pool,
+        subject_id,
+        payload.min_consecutive_periods,
+        payload.max_consecutive_periods,
+        payload.allow_single_period,
+        payload.allowed_period_ids,
+        payload.allowed_days,
+    )
+    .await?;
+    Ok(Json(ApiResponse::success(
+        "Updated subject constraints".to_string(),
+    ))
+    .into_response())
 }

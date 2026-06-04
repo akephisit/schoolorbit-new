@@ -4,15 +4,11 @@ use std::env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    
-    let password = if args.len() > 1 {
-        &args[1]
-    } else {
-        "test123"
-    };
+
+    let password = if args.len() > 1 { &args[1] } else { "test123" };
 
     let hash = hash(password, DEFAULT_COST)?;
-    
+
     println!("Password: {}", password);
     println!("Bcrypt Hash:");
     println!("{}", hash);

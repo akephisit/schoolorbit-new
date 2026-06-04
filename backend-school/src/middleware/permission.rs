@@ -77,11 +77,13 @@ pub async fn check_permission(
     }
 
     // ── Cache miss: permissions-only query (no user JOIN) ────────────
-    let permissions = fetch_user_permissions(user_id, pool).await
-        .map_err(|_| (
+    let permissions = fetch_user_permissions(user_id, pool).await.map_err(|_| {
+        (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "success": false, "error": "ไม่สามารถตรวจสอบสิทธิ์ได้" })),
-        ).into_response())?;
+        )
+            .into_response()
+    })?;
 
     cache.set(user_id, permissions.clone());
 
@@ -202,7 +204,8 @@ pub async fn get_user_with_permissions(
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "success": false, "error": "กรุณาเข้าสู่ระบบ" })),
-            ).into_response());
+            )
+                .into_response());
         }
     };
 
@@ -212,7 +215,8 @@ pub async fn get_user_with_permissions(
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "success": false, "error": "Token ไม่ถูกต้อง" })),
-            ).into_response());
+            )
+                .into_response());
         }
     };
 
@@ -222,7 +226,8 @@ pub async fn get_user_with_permissions(
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "success": false, "error": "Token ไม่ถูกต้อง" })),
-            ).into_response());
+            )
+                .into_response());
         }
     };
 
@@ -230,11 +235,13 @@ pub async fn get_user_with_permissions(
         return Ok((user_id, permissions));
     }
 
-    let permissions = fetch_user_permissions(user_id, pool).await
-        .map_err(|_| (
+    let permissions = fetch_user_permissions(user_id, pool).await.map_err(|_| {
+        (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "success": false, "error": "ไม่สามารถตรวจสอบสิทธิ์ได้" })),
-        ).into_response())?;
+        )
+            .into_response()
+    })?;
 
     cache.set(user_id, permissions.clone());
     Ok((user_id, permissions))

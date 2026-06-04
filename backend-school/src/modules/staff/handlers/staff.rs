@@ -77,8 +77,10 @@ async fn check_user_permission(
             hired_date, resigned_date
          FROM users WHERE id = $1",
     )
-    .bind(uuid::Uuid::parse_str(&claims.sub)
-        .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
+    .bind(
+        uuid::Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?,
+    )
     .fetch_one(pool)
     .await
     .map_err(|e| {
@@ -103,7 +105,9 @@ async fn check_user_permission(
         ))),
         Err(e) => {
             eprintln!("❌ Permission check error: {}", e);
-            Err(AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string()))
+            Err(AppError::InternalServerError(
+                "เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string(),
+            ))
         }
     }
 }
@@ -152,7 +156,10 @@ pub async fn get_staff_profile(
     check_user_permission(&headers, &pool, "staff.read.all").await?;
 
     let profile = staff_service::get_staff_profile(&pool, staff_id).await?;
-    Ok((StatusCode::OK, Json(json!({ "success": true, "data": profile }))))
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "success": true, "data": profile })),
+    ))
 }
 
 pub async fn create_staff(
@@ -214,7 +221,9 @@ pub async fn get_public_staff_profile(
     let pool = get_pool(&state, &headers).await?;
 
     // Authentication only — verify token without permission check
-    let auth_header = headers.get(header::AUTHORIZATION).and_then(|h| h.to_str().ok());
+    let auth_header = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok());
     let token_from_header = auth_header.and_then(|h| {
         if h.starts_with("Bearer ") {
             Some(h[7..].to_string())
@@ -234,5 +243,8 @@ pub async fn get_public_staff_profile(
         .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
 
     let data = staff_service::get_public_staff_profile(&pool, staff_id).await?;
-    Ok((StatusCode::OK, Json(json!({ "success": true, "data": data }))))
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "success": true, "data": data })),
+    ))
 }

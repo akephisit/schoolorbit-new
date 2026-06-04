@@ -98,15 +98,19 @@ pub async fn update_period(
     payload: UpdatePeriodRequest,
 ) -> Result<AcademicPeriod, AppError> {
     let start_time = if let Some(ref st) = payload.start_time {
-        Some(NaiveTime::parse_from_str(st, "%H:%M")
-            .map_err(|_| AppError::BadRequest("Invalid start_time format".to_string()))?)
+        Some(
+            NaiveTime::parse_from_str(st, "%H:%M")
+                .map_err(|_| AppError::BadRequest("Invalid start_time format".to_string()))?,
+        )
     } else {
         None
     };
 
     let end_time = if let Some(ref et) = payload.end_time {
-        Some(NaiveTime::parse_from_str(et, "%H:%M")
-            .map_err(|_| AppError::BadRequest("Invalid end_time format".to_string()))?)
+        Some(
+            NaiveTime::parse_from_str(et, "%H:%M")
+                .map_err(|_| AppError::BadRequest("Invalid end_time format".to_string()))?,
+        )
     } else {
         None
     };
@@ -170,7 +174,9 @@ pub async fn reorder_periods(
         return Ok(0);
     }
 
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
 
     sqlx::query("SET CONSTRAINTS unique_period_per_year DEFERRED")

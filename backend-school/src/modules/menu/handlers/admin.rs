@@ -6,8 +6,8 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
 use axum::{
-    extract::{State, Path, Query},
-    http::{StatusCode, HeaderMap},
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
@@ -113,9 +113,13 @@ pub struct MenuItemResponse {
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|e| AppError::NotFound(format!("School not found: {}", e)))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))
 }
 
@@ -125,10 +129,17 @@ async fn auth(state: &AppState, headers: &HeaderMap) -> Result<(PgPool, Vec<Stri
     Ok((pool, permissions))
 }
 
-async fn auth_check_module(state: &AppState, headers: &HeaderMap, module: &str) -> Result<PgPool, AppError> {
+async fn auth_check_module(
+    state: &AppState,
+    headers: &HeaderMap,
+    module: &str,
+) -> Result<PgPool, AppError> {
     let (pool, permissions) = auth(state, headers).await?;
     if !menu_service::has_module_permission(&permissions, module) {
-        return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
+        return Err(AppError::Forbidden(format!(
+            "No permission for module '{}'",
+            module
+        )));
     }
     Ok(pool)
 }
@@ -141,7 +152,13 @@ pub async fn list_menu_groups(
 ) -> Result<impl IntoResponse, AppError> {
     let (pool, _) = auth(&state, &headers).await?;
     let groups = menu_service::list_menu_groups(&pool).await?;
-    Ok((StatusCode::OK, JsonResponse(MenuGroupListResponse { success: true, data: groups })))
+    Ok((
+        StatusCode::OK,
+        JsonResponse(MenuGroupListResponse {
+            success: true,
+            data: groups,
+        }),
+    ))
 }
 
 pub async fn create_menu_group(
@@ -150,13 +167,26 @@ pub async fn create_menu_group(
     JsonResponse(data): JsonResponse<CreateMenuGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let (pool, _) = auth(&state, &headers).await?;
-    let group = menu_service::create_menu_group(&pool, menu_service::CreateMenuGroupInput {
-        code: data.code, name: data.name, name_en: data.name_en,
-        description: data.description, icon: data.icon, display_order: data.display_order,
-    }).await?;
-    Ok((StatusCode::CREATED, JsonResponse(MenuGroupResponse {
-        success: true, data: Some(group), message: Some("Menu group created successfully".to_string()),
-    })))
+    let group = menu_service::create_menu_group(
+        &pool,
+        menu_service::CreateMenuGroupInput {
+            code: data.code,
+            name: data.name,
+            name_en: data.name_en,
+            description: data.description,
+            icon: data.icon,
+            display_order: data.display_order,
+        },
+    )
+    .await?;
+    Ok((
+        StatusCode::CREATED,
+        JsonResponse(MenuGroupResponse {
+            success: true,
+            data: Some(group),
+            message: Some("Menu group created successfully".to_string()),
+        }),
+    ))
 }
 
 pub async fn update_menu_group(
@@ -166,13 +196,27 @@ pub async fn update_menu_group(
     JsonResponse(data): JsonResponse<UpdateMenuGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let (pool, _) = auth(&state, &headers).await?;
-    let group = menu_service::update_menu_group(&pool, id, menu_service::UpdateMenuGroupInput {
-        name: data.name, name_en: data.name_en, description: data.description,
-        icon: data.icon, display_order: data.display_order, is_active: data.is_active,
-    }).await?;
-    Ok((StatusCode::OK, JsonResponse(MenuGroupResponse {
-        success: true, data: Some(group), message: Some("Menu group updated successfully".to_string()),
-    })))
+    let group = menu_service::update_menu_group(
+        &pool,
+        id,
+        menu_service::UpdateMenuGroupInput {
+            name: data.name,
+            name_en: data.name_en,
+            description: data.description,
+            icon: data.icon,
+            display_order: data.display_order,
+            is_active: data.is_active,
+        },
+    )
+    .await?;
+    Ok((
+        StatusCode::OK,
+        JsonResponse(MenuGroupResponse {
+            success: true,
+            data: Some(group),
+            message: Some("Menu group updated successfully".to_string()),
+        }),
+    ))
 }
 
 pub async fn delete_menu_group(
@@ -182,7 +226,12 @@ pub async fn delete_menu_group(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = auth_check_module(&state, &headers, "settings").await?;
     let moved = menu_service::delete_menu_group(&pool, id).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": { "moved_count": moved }, "message": format!("Deleted group and moved {} items to 'other'", moved) }))))
+    Ok((
+        StatusCode::OK,
+        JsonResponse(
+            serde_json::json!({ "success": true, "data": { "moved_count": moved }, "message": format!("Deleted group and moved {} items to 'other'", moved) }),
+        ),
+    ))
 }
 
 // ==================== Menu Items ====================
@@ -194,7 +243,13 @@ pub async fn list_menu_items(
 ) -> Result<impl IntoResponse, AppError> {
     let (pool, permissions) = auth(&state, &headers).await?;
     let items = menu_service::list_menu_items(&pool, filter.group_id, &permissions).await?;
-    Ok((StatusCode::OK, JsonResponse(MenuItemListResponse { success: true, data: items })))
+    Ok((
+        StatusCode::OK,
+        JsonResponse(MenuItemListResponse {
+            success: true,
+            data: items,
+        }),
+    ))
 }
 
 pub async fn create_menu_item(
@@ -208,14 +263,30 @@ pub async fn create_menu_item(
         let (pool, _) = auth(&state, &headers).await?;
         pool
     };
-    let item = menu_service::create_menu_item(&pool, menu_service::CreateMenuItemInput {
-        code: data.code, name: data.name, name_en: data.name_en, description: data.description,
-        path: data.path, icon: data.icon, group_id: data.group_id, parent_id: data.parent_id,
-        required_permission: data.required_permission, display_order: data.display_order,
-    }).await?;
-    Ok((StatusCode::CREATED, JsonResponse(MenuItemResponse {
-        success: true, data: Some(item), message: Some("Menu item created successfully".to_string()),
-    })))
+    let item = menu_service::create_menu_item(
+        &pool,
+        menu_service::CreateMenuItemInput {
+            code: data.code,
+            name: data.name,
+            name_en: data.name_en,
+            description: data.description,
+            path: data.path,
+            icon: data.icon,
+            group_id: data.group_id,
+            parent_id: data.parent_id,
+            required_permission: data.required_permission,
+            display_order: data.display_order,
+        },
+    )
+    .await?;
+    Ok((
+        StatusCode::CREATED,
+        JsonResponse(MenuItemResponse {
+            success: true,
+            data: Some(item),
+            message: Some("Menu item created successfully".to_string()),
+        }),
+    ))
 }
 
 pub async fn update_menu_item(
@@ -228,17 +299,37 @@ pub async fn update_menu_item(
     let existing = menu_service::get_menu_item(&pool, id).await?;
     if let Some(ref module) = existing.required_permission {
         if !menu_service::has_module_permission(&permissions, module) {
-            return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
+            return Err(AppError::Forbidden(format!(
+                "No permission for module '{}'",
+                module
+            )));
         }
     }
-    let item = menu_service::update_menu_item(&pool, id, menu_service::UpdateMenuItemInput {
-        name: data.name, name_en: data.name_en, description: data.description,
-        path: data.path, icon: data.icon, group_id: data.group_id, parent_id: data.parent_id,
-        required_permission: data.required_permission, display_order: data.display_order, is_active: data.is_active,
-    }).await?;
-    Ok((StatusCode::OK, JsonResponse(MenuItemResponse {
-        success: true, data: Some(item), message: Some("Menu item updated successfully".to_string()),
-    })))
+    let item = menu_service::update_menu_item(
+        &pool,
+        id,
+        menu_service::UpdateMenuItemInput {
+            name: data.name,
+            name_en: data.name_en,
+            description: data.description,
+            path: data.path,
+            icon: data.icon,
+            group_id: data.group_id,
+            parent_id: data.parent_id,
+            required_permission: data.required_permission,
+            display_order: data.display_order,
+            is_active: data.is_active,
+        },
+    )
+    .await?;
+    Ok((
+        StatusCode::OK,
+        JsonResponse(MenuItemResponse {
+            success: true,
+            data: Some(item),
+            message: Some("Menu item updated successfully".to_string()),
+        }),
+    ))
 }
 
 pub async fn delete_menu_item(
@@ -250,11 +341,19 @@ pub async fn delete_menu_item(
     let existing = menu_service::get_menu_item(&pool, id).await?;
     if let Some(ref module) = existing.required_permission {
         if !menu_service::has_module_permission(&permissions, module) {
-            return Err(AppError::Forbidden(format!("No permission for module '{}'", module)));
+            return Err(AppError::Forbidden(format!(
+                "No permission for module '{}'",
+                module
+            )));
         }
     }
     menu_service::delete_menu_item(&pool, id).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": {}, "message": "Menu item deleted successfully" }))))
+    Ok((
+        StatusCode::OK,
+        JsonResponse(
+            serde_json::json!({ "success": true, "data": {}, "message": "Menu item deleted successfully" }),
+        ),
+    ))
 }
 
 pub async fn reorder_menu_items(
@@ -263,13 +362,26 @@ pub async fn reorder_menu_items(
     JsonResponse(data): JsonResponse<ReorderRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     if data.items.is_empty() {
-        return Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": {}, "message": "No items to reorder" }))));
+        return Ok((
+            StatusCode::OK,
+            JsonResponse(
+                serde_json::json!({ "success": true, "data": {}, "message": "No items to reorder" }),
+            ),
+        ));
     }
     let (pool, permissions) = auth(&state, &headers).await?;
-    let items: Vec<(Uuid, i32, Option<Uuid>)> = data.items.into_iter()
-        .map(|i| (i.id, i.display_order, i.group_id)).collect();
+    let items: Vec<(Uuid, i32, Option<Uuid>)> = data
+        .items
+        .into_iter()
+        .map(|i| (i.id, i.display_order, i.group_id))
+        .collect();
     let count = menu_service::reorder_menu_items(&pool, items, &permissions).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": {}, "message": format!("Reordered {} items successfully", count) }))))
+    Ok((
+        StatusCode::OK,
+        JsonResponse(
+            serde_json::json!({ "success": true, "data": {}, "message": format!("Reordered {} items successfully", count) }),
+        ),
+    ))
 }
 
 pub async fn reorder_menu_groups(
@@ -278,9 +390,18 @@ pub async fn reorder_menu_groups(
     JsonResponse(data): JsonResponse<ReorderGroupsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = auth_check_module(&state, &headers, "settings").await?;
-    let groups: Vec<(Uuid, i32)> = data.groups.into_iter().map(|g| (g.id, g.display_order)).collect();
+    let groups: Vec<(Uuid, i32)> = data
+        .groups
+        .into_iter()
+        .map(|g| (g.id, g.display_order))
+        .collect();
     let count = menu_service::reorder_menu_groups(&pool, groups).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": {}, "message": format!("Reordered {} groups", count) }))))
+    Ok((
+        StatusCode::OK,
+        JsonResponse(
+            serde_json::json!({ "success": true, "data": {}, "message": format!("Reordered {} groups", count) }),
+        ),
+    ))
 }
 
 pub async fn move_item_to_group(
@@ -291,9 +412,13 @@ pub async fn move_item_to_group(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = auth_check_module(&state, &headers, "settings").await?;
     let group_id = match data.get("group_id").and_then(|v| v.as_str()) {
-        Some(s) => Uuid::parse_str(s).map_err(|_| AppError::BadRequest("Invalid group_id format".to_string()))?,
+        Some(s) => Uuid::parse_str(s)
+            .map_err(|_| AppError::BadRequest("Invalid group_id format".to_string()))?,
         None => return Err(AppError::BadRequest("group_id required".to_string())),
     };
     let item = menu_service::move_item_to_group(&pool, id, group_id).await?;
-    Ok((StatusCode::OK, JsonResponse(serde_json::json!({ "success": true, "data": item }))))
+    Ok((
+        StatusCode::OK,
+        JsonResponse(serde_json::json!({ "success": true, "data": item })),
+    ))
 }

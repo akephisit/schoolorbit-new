@@ -1,22 +1,19 @@
+use super::models::{ChildDto, ParentDbRow, ParentProfile};
+use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
+use crate::middleware::auth::get_current_user;
+use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
+use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
+use crate::utils::{field_encryption, subdomain::extract_subdomain_from_request};
+use crate::AppState;
 use axum::{
-    extract::{State, Query, Path},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
 use serde_json::json;
 use uuid::Uuid;
-use crate::error::AppError;
-use crate::middleware::auth::get_current_user;
-use crate::db::school_mapping::get_school_database_url;
-use crate::utils::{
-    subdomain::extract_subdomain_from_request,
-    field_encryption,
-};
-use crate::AppState;
-use super::models::{ParentProfile, ParentDbRow, ChildDto};
-use crate::modules::students::models::{StudentProfile, StudentDbRow, ParentDto};
-use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
 
 /// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
 pub async fn get_own_parent_profile(
@@ -33,13 +30,15 @@ pub async fn get_own_parent_profile(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-    
+
     // Get current user
     let user = get_current_user(&headers, &pool).await?;
 
@@ -54,7 +53,7 @@ pub async fn get_own_parent_profile(
             id, username, first_name, last_name, title, phone, email, national_id
         FROM users
         WHERE id = $1 AND status = 'active'
-        "#
+        "#,
     )
     .bind(user.id)
     .fetch_optional(&pool)
@@ -94,7 +93,7 @@ pub async fn get_own_parent_profile(
         LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
         WHERE sp.parent_user_id = $1 AND u.status = 'active'
         ORDER BY u.first_name ASC
-        "#
+        "#,
     )
     .bind(user.id)
     .fetch_all(&pool)
@@ -135,7 +134,9 @@ pub async fn get_child_profile(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -156,7 +157,7 @@ pub async fn get_child_profile(
             SELECT 1 FROM student_parents
             WHERE parent_user_id = $1 AND student_user_id = $2
         )
-        "#
+        "#,
     )
     .bind(user.id)
     .bind(student_id)
@@ -168,7 +169,9 @@ pub async fn get_child_profile(
     })?;
 
     if !is_linked {
-        return Err(AppError::Forbidden("คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string()));
+        return Err(AppError::Forbidden(
+            "คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string(),
+        ));
     }
 
     // Reuse logic from get_student to fetch full profile
@@ -223,19 +226,22 @@ pub async fn get_child_profile(
         FROM student_parents sp
         INNER JOIN users u ON sp.parent_user_id = u.id
         WHERE sp.student_user_id = $1
-        "#
+        "#,
     )
     .bind(student_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_else(|_| Vec::new());
-    
+
     let student = StudentProfile {
         info: student_row,
         parents,
     };
 
-    Ok((StatusCode::OK, Json(json!({ "success": true, "data": student }))))
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "success": true, "data": student })),
+    ))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -258,7 +264,9 @@ pub async fn get_child_timetable(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
 
@@ -275,7 +283,7 @@ pub async fn get_child_timetable(
             SELECT 1 FROM student_parents
             WHERE parent_user_id = $1 AND student_user_id = $2
         )
-        "#
+        "#,
     )
     .bind(user.id)
     .bind(student_id)
@@ -287,15 +295,24 @@ pub async fn get_child_timetable(
     })?;
 
     if !is_linked {
-        return Err(AppError::Forbidden("คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string()));
+        return Err(AppError::Forbidden(
+            "คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string(),
+        ));
     }
 
     // ใช้ service เดียวกับ list_timetable_entries — filter ตาม student_id ของลูก
-    let entries = timetable_service::list_entries(&pool, TimetableFilter {
-        student_id: Some(student_id),
-        academic_semester_id: query.academic_semester_id,
-        ..Default::default()
-    }).await?;
+    let entries = timetable_service::list_entries(
+        &pool,
+        TimetableFilter {
+            student_id: Some(student_id),
+            academic_semester_id: query.academic_semester_id,
+            ..Default::default()
+        },
+    )
+    .await?;
 
-    Ok((StatusCode::OK, Json(json!({ "success": true, "data": entries }))))
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "success": true, "data": entries })),
+    ))
 }

@@ -1,8 +1,8 @@
 use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
 use crate::modules::staff::models::UpdateDepartmentPermissionsRequest;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
-use crate::error::AppError;
 
 use axum::{
     extract::{Path, State},
@@ -25,22 +25,24 @@ pub async fn get_department_permissions(
     let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|e| {
-             eprintln!("❌ Failed to get school database: {}", e);
-             AppError::NotFound("ไม่พบโรงเรียน".to_string())
+            eprintln!("❌ Failed to get school database: {}", e);
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
-             AppError::InternalServerError("Database connection error".to_string())
+            AppError::InternalServerError("Database connection error".to_string())
         })?;
 
     let rows = sqlx::query(
         r#"
         SELECT permission_id FROM department_permissions
         WHERE department_id = $1
-        "#
+        "#,
     )
     .bind(department_id)
     .fetch_all(&pool)
@@ -61,14 +63,16 @@ pub async fn update_department_permissions(
     headers: HeaderMap,
     Json(payload): Json<UpdateDepartmentPermissionsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-     let subdomain = extract_subdomain_from_request(&headers)
+    let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
     let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_e| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_e| AppError::InternalServerError("Database connection error".to_string()))?;
 
@@ -84,7 +88,7 @@ pub async fn update_department_permissions(
     // 2. Insert new mappings
     for permission_id in payload.permission_ids {
         sqlx::query(
-            "INSERT INTO department_permissions (department_id, permission_id) VALUES ($1, $2)"
+            "INSERT INTO department_permissions (department_id, permission_id) VALUES ($1, $2)",
         )
         .bind(department_id)
         .bind(permission_id)
@@ -97,5 +101,7 @@ pub async fn update_department_permissions(
     // Department permissions changed — all members of this department have stale cache
     state.permission_cache.clear_all();
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": "Update department permissions successfully" })))
+    Ok(Json(
+        json!({ "success": true, "data": {}, "message": "Update department permissions successfully" }),
+    ))
 }

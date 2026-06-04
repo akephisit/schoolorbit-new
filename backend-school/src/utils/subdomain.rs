@@ -14,7 +14,7 @@ pub fn extract_subdomain_from_request(headers: &HeaderMap) -> Result<String, Res
             }
         }
     }
-    
+
     // Fallback: Try Origin/Referer (used during runtime requests)
     let url = headers
         .get("origin")
@@ -37,10 +37,10 @@ pub fn extract_subdomain_from_request(headers: &HeaderMap) -> Result<String, Res
         .trim_start_matches("http://")
         .split('/')
         .next()
-        .unwrap_or( "");
+        .unwrap_or("");
 
     let parts: Vec<&str> = host.split('.').collect();
-    
+
     // Validate: should be subdomain.schoolorbit.app
     if parts.len() < 3 || parts[parts.len() - 2] != "schoolorbit" {
         return Err((

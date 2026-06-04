@@ -1,34 +1,32 @@
+pub mod api_response;
 mod db;
+pub mod error;
 mod middleware;
+mod modules;
 mod permissions;
 mod services;
 mod utils;
-mod modules;
-pub mod api_response;
-pub mod error;
 
 #[cfg(test)]
 mod test_helpers;
 
-
+use crate::modules::notification::handlers::Notification;
 use axum::{
     middleware as axum_middleware,
     routing::{delete, get, post},
-    Router,
-    Json,
+    Json, Router,
 };
 use db::admin_client::AdminClient;
-use db::pool_manager::PoolManager;
 use db::permission_cache::PermissionCache;
+use db::pool_manager::PoolManager;
 use dotenvy::dotenv;
 use serde_json::json;
-use tokio::sync::broadcast;
-use crate::modules::notification::handlers::Notification;
 use std::env;
 use std::sync::Arc;
-use uuid::Uuid;
+use tokio::sync::broadcast;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tower_cookies::CookieManagerLayer;
+use uuid::Uuid;
 
 /// Shared application state
 #[derive(Clone)]
@@ -43,21 +41,20 @@ pub struct AppState {
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    
+
     // Default to readable local logs; set LOG_FORMAT=json for structured production logs.
     if env::var("LOG_FORMAT").as_deref() == Ok("json") {
         utils::logging::init();
     } else {
         utils::logging::init_pretty();
     }
-    
+
     tracing::info!("🚀 Starting SchoolOrbit Backend School Service...");
 
     // Get environment variables
     let port = env::var("PORT").unwrap_or_else(|_| "8081".to_string());
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
 
-    
     // Connect to backend-admin via HTTP for school mapping
     let backend_admin_url = env::var("BACKEND_ADMIN_URL")
         .expect("BACKEND_ADMIN_URL must be set (e.g. http://backend-admin:8080)");
@@ -91,7 +88,6 @@ async fn main() {
     tracing::info!("ℹ️  Multi-tenant architecture ready");
     tracing::info!("ℹ️  Each school has its own database connection pool (cached)");
 
-
     // Create shared state
     let state = AppState {
         admin_client,
@@ -106,274 +102,501 @@ async fn main() {
         // Public routes
         .route("/", get(root_handler))
         .route("/health", get(health_check))
-        
         // Auth routes (public)
         .route("/api/auth/login", post(modules::auth::handlers::login))
         .route("/api/auth/logout", post(modules::auth::handlers::logout))
-        
         // Protected auth routes
-        .route("/api/auth/me", get(modules::auth::handlers::me)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/auth/me/profile", get(modules::auth::handlers::get_profile)
-            .put(modules::auth::handlers::update_profile)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/auth/me/change-password", post(modules::auth::handlers::change_password)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route(
+            "/api/auth/me",
+            get(modules::auth::handlers::me)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/auth/me/profile",
+            get(modules::auth::handlers::get_profile)
+                .put(modules::auth::handlers::update_profile)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/auth/me/change-password",
+            post(modules::auth::handlers::change_password)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Staff Management routes (protected)
-        .route("/api/staff", get(modules::staff::handlers::staff::list_staff)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/staff/{id}", get(modules::staff::handlers::staff::get_staff_profile)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/staff/{id}/public-profile", get(modules::staff::handlers::staff::get_public_staff_profile)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/staff", post(modules::staff::handlers::staff::create_staff)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/staff/{id}", axum::routing::put(modules::staff::handlers::staff::update_staff)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/staff/{id}", axum::routing::delete(modules::staff::handlers::staff::delete_staff)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route(
+            "/api/staff",
+            get(modules::staff::handlers::staff::list_staff)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/staff/{id}",
+            get(modules::staff::handlers::staff::get_staff_profile)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/staff/{id}/public-profile",
+            get(modules::staff::handlers::staff::get_public_staff_profile)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/staff",
+            post(modules::staff::handlers::staff::create_staff)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/staff/{id}",
+            axum::routing::put(modules::staff::handlers::staff::update_staff)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/staff/{id}",
+            axum::routing::delete(modules::staff::handlers::staff::delete_staff)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Staff Achievements routes (protected)
-        .route("/api/achievements", get(modules::achievement::handlers::list_achievements)
-            .post(modules::achievement::handlers::create_achievement)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/achievements/{id}", axum::routing::put(modules::achievement::handlers::update_achievement)
-            .delete(modules::achievement::handlers::delete_achievement)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route(
+            "/api/achievements",
+            get(modules::achievement::handlers::list_achievements)
+                .post(modules::achievement::handlers::create_achievement)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/achievements/{id}",
+            axum::routing::put(modules::achievement::handlers::update_achievement)
+                .delete(modules::achievement::handlers::delete_achievement)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Student Self-Service routes (protected)
-        .route("/api/student/profile", get(modules::students::handlers::get_own_profile)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/student/profile", axum::routing::put(modules::students::handlers::update_own_profile)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route(
+            "/api/student/profile",
+            get(modules::students::handlers::get_own_profile)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/student/profile",
+            axum::routing::put(modules::students::handlers::update_own_profile)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Parent Self-Service routes (protected)
-        .route("/api/parent/profile", get(modules::parents::handlers::get_own_parent_profile)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/parent/students/{student_id}", get(modules::parents::handlers::get_child_profile)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/parent/students/{student_id}/timetable", get(modules::parents::handlers::get_child_timetable)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+        .route(
+            "/api/parent/profile",
+            get(modules::parents::handlers::get_own_parent_profile)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/parent/students/{student_id}",
+            get(modules::parents::handlers::get_child_profile)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/parent/students/{student_id}/timetable",
+            get(modules::parents::handlers::get_child_timetable)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Self-service timetable (student/staff ดูตารางตัวเอง)
-        .route("/api/me/timetable", get(modules::academic::handlers::timetable::get_my_timetable)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+        .route(
+            "/api/me/timetable",
+            get(modules::academic::handlers::timetable::get_my_timetable)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Student Management routes (protected - for admin/staff)
-        .route("/api/students", get(modules::students::handlers::list_students)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/students", post(modules::students::handlers::create_student)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/students/{id}", get(modules::students::handlers::get_student)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/students/{id}", axum::routing::put(modules::students::handlers::update_student)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/students/{id}", axum::routing::delete(modules::students::handlers::delete_student)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
+        .route(
+            "/api/students",
+            get(modules::students::handlers::list_students)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/students",
+            post(modules::students::handlers::create_student)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/students/{id}",
+            get(modules::students::handlers::get_student)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/students/{id}",
+            axum::routing::put(modules::students::handlers::update_student)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/students/{id}",
+            axum::routing::delete(modules::students::handlers::delete_student)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Parent Management (Nested for simplicity)
-        .route("/api/students/{id}/parents", post(modules::students::handlers_parents::add_parent_to_student)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/students/{id}/parents/{parent_id}", axum::routing::delete(modules::students::handlers_parents::remove_parent_from_student)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route(
+            "/api/students/{id}/parents",
+            post(modules::students::handlers_parents::add_parent_to_student)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/students/{id}/parents/{parent_id}",
+            axum::routing::delete(modules::students::handlers_parents::remove_parent_from_student)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Role Management routes (protected)
-        .route("/api/roles", get(modules::staff::handlers::roles::list_roles)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/roles/{id}", get(modules::staff::handlers::roles::get_role)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/roles", post(modules::staff::handlers::roles::create_role)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/roles/{id}", axum::routing::put(modules::staff::handlers::roles::update_role)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route(
+            "/api/roles",
+            get(modules::staff::handlers::roles::list_roles)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/roles/{id}",
+            get(modules::staff::handlers::roles::get_role)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/roles",
+            post(modules::staff::handlers::roles::create_role)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/roles/{id}",
+            axum::routing::put(modules::staff::handlers::roles::update_role)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Department Management routes (protected)
-        .route("/api/departments", get(modules::staff::handlers::roles::list_departments)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/departments/{id}", get(modules::staff::handlers::roles::get_department)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/departments", post(modules::staff::handlers::roles::create_department)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/departments/{id}", axum::routing::put(modules::staff::handlers::roles::update_department)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/departments/{id}/permissions", get(modules::staff::handlers::department_permissions::get_department_permissions)
-            .put(modules::staff::handlers::department_permissions::update_department_permissions)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/departments/{id}/delegatable-permissions", get(modules::staff::handlers::delegations::list_delegatable_permissions)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/departments/{id}/delegations", get(modules::staff::handlers::delegations::list_delegations)
-            .post(modules::staff::handlers::delegations::create_delegation)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/delegations/{id}", axum::routing::delete(modules::staff::handlers::delegations::revoke_delegation)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/departments/{id}/members", get(modules::staff::handlers::department_members::list_members)
-            .post(modules::staff::handlers::department_members::add_member)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/departments/{id}/members/{user_id}", axum::routing::put(modules::staff::handlers::department_members::update_member)
-            .delete(modules::staff::handlers::department_members::remove_member)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+        .route(
+            "/api/departments",
+            get(modules::staff::handlers::roles::list_departments)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/departments/{id}",
+            get(modules::staff::handlers::roles::get_department)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/departments",
+            post(modules::staff::handlers::roles::create_department)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/departments/{id}",
+            axum::routing::put(modules::staff::handlers::roles::update_department)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/departments/{id}/permissions",
+            get(modules::staff::handlers::department_permissions::get_department_permissions)
+                .put(
+                    modules::staff::handlers::department_permissions::update_department_permissions,
+                )
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/departments/{id}/delegatable-permissions",
+            get(modules::staff::handlers::delegations::list_delegatable_permissions)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/departments/{id}/delegations",
+            get(modules::staff::handlers::delegations::list_delegations)
+                .post(modules::staff::handlers::delegations::create_delegation)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/delegations/{id}",
+            axum::routing::delete(modules::staff::handlers::delegations::revoke_delegation)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/departments/{id}/members",
+            get(modules::staff::handlers::department_members::list_members)
+                .post(modules::staff::handlers::department_members::add_member)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/departments/{id}/members/{user_id}",
+            axum::routing::put(modules::staff::handlers::department_members::update_member)
+                .delete(modules::staff::handlers::department_members::remove_member)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // User Role Assignment routes (protected)
-        .route("/api/users/{id}/roles", get(modules::staff::handlers::user_roles::get_user_roles)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/users/{id}/roles", post(modules::staff::handlers::user_roles::assign_user_role)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/users/{id}/roles/{role_id}", axum::routing::delete(modules::staff::handlers::user_roles::remove_user_role)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/users/{id}/permissions", get(modules::staff::handlers::user_roles::get_user_permissions)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route(
+            "/api/users/{id}/roles",
+            get(modules::staff::handlers::user_roles::get_user_roles)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/users/{id}/roles",
+            post(modules::staff::handlers::user_roles::assign_user_role)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/users/{id}/roles/{role_id}",
+            axum::routing::delete(modules::staff::handlers::user_roles::remove_user_role)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/users/{id}/permissions",
+            get(modules::staff::handlers::user_roles::get_user_permissions)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Permissions Master Data routes (protected)
-        .route("/api/permissions", get(modules::staff::handlers::permissions::list_permissions)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/permissions/modules", get(modules::staff::handlers::permissions::list_permissions_by_module)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route(
+            "/api/permissions",
+            get(modules::staff::handlers::permissions::list_permissions)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/permissions/modules",
+            get(modules::staff::handlers::permissions::list_permissions_by_module)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Menu routes (protected)
-        .route("/api/menu/user", get(modules::menu::handlers::public::get_user_menu)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .route(
+            "/api/menu/user",
+            get(modules::menu::handlers::public::get_user_menu)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Admin - Feature Toggles (protected)
-        .route("/api/admin/features", get(modules::system::handlers::feature_toggles::list_features)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/admin/features/{id}", get(modules::system::handlers::feature_toggles::get_feature)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/admin/features/{id}", axum::routing::put(modules::system::handlers::feature_toggles::update_feature)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/admin/features/{id}/toggle", post(modules::system::handlers::feature_toggles::toggle_feature)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
-        
+        .route(
+            "/api/admin/features",
+            get(modules::system::handlers::feature_toggles::list_features)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/features/{id}",
+            get(modules::system::handlers::feature_toggles::get_feature)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/features/{id}",
+            axum::routing::put(modules::system::handlers::feature_toggles::update_feature)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/features/{id}/toggle",
+            post(modules::system::handlers::feature_toggles::toggle_feature)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Admin - Menu Management (protected, module-based permissions)
-        .route("/api/admin/menu/groups", get(modules::menu::handlers::admin::list_menu_groups)
-            .post(modules::menu::handlers::admin::create_menu_group)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/admin/menu/groups/{id}", axum::routing::put(modules::menu::handlers::admin::update_menu_group)
-            .delete(modules::menu::handlers::admin::delete_menu_group)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/admin/menu/groups/reorder", post(modules::menu::handlers::admin::reorder_menu_groups)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/admin/menu/items", get(modules::menu::handlers::admin::list_menu_items)
-            .post(modules::menu::handlers::admin::create_menu_item)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/admin/menu/items/{id}", axum::routing::put(modules::menu::handlers::admin::update_menu_item)
-            .delete(modules::menu::handlers::admin::delete_menu_item)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/admin/menu/items/{id}/group", axum::routing::put(modules::menu::handlers::admin::move_item_to_group)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/admin/menu/items/reorder", post(modules::menu::handlers::admin::reorder_menu_items)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+        .route(
+            "/api/admin/menu/groups",
+            get(modules::menu::handlers::admin::list_menu_groups)
+                .post(modules::menu::handlers::admin::create_menu_group)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/menu/groups/{id}",
+            axum::routing::put(modules::menu::handlers::admin::update_menu_group)
+                .delete(modules::menu::handlers::admin::delete_menu_group)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/menu/groups/reorder",
+            post(modules::menu::handlers::admin::reorder_menu_groups)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/menu/items",
+            get(modules::menu::handlers::admin::list_menu_items)
+                .post(modules::menu::handlers::admin::create_menu_item)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/menu/items/{id}",
+            axum::routing::put(modules::menu::handlers::admin::update_menu_item)
+                .delete(modules::menu::handlers::admin::delete_menu_item)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/menu/items/{id}/group",
+            axum::routing::put(modules::menu::handlers::admin::move_item_to_group)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/menu/items/reorder",
+            post(modules::menu::handlers::admin::reorder_menu_items)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Consent Management routes (PDPA Compliance)
-        .route("/api/consent/types", get(modules::consent::handlers::get_consent_types))
-        .route("/api/consent/my-status", get(modules::consent::handlers::get_my_consent_status)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/consent", post(modules::consent::handlers::create_consent)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/consent/{id}/withdraw", post(modules::consent::handlers::withdraw_consent)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/consent/summary", get(modules::consent::handlers::get_consent_summary)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+        .route(
+            "/api/consent/types",
+            get(modules::consent::handlers::get_consent_types),
+        )
+        .route(
+            "/api/consent/my-status",
+            get(modules::consent::handlers::get_my_consent_status)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/consent",
+            post(modules::consent::handlers::create_consent)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/consent/{id}/withdraw",
+            post(modules::consent::handlers::withdraw_consent)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/consent/summary",
+            get(modules::consent::handlers::get_consent_summary)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // File Management routes (protected)
-        .route("/api/files/upload", post(modules::files::handlers::upload_file)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/files", get(modules::files::handlers::list_user_files)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/files/{id}", axum::routing::delete(modules::files::handlers::delete_file)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+        .route(
+            "/api/files/upload",
+            post(modules::files::handlers::upload_file)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/files",
+            get(modules::files::handlers::list_user_files)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/files/{id}",
+            axum::routing::delete(modules::files::handlers::delete_file)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Academic Management routes (Protected)
-        .nest("/api/academic", modules::academic::academic_routes()
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        
+        .nest(
+            "/api/academic",
+            modules::academic::academic_routes()
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Facility Management routes (Protected)
-        .nest("/api/facilities", modules::facility::facility_routes()
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+        .nest(
+            "/api/facilities",
+            modules::facility::facility_routes()
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Admission Management routes (บาง endpoints Public — submit, portal)
         // Staff endpoints: Protected
         // Public endpoints: /apply/:round_id, /portal/*
         .nest("/api/admission", modules::admission::admission_routes())
-
         // School Settings routes
-        .route("/api/school/public", get(modules::school::handlers::get_public_info))
-        .route("/api/school/settings", get(modules::school::handlers::get_settings)
-            .patch(modules::school::handlers::update_settings)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/school/settings/logo", delete(modules::school::handlers::delete_logo)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+        .route(
+            "/api/school/public",
+            get(modules::school::handlers::get_public_info),
+        )
+        .route(
+            "/api/school/settings",
+            get(modules::school::handlers::get_settings)
+                .patch(modules::school::handlers::update_settings)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/school/settings/logo",
+            delete(modules::school::handlers::delete_logo)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Notification routes (Protected)
-        .route("/api/notifications/stream", get(modules::notification::handlers::stream_notifications)) // Auth handled inside to get user ID, or use middleware?
-                                                                                                        // Standard middleware might buffer or cause issues with SSE if not careful?
-                                                                                                        // Actually `auth_middleware` just parses token.
-            // .layer(axum_middleware::from_fn(middleware::auth::auth_middleware))) // Let's keep it consistent.
-        .route("/api/notifications", 
+        .route(
+            "/api/notifications/stream",
+            get(modules::notification::handlers::stream_notifications),
+        ) // Auth handled inside to get user ID, or use middleware?
+        // Standard middleware might buffer or cause issues with SSE if not careful?
+        // Actually `auth_middleware` just parses token.
+        // .layer(axum_middleware::from_fn(middleware::auth::auth_middleware))) // Let's keep it consistent.
+        .route(
+            "/api/notifications",
             get(modules::notification::handlers::list_notifications)
-            .post(modules::notification::handlers::create_notification)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/notifications/read-all", post(modules::notification::handlers::mark_all_as_read)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/notifications/{id}/read", post(modules::notification::handlers::mark_as_read)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/notifications/subscribe", post(modules::notification::handlers::subscribe_push)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+                .post(modules::notification::handlers::create_notification)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/notifications/read-all",
+            post(modules::notification::handlers::mark_all_as_read)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/notifications/{id}/read",
+            post(modules::notification::handlers::mark_as_read)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/notifications/subscribe",
+            post(modules::notification::handlers::subscribe_push)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Lookup endpoints (Protected - only requires authentication, no specific permission)
         // These return minimal data for dropdowns (id, name only)
-        .route("/api/lookup/staff", get(modules::lookup::handlers::lookup_staff)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/lookup/students", get(modules::lookup::handlers::lookup_students)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/lookup/rooms", get(modules::lookup::handlers::lookup_rooms)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/lookup/roles", get(modules::lookup::handlers::lookup_roles)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/lookup/departments", get(modules::lookup::handlers::lookup_departments)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/lookup/departments/{id}", get(modules::lookup::handlers::lookup_department_by_id)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/lookup/grade-levels", get(modules::lookup::handlers::lookup_grade_levels)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/lookup/classrooms", get(modules::lookup::handlers::lookup_classrooms)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/lookup/academic-years", get(modules::lookup::handlers::lookup_academic_years)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-        .route("/api/lookup/subjects", get(modules::lookup::handlers::lookup_subjects)
-            .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)))
-
+        .route(
+            "/api/lookup/staff",
+            get(modules::lookup::handlers::lookup_staff)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/lookup/students",
+            get(modules::lookup::handlers::lookup_students)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/lookup/rooms",
+            get(modules::lookup::handlers::lookup_rooms)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/lookup/roles",
+            get(modules::lookup::handlers::lookup_roles)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/lookup/departments",
+            get(modules::lookup::handlers::lookup_departments)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/lookup/departments/{id}",
+            get(modules::lookup::handlers::lookup_department_by_id)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/lookup/grade-levels",
+            get(modules::lookup::handlers::lookup_grade_levels)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/lookup/classrooms",
+            get(modules::lookup::handlers::lookup_classrooms)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/lookup/academic-years",
+            get(modules::lookup::handlers::lookup_academic_years)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/lookup/subjects",
+            get(modules::lookup::handlers::lookup_subjects)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Route registration (no auth - uses deploy key)
-        .route("/api/admin/routes/register", post(modules::system::handlers::register_routes::register_routes))
-        
+        .route(
+            "/api/admin/routes/register",
+            post(modules::system::handlers::register_routes::register_routes),
+        )
         // WebSocket Route (No standard middleware auth, uses Query Params)
-        .route("/ws/timetable", get(modules::academic::websockets::timetable_websocket_handler))
-        
-        
-        
+        .route(
+            "/ws/timetable",
+            get(modules::academic::websockets::timetable_websocket_handler),
+        )
         // Internal routes (protected by internal auth middleware)
         .route(
             "/internal/provision",
-            post(modules::system::handlers::provision::provision_tenant)
-                .layer(axum_middleware::from_fn(
-                    middleware::internal_auth::validate_internal_secret,
-                )),
+            post(modules::system::handlers::provision::provision_tenant).layer(
+                axum_middleware::from_fn(middleware::internal_auth::validate_internal_secret),
+            ),
         )
         .route(
             "/internal/migrate-all",
-            post(modules::system::handlers::migration::migrate_all_schools)
-                .layer(axum_middleware::from_fn(
-                    middleware::internal_auth::validate_internal_secret,
-                )),
+            post(modules::system::handlers::migration::migrate_all_schools).layer(
+                axum_middleware::from_fn(middleware::internal_auth::validate_internal_secret),
+            ),
         )
         .route(
             "/internal/migration-status",
-            get(modules::system::handlers::migration::migration_status)
-                .layer(axum_middleware::from_fn(
-                    middleware::internal_auth::validate_internal_secret,
-                )),
+            get(modules::system::handlers::migration::migration_status).layer(
+                axum_middleware::from_fn(middleware::internal_auth::validate_internal_secret),
+            ),
         )
-    // Add cookie middleware
+        // Add cookie middleware
         .layer(CookieManagerLayer::new())
         // Increase request body limit to 20MB for file uploads
         .layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024))
@@ -398,7 +621,6 @@ async fn main() {
     tracing::info!("  GET  /internal/migration-status - Get migration status");
     tracing::info!("  GET  /ws/timetable              - Real-time Timetable Collaboration");
 
-
     // Run server
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
@@ -406,9 +628,10 @@ async fn main() {
 
     // Initialize Job Scheduler for background tasks
     // Run daily cleaning at 3:00 AM
-    let sched = JobScheduler::new().await
+    let sched = JobScheduler::new()
+        .await
         .expect("Failed to initialize job scheduler");
-    
+
     // Clone shared resources for the job
     let admin_client_for_job = Arc::clone(&state.admin_client);
     let pool_manager_for_job = Arc::clone(&state.pool_manager);
@@ -449,27 +672,37 @@ async fn main() {
                         match services::cleaner::FileCleaner::new(pool).await {
                             Ok(cleaner) => {
                                 cleaner.clean_orphaned_files().await;
-                            },
+                            }
                             Err(e) => {
-                                tracing::error!("Failed to initialize FileCleaner for {}: {}", school.subdomain, e);
+                                tracing::error!(
+                                    "Failed to initialize FileCleaner for {}: {}",
+                                    school.subdomain,
+                                    e
+                                );
                             }
                         }
-                    },
+                    }
                     Err(e) => {
-                        tracing::error!("Failed to get database connection for {}: {}", school.subdomain, e);
+                        tracing::error!(
+                            "Failed to get database connection for {}: {}",
+                            school.subdomain,
+                            e
+                        );
                     }
                 }
             }
             tracing::info!("✅ Scheduled cleanup job completed for all tenants.");
         })
-    }).expect("Failed to create cleaner job");
+    })
+    .expect("Failed to create cleaner job");
 
-    sched.add(cleaner_job).await.expect("Failed to add job to scheduler");
+    sched
+        .add(cleaner_job)
+        .await
+        .expect("Failed to add job to scheduler");
     sched.start().await.expect("Failed to start scheduler");
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server failed");
+    axum::serve(listener, app).await.expect("Server failed");
 }
 
 // Handler functions

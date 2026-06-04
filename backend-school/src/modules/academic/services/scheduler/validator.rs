@@ -47,7 +47,7 @@ impl ConstraintValidator {
             default_max_consecutive,
         }
     }
-    
+
     /// Check all hard constraints for an assignment
     pub fn can_assign(
         &self,
@@ -57,7 +57,7 @@ impl ConstraintValidator {
         state: &ScheduleState,
     ) -> Result<(), Conflict> {
         let slot_key = time_slot.key();
-        
+
         // HC-1: Classroom conflict
         if state.is_classroom_slot_occupied(course.classroom_id, &slot_key) {
             return Err(Conflict {
@@ -68,7 +68,7 @@ impl ConstraintValidator {
                 ),
             });
         }
-        
+
         // HC-2: Instructor conflict
         if let Some(instructor_id) = course.instructor_id {
             if state.is_instructor_slot_occupied(instructor_id, &slot_key) {
@@ -82,7 +82,7 @@ impl ConstraintValidator {
                 });
             }
         }
-        
+
         // HC-3: Room conflict
         if let Some(rid) = room_id {
             // Check occupancy
@@ -92,25 +92,22 @@ impl ConstraintValidator {
                     message: format!("Room is occupied at {}", slot_key),
                 });
             }
-            
+
             // Room type check removed as per data schema change
         }
-        
+
         // HC-6: Instructor unavailability (hard)
         if let Some(instructor_id) = course.instructor_id {
             if let Some(prefs) = self.instructor_prefs.get(&instructor_id) {
                 if prefs.hard_unavailable.contains(&slot_key) {
                     return Err(Conflict {
                         conflict_type: ConflictType::InstructorUnavailable,
-                        message: format!(
-                            "Instructor is unavailable at {}",
-                            slot_key
-                        ),
+                        message: format!("Instructor is unavailable at {}", slot_key),
                     });
                 }
             }
         }
-        
+
         // HC-10 (Phase B): cc-level hard unavailable
         if course.cc_hard_unavailable.contains(&slot_key) {
             return Err(Conflict {
@@ -150,7 +147,7 @@ impl ConstraintValidator {
             let day = &time_slot.day;
             let order = time_slot.period_order;
             let mut consecutive = 1; // คาบใหม่ที่จะวาง
-            // นับย้อนหลัง
+                                     // นับย้อนหลัง
             let mut prev = order - 1;
             loop {
                 let has = state.assignments.iter().any(|a| {
@@ -158,7 +155,9 @@ impl ConstraintValidator {
                         && a.time_slot.day == *day
                         && a.time_slot.period_order == prev
                 });
-                if !has { break; }
+                if !has {
+                    break;
+                }
                 consecutive += 1;
                 prev -= 1;
             }
@@ -170,7 +169,9 @@ impl ConstraintValidator {
                         && a.time_slot.day == *day
                         && a.time_slot.period_order == next
                 });
-                if !has { break; }
+                if !has {
+                    break;
+                }
                 consecutive += 1;
                 next += 1;
             }
@@ -180,7 +181,8 @@ impl ConstraintValidator {
                     message: format!(
                         "ครู {} จะสอนติด {} คาบ (เกิน {} คาบ)",
                         course.instructor_name.as_deref().unwrap_or("?"),
-                        consecutive, self.default_max_consecutive
+                        consecutive,
+                        self.default_max_consecutive
                     ),
                 });
             }
@@ -192,30 +194,24 @@ impl ConstraintValidator {
             if locked_info.subject_id != course.subject_id {
                 return Err(Conflict {
                     conflict_type: ConflictType::LockedSlot,
-                    message: format!(
-                        "Slot {} is locked for another subject",
-                        slot_key
-                    ),
+                    message: format!("Slot {} is locked for another subject", slot_key),
                 });
             }
-            
+
             // Check if classroom is in scope
             if !locked_info.classroom_ids.is_empty()
                 && !locked_info.classroom_ids.contains(&course.classroom_id)
             {
                 return Err(Conflict {
                     conflict_type: ConflictType::LockedSlot,
-                    message: format!(
-                        "Slot {} is locked for different classrooms",
-                        slot_key
-                    ),
+                    message: format!("Slot {} is locked for different classrooms", slot_key),
                 });
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate consecutive period requirements after assignment
     pub fn validate_consecutive(
         &self,
@@ -226,7 +222,7 @@ impl ConstraintValidator {
         if course.min_consecutive <= 1 {
             return Ok(());
         }
-        
+
         // Group by day
         let mut by_day: HashMap<String, Vec<i32>> = HashMap::new();
         for assign in assignments {
@@ -235,12 +231,12 @@ impl ConstraintValidator {
                 .or_insert_with(Vec::new)
                 .push(assign.time_slot.period_order);
         }
-        
+
         // Check each day
         for (day, mut periods) in by_day {
             periods.sort();
             let count = periods.len() as i32;
-            
+
             // If only 1 period
             if count == 1 {
                 if !course.allow_single_period {
@@ -254,7 +250,7 @@ impl ConstraintValidator {
                 }
                 continue; // OK - single period allowed
             }
-            
+
             // If 2+ periods, check if consecutive
             if !Self::is_consecutive(&periods) {
                 return Err(Conflict {
@@ -265,7 +261,7 @@ impl ConstraintValidator {
                     ),
                 });
             }
-            
+
             // Check min/max
             if count < course.min_consecutive {
                 return Err(Conflict {
@@ -276,7 +272,7 @@ impl ConstraintValidator {
                     ),
                 });
             }
-            
+
             if count > course.max_consecutive {
                 return Err(Conflict {
                     conflict_type: ConflictType::InvalidConsecutive,
@@ -287,24 +283,24 @@ impl ConstraintValidator {
                 });
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn is_consecutive(periods: &[i32]) -> bool {
         if periods.len() <= 1 {
             return true;
         }
-        
+
         for i in 1..periods.len() {
             if periods[i] != periods[i - 1] + 1 {
                 return false; // Gap found
             }
         }
-        
+
         true
     }
-    
+
     /// Check if instructor has exceeded daily load
     pub fn check_instructor_daily_load(
         &self,
@@ -317,16 +313,14 @@ impl ConstraintValidator {
             let count = state
                 .assignments
                 .iter()
-                .filter(|a| {
-                    a.instructor_id == Some(instructor_id) && a.time_slot.day == day
-                })
+                .filter(|a| a.instructor_id == Some(instructor_id) && a.time_slot.day == day)
                 .count() as i32;
-            
+
             if count >= prefs.max_periods_per_day {
                 return false; // Exceeded
             }
         }
-        
+
         true // OK
     }
 }
@@ -343,7 +337,7 @@ pub struct LockedSlotData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_is_consecutive() {
         assert!(ConstraintValidator::is_consecutive(&[1, 2, 3]));

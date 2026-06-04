@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TimeSlot {
-    pub day: String,      // "MON", "TUE", etc.
+    pub day: String, // "MON", "TUE", etc.
     pub period_id: Uuid,
     pub period_order: i32, // For consecutive checking
 }
@@ -30,19 +30,19 @@ pub struct CourseToSchedule {
     pub subject_name: String,
     pub instructor_id: Option<Uuid>,
     pub instructor_name: Option<String>,
-    
+
     // Scheduling requirements
     pub periods_needed: i32,
     pub periods_remaining: i32,
-    
+
     // Consecutive requirements
     pub min_consecutive: i32,
     pub max_consecutive: i32,
     pub allow_single_period: bool,
-    
+
     // Room requirements
     pub fixed_room_id: Option<Uuid>, // From instructor_room_assignments
-    
+
     // Flexible constraints (new)
     pub allowed_period_ids: Option<Vec<Uuid>>, // NULL = all periods allowed
     pub allowed_days: Option<Vec<String>>,     // NULL = all days allowed
@@ -114,12 +114,12 @@ impl Assignment {
 #[derive(Debug, Clone)]
 pub struct ScheduleState {
     pub assignments: Vec<Assignment>,
-    
+
     // Fast lookup maps
     pub classroom_slots: HashMap<String, HashSet<String>>, // classroom_id -> set of slot keys
     pub instructor_slots: HashMap<Uuid, HashSet<String>>,  // instructor_id -> set of slot keys
     pub room_slots: HashMap<Uuid, HashSet<String>>,        // room_id -> set of slot keys
-    
+
     // Per-course assignments
     pub course_assignments: HashMap<Uuid, Vec<Assignment>>, // course_id -> assignments
 }
@@ -134,16 +134,16 @@ impl ScheduleState {
             course_assignments: HashMap::new(),
         }
     }
-    
+
     pub fn add_assignment(&mut self, assignment: Assignment) {
         let slot_key = assignment.time_slot.key();
-        
+
         // Track classroom usage
         self.classroom_slots
             .entry(assignment.classroom_id.to_string())
             .or_insert_with(HashSet::new)
             .insert(slot_key.clone());
-        
+
         // Track instructor usage
         if let Some(instructor_id) = assignment.instructor_id {
             self.instructor_slots
@@ -151,7 +151,7 @@ impl ScheduleState {
                 .or_insert_with(HashSet::new)
                 .insert(slot_key.clone());
         }
-        
+
         // Track room usage
         if let Some(room_id) = assignment.room_id {
             self.room_slots
@@ -159,67 +159,73 @@ impl ScheduleState {
                 .or_insert_with(HashSet::new)
                 .insert(slot_key);
         }
-        
+
         // Track per-course
         self.course_assignments
             .entry(assignment.classroom_course_id)
             .or_insert_with(Vec::new)
             .push(assignment.clone());
-        
+
         self.assignments.push(assignment);
     }
-    
+
     pub fn remove_last_assignment(&mut self) {
         if let Some(assignment) = self.assignments.pop() {
             let slot_key = assignment.time_slot.key();
-            
+
             // Remove from classroom
-            if let Some(slots) = self.classroom_slots.get_mut(&assignment.classroom_id.to_string()) {
+            if let Some(slots) = self
+                .classroom_slots
+                .get_mut(&assignment.classroom_id.to_string())
+            {
                 slots.remove(&slot_key);
             }
-            
+
             // Remove from instructor
             if let Some(instructor_id) = assignment.instructor_id {
                 if let Some(slots) = self.instructor_slots.get_mut(&instructor_id) {
                     slots.remove(&slot_key);
                 }
             }
-            
+
             // Remove from room
             if let Some(room_id) = assignment.room_id {
                 if let Some(slots) = self.room_slots.get_mut(&room_id) {
                     slots.remove(&slot_key);
                 }
             }
-            
+
             // Remove from course
-            if let Some(course_assigns) = self.course_assignments.get_mut(&assignment.classroom_course_id) {
+            if let Some(course_assigns) = self
+                .course_assignments
+                .get_mut(&assignment.classroom_course_id)
+            {
                 course_assigns.pop();
             }
         }
     }
-    
+
     pub fn is_classroom_slot_occupied(&self, classroom_id: Uuid, slot_key: &str) -> bool {
         self.classroom_slots
             .get(&classroom_id.to_string())
             .map(|slots| slots.contains(slot_key))
             .unwrap_or(false)
     }
-    
+
     pub fn is_instructor_slot_occupied(&self, instructor_id: Uuid, slot_key: &str) -> bool {
         self.instructor_slots
             .get(&instructor_id)
             .map(|slots| slots.contains(slot_key))
             .unwrap_or(false)
     }
-    
+
     pub fn is_room_slot_occupied(&self, room_id: Uuid, slot_key: &str) -> bool {
         self.room_slots
             .get(&room_id)
             .map(|slots| slots.contains(slot_key))
             .unwrap_or(false)
     }
-    
+
     pub fn get_course_assignments(&self, course_id: Uuid) -> Vec<Assignment> {
         self.course_assignments
             .get(&course_id)
@@ -254,26 +260,26 @@ pub struct SchedulerConfig {
     pub algorithm: SchedulingAlgorithm,
     pub max_iterations: u32,
     pub timeout_seconds: u32,
-    
+
     // Soft constraints
     pub optimize_distribution: bool,
     pub optimize_consecutive_limit: bool,
     pub optimize_time_of_day: bool,
     pub balance_daily_load: bool,
-    
+
     // Options
     pub allow_partial: bool,
     pub min_quality_score: f64,
-    
+
     // Custom constraints
     pub allow_multiple_sessions_per_day: bool, // If false, forces spread days
-    
+
     // Weights (for quality scoring)
-    pub weight_distribution: f64,      // 30%
-    pub weight_consecutive: f64,        // 20%
-    pub weight_time_of_day: f64,       // 15%
-    pub weight_daily_load: f64,        // 10%
-    pub weight_spacing: f64,           // 2%
+    pub weight_distribution: f64, // 30%
+    pub weight_consecutive: f64,  // 20%
+    pub weight_time_of_day: f64,  // 15%
+    pub weight_daily_load: f64,   // 10%
+    pub weight_spacing: f64,      // 2%
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -289,17 +295,17 @@ impl Default for SchedulerConfig {
             algorithm: SchedulingAlgorithm::Backtracking,
             max_iterations: 10000,
             timeout_seconds: 300,
-            
+
             optimize_distribution: true,
             optimize_consecutive_limit: true,
             optimize_time_of_day: true,
             balance_daily_load: true,
-            
+
             allow_partial: false,
             min_quality_score: 70.0,
-            
+
             allow_multiple_sessions_per_day: false, // Default = Force Spread Days
-            
+
             weight_distribution: 30.0,
             weight_consecutive: 20.0,
             weight_time_of_day: 15.0,

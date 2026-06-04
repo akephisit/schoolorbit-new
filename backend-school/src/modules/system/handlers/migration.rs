@@ -1,11 +1,6 @@
-use crate::AppState;
 use crate::error::AppError;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use crate::AppState;
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
 use sqlx::PgPool;
 
@@ -50,15 +45,24 @@ struct SchoolMigrationStatus {
 }
 
 /// Migrate all active schools
-pub async fn migrate_all_schools(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+pub async fn migrate_all_schools(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
     tracing::info!("🔄 Starting migration for all active schools...");
 
-    let latest_version = get_latest_migration_version().await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to determine latest migration version: {}", e)))?;
+    let latest_version = get_latest_migration_version().await.map_err(|e| {
+        AppError::InternalServerError(format!(
+            "Failed to determine latest migration version: {}",
+            e
+        ))
+    })?;
 
     tracing::info!("📊 Latest migration version: {}", latest_version);
 
-    let schools = state.admin_client.list_active_schools().await
+    let schools = state
+        .admin_client
+        .list_active_schools()
+        .await
         .map_err(|e| {
             tracing::error!("❌ Failed to fetch schools: {}", e);
             AppError::InternalServerError("Failed to fetch schools from admin service".to_string())
@@ -73,8 +77,14 @@ pub async fn migrate_all_schools(State(state): State<AppState>) -> Result<impl I
         let db_url = match school.db_connection_string {
             Some(ref url) if !url.is_empty() => url.clone(),
             _ => {
-                let _ = state.admin_client
-                    .update_migration_status(&subdomain, 0, "failed", Some("No database connection string"))
+                let _ = state
+                    .admin_client
+                    .update_migration_status(
+                        &subdomain,
+                        0,
+                        "failed",
+                        Some("No database connection string"),
+                    )
                     .await;
 
                 results.push(MigrationResult {
@@ -97,7 +107,11 @@ pub async fn migrate_all_schools(State(state): State<AppState>) -> Result<impl I
         .count();
     let failed_count = results.iter().filter(|r| r.status == "failed").count();
 
-    tracing::info!("✅ Migration complete: {} success, {} failed", success_count, failed_count);
+    tracing::info!(
+        "✅ Migration complete: {} success, {} failed",
+        success_count,
+        failed_count
+    );
 
     Ok((
         StatusCode::OK,
@@ -112,10 +126,15 @@ pub async fn migrate_all_schools(State(state): State<AppState>) -> Result<impl I
 }
 
 /// Get migration status for all schools
-pub async fn migration_status(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+pub async fn migration_status(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
     let latest_version = get_latest_migration_version().await.unwrap_or(0);
 
-    let schools = state.admin_client.list_active_schools().await
+    let schools = state
+        .admin_client
+        .list_active_schools()
+        .await
         .map_err(|e| {
             tracing::error!("❌ Failed to fetch schools: {}", e);
             AppError::InternalServerError("Failed to fetch migration status".to_string())
@@ -189,7 +208,8 @@ async fn migrate_single_school(
         Ok(p) => p,
         Err(e) => {
             tracing::error!("❌ Failed to get pool for {}: {}", subdomain, e);
-            let _ = state.admin_client
+            let _ = state
+                .admin_client
                 .update_migration_status(subdomain, 0, "failed", Some(&e))
                 .await;
             return MigrationResult {
@@ -205,7 +225,8 @@ async fn migrate_single_school(
         Ok(v) => v,
         Err(e) => {
             tracing::error!("❌ Failed to get version for {}: {}", subdomain, e);
-            let _ = state.admin_client
+            let _ = state
+                .admin_client
                 .update_migration_status(subdomain, 0, "failed", Some(&e))
                 .await;
             return MigrationResult {
@@ -217,7 +238,8 @@ async fn migrate_single_school(
         }
     };
 
-    match state.admin_client
+    match state
+        .admin_client
         .update_migration_status(subdomain, current_version as i32, "migrated", None)
         .await
     {
@@ -236,7 +258,10 @@ async fn migrate_single_school(
             }
         }
         Err(e) => {
-            tracing::warn!("⚠️ Migration succeeded but failed to update admin service: {}", e);
+            tracing::warn!(
+                "⚠️ Migration succeeded but failed to update admin service: {}",
+                e
+            );
             MigrationResult {
                 subdomain: subdomain.to_string(),
                 status: "migrated".to_string(),
@@ -275,12 +300,11 @@ async fn get_latest_migration_version() -> Result<i64, String> {
 
 /// Get current migration version from school database
 async fn get_current_version(pool: &PgPool) -> Result<i64, String> {
-    let version = sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations",
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("Failed to get current version: {}", e))?;
+    let version =
+        sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations")
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("Failed to get current version: {}", e))?;
 
     Ok(version)
 }

@@ -123,8 +123,6 @@ pub struct CreateStaffInfoRequest {
     pub teaching_license_expiry: Option<NaiveDate>,
 }
 
-
-
 // ===================================================================
 // Response Models
 // ===================================================================
@@ -198,16 +196,16 @@ pub struct StaffProfileResponse {
     pub user_type: String,
     pub status: String,
     pub profile_image_url: Option<String>,
-    
+
     // Staff specific info
     pub staff_info: Option<StaffInfoResponse>,
-    
+
     // Roles
     pub roles: Vec<RoleResponse>,
-    
+
     // Departments
     pub departments: Vec<DepartmentResponse>,
-    
+
     // วิชาที่สอน (จาก classroom_courses)
     pub teaching_courses: Vec<TeachingCourseItem>,
 
@@ -247,15 +245,15 @@ pub struct CreateStaffRequest {
     pub gender: Option<String>,
     pub address: Option<String>,
     pub hired_date: Option<NaiveDate>,
-    
+
     // Staff Info (Optional - can be added later)
     pub staff_info: Option<CreateStaffInfoRequest>,
     pub profile_image_url: Option<String>,
-    
+
     // Roles
     pub role_ids: Vec<Uuid>,
     pub primary_role_id: Option<Uuid>,
-    
+
     // Departments
     pub department_assignments: Option<Vec<DepartmentAssignment>>,
 }
@@ -289,11 +287,11 @@ pub struct UpdateStaffRequest {
     pub status: Option<String>,
     pub profile_image_url: Option<String>,
     pub staff_info: Option<CreateStaffInfoRequest>,
-    
+
     // Roles
     pub role_ids: Option<Vec<Uuid>>,
     pub primary_role_id: Option<Uuid>,
-    
+
     // Departments
     pub department_assignments: Option<Vec<DepartmentAssignment>>,
 }
@@ -341,7 +339,6 @@ pub struct Permission {
 }
 
 // ===================================================================
-
 
 // ===================================================================
 #[derive(Debug, Clone, Serialize, Deserialize)]

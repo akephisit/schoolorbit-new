@@ -1,20 +1,20 @@
 use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
 use crate::middleware::auth::extract_user_id;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
-use crate::error::AppError;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
-    extract::{Path, State, Query},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use axum::response::sse::{Event, Sse, KeepAlive};
 use futures::stream::Stream;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tokio::sync::broadcast;
+use uuid::Uuid;
 
 // Models
 #[derive(Debug, Serialize, Clone, sqlx::FromRow)]
@@ -64,7 +64,9 @@ pub async fn list_notifications(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get database pool: {}", e);
@@ -83,7 +85,8 @@ pub async fn list_notifications(
         SELECT id, title, message, type AS type_, link, read_at, created_at
         FROM notifications
         WHERE user_id = $1
-    "#.to_string();
+    "#
+    .to_string();
 
     if query.unread_only.unwrap_or(false) {
         sql.push_str(" AND read_at IS NULL");
@@ -104,7 +107,7 @@ pub async fn list_notifications(
 
     // Count unread
     let unread_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL"
+        "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL",
     )
     .bind(user_id)
     .fetch_one(&pool)
@@ -113,7 +116,9 @@ pub async fn list_notifications(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({ "success": true, "data": { "items": notifications, "unread_count": unread_count, "page": page, "limit": limit } })),
+        Json(
+            serde_json::json!({ "success": true, "data": { "items": notifications, "unread_count": unread_count, "page": page, "limit": limit } }),
+        ),
     ))
 }
 
@@ -133,7 +138,9 @@ pub async fn mark_as_read(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get database pool: {}", e);
@@ -144,17 +151,15 @@ pub async fn mark_as_read(
         .await
         .map_err(|e| AppError::AuthError(e))?;
 
-    sqlx::query(
-        "UPDATE notifications SET read_at = NOW() WHERE id = $1 AND user_id = $2"
-    )
-    .bind(id)
-    .bind(user_id)
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to mark notification as read: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการอัพเดตสถานะ".to_string())
-    })?;
+    sqlx::query("UPDATE notifications SET read_at = NOW() WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to mark notification as read: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการอัพเดตสถานะ".to_string())
+        })?;
 
     Ok((
         StatusCode::OK,
@@ -177,7 +182,9 @@ pub async fn mark_all_as_read(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get database pool: {}", e);
@@ -188,16 +195,14 @@ pub async fn mark_all_as_read(
         .await
         .map_err(|e| AppError::AuthError(e))?;
 
-    sqlx::query(
-        "UPDATE notifications SET read_at = NOW() WHERE user_id = $1 AND read_at IS NULL"
-    )
-    .bind(user_id)
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to mark all notifications as read: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการอัพเดตสถานะ".to_string())
-    })?;
+    sqlx::query("UPDATE notifications SET read_at = NOW() WHERE user_id = $1 AND read_at IS NULL")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to mark all notifications as read: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการอัพเดตสถานะ".to_string())
+        })?;
 
     Ok((
         StatusCode::OK,
@@ -210,21 +215,23 @@ pub async fn stream_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
-     let subdomain = extract_subdomain_from_request(&headers)
+    let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    // We verify the user, but we don't need the DB connection for the stream itself, 
+    // We verify the user, but we don't need the DB connection for the stream itself,
     // unless to verify the user exists/is active.
     // However, to extract_user_id cleanly we need the pool.
-    
+
     let db_url = get_school_database_url(&state.admin_client, &subdomain)
         .await
         .map_err(|_e| {
-             // If DB lookup fails, we can't authenticate, so unauthorized or not found
-             AppError::NotFound("ไม่พบโรงเรียน".to_string())
+            // If DB lookup fails, we can't authenticate, so unauthorized or not found
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
-        
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_e| AppError::InternalServerError("Database error".to_string()))?;
 
@@ -270,14 +277,16 @@ pub async fn create_notification(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
     let user_id = extract_user_id(&headers, &pool)
         .await
         .map_err(|e| AppError::AuthError(e))?;
-    
+
     // In real app, check permissions here (e.g. only staff/admin can broadcast)
     // For now, allow test.
 
@@ -289,7 +298,6 @@ pub async fn create_notification(
         "error" => NotificationType::Error,
         _ => NotificationType::Info,
     };
-
 
     let target_user_id = payload.user_id.unwrap_or(user_id);
 
@@ -334,7 +342,9 @@ pub async fn subscribe_push(
         .await
         .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
@@ -344,7 +354,8 @@ pub async fn subscribe_push(
 
     // Upsert subscription
     // If endpoint exists, update keys and timestamp
-    sqlx::query(r#"
+    sqlx::query(
+        r#"
         INSERT INTO push_subscriptions (user_id, endpoint, p256dh_key, auth_key, updated_at)
         VALUES ($1, $2, $3, $4, NOW())
         ON CONFLICT (endpoint) DO UPDATE
@@ -352,7 +363,8 @@ pub async fn subscribe_push(
             p256dh_key = EXCLUDED.p256dh_key,
             auth_key = EXCLUDED.auth_key,
             updated_at = NOW()
-    "#)
+    "#,
+    )
     .bind(user_id)
     .bind(payload.endpoint)
     .bind(payload.p256dh)
@@ -366,8 +378,8 @@ pub async fn subscribe_push(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({ "success": true, "data": {}, "message": "Subscribed to push notifications" })),
+        Json(
+            serde_json::json!({ "success": true, "data": {}, "message": "Subscribed to push notifications" }),
+        ),
     ))
 }
-
-

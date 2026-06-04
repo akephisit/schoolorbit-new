@@ -7,16 +7,13 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::permission::check_permission;
-use crate::db::school_mapping::get_school_database_url;
-use crate::utils::{
-    field_encryption,
-    subdomain::extract_subdomain_from_request,
-};
+use crate::utils::{field_encryption, subdomain::extract_subdomain_from_request};
+use crate::AppState;
 use ::bcrypt::hash;
 use ::bcrypt::DEFAULT_COST;
-use crate::AppState;
 
 use super::models::CreateParentRequest;
 
@@ -41,7 +38,8 @@ pub async fn add_parent_to_student(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager
+    let pool = state
+        .pool_manager
         .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
@@ -50,7 +48,9 @@ pub async fn add_parent_to_student(
         })?;
 
     // Check permission against tenant pool
-    if let Err(e) = check_permission(&headers, &pool, "student.update", &state.permission_cache).await {
+    if let Err(e) =
+        check_permission(&headers, &pool, "student.update", &state.permission_cache).await
+    {
         return Ok(e.into_response());
     }
 
@@ -74,28 +74,21 @@ pub async fn add_parent_to_student(
         pid
     } else {
         // Create new parent user
-        let parent_password_hash =
-            hash(&payload.phone, DEFAULT_COST).map_err(|e| {
-                eprintln!("❌ Parent password hashing failed: {}", e);
-                AppError::InternalServerError(
-                    "เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string(),
-                )
-            })?;
+        let parent_password_hash = hash(&payload.phone, DEFAULT_COST).map_err(|e| {
+            eprintln!("❌ Parent password hashing failed: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string())
+        })?;
 
         // Encrypt parent national id if provided
         let (parent_enc_nid, parent_nid_hash) = if let Some(nid) = &payload.national_id {
             if !nid.is_empty() {
                 let enc = field_encryption::encrypt(nid).map_err(|e| {
                     eprintln!("❌ Parent Encryption failed: {}", e);
-                    AppError::InternalServerError(
-                        "เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string(),
-                    )
+                    AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
                 })?;
                 let hash = field_encryption::hash_for_search(nid).map_err(|e| {
                     eprintln!("❌ Parent blind index failed: {}", e);
-                    AppError::InternalServerError(
-                        "เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string(),
-                    )
+                    AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
                 })?;
                 (Some(enc), Some(hash))
             } else {
@@ -182,7 +175,8 @@ pub async fn add_parent_to_student(
     Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": {}, "message": "เพิ่มผู้ปกครองสำเร็จ" })),
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// DELETE /api/students/:id/parents/:parentId - ลบความสัมพันธ์ผู้ปกครอง
@@ -201,7 +195,8 @@ pub async fn remove_parent_from_student(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager
+    let pool = state
+        .pool_manager
         .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
@@ -210,30 +205,32 @@ pub async fn remove_parent_from_student(
         })?;
 
     // Check permission against tenant pool
-    if let Err(e) = check_permission(&headers, &pool, "student.update", &state.permission_cache).await {
+    if let Err(e) =
+        check_permission(&headers, &pool, "student.update", &state.permission_cache).await
+    {
         return Ok(e.into_response());
     }
 
     // Delete from student_parents table
-    let result =
-        sqlx::query("DELETE FROM student_parents WHERE student_user_id = $1 AND parent_user_id = $2")
-            .bind(student_id)
-            .bind(parent_id)
-            .execute(&pool)
-            .await
-            .map_err(|e| {
-                eprintln!("❌ Failed to remove parent link: {}", e);
-                AppError::InternalServerError("ไม่สามารถลบผู้ปกครองได้".to_string())
-            })?;
+    let result = sqlx::query(
+        "DELETE FROM student_parents WHERE student_user_id = $1 AND parent_user_id = $2",
+    )
+    .bind(student_id)
+    .bind(parent_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("❌ Failed to remove parent link: {}", e);
+        AppError::InternalServerError("ไม่สามารถลบผู้ปกครองได้".to_string())
+    })?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound(
-            "ไม่พบข้อมูลความสัมพันธ์ผู้ปกครอง".to_string(),
-        ));
+        return Err(AppError::NotFound("ไม่พบข้อมูลความสัมพันธ์ผู้ปกครอง".to_string()));
     }
 
     Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": {}, "message": "ลบผู้ปกครองสำเร็จ" })),
-    ).into_response())
+    )
+        .into_response())
 }

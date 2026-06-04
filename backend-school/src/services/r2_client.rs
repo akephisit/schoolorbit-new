@@ -20,18 +20,15 @@ impl R2Config {
     /// Load configuration from environment variables
     pub fn from_env() -> Result<Self, String> {
         Ok(Self {
-            account_id: env::var("R2_ACCOUNT_ID")
-                .map_err(|_| "R2_ACCOUNT_ID not set")?,
-            access_key_id: env::var("R2_ACCESS_KEY_ID")
-                .map_err(|_| "R2_ACCESS_KEY_ID not set")?,
+            account_id: env::var("R2_ACCOUNT_ID").map_err(|_| "R2_ACCOUNT_ID not set")?,
+            access_key_id: env::var("R2_ACCESS_KEY_ID").map_err(|_| "R2_ACCESS_KEY_ID not set")?,
             secret_access_key: env::var("R2_SECRET_ACCESS_KEY")
                 .map_err(|_| "R2_SECRET_ACCESS_KEY not set")?,
-            bucket_name: env::var("R2_BUCKET_NAME")
-                .map_err(|_| "R2_BUCKET_NAME not set")?,
+            bucket_name: env::var("R2_BUCKET_NAME").map_err(|_| "R2_BUCKET_NAME not set")?,
             region: env::var("R2_REGION").unwrap_or_else(|_| "auto".to_string()),
         })
     }
-    
+
     /// Get the R2 endpoint URL
     pub fn endpoint_url(&self) -> String {
         format!("https://{}.r2.cloudflarestorage.com", self.account_id)
@@ -48,11 +45,11 @@ impl R2Client {
     /// Create a new R2Client
     pub async fn new() -> Result<Self, String> {
         let config = R2Config::from_env()?;
-        
+
         info!("Initializing R2 Client...");
         info!("Endpoint: {}", config.endpoint_url());
         info!("Bucket: {}", config.bucket_name);
-        
+
         // Create AWS credentials
         let credentials = Credentials::new(
             &config.access_key_id,
@@ -61,30 +58,30 @@ impl R2Client {
             None,
             "r2-client",
         );
-        
+
         // Setup region
         let region = Region::new(config.region.clone());
         let region_provider = RegionProviderChain::default_provider().or_else(region);
-        
+
         // Build S3 config for R2
         let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(region_provider)
             .credentials_provider(credentials)
             .load()
             .await;
-        
+
         let s3_config = aws_sdk_s3::config::Builder::from(&aws_config)
             .endpoint_url(config.endpoint_url())
             .force_path_style(true)
             .build();
-        
+
         let client = S3Client::from_conf(s3_config);
-        
+
         info!("R2 Client initialized successfully");
-        
+
         Ok(Self { client, config })
     }
-    
+
     /// Upload a file to R2
     ///
     /// # Arguments
@@ -101,9 +98,9 @@ impl R2Client {
         content_type: &str,
     ) -> Result<(), String> {
         info!("Uploading file to R2: {}", key);
-        
+
         let body = ByteStream::from(data);
-        
+
         self.client
             .put_object()
             .bucket(&self.config.bucket_name)
@@ -116,18 +113,18 @@ impl R2Client {
                 error!("Failed to upload file to R2: {}", e);
                 format!("Failed to upload file: {}", e)
             })?;
-        
+
         info!("File uploaded successfully: {}", key);
         Ok(())
     }
-    
+
     /// Delete a file from R2
     ///
     /// # Arguments
     /// * `key` - Storage path
     pub async fn delete_file(&self, key: &str) -> Result<(), String> {
         info!("Deleting file from R2: {}", key);
-        
+
         self.client
             .delete_object()
             .bucket(&self.config.bucket_name)
@@ -138,17 +135,16 @@ impl R2Client {
                 error!("Failed to delete file from R2: {}", e);
                 format!("Failed to delete file: {}", e)
             })?;
-        
+
         info!("File deleted successfully: {}", key);
         Ok(())
     }
-    
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_r2_config_endpoint_url() {
         let config = R2Config {
@@ -158,7 +154,7 @@ mod tests {
             bucket_name: "test-bucket".to_string(),
             region: "auto".to_string(),
         };
-        
+
         assert_eq!(
             config.endpoint_url(),
             "https://test123.r2.cloudflarestorage.com"

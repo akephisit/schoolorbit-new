@@ -18,9 +18,13 @@ use super::super::models::study_plans::*;
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
@@ -55,7 +59,10 @@ pub async fn create_study_plan(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let plan = study_plan_service::create_plan(&pool, req).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": plan }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": plan })),
+    ))
 }
 
 pub async fn update_study_plan(
@@ -110,7 +117,10 @@ pub async fn create_study_plan_version(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let version = study_plan_service::create_version(&pool, req).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": version }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": version })),
+    ))
 }
 
 pub async fn update_study_plan_version(
@@ -156,7 +166,9 @@ pub async fn add_subjects_to_version(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let count = study_plan_service::add_subjects_to_version(&pool, version_id, req).await?;
-    Ok(Json(json!({ "success": true, "data": { "count": count }, "message": "Subjects added successfully" })))
+    Ok(Json(
+        json!({ "success": true, "data": { "count": count }, "message": "Subjects added successfully" }),
+    ))
 }
 
 pub async fn delete_study_plan_subject(
@@ -179,18 +191,22 @@ pub async fn generate_courses_from_plan(
     Json(req): Json<GenerateCoursesFromPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
+        .await
+        .ok();
 
     let result = study_plan_service::generate_courses_from_plan(&pool, req, user_id).await?;
 
-    Ok(Json(json!({ "success": true, "data": { "items": GenerateCoursesResponse {
+    Ok(Json(
+        json!({ "success": true, "data": { "items": GenerateCoursesResponse {
             added_count: result.courses_created,
             skipped_count: result.courses_skipped,
             message: format!(
                 "Added {} courses, skipped {} existing courses; Added {} activities, skipped {}",
                 result.courses_created, result.courses_skipped, result.activities_created, result.activities_skipped
             ),
-        }, "courses_created": result.courses_created, "courses_skipped": result.courses_skipped, "activities_created": result.activities_created, "activities_skipped": result.activities_skipped } })))
+        }, "courses_created": result.courses_created, "courses_skipped": result.courses_skipped, "activities_created": result.activities_created, "activities_skipped": result.activities_skipped } }),
+    ))
 }
 
 // ============================================
@@ -215,7 +231,10 @@ pub async fn add_plan_activity(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let row = study_plan_service::add_plan_activity(&pool, version_id, req).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": row }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": row })),
+    ))
 }
 
 pub async fn update_plan_activity(
@@ -245,9 +264,14 @@ pub async fn generate_activities_from_plan(
     Json(req): Json<GenerateActivitiesFromPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
-    let (created, skipped, total) = study_plan_service::generate_activities_from_plan(&pool, req, user_id).await?;
-    Ok(Json(json!({ "success": true, "data": { "created": created, "skipped": skipped, "total_templates": total } })))
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
+        .await
+        .ok();
+    let (created, skipped, total) =
+        study_plan_service::generate_activities_from_plan(&pool, req, user_id).await?;
+    Ok(Json(
+        json!({ "success": true, "data": { "created": created, "skipped": skipped, "total_templates": total } }),
+    ))
 }
 
 // ============================================
@@ -272,7 +296,10 @@ pub async fn create_activity_catalog(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let row = study_plan_service::create_activity_catalog(&pool, req).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": row }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": row })),
+    ))
 }
 
 pub async fn update_activity_catalog(
@@ -318,7 +345,13 @@ pub async fn add_catalog_default_instructor(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     let role = body.role.unwrap_or_else(|| "secondary".to_string());
-    study_plan_service::add_catalog_default_instructor(&pool, catalog_id, body.instructor_id, &role).await?;
+    study_plan_service::add_catalog_default_instructor(
+        &pool,
+        catalog_id,
+        body.instructor_id,
+        &role,
+    )
+    .await?;
     Ok(Json(json!({ "success": true, "data": {} })))
 }
 
@@ -339,6 +372,12 @@ pub async fn update_catalog_default_instructor_role(
     Json(body): Json<UpdateCatalogDefaultInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    study_plan_service::update_catalog_default_instructor_role(&pool, catalog_id, instructor_id, &body.role).await?;
+    study_plan_service::update_catalog_default_instructor_role(
+        &pool,
+        catalog_id,
+        instructor_id,
+        &body.role,
+    )
+    .await?;
     Ok(Json(json!({ "success": true, "data": {} })))
 }

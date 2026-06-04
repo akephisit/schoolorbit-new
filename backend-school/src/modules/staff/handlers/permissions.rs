@@ -17,10 +17,7 @@ use std::collections::HashMap;
 // List All Permissions
 // ===================================================================
 
-pub async fn list_permissions(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn list_permissions(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let subdomain = match extract_subdomain_from_request(&headers) {
         Ok(s) => s,
         Err(response) => return response,
@@ -51,13 +48,20 @@ pub async fn list_permissions(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, codes::SETTINGS_READ, &state.permission_cache).await {
+    let _user = match check_permission(
+        &headers,
+        &pool,
+        codes::SETTINGS_READ,
+        &state.permission_cache,
+    )
+    .await
+    {
         Ok(u) => u,
         Err(response) => return response,
     };
 
     let permissions = match sqlx::query_as::<_, Permission>(
-        "SELECT * FROM permissions ORDER BY module, action, code"
+        "SELECT * FROM permissions ORDER BY module, action, code",
     )
     .fetch_all(&pool)
     .await
@@ -118,13 +122,14 @@ pub async fn list_permissions_by_module(
     };
 
     // Check permission
-    let _user = match check_permission(&headers, &pool, "settings.read", &state.permission_cache).await {
-        Ok(u) => u,
-        Err(response) => return response,
-    };
+    let _user =
+        match check_permission(&headers, &pool, "settings.read", &state.permission_cache).await {
+            Ok(u) => u,
+            Err(response) => return response,
+        };
 
     let permissions = match sqlx::query_as::<_, Permission>(
-        "SELECT * FROM permissions ORDER BY module, action, code"
+        "SELECT * FROM permissions ORDER BY module, action, code",
     )
     .fetch_all(&pool)
     .await

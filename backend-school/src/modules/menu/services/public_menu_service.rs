@@ -10,9 +10,11 @@ pub async fn get_user(pool: &PgPool, user_id: Uuid) -> Result<User, AppError> {
                 user_type, phone, date_of_birth, address, status, metadata, created_at, updated_at,
                 title, nickname, emergency_contact, line_id, gender, profile_image_url,
                 hired_date, resigned_date
-         FROM users WHERE id = $1"
+         FROM users WHERE id = $1",
     )
-    .bind(user_id).fetch_one(pool).await
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
     .map_err(|e| {
         eprintln!("Failed to get user: {}", e);
         AppError::InternalServerError(format!("Database error: {}", e))
@@ -27,8 +29,17 @@ pub async fn get_user(pool: &PgPool, user_id: Uuid) -> Result<User, AppError> {
 }
 
 pub type MenuRow = (
-    Uuid, String, String, String, Option<String>, Option<String>,
-    String, String, Option<String>, i32, i32,
+    Uuid,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    Option<String>,
+    i32,
+    i32,
 );
 
 pub async fn fetch_menu_items(pool: &PgPool, user_type: &str) -> Result<Vec<MenuRow>, AppError> {
@@ -39,9 +50,11 @@ pub async fn fetch_menu_items(pool: &PgPool, user_type: &str) -> Result<Vec<Menu
            FROM menu_items mi
            JOIN menu_groups mg ON mi.group_id = mg.id
            WHERE mi.is_active = true AND mg.is_active = true AND mi.user_type = $1
-           ORDER BY mg.display_order, mi.display_order"#
+           ORDER BY mg.display_order, mi.display_order"#,
     )
-    .bind(user_type).fetch_all(pool).await
+    .bind(user_type)
+    .fetch_all(pool)
+    .await
     .map_err(|e| {
         eprintln!("Failed to fetch menu items: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลเมนูได้".to_string())

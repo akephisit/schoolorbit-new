@@ -11,8 +11,8 @@ use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::permission::check_permission;
 use crate::modules::academic::models::course_planning::{
-    AddCourseInstructorRequest, AssignCoursesRequest, PlanQuery,
-    UpdateCourseInstructorRoleRequest, UpdateCourseRequest,
+    AddCourseInstructorRequest, AssignCoursesRequest, PlanQuery, UpdateCourseInstructorRoleRequest,
+    UpdateCourseRequest,
 };
 use crate::modules::academic::services::course_planning_service;
 use crate::modules::academic::websockets::TimetableEvent;
@@ -23,19 +23,35 @@ use crate::AppState;
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
-async fn broadcast_course_refresh(state: &AppState, headers: &HeaderMap, pool: &sqlx::PgPool, course_id: Uuid) {
+async fn broadcast_course_refresh(
+    state: &AppState,
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    course_id: Uuid,
+) {
     if let Some(sem_id) = course_planning_service::get_course_semester_id(pool, course_id).await {
-        let user_id = crate::middleware::auth::extract_user_id(headers, pool).await.ok();
-        let subdomain = extract_subdomain_from_request(headers).unwrap_or_else(|_| "default".to_string());
+        let user_id = crate::middleware::auth::extract_user_id(headers, pool)
+            .await
+            .ok();
+        let subdomain =
+            extract_subdomain_from_request(headers).unwrap_or_else(|_| "default".to_string());
         state.websocket_manager.broadcast_mutation(
-            subdomain, sem_id,
-            TimetableEvent::CourseTeamChanged { user_id: user_id.unwrap_or_default(), course_id },
+            subdomain,
+            sem_id,
+            TimetableEvent::CourseTeamChanged {
+                user_id: user_id.unwrap_or_default(),
+                course_id,
+            },
         );
     }
 }
@@ -46,7 +62,14 @@ pub async fn list_classroom_courses(
     Query(query): Query<PlanQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let courses = course_planning_service::list_classroom_courses(&pool, &query).await?;
@@ -59,11 +82,21 @@ pub async fn assign_courses(
     Json(payload): Json<AssignCoursesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let added = course_planning_service::assign_courses(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": format!("Assigned {} courses", added) })).into_response())
+    Ok(Json(
+        json!({ "success": true, "data": {}, "message": format!("Assigned {} courses", added) }),
+    )
+    .into_response())
 }
 
 pub async fn remove_course(
@@ -72,7 +105,14 @@ pub async fn remove_course(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     course_planning_service::remove_course(&pool, id).await?;
@@ -86,7 +126,14 @@ pub async fn update_course(
     Json(payload): Json<UpdateCourseRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     course_planning_service::update_course(&pool, id, payload).await?;
@@ -104,11 +151,21 @@ pub async fn batch_list_course_instructors(
     Query(query): Query<BatchListCourseInstructorsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let ids: Vec<Uuid> = query.course_ids.split(',')
-        .filter_map(|s| s.trim().parse::<Uuid>().ok()).collect();
+    let ids: Vec<Uuid> = query
+        .course_ids
+        .split(',')
+        .filter_map(|s| s.trim().parse::<Uuid>().ok())
+        .collect();
     let grouped = course_planning_service::batch_list_course_instructors(&pool, &ids).await?;
     Ok(Json(json!({ "success": true, "data": grouped })).into_response())
 }
@@ -119,7 +176,14 @@ pub async fn list_course_instructors(
     Path(course_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rows = course_planning_service::list_course_instructors(&pool, course_id).await?;
@@ -133,11 +197,19 @@ pub async fn add_course_instructor(
     Json(body): Json<AddCourseInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let role = body.role.unwrap_or_else(|| "secondary".to_string());
-    course_planning_service::add_course_instructor(&pool, course_id, body.instructor_id, &role).await?;
+    course_planning_service::add_course_instructor(&pool, course_id, body.instructor_id, &role)
+        .await?;
     broadcast_course_refresh(&state, &headers, &pool, course_id).await;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
@@ -148,7 +220,14 @@ pub async fn remove_course_instructor(
     Path((course_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     course_planning_service::remove_course_instructor(&pool, course_id, instructor_id).await?;
@@ -163,10 +242,23 @@ pub async fn update_course_instructor_role(
     Json(body): Json<UpdateCourseInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    course_planning_service::update_course_instructor_role(&pool, course_id, instructor_id, &body.role).await?;
+    course_planning_service::update_course_instructor_role(
+        &pool,
+        course_id,
+        instructor_id,
+        &body.role,
+    )
+    .await?;
     broadcast_course_refresh(&state, &headers, &pool, course_id).await;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
@@ -194,10 +286,19 @@ pub async fn list_classroom_activities(
     Query(query): Query<ClassroomActivityQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let rows = course_planning_service::list_classroom_activities(&pool, classroom_id, query.semester_id).await?;
+    let rows =
+        course_planning_service::list_classroom_activities(&pool, classroom_id, query.semester_id)
+            .await?;
     Ok(Json(json!({ "success": true, "data": rows })).into_response())
 }
 
@@ -207,7 +308,14 @@ pub async fn remove_classroom_from_slot(
     Path((classroom_id, slot_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     course_planning_service::remove_classroom_from_slot(&pool, classroom_id, slot_id).await?;

@@ -22,7 +22,7 @@ pub struct User {
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    
+
     // Additional fields from migration 005
     pub title: Option<String>,
     pub nickname: Option<String>,
@@ -97,13 +97,13 @@ pub struct UserResponse {
     pub phone: Option<String>,
     pub status: String,
     pub created_at: DateTime<Utc>,
-    
+
     // Primary role name from roles table (if exists)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_role_name: Option<String>,
-    
+
     pub profile_image_url: Option<String>,
-    
+
     // User permissions
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permissions: Option<Vec<String>>,
@@ -143,11 +143,11 @@ pub struct ProfileResponse {
     pub status: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    
+
     // Primary role (read-only)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_role_name: Option<String>,
-    
+
     // Editable fields
     pub title: Option<String>,
     pub nickname: Option<String>,
@@ -200,9 +200,9 @@ pub struct LoginData {
 // JWT Claims
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,           // user_id
-    pub username: String,      // Changed from national_id
+    pub sub: String,      // user_id
+    pub username: String, // Changed from national_id
     pub user_type: String,
-    pub exp: i64,              // Expiry timestamp
-    pub iat: i64,              // Issued at timestamp
+    pub exp: i64, // Expiry timestamp
+    pub iat: i64, // Issued at timestamp
 }

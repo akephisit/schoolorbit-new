@@ -259,7 +259,6 @@ pub struct SubmitApplicationRequest {
     pub mother_income: Option<f64>,
     pub parent_status: Option<serde_json::Value>,
     pub parent_status_other: Option<String>,
-
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]

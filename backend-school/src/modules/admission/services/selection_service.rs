@@ -265,16 +265,14 @@ pub async fn get_round_ranking(
         let ranked: Vec<RoundRankingEntry> = rows
             .into_iter()
             .enumerate()
-            .map(|(i, row)| {
-                RoundRankingEntry {
-                    rank: i + 1,
-                    application_id: row.application_id,
-                    application_number: row.application_number,
-                    national_id: row.national_id,
-                    full_name: row.full_name,
-                    total_score: row.total_score.unwrap_or(0.0),
-                    selection_score: row.selection_score.unwrap_or(0.0),
-                }
+            .map(|(i, row)| RoundRankingEntry {
+                rank: i + 1,
+                application_id: row.application_id,
+                application_number: row.application_number,
+                national_id: row.national_id,
+                full_name: row.full_name,
+                total_score: row.total_score.unwrap_or(0.0),
+                selection_score: row.selection_score.unwrap_or(0.0),
             })
             .collect();
 
@@ -419,21 +417,24 @@ pub async fn get_track_ranking(
             let selection_rank = (sel_i + 1) as i64;
 
             let room_saved = row.saved_room_id.is_some();
-            let (assigned_room, assigned_room_id) = if let (Some(name), Some(id)) = (&row.saved_room_name, &row.saved_room_id) {
-                (Some(name.clone()), Some(*id))
-            } else if rooms.is_empty() {
-                (None, None)
-            } else {
-                let (ri, _rir) = room_slots[final_i];
-                (Some(rooms[ri].room_name.clone()), Some(rooms[ri].room_id))
-            };
+            let (assigned_room, assigned_room_id) =
+                if let (Some(name), Some(id)) = (&row.saved_room_name, &row.saved_room_id) {
+                    (Some(name.clone()), Some(*id))
+                } else if rooms.is_empty() {
+                    (None, None)
+                } else {
+                    let (ri, _rir) = room_slots[final_i];
+                    (Some(rooms[ri].room_name.clone()), Some(rooms[ri].room_id))
+                };
 
             if let Some(rid) = assigned_room_id {
                 let entry = room_stats.entry(rid.to_string()).or_insert((0, 0, 0));
                 entry.0 += 1;
                 match row.gender.as_deref() {
                     Some(g) if g.eq_ignore_ascii_case("male") || g == "ชาย" => entry.1 += 1,
-                    Some(g) if g.eq_ignore_ascii_case("female") || g == "หญิง" => entry.2 += 1,
+                    Some(g) if g.eq_ignore_ascii_case("female") || g == "หญิง" => {
+                        entry.2 += 1
+                    }
                     _ => {}
                 }
             }
@@ -453,7 +454,11 @@ pub async fn get_track_ranking(
                 room_saved,
                 is_overflow: false,
                 is_track_overridden: is_overridden,
-                original_track_name: if is_overridden { row.original_track_name } else { None },
+                original_track_name: if is_overridden {
+                    row.original_track_name
+                } else {
+                    None
+                },
                 gender: row.gender,
             }
         })
@@ -477,7 +482,11 @@ pub async fn get_track_ranking(
                 room_saved: false,
                 is_overflow: true,
                 is_track_overridden: is_overridden,
-                original_track_name: if is_overridden { row.original_track_name } else { None },
+                original_track_name: if is_overridden {
+                    row.original_track_name
+                } else {
+                    None
+                },
                 gender: row.gender,
             }
         })
@@ -489,18 +498,21 @@ pub async fn get_track_ranking(
     Ok(TrackRankingResult {
         track_id,
         track_name,
-        rooms: rooms.iter().map(|r| {
-            let room_id = r.room_id.to_string();
-            let (total, male, female) = room_stats.get(&room_id).copied().unwrap_or((0, 0, 0));
-            RankingRoomSummary {
-                room_id,
-                room_name: r.room_name.clone(),
-                capacity: r.capacity,
-                student_count: total,
-                male_count: male,
-                female_count: female,
-            }
-        }).collect(),
+        rooms: rooms
+            .iter()
+            .map(|r| {
+                let room_id = r.room_id.to_string();
+                let (total, male, female) = room_stats.get(&room_id).copied().unwrap_or((0, 0, 0));
+                RankingRoomSummary {
+                    room_id,
+                    room_name: r.room_name.clone(),
+                    capacity: r.capacity,
+                    student_count: total,
+                    male_count: male,
+                    female_count: female,
+                }
+            })
+            .collect(),
         applications: all_apps,
     })
 }

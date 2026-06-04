@@ -3,21 +3,25 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 pub async fn get_active_year_id(pool: &PgPool) -> Result<Uuid, AppError> {
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
-        .fetch_optional(pool).await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let id: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     id.ok_or_else(|| AppError::NotFound("Active academic year not found".to_string()))
 }
 
 pub async fn get_active_year_id_tx(tx: &mut sqlx::PgConnection) -> Result<Uuid, AppError> {
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
-        .fetch_optional(&mut *tx).await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let id: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM academic_years WHERE is_active = true LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     id.ok_or_else(|| AppError::NotFound("Active academic year not found".to_string()))
 }
 
 use crate::modules::academic::handlers::scheduling_config::{
-    ClassroomCourseConstraintView, CcPreferredRoomView, InstructorConstraintView, RoomView,
+    CcPreferredRoomView, ClassroomCourseConstraintView, InstructorConstraintView, RoomView,
     SubjectConstraintView,
 };
 
@@ -64,7 +68,7 @@ pub async fn list_classroom_course_constraints(
         LEFT JOIN primary_instr pi ON pi.classroom_course_id = cc.id
         LEFT JOIN users u ON u.id = pi.instructor_id
         LEFT JOIN team_unavail tu ON tu.classroom_course_id = cc.id
-        WHERE sem.academic_year_id = $1"#
+        WHERE sem.academic_year_id = $1"#,
     );
 
     if instructor_id.is_some() {
@@ -73,18 +77,31 @@ pub async fn list_classroom_course_constraints(
     sql.push_str(" ORDER BY cls.name, s.code");
 
     let q = sqlx::query_as::<_, ClassroomCourseConstraintView>(&sql).bind(year_id);
-    let result = if let Some(iid) = instructor_id { q.bind(iid).fetch_all(pool).await } else { q.fetch_all(pool).await };
+    let result = if let Some(iid) = instructor_id {
+        q.bind(iid).fetch_all(pool).await
+    } else {
+        q.fetch_all(pool).await
+    };
     result.map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
-pub async fn validate_consecutive_pattern(pool: &PgPool, cc_id: Uuid, pattern: &serde_json::Value) -> Result<(), AppError> {
-    let arr = pattern.as_array()
+pub async fn validate_consecutive_pattern(
+    pool: &PgPool,
+    cc_id: Uuid,
+    pattern: &serde_json::Value,
+) -> Result<(), AppError> {
+    let arr = pattern
+        .as_array()
         .ok_or_else(|| AppError::BadRequest("consecutive_pattern ต้องเป็น array".to_string()))?;
     let mut sum: i64 = 0;
     for v in arr {
-        let n = v.as_i64().ok_or_else(|| AppError::BadRequest("consecutive_pattern มีค่าที่ไม่ใช่ตัวเลข".to_string()))?;
+        let n = v
+            .as_i64()
+            .ok_or_else(|| AppError::BadRequest("consecutive_pattern มีค่าที่ไม่ใช่ตัวเลข".to_string()))?;
         if !(1..=20).contains(&n) {
-            return Err(AppError::BadRequest("consecutive_pattern แต่ละค่าต้องอยู่ระหว่าง 1-20".to_string()));
+            return Err(AppError::BadRequest(
+                "consecutive_pattern แต่ละค่าต้องอยู่ระหว่าง 1-20".to_string(),
+            ));
         }
         sum += n;
     }
@@ -99,7 +116,8 @@ pub async fn validate_consecutive_pattern(pool: &PgPool, cc_id: Uuid, pattern: &
     if let Some(ppw) = pw {
         if sum != ppw as i64 {
             return Err(AppError::BadRequest(format!(
-                "ผลรวมของ pattern ({}) ต้องเท่ากับ periods_per_week ของวิชา ({})", sum, ppw
+                "ผลรวมของ pattern ({}) ต้องเท่ากับ periods_per_week ของวิชา ({})",
+                sum, ppw
             )));
         }
     }
@@ -107,7 +125,8 @@ pub async fn validate_consecutive_pattern(pool: &PgPool, cc_id: Uuid, pattern: &
 }
 
 pub async fn update_classroom_course_constraints(
-    pool: &PgPool, cc_id: Uuid,
+    pool: &PgPool,
+    cc_id: Uuid,
     consecutive_pattern: Option<serde_json::Value>,
     same_day_unique: Option<bool>,
     hard_unavailable_slots: Option<serde_json::Value>,
@@ -118,15 +137,22 @@ pub async fn update_classroom_course_constraints(
             same_day_unique = COALESCE($3, same_day_unique),
             hard_unavailable_slots = COALESCE($4, hard_unavailable_slots),
             updated_at = NOW()
-           WHERE id = $1"#
+           WHERE id = $1"#,
     )
-    .bind(cc_id).bind(consecutive_pattern).bind(same_day_unique).bind(hard_unavailable_slots)
-    .execute(pool).await
+    .bind(cc_id)
+    .bind(consecutive_pattern)
+    .bind(same_day_unique)
+    .bind(hard_unavailable_slots)
+    .execute(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
 }
 
-pub async fn list_cc_preferred_rooms(pool: &PgPool, cc_id: Uuid) -> Result<Vec<CcPreferredRoomView>, AppError> {
+pub async fn list_cc_preferred_rooms(
+    pool: &PgPool,
+    cc_id: Uuid,
+) -> Result<Vec<CcPreferredRoomView>, AppError> {
     sqlx::query_as::<_, CcPreferredRoomView>(
         r#"SELECT pr.id, pr.classroom_course_id, pr.room_id,
                   r.code AS room_code, r.name_th AS room_name,
@@ -134,20 +160,28 @@ pub async fn list_cc_preferred_rooms(pool: &PgPool, cc_id: Uuid) -> Result<Vec<C
            FROM classroom_course_preferred_rooms pr
            JOIN rooms r ON r.id = pr.room_id
            WHERE pr.classroom_course_id = $1
-           ORDER BY pr.rank ASC"#
+           ORDER BY pr.rank ASC"#,
     )
-    .bind(cc_id).fetch_all(pool).await
+    .bind(cc_id)
+    .fetch_all(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
 pub async fn set_cc_preferred_rooms(
-    pool: &PgPool, cc_id: Uuid,
+    pool: &PgPool,
+    cc_id: Uuid,
     rooms: Vec<(Uuid, i32, bool)>,
 ) -> Result<usize, AppError> {
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     sqlx::query("DELETE FROM classroom_course_preferred_rooms WHERE classroom_course_id = $1")
-        .bind(cc_id).execute(&mut *tx).await
+        .bind(cc_id)
+        .execute(&mut *tx)
+        .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     if !rooms.is_empty() {
@@ -166,19 +200,24 @@ pub async fn set_cc_preferred_rooms(
     }
 
     let count = rooms.len();
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(count)
 }
 
 pub async fn list_all_rooms(pool: &PgPool) -> Result<Vec<RoomView>, AppError> {
     sqlx::query_as::<_, RoomView>(
-        "SELECT id, code, name_th, room_type FROM rooms WHERE status = 'ACTIVE' ORDER BY code"
+        "SELECT id, code, name_th, room_type FROM rooms WHERE status = 'ACTIVE' ORDER BY code",
     )
-    .fetch_all(pool).await
+    .fetch_all(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
-pub async fn list_instructor_constraints(pool: &PgPool) -> Result<Vec<InstructorConstraintView>, AppError> {
+pub async fn list_instructor_constraints(
+    pool: &PgPool,
+) -> Result<Vec<InstructorConstraintView>, AppError> {
     let year_id = get_active_year_id(pool).await?;
     sqlx::query_as::<_, InstructorConstraintView>(
         r#"WITH primary_counts AS (
@@ -206,7 +245,10 @@ pub async fn list_instructor_constraints(pool: &PgPool) -> Result<Vec<Instructor
     .map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
-pub async fn reorder_instructor_priority(pool: &PgPool, instructor_ids: Vec<Uuid>) -> Result<usize, AppError> {
+pub async fn reorder_instructor_priority(
+    pool: &PgPool,
+    instructor_ids: Vec<Uuid>,
+) -> Result<usize, AppError> {
     if instructor_ids.is_empty() {
         return Ok(0);
     }
@@ -218,19 +260,23 @@ pub async fn reorder_instructor_priority(pool: &PgPool, instructor_ids: Vec<Uuid
            SELECT instr_id, $2, prio
            FROM UNNEST($1::uuid[], $3::int[]) AS t(instr_id, prio)
            ON CONFLICT (instructor_id, academic_year_id)
-           DO UPDATE SET priority = EXCLUDED.priority, updated_at = NOW()"#
+           DO UPDATE SET priority = EXCLUDED.priority, updated_at = NOW()"#,
     )
-    .bind(&instructor_ids).bind(year_id).bind(&priorities)
-    .execute(pool).await
+    .bind(&instructor_ids)
+    .bind(year_id)
+    .bind(&priorities)
+    .execute(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(instructor_ids.len())
 }
 
 pub async fn get_scheduler_settings(pool: &PgPool) -> Result<i32, AppError> {
     let rows = sqlx::query_as::<_, (String, serde_json::Value)>(
-        "SELECT key, value FROM scheduler_settings"
+        "SELECT key, value FROM scheduler_settings",
     )
-    .fetch_all(pool).await
+    .fetch_all(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let mut default_max_consecutive: i32 = 4;
@@ -242,10 +288,15 @@ pub async fn get_scheduler_settings(pool: &PgPool) -> Result<i32, AppError> {
     Ok(default_max_consecutive)
 }
 
-pub async fn update_scheduler_settings(pool: &PgPool, default_max_consecutive: Option<i32>) -> Result<(), AppError> {
+pub async fn update_scheduler_settings(
+    pool: &PgPool,
+    default_max_consecutive: Option<i32>,
+) -> Result<(), AppError> {
     if let Some(v) = default_max_consecutive {
         if !(1..=20).contains(&v) {
-            return Err(AppError::BadRequest("default_max_consecutive ต้องอยู่ระหว่าง 1-20".to_string()));
+            return Err(AppError::BadRequest(
+                "default_max_consecutive ต้องอยู่ระหว่าง 1-20".to_string(),
+            ));
         }
         sqlx::query(
             "INSERT INTO scheduler_settings (key, value) VALUES ('default_max_consecutive', $1::jsonb)
@@ -258,7 +309,8 @@ pub async fn update_scheduler_settings(pool: &PgPool, default_max_consecutive: O
 }
 
 pub async fn update_instructor_constraints(
-    pool: &PgPool, instructor_id: Uuid,
+    pool: &PgPool,
+    instructor_id: Uuid,
     hard_unavailable_slots: Option<serde_json::Value>,
     max_periods_per_day: Option<i32>,
     preferred_slots: Option<serde_json::Value>,
@@ -266,7 +318,10 @@ pub async fn update_instructor_constraints(
     assigned_room_id: Option<Uuid>,
     clear_assigned_room: bool,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     let year_id = get_active_year_id_tx(&mut *tx).await?;
 
     sqlx::query(
@@ -283,12 +338,16 @@ pub async fn update_instructor_constraints(
                max_periods_per_day = COALESCE($4, instructor_preferences.max_periods_per_day),
                preferred_slots = COALESCE($5, instructor_preferences.preferred_slots),
                priority = COALESCE($6, instructor_preferences.priority),
-               updated_at = NOW()"#
+               updated_at = NOW()"#,
     )
-    .bind(instructor_id).bind(year_id)
-    .bind(hard_unavailable_slots).bind(max_periods_per_day)
-    .bind(preferred_slots).bind(priority)
-    .execute(&mut *tx).await
+    .bind(instructor_id)
+    .bind(year_id)
+    .bind(hard_unavailable_slots)
+    .bind(max_periods_per_day)
+    .bind(preferred_slots)
+    .bind(priority)
+    .execute(&mut *tx)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     if let Some(room_id) = assigned_room_id {
@@ -309,24 +368,30 @@ pub async fn update_instructor_constraints(
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
 
-    tx.commit().await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
 }
 
-pub async fn list_subject_constraints(pool: &PgPool) -> Result<Vec<SubjectConstraintView>, AppError> {
+pub async fn list_subject_constraints(
+    pool: &PgPool,
+) -> Result<Vec<SubjectConstraintView>, AppError> {
     sqlx::query_as::<_, SubjectConstraintView>(
         r#"SELECT id, code, name_th as name,
                   COALESCE(min_consecutive_periods, 1) as min_consecutive_periods,
                   max_consecutive_periods, allow_single_period, periods_per_week,
                   allowed_period_ids, allowed_days
-           FROM subjects WHERE is_active = true ORDER BY code"#
+           FROM subjects WHERE is_active = true ORDER BY code"#,
     )
-    .fetch_all(pool).await
+    .fetch_all(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))
 }
 
 pub async fn update_subject_constraints(
-    pool: &PgPool, subject_id: Uuid,
+    pool: &PgPool,
+    subject_id: Uuid,
     min_consecutive_periods: Option<i32>,
     max_consecutive_periods: Option<i32>,
     allow_single_period: Option<bool>,
@@ -341,11 +406,16 @@ pub async fn update_subject_constraints(
             allowed_period_ids = $5,
             allowed_days = $6,
             updated_at = NOW()
-           WHERE id = $1"#
+           WHERE id = $1"#,
     )
-    .bind(subject_id).bind(min_consecutive_periods).bind(max_consecutive_periods)
-    .bind(allow_single_period).bind(allowed_period_ids).bind(allowed_days)
-    .execute(pool).await
+    .bind(subject_id)
+    .bind(min_consecutive_periods)
+    .bind(max_consecutive_periods)
+    .bind(allow_single_period)
+    .bind(allowed_period_ids)
+    .bind(allowed_days)
+    .execute(pool)
+    .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
 }

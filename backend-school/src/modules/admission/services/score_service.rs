@@ -62,9 +62,15 @@ pub async fn get_application_scores(pool: &PgPool, id: Uuid) -> Result<Vec<ExamS
 }
 
 pub async fn update_application_scores(
-    pool: &PgPool, application_id: Uuid, user_id: Uuid, scores: &[UpdateScoreEntry],
+    pool: &PgPool,
+    application_id: Uuid,
+    user_id: Uuid,
+    scores: &[UpdateScoreEntry],
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await.map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     for entry in scores {
         sqlx::query(
@@ -98,12 +104,17 @@ pub async fn update_application_scores(
         .bind(application_id).execute(&mut *tx).await.ok();
     }
 
-    tx.commit().await.map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
     Ok(())
 }
 
 pub async fn bulk_update_scores(
-    pool: &PgPool, round_id: Uuid, user_id: Uuid, entries: &[BulkScoreEntry],
+    pool: &PgPool,
+    round_id: Uuid,
+    user_id: Uuid,
+    entries: &[BulkScoreEntry],
 ) -> Result<usize, AppError> {
     let mut app_ids: Vec<Uuid> = Vec::new();
     let mut sub_ids: Vec<Uuid> = Vec::new();
@@ -145,9 +156,13 @@ pub async fn bulk_update_scores(
                  WHERE esc.application_id = aa.id AND esc.score IS NOT NULL
              ) >= (
                  SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = $2
-             )"#
+             )"#,
     )
-    .bind(&app_id_set).bind(round_id).execute(pool).await.ok();
+    .bind(&app_id_set)
+    .bind(round_id)
+    .execute(pool)
+    .await
+    .ok();
 
     Ok(updated)
 }

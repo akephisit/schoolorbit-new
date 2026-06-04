@@ -1,5 +1,5 @@
-use bcrypt::{hash, verify, DEFAULT_COST};
 use crate::error::AppError;
+use bcrypt::{hash, verify, DEFAULT_COST};
 
 pub fn hash_password(password: &str) -> Result<String, AppError> {
     hash(password, DEFAULT_COST)

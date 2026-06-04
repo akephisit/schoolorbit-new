@@ -10,28 +10,28 @@ pub struct InstructorPreference {
     pub id: Uuid,
     pub instructor_id: Uuid,
     pub academic_year_id: Uuid,
-    
+
     // Unavailable time slots (HARD constraint)
     #[sqlx(default)]
     pub hard_unavailable_slots: serde_json::Value, // Array of {day, period_id}
-    
+
     // Preferred time slots (SOFT constraint)
     #[sqlx(default)]
     pub preferred_slots: serde_json::Value, // Array of {day, period_id}
-    
+
     // Daily load preferences
     pub max_periods_per_day: Option<i32>,
     pub min_periods_per_day: Option<i32>,
-    
+
     // Day preferences
     #[sqlx(default)]
     pub preferred_days: serde_json::Value, // Array of day strings
-    
+
     #[sqlx(default)]
     pub avoid_days: serde_json::Value, // Array of day strings
-    
+
     pub notes: Option<String>,
-    
+
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -63,15 +63,15 @@ pub struct InstructorRoomAssignment {
     pub instructor_id: Uuid,
     pub room_id: Uuid,
     pub academic_year_id: Uuid,
-    
+
     pub is_preferred: Option<bool>,
     pub is_required: Option<bool>,
-    
+
     #[sqlx(default)]
     pub for_subjects: serde_json::Value, // Array of subject codes or empty
-    
+
     pub reason: Option<String>,
-    
+
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -101,24 +101,24 @@ pub enum LockedSlotScope {
 pub struct TimetableLockedSlot {
     pub id: Uuid,
     pub academic_semester_id: Uuid,
-    
+
     pub scope_type: String, // Will be converted to/from LockedSlotScope
-    
+
     #[sqlx(default)]
     pub scope_ids: serde_json::Value, // Array of UUIDs or null
-    
+
     pub subject_id: Uuid,
     pub day_of_week: String,
-    
+
     #[sqlx(default)]
     pub period_ids: serde_json::Value, // Array of period UUIDs
-    
+
     pub room_id: Option<Uuid>,
     pub instructor_id: Option<Uuid>,
-    
+
     pub reason: Option<String>,
     pub locked_by: Option<Uuid>,
-    
+
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -160,32 +160,32 @@ pub enum SchedulingAlgorithm {
 pub struct TimetableSchedulingJob {
     pub id: Uuid,
     pub academic_semester_id: Uuid,
-    
+
     #[sqlx(default)]
     pub classroom_ids: serde_json::Value, // Array of classroom UUIDs
-    
+
     pub algorithm: String, // Will be converted to/from SchedulingAlgorithm
-    
+
     #[sqlx(default)]
     pub config: serde_json::Value, // Scheduling configuration
-    
-    pub status: String, // Will be converted to/from SchedulingStatus
+
+    pub status: String,        // Will be converted to/from SchedulingStatus
     pub progress: Option<i32>, // 0-100
-    
+
     #[sqlx(default)]
     pub quality_score: Option<f32>,
     pub scheduled_courses: Option<i32>,
     pub total_courses: Option<i32>,
-    
+
     #[sqlx(default)]
     pub failed_courses: serde_json::Value, // Array of failed course info
-    
+
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub duration_seconds: Option<i32>,
-    
+
     pub error_message: Option<String>,
-    
+
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -198,7 +198,7 @@ pub struct SchedulingConfig {
     pub allow_partial: Option<bool>,
     pub min_quality_score: Option<f64>,
     pub timeout_seconds: Option<u32>,
-    
+
     // Soft constraint weights (optional overrides)
     pub weight_distribution: Option<f64>,
     pub weight_consecutive: Option<f64>,

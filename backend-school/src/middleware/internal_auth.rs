@@ -12,8 +12,7 @@ pub async fn validate_internal_secret(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, Response> {
-    let expected_secret = env::var("INTERNAL_API_SECRET")
-        .expect("INTERNAL_API_SECRET must be set");
+    let expected_secret = env::var("INTERNAL_API_SECRET").expect("INTERNAL_API_SECRET must be set");
 
     let secret_header = req
         .headers()
@@ -21,9 +20,7 @@ pub async fn validate_internal_secret(
         .and_then(|h| h.to_str().ok());
 
     match secret_header {
-        Some(secret) if secret == expected_secret => {
-            Ok(next.run(req).await)
-        }
+        Some(secret) if secret == expected_secret => Ok(next.run(req).await),
         _ => {
             let error = serde_json::json!({
                 "error": "Unauthorized - Invalid or missing internal secret"
@@ -32,4 +29,3 @@ pub async fn validate_internal_secret(
         }
     }
 }
-

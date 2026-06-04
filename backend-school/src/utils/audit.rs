@@ -223,7 +223,12 @@ pub async fn log_login(
     AuditLogBuilder::new("login", "user")
         .user(user_id, Some(user_email.clone()), None)
         .entity(user_id, Some(user_email))
-        .request_context(ip_address, user_agent, Some("/api/auth/login".to_string()), Some("POST".to_string()))
+        .request_context(
+            ip_address,
+            user_agent,
+            Some("/api/auth/login".to_string()),
+            Some("POST".to_string()),
+        )
         .description("User logged in".to_string())
         .save(pool)
         .await

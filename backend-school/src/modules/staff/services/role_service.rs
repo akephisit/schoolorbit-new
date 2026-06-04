@@ -46,13 +46,10 @@ pub async fn get_role(pool: &PgPool, role_id: Uuid) -> Result<Role, AppError> {
 
 /// สร้าง role ใหม่ + assign permissions ใน transaction
 pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uuid, AppError> {
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to start transaction: {}", e);
-            AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
-        })?;
+    let mut tx = pool.begin().await.map_err(|e| {
+        eprintln!("❌ Failed to start transaction: {}", e);
+        AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
+    })?;
 
     let role_id: Uuid = sqlx::query_scalar(
         "INSERT INTO roles (code, name, name_en, description, user_type, level)
@@ -80,16 +77,15 @@ pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uu
     // Insert permissions if provided
     if let Some(permissions) = &payload.permissions {
         if !permissions.is_empty() {
-            let perm_ids: Vec<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM permissions WHERE code = ANY($1)",
-            )
-            .bind(permissions)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| {
-                eprintln!("❌ Failed to find permissions: {}", e);
-                AppError::InternalServerError("ไม่พบสิทธิ์การใช้งานที่ระบุ".to_string())
-            })?;
+            let perm_ids: Vec<Uuid> =
+                sqlx::query_scalar("SELECT id FROM permissions WHERE code = ANY($1)")
+                    .bind(permissions)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|e| {
+                        eprintln!("❌ Failed to find permissions: {}", e);
+                        AppError::InternalServerError("ไม่พบสิทธิ์การใช้งานที่ระบุ".to_string())
+                    })?;
 
             for perm_id in perm_ids {
                 sqlx::query(
@@ -177,16 +173,15 @@ pub async fn update_role(
             })?;
 
         if !permissions.is_empty() {
-            let perm_ids: Vec<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM permissions WHERE code = ANY($1)",
-            )
-            .bind(permissions)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| {
-                eprintln!("❌ Failed to find permissions: {}", e);
-                AppError::InternalServerError("ไม่พบสิทธิ์การใช้งานที่ระบุ".to_string())
-            })?;
+            let perm_ids: Vec<Uuid> =
+                sqlx::query_scalar("SELECT id FROM permissions WHERE code = ANY($1)")
+                    .bind(permissions)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|e| {
+                        eprintln!("❌ Failed to find permissions: {}", e);
+                        AppError::InternalServerError("ไม่พบสิทธิ์การใช้งานที่ระบุ".to_string())
+                    })?;
 
             for perm_id in perm_ids {
                 sqlx::query(

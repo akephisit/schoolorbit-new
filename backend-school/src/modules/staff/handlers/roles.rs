@@ -45,8 +45,13 @@ pub async fn list_roles(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) =
-        check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(response);
     }
@@ -61,8 +66,13 @@ pub async fn get_role(
     Path(role_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) =
-        check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(response);
     }
@@ -77,8 +87,13 @@ pub async fn create_role(
     Json(payload): Json<CreateRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) =
-        check_permission(&headers, &pool, codes::ROLES_CREATE_ALL, &state.permission_cache).await
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_CREATE_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(response);
     }
@@ -98,8 +113,13 @@ pub async fn update_role(
     Json(payload): Json<UpdateRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) =
-        check_permission(&headers, &pool, codes::ROLES_UPDATE_ALL, &state.permission_cache).await
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_UPDATE_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(response);
     }
@@ -109,8 +129,7 @@ pub async fn update_role(
     // Role permissions changed — every user with this role has stale cache
     state.permission_cache.clear_all();
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตบทบาทสำเร็จ" }))
-    .into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตบทบาทสำเร็จ" })).into_response())
 }
 
 // ============================================
@@ -122,8 +141,13 @@ pub async fn list_departments(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) =
-        check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(response);
     }
@@ -138,8 +162,13 @@ pub async fn get_department(
     Path(dept_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) =
-        check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(response);
     }
@@ -154,8 +183,13 @@ pub async fn create_department(
     Json(payload): Json<CreateDepartmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) =
-        check_permission(&headers, &pool, codes::ROLES_CREATE_ALL, &state.permission_cache).await
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_CREATE_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(response);
     }
@@ -175,13 +209,17 @@ pub async fn update_department(
     Json(payload): Json<UpdateDepartmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) =
-        check_permission(&headers, &pool, codes::ROLES_UPDATE_ALL, &state.permission_cache).await
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_UPDATE_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(response);
     }
 
     department_service::update_department(&pool, dept_id, payload).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตฝ่ายสำเร็จ" }))
-    .into_response())
+    Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตฝ่ายสำเร็จ" })).into_response())
 }

@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::env;
 
 static MIGRATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -6,11 +6,11 @@ static MIGRATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(()
 /// Create a test database pool
 pub async fn create_test_pool() -> PgPool {
     dotenvy::dotenv().ok();
-    
+
     let database_url = env::var("TEST_DATABASE_URL")
         .or_else(|_| env::var("DATABASE_URL"))
         .expect("TEST_DATABASE_URL or DATABASE_URL must be set for tests");
-    
+
     PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
@@ -34,22 +34,22 @@ pub async fn cleanup_test_data(pool: &PgPool) {
         .execute(pool)
         .await
         .ok();
-    
+
     sqlx::query("DELETE FROM department_members")
         .execute(pool)
         .await
         .ok();
-    
+
     sqlx::query("DELETE FROM users WHERE email LIKE '%test%'")
         .execute(pool)
         .await
         .ok();
-    
+
     sqlx::query("DELETE FROM roles WHERE name LIKE '%test%'")
         .execute(pool)
         .await
         .ok();
-    
+
     sqlx::query("DELETE FROM departments WHERE name LIKE '%test%'")
         .execute(pool)
         .await
@@ -63,18 +63,18 @@ pub async fn create_test_user(
     password: &str,
 ) -> Result<uuid::Uuid, sqlx::Error> {
     let password_hash = bcrypt::hash(password, 10).unwrap();
-    
+
     let user_id: uuid::Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO users (username, email, password_hash, first_name, last_name, user_type, status)
         VALUES ($1, $1, $2, 'Test', 'User', 'staff', 'active')
         RETURNING id
-        "#
+        "#,
     )
     .bind(email)
     .bind(password_hash)
     .fetch_one(pool)
     .await?;
-    
+
     Ok(user_id)
 }

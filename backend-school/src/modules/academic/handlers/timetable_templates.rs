@@ -20,9 +20,13 @@ use crate::AppState;
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
@@ -84,7 +88,12 @@ pub struct UpdateTemplateRequest {
 }
 
 fn default_non_course_types() -> Vec<String> {
-    vec!["BREAK".into(), "HOMEROOM".into(), "ACTIVITY".into(), "ACADEMIC".into()]
+    vec![
+        "BREAK".into(),
+        "HOMEROOM".into(),
+        "ACTIVITY".into(),
+        "ACADEMIC".into(),
+    ]
 }
 
 pub async fn list_templates(
@@ -92,7 +101,14 @@ pub async fn list_templates(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rows = timetable_template_service::list_templates(&pool).await?;
@@ -105,7 +121,14 @@ pub async fn get_template(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let (template, entries) = timetable_template_service::get_template(&pool, id).await?;
@@ -118,11 +141,26 @@ pub async fn create_template(
     Json(payload): Json<CreateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
-    let id = timetable_template_service::create_template(&pool, &payload.name, payload.description.as_deref(), user_id).await?;
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
+        .await
+        .ok();
+    let id = timetable_template_service::create_template(
+        &pool,
+        &payload.name,
+        payload.description.as_deref(),
+        user_id,
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "success": true, "data": { "id": id } })).into_response())
 }
 
@@ -133,10 +171,23 @@ pub async fn update_template(
     Json(payload): Json<UpdateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    timetable_template_service::update_template(&pool, id, payload.name.as_deref(), payload.description.as_deref()).await?;
+    timetable_template_service::update_template(
+        &pool,
+        id,
+        payload.name.as_deref(),
+        payload.description.as_deref(),
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "success": true, "data": {} })).into_response())
 }
 
@@ -146,7 +197,14 @@ pub async fn delete_template(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     timetable_template_service::delete_template(&pool, id).await?;
@@ -159,15 +217,30 @@ pub async fn from_current(
     Json(payload): Json<FromCurrentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
+        .await
+        .ok();
     let entry_types = payload.entry_types.unwrap_or_else(default_non_course_types);
 
     let id = timetable_template_service::from_current(
-        &pool, payload.semester_id, &payload.name, payload.description.as_deref(), entry_types, user_id
-    ).await?;
+        &pool,
+        payload.semester_id,
+        &payload.name,
+        payload.description.as_deref(),
+        entry_types,
+        user_id,
+    )
+    .await?;
 
     Ok(Json(serde_json::json!({ "success": true, "data": { "id": id } })).into_response())
 }
@@ -179,19 +252,41 @@ pub async fn apply_template(
     Json(payload): Json<ApplyTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
-    let total_inserted = timetable_template_service::apply_template(&pool, template_id, payload.semester_id, user_id).await?;
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
+        .await
+        .ok();
+    let total_inserted = timetable_template_service::apply_template(
+        &pool,
+        template_id,
+        payload.semester_id,
+        user_id,
+    )
+    .await?;
 
-    let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    let subdomain =
+        extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
     state.websocket_manager.broadcast_mutation(
-        subdomain, payload.semester_id,
-        TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+        subdomain,
+        payload.semester_id,
+        TimetableEvent::TableRefresh {
+            user_id: user_id.unwrap_or_default(),
+        },
     );
 
-    Ok(Json(serde_json::json!({ "success": true, "data": { "applied": total_inserted } })).into_response())
+    Ok(
+        Json(serde_json::json!({ "success": true, "data": { "applied": total_inserted } }))
+            .into_response(),
+    )
 }
 
 pub async fn clear_timetable(
@@ -200,18 +295,36 @@ pub async fn clear_timetable(
     Json(payload): Json<ClearTimetableRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool).await.ok();
+    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
+        .await
+        .ok();
     let entry_types = payload.entry_types.unwrap_or_else(default_non_course_types);
-    let deleted = timetable_template_service::clear_timetable(&pool, payload.semester_id, entry_types).await?;
+    let deleted =
+        timetable_template_service::clear_timetable(&pool, payload.semester_id, entry_types)
+            .await?;
 
-    let subdomain = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
+    let subdomain =
+        extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
     state.websocket_manager.broadcast_mutation(
-        subdomain, payload.semester_id,
-        TimetableEvent::TableRefresh { user_id: user_id.unwrap_or_default() },
+        subdomain,
+        payload.semester_id,
+        TimetableEvent::TableRefresh {
+            user_id: user_id.unwrap_or_default(),
+        },
     );
 
-    Ok(Json(serde_json::json!({ "success": true, "data": { "deleted": deleted } })).into_response())
+    Ok(
+        Json(serde_json::json!({ "success": true, "data": { "deleted": deleted } }))
+            .into_response(),
+    )
 }

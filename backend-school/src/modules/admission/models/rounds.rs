@@ -1,7 +1,7 @@
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, NaiveDate, Utc};
 
 // ==========================================
 // Admission Round Models
@@ -154,7 +154,7 @@ pub struct AdmissionTrack {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub study_plan_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub computed_capacity: Option<i64>,  // ดึงจาก class_rooms ถ้า capacity_override = NULL
+    pub computed_capacity: Option<i64>, // ดึงจาก class_rooms ถ้า capacity_override = NULL
     #[serde(skip_serializing_if = "Option::is_none")]
     pub room_count: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]

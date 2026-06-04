@@ -1,8 +1,8 @@
 use crate::api_response::ApiErrorResponse;
-use crate::modules::auth::models::User;
-use crate::utils::jwt::JwtService;
-use crate::utils::field_encryption;
 use crate::error::AppError;
+use crate::modules::auth::models::User;
+use crate::utils::field_encryption;
+use crate::utils::jwt::JwtService;
 use axum::{
     extract::Request,
     http::{header, HeaderMap, StatusCode},
@@ -19,15 +19,14 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
-    
-    let token_from_header = auth_header
-        .and_then(|h| {
-            if h.starts_with("Bearer ") {
-                Some(h[7..].to_string())
-            } else {
-                None
-            }
-        });
+
+    let token_from_header = auth_header.and_then(|h| {
+        if h.starts_with("Bearer ") {
+            Some(h[7..].to_string())
+        } else {
+            None
+        }
+    });
 
     // Fallback to cookie (for same-origin requests)
     let token_from_cookie = req
@@ -67,20 +66,22 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
 }
 
 /// Helper function to extract user ID from request headers
-pub async fn extract_user_id(headers: &HeaderMap, _pool: &sqlx::PgPool) -> Result<uuid::Uuid, String> {
+pub async fn extract_user_id(
+    headers: &HeaderMap,
+    _pool: &sqlx::PgPool,
+) -> Result<uuid::Uuid, String> {
     // Try to extract token from Authorization header first
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
-    
-    let token_from_header = auth_header
-        .and_then(|h| {
-            if h.starts_with("Bearer ") {
-                Some(h[7..].to_string())
-            } else {
-                None
-            }
-        });
+
+    let token_from_header = auth_header.and_then(|h| {
+        if h.starts_with("Bearer ") {
+            Some(h[7..].to_string())
+        } else {
+            None
+        }
+    });
 
     // Fallback to cookie
     let token_from_cookie = headers
@@ -89,33 +90,31 @@ pub async fn extract_user_id(headers: &HeaderMap, _pool: &sqlx::PgPool) -> Resul
         .and_then(|cookie| JwtService::extract_token_from_cookie(Some(cookie)));
 
     // Use Authorization header first, then cookie
-    let token = token_from_header.or(token_from_cookie)
+    let token = token_from_header
+        .or(token_from_cookie)
         .ok_or("No authentication token found".to_string())?;
-    
+
     // Verify token and extract user ID
-    let claims = JwtService::verify_token(&token)
-        .map_err(|e| format!("Invalid token: {}", e))?;
-    
-    uuid::Uuid::parse_str(&claims.sub)
-        .map_err(|e| format!("Invalid user ID in token: {}", e))
+    let claims = JwtService::verify_token(&token).map_err(|e| format!("Invalid token: {}", e))?;
+
+    uuid::Uuid::parse_str(&claims.sub).map_err(|e| format!("Invalid user ID in token: {}", e))
 }
 
 /// Helper function to get current user info with database query
 pub async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<User, AppError> {
-    let user_id = extract_user_id(headers, pool).await
+    let user_id = extract_user_id(headers, pool)
+        .await
         .map_err(|e| AppError::AuthError(e))?;
 
-    let mut user = sqlx::query_as::<_, User>(
-        "SELECT * FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Database error fetching user: {}", e);
-        AppError::InternalServerError("Database error".to_string())
-    })?
-    .ok_or(AppError::NotFound("User not found".to_string()))?;
+    let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error fetching user: {}", e);
+            AppError::InternalServerError("Database error".to_string())
+        })?
+        .ok_or(AppError::NotFound("User not found".to_string()))?;
 
     // Decrypt sensitive fields
     if let Some(nid) = &user.national_id {

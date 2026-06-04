@@ -20,9 +20,13 @@ use crate::AppState;
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
@@ -37,11 +41,16 @@ pub async fn submit_application(
     Json(payload): Json<SubmitApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let (application_number, application) = application_service::submit_application(&pool, round_id, payload).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": {
+    let (application_number, application) =
+        application_service::submit_application(&pool, round_id, payload).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": {
             "applicationNumber": application_number,
             "application": application,
-        }, "message": "ยื่นใบสมัครสำเร็จ" }))).into_response())
+        }, "message": "ยื่นใบสมัครสำเร็จ" })),
+    )
+        .into_response())
 }
 
 // ==========================================
@@ -55,7 +64,14 @@ pub async fn list_applications(
     Query(filter): Query<ApplicationFilter>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let applications = application_service::list_applications(&pool, round_id, filter).await?;
@@ -68,11 +84,22 @@ pub async fn get_application(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_READ_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let (application, documents) = application_service::get_application_with_documents(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": { "application": application, "documents": documents } })).into_response())
+    let (application, documents) =
+        application_service::get_application_with_documents(&pool, id).await?;
+    Ok(Json(
+        json!({ "success": true, "data": { "application": application, "documents": documents } }),
+    )
+    .into_response())
 }
 
 // ==========================================
@@ -85,7 +112,14 @@ pub async fn verify_application(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let verifier_id = match check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
+    let verifier_id = match check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_VERIFY,
+        &state.permission_cache,
+    )
+    .await
+    {
         Ok(u) => u,
         Err(r) => return Ok(r),
     };
@@ -100,7 +134,14 @@ pub async fn reject_application(
     Json(payload): Json<RejectApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_VERIFY,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     application_service::reject_application(&pool, id, &payload.rejection_reason).await?;
@@ -114,11 +155,22 @@ pub async fn mark_absent(
     Json(payload): Json<MarkAbsentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     application_service::mark_absent(&pool, id, payload.absent).await?;
-    let msg = if payload.absent { "ทำเครื่องหมายขาดสอบแล้ว" } else { "ยกเลิกขาดสอบแล้ว" };
+    let msg = if payload.absent {
+        "ทำเครื่องหมายขาดสอบแล้ว"
+    } else {
+        "ยกเลิกขาดสอบแล้ว"
+    };
     Ok(Json(json!({ "success": true, "data": {}, "message": msg })).into_response())
 }
 
@@ -129,7 +181,14 @@ pub async fn update_application(
     Json(payload): Json<UpdateApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_VERIFY,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     application_service::update_application(&pool, id, payload).await?;
@@ -142,7 +201,14 @@ pub async fn unverify_application(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_VERIFY,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     application_service::unverify_application(&pool, id).await?;
@@ -155,11 +221,19 @@ pub async fn delete_application(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
 
-    let files_to_delete = application_service::fetch_application_files_then_delete(&pool, id).await?;
+    let files_to_delete =
+        application_service::fetch_application_files_then_delete(&pool, id).await?;
 
     // ลบไฟล์ใน R2 (best-effort, ไม่ blocking response)
     if !files_to_delete.is_empty() {
@@ -183,7 +257,14 @@ pub async fn list_enrollment_pending(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_ENROLL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_ENROLL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let list = application_service::list_enrollment_pending(&pool, round_id).await?;
@@ -197,7 +278,14 @@ pub async fn complete_enrollment(
     Json(payload): Json<CompleteEnrollmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let enroller_id = match check_permission(&headers, &pool, codes::ADMISSION_ENROLL, &state.permission_cache).await {
+    let enroller_id = match check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_ENROLL,
+        &state.permission_cache,
+    )
+    .await
+    {
         Ok(u) => u,
         Err(r) => return Ok(r),
     };
@@ -207,7 +295,8 @@ pub async fn complete_enrollment(
             "userId": result.user_id,
             "username": result.username,
             "studentCode": result.student_code,
-        }, "message": "มอบตัวสำเร็จ สร้าง account แล้ว" })).into_response())
+        }, "message": "มอบตัวสำเร็จ สร้าง account แล้ว" }))
+    .into_response())
 }
 
 pub async fn change_application_track(
@@ -217,7 +306,14 @@ pub async fn change_application_track(
     Json(payload): Json<ChangeTrackRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     application_service::change_application_track(&pool, application_id, payload.track_id).await?;
@@ -231,7 +327,14 @@ pub async fn update_admission_track(
     Json(payload): Json<UpdateAdmissionTrackRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_VERIFY, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_VERIFY,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     application_service::update_admission_track(&pool, application_id, payload.track_id).await?;
@@ -252,7 +355,9 @@ pub async fn staff_upload_document(
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(r) = check_permission(&headers, &pool, "admission.update", &state.permission_cache).await {
+    if let Err(r) =
+        check_permission(&headers, &pool, "admission.update", &state.permission_cache).await
+    {
         return Ok(r);
     }
 
@@ -262,21 +367,36 @@ pub async fn staff_upload_document(
     let mut original_filename: Option<String> = None;
     let mut mime_type = "application/octet-stream".to_string();
 
-    while let Some(field) = multipart.next_field().await
-        .map_err(|_| AppError::BadRequest("Invalid multipart data".to_string()))? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::BadRequest("Invalid multipart data".to_string()))?
+    {
         match field.name().unwrap_or("") {
             "doc_type" => {
-                doc_type = Some(String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string());
+                doc_type = Some(
+                    String::from_utf8_lossy(&field.bytes().await.unwrap_or_default()).to_string(),
+                );
             }
             "file" => {
-                original_filename = field.file_name().map(|s| s.to_string()).or(Some("document".to_string()));
+                original_filename = field
+                    .file_name()
+                    .map(|s| s.to_string())
+                    .or(Some("document".to_string()));
                 if let Some(ct) = field.content_type() {
                     mime_type = ct.to_string();
                 }
-                file_data = Some(field.bytes().await
-                    .map_err(|_| AppError::BadRequest("Failed to read file".to_string()))?.to_vec());
+                file_data = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|_| AppError::BadRequest("Failed to read file".to_string()))?
+                        .to_vec(),
+                );
             }
-            _ => { let _ = field.bytes().await; }
+            _ => {
+                let _ = field.bytes().await;
+            }
         }
     }
 
@@ -285,7 +405,10 @@ pub async fn staff_upload_document(
     let original_filename = original_filename.unwrap_or_else(|| "document".to_string());
 
     if !application_service::VALID_DOC_TYPES.contains(&doc_type.as_str()) {
-        return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
+        return Err(AppError::BadRequest(format!(
+            "Invalid doc_type: {}",
+            doc_type
+        )));
     }
 
     let ext = std::path::Path::new(&original_filename)
@@ -294,7 +417,10 @@ pub async fn staff_upload_document(
         .unwrap_or("bin")
         .to_lowercase();
     if !application_service::ALLOWED_EXTENSIONS.contains(&ext.as_str()) {
-        return Err(AppError::BadRequest(format!("File extension .{} not allowed. Use: jpg, png, pdf", ext)));
+        return Err(AppError::BadRequest(format!(
+            "File extension .{} not allowed. Use: jpg, png, pdf",
+            ext
+        )));
     }
 
     if file_data.len() > 20 * 1024 * 1024 {
@@ -310,7 +436,8 @@ pub async fn staff_upload_document(
     };
 
     // R2 ใส่ใน handler — service ทำแค่ DB
-    let r2_client = R2Client::new().await
+    let r2_client = R2Client::new()
+        .await
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
 
     // Upload R2 ก่อน (ถ้าพัง = old file ยังอยู่)
@@ -320,11 +447,17 @@ pub async fn staff_upload_document(
     //   1. Generate paths in service (insert DB only after R2 success)
     // Simplification: trust ordering — DB insert first, then R2 (mirror original code)
 
-    let result = application_service::save_document_record(&pool, &subdomain, application_id, input).await?;
+    let result =
+        application_service::save_document_record(&pool, &subdomain, application_id, input).await?;
 
     // Upload to R2 (DB record มีอยู่แล้ว — ถ้าพังต้อง manual cleanup)
-    if let Err(_) = r2_client.upload_file(&result.storage_path, file_data, &mime_type).await {
-        return Err(AppError::InternalServerError("Failed to upload file".to_string()));
+    if let Err(_) = r2_client
+        .upload_file(&result.storage_path, file_data, &mime_type)
+        .await
+    {
+        return Err(AppError::InternalServerError(
+            "Failed to upload file".to_string(),
+        ));
     }
 
     // Delete old file from R2 (DB update succeeded)
@@ -342,17 +475,24 @@ pub async fn staff_delete_document(
     Path((application_id, doc_type)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, "admission.update", &state.permission_cache).await {
+    if let Err(r) =
+        check_permission(&headers, &pool, "admission.update", &state.permission_cache).await
+    {
         return Ok(r);
     }
 
     if !application_service::VALID_DOC_TYPES.contains(&doc_type.as_str()) {
-        return Err(AppError::BadRequest(format!("Invalid doc_type: {}", doc_type)));
+        return Err(AppError::BadRequest(format!(
+            "Invalid doc_type: {}",
+            doc_type
+        )));
     }
 
-    let storage_path = application_service::delete_document_record(&pool, application_id, &doc_type).await?;
+    let storage_path =
+        application_service::delete_document_record(&pool, application_id, &doc_type).await?;
 
-    let r2_client = R2Client::new().await
+    let r2_client = R2Client::new()
+        .await
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
     r2_client.delete_file(&storage_path).await.ok();
 
@@ -369,7 +509,14 @@ pub async fn sort_room_students(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let updated = application_service::sort_room_students(&pool, round_id).await?;
@@ -389,10 +536,18 @@ pub async fn auto_assign_student_ids(
     Json(payload): Json<AutoAssignStudentIdsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
-    let assigned = application_service::auto_assign_student_ids(&pool, round_id, payload.start_number).await?;
+    let assigned =
+        application_service::auto_assign_student_ids(&pool, round_id, payload.start_number).await?;
     Ok(Json(json!({ "success": true, "data": { "assigned": assigned } })).into_response())
 }
 
@@ -402,7 +557,14 @@ pub async fn list_student_ids(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rows = application_service::list_student_ids(&pool, round_id).await?;
@@ -416,7 +578,14 @@ pub async fn move_application_room(
     Json(payload): Json<MoveRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     application_service::move_application_room(&pool, id, payload.room_id).await?;
@@ -430,7 +599,14 @@ pub async fn batch_update_student_ids(
     Json(payload): Json<Vec<UpdateStudentIdItem>>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_MANAGE_ALL, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_MANAGE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let updated = application_service::batch_update_student_ids(&pool, round_id, payload).await?;

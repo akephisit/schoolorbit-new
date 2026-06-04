@@ -1,11 +1,11 @@
+pub mod backtracking;
+pub mod quality;
 pub mod types;
 pub mod validator;
-pub mod quality;
-pub mod backtracking;
 
+use backtracking::BacktrackingScheduler;
 use types::*;
 use validator::{ConstraintValidator, LockedSlotData};
-use backtracking::BacktrackingScheduler;
 
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -19,7 +19,7 @@ impl TimetableScheduler {
     pub fn new(config: SchedulerConfig) -> Self {
         Self { config }
     }
-    
+
     pub fn schedule_with_settings(
         &self,
         mut courses: Vec<CourseToSchedule>,
@@ -34,7 +34,7 @@ impl TimetableScheduler {
             instructor_prefs,
             default_max_consecutive,
         );
-        
+
         // Select algorithm
         match self.config.algorithm {
             SchedulingAlgorithm::Greedy => {
@@ -68,27 +68,27 @@ impl SchedulerBuilder {
             config: SchedulerConfig::default(),
         }
     }
-    
+
     pub fn algorithm(mut self, algorithm: SchedulingAlgorithm) -> Self {
         self.config.algorithm = algorithm;
         self
     }
-    
+
     pub fn timeout_seconds(mut self, seconds: u32) -> Self {
         self.config.timeout_seconds = seconds;
         self
     }
-    
+
     pub fn min_quality_score(mut self, score: f64) -> Self {
         self.config.min_quality_score = score;
         self
     }
-    
+
     pub fn allow_partial(mut self, allow: bool) -> Self {
         self.config.allow_partial = allow;
         self
     }
-    
+
     pub fn build(self) -> TimetableScheduler {
         TimetableScheduler::new(self.config)
     }
@@ -103,7 +103,7 @@ impl Default for SchedulerBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_builder() {
         let scheduler = SchedulerBuilder::new()
@@ -111,8 +111,11 @@ mod tests {
             .timeout_seconds(60)
             .min_quality_score(80.0)
             .build();
-        
-        assert_eq!(scheduler.config.algorithm, SchedulingAlgorithm::Backtracking);
+
+        assert_eq!(
+            scheduler.config.algorithm,
+            SchedulingAlgorithm::Backtracking
+        );
         assert_eq!(scheduler.config.timeout_seconds, 60);
         assert_eq!(scheduler.config.min_quality_score, 80.0);
     }

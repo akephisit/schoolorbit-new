@@ -10,7 +10,9 @@ use uuid::Uuid;
 use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::permission::check_permission;
-use crate::modules::admission::models::applications::{AssignRoomsGlobalRequest, AssignRoomsRequest};
+use crate::modules::admission::models::applications::{
+    AssignRoomsGlobalRequest, AssignRoomsRequest,
+};
 use crate::modules::admission::models::rounds::UpdateSelectionSettingsRequest;
 use crate::modules::admission::services::selection_service;
 use crate::permissions::registry::codes;
@@ -20,9 +22,13 @@ use crate::AppState;
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
 }
 
@@ -38,7 +44,14 @@ pub async fn get_ranking(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let data = selection_service::get_round_ranking(&pool, round_id).await?;
@@ -52,12 +65,23 @@ pub async fn get_track_ranking(
     Query(params): Query<RankingQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let data = selection_service::get_track_ranking(
-        &pool, track_id, params.selection_subject_ids, params.room_assignment_method,
-    ).await?;
+        &pool,
+        track_id,
+        params.selection_subject_ids,
+        params.room_assignment_method,
+    )
+    .await?;
     Ok(Json(json!({ "success": true, "data": data })).into_response())
 }
 
@@ -68,7 +92,14 @@ pub async fn assign_rooms(
     Json(payload): Json<AssignRoomsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let user_id = match check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    let user_id = match check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         Ok(u) => u,
         Err(r) => return Ok(r),
     };
@@ -82,7 +113,14 @@ pub async fn reset_all_room_assignments(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let deleted = selection_service::reset_all_room_assignments(&pool, round_id).await?;
@@ -96,11 +134,19 @@ pub async fn assign_rooms_global(
     Json(payload): Json<AssignRoomsGlobalRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let user_id = match check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    let user_id = match check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         Ok(u) => u,
         Err(r) => return Ok(r),
     };
-    let assigned_count = selection_service::assign_rooms_global(&pool, round_id, payload, user_id).await?;
+    let assigned_count =
+        selection_service::assign_rooms_global(&pool, round_id, payload, user_id).await?;
     Ok(Json(json!({ "success": true, "data": { "assigned_count": assigned_count }, "message": format!("จัดห้องรวมสำเร็จ {} คน", assigned_count) })).into_response())
 }
 
@@ -110,7 +156,14 @@ pub async fn get_global_ranking(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let data = selection_service::get_global_ranking(&pool, round_id).await?;
@@ -123,7 +176,14 @@ pub async fn get_round_rooms(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     let rooms = selection_service::get_round_rooms(&pool, round_id).await?;
@@ -137,7 +197,14 @@ pub async fn update_selection_settings(
     Json(payload): Json<UpdateSelectionSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(&headers, &pool, codes::ADMISSION_SCORES, &state.permission_cache).await {
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_SCORES,
+        &state.permission_cache,
+    )
+    .await
+    {
         return Ok(r);
     }
     selection_service::update_selection_settings(&pool, round_id, payload).await?;

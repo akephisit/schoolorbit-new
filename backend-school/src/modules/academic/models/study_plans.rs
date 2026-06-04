@@ -56,7 +56,7 @@ pub struct StudyPlanVersion {
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    
+
     // Joined fields (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
@@ -97,13 +97,13 @@ pub struct StudyPlanSubject {
     pub subject_id: Uuid,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub subject_code: Option<String>,  // joined from subjects.code
+    pub subject_code: Option<String>, // joined from subjects.code
     pub display_order: i32,
     #[sqlx(default)]
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    
+
     // Joined fields
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]

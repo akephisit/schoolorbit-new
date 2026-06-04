@@ -76,9 +76,9 @@ pub struct RouteItem {
     pub path: String,
     pub title: String,
     pub icon: Option<String>,
-    pub group: String,  // group code
+    pub group: String, // group code
     pub order: i32,
-    pub permission: Option<String>,  // module name
+    pub permission: Option<String>, // module name
     pub user_type: Option<String>,  // 'staff', 'student', or 'parent' - defaults to 'staff'
 }
 

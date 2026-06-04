@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        "#
+        "#,
     )
     .execute(&pool)
     .await?;
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        "#
+        "#,
     )
     .execute(&pool)
     .await?;

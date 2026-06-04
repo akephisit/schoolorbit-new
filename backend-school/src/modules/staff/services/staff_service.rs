@@ -182,16 +182,18 @@ pub async fn list_staff(
 
     let items: Vec<StaffListItem> = staff_rows
         .into_iter()
-        .map(|(id, username, title, first_name, last_name, status)| StaffListItem {
-            id,
-            username,
-            title: title.unwrap_or_default(),
-            first_name,
-            last_name,
-            roles: vec![],
-            departments: vec![],
-            status,
-        })
+        .map(
+            |(id, username, title, first_name, last_name, status)| StaffListItem {
+                id,
+                username,
+                title: title.unwrap_or_default(),
+                first_name,
+                last_name,
+                roles: vec![],
+                departments: vec![],
+                status,
+            },
+        )
         .collect();
 
     Ok((items, total, page, page_size))
@@ -302,8 +304,13 @@ pub async fn get_staff_profile(
     .bind(staff_id)
     .fetch_all(pool);
 
-    let (staff_info_res, roles_res, departments_res, teaching_res, advisor_res) =
-        tokio::join!(staff_info_fut, roles_fut, departments_fut, teaching_fut, advisor_fut);
+    let (staff_info_res, roles_res, departments_res, teaching_res, advisor_res) = tokio::join!(
+        staff_info_fut,
+        roles_fut,
+        departments_fut,
+        teaching_fut,
+        advisor_fut
+    );
 
     let staff_info = staff_info_res.ok().flatten();
 
@@ -415,11 +422,13 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
             AppError::InternalServerError("Encryption error".to_string())
         })?;
 
-    let national_id_hash =
-        field_encryption::hash_optional_for_search(payload.national_id.as_deref()).map_err(|e| {
-            eprintln!("Blind index failed: {}", e);
-            AppError::InternalServerError("Encryption error".to_string())
-        })?;
+    let national_id_hash = field_encryption::hash_optional_for_search(
+        payload.national_id.as_deref(),
+    )
+    .map_err(|e| {
+        eprintln!("Blind index failed: {}", e);
+        AppError::InternalServerError("Encryption error".to_string())
+    })?;
 
     // Generate username if not provided — T0001 pattern, first available slot
     let username = match payload.username.as_deref() {
@@ -643,13 +652,12 @@ pub async fn update_staff(
     }
 
     if let Some(staff_info) = &payload.staff_info {
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM staff_info WHERE user_id = $1)",
-        )
-        .bind(staff_id)
-        .fetch_one(&mut *tx)
-        .await
-        .unwrap_or(false);
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM staff_info WHERE user_id = $1)")
+                .bind(staff_id)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap_or(false);
 
         if exists {
             sqlx::query(
@@ -863,17 +871,23 @@ pub async fn get_public_staff_profile(
         profile_image_url: user_rec.profile_image_url,
         user_type: user_rec.user_type,
         status: user_rec.status,
-        roles: roles.into_iter().map(|r| PublicStaffRole {
-            id: r.id,
-            code: r.code,
-            name: r.name,
-            level: r.level,
-        }).collect(),
-        departments: departments.into_iter().map(|d| PublicStaffDepartment {
-            id: d.id,
-            code: d.code,
-            name: d.name,
-            position: d.position,
-        }).collect(),
+        roles: roles
+            .into_iter()
+            .map(|r| PublicStaffRole {
+                id: r.id,
+                code: r.code,
+                name: r.name,
+                level: r.level,
+            })
+            .collect(),
+        departments: departments
+            .into_iter()
+            .map(|d| PublicStaffDepartment {
+                id: d.id,
+                code: d.code,
+                name: d.name,
+                position: d.position,
+            })
+            .collect(),
     })
 }

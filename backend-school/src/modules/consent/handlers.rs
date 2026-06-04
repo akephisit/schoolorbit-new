@@ -1,12 +1,12 @@
 use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
 use crate::modules::auth::models::Claims;
 use crate::modules::consent::models::{
-    ConsentRecord, ConsentRecordResponse, ConsentSummary, ConsentType,
-    ConsentTypeResponse, CreateConsentRequest, UserConsentStatus,
+    ConsentRecord, ConsentRecordResponse, ConsentSummary, ConsentType, ConsentTypeResponse,
+    CreateConsentRequest, UserConsentStatus,
 };
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
-use crate::error::AppError;
 use axum::{
     extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode},
@@ -37,7 +37,9 @@ pub async fn get_consent_types(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -88,7 +90,9 @@ pub async fn get_my_consent_status(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let claims = req.extensions().get::<Claims>()
+    let claims = req
+        .extensions()
+        .get::<Claims>()
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
@@ -99,7 +103,9 @@ pub async fn get_my_consent_status(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -116,7 +122,7 @@ pub async fn get_my_consent_status(
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get user type: {}", e);
-             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
     // Get required consent types for this user type
@@ -152,11 +158,14 @@ pub async fn get_my_consent_status(
     let consent_responses: Vec<ConsentRecordResponse> = consents
         .into_iter()
         .map(|c| {
-            let data_categories: Vec<String> = serde_json::from_value(c.data_categories.clone())
-                .unwrap_or_default();
-            
-            let is_expired = c.expires_at.map(|exp| exp < chrono::Utc::now()).unwrap_or(false);
-            
+            let data_categories: Vec<String> =
+                serde_json::from_value(c.data_categories.clone()).unwrap_or_default();
+
+            let is_expired = c
+                .expires_at
+                .map(|exp| exp < chrono::Utc::now())
+                .unwrap_or(false);
+
             ConsentRecordResponse {
                 id: c.id,
                 user_id: c.user_id,
@@ -220,7 +229,9 @@ pub async fn create_consent(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let claims = req.extensions().get::<Claims>()
+    let claims = req
+        .extensions()
+        .get::<Claims>()
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
@@ -231,7 +242,9 @@ pub async fn create_consent(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -243,17 +256,15 @@ pub async fn create_consent(
 
     // Extract request body
     let (_parts, body) = req.into_parts();
-    let bytes = axum::body::to_bytes(body, usize::MAX).await
-        .map_err(|e| {
-            eprintln!("❌ Failed to read request body: {}", e);
-            AppError::BadRequest("Invalid request body".to_string())
-        })?;
+    let bytes = axum::body::to_bytes(body, usize::MAX).await.map_err(|e| {
+        eprintln!("❌ Failed to read request body: {}", e);
+        AppError::BadRequest("Invalid request body".to_string())
+    })?;
 
-    let payload: CreateConsentRequest = serde_json::from_slice(&bytes)
-        .map_err(|e| {
-            eprintln!("❌ Failed to parse request: {}", e);
-            AppError::BadRequest("Invalid request format".to_string())
-        })?;
+    let payload: CreateConsentRequest = serde_json::from_slice(&bytes).map_err(|e| {
+        eprintln!("❌ Failed to parse request: {}", e);
+        AppError::BadRequest("Invalid request format".to_string())
+    })?;
 
     // Get user type
     let user_type: String = sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
@@ -279,9 +290,9 @@ pub async fn create_consent(
     .ok_or(AppError::NotFound("ไม่พบประเภทความยินยอมนี้".to_string()))?;
 
     // Calculate expiration date
-    let expires_at = consent_type_data.default_duration_days.map(|days| {
-        chrono::Utc::now() + chrono::Duration::days(days as i64)
-    });
+    let expires_at = consent_type_data
+        .default_duration_days
+        .map(|days| chrono::Utc::now() + chrono::Duration::days(days as i64));
 
     // Get IP and User Agent
     let ip_address = headers
@@ -336,7 +347,9 @@ pub async fn create_consent(
 
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({ "success": true, "data": { "consent_id": consent_id }, "message": "บันทึกความยินยอมสำเร็จ" })),
+        Json(
+            serde_json::json!({ "success": true, "data": { "consent_id": consent_id }, "message": "บันทึกความยินยอมสำเร็จ" }),
+        ),
     ))
 }
 
@@ -351,7 +364,9 @@ pub async fn withdraw_consent(
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
-    let claims = req.extensions().get::<Claims>()
+    let claims = req
+        .extensions()
+        .get::<Claims>()
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
@@ -359,10 +374,12 @@ pub async fn withdraw_consent(
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get school database: {}", e);
-             AppError::NotFound("ไม่พบโรงเรียน".to_string())
+            AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -387,16 +404,17 @@ pub async fn withdraw_consent(
     .ok_or(AppError::NotFound("ไม่พบความยินยอมนี้".to_string()))?;
 
     // Check if it's a required consent
-    let is_required: bool = sqlx::query_scalar(
-        "SELECT is_required FROM consent_types WHERE code = $1",
-    )
-    .bind(&consent.consent_type)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
+    let is_required: bool =
+        sqlx::query_scalar("SELECT is_required FROM consent_types WHERE code = $1")
+            .bind(&consent.consent_type)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
 
     if is_required {
-        return Err(AppError::BadRequest("ไม่สามารถถอนความยินยอมที่จำเป็นได้".to_string()));
+        return Err(AppError::BadRequest(
+            "ไม่สามารถถอนความยินยอมที่จำเป็นได้".to_string(),
+        ));
     }
 
     // Withdraw consent
@@ -435,7 +453,9 @@ pub async fn get_consent_summary(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let pool = state.pool_manager.get_pool(&db_url, &subdomain)
+    let pool = state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
         .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
@@ -453,12 +473,11 @@ pub async fn get_consent_summary(
         .await
         .unwrap_or(0);
 
-    let granted: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM consent_records WHERE consent_status = 'granted'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
+    let granted: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM consent_records WHERE consent_status = 'granted'")
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0);
 
     let denied: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM consent_records WHERE consent_status = 'denied'")
@@ -473,12 +492,11 @@ pub async fn get_consent_summary(
     .await
     .unwrap_or(0);
 
-    let pending: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM consent_records WHERE consent_status = 'pending'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
+    let pending: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM consent_records WHERE consent_status = 'pending'")
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0);
 
     let compliance_rate = if total_users > 0 {
         (granted as f64 / total_users as f64) * 100.0

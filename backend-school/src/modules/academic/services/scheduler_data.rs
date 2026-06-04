@@ -1,10 +1,7 @@
+use crate::modules::academic::services::scheduler::{types::*, validator::LockedSlotData};
 use sqlx::PgPool;
-use uuid::Uuid;
-use crate::modules::academic::services::scheduler::{
-    types::*,
-    validator::LockedSlotData,
-};
 use std::collections::{HashMap, HashSet};
+use uuid::Uuid;
 
 /// Phase D: cc preferred rooms — load all in 1 query → group by cc_id
 async fn load_cc_preferred_rooms_batch(
@@ -18,7 +15,7 @@ async fn load_cc_preferred_rooms_batch(
         r#"SELECT classroom_course_id, room_id, rank, is_required
            FROM classroom_course_preferred_rooms
            WHERE classroom_course_id = ANY($1)
-           ORDER BY classroom_course_id, rank ASC"#
+           ORDER BY classroom_course_id, rank ASC"#,
     )
     .bind(cc_ids)
     .fetch_all(pool)
@@ -26,7 +23,10 @@ async fn load_cc_preferred_rooms_batch(
 
     let mut map: HashMap<Uuid, Vec<RoomPref>> = HashMap::new();
     for (cc_id, room_id, _rank, is_required) in rows {
-        map.entry(cc_id).or_default().push(RoomPref { room_id, is_required });
+        map.entry(cc_id).or_default().push(RoomPref {
+            room_id,
+            is_required,
+        });
     }
     Ok(map)
 }
@@ -40,7 +40,7 @@ impl<'a> SchedulerDataLoader<'a> {
     pub fn new(pool: &'a PgPool) -> Self {
         Self { pool }
     }
-    
+
     /// Load courses to schedule for given classrooms and semester
     /// Sorted by primary instructor's priority — ครูสำคัญถูกจัดก่อน
     pub async fn load_courses(
@@ -90,7 +90,7 @@ impl<'a> SchedulerDataLoader<'a> {
               AND cc.academic_semester_id = $2
             ORDER BY COALESCE(ip.priority, 100) ASC, s.code ASC
         "#;
-        
+
         let rows = sqlx::query_as::<_, CourseRow>(query)
             .bind(classroom_ids)
             .bind(semester_id)
@@ -112,7 +112,7 @@ impl<'a> SchedulerDataLoader<'a> {
             } else {
                 None
             };
-            
+
             // Parse JSONB arrays
             let allowed_period_ids = row.allowed_period_ids.as_ref().and_then(|json| {
                 json.as_array().and_then(|arr| {
@@ -124,22 +124,26 @@ impl<'a> SchedulerDataLoader<'a> {
                     uuids.ok()
                 })
             });
-            
+
             let allowed_days = row.allowed_days.as_ref().and_then(|json| {
                 json.as_array().and_then(|arr| {
-                    Some(arr
-                        .iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect())
+                    Some(
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect(),
+                    )
                 })
             });
-            
+
             // Phase B: parse cc.consecutive_pattern (Option<Vec<i32>>)
-            let consecutive_pattern: Option<Vec<i32>> = row.consecutive_pattern.as_ref().and_then(|json| {
-                json.as_array().map(|arr| {
-                    arr.iter().filter_map(|v| v.as_i64().map(|n| n as i32)).collect()
-                })
-            });
+            let consecutive_pattern: Option<Vec<i32>> =
+                row.consecutive_pattern.as_ref().and_then(|json| {
+                    json.as_array().map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_i64().map(|n| n as i32))
+                            .collect()
+                    })
+                });
 
             // Phase B: parse cc.hard_unavailable_slots → HashSet<key>
             let cc_hard_unavailable: HashSet<String> = {
@@ -147,7 +151,9 @@ impl<'a> SchedulerDataLoader<'a> {
                 if let Some(arr) = row.cc_hard_unavailable_slots.as_array() {
                     for slot in arr {
                         let day = slot.get("day").and_then(|v| v.as_str()).map(String::from);
-                        let period_id = slot.get("period_id").and_then(|v| v.as_str())
+                        let period_id = slot
+                            .get("period_id")
+                            .and_then(|v| v.as_str())
                             .and_then(|s| Uuid::parse_str(s).ok());
                         if let (Some(d), Some(p)) = (day, period_id) {
                             set.insert(format!("{}__{}", d, p));
@@ -222,7 +228,7 @@ impl<'a> SchedulerDataLoader<'a> {
               AND s.is_active = true
               AND ac.scheduling_mode = 'independent'
               AND asca.classroom_id = ANY($2)
-            "#
+            "#,
         )
         .bind(semester_id)
         .bind(classroom_ids)
@@ -239,7 +245,7 @@ impl<'a> SchedulerDataLoader<'a> {
                 classroom_course_id: Uuid::nil(),
                 classroom_id: row.classroom_id,
                 classroom_name: row.classroom_name,
-                subject_id: row.slot_id,  // slot_id เป็น "subject id" สำหรับ same_day_unique
+                subject_id: row.slot_id, // slot_id เป็น "subject id" สำหรับ same_day_unique
                 subject_code: format!("[{}]", row.activity_type),
                 subject_name: row.activity_name,
                 instructor_id: row.instructor_id,
@@ -262,16 +268,19 @@ impl<'a> SchedulerDataLoader<'a> {
 
         Ok(result)
     }
-    
+
     /// Load available time slots from periods
     /// ดึง school_days จาก academic_year ของ semester ที่กำลัง schedule
-    pub async fn load_available_slots(&self, semester_id: Uuid) -> Result<Vec<TimeSlot>, sqlx::Error> {
+    pub async fn load_available_slots(
+        &self,
+        semester_id: Uuid,
+    ) -> Result<Vec<TimeSlot>, sqlx::Error> {
         // ดึง school_days จาก academic_year ที่ผูกกับ semester
         let school_days: String = sqlx::query_scalar(
             r#"SELECT ay.school_days
                FROM academic_semesters s
                JOIN academic_years ay ON ay.id = s.academic_year_id
-               WHERE s.id = $1"#
+               WHERE s.id = $1"#,
         )
         .bind(semester_id)
         .fetch_optional(self.pool)
@@ -281,18 +290,17 @@ impl<'a> SchedulerDataLoader<'a> {
         let days: Vec<&str> = school_days.split(',').map(|d| d.trim()).collect();
 
         // ดึง academic_year_id จาก semester เพื่อ filter periods
-        let year_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT academic_year_id FROM academic_semesters WHERE id = $1"
-        )
-        .bind(semester_id)
-        .fetch_optional(self.pool)
-        .await?;
+        let year_id: Option<Uuid> =
+            sqlx::query_scalar("SELECT academic_year_id FROM academic_semesters WHERE id = $1")
+                .bind(semester_id)
+                .fetch_optional(self.pool)
+                .await?;
 
         let periods = sqlx::query_as::<_, PeriodRow>(
             r#"SELECT id, order_index as period_order
                FROM academic_periods
                WHERE is_active = true AND academic_year_id = $1
-               ORDER BY order_index"#
+               ORDER BY order_index"#,
         )
         .bind(year_id)
         .fetch_all(self.pool)
@@ -312,25 +320,31 @@ impl<'a> SchedulerDataLoader<'a> {
 
         Ok(slots)
     }
-    
+
     /// Load periods info filtered by academic year
-    pub async fn load_periods(&self, academic_year_id: Uuid) -> Result<Vec<PeriodInfo>, sqlx::Error> {
+    pub async fn load_periods(
+        &self,
+        academic_year_id: Uuid,
+    ) -> Result<Vec<PeriodInfo>, sqlx::Error> {
         let rows = sqlx::query_as::<_, PeriodRow>(
             r#"SELECT id, order_index as period_order
                FROM academic_periods
                WHERE is_active = true AND academic_year_id = $1
-               ORDER BY order_index"#
+               ORDER BY order_index"#,
         )
         .bind(academic_year_id)
         .fetch_all(self.pool)
         .await?;
-        
-        Ok(rows.into_iter().map(|r| PeriodInfo {
-            id: r.id,
-            order: r.period_order,
-        }).collect())
+
+        Ok(rows
+            .into_iter()
+            .map(|r| PeriodInfo {
+                id: r.id,
+                order: r.period_order,
+            })
+            .collect())
     }
-    
+
     /// Load locked slots
     pub async fn load_locked_slots(
         &self,
@@ -347,31 +361,32 @@ impl<'a> SchedulerDataLoader<'a> {
             FROM timetable_locked_slots
             WHERE academic_semester_id = $1
         "#;
-        
+
         let rows = sqlx::query_as::<_, LockedSlotRow>(query)
             .bind(semester_id)
             .fetch_all(self.pool)
             .await?;
-        
+
         let mut locked_slots = Vec::new();
-        
+
         for row in rows {
             // Parse period_ids from JSONB
-            let period_ids: Vec<Uuid> = serde_json::from_value(row.period_ids)
-                .unwrap_or_default();
-            
+            let period_ids: Vec<Uuid> = serde_json::from_value(row.period_ids).unwrap_or_default();
+
             // Parse scope_ids
-            let scope_ids: Vec<Uuid> = row.scope_ids
+            let scope_ids: Vec<Uuid> = row
+                .scope_ids
                 .as_ref()
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
-            
+
             // Filter by scope
             let applicable_classrooms = match row.scope_type.as_str() {
                 "ALL_SCHOOL" => classroom_ids.to_vec(),
                 "CLASSROOM" => {
                     // Only include classrooms in both scope_ids and classroom_ids
-                    scope_ids.iter()
+                    scope_ids
+                        .iter()
                         .filter(|id| classroom_ids.contains(id))
                         .copied()
                         .collect()
@@ -383,7 +398,7 @@ impl<'a> SchedulerDataLoader<'a> {
                 }
                 _ => vec![],
             };
-            
+
             if !applicable_classrooms.is_empty() {
                 locked_slots.push(LockedSlotData {
                     subject_id: row.subject_id,
@@ -393,10 +408,10 @@ impl<'a> SchedulerDataLoader<'a> {
                 });
             }
         }
-        
+
         Ok(locked_slots)
     }
-    
+
     /// Load instructor preferences
     pub async fn load_instructor_preferences(
         &self,
@@ -404,17 +419,15 @@ impl<'a> SchedulerDataLoader<'a> {
     ) -> Result<HashMap<Uuid, InstructorPrefData>, sqlx::Error> {
         // 1. Load periods to map index -> id
         let periods = self.load_periods(academic_year_id).await?;
-        let period_map: HashMap<i32, Uuid> = periods.iter()
-            .map(|p| (p.order, p.id)) 
-            .collect();
-            
+        let period_map: HashMap<i32, Uuid> = periods.iter().map(|p| (p.order, p.id)).collect();
+
         let resolve_period_id = |slot: &TimeSlotJson| -> Option<Uuid> {
             if let Some(id) = slot.period_id {
                 return Some(id);
             }
             if let Some(idx) = slot.period_index {
                 // Front end index 0 = Period 1 (order 1)
-                return period_map.get(&(idx + 1)).copied(); 
+                return period_map.get(&(idx + 1)).copied();
             }
             None
         };
@@ -427,36 +440,38 @@ impl<'a> SchedulerDataLoader<'a> {
             FROM instructor_preferences
             WHERE academic_year_id = $1
         "#;
-        
+
         let rows = sqlx::query_as::<_, InstructorPrefRow>(query)
             .bind(academic_year_id)
             .fetch_all(self.pool)
             .await?;
-        
+
         let mut prefs = HashMap::new();
-        
+
         for row in rows {
             // Parse hard unavailable slots
-            let hard_unavailable: Vec<TimeSlotJson> = serde_json::from_value(
-                row.hard_unavailable_slots
-            ).unwrap_or_default();
-            
+            let hard_unavailable: Vec<TimeSlotJson> =
+                serde_json::from_value(row.hard_unavailable_slots).unwrap_or_default();
+
             let mut hard_unavailable_set = HashSet::new();
             for slot in hard_unavailable {
                 if let Some(pid) = resolve_period_id(&slot) {
                     hard_unavailable_set.insert(format!("{}__{}", slot.day, pid));
                 }
             }
-            
-            prefs.insert(row.instructor_id, InstructorPrefData {
-                hard_unavailable: hard_unavailable_set,
-                max_periods_per_day: row.max_periods_per_day,
-            });
+
+            prefs.insert(
+                row.instructor_id,
+                InstructorPrefData {
+                    hard_unavailable: hard_unavailable_set,
+                    max_periods_per_day: row.max_periods_per_day,
+                },
+            );
         }
-        
+
         Ok(prefs)
     }
-    
+
     /// Load instructor room assignments
     async fn load_instructor_room_assignments(
         &self,
@@ -467,7 +482,7 @@ impl<'a> SchedulerDataLoader<'a> {
             r#"SELECT ira.instructor_id, ira.room_id
                FROM instructor_room_assignments ira
                JOIN academic_semesters s ON s.academic_year_id = ira.academic_year_id
-               WHERE s.id = $1"#
+               WHERE s.id = $1"#,
         )
         .bind(semester_id)
         .fetch_all(self.pool)
@@ -492,7 +507,7 @@ impl<'a> SchedulerDataLoader<'a> {
                WHERE te.academic_semester_id = $1
                  AND te.classroom_id = ANY($2)
                  AND te.is_active = true
-                 AND te.entry_type <> 'COURSE'"#
+                 AND te.entry_type <> 'COURSE'"#,
         )
         .bind(semester_id)
         .bind(classroom_ids)
@@ -503,14 +518,15 @@ impl<'a> SchedulerDataLoader<'a> {
         // ใช้ Uuid::nil() เป็น sentinel "ไม่ใช่ subject ใด ๆ" — locked check ใน validator
         // ใช้ subject_id != course.subject_id → nil ≠ real subject → block ทุกวิชา
         let nil = Uuid::nil();
-        let locked = rows.into_iter().map(|(classroom_id, day, period_id)| {
-            LockedSlotData {
+        let locked = rows
+            .into_iter()
+            .map(|(classroom_id, day, period_id)| LockedSlotData {
                 subject_id: nil,
                 day,
                 period_ids: vec![period_id],
                 classroom_ids: vec![classroom_id],
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(locked)
     }
@@ -518,14 +534,13 @@ impl<'a> SchedulerDataLoader<'a> {
     /// Load global setting: default_max_consecutive
     pub async fn load_default_max_consecutive(&self) -> Result<i32, sqlx::Error> {
         let val: Option<serde_json::Value> = sqlx::query_scalar(
-            "SELECT value FROM scheduler_settings WHERE key = 'default_max_consecutive'"
+            "SELECT value FROM scheduler_settings WHERE key = 'default_max_consecutive'",
         )
         .fetch_optional(self.pool)
         .await?;
 
         Ok(val.and_then(|v| v.as_i64()).unwrap_or(4) as i32)
     }
-
 }
 
 // Database row types
@@ -544,11 +559,11 @@ struct CourseRow {
     min_consecutive: i32,
     max_consecutive: i32,
     allow_single_period: bool,
-    allowed_period_ids: Option<serde_json::Value>,         // JSONB
-    allowed_days: Option<serde_json::Value>,               // JSONB
-    consecutive_pattern: Option<serde_json::Value>,        // jsonb [1,1,1] etc.
+    allowed_period_ids: Option<serde_json::Value>, // JSONB
+    allowed_days: Option<serde_json::Value>,       // JSONB
+    consecutive_pattern: Option<serde_json::Value>, // jsonb [1,1,1] etc.
     same_day_unique: bool,
-    cc_hard_unavailable_slots: serde_json::Value,          // [{"day","period_id"}]
+    cc_hard_unavailable_slots: serde_json::Value, // [{"day","period_id"}]
 }
 
 #[derive(sqlx::FromRow)]

@@ -17,17 +17,28 @@ use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, Response> {
-    let subdomain = extract_subdomain_from_request(headers)
-        .map_err(|response| response)?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain).await
+    let subdomain = extract_subdomain_from_request(headers).map_err(|response| response)?;
+    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+        .await
         .map_err(|e| {
             eprintln!("Failed to get school database: {}", e);
-            (StatusCode::NOT_FOUND, Json(json!({ "success": false, "error": "ไม่พบโรงเรียน" }))).into_response()
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "success": false, "error": "ไม่พบโรงเรียน" })),
+            )
+                .into_response()
         })?;
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|e| {
             eprintln!("Failed to get database pool: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "success": false, "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้" }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "success": false, "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้" })),
+            )
+                .into_response()
         })
 }
 
@@ -40,12 +51,26 @@ pub async fn get_user_roles(
     headers: HeaderMap,
     Path(user_id): Path<Uuid>,
 ) -> Response {
-    let pool = match get_pool(&state, &headers).await { Ok(p) => p, Err(r) => return r };
-    if let Err(r) = check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await {
+    let pool = match get_pool(&state, &headers).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return r;
     }
     match user_role_service::get_user_roles(&pool, user_id).await {
-        Ok(roles) => (StatusCode::OK, Json(json!({ "success": true, "data": roles }))).into_response(),
+        Ok(roles) => (
+            StatusCode::OK,
+            Json(json!({ "success": true, "data": roles })),
+        )
+            .into_response(),
         Err(e) => err_response(e),
     }
 }
@@ -56,8 +81,18 @@ pub async fn assign_user_role(
     Path(user_id): Path<Uuid>,
     Json(payload): Json<AssignRoleRequest>,
 ) -> Response {
-    let pool = match get_pool(&state, &headers).await { Ok(p) => p, Err(r) => return r };
-    if let Err(r) = check_permission(&headers, &pool, codes::ROLES_ASSIGN_ALL, &state.permission_cache).await {
+    let pool = match get_pool(&state, &headers).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_ASSIGN_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return r;
     }
 
@@ -69,11 +104,13 @@ pub async fn assign_user_role(
         Ok(AssignRoleOutcome::UserNotFound) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "success": false, "error": "ไม่พบผู้ใช้" })),
-        ).into_response(),
+        )
+            .into_response(),
         Ok(AssignRoleOutcome::RoleNotFound) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "success": false, "error": "ไม่พบบทบาทหรือบทบาทไม่ active" })),
-        ).into_response(),
+        )
+            .into_response(),
         Ok(AssignRoleOutcome::UserTypeMismatch(role_user_type)) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "success": false, "error": format!(
@@ -85,7 +122,8 @@ pub async fn assign_user_role(
                         _ => "ผู้ใช้อื่น"
                     }
                 ) })),
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => err_response(e),
     }
 }
@@ -95,20 +133,35 @@ pub async fn remove_user_role(
     headers: HeaderMap,
     Path((user_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Response {
-    let pool = match get_pool(&state, &headers).await { Ok(p) => p, Err(r) => return r };
-    if let Err(r) = check_permission(&headers, &pool, codes::ROLES_REMOVE_ALL, &state.permission_cache).await {
+    let pool = match get_pool(&state, &headers).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_REMOVE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return r;
     }
 
     match user_role_service::remove_user_role(&pool, user_id, role_id).await {
         Ok(true) => {
             state.permission_cache.invalidate(&user_id);
-            (StatusCode::OK, Json(json!({ "success": true, "data": {}, "message": "ลบบทบาทสำเร็จ" }))).into_response()
+            (
+                StatusCode::OK,
+                Json(json!({ "success": true, "data": {}, "message": "ลบบทบาทสำเร็จ" })),
+            )
+                .into_response()
         }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "success": false, "error": "ไม่พบการมอบหมายบทบาท" })),
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => err_response(e),
     }
 }
@@ -118,12 +171,26 @@ pub async fn get_user_permissions(
     headers: HeaderMap,
     Path(user_id): Path<Uuid>,
 ) -> Response {
-    let pool = match get_pool(&state, &headers).await { Ok(p) => p, Err(r) => return r };
-    if let Err(r) = check_permission(&headers, &pool, codes::ROLES_READ_ALL, &state.permission_cache).await {
+    let pool = match get_pool(&state, &headers).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ROLES_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
         return r;
     }
     match user_role_service::get_user_permissions(&pool, user_id).await {
-        Ok(perms) => (StatusCode::OK, Json(json!({ "success": true, "data": perms }))).into_response(),
+        Ok(perms) => (
+            StatusCode::OK,
+            Json(json!({ "success": true, "data": perms })),
+        )
+            .into_response(),
         Err(e) => err_response(e),
     }
 }

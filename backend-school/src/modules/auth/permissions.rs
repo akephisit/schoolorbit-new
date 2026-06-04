@@ -15,14 +15,13 @@ impl UserPermissions for User {
     async fn has_permission(&self, pool: &PgPool, permission: &str) -> Result<bool, sqlx::Error> {
         // Admin wildcard permission
 
-        
         let permissions = self.get_permissions(pool).await?;
-        
+
         // Check for wildcard permission
         if permissions.contains(&"*".to_string()) {
             return Ok(true);
         }
-        
+
         // Check for specific permission
         Ok(permissions.contains(&permission.to_string()))
     }
@@ -50,12 +49,12 @@ impl UserPermissions for User {
                   AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
             ) AS combined_permissions
             ORDER BY code
-            "#
+            "#,
         )
         .bind(self.id)
         .fetch_all(pool)
         .await?;
-        
+
         Ok(permissions)
     }
 }

@@ -6,24 +6,22 @@ use axum::{
 };
 use serde_json::json;
 
-
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
     db::school_mapping::get_school_database_url,
-    modules::files::models::{
-        DeleteFileResponse, File, FileListResponse, FileResponse, FileType,
-        FileValidationConfig,
-    },
+    error::AppError,
     modules::auth::models::Claims,
+    modules::files::models::{
+        DeleteFileResponse, File, FileListResponse, FileResponse, FileType, FileValidationConfig,
+    },
     services::r2_client::R2Client,
     utils::{
         file_hash::FileHasher, file_processor::ImageProcessor, file_url::FileUrlBuilder,
         subdomain::extract_subdomain_from_request,
     },
     AppState,
-    error::AppError,
 };
 
 /// Upload a file
@@ -92,15 +90,17 @@ pub async fn upload_file(
                 file_data = Some(data.to_vec());
             }
             "file_type" => {
-                let data = field.bytes().await.map_err(|_| {
-                     AppError::BadRequest("Invalid file_type".to_string())
-                })?;
+                let data = field
+                    .bytes()
+                    .await
+                    .map_err(|_| AppError::BadRequest("Invalid file_type".to_string()))?;
                 file_type_str = String::from_utf8_lossy(&data).to_string();
             }
             "is_temporary" => {
-                let data = field.bytes().await.map_err(|_| {
-                     AppError::BadRequest("Invalid is_temporary".to_string())
-                })?;
+                let data = field
+                    .bytes()
+                    .await
+                    .map_err(|_| AppError::BadRequest("Invalid is_temporary".to_string()))?;
                 let value = String::from_utf8_lossy(&data).to_string();
                 is_temporary = value == "true" || value == "1";
             }
@@ -111,8 +111,10 @@ pub async fn upload_file(
     }
 
     // Validate required fields
-    let file_data = file_data.ok_or_else(|| AppError::BadRequest("No file provided".to_string()))?;
-    let original_filename = file_name.ok_or_else(|| AppError::BadRequest("No filename provided".to_string()))?;
+    let file_data =
+        file_data.ok_or_else(|| AppError::BadRequest("No file provided".to_string()))?;
+    let original_filename =
+        file_name.ok_or_else(|| AppError::BadRequest("No filename provided".to_string()))?;
     let mime_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
 
     // Parse file type
@@ -130,7 +132,10 @@ pub async fn upload_file(
     // Validate file extension
     if !validation_config.is_allowed_extension(&original_filename, &file_type) {
         warn!("File extension not allowed: {}", original_filename);
-        return Err(AppError::BadRequest(format!("File type '{}' not allowed for {}", original_filename, file_type_str)));
+        return Err(AppError::BadRequest(format!(
+            "File type '{}' not allowed for {}",
+            original_filename, file_type_str
+        )));
     }
 
     // Process image if needed
@@ -146,10 +151,11 @@ pub async fn upload_file(
         }
 
         // Get original dimensions
-        let (orig_width, orig_height) = ImageProcessor::get_dimensions(&file_data).map_err(|e| {
-            error!("Failed to get image dimensions: {}", e);
-            AppError::BadRequest("Invalid image".to_string())
-        })?;
+        let (orig_width, orig_height) =
+            ImageProcessor::get_dimensions(&file_data).map_err(|e| {
+                error!("Failed to get image dimensions: {}", e);
+                AppError::BadRequest("Invalid image".to_string())
+            })?;
 
         // Resize if needed (max 2048x2048 for storage efficiency)
         let resized = ImageProcessor::resize_image(&file_data, 2048, 2048).unwrap_or(file_data);
@@ -161,7 +167,12 @@ pub async fn upload_file(
             None
         };
 
-        (resized, Some(orig_width as i32), Some(orig_height as i32), thumbnail)
+        (
+            resized,
+            Some(orig_width as i32),
+            Some(orig_height as i32),
+            thumbnail,
+        )
     } else {
         (file_data, None, None, None)
     };
@@ -174,7 +185,10 @@ pub async fn upload_file(
         .unwrap_or("bin");
 
     let storage_folder = file_type.storage_folder();
-    let storage_path = if matches!(file_type, FileType::Document | FileType::Transcript | FileType::Certificate | FileType::IdCard) {
+    let storage_path = if matches!(
+        file_type,
+        FileType::Document | FileType::Transcript | FileType::Certificate | FileType::IdCard
+    ) {
         // For user documents, create user-specific folder
         format!(
             "school-{}/{}/{}/{}.{}",
@@ -197,7 +211,7 @@ pub async fn upload_file(
     // Generate checksum
     let checksum = FileHasher::sha256(&processed_data);
 
-    // Store file size before moving processed_data  
+    // Store file size before moving processed_data
     let file_size = processed_data.len() as i64;
 
     // Upload to R2
@@ -315,10 +329,10 @@ pub async fn delete_file(
         .await
         .map_err(|e| {
             error!("Failed to get school database: {}", e);
-             AppError::NotFound("School not found".to_string())
+            AppError::NotFound("School not found".to_string())
         })?;
 
-    // Get pool  
+    // Get pool
     let pool = state
         .pool_manager
         .get_pool(&db_url, &subdomain)
@@ -423,9 +437,8 @@ pub async fn list_user_files(
 
     let total = files.len() as i64;
 
-    let url_builder = FileUrlBuilder::new().map_err(|_| {
-        AppError::InternalServerError("Configuration error".to_string())
-    })?;
+    let url_builder = FileUrlBuilder::new()
+        .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
 
     let file_responses: Vec<FileResponse> = files
         .into_iter()

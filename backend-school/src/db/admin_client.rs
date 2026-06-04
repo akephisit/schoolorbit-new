@@ -65,10 +65,7 @@ impl AdminClient {
             return Err(format!("School '{}' not found or inactive", subdomain));
         }
         if !resp.status().is_success() {
-            return Err(format!(
-                "Admin service returned error: {}",
-                resp.status()
-            ));
+            return Err(format!("Admin service returned error: {}", resp.status()));
         }
 
         let info: SchoolDbInfo = resp
@@ -100,7 +97,8 @@ impl AdminClient {
             .await
             .map_err(|e| format!("Failed to parse admin response: {}", e))?;
 
-        info.name.ok_or_else(|| "School name not available".to_string())
+        info.name
+            .ok_or_else(|| "School name not available".to_string())
     }
 
     /// Fetch all active schools with their db_connection_string and migration metadata.
@@ -117,10 +115,7 @@ impl AdminClient {
             .map_err(|e| format!("Failed to reach admin service: {}", e))?;
 
         if !resp.status().is_success() {
-            return Err(format!(
-                "Admin service returned error: {}",
-                resp.status()
-            ));
+            return Err(format!("Admin service returned error: {}", resp.status()));
         }
 
         let list: ListSchoolsResponse = resp
@@ -158,10 +153,7 @@ impl AdminClient {
             .map_err(|e| format!("Failed to reach admin service: {}", e))?;
 
         if !resp.status().is_success() {
-            return Err(format!(
-                "Admin service returned error: {}",
-                resp.status()
-            ));
+            return Err(format!("Admin service returned error: {}", resp.status()));
         }
 
         Ok(())

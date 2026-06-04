@@ -1,11 +1,11 @@
 use crate::db::school_mapping::get_school_database_url;
+use crate::error::AppError;
 use crate::modules::achievement::models::*;
 use crate::modules::auth::models::User;
 use crate::modules::auth::permissions::UserPermissions;
 use crate::permissions::registry::codes;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
-use crate::error::AppError;
 use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -28,15 +28,14 @@ async fn get_authenticated_user(
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
-    
-    let token_from_header = auth_header
-        .and_then(|h| {
-            if h.starts_with("Bearer ") {
-                Some(h[7..].to_string())
-            } else {
-                None
-            }
-        });
+
+    let token_from_header = auth_header.and_then(|h| {
+        if h.starts_with("Bearer ") {
+            Some(h[7..].to_string())
+        } else {
+            None
+        }
+    });
 
     // Fallback to cookie
     let token_from_cookie = headers
@@ -45,28 +44,26 @@ async fn get_authenticated_user(
         .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
 
     // Use Authorization header first, then cookie
-    let token = token_from_header.or(token_from_cookie)
+    let token = token_from_header
+        .or(token_from_cookie)
         .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
-    
+
     // Verify token
     let claims = crate::utils::jwt::JwtService::verify_token(&token)
         .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
-    
+
     // Get user from database
-    sqlx::query_as::<_, User>(
-        "SELECT * FROM users WHERE id = $1"
-    )
-    .bind(uuid::Uuid::parse_str(&claims.sub)
-        .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string()))
+    sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+        .bind(
+            uuid::Uuid::parse_str(&claims.sub)
+                .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?,
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string()))
 }
 
-async fn get_db_pool(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<sqlx::PgPool, AppError> {
+async fn get_db_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
 
@@ -77,7 +74,10 @@ async fn get_db_pool(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    state.pool_manager.get_pool(&db_url, &subdomain).await
+    state
+        .pool_manager
+        .get_pool(&db_url, &subdomain)
+        .await
         .map_err(|e| {
             eprintln!("❌ Failed to get database pool: {}", e);
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
@@ -97,15 +97,22 @@ pub async fn list_achievements(
     let user = get_authenticated_user(&headers, &pool).await?;
 
     // Check Permissions
-    let can_read_all = user.has_permission(&pool, codes::ACHIEVEMENT_READ_ALL).await.unwrap_or(false);
-    let can_read_own = user.has_permission(&pool, codes::ACHIEVEMENT_READ_OWN).await.unwrap_or(false);
+    let can_read_all = user
+        .has_permission(&pool, codes::ACHIEVEMENT_READ_ALL)
+        .await
+        .unwrap_or(false);
+    let can_read_own = user
+        .has_permission(&pool, codes::ACHIEVEMENT_READ_OWN)
+        .await
+        .unwrap_or(false);
 
     if !can_read_all && !can_read_own {
-         return Err(AppError::Forbidden("คุณไม่มีสิทธิ์ดูผลงาน".to_string()));
+        return Err(AppError::Forbidden("คุณไม่มีสิทธิ์ดูผลงาน".to_string()));
     }
 
     // Prepare Query
-    let mut query = String::from("
+    let mut query = String::from(
+        "
         SELECT 
             a.*,
             u.first_name as user_first_name,
@@ -114,8 +121,9 @@ pub async fn list_achievements(
         FROM staff_achievements a
         LEFT JOIN users u ON a.user_id = u.id
         WHERE 1=1
-    ");
-    
+    ",
+    );
+
     let mut idx = 0u32;
 
     // Apply Ownership Filter
@@ -145,18 +153,22 @@ pub async fn list_achievements(
     } else if let Some(target_user_id) = filter.user_id {
         q = q.bind(target_user_id);
     }
-    if let Some(start) = filter.start_date { q = q.bind(start); }
-    if let Some(end) = filter.end_date { q = q.bind(end); }
+    if let Some(start) = filter.start_date {
+        q = q.bind(start);
+    }
+    if let Some(end) = filter.end_date {
+        q = q.bind(end);
+    }
 
-    let items = q
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
-        })?;
+    let items = q.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("❌ Database error: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+    })?;
 
-    Ok((StatusCode::OK, Json(json!({ "success": true, "data": items }))))
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "success": true, "data": items })),
+    ))
 }
 
 pub async fn create_achievement(
@@ -173,9 +185,13 @@ pub async fn create_achievement(
 
     // Check Permissions
     let allowed = if is_own {
-        user.has_permission(&pool, codes::ACHIEVEMENT_CREATE_OWN).await.unwrap_or(false)
+        user.has_permission(&pool, codes::ACHIEVEMENT_CREATE_OWN)
+            .await
+            .unwrap_or(false)
     } else {
-        user.has_permission(&pool, codes::ACHIEVEMENT_CREATE_ALL).await.unwrap_or(false)
+        user.has_permission(&pool, codes::ACHIEVEMENT_CREATE_ALL)
+            .await
+            .unwrap_or(false)
     };
 
     if !allowed {
@@ -204,7 +220,10 @@ pub async fn create_achievement(
         AppError::InternalServerError("บันทึกข้อมูลไม่สำเร็จ".to_string())
     })?;
 
-    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": achievement }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "success": true, "data": achievement })),
+    ))
 }
 
 pub async fn update_achievement(
@@ -222,20 +241,26 @@ pub async fn update_achievement(
         user_id: Uuid,
     }
 
-    let existing = sqlx::query_as::<_, AchievementOwnership>("SELECT user_id FROM staff_achievements WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
-        .ok_or(AppError::NotFound("ไม่พบข้อมูล".to_string()))?;
+    let existing = sqlx::query_as::<_, AchievementOwnership>(
+        "SELECT user_id FROM staff_achievements WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+    .ok_or(AppError::NotFound("ไม่พบข้อมูล".to_string()))?;
 
     let is_own = existing.user_id == user.id;
 
     // Check Permissions
     let allowed = if is_own {
-        user.has_permission(&pool, codes::ACHIEVEMENT_UPDATE_OWN).await.unwrap_or(false)
+        user.has_permission(&pool, codes::ACHIEVEMENT_UPDATE_OWN)
+            .await
+            .unwrap_or(false)
     } else {
-        user.has_permission(&pool, codes::ACHIEVEMENT_UPDATE_ALL).await.unwrap_or(false)
+        user.has_permission(&pool, codes::ACHIEVEMENT_UPDATE_ALL)
+            .await
+            .unwrap_or(false)
     };
 
     if !allowed {
@@ -254,7 +279,7 @@ pub async fn update_achievement(
          RETURNING *, 
          NULL::text as user_first_name, 
          NULL::text as user_last_name, 
-         NULL::text as user_profile_image_url"
+         NULL::text as user_profile_image_url",
     )
     .bind(payload.title)
     .bind(payload.description)
@@ -268,7 +293,10 @@ pub async fn update_achievement(
         AppError::InternalServerError("แก้ไขข้อมูลไม่สำเร็จ".to_string())
     })?;
 
-    Ok((StatusCode::OK, Json(json!({ "success": true, "data": updated }))))
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "success": true, "data": updated })),
+    ))
 }
 
 pub async fn delete_achievement(
@@ -285,20 +313,26 @@ pub async fn delete_achievement(
         user_id: Uuid,
     }
 
-    let existing = sqlx::query_as::<_, AchievementOwnership>("SELECT user_id FROM staff_achievements WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
-        .ok_or(AppError::NotFound("ไม่พบข้อมูล".to_string()))?;
+    let existing = sqlx::query_as::<_, AchievementOwnership>(
+        "SELECT user_id FROM staff_achievements WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+    .ok_or(AppError::NotFound("ไม่พบข้อมูล".to_string()))?;
 
     let is_own = existing.user_id == user.id;
 
     // Check Permissions
     let allowed = if is_own {
-        user.has_permission(&pool, codes::ACHIEVEMENT_DELETE_OWN).await.unwrap_or(false)
+        user.has_permission(&pool, codes::ACHIEVEMENT_DELETE_OWN)
+            .await
+            .unwrap_or(false)
     } else {
-        user.has_permission(&pool, codes::ACHIEVEMENT_DELETE_ALL).await.unwrap_or(false)
+        user.has_permission(&pool, codes::ACHIEVEMENT_DELETE_ALL)
+            .await
+            .unwrap_or(false)
     };
 
     if !allowed {

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionDef {
     pub code: &'static str,
-    pub name: &'static str,      // Thai display name
+    pub name: &'static str, // Thai display name
     pub module: &'static str,
     pub action: &'static str,
     pub scope: &'static str,
@@ -112,8 +112,8 @@ pub mod codes {
 
     // Activity Group Permissions (กิจกรรมพัฒนาผู้เรียน)
     pub const ACTIVITY_READ_ALL: &str = "activity.read.all";
-    pub const ACTIVITY_MANAGE_ALL: &str = "activity.manage.all";     // admin
-    pub const ACTIVITY_MANAGE_OWN: &str = "activity.manage.own";     // ครูจัดการชุมนุมตัวเอง
+    pub const ACTIVITY_MANAGE_ALL: &str = "activity.manage.all"; // admin
+    pub const ACTIVITY_MANAGE_OWN: &str = "activity.manage.own"; // ครูจัดการชุมนุมตัวเอง
     pub const ACTIVITY_MEMBERS_MANAGE: &str = "activity.members.manage"; // จัดการสมาชิก
 
     // Admission permissions
@@ -135,7 +135,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "global",
         description: "สิทธิ์ระดับสูงสุด (เข้าถึงทุกส่วน)",
     },
-
     // Staff permissions
     PermissionDef {
         code: codes::STAFF_READ_ALL,
@@ -408,7 +407,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "all",
         description: "ลบผลงานของบุคคลากรอื่น",
     },
-
     // Academic Structure Permissions
     PermissionDef {
         code: codes::ACADEMIC_STRUCTURE_READ_ALL,
@@ -426,7 +424,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "all",
         description: "สร้าง/แก้ไข/ลบ โครงสร้างวิชาการ",
     },
-
     // Academic Classroom Permissions
     PermissionDef {
         code: codes::ACADEMIC_CLASSROOM_READ_ALL,
@@ -460,7 +457,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "all",
         description: "ลบห้องเรียน",
     },
-
     // Academic Enrollment Configuration
     PermissionDef {
         code: codes::ACADEMIC_ENROLLMENT_READ_ALL,
@@ -478,8 +474,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "all",
         description: "ย้ายนักเรียนเข้า/ออก ห้องเรียน",
     },
-
-
     // Academic Promotion Permissions
     PermissionDef {
         code: codes::ACADEMIC_PROMOTION_READ_ALL,
@@ -497,7 +491,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "all",
         description: "ประมวลผลการเลื่อนชั้นเรียน (End of Year)",
     },
-
     // Academic Curriculum Permissions
     PermissionDef {
         code: codes::ACADEMIC_CURRICULUM_READ_ALL,
@@ -539,7 +532,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "all",
         description: "ลบรายวิชาออกจากระบบ",
     },
-
     // Course Plan Permissions
     PermissionDef {
         code: codes::ACADEMIC_COURSE_PLAN_READ_ALL,
@@ -557,7 +549,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "all",
         description: "เพิ่ม/ลบ/แก้ไข วิชาที่เปิดสอนในห้องเรียน",
     },
-
     // Facility Permissions
     PermissionDef {
         code: codes::FACILITY_READ_ALL,
@@ -591,7 +582,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "all",
         description: "ลบข้อมูลอาคารและห้อง",
     },
-
     // Department Work Permissions
     PermissionDef {
         code: codes::DEPT_WORK_READ_OWN,
@@ -633,7 +623,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "department",
         description: "อนุมัติหรือตรวจสอบงานของสมาชิกในฝ่าย",
     },
-
     // Admission Permissions
     PermissionDef {
         code: codes::ADMISSION_READ_ALL,

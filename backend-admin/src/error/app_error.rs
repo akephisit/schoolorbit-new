@@ -11,7 +11,6 @@ pub enum AppError {
     ExternalServiceError(String),
 }
 
-
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -25,7 +24,6 @@ impl std::fmt::Display for AppError {
         }
     }
 }
-
 
 impl std::error::Error for AppError {}
 
@@ -62,4 +60,3 @@ impl AppError {
         }
     }
 }
-
