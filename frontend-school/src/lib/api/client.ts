@@ -1,16 +1,42 @@
 // API Client base
 import { browser } from '$app/environment';
 import { resolve } from '$app/paths';
+import { env } from '$env/dynamic/public';
 import { PUBLIC_BACKEND_URL } from '$env/static/public';
 
 export const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 export const BACKEND_WS_URL = BACKEND_URL.replace(/^http/, 'ws');
+const SCHOOL_SUBDOMAIN_HEADER = 'X-School-Subdomain';
+const SCHOOL_DOMAIN = 'schoolorbit.app';
 
 export interface ApiResponse<T> {
 	success: boolean;
 	data?: T;
 	error?: string;
 	message?: string;
+}
+
+function normalizeSchoolSubdomain(value: string | undefined): string | null {
+	const subdomain = value?.trim().toLowerCase();
+	if (!subdomain || subdomain === 'www') return null;
+	if (!/^[a-z0-9-]+$/.test(subdomain)) return null;
+	return subdomain;
+}
+
+function getHostnameSubdomain(hostname: string): string | null {
+	const parts = hostname.toLowerCase().split('.');
+	if (parts.length < 3) return null;
+	if (parts.slice(-2).join('.') !== SCHOOL_DOMAIN) return null;
+
+	return normalizeSchoolSubdomain(parts[0]);
+}
+
+function getRequestSubdomain(): string | null {
+	const configured = normalizeSchoolSubdomain(env.PUBLIC_SCHOOL_SUBDOMAIN);
+	if (configured) return configured;
+	if (!browser) return null;
+
+	return getHostnameSubdomain(window.location.hostname);
 }
 
 export function requireApiData<T>(response: ApiResponse<T>, fallbackError: string): T {
@@ -69,6 +95,15 @@ class APIClient {
 		window.location.assign(loginPath);
 	}
 
+	private applyTenantHeader(headers: Headers) {
+		if (headers.has(SCHOOL_SUBDOMAIN_HEADER)) return;
+
+		const subdomain = getRequestSubdomain();
+		if (subdomain) {
+			headers.set(SCHOOL_SUBDOMAIN_HEADER, subdomain);
+		}
+	}
+
 	private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
 		const url = `${this.baseURL}${endpoint}`;
 
@@ -76,6 +111,7 @@ class APIClient {
 		if (options.body !== undefined && !headers.has('Content-Type')) {
 			headers.set('Content-Type', 'application/json');
 		}
+		this.applyTenantHeader(headers);
 
 		const response = await fetch(url, {
 			...options,
@@ -137,10 +173,13 @@ class APIClient {
 
 	async postMultipart<T>(endpoint: string, body: FormData): Promise<ApiResponse<T>> {
 		const url = `${this.baseURL}${endpoint}`;
+		const headers = new Headers();
+		this.applyTenantHeader(headers);
 		// Do NOT set Content-Type — browser sets it with the multipart boundary automatically
 		const response = await fetch(url, {
 			method: 'POST',
 			credentials: 'include',
+			headers,
 			body
 		});
 		const data = await this.parseResponse(response);

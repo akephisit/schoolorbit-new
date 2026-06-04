@@ -325,6 +325,29 @@ test('backend module handlers resolve tenant pools through the central resolver'
 	assert.deepEqual(violations, []);
 });
 
+test('tenant routing prefers validated X-School-Subdomain with Origin fallback', async () => {
+	const subdomainResolver = await readFile(
+		path.join(repoRoot, 'backend-school/src/utils/subdomain.rs'),
+		'utf8'
+	);
+	const apiClient = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/api/client.ts'),
+		'utf8'
+	);
+
+	assert.match(subdomainResolver, /SCHOOL_SUBDOMAIN_HEADER/);
+	assert.match(subdomainResolver, /normalize_subdomain/);
+	assert.match(subdomainResolver, /headers\.get\(SCHOOL_SUBDOMAIN_HEADER\)/);
+	assert.match(subdomainResolver, /Subdomain header does not match origin/);
+	assert.match(subdomainResolver, /\.get\("origin"\)/);
+	assert.match(subdomainResolver, /\.get\("referer"\)/);
+
+	assert.match(apiClient, /X-School-Subdomain/);
+	assert.match(apiClient, /PUBLIC_SCHOOL_SUBDOMAIN/);
+	assert.match(apiClient, /window\.location\.hostname/);
+	assert.match(apiClient, /applyTenantHeader\(headers\)/);
+});
+
 test('frontend application code routes backend API calls through apiClient', async () => {
 	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
 		/\.(svelte|ts)$/.test(file)

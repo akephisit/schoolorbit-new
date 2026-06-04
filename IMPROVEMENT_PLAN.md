@@ -104,12 +104,12 @@
 
 ## 🟡 Priority 3: Medium — sprint ถัดไป
 
-### M-1. Subdomain extraction จาก `Origin` header ขาดความยืดหยุ่น
+### ✅ M-1. Subdomain extraction จาก `Origin` header ขาดความยืดหยุ่น — เสร็จแล้ว
 | | |
 |---|---|
 | **ไฟล์** | `backend-school/src/utils/subdomain.rs` |
 | **ปัญหา** | ไม่รองรับ non-browser clients (Postman, mobile, scripts), local dev และ custom domains ในอนาคต |
-| **แก้ไข** | เพิ่ม `X-School-Subdomain` header เป็น first-class input (ก่อน Origin/Referer) และต้องเพิ่มใน `frontend-school/src/lib/api/client.ts` ด้วย |
+| **ที่ทำ** | ทำ `X-School-Subdomain` เป็น first-class input ที่ validate แล้วก่อน fallback Origin/Referer, ให้ `frontend-school/src/lib/api/client.ts` ส่ง header จาก `PUBLIC_SCHOOL_SUBDOMAIN` หรือ tenant hostname, เพิ่ม smoke/preflight coverage และอัปเดต CORS docs ให้ allow header นี้ |
 | **ความยาก** | Small |
 
 ### M-2. 51 migrations ไม่มี squash strategy
@@ -165,7 +165,7 @@
 ทั้งหมด small/medium complexity แก้ security + correctness + รากฐาน testing
 
 ### Sprint 2
-**M-1** (subdomain header + frontend-school client.ts)
+**M-1** (subdomain header + frontend-school client.ts) — เสร็จแล้ว
 
 *(H-5 เสร็จแล้วใน session 2026-03-24)*
 

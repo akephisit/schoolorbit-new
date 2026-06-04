@@ -184,6 +184,7 @@ print_section "SchoolOrbit smoke test"
 printf 'Tenant: %s\n' "$SMOKE_TENANT_URL"
 printf 'API: %s\n' "$SMOKE_API_URL"
 printf 'Origin: %s\n' "$SMOKE_ORIGIN"
+printf 'Subdomain header: %s\n' "$SMOKE_SUBDOMAIN"
 
 tenant_headers="$tmp_dir/tenant.headers"
 tenant_body="$tmp_dir/tenant.body"
@@ -205,7 +206,8 @@ expect_body_contains "school API health" "$health_body" '"status":"healthy"'
 me_unauth_headers="$tmp_dir/me-unauth.headers"
 me_unauth_body="$tmp_dir/me-unauth.body"
 status="$(request "unauthenticated /me" GET "$SMOKE_API_URL/api/auth/me" "$me_unauth_headers" "$me_unauth_body" \
-    -H "Origin: $SMOKE_ORIGIN")"
+    -H "Origin: $SMOKE_ORIGIN" \
+    -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
 expect_status "unauthenticated /me" "$status" "401"
 expect_header "unauthenticated /me" "$me_unauth_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
 
@@ -214,7 +216,7 @@ preflight_body="$tmp_dir/preflight.body"
 status="$(request "login preflight" OPTIONS "$SMOKE_API_URL/api/auth/login" "$preflight_headers" "$preflight_body" \
     -H "Origin: $SMOKE_ORIGIN" \
     -H "Access-Control-Request-Method: POST" \
-    -H "Access-Control-Request-Headers: content-type,authorization")"
+    -H "Access-Control-Request-Headers: content-type,authorization,x-school-subdomain")"
 expect_status "login preflight" "$status" "204"
 expect_header "login preflight" "$preflight_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
 
@@ -223,6 +225,7 @@ if [[ -z "$SMOKE_USERNAME" || -z "$SMOKE_PASSWORD" ]]; then
     login_validation_body="$tmp_dir/login-validation.body"
     status="$(request "login validation" POST "$SMOKE_API_URL/api/auth/login" "$login_validation_headers" "$login_validation_body" \
         -H "Origin: $SMOKE_ORIGIN" \
+        -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
         -H "Content-Type: application/json" \
         --data '{}')"
     expect_status "login validation" "$status" "422"
@@ -250,6 +253,7 @@ PY
     status="$(request "login" POST "$SMOKE_API_URL/api/auth/login" "$login_headers" "$login_body" \
         -c "$cookie_jar" \
         -H "Origin: $SMOKE_ORIGIN" \
+        -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
         -H "Content-Type: application/json" \
         --data-binary "@$login_payload")"
     expect_status "login" "$status" "200"
@@ -266,7 +270,8 @@ PY
     me_body="$tmp_dir/me.body"
     status="$(request "authenticated /me" GET "$SMOKE_API_URL/api/auth/me" "$me_headers" "$me_body" \
         -b "$cookie_jar" \
-        -H "Origin: $SMOKE_ORIGIN")"
+        -H "Origin: $SMOKE_ORIGIN" \
+        -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
     expect_status "authenticated /me" "$status" "200"
     expect_header "authenticated /me" "$me_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
     expect_json_username "authenticated /me" "$me_body" "$SMOKE_USERNAME"

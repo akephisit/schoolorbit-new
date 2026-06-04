@@ -87,6 +87,8 @@ The script checks:
 - login returns an `auth_token` cookie
 - authenticated `/api/auth/me` returns the logged-in user
 
+Tenant API requests send both `Origin` and `X-School-Subdomain`; the preflight check includes `x-school-subdomain` so CORS config drift is caught before browser E2E.
+
 If `SMOKE_USERNAME` or `SMOKE_PASSWORD` is omitted, authenticated login checks are skipped and the script only validates public endpoints, CORS, and login request validation.
 
 ## Environment Variables
