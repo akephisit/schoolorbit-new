@@ -13,8 +13,8 @@ use super::models::{
 };
 use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
+use crate::middleware::permission::{get_cached_user_permissions, permission_matches};
 use crate::modules::auth::models::User;
-use crate::modules::auth::permissions::UserPermissions;
 use crate::permissions::registry::codes;
 use crate::utils::field_encryption;
 use crate::utils::subdomain::extract_subdomain_from_request;
@@ -109,22 +109,23 @@ async fn check_user_permission(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
     required_permission: &str,
+    cache: &crate::db::permission_cache::PermissionCache,
 ) -> Result<User, AppError> {
     let user = get_current_user(headers, pool).await?;
+    let permissions = get_cached_user_permissions(user.id, pool, cache)
+        .await
+        .map_err(|e| {
+            eprintln!("❌ Permission check error: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string())
+        })?;
 
-    // Check permission
-    match user.has_permission(pool, required_permission).await {
-        Ok(true) => Ok(user),
-        Ok(false) => Err(AppError::Forbidden(format!(
+    if permission_matches(&permissions, required_permission) {
+        Ok(user)
+    } else {
+        Err(AppError::Forbidden(format!(
             "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
             required_permission
-        ))),
-        Err(e) => {
-            eprintln!("❌ Permission check error: {}", e);
-            Err(AppError::InternalServerError(
-                "เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string(),
-            ))
-        }
+        )))
     }
 }
 
@@ -338,7 +339,13 @@ pub async fn list_students(
         })?;
 
     // Check permission
-    check_user_permission(&headers, &pool, codes::STUDENT_READ_ALL).await?;
+    check_user_permission(
+        &headers,
+        &pool,
+        codes::STUDENT_READ_ALL,
+        &state.permission_cache,
+    )
+    .await?;
 
     let page = filter.page.unwrap_or(1);
     let page_size = filter.page_size.unwrap_or(20).min(100);
@@ -441,7 +448,13 @@ pub async fn create_student(
         })?;
 
     // Check permission
-    check_user_permission(&headers, &pool, codes::STUDENT_CREATE).await?;
+    check_user_permission(
+        &headers,
+        &pool,
+        codes::STUDENT_CREATE,
+        &state.permission_cache,
+    )
+    .await?;
 
     let mut tx = pool.begin().await.map_err(|e| {
         eprintln!("❌ Failed to start transaction: {}", e);
@@ -742,7 +755,13 @@ pub async fn get_student(
         })?;
 
     // Check permission
-    check_user_permission(&headers, &pool, codes::STUDENT_READ_ALL).await?;
+    check_user_permission(
+        &headers,
+        &pool,
+        codes::STUDENT_READ_ALL,
+        &state.permission_cache,
+    )
+    .await?;
 
     // Query student profile with joined class info
     let mut student_row = sqlx::query_as::<_, StudentDbRow>(
@@ -848,7 +867,13 @@ pub async fn update_student(
         })?;
 
     // Check permission
-    check_user_permission(&headers, &pool, codes::STUDENT_UPDATE_ALL).await?;
+    check_user_permission(
+        &headers,
+        &pool,
+        codes::STUDENT_UPDATE_ALL,
+        &state.permission_cache,
+    )
+    .await?;
 
     let mut tx = pool.begin().await.map_err(|e| {
         eprintln!("❌ Failed to start transaction: {}", e);
@@ -938,7 +963,13 @@ pub async fn delete_student(
         })?;
 
     // Check permission
-    check_user_permission(&headers, &pool, codes::STUDENT_DELETE).await?;
+    check_user_permission(
+        &headers,
+        &pool,
+        codes::STUDENT_DELETE,
+        &state.permission_cache,
+    )
+    .await?;
 
     // Soft delete — wrap in transaction to also drop enrollments
     let mut tx = pool.begin().await.map_err(|e| {

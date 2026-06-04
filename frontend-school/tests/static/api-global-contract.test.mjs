@@ -233,6 +233,22 @@ test('backend permission checks use registry constants instead of string literal
 	assert.deepEqual(violations, []);
 });
 
+test('backend permissions do not use the legacy UserPermissions resolver', async () => {
+	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src'), (file) =>
+		file.endsWith('.rs')
+	);
+	const violations = [];
+
+	for (const file of backendFiles) {
+		const source = await readFile(file, 'utf8');
+		if (/\bUserPermissions\b|\bhas_permission\s*\(/.test(source)) {
+			violations.push(relative(file));
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
 test('frontend application code routes backend API calls through apiClient', async () => {
 	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
 		/\.(svelte|ts)$/.test(file)
