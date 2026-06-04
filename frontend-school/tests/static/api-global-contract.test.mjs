@@ -355,7 +355,7 @@ test('backend module handlers resolve tenant pools through the central resolver'
 	assert.deepEqual(violations, []);
 });
 
-test('tenant routing prefers validated X-School-Subdomain with Origin fallback', async () => {
+test('tenant routing uses Origin by default with explicit X-School-Subdomain override', async () => {
 	const subdomainResolver = await readFile(
 		path.join(repoRoot, 'backend-school/src/utils/subdomain.rs'),
 		'utf8'
@@ -374,7 +374,7 @@ test('tenant routing prefers validated X-School-Subdomain with Origin fallback',
 
 	assert.match(apiClient, /X-School-Subdomain/);
 	assert.match(apiClient, /PUBLIC_SCHOOL_SUBDOMAIN/);
-	assert.match(apiClient, /window\.location\.hostname/);
+	assert.equal(apiClient.includes('window.location.hostname'), false);
 	assert.match(apiClient, /applyTenantHeader\(headers\)/);
 });
 

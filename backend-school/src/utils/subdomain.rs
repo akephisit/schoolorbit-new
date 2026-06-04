@@ -8,8 +8,8 @@ pub const SCHOOL_SUBDOMAIN_HEADER: &str = "x-school-subdomain";
 
 /// Extract subdomain from X-School-Subdomain header or Origin/Referer.
 ///
-/// Browser clients should send X-School-Subdomain so tenant routing does not
-/// depend on Origin, while older/browser-default requests can still fall back.
+/// Browser tenant requests normally rely on Origin/Referer. X-School-Subdomain
+/// is an explicit override for local, custom-host, script, or non-browser clients.
 pub fn extract_subdomain_from_request(headers: &HeaderMap) -> Result<String, Response> {
     if let Some(subdomain_header) = headers.get(SCHOOL_SUBDOMAIN_HEADER) {
         let subdomain = subdomain_header

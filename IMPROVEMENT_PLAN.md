@@ -109,7 +109,7 @@
 |---|---|
 | **ไฟล์** | `backend-school/src/utils/subdomain.rs` |
 | **ปัญหา** | ไม่รองรับ non-browser clients (Postman, mobile, scripts), local dev และ custom domains ในอนาคต |
-| **ที่ทำ** | ทำ `X-School-Subdomain` เป็น first-class input ที่ validate แล้วก่อน fallback Origin/Referer, ให้ `frontend-school/src/lib/api/client.ts` ส่ง header จาก `PUBLIC_SCHOOL_SUBDOMAIN` หรือ tenant hostname, เพิ่ม smoke/preflight coverage และอัปเดต CORS docs ให้ allow header นี้ |
+| **ที่ทำ** | ฝั่ง backend ยังรับ `X-School-Subdomain` เป็น first-class input: ถ้ามี header จะ validate และใช้ก่อน fallback ไป Origin/Referer; ฝั่ง frontend ส่ง header เฉพาะเมื่อกำหนด `PUBLIC_SCHOOL_SUBDOMAIN` ชัดเจน ส่วน production browser tenant ใช้ Origin/Referer เป็นหลัก, เพิ่ม smoke/preflight coverage และอัปเดต CORS docs ให้ allow header นี้ |
 | **ความยาก** | Small |
 
 ### M-2. 51 migrations ไม่มี squash strategy

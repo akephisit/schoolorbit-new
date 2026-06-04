@@ -7,7 +7,6 @@ import { PUBLIC_BACKEND_URL } from '$env/static/public';
 export const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 export const BACKEND_WS_URL = BACKEND_URL.replace(/^http/, 'ws');
 const SCHOOL_SUBDOMAIN_HEADER = 'X-School-Subdomain';
-const SCHOOL_DOMAIN = 'schoolorbit.app';
 
 export interface ApiResponse<T> {
 	success: boolean;
@@ -23,20 +22,8 @@ function normalizeSchoolSubdomain(value: string | undefined): string | null {
 	return subdomain;
 }
 
-function getHostnameSubdomain(hostname: string): string | null {
-	const parts = hostname.toLowerCase().split('.');
-	if (parts.length < 3) return null;
-	if (parts.slice(-2).join('.') !== SCHOOL_DOMAIN) return null;
-
-	return normalizeSchoolSubdomain(parts[0]);
-}
-
 function getRequestSubdomain(): string | null {
-	const configured = normalizeSchoolSubdomain(env.PUBLIC_SCHOOL_SUBDOMAIN);
-	if (configured) return configured;
-	if (!browser) return null;
-
-	return getHostnameSubdomain(window.location.hostname);
+	return normalizeSchoolSubdomain(env.PUBLIC_SCHOOL_SUBDOMAIN);
 }
 
 export function requireApiData<T>(response: ApiResponse<T>, fallbackError: string): T {
