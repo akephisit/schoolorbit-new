@@ -6,7 +6,7 @@ use axum::{
 use std::collections::HashMap;
 
 use crate::error::AppError;
-use crate::middleware::permission::{get_actor_context, module_permission_matches};
+use crate::middleware::permission::{load_actor_context, module_permission_matches};
 use crate::modules::menu::models::*;
 use crate::modules::menu::services::public_menu_service::{self, MenuRow};
 use crate::utils::tenant::resolve_tenant_pool;
@@ -17,7 +17,7 @@ pub async fn get_user_menu(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = resolve_tenant_pool(&state, &headers).await?;
-    let actor = get_actor_context(&headers, &pool, &state.permission_cache)
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache)
         .await
         .map_err(|_| AppError::AuthError("ไม่สามารถดึงข้อมูล permissions ได้".to_string()))?;
     let user = public_menu_service::get_user(&pool, actor.user_id).await?;

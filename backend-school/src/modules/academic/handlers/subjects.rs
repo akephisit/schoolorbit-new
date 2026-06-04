@@ -8,7 +8,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::get_actor_context;
+use crate::middleware::permission::load_actor_context;
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, SubjectFilter,
     UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
@@ -28,7 +28,7 @@ pub async fn list_subject_groups(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };
@@ -53,7 +53,7 @@ pub async fn list_subjects(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };
@@ -92,7 +92,7 @@ pub async fn create_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };
@@ -132,7 +132,7 @@ pub async fn update_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };
@@ -168,7 +168,7 @@ pub async fn delete_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };
@@ -206,7 +206,7 @@ async fn check_subject_manage(
     manage_code: &str,
     read_only: bool,
 ) -> Result<(), axum::response::Response> {
-    let actor = match get_actor_context(headers, pool, &state.permission_cache).await {
+    let actor = match load_actor_context(headers, pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Err(resp),
     };
@@ -360,7 +360,7 @@ pub async fn batch_list_subject_default_instructors(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };

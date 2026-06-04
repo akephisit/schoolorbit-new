@@ -12,7 +12,7 @@ use super::models::{
     UpdateOwnProfileRequest, UpdateStudentRequest,
 };
 use crate::error::AppError;
-use crate::middleware::permission::get_actor_context_or_error;
+use crate::middleware::permission::load_actor_context_or_error;
 use crate::modules::auth::models::User;
 use crate::permissions::registry::codes;
 use crate::utils::field_encryption;
@@ -105,26 +105,6 @@ async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Us
     }
 
     Ok(user)
-}
-
-/// Check if user has permission
-async fn check_user_permission(
-    headers: &HeaderMap,
-    pool: &sqlx::PgPool,
-    required_permission: &str,
-    cache: &crate::db::permission_cache::PermissionCache,
-) -> Result<Uuid, AppError> {
-    let actor = get_actor_context_or_error(headers, pool, cache).await?;
-    let has_required_permission = actor.has_permission(required_permission);
-
-    if has_required_permission {
-        Ok(actor.user_id)
-    } else {
-        Err(AppError::Forbidden(format!(
-            "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
-            required_permission
-        )))
-    }
 }
 
 // =========================================
@@ -285,14 +265,15 @@ pub async fn list_students(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Check permission
-    check_user_permission(
-        &headers,
-        &pool,
-        codes::STUDENT_READ_ALL,
-        &state.permission_cache,
-    )
-    .await?;
+    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    actor
+        .require_permission(codes::STUDENT_READ_ALL)
+        .map_err(|_| {
+            AppError::Forbidden(format!(
+                "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
+                codes::STUDENT_READ_ALL
+            ))
+        })?;
 
     let page = filter.page.unwrap_or(1);
     let page_size = filter.page_size.unwrap_or(20).min(100);
@@ -377,14 +358,15 @@ pub async fn create_student(
     eprintln!("🔍 Creating student with payload: {:?}", payload);
     let pool = get_pool(&state, &headers).await?;
 
-    // Check permission
-    check_user_permission(
-        &headers,
-        &pool,
-        codes::STUDENT_CREATE,
-        &state.permission_cache,
-    )
-    .await?;
+    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    actor
+        .require_permission(codes::STUDENT_CREATE)
+        .map_err(|_| {
+            AppError::Forbidden(format!(
+                "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
+                codes::STUDENT_CREATE
+            ))
+        })?;
 
     let mut tx = pool.begin().await.map_err(|e| {
         eprintln!("❌ Failed to start transaction: {}", e);
@@ -667,14 +649,15 @@ pub async fn get_student(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Check permission
-    check_user_permission(
-        &headers,
-        &pool,
-        codes::STUDENT_READ_ALL,
-        &state.permission_cache,
-    )
-    .await?;
+    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    actor
+        .require_permission(codes::STUDENT_READ_ALL)
+        .map_err(|_| {
+            AppError::Forbidden(format!(
+                "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
+                codes::STUDENT_READ_ALL
+            ))
+        })?;
 
     // Query student profile with joined class info
     let mut student_row = sqlx::query_as::<_, StudentDbRow>(
@@ -762,14 +745,15 @@ pub async fn update_student(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Check permission
-    check_user_permission(
-        &headers,
-        &pool,
-        codes::STUDENT_UPDATE_ALL,
-        &state.permission_cache,
-    )
-    .await?;
+    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    actor
+        .require_permission(codes::STUDENT_UPDATE_ALL)
+        .map_err(|_| {
+            AppError::Forbidden(format!(
+                "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
+                codes::STUDENT_UPDATE_ALL
+            ))
+        })?;
 
     let mut tx = pool.begin().await.map_err(|e| {
         eprintln!("❌ Failed to start transaction: {}", e);
@@ -841,14 +825,15 @@ pub async fn delete_student(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Check permission
-    check_user_permission(
-        &headers,
-        &pool,
-        codes::STUDENT_DELETE,
-        &state.permission_cache,
-    )
-    .await?;
+    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    actor
+        .require_permission(codes::STUDENT_DELETE)
+        .map_err(|_| {
+            AppError::Forbidden(format!(
+                "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
+                codes::STUDENT_DELETE
+            ))
+        })?;
 
     // Soft delete — wrap in transaction to also drop enrollments
     let mut tx = pool.begin().await.map_err(|e| {

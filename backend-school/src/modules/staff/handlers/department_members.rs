@@ -10,7 +10,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::check_permission;
+use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::services::department_member_service;
 use crate::permissions::registry::codes;
 use crate::utils::tenant::resolve_tenant_pool;
@@ -77,15 +77,12 @@ pub async fn add_member(
     Json(body): Json<AddMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_permission(
-        &headers,
-        &pool,
-        codes::ROLES_ASSIGN_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(resp);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ROLES_ASSIGN_ALL) {
+        return Ok(response);
     }
 
     if department_member_service::already_member(&pool, body.user_id, department_id).await? {
@@ -116,15 +113,12 @@ pub async fn update_member(
     Json(body): Json<UpdateMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_permission(
-        &headers,
-        &pool,
-        codes::ROLES_ASSIGN_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(resp);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ROLES_ASSIGN_ALL) {
+        return Ok(response);
     }
 
     let target_dept = body.new_department_id.unwrap_or(department_id);
@@ -153,15 +147,12 @@ pub async fn remove_member(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_permission(
-        &headers,
-        &pool,
-        codes::ROLES_ASSIGN_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(resp);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ROLES_ASSIGN_ALL) {
+        return Ok(response);
     }
     department_member_service::remove_member(&pool, department_id, user_id).await?;
     state.permission_cache.invalidate(&user_id);

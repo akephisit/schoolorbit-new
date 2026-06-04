@@ -1,4 +1,4 @@
-use crate::middleware::permission::check_permission;
+use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::models::Permission;
 use crate::permissions::registry::codes;
 use crate::utils::tenant::resolve_tenant_pool;
@@ -22,18 +22,13 @@ pub async fn list_permissions(State(state): State<AppState>, headers: HeaderMap)
         Err(error) => return error.into_response(),
     };
 
-    // Check permission
-    let _user = match check_permission(
-        &headers,
-        &pool,
-        codes::SETTINGS_READ,
-        &state.permission_cache,
-    )
-    .await
-    {
-        Ok(u) => u,
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
         Err(response) => return response,
     };
+    if let Err(response) = actor.require_permission(codes::SETTINGS_READ) {
+        return response;
+    }
 
     let permissions = match sqlx::query_as::<_, Permission>(
         "SELECT * FROM permissions ORDER BY module, action, code",
@@ -72,18 +67,13 @@ pub async fn list_permissions_by_module(
         Err(error) => return error.into_response(),
     };
 
-    // Check permission
-    let _user = match check_permission(
-        &headers,
-        &pool,
-        codes::SETTINGS_READ,
-        &state.permission_cache,
-    )
-    .await
-    {
-        Ok(u) => u,
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
         Err(response) => return response,
     };
+    if let Err(response) = actor.require_permission(codes::SETTINGS_READ) {
+        return response;
+    }
 
     let permissions = match sqlx::query_as::<_, Permission>(
         "SELECT * FROM permissions ORDER BY module, action, code",

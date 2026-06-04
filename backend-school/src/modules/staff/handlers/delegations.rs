@@ -10,7 +10,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::get_actor_context;
+use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::services::delegation_service;
 use crate::permissions::registry::codes;
 use crate::utils::tenant::resolve_tenant_pool;
@@ -50,7 +50,7 @@ pub async fn list_delegatable_permissions(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };
@@ -74,7 +74,7 @@ pub async fn list_delegations(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };
@@ -99,7 +99,7 @@ pub async fn create_delegation(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };
@@ -148,7 +148,7 @@ pub async fn revoke_delegation(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(resp) => return Ok(resp),
     };

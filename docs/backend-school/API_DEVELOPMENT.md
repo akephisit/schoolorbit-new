@@ -29,7 +29,7 @@ Extract data from the Request, call the Service, and handle errors.
 ### 6. Register the Route
 Add the new handler to the router configuration.
 *   **File:** `src/routes.rs` (or `main.rs` depending on setup).
-*   **Middleware:** Don't forget to wrap it in `check_permission` if needed.
+*   **Permission:** Load the actor context in the handler and call `actor.require_*` if the endpoint is protected.
 
 ## Error Handling
 *   Use the custom `AppError` type (if available) to map errors to HTTP status codes.
@@ -40,34 +40,33 @@ Add the new handler to the router configuration.
 ### System Overview
 The system uses a **Permission-Based Access Control (PBAC)** model. Users are assigned Roles, and Roles have Permissions.
 *   **Authentication:** Handled by `auth_middleware` (validates JWT/Cookie).
-*   **Authorization:** Handled explicitly within each Handler using `check_permission`.
+*   **Authorization:** Handled explicitly within each handler using `load_actor_context(...)` and `ActorContext` helpers.
 
 ### Implementing Permission Checks
 To enforce that a user must have a specific permission (e.g., `staff.create.all`) to use an endpoint, follow this pattern inside your handler function:
 
 ```rust
-use crate::middleware::permission::check_permission;
-// or use the local helper if available in your handler module
-// use check_user_permission; 
+use crate::middleware::permission::load_actor_context;
+use crate::permissions::registry::codes;
 
 pub async fn my_protected_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    // 1. Get Database Pool (Standard flow)
-    let subdomain = match extract_subdomain_from_request(&headers) { ... };
-    let db_url = match get_school_database_url(...).await { ... };
-    let pool = match state.pool_manager.get_pool(...).await { ... };
+    // 1. Resolve the tenant pool through backend-school/src/utils/tenant.rs
+    let pool = match resolve_tenant_pool(&state, &headers).await { ... };
 
     // 2. Enforce Permission
-    // Returns the User object if allowed, or an Error Response immediately if denied.
-    let user = match check_permission(&headers, &pool, "my.feature.read").await {
-        Ok(u) => u,
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
         Err(response) => return response,
+    };
+    if let Err(response) = actor.require_permission(codes::MY_FEATURE_READ) {
+        return response;
     };
 
     // 3. Proceed with business logic
-    // You now have access to the authenticated 'user' object
+    // You now have actor.user_id and actor.permissions.
 }
 ```
 
@@ -78,4 +77,4 @@ pub async fn my_protected_handler(
     // src/permissions/registry.rs
     pub const MY_FEATURE_READ: &str = "my.feature.read";
     ```
-3.  **Usage:** `check_permission(&headers, &pool, codes::MY_FEATURE_READ).await`
+3.  **Usage:** load `ActorContext` once, then call `actor.require_permission(codes::MY_FEATURE_READ)` or `actor.require_any_permission(&[...])`.

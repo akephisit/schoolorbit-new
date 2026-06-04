@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::middleware::permission::check_permission;
+use crate::middleware::permission::load_actor_context;
 use crate::modules::academic::models::timetable::*;
 use crate::modules::academic::services::{period_service, timetable_service};
 use crate::modules::academic::websockets::TimetableEvent;
@@ -38,14 +38,11 @@ pub async fn list_periods(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_STRUCTURE_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_STRUCTURE_READ_ALL) {
         return Ok(response);
     }
 
@@ -61,14 +58,11 @@ pub async fn create_period(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_STRUCTURE_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -89,14 +83,11 @@ pub async fn update_period(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_STRUCTURE_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -112,14 +103,11 @@ pub async fn delete_period(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_STRUCTURE_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -135,14 +123,11 @@ pub async fn reorder_periods(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_STRUCTURE_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -162,14 +147,11 @@ pub async fn list_timetable_entries(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL) {
         return Ok(response);
     }
 
@@ -206,14 +188,11 @@ pub async fn replay_events(
     Query(query): Query<ReplayQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL) {
         return Ok(response);
     }
 
@@ -294,14 +273,11 @@ pub async fn create_timetable_entry(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -401,14 +377,11 @@ pub async fn delete_batch_timetable_entries(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -447,14 +420,11 @@ pub async fn delete_timetable_entry(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -487,14 +457,11 @@ pub async fn delete_batch_group(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -533,14 +500,11 @@ pub async fn update_timetable_entry(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -619,14 +583,11 @@ pub async fn create_batch_timetable_entries(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
         return Ok(response);
     }
 
@@ -685,15 +646,12 @@ pub async fn add_entry_instructor(
     Json(body): Json<AddEntryInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
         .await
@@ -734,15 +692,12 @@ pub async fn remove_entry_instructor(
     Path((entry_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
         .await
@@ -775,15 +730,12 @@ pub async fn restore_instructor_to_slot_entries(
     Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     let inserted =
         timetable_service::restore_instructor_to_slot(&pool, slot_id, instructor_id).await?;
@@ -797,15 +749,12 @@ pub async fn hide_instructor_from_slot_entries(
     Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     let (deleted, semester_id) =
         timetable_service::hide_instructor_from_slot(&pool, slot_id, instructor_id).await?;
@@ -842,15 +791,12 @@ pub async fn hide_instructor_from_slot_period_entries(
     Query(q): Query<HideSlotPeriodQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     let (deleted, semester_id) = timetable_service::hide_instructor_from_slot_period(
         &pool,
@@ -893,15 +839,12 @@ pub async fn swap_timetable_entries(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
 
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
@@ -953,15 +896,12 @@ pub async fn validate_timetable_moves(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL) {
+        return Ok(response);
     }
 
     let cells = timetable_service::validate_moves(&pool, body).await?;
@@ -981,15 +921,12 @@ pub async fn get_timetable_occupancy(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL) {
+        return Ok(response);
     }
 
     let rows = timetable_service::get_occupancy(&pool, q.semester_id).await?;

@@ -72,24 +72,6 @@ impl ActorContext {
     }
 }
 
-/// Shared permission check — returns user_id (Uuid) on success.
-///
-/// Cache hit (within 30-min TTL): 0 DB trips
-///   JWT verify → cache lookup → return user_id immediately
-///
-/// Cache miss / expired: 1 DB trip
-///   permissions-only query (no user JOIN) → cache → check
-pub async fn check_permission(
-    headers: &HeaderMap,
-    pool: &sqlx::PgPool,
-    required_permission: &str,
-    cache: &PermissionCache,
-) -> Result<Uuid, Response> {
-    let actor = get_actor_context(headers, pool, cache).await?;
-    actor.require_permission(required_permission)?;
-    Ok(actor.user_id)
-}
-
 fn extract_actor_user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
     let auth_header = headers
         .get(header::AUTHORIZATION)
@@ -156,29 +138,6 @@ pub async fn get_cached_user_permissions(
     let permissions = fetch_user_permissions(user_id, pool).await?;
     cache.set(user_id, permissions.clone());
     Ok(permissions)
-}
-
-pub async fn check_any_permission(
-    headers: &HeaderMap,
-    pool: &sqlx::PgPool,
-    required_permissions: &[&str],
-    cache: &PermissionCache,
-) -> Result<Uuid, Response> {
-    let actor = get_actor_context(headers, pool, cache).await?;
-    actor.require_any_permission(required_permissions)?;
-    Ok(actor.user_id)
-}
-
-#[allow(dead_code)]
-pub async fn check_all_permissions(
-    headers: &HeaderMap,
-    pool: &sqlx::PgPool,
-    required_permissions: &[&str],
-    cache: &PermissionCache,
-) -> Result<Uuid, Response> {
-    let actor = get_actor_context(headers, pool, cache).await?;
-    actor.require_all_permissions(required_permissions)?;
-    Ok(actor.user_id)
 }
 
 pub fn permission_matches(permissions: &[String], required_permission: &str) -> bool {
@@ -276,14 +235,6 @@ async fn fetch_user_permissions(
 /// Verify JWT and return (user_id, permissions) without checking a specific permission.
 /// Use this when a handler needs to check multiple permissions or determine scope.
 /// Returns Err(401 Response) on auth failure only.
-pub async fn get_actor_context(
-    headers: &HeaderMap,
-    pool: &sqlx::PgPool,
-    cache: &PermissionCache,
-) -> Result<ActorContext, Response> {
-    load_actor_context(headers, pool, cache).await
-}
-
 pub async fn load_actor_context(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
@@ -306,12 +257,12 @@ pub async fn load_actor_context(
     })
 }
 
-pub async fn get_actor_context_or_error(
+pub async fn load_actor_context_or_error(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
     cache: &PermissionCache,
 ) -> Result<ActorContext, AppError> {
-    get_actor_context(headers, pool, cache)
+    load_actor_context(headers, pool, cache)
         .await
         .map_err(actor_context_response_to_error)
 }

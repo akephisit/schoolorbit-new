@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::middleware::permission::{check_any_permission, check_permission};
+use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::staff_service;
 use crate::permissions::registry::codes;
@@ -30,13 +30,12 @@ pub async fn list_staff(
     let pool = get_pool(&state, &headers).await?;
 
     // staff.read.all OR achievement.create.all (latter for non-staff viewing teacher list)
-    if let Err(response) = check_any_permission(
-        &headers,
-        &pool,
-        &[codes::STAFF_READ_ALL, codes::ACHIEVEMENT_CREATE_ALL],
-        &state.permission_cache,
-    )
-    .await
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) =
+        actor.require_any_permission(&[codes::STAFF_READ_ALL, codes::ACHIEVEMENT_CREATE_ALL])
     {
         return Ok(response);
     }
@@ -66,14 +65,11 @@ pub async fn get_staff_profile(
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::STAFF_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::STAFF_READ_ALL) {
         return Ok(response);
     }
 
@@ -91,14 +87,11 @@ pub async fn create_staff(
     Json(payload): Json<CreateStaffRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::STAFF_CREATE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::STAFF_CREATE_ALL) {
         return Ok(response);
     }
 
@@ -117,14 +110,11 @@ pub async fn update_staff(
     Json(payload): Json<UpdateStaffRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::STAFF_UPDATE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::STAFF_UPDATE_ALL) {
         return Ok(response);
     }
 
@@ -146,14 +136,11 @@ pub async fn delete_staff(
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::STAFF_DELETE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::STAFF_DELETE_ALL) {
         return Ok(response);
     }
 

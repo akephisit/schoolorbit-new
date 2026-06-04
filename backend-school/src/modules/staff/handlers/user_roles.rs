@@ -8,7 +8,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::check_permission;
+use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::user_role_service::{self, AssignRoleOutcome};
 use crate::permissions::registry::codes;
@@ -34,15 +34,12 @@ pub async fn get_user_roles(
         Ok(p) => p,
         Err(r) => return r,
     };
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ROLES_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return r;
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    if let Err(response) = actor.require_permission(codes::ROLES_READ_ALL) {
+        return response;
     }
     match user_role_service::get_user_roles(&pool, user_id).await {
         Ok(roles) => (
@@ -64,15 +61,12 @@ pub async fn assign_user_role(
         Ok(p) => p,
         Err(r) => return r,
     };
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ROLES_ASSIGN_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return r;
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    if let Err(response) = actor.require_permission(codes::ROLES_ASSIGN_ALL) {
+        return response;
     }
 
     match user_role_service::assign_user_role(&pool, user_id, payload).await {
@@ -116,15 +110,12 @@ pub async fn remove_user_role(
         Ok(p) => p,
         Err(r) => return r,
     };
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ROLES_REMOVE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return r;
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    if let Err(response) = actor.require_permission(codes::ROLES_REMOVE_ALL) {
+        return response;
     }
 
     match user_role_service::remove_user_role(&pool, user_id, role_id).await {
@@ -154,15 +145,12 @@ pub async fn get_user_permissions(
         Ok(p) => p,
         Err(r) => return r,
     };
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ROLES_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return r;
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    if let Err(response) = actor.require_permission(codes::ROLES_READ_ALL) {
+        return response;
     }
     match user_role_service::get_user_permissions(&pool, user_id).await {
         Ok(perms) => (

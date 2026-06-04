@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::{get_actor_context_or_error, ActorContext};
+use crate::middleware::permission::{load_actor_context_or_error, ActorContext};
 use crate::modules::menu::models::FeatureToggle;
 use crate::modules::system::services::feature_toggle_service;
 use crate::utils::tenant::resolve_tenant_pool;
@@ -155,6 +155,6 @@ async fn get_pool_and_actor(
     headers: &HeaderMap,
 ) -> Result<(sqlx::PgPool, ActorContext), AppError> {
     let pool = resolve_tenant_pool(state, headers).await?;
-    let actor = get_actor_context_or_error(headers, &pool, &state.permission_cache).await?;
+    let actor = load_actor_context_or_error(headers, &pool, &state.permission_cache).await?;
     Ok((pool, actor))
 }

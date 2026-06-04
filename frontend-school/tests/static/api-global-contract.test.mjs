@@ -251,7 +251,7 @@ test('backend permission checks use registry constants instead of string literal
 		file.endsWith('.rs')
 	);
 	const callWithPermissionLiteral =
-		/\b(?:check_permission|check_any_permission|check_all_permissions|check_user_permission|has_permission|has_any_permission|has_all_permissions|require_permission|require_any_permission|require_all_permissions)\s*\((?:(?!;).)*?"[a-z_]+(?:\.[a-z_]+){0,2}"/gs;
+		/\b(?:has_permission|has_any_permission|has_all_permissions|require_permission|require_any_permission|require_all_permissions)\s*\((?:(?!;).)*?"[a-z_]+(?:\.[a-z_]+){0,2}"/gs;
 	const violations = [];
 
 	for (const file of backendFiles) {
@@ -261,6 +261,26 @@ test('backend permission checks use registry constants instead of string literal
 		for (const match of matches) {
 			if (match[0].includes('codes::')) continue;
 			violations.push(`${relative(file)}: ${match[0].replace(/\s+/g, ' ').slice(0, 140)}`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('backend permission handlers use ActorContext loader APIs only', async () => {
+	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src'), (file) =>
+		file.endsWith('.rs')
+	);
+	const legacyPermissionHelpers =
+		/\b(?:check_permission|check_any_permission|check_all_permissions|check_user_permission|get_actor_context|get_actor_context_or_error)\b/;
+	const violations = [];
+
+	for (const file of backendFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (legacyPermissionHelpers.test(source)) {
+			violations.push(
+				`${relative(file)}: use load_actor_context/load_actor_context_or_error and actor.require_* helpers`
+			);
 		}
 	}
 

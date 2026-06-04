@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::check_permission;
+use crate::middleware::permission::load_actor_context;
 use crate::modules::academic::services::timetable_template_service;
 use crate::modules::academic::websockets::TimetableEvent;
 use crate::permissions::registry::codes;
@@ -91,15 +91,12 @@ pub async fn list_templates(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL) {
+        return Ok(response);
     }
     let rows = timetable_template_service::list_templates(&pool).await?;
     Ok(Json(serde_json::json!({ "success": true, "data": rows })).into_response())
@@ -111,15 +108,12 @@ pub async fn get_template(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL) {
+        return Ok(response);
     }
     let (template, entries) = timetable_template_service::get_template(&pool, id).await?;
     Ok(Json(serde_json::json!({ "success": true, "data": { "template": template, "entries": entries } })).into_response())
@@ -131,15 +125,12 @@ pub async fn create_template(
     Json(payload): Json<CreateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
         .await
@@ -161,15 +152,12 @@ pub async fn update_template(
     Json(payload): Json<UpdateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     timetable_template_service::update_template(
         &pool,
@@ -187,15 +175,12 @@ pub async fn delete_template(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     timetable_template_service::delete_template(&pool, id).await?;
     Ok(Json(serde_json::json!({ "success": true, "data": {} })).into_response())
@@ -207,15 +192,12 @@ pub async fn from_current(
     Json(payload): Json<FromCurrentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
         .await
@@ -242,15 +224,12 @@ pub async fn apply_template(
     Json(payload): Json<ApplyTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
         .await
@@ -285,15 +264,12 @@ pub async fn clear_timetable(
     Json(payload): Json<ClearTimetableRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL) {
+        return Ok(response);
     }
     let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
         .await

@@ -3,7 +3,7 @@ use serde_json::json;
 
 use super::models::{SchoolSettingsResponse, SchoolSettingsRow, UpdateSchoolSettingsRequest};
 use crate::error::AppError;
-use crate::middleware::permission::check_permission;
+use crate::middleware::permission::load_actor_context;
 use crate::permissions::registry::codes;
 use crate::services::r2_client::R2Client;
 use crate::utils::file_url::get_file_url_from_string;
@@ -20,15 +20,12 @@ pub async fn get_settings(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::SETTINGS_READ,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::SETTINGS_READ) {
+        return Ok(response);
     }
     let row = sqlx::query_as::<_, SchoolSettingsRow>(
         "SELECT logo_path, logo_file_id FROM school_settings LIMIT 1",
@@ -59,15 +56,12 @@ pub async fn update_settings(
     Json(payload): Json<UpdateSchoolSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::SETTINGS_UPDATE,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::SETTINGS_UPDATE) {
+        return Ok(response);
     }
     sqlx::query("UPDATE school_settings SET logo_path = $1, logo_file_id = $2, updated_at = NOW()")
         .bind(&payload.logo_path)
@@ -123,15 +117,12 @@ pub async fn delete_logo(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) = check_permission(
-        &headers,
-        &pool,
-        codes::SETTINGS_UPDATE,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(r);
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::SETTINGS_UPDATE) {
+        return Ok(response);
     }
 
     let row = sqlx::query_as::<_, SchoolSettingsRow>(

@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::middleware::permission::{check_permission, get_actor_context};
+use crate::middleware::permission::load_actor_context;
 use crate::modules::facility::models::{
     Building, CreateBuildingRequest, CreateRoomRequest, Room, RoomFilter, UpdateBuildingRequest,
     UpdateRoomRequest,
@@ -32,14 +32,11 @@ pub async fn list_buildings(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::FACILITY_READ_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::FACILITY_READ_ALL) {
         return Ok(response);
     }
 
@@ -57,14 +54,11 @@ pub async fn create_building(
     Json(payload): Json<CreateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::FACILITY_CREATE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::FACILITY_CREATE_ALL) {
         return Ok(response);
     }
 
@@ -100,16 +94,12 @@ pub async fn update_building(
     Json(payload): Json<UpdateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    match check_permission(
-        &headers,
-        &pool,
-        codes::FACILITY_UPDATE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        Ok(_) => {}
-        Err(r) => return Ok(r),
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::FACILITY_UPDATE_ALL) {
+        return Ok(response);
     }
 
     let building = sqlx::query_as::<_, Building>(
@@ -142,16 +132,12 @@ pub async fn delete_building(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    match check_permission(
-        &headers,
-        &pool,
-        codes::FACILITY_DELETE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        Ok(_) => {}
-        Err(r) => return Ok(r),
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::FACILITY_DELETE_ALL) {
+        return Ok(response);
     }
 
     sqlx::query("DELETE FROM buildings WHERE id = $1")
@@ -174,7 +160,7 @@ pub async fn list_rooms(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     // Any authenticated staff can list rooms (used for timetable, exam rooms, etc.)
-    if let Err(response) = get_actor_context(&headers, &pool, &state.permission_cache).await {
+    if let Err(response) = load_actor_context(&headers, &pool, &state.permission_cache).await {
         return Ok(response);
     }
 
@@ -235,14 +221,11 @@ pub async fn create_room(
     Json(payload): Json<CreateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::FACILITY_CREATE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::FACILITY_CREATE_ALL) {
         return Ok(response);
     }
 
@@ -286,14 +269,11 @@ pub async fn update_room(
     Json(payload): Json<UpdateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::FACILITY_UPDATE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::FACILITY_UPDATE_ALL) {
         return Ok(response);
     }
 
@@ -337,14 +317,11 @@ pub async fn delete_room(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(response) = check_permission(
-        &headers,
-        &pool,
-        codes::FACILITY_DELETE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::FACILITY_DELETE_ALL) {
         return Ok(response);
     }
 

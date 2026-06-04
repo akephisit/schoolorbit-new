@@ -8,7 +8,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::check_permission;
+use crate::middleware::permission::load_actor_context;
 use crate::permissions::registry::codes;
 use crate::utils::{field_encryption, tenant::resolve_tenant_pool};
 use crate::AppState;
@@ -34,16 +34,12 @@ pub async fn add_parent_to_student(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Check permission against tenant pool
-    if let Err(e) = check_permission(
-        &headers,
-        &pool,
-        codes::STUDENT_UPDATE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(e.into_response());
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::STUDENT_UPDATE_ALL) {
+        return Ok(response);
     }
 
     let mut tx = pool.begin().await.map_err(|e| {
@@ -179,16 +175,12 @@ pub async fn remove_parent_from_student(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    // Check permission against tenant pool
-    if let Err(e) = check_permission(
-        &headers,
-        &pool,
-        codes::STUDENT_UPDATE_ALL,
-        &state.permission_cache,
-    )
-    .await
-    {
-        return Ok(e.into_response());
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    if let Err(response) = actor.require_permission(codes::STUDENT_UPDATE_ALL) {
+        return Ok(response);
     }
 
     // Delete from student_parents table

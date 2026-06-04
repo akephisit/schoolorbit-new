@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::middleware::permission::get_actor_context;
+use crate::middleware::permission::load_actor_context;
 use crate::modules::achievement::models::*;
 use crate::permissions::registry::codes;
 use crate::utils::tenant::resolve_tenant_pool;
@@ -31,7 +31,7 @@ pub async fn list_achievements(
     Query(filter): Query<AchievementListFilter>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_db_pool(&state, &headers).await?;
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(response) => return Ok(response),
     };
@@ -112,7 +112,7 @@ pub async fn create_achievement(
     Json(payload): Json<CreateAchievementRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_db_pool(&state, &headers).await?;
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(response) => return Ok(response),
     };
@@ -168,7 +168,7 @@ pub async fn update_achievement(
     Json(payload): Json<UpdateAchievementRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_db_pool(&state, &headers).await?;
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(response) => return Ok(response),
     };
@@ -240,7 +240,7 @@ pub async fn delete_achievement(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_db_pool(&state, &headers).await?;
-    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
         Ok(actor) => actor,
         Err(response) => return Ok(response),
     };

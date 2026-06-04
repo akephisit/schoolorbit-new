@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::middleware::permission::{get_actor_context_or_error, ActorContext};
+use crate::middleware::permission::{load_actor_context_or_error, ActorContext};
 use crate::modules::menu::models::{MenuGroup, MenuItem};
 use crate::modules::menu::services::menu_service;
 use crate::utils::tenant::resolve_tenant_pool;
@@ -116,7 +116,7 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<PgPool, AppEr
 
 async fn auth(state: &AppState, headers: &HeaderMap) -> Result<(PgPool, ActorContext), AppError> {
     let pool = get_pool(state, headers).await?;
-    let actor = get_actor_context_or_error(headers, &pool, &state.permission_cache).await?;
+    let actor = load_actor_context_or_error(headers, &pool, &state.permission_cache).await?;
     Ok((pool, actor))
 }
 
