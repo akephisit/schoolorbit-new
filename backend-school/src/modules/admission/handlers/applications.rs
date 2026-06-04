@@ -355,8 +355,13 @@ pub async fn staff_upload_document(
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
     let pool = get_pool(&state, &headers).await?;
 
-    if let Err(r) =
-        check_permission(&headers, &pool, "admission.update", &state.permission_cache).await
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_VERIFY,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(r);
     }
@@ -475,8 +480,13 @@ pub async fn staff_delete_document(
     Path((application_id, doc_type)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(r) =
-        check_permission(&headers, &pool, "admission.update", &state.permission_cache).await
+    if let Err(r) = check_permission(
+        &headers,
+        &pool,
+        codes::ADMISSION_VERIFY,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(r);
     }

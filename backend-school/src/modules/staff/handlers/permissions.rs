@@ -122,11 +122,17 @@ pub async fn list_permissions_by_module(
     };
 
     // Check permission
-    let _user =
-        match check_permission(&headers, &pool, "settings.read", &state.permission_cache).await {
-            Ok(u) => u,
-            Err(response) => return response,
-        };
+    let _user = match check_permission(
+        &headers,
+        &pool,
+        codes::SETTINGS_READ,
+        &state.permission_cache,
+    )
+    .await
+    {
+        Ok(u) => u,
+        Err(response) => return response,
+    };
 
     let permissions = match sqlx::query_as::<_, Permission>(
         "SELECT * FROM permissions ORDER BY module, action, code",

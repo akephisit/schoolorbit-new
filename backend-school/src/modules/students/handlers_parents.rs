@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::permission::check_permission;
+use crate::permissions::registry::codes;
 use crate::utils::{field_encryption, subdomain::extract_subdomain_from_request};
 use crate::AppState;
 use ::bcrypt::hash;
@@ -48,8 +49,13 @@ pub async fn add_parent_to_student(
         })?;
 
     // Check permission against tenant pool
-    if let Err(e) =
-        check_permission(&headers, &pool, "student.update", &state.permission_cache).await
+    if let Err(e) = check_permission(
+        &headers,
+        &pool,
+        codes::STUDENT_UPDATE_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(e.into_response());
     }
@@ -205,8 +211,13 @@ pub async fn remove_parent_from_student(
         })?;
 
     // Check permission against tenant pool
-    if let Err(e) =
-        check_permission(&headers, &pool, "student.update", &state.permission_cache).await
+    if let Err(e) = check_permission(
+        &headers,
+        &pool,
+        codes::STUDENT_UPDATE_ALL,
+        &state.permission_cache,
+    )
+    .await
     {
         return Ok(e.into_response());
     }

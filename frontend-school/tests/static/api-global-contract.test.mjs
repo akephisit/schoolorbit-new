@@ -213,6 +213,26 @@ test('backend auth middleware and login validation errors use the response envel
 	assert.match(loginHandler, /AppError::ValidationError\(rejection\.body_text\(\)\)/);
 });
 
+test('backend permission checks use registry constants instead of string literals', async () => {
+	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src'), (file) =>
+		file.endsWith('.rs')
+	);
+	const callWithPermissionLiteral =
+		/\b(?:check_permission|check_any_permission|check_all_permissions|check_user_permission|has_permission)\s*\((?:(?!;).)*?"[a-z_]+(?:\.[a-z_]+){0,2}"/gs;
+	const violations = [];
+
+	for (const file of backendFiles) {
+		const source = await readFile(file, 'utf8');
+		const matches = source.matchAll(callWithPermissionLiteral);
+
+		for (const match of matches) {
+			violations.push(`${relative(file)}: ${match[0].replace(/\s+/g, ' ').slice(0, 140)}`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
 test('frontend application code routes backend API calls through apiClient', async () => {
 	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
 		/\.(svelte|ts)$/.test(file)

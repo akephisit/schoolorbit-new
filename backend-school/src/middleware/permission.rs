@@ -1,4 +1,5 @@
 use crate::db::permission_cache::PermissionCache;
+use crate::permissions::registry::codes;
 use axum::{
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -90,26 +91,57 @@ pub async fn check_permission(
     check_permission_result(user_id, &permissions, required_permission)
 }
 
+pub async fn check_any_permission(
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    required_permissions: &[&str],
+    cache: &PermissionCache,
+) -> Result<Uuid, Response> {
+    let (user_id, permissions) = get_user_with_permissions(headers, pool, cache).await?;
+
+    if required_permissions
+        .iter()
+        .any(|permission| permission_matches(&permissions, permission))
+    {
+        Ok(user_id)
+    } else {
+        Err(forbidden_response(format!(
+            "ไม่มีสิทธิ์ {}",
+            required_permissions.join(" หรือ ")
+        )))
+    }
+}
+
+pub fn permission_matches(permissions: &[String], required_permission: &str) -> bool {
+    permissions
+        .iter()
+        .any(|permission| permission == codes::WILDCARD || permission == required_permission)
+}
+
 fn check_permission_result(
     user_id: Uuid,
     permissions: &[String],
     required_permission: &str,
 ) -> Result<Uuid, Response> {
-    let has_perm = permissions.contains(&"*".to_string())
-        || permissions.contains(&required_permission.to_string());
-
-    if has_perm {
+    if permission_matches(permissions, required_permission) {
         Ok(user_id)
     } else {
-        Err((
-            StatusCode::FORBIDDEN,
-            Json(json!({
-                "success": false,
-                "error": format!("ไม่มีสิทธิ์ {}", required_permission)
-            })),
-        )
-            .into_response())
+        Err(forbidden_response(format!(
+            "ไม่มีสิทธิ์ {}",
+            required_permission
+        )))
     }
+}
+
+fn forbidden_response(error: String) -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "success": false,
+            "error": error
+        })),
+    )
+        .into_response()
 }
 
 /// Fetch user's effective permissions from DB (position-aware + delegations).

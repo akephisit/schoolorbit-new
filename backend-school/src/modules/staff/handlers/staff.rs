@@ -1,9 +1,9 @@
 use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
-use crate::modules::auth::models::User;
+use crate::middleware::permission::{check_any_permission, check_permission};
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::staff_service;
-use crate::utils::field_encryption;
+use crate::permissions::registry::codes;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 use axum::{
@@ -36,82 +36,6 @@ async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool,
         })
 }
 
-/// Extract user from request and check permission.
-/// Decrypts national_id so downstream code never sees ciphertext.
-async fn check_user_permission(
-    headers: &HeaderMap,
-    pool: &sqlx::PgPool,
-    required_permission: &str,
-) -> Result<User, AppError> {
-    use crate::modules::auth::permissions::UserPermissions;
-
-    let auth_header = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok());
-
-    let token_from_header = auth_header.and_then(|h| {
-        if h.starts_with("Bearer ") {
-            Some(h[7..].to_string())
-        } else {
-            None
-        }
-    });
-
-    let token_from_cookie = headers
-        .get(header::COOKIE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
-
-    let token = token_from_header
-        .or(token_from_cookie)
-        .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
-
-    let claims = crate::utils::jwt::JwtService::verify_token(&token)
-        .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
-
-    let mut user: User = sqlx::query_as(
-        "SELECT
-            id, username, national_id, email, password_hash, first_name, last_name, user_type,
-            phone, date_of_birth, address, status, metadata, created_at, updated_at,
-            title, nickname, emergency_contact, line_id, gender, profile_image_url,
-            hired_date, resigned_date
-         FROM users WHERE id = $1",
-    )
-    .bind(
-        uuid::Uuid::parse_str(&claims.sub)
-            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?,
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        eprintln!("❌ Failed to get user: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string())
-    })?;
-
-    if let Some(encrypted_national_id) = user.national_id {
-        if let Ok(decrypted_national_id) = field_encryption::decrypt(&encrypted_national_id) {
-            user.national_id = Some(decrypted_national_id);
-        } else {
-            eprintln!("❌ Failed to decrypt national_id for user {}", user.id);
-            user.national_id = None;
-        }
-    }
-
-    match user.has_permission(pool, required_permission).await {
-        Ok(true) => Ok(user),
-        Ok(false) => Err(AppError::Forbidden(format!(
-            "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
-            required_permission
-        ))),
-        Err(e) => {
-            eprintln!("❌ Permission check error: {}", e);
-            Err(AppError::InternalServerError(
-                "เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string(),
-            ))
-        }
-    }
-}
-
 // ============================================
 // Handlers
 // ============================================
@@ -124,9 +48,15 @@ pub async fn list_staff(
     let pool = get_pool(&state, &headers).await?;
 
     // staff.read.all OR achievement.create.all (latter for non-staff viewing teacher list)
-    let auth_result = check_user_permission(&headers, &pool, "staff.read.all").await;
-    if auth_result.is_err() {
-        check_user_permission(&headers, &pool, "achievement.create.all").await?;
+    if let Err(response) = check_any_permission(
+        &headers,
+        &pool,
+        &[codes::STAFF_READ_ALL, codes::ACHIEVEMENT_CREATE_ALL],
+        &state.permission_cache,
+    )
+    .await
+    {
+        return Ok(response);
     }
 
     let (items, total, page, page_size) = staff_service::list_staff(&pool, filter).await?;
@@ -144,7 +74,8 @@ pub async fn list_staff(
                 "total_pages": total_pages
             }
         })),
-    ))
+    )
+        .into_response())
 }
 
 pub async fn get_staff_profile(
@@ -153,13 +84,23 @@ pub async fn get_staff_profile(
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    check_user_permission(&headers, &pool, "staff.read.all").await?;
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::STAFF_READ_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
+        return Ok(response);
+    }
 
     let profile = staff_service::get_staff_profile(&pool, staff_id).await?;
     Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": profile })),
-    ))
+    )
+        .into_response())
 }
 
 pub async fn create_staff(
@@ -168,13 +109,23 @@ pub async fn create_staff(
     Json(payload): Json<CreateStaffRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    check_user_permission(&headers, &pool, "staff.create.all").await?;
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::STAFF_CREATE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
+        return Ok(response);
+    }
 
     let user_id = staff_service::create_staff(&pool, payload).await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({ "success": true, "data": { "id": user_id }, "message": "สร้างบุคลากรสำเร็จ" })),
-    ))
+    )
+        .into_response())
 }
 
 pub async fn update_staff(
@@ -184,7 +135,16 @@ pub async fn update_staff(
     Json(payload): Json<UpdateStaffRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    check_user_permission(&headers, &pool, "staff.update.all").await?;
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::STAFF_UPDATE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
+        return Ok(response);
+    }
 
     staff_service::update_staff(&pool, staff_id, payload).await?;
 
@@ -194,7 +154,8 @@ pub async fn update_staff(
     Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": {}, "message": "อัปเดตข้อมูลสำเร็จ" })),
-    ))
+    )
+        .into_response())
 }
 
 pub async fn delete_staff(
@@ -203,13 +164,23 @@ pub async fn delete_staff(
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    check_user_permission(&headers, &pool, "staff.delete.all").await?;
+    if let Err(response) = check_permission(
+        &headers,
+        &pool,
+        codes::STAFF_DELETE_ALL,
+        &state.permission_cache,
+    )
+    .await
+    {
+        return Ok(response);
+    }
 
     staff_service::soft_delete_staff(&pool, staff_id).await?;
     Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": {}, "message": "ลบบุคลากรสำเร็จ" })),
-    ))
+    )
+        .into_response())
 }
 
 /// Public profile — authentication required but no permission check (any logged-in user)
@@ -246,5 +217,6 @@ pub async fn get_public_staff_profile(
     Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": data })),
-    ))
+    )
+        .into_response())
 }
