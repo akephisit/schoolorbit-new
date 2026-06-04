@@ -39,12 +39,12 @@
 | **ที่ทำ** | ใช้ app-side `field_encryption.rs` สำหรับ `national_id`, เพิ่ม keyed HMAC blind hash สำหรับ lookup/unique, และอัปเดต `TODO_ENCRYPTION.md` ให้เลิกอ้าง pgcrypto legacy |
 | **ความยาก** | Medium |
 
-### C-4. INTERNAL_API_SECRET ไม่ timing-safe
+### ✅ C-4. INTERNAL_API_SECRET ไม่ timing-safe — เสร็จแล้ว
 | | |
 |---|---|
 | **ไฟล์** | `backend-school/src/middleware/internal_auth.rs`, `backend-admin/src/handlers/internal.rs` |
 | **ปัญหา** | `auth_header != internal_secret` เปรียบเทียบแบบ naive — เสี่ยง timing attack และ rotate secret ได้ยากเพราะใช้ secret เดียวกับทุก caller |
-| **แก้ไข** | ใช้ `subtle::ConstantTimeEq` และเพิ่ม `X-Internal-Caller` header เพื่อแยก secret ต่อ caller |
+| **ที่ทำ** | ใช้ `subtle::ConstantTimeEq`, เพิ่ม `X-Internal-Caller`, รองรับ `INTERNAL_API_SECRET_<CALLER>` พร้อม fallback ไป `INTERNAL_API_SECRET`, และให้ backend-admin/backend-school internal clients ส่ง caller header |
 | **ความยาก** | Small |
 
 ### ✅ C-5. Admin JWT claims มี school-scoped fields ที่ไม่จำเป็น — เสร็จแล้ว

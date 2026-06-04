@@ -5,24 +5,22 @@ use axum::{
     response::Json,
 };
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
+
+const INTERNAL_SECRET_HEADER: &str = "X-Internal-Secret";
+const INTERNAL_CALLER_HEADER: &str = "X-Internal-Caller";
 
 fn verify_internal_secret(headers: &HeaderMap) -> Result<(), (StatusCode, String)> {
-    let internal_secret = std::env::var("INTERNAL_API_SECRET").map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Server configuration error".to_string(),
-        )
-    })?;
-
-    let auth_header = headers
-        .get("X-Internal-Secret")
+    let expected_secret = expected_internal_secret(headers)?;
+    let provided_secret = headers
+        .get(INTERNAL_SECRET_HEADER)
         .and_then(|v| v.to_str().ok())
         .ok_or((
             StatusCode::UNAUTHORIZED,
             "Missing X-Internal-Secret header".to_string(),
         ))?;
 
-    if auth_header != internal_secret {
+    if !secrets_match(provided_secret, &expected_secret) {
         return Err((
             StatusCode::UNAUTHORIZED,
             "Invalid internal API secret".to_string(),
@@ -30,6 +28,41 @@ fn verify_internal_secret(headers: &HeaderMap) -> Result<(), (StatusCode, String
     }
 
     Ok(())
+}
+
+fn expected_internal_secret(headers: &HeaderMap) -> Result<String, (StatusCode, String)> {
+    if let Some(caller_secret) = internal_caller(headers).and_then(secret_for_caller) {
+        return Ok(caller_secret);
+    }
+
+    std::env::var("INTERNAL_API_SECRET").map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Server configuration error".to_string(),
+        )
+    })
+}
+
+fn internal_caller(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(INTERNAL_CALLER_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|caller| !caller.is_empty())
+}
+
+fn secret_for_caller(caller: &str) -> Option<String> {
+    let env_key = format!(
+        "INTERNAL_API_SECRET_{}",
+        caller.replace('-', "_").to_ascii_uppercase()
+    );
+    std::env::var(env_key)
+        .ok()
+        .filter(|secret| !secret.is_empty())
+}
+
+fn secrets_match(provided: &str, expected: &str) -> bool {
+    provided.as_bytes().ct_eq(expected.as_bytes()).into()
 }
 
 #[derive(Debug, Deserialize)]
@@ -196,4 +229,60 @@ pub async fn update_migration_status_internal(
     })?;
 
     Ok(StatusCode::OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    fn headers(secret: &str, caller: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            INTERNAL_SECRET_HEADER,
+            HeaderValue::from_str(secret).unwrap(),
+        );
+        if let Some(caller) = caller {
+            headers.insert(
+                INTERNAL_CALLER_HEADER,
+                HeaderValue::from_str(caller).unwrap(),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn verifies_fallback_internal_secret() {
+        let _guard = env_lock();
+        std::env::set_var("INTERNAL_API_SECRET", "shared-secret");
+        std::env::remove_var("INTERNAL_API_SECRET_BACKEND_SCHOOL");
+
+        assert!(verify_internal_secret(&headers("shared-secret", None)).is_ok());
+        assert!(verify_internal_secret(&headers("wrong-secret", None)).is_err());
+    }
+
+    #[test]
+    fn caller_secret_overrides_shared_secret() {
+        let _guard = env_lock();
+        std::env::set_var("INTERNAL_API_SECRET", "shared-secret");
+        std::env::set_var("INTERNAL_API_SECRET_BACKEND_SCHOOL", "school-secret");
+
+        assert!(verify_internal_secret(&headers("school-secret", Some("backend-school"))).is_ok());
+        assert!(verify_internal_secret(&headers("shared-secret", Some("backend-school"))).is_err());
+    }
+
+    #[test]
+    fn caller_secret_falls_back_to_shared_secret_when_unset() {
+        let _guard = env_lock();
+        std::env::set_var("INTERNAL_API_SECRET", "shared-secret");
+        std::env::remove_var("INTERNAL_API_SECRET_BACKEND_SCHOOL");
+
+        assert!(verify_internal_secret(&headers("shared-secret", Some("backend-school"))).is_ok());
+    }
 }

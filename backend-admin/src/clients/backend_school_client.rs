@@ -2,6 +2,10 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 
+const INTERNAL_CALLER: &str = "backend-admin";
+const INTERNAL_CALLER_HEADER: &str = "X-Internal-Caller";
+const INTERNAL_SECRET_HEADER: &str = "X-Internal-Secret";
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProvisionRequest {
@@ -70,7 +74,8 @@ impl BackendSchoolClient {
         let response = self
             .client
             .post(&url)
-            .header("X-Internal-Secret", &self.internal_secret)
+            .header(INTERNAL_SECRET_HEADER, &self.internal_secret)
+            .header(INTERNAL_CALLER_HEADER, INTERNAL_CALLER)
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()

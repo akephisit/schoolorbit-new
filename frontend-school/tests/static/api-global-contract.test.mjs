@@ -298,6 +298,36 @@ test('backend menu and feature handlers do not parse auth or query permissions d
 	assert.deepEqual(violations, []);
 });
 
+test('internal API secrets use constant-time comparison and caller headers', async () => {
+	const checkedFiles = [
+		'backend-school/src/middleware/internal_auth.rs',
+		'backend-admin/src/handlers/internal.rs'
+	];
+
+	for (const relativePath of checkedFiles) {
+		const source = await readFile(path.join(repoRoot, relativePath), 'utf8');
+		assert.match(source, /ConstantTimeEq/);
+		assert.match(source, /X-Internal-Caller/);
+		assert.match(source, /INTERNAL_API_SECRET_/);
+		assert.equal(source.includes('!= internal_secret'), false);
+		assert.equal(source.includes('== internal_secret'), false);
+	}
+
+	const backendSchoolClient = await readFile(
+		path.join(repoRoot, 'backend-school/src/db/admin_client.rs'),
+		'utf8'
+	);
+	const backendAdminClient = await readFile(
+		path.join(repoRoot, 'backend-admin/src/clients/backend_school_client.rs'),
+		'utf8'
+	);
+
+	assert.match(backendSchoolClient, /X-Internal-Caller/);
+	assert.match(backendSchoolClient, /backend-school/);
+	assert.match(backendAdminClient, /X-Internal-Caller/);
+	assert.match(backendAdminClient, /backend-admin/);
+});
+
 test('backend module handlers resolve tenant pools through the central resolver', async () => {
 	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src/modules'), (file) =>
 		file.endsWith('.rs')

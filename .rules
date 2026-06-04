@@ -111,7 +111,7 @@ If adding "User Profile Edit" feature:
 
 ## 6. Deployment (Coolify/Docker)
 * **Configuration:** All secrets (Database URL, Salt, Keys) must come from Environment Variables (`std::env::var`).
-* **backend-school required secrets:** `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `JWT_SECRET`, `INTERNAL_API_SECRET`, and `DEPLOY_KEY` must be present in the runtime environment (for Podman, `/opt/stack/.env`).
+* **backend-school required secrets:** `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `JWT_SECRET`, `INTERNAL_API_SECRET`, and `DEPLOY_KEY` must be present in the runtime environment (for Podman, `/opt/stack/.env`). Internal API calls should send `X-Internal-Caller`; caller-specific secrets use `INTERNAL_API_SECRET_<CALLER>` (for example `INTERNAL_API_SECRET_BACKEND_ADMIN` / `INTERNAL_API_SECRET_BACKEND_SCHOOL`) and fall back to `INTERNAL_API_SECRET` during rotation.
 * **Ports:** Backend must listen on `0.0.0.0` (not `127.0.0.1`) inside Docker.
 
 ## 7. Testing & Sandbox Verification

@@ -22,6 +22,7 @@ time = "0.3"
 async-trait = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+subtle = "2.6"
 
 # File Storage & R2/S3 Integration
 aws-config = "1.1"

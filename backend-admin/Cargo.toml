@@ -22,3 +22,4 @@ reqwest = { version = "0.12", features = ["json"] }
 cookie = "0.18"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+subtle = "2.6"

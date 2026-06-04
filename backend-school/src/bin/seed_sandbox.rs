@@ -195,6 +195,7 @@ async fn fetch_database_url(config: &SeedConfig) -> SeedResult<String> {
     let response = reqwest::Client::new()
         .get(url)
         .header("X-Internal-Secret", internal_api_secret)
+        .header("X-Internal-Caller", "seed-sandbox")
         .send()
         .await?;
 

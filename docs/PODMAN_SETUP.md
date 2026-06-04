@@ -570,6 +570,7 @@ services:
       # Backend-School Communication
       - BACKEND_SCHOOL_URL=${BACKEND_SCHOOL_URL:-http://schoolorbit-backend-school:8081}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - INTERNAL_API_SECRET_BACKEND_SCHOOL=${INTERNAL_API_SECRET_BACKEND_SCHOOL:-}
 
       # Deployment (GitHub Actions)
       - API_URL=${API_URL}
@@ -600,6 +601,7 @@ services:
       # Secrets
       - JWT_SECRET=${JWT_SECRET}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - INTERNAL_API_SECRET_BACKEND_ADMIN=${INTERNAL_API_SECRET_BACKEND_ADMIN:-}
       - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - BLIND_INDEX_KEY=${BLIND_INDEX_KEY}
@@ -661,6 +663,9 @@ BLIND_INDEX_KEY=change-this-blind-index-key-minimum-32-characters-long
 DEPLOY_KEY=local-dev-key-change-me-in-production
 JWT_SECRET=your-secret-key-change-this-in-production
 INTERNAL_API_SECRET=internal-secret-change-this
+# Optional caller-specific internal secrets. Omit to fall back to INTERNAL_API_SECRET.
+INTERNAL_API_SECRET_BACKEND_ADMIN=
+INTERNAL_API_SECRET_BACKEND_SCHOOL=
 
 # Internal service URLs for this single compose stack
 BACKEND_ADMIN_URL=http://schoolorbit-backend-admin:8080

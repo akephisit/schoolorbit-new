@@ -1,6 +1,10 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+const INTERNAL_CALLER: &str = "backend-school";
+const INTERNAL_CALLER_HEADER: &str = "X-Internal-Caller";
+const INTERNAL_SECRET_HEADER: &str = "X-Internal-Secret";
+
 /// HTTP client for communicating with backend-admin's internal API.
 /// Replaces direct admin database access — backend-school no longer needs ADMIN_DATABASE_URL.
 #[derive(Clone)]
@@ -56,7 +60,8 @@ impl AdminClient {
         let resp = self
             .client
             .get(&url)
-            .header("X-Internal-Secret", &self.secret)
+            .header(INTERNAL_SECRET_HEADER, &self.secret)
+            .header(INTERNAL_CALLER_HEADER, INTERNAL_CALLER)
             .send()
             .await
             .map_err(|e| format!("Failed to reach admin service: {}", e))?;
@@ -83,7 +88,8 @@ impl AdminClient {
         let resp = self
             .client
             .get(&url)
-            .header("X-Internal-Secret", &self.secret)
+            .header(INTERNAL_SECRET_HEADER, &self.secret)
+            .header(INTERNAL_CALLER_HEADER, INTERNAL_CALLER)
             .send()
             .await
             .map_err(|e| format!("Failed to reach admin service: {}", e))?;
@@ -109,7 +115,8 @@ impl AdminClient {
         let resp = self
             .client
             .get(&url)
-            .header("X-Internal-Secret", &self.secret)
+            .header(INTERNAL_SECRET_HEADER, &self.secret)
+            .header(INTERNAL_CALLER_HEADER, INTERNAL_CALLER)
             .send()
             .await
             .map_err(|e| format!("Failed to reach admin service: {}", e))?;
@@ -142,7 +149,8 @@ impl AdminClient {
         let resp = self
             .client
             .put(&url)
-            .header("X-Internal-Secret", &self.secret)
+            .header(INTERNAL_SECRET_HEADER, &self.secret)
+            .header(INTERNAL_CALLER_HEADER, INTERNAL_CALLER)
             .json(&UpdateMigrationStatusPayload {
                 migration_version: version,
                 migration_status: status.to_string(),
