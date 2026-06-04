@@ -2,6 +2,8 @@
  * Admission Management — รายการรอบรับสมัครทั้งหมด
  */
 
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'รับสมัครนักเรียน',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'academic',
 		order: 40,
 		user_type: 'staff',
-		permission: 'admission.read.all'
+		permission: PERMISSIONS.ADMISSION_READ_ALL
 	}
 };
 

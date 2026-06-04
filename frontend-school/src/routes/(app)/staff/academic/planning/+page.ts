@@ -2,6 +2,8 @@
  * Course Planning Page
  */
 
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'จัดแผนการเรียน',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'academic',
 		order: 30, // ถัดจาก ห้องเรียน (20)
 		user_type: 'staff',
-		permission: 'academic_course_plan.read.all'
+		permission: PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL
 	}
 };
 

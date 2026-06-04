@@ -2,6 +2,8 @@
  * Activity Groups Page (กิจกรรมพัฒนาผู้เรียน)
  */
 
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'กิจกรรมพัฒนาผู้เรียน',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'academic',
 		order: 7,
 		user_type: 'staff',
-		permission: 'activity'
+		permission: PERMISSION_MODULES.ACTIVITY
 	}
 };
 

@@ -2,6 +2,8 @@
  * Staff Achievements Management Page
  */
 
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const ssr = false;
 
 export const _meta = {
@@ -11,7 +13,7 @@ export const _meta = {
 		group: 'personnel',
 		order: 30, // After "Manage Staff" (10)
 		user_type: 'staff',
-		permission: 'achievement.read.all'
+		permission: PERMISSIONS.ACHIEVEMENT_READ_ALL
 	}
 };
 

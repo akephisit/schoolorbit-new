@@ -31,6 +31,7 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { toast } from 'svelte-sonner';
 	import { ArrowLeft, UserPlus, Trash2, Search, UserCog } from 'lucide-svelte';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -221,7 +222,7 @@
 						<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
 						<Input class="pl-8 w-56" placeholder="ค้นหา..." bind:value={memberSearch} />
 					</div>
-					{#if $can.has('activity.members.manage')}
+					{#if $can.has(PERMISSIONS.ACTIVITY_MEMBERS_MANAGE)}
 						<Button onclick={openAddStudentDialog}
 							><UserPlus class="mr-1 h-4 w-4" />เพิ่มสมาชิก</Button
 						>
@@ -240,7 +241,7 @@
 								<Table.Head>ห้องเรียน</Table.Head>
 								<Table.Head>ระดับชั้น</Table.Head>
 								<Table.Head class="text-center">ผล</Table.Head>
-								{#if $can.has('activity.members.manage')}<Table.Head></Table.Head>{/if}
+								{#if $can.has(PERMISSIONS.ACTIVITY_MEMBERS_MANAGE)}<Table.Head></Table.Head>{/if}
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
@@ -253,7 +254,7 @@
 									<Table.Cell class="text-sm">{m.classroom_name ?? '—'}</Table.Cell>
 									<Table.Cell class="text-sm">{m.grade_level_name ?? '—'}</Table.Cell>
 									<Table.Cell class="text-center">
-										{#if $can.has('activity.members.manage')}
+										{#if $can.has(PERMISSIONS.ACTIVITY_MEMBERS_MANAGE)}
 											<select
 												class="h-7 rounded border px-1 text-xs bg-background"
 												value={m.result ?? ''}
@@ -268,7 +269,7 @@
 											{m.result === 'pass' ? 'ผ' : m.result === 'fail' ? 'มผ' : '—'}
 										{/if}
 									</Table.Cell>
-									{#if $can.has('activity.members.manage')}
+									{#if $can.has(PERMISSIONS.ACTIVITY_MEMBERS_MANAGE)}
 										<Table.Cell>
 											<Button variant="ghost" size="icon" onclick={() => handleRemoveMember(m)}>
 												<Trash2 class="h-4 w-4 text-destructive" />
@@ -286,7 +287,7 @@
 		<!-- Instructors -->
 		<Tabs.Content value="instructors">
 			<div class="space-y-3 pt-3">
-				{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
+				{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || $can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN)}
 					<div class="flex justify-end">
 						<Button onclick={openAddInstructorDialog}
 							><UserCog class="mr-1 h-4 w-4" />เพิ่มครู</Button
@@ -301,7 +302,7 @@
 							<Table.Row>
 								<Table.Head>ชื่อครู</Table.Head>
 								<Table.Head>บทบาท</Table.Head>
-								{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}<Table.Head
+								{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || $can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN)}<Table.Head
 									></Table.Head>{/if}
 							</Table.Row>
 						</Table.Header>
@@ -314,7 +315,7 @@
 											{i.role === 'primary' ? 'ครูหลัก' : 'ครูผู้ช่วย'}
 										</Badge>
 									</Table.Cell>
-									{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
+									{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || $can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN)}
 										<Table.Cell>
 											<Button variant="ghost" size="icon" onclick={() => handleRemoveInstructor(i)}>
 												<Trash2 class="h-4 w-4 text-destructive" />

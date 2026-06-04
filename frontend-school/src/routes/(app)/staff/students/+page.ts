@@ -2,6 +2,8 @@
  * Student Management Page (Staff)
  */
 
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'รายชื่อนักเรียน',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'academic',
 		order: 5, // Top priority in academic
 		user_type: 'staff',
-		permission: 'student.read.all'
+		permission: PERMISSIONS.STUDENT_READ_ALL
 	}
 };
 

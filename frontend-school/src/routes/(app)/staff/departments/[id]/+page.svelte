@@ -18,6 +18,7 @@
 		type CreateDelegationBody
 	} from '$lib/api/staff';
 	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -137,7 +138,7 @@
 	});
 
 	$effect(() => {
-		if (!loading && $can.has('dept_work.approve.department') && deptId) {
+		if (!loading && $can.has(PERMISSIONS.DEPT_WORK_APPROVE_DEPARTMENT) && deptId) {
 			loadDelegations();
 		}
 	});
@@ -251,7 +252,7 @@
 				</div>
 
 				<!-- Child Departments (ฝ่ายย่อย) -->
-				{#if $can.has('roles.assign.all')}
+				{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
 					<div class="bg-card border border-border rounded-lg p-6 space-y-4">
 						<div class="flex items-center justify-between">
 							<h2 class="text-lg font-semibold flex items-center gap-2">
@@ -285,7 +286,7 @@
 				{/if}
 
 				<!-- Delegation Section (heads only) -->
-				{#if $can.has('dept_work.approve.department')}
+				{#if $can.has(PERMISSIONS.DEPT_WORK_APPROVE_DEPARTMENT)}
 					<div class="bg-card border border-border rounded-lg p-6 space-y-4">
 						<div class="flex items-center justify-between">
 							<h2 class="text-lg font-semibold flex items-center gap-2">

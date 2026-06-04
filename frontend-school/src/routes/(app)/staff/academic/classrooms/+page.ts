@@ -2,6 +2,8 @@
  * Classroom Management Page
  */
 
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'จัดการห้องเรียน',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'academic',
 		order: 20,
 		user_type: 'staff',
-		permission: 'academic_classroom.read.all'
+		permission: PERMISSIONS.ACADEMIC_CLASSROOM_READ_ALL
 	}
 };
 

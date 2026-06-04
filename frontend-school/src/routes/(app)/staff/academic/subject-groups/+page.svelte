@@ -6,6 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { GraduationCap, ChevronRight, Search, Settings } from 'lucide-svelte';
 	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
 	let departments: Department[] = $state([]);
@@ -39,7 +40,7 @@
 	async function loadData() {
 		loading = true;
 		// admin เห็นทุกกลุ่ม, user ทั่วไปเห็นเฉพาะกลุ่มที่ตัวเองสังกัด
-		const isAdmin = $can.has('roles.assign.all');
+		const isAdmin = $can.has(PERMISSIONS.ROLES_ASSIGN_ALL);
 		const res = await listDepartmentsLookup(isAdmin ? undefined : { member_only: true });
 		if (res.success && res.data) departments = res.data;
 		loading = false;
@@ -101,7 +102,7 @@
 							</div>
 						</div>
 						<div class="flex items-center gap-1">
-							{#if $can.has('roles.assign.all')}
+							{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
 								<Button
 									variant="ghost"
 									size="icon"

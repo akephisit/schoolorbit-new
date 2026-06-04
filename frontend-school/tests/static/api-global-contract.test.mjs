@@ -162,6 +162,39 @@ function extractPermissionRegistry(source) {
 	};
 }
 
+function extractConstObjectValues(source, objectName) {
+	const match = new RegExp(
+		`export const ${objectName}\\s*=\\s*\\{([\\s\\S]*?)\\}\\s*as const`
+	).exec(source);
+	if (!match) return new Map();
+
+	const values = new Map();
+	for (const valueMatch of match[1].matchAll(/\b([A-Z0-9_]+):\s*['"]([^'"]+)['"]/g)) {
+		values.set(valueMatch[1], valueMatch[2]);
+	}
+	return values;
+}
+
+function appRouteIdFromFile(filePath, suffix) {
+	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
+	const routePath = path.relative(appRoutesDir, filePath.replace(suffix, ''));
+	const normalized = routePath.split(path.sep).filter(Boolean).join('/');
+	return normalized ? `/(app)/${normalized}` : '/(app)';
+}
+
+function hasGuardedAncestor(routeId, guardedRouteIds) {
+	let currentRouteId = routeId;
+	while (currentRouteId.length > 0) {
+		if (guardedRouteIds.has(currentRouteId)) return true;
+
+		const lastSlash = currentRouteId.lastIndexOf('/');
+		if (lastSlash <= 0) break;
+		currentRouteId = currentRouteId.slice(0, lastSlash);
+	}
+
+	return false;
+}
+
 test('backend JSON handler responses use the standard envelope shape', async () => {
 	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src/modules'), (file) =>
 		file.endsWith('.rs')
@@ -174,7 +207,9 @@ test('backend JSON handler responses use the standard envelope shape', async () 
 		const rawIdentifiers = rawJsonResponseIdentifiers(source);
 
 		for (const identifier of rawIdentifiers) {
-			violations.push(`${relative(file)}: raw Json(${identifier}) response must use { success, data }`);
+			violations.push(
+				`${relative(file)}: raw Json(${identifier}) response must use { success, data }`
+			);
 		}
 
 		for (const block of blocks) {
@@ -194,7 +229,9 @@ test('backend JSON handler responses use the standard envelope shape', async () 
 			if (hasSuccessTrue) {
 				const extraKeys = keys.filter((key) => !allowedSuccessKeys.has(key));
 				if (!keySet.has('data')) {
-					violations.push(`${relative(file)}: success response missing data in ${block.slice(0, 120)}`);
+					violations.push(
+						`${relative(file)}: success response missing data in ${block.slice(0, 120)}`
+					);
 				}
 				if (extraKeys.length > 0) {
 					violations.push(
@@ -204,7 +241,9 @@ test('backend JSON handler responses use the standard envelope shape', async () 
 			} else if (hasSuccessFalse) {
 				const extraKeys = keys.filter((key) => !allowedErrorKeys.has(key));
 				if (!keySet.has('error')) {
-					violations.push(`${relative(file)}: error response missing error in ${block.slice(0, 120)}`);
+					violations.push(
+						`${relative(file)}: error response missing error in ${block.slice(0, 120)}`
+					);
 				}
 				if (extraKeys.length > 0) {
 					violations.push(
@@ -212,7 +251,9 @@ test('backend JSON handler responses use the standard envelope shape', async () 
 					);
 				}
 			} else {
-				violations.push(`${relative(file)}: success is not statically true/false in ${block.slice(0, 120)}`);
+				violations.push(
+					`${relative(file)}: success is not statically true/false in ${block.slice(0, 120)}`
+				);
 			}
 		}
 	}
@@ -308,6 +349,25 @@ test('permission registry covers backend and frontend permission references', as
 		}
 	}
 
+	const frontendRegistrySource = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.ts'),
+		'utf8'
+	);
+	const frontendPermissions = extractConstObjectValues(frontendRegistrySource, 'PERMISSIONS');
+	const frontendModules = extractConstObjectValues(frontendRegistrySource, 'PERMISSION_MODULES');
+
+	for (const [name, permission] of frontendPermissions) {
+		if (!allPermissionCodes.has(permission)) {
+			violations.push(`frontend registry: PERMISSIONS.${name} is not in backend registry`);
+		}
+	}
+
+	for (const [name, module] of frontendModules) {
+		if (!modules.has(module)) {
+			violations.push(`frontend registry: PERMISSION_MODULES.${name} is not in backend registry`);
+		}
+	}
+
 	const duplicateCodes = [...constants.values()].filter(
 		(code, index, codes) => codes.indexOf(code) !== index
 	);
@@ -343,13 +403,73 @@ test('permission registry covers backend and frontend permission references', as
 		for (const pattern of frontendPermissionPatterns) {
 			for (const match of source.matchAll(pattern)) {
 				const permission = match[1];
-				if (
-					permission !== '*' &&
-					!allPermissionCodes.has(permission) &&
-					!modules.has(permission)
-				) {
+				if (permission !== '*' && !allPermissionCodes.has(permission) && !modules.has(permission)) {
 					violations.push(`${relative(file)}: unknown permission reference ${permission}`);
 				}
+			}
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('frontend app route metadata uses permission registry constants', async () => {
+	const routeFiles = await listFiles(
+		path.join(repoRoot, 'frontend-school/src/routes/(app)'),
+		(file) => file.endsWith('+page.ts')
+	);
+	const violations = [];
+
+	for (const file of routeFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (/\bpermission:\s*['"][^'"]+['"]/.test(source)) {
+			violations.push(`${relative(file)}: use PERMISSIONS/PERMISSION_MODULES constants`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
+	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
+	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));
+	const pageTsFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.ts'));
+	const guardedRouteIds = new Set();
+	const allowedOpenRoutes = new Set(['/(app)/403', '/(app)/debug', '/(app)/settings/consent']);
+	const violations = [];
+
+	for (const file of pageTsFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (/\b_meta\s*=/.test(source) && /\bmenu\s*:/.test(source)) {
+			guardedRouteIds.add(appRouteIdFromFile(file, '/+page.ts'));
+		}
+	}
+
+	for (const file of pageSvelteFiles) {
+		const routeId = appRouteIdFromFile(file, '/+page.svelte');
+		if (allowedOpenRoutes.has(routeId)) continue;
+		if (!hasGuardedAncestor(routeId, guardedRouteIds)) {
+			violations.push(`${relative(file)}: missing _meta.menu guard metadata or guarded ancestor`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('frontend menu route metadata is complete for deployment sync', async () => {
+	const routeFiles = await listFiles(
+		path.join(repoRoot, 'frontend-school/src/routes/(app)'),
+		(file) => file.endsWith('+page.ts')
+	);
+	const violations = [];
+
+	for (const file of routeFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (!/\b_meta\s*=/.test(source) || !/\bmenu\s*:/.test(source)) continue;
+
+		for (const requiredField of ['title', 'icon', 'group', 'order', 'user_type']) {
+			if (!new RegExp(`\\b${requiredField}:`).test(source)) {
+				violations.push(`${relative(file)}: _meta.menu is missing ${requiredField}`);
 			}
 		}
 	}
@@ -374,9 +494,8 @@ test('backend permissions do not use the legacy UserPermissions resolver', async
 });
 
 test('backend module handlers use ActorContext instead of raw permission lists', async () => {
-	const backendFiles = await listFiles(
-		path.join(repoRoot, 'backend-school/src/modules'),
-		(file) => file.endsWith('.rs')
+	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src/modules'), (file) =>
+		file.endsWith('.rs')
 	);
 	const violations = [];
 
@@ -414,7 +533,11 @@ test('backend menu and feature handlers do not parse auth or query permissions d
 
 	for (const relativePath of checkedFiles) {
 		const source = await readFile(path.join(repoRoot, relativePath), 'utf8');
-		if (/\bJwtService\b|\bfield_encryption\b|JOIN role_permissions|permission_delegations/.test(source)) {
+		if (
+			/\bJwtService\b|\bfield_encryption\b|JOIN role_permissions|permission_delegations/.test(
+				source
+			)
+		) {
 			violations.push(relativePath);
 		}
 	}
@@ -452,12 +575,36 @@ test('backend permission cache invalidations notify active clients', async () =>
 	assert.deepEqual(violations, []);
 });
 
+test('permission change SSE supports user-targeted and broadcast invalidation', async () => {
+	const eventSource = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/notification/events.rs'),
+		'utf8'
+	);
+	const notificationHandler = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/notification/handlers.rs'),
+		'utf8'
+	);
+	const appState = await readFile(path.join(repoRoot, 'backend-school/src/main.rs'), 'utf8');
+
+	assert.match(eventSource, /pub fn for_user\(user_id: Uuid\)/);
+	assert.match(eventSource, /pub fn for_all_users\(\)/);
+	assert.match(eventSource, /pub fn applies_to\(&self, user_id: Uuid\) -> bool/);
+	assert.match(notificationHandler, /permission_event_channel\.subscribe\(\)/);
+	assert.match(notificationHandler, /\bevent\.applies_to\(user_id\)/);
+	assert.match(notificationHandler, /\.event\("permission_changed"\)/);
+	assert.match(appState, /notify_permission_changed\(&self, target_user_id: Uuid\)/);
+	assert.match(appState, /notify_all_permissions_changed\(&self\)/);
+});
+
 test('frontend permission updates use SSE-triggered silent auth refresh', async () => {
 	const notificationStore = await readFile(
 		path.join(repoRoot, 'frontend-school/src/lib/stores/notification.ts'),
 		'utf8'
 	);
-	const authApi = await readFile(path.join(repoRoot, 'frontend-school/src/lib/api/auth.ts'), 'utf8');
+	const authApi = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/api/auth.ts'),
+		'utf8'
+	);
 
 	assert.match(notificationStore, /addEventListener\('permission_changed'/);
 	assert.match(notificationStore, /refreshCurrentUser\(\{\s*silent:\s*true\s*\}\)/);
@@ -482,9 +629,7 @@ test('frontend current-user permission checks go through the can store', async (
 
 		const source = stripComments(await readFile(file, 'utf8'));
 		if (
-			/(?:authState|authStore|\$authStore|user)\.user\??\.permissions\??\.includes\(/.test(
-				source
-			)
+			/(?:authState|authStore|\$authStore|user)\.user\??\.permissions\??\.includes\(/.test(source)
 		) {
 			violations.push(`${rel}: use $can.has/$can.hasAny instead of direct current-user includes`);
 		}

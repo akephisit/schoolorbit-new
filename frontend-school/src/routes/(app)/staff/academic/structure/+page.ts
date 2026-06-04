@@ -2,6 +2,8 @@
  * Academic Structure Management Page
  */
 
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'โครงสร้างวิชาการ',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'academic',
 		order: 10,
 		user_type: 'staff',
-		permission: 'academic_structure.read.all'
+		permission: PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL
 	}
 };
 

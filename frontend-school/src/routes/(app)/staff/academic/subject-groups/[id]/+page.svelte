@@ -6,6 +6,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import DeptMembersSection from '$lib/components/staff/DeptMembersSection.svelte';
 	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { GraduationCap, ArrowLeft, Building2, Settings } from 'lucide-svelte';
 
@@ -62,7 +63,7 @@
 				<p class="text-muted-foreground text-sm">{department.code}</p>
 			{/if}
 		</div>
-		{#if department && $can.has('roles.assign.all')}
+		{#if department && $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
 			<Button variant="outline" size="sm" onclick={() => (showPermissionDialog = true)}>
 				<Settings class="w-4 h-4 mr-1" />
 				ตั้งค่าสิทธิ์

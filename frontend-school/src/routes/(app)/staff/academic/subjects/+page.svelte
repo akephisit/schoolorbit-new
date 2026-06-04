@@ -60,13 +60,15 @@
 		Inbox,
 		Info
 	} from 'lucide-svelte';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
 	let { data } = $props();
 
 	// true = ครูกลุ่มสาระ (manage.department เท่านั้น) — lock group filter
 	let isDeptScope = $derived(
-		$can.has('academic_curriculum.manage.department') && !$can.has('academic_curriculum.read.all')
+		$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_DEPARTMENT) &&
+			!$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL)
 	);
 
 	// Data States

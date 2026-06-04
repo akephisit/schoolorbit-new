@@ -2,6 +2,8 @@
  * Feature Toggles Management Page
  */
 
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'จัดการระบบงาน',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'settings',
 		order: 1000,
 		user_type: 'staff',
-		permission: 'settings'
+		permission: PERMISSION_MODULES.SETTINGS
 	}
 };
 

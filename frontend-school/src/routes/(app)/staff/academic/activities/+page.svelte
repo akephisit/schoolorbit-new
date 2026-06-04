@@ -50,6 +50,7 @@
 		FolderInput
 	} from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
@@ -607,7 +608,7 @@
 			</Select.Content>
 		</Select.Root>
 
-		{#if $can.has('activity.manage.all')}
+		{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL)}
 			<div class="ml-auto">
 				<Button variant="outline" onclick={openGenerateDialog} disabled={!filterSemesterId}>
 					<FolderInput class="w-4 h-4 mr-1" />
@@ -681,7 +682,7 @@
 					{#if expanded}
 						<div class="border-t px-4 pb-4">
 							<!-- Slot Actions -->
-							{#if $can.has('activity.manage.all')}
+							{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL)}
 								<div class="flex flex-wrap gap-2 py-3">
 									{#if slot.scheduling_mode !== 'independent'}
 										<Button
@@ -717,7 +718,7 @@
 							{/if}
 
 							<!-- Slot Instructors (synchronized only) -->
-							{#if $can.has('activity.manage.all') && slot.scheduling_mode !== 'independent'}
+							{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) && slot.scheduling_mode !== 'independent'}
 								{@const instrList = slotInstructorsMap[slot.id] ?? []}
 								<div class="space-y-1 pb-3">
 									<Label class="text-xs font-semibold text-muted-foreground"
@@ -753,7 +754,7 @@
 							{/if}
 
 							<!-- Classroom Instructor Assignments (independent slots) -->
-							{#if slot.scheduling_mode === 'independent' && $can.has('activity.manage.all')}
+							{#if slot.scheduling_mode === 'independent' && $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL)}
 								{@const assignments = slotClassroomAssignmentsMap[slot.id] ?? []}
 								<!-- แสดงเฉพาะห้องที่เข้าร่วมจริง (junction activity_slot_classrooms),
 								     ไม่ใช่ทุกห้องในระดับชั้นที่ catalog รองรับ —
@@ -839,7 +840,7 @@
 													>
 														<UserCog class="h-4 w-4" />
 													</Button>
-													{#if $can.has('activity.manage.all') || $can.has('activity.manage.own')}
+													{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || $can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN)}
 														<Button
 															variant="ghost"
 															size="icon"
@@ -849,7 +850,7 @@
 															<Pencil class="h-3 w-3" />
 														</Button>
 													{/if}
-													{#if $can.has('activity.manage.all')}
+													{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL)}
 														<Button
 															variant="ghost"
 															size="icon"
@@ -865,7 +866,7 @@
 								{/if}
 
 								<!-- Add Group Button -->
-								{#if $can.has('activity.manage.all') || ($can.has('activity.manage.own') && slot.teacher_reg_open)}
+								{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || ($can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN) && slot.teacher_reg_open)}
 									<Button
 										variant="outline"
 										size="sm"

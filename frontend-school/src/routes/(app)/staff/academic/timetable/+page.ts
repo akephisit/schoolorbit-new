@@ -1,9 +1,11 @@
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'จัดตารางสอน',
 		icon: 'CalendarDays',
 		group: 'academic',
-		permission: 'academic_course_plan.manage.all',
+		permission: PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL,
 		order: 51,
 		user_type: 'staff'
 	}

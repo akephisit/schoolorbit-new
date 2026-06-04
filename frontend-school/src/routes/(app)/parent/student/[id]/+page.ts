@@ -1,12 +1,8 @@
-/**
- * Edit Student Page (Admin/Staff)
- */
-
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params }) => {
 	return {
-		title: 'แก้ไขข้อมูลนักเรียน',
+		title: 'ข้อมูลนักเรียน',
 		studentId: params.id
 	};
 };

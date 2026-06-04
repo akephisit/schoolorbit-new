@@ -9,6 +9,7 @@
 		type StaffListItem,
 		type Department
 	} from '$lib/api/staff';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Users, Plus, Pencil, Trash2 } from 'lucide-svelte';
@@ -146,7 +147,7 @@
 			<Users class="w-5 h-5" />
 			สมาชิก ({members.length} คน)
 		</h2>
-		{#if $can.has('roles.assign.all')}
+		{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
 			<Button size="sm" onclick={() => (showAddDialog = true)}>
 				<Plus class="w-4 h-4 mr-1" />
 				เพิ่มสมาชิก
@@ -178,7 +179,7 @@
 							</p>
 						</div>
 					</div>
-					{#if $can.has('roles.assign.all')}
+					{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
 						<div class="flex items-center gap-1 shrink-0">
 							<Button variant="ghost" size="sm" onclick={() => openEdit(member)}>
 								<Pencil class="w-3.5 h-3.5" />

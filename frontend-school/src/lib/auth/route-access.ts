@@ -1,18 +1,19 @@
 import type { User } from '$lib/stores/auth';
+import type { RoutePermission } from '$lib/permissions/registry';
 import { hasModulePermission, hasPermission } from '$lib/stores/permissions';
 
 type RouteMetaModule = {
 	_meta?: {
 		menu?: {
 			user_type?: string;
-			permission?: string;
+			permission?: RoutePermission;
 		};
 	};
 };
 
 export type RouteAccess = {
 	userType?: string;
-	permission?: string;
+	permission?: RoutePermission;
 };
 
 export type DashboardPath = '/staff' | '/student' | '/parent';
@@ -50,7 +51,10 @@ export function getRouteAccess(routeId: string | null): RouteAccess | undefined 
 	return undefined;
 }
 
-export function routePermissionMatches(permissions: string[], requiredPermission?: string): boolean {
+export function routePermissionMatches(
+	permissions: string[],
+	requiredPermission?: string
+): boolean {
 	if (!requiredPermission) return true;
 
 	return requiredPermission.includes('.')

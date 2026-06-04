@@ -2,6 +2,8 @@
  * Departments Management Page
  */
 
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'โครงสร้างองค์กร',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'personnel',
 		order: 20,
 		user_type: 'staff',
-		permission: 'roles'
+		permission: PERMISSION_MODULES.ROLES
 	}
 };
 

@@ -3,6 +3,8 @@
  * จัดการหลักสูตรสถานศึกษา (ฉบับปรับปรุง พ.ศ. ...)
  */
 
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'หลักสูตรสถานศึกษา',
@@ -10,7 +12,7 @@ export const _meta = {
 		group: 'academic',
 		order: 3,
 		user_type: 'staff',
-		permission: 'academic_curriculum.read.all'
+		permission: PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL
 	}
 };
 

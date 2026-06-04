@@ -2,6 +2,8 @@
  * Subject Management Page
  */
 
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'คลังรายวิชา',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'academic',
 		order: 2,
 		user_type: 'staff',
-		permission: 'academic_curriculum'
+		permission: PERMISSION_MODULES.ACADEMIC_CURRICULUM
 	}
 };
 

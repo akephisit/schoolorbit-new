@@ -2,6 +2,8 @@
  * Staff Management Page
  */
 
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'บุคลากร',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'personnel',
 		order: 10,
 		user_type: 'staff',
-		permission: 'staff'
+		permission: PERMISSION_MODULES.STAFF
 	}
 };
 

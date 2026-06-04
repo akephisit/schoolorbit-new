@@ -1,5 +1,10 @@
 import { glob } from 'glob';
 import fs from 'fs';
+import {
+	PERMISSION_MODULES,
+	PERMISSIONS,
+	WILDCARD_PERMISSION
+} from '../src/lib/permissions/registry';
 
 /**
  * Route metadata structure
@@ -74,6 +79,22 @@ export function extractMeta(content: string): { menu?: unknown } | null {
 		// Step 0: Remove JavaScript comments (JSON doesn't support comments)
 		menuStr = menuStr.replace(/\/\/.*$/gm, ''); // Remove single-line comments
 		menuStr = menuStr.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove multi-line comments
+
+		menuStr = menuStr.replace(
+			/\b(PERMISSIONS|PERMISSION_MODULES)\.([A-Z0-9_]+)\b/g,
+			(_, namespace: 'PERMISSIONS' | 'PERMISSION_MODULES', key: string) => {
+				const values = (namespace === 'PERMISSIONS' ? PERMISSIONS : PERMISSION_MODULES) as Record<
+					string,
+					string
+				>;
+				const value = values[key];
+				if (!value) {
+					throw new Error(`Unknown menu permission constant ${namespace}.${key}`);
+				}
+				return JSON.stringify(value);
+			}
+		);
+		menuStr = menuStr.replace(/\bWILDCARD_PERMISSION\b/g, JSON.stringify(WILDCARD_PERMISSION));
 
 		// Step 1: Replace single quotes with double quotes for string values
 		// But be careful with quotes inside strings

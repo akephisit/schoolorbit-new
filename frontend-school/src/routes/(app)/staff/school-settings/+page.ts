@@ -1,3 +1,5 @@
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'ตั้งค่าโรงเรียน',
@@ -5,7 +7,7 @@ export const _meta = {
 		group: 'settings',
 		order: 900,
 		user_type: 'staff',
-		permission: 'settings.update'
+		permission: PERMISSIONS.SETTINGS_UPDATE
 	}
 };
 

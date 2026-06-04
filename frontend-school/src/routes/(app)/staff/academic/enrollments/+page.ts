@@ -2,6 +2,8 @@
  * Enrollment Management Page
  */
 
+import { PERMISSIONS } from '$lib/permissions/registry';
+
 export const _meta = {
 	menu: {
 		title: 'จัดห้องเรียน',
@@ -9,7 +11,7 @@ export const _meta = {
 		group: 'academic',
 		order: 30,
 		user_type: 'staff',
-		permission: 'academic_enrollment.read.all'
+		permission: PERMISSIONS.ACADEMIC_ENROLLMENT_READ_ALL
 	}
 };
 
