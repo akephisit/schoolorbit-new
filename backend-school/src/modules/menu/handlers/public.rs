@@ -6,34 +6,18 @@ use axum::{
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::permission::get_user_with_permissions;
 use crate::modules::menu::models::*;
 use crate::modules::menu::services::public_menu_service::{self, MenuRow};
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 
 pub async fn get_user_menu(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to get database pool: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+    let pool = resolve_tenant_pool(&state, &headers).await?;
 
     let token_from_header = headers
         .get(header::AUTHORIZATION)

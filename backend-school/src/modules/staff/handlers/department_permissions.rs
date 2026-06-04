@@ -1,7 +1,6 @@
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::modules::staff::models::UpdateDepartmentPermissionsRequest;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 
 use axum::{
@@ -19,24 +18,7 @@ pub async fn get_department_permissions(
     Path(department_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("Database connection error".to_string())
-        })?;
+    let pool = resolve_tenant_pool(&state, &headers).await?;
 
     let rows = sqlx::query(
         r#"
@@ -63,18 +45,7 @@ pub async fn update_department_permissions(
     headers: HeaderMap,
     Json(payload): Json<UpdateDepartmentPermissionsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_e| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_e| AppError::InternalServerError("Database connection error".to_string()))?;
+    let pool = resolve_tenant_pool(&state, &headers).await?;
 
     // Transaction
     let mut tx = pool.begin().await?;

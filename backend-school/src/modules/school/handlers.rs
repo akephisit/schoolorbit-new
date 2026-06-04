@@ -2,26 +2,16 @@ use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
 use serde_json::json;
 
 use super::models::{SchoolSettingsResponse, SchoolSettingsRow, UpdateSchoolSettingsRequest};
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::permission::check_permission;
 use crate::permissions::registry::codes;
 use crate::services::r2_client::R2Client;
 use crate::utils::file_url::get_file_url_from_string;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::{resolve_tenant_context, resolve_tenant_pool};
 use crate::AppState;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    let subdomain = extract_subdomain_from_request(headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
+    resolve_tenant_pool(state, headers).await
 }
 
 /// GET /api/school/settings — staff only (SETTINGS_READ)
@@ -98,17 +88,8 @@ pub async fn get_public_info(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))?;
+    let tenant = resolve_tenant_context(&state, &headers).await?;
+    let pool = tenant.pool;
 
     let row = sqlx::query_as::<_, SchoolSettingsRow>(
         "SELECT logo_path, logo_file_id FROM school_settings LIMIT 1",
@@ -122,7 +103,11 @@ pub async fn get_public_info(
     });
 
     let logo_url = get_file_url_from_string(&row.logo_path);
-    let school_name = state.admin_client.get_school_name(&subdomain).await.ok();
+    let school_name = state
+        .admin_client
+        .get_school_name(&tenant.subdomain)
+        .await
+        .ok();
 
     Ok(Json(json!({ "success": true, "data": {
             "logoUrl": logo_url,

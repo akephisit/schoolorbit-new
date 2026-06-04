@@ -1,7 +1,6 @@
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::auth::extract_user_id;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
@@ -15,6 +14,10 @@ use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tokio::sync::broadcast;
 use uuid::Uuid;
+
+async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
+    resolve_tenant_pool(state, headers).await
+}
 
 // Models
 #[derive(Debug, Serialize, Clone, sqlx::FromRow)]
@@ -54,24 +57,7 @@ pub async fn list_notifications(
     headers: HeaderMap,
     Query(query): Query<ListNotificationsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get database pool: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user_id = extract_user_id(&headers, &pool)
         .await
@@ -128,24 +114,7 @@ pub async fn mark_as_read(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get database pool: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user_id = extract_user_id(&headers, &pool)
         .await
@@ -172,24 +141,7 @@ pub async fn mark_all_as_read(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get database pool: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user_id = extract_user_id(&headers, &pool)
         .await
@@ -215,25 +167,10 @@ pub async fn stream_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
     // We verify the user, but we don't need the DB connection for the stream itself,
     // unless to verify the user exists/is active.
     // However, to extract_user_id cleanly we need the pool.
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_e| {
-            // If DB lookup fails, we can't authenticate, so unauthorized or not found
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_e| AppError::InternalServerError("Database error".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user_id = extract_user_id(&headers, &pool)
         .await
@@ -270,18 +207,7 @@ pub async fn create_notification(
     headers: HeaderMap,
     Json(payload): Json<CreateNotificationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user_id = extract_user_id(&headers, &pool)
         .await
@@ -335,18 +261,7 @@ pub async fn subscribe_push(
     headers: HeaderMap,
     Json(payload): Json<SubscribePushRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user_id = extract_user_id(&headers, &pool)
         .await

@@ -7,26 +7,16 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::permission::check_permission;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::score_service;
 use crate::permissions::registry::codes;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    let subdomain = extract_subdomain_from_request(headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("School not found".to_string()))?;
-    state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("Database connection failed".to_string()))
+    resolve_tenant_pool(state, headers).await
 }
 
 pub async fn get_all_scores(

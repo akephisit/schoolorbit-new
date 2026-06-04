@@ -249,6 +249,33 @@ test('backend permissions do not use the legacy UserPermissions resolver', async
 	assert.deepEqual(violations, []);
 });
 
+test('backend module handlers resolve tenant pools through the central resolver', async () => {
+	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src/modules'), (file) =>
+		file.endsWith('.rs')
+	);
+	const directPoolAllowed = new Set(['backend-school/src/modules/system/handlers/migration.rs']);
+	const violations = [];
+
+	for (const file of backendFiles) {
+		const source = await readFile(file, 'utf8');
+		const fileName = relative(file);
+
+		if (source.includes('get_school_database_url')) {
+			violations.push(`${fileName}: use utils::tenant resolver instead of get_school_database_url`);
+		}
+
+		if (source.includes('PgPool::connect(')) {
+			violations.push(`${fileName}: use AppState PoolManager via utils::tenant resolver`);
+		}
+
+		if (!directPoolAllowed.has(fileName) && /\.pool_manager\s*\.get_pool\s*\(/.test(source)) {
+			violations.push(`${fileName}: use utils::tenant resolver instead of pool_manager.get_pool`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
 test('frontend application code routes backend API calls through apiClient', async () => {
 	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
 		/\.(svelte|ts)$/.test(file)

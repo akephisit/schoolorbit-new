@@ -7,3 +7,4 @@ pub mod jwt;
 pub mod logging;
 pub mod permission_sync;
 pub mod subdomain;
+pub mod tenant;

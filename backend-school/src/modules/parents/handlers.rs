@@ -1,10 +1,9 @@
 use super::models::{ChildDto, ParentDbRow, ParentProfile};
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::auth::get_current_user;
 use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
 use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
-use crate::utils::{field_encryption, subdomain::extract_subdomain_from_request};
+use crate::utils::{field_encryption, tenant::resolve_tenant_pool};
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -15,29 +14,16 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
+async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
+    resolve_tenant_pool(state, headers).await
+}
+
 /// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
 pub async fn get_own_parent_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     // Get current user
     let user = get_current_user(&headers, &pool).await?;
@@ -124,24 +110,7 @@ pub async fn get_child_profile(
     headers: HeaderMap,
     Path(student_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     // Get current user (Parent)
     let user = get_current_user(&headers, &pool).await?;
@@ -257,18 +226,7 @@ pub async fn get_child_timetable(
     Path(student_id): Path<Uuid>,
     Query(query): Query<ChildTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user = get_current_user(&headers, &pool).await?;
 

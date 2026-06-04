@@ -1,6 +1,8 @@
 use crate::error::AppError;
 use crate::modules::menu::models::{RouteRegistration, RouteRegistrationResponse};
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::{
+    subdomain::extract_subdomain_from_request, tenant::resolve_tenant_context_by_subdomain,
+};
 use crate::AppState;
 
 use axum::{
@@ -43,18 +45,9 @@ pub async fn register_routes(
         AppError::BadRequest("No subdomain specified".to_string())
     })?;
 
-    let db_url =
-        crate::db::school_mapping::get_school_database_url(&state.admin_client, &subdomain)
-            .await
-            .map_err(|e| {
-                eprintln!("❌ Failed to get school database: {}", e);
-                AppError::InternalServerError("Database connection failed".to_string())
-            })?;
-
-    let pool = sqlx::PgPool::connect(&db_url).await.map_err(|e| {
-        eprintln!("❌ Failed to connect to database: {}", e);
-        AppError::InternalServerError("Database connection failed".to_string())
-    })?;
+    let pool = resolve_tenant_context_by_subdomain(&state, &subdomain)
+        .await?
+        .pool;
 
     // Smart sync: UPSERT to preserve user customizations (display_order, is_active)
     // while updating code-controlled fields (name, path, icon, permission, group)

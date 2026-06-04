@@ -2,10 +2,9 @@
 // These endpoints return minimal data for dropdowns
 // Only require authentication, no specific permission needed
 
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::modules::lookup::models::*;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 use axum::{
     extract::{Query, State},
@@ -21,6 +20,10 @@ use uuid::Uuid;
 // ===================================================================
 // Helper: Verify user is authenticated (no permission check)
 // ===================================================================
+
+async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
+    resolve_tenant_pool(state, headers).await
+}
 
 async fn verify_authenticated(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Uuid, AppError> {
     // Try to extract token from Authorization header first
@@ -90,24 +93,7 @@ pub async fn lookup_staff(
     headers: HeaderMap,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     // Only requires authentication
     verify_authenticated(&headers, &pool).await?;
@@ -182,18 +168,7 @@ pub async fn lookup_roles(
     headers: HeaderMap,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     verify_authenticated(&headers, &pool).await?;
 
@@ -265,18 +240,7 @@ pub async fn lookup_departments(
     headers: HeaderMap,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user_id = verify_authenticated(&headers, &pool).await?;
 
@@ -352,18 +316,7 @@ pub async fn lookup_department_by_id(
     axum::extract::Path(id): axum::extract::Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     verify_authenticated(&headers, &pool).await?;
 
@@ -415,18 +368,7 @@ pub async fn lookup_grade_levels(
     headers: HeaderMap,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     verify_authenticated(&headers, &pool).await?;
 
@@ -580,18 +522,7 @@ pub async fn lookup_classrooms(
     headers: HeaderMap,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     verify_authenticated(&headers, &pool).await?;
 
@@ -674,18 +605,7 @@ pub async fn lookup_academic_years(
     headers: HeaderMap,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     verify_authenticated(&headers, &pool).await?;
 
@@ -748,18 +668,7 @@ pub async fn lookup_students(
     headers: HeaderMap,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     verify_authenticated(&headers, &pool).await?;
 
@@ -848,18 +757,7 @@ pub async fn lookup_rooms(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     // 1. Check authentication
     verify_authenticated(&headers, &pool).await?;
@@ -908,18 +806,7 @@ pub async fn lookup_subjects(
     headers: HeaderMap,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|_| AppError::NotFound("ไม่พบโรงเรียน".to_string()))?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string()))?;
+    let pool = get_pool(&state, &headers).await?;
 
     verify_authenticated(&headers, &pool).await?;
 

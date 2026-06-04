@@ -10,7 +10,6 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
-    db::school_mapping::get_school_database_url,
     error::AppError,
     modules::auth::models::Claims,
     modules::files::models::{
@@ -19,7 +18,7 @@ use crate::{
     services::r2_client::R2Client,
     utils::{
         file_hash::FileHasher, file_processor::ImageProcessor, file_url::FileUrlBuilder,
-        subdomain::extract_subdomain_from_request,
+        subdomain::extract_subdomain_from_request, tenant::resolve_tenant_context_by_subdomain,
     },
     AppState,
 };
@@ -236,23 +235,9 @@ pub async fn upload_file(
         }
     }
 
-    // Get school database URL
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            error!("Failed to get school database: {}", e);
-            AppError::NotFound("School not found".to_string())
-        })?;
-
-    // Get pool
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            error!("Failed to get database pool: {}", e);
-            AppError::InternalServerError("Database unavailable".to_string())
-        })?;
+    let pool = resolve_tenant_context_by_subdomain(&state, &subdomain)
+        .await?
+        .pool;
 
     let file_record = sqlx::query_as::<_, File>(
         r#"
@@ -324,23 +309,9 @@ pub async fn delete_file(
     let subdomain = extract_subdomain_from_request(&subdomain_header)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    // Get school database URL
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            error!("Failed to get school database: {}", e);
-            AppError::NotFound("School not found".to_string())
-        })?;
-
-    // Get pool
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            error!("Failed to get database pool: {}", e);
-            AppError::InternalServerError("Database unavailable".to_string())
-        })?;
+    let pool = resolve_tenant_context_by_subdomain(&state, &subdomain)
+        .await?
+        .pool;
 
     // Get file metadata
     let file = sqlx::query_as::<_, File>(
@@ -406,23 +377,9 @@ pub async fn list_user_files(
     let subdomain = extract_subdomain_from_request(&subdomain_header)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
 
-    // Get school database URL
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            error!("Failed to get school database: {}", e);
-            AppError::NotFound("School not found".to_string())
-        })?;
-
-    // Get pool
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            error!("Failed to get database pool: {}", e);
-            AppError::InternalServerError("Database unavailable".to_string())
-        })?;
+    let pool = resolve_tenant_context_by_subdomain(&state, &subdomain)
+        .await?
+        .pool;
 
     let files = sqlx::query_as::<_, File>(
         "SELECT * FROM files WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",

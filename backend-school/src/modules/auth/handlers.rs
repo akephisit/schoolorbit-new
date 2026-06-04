@@ -3,12 +3,11 @@ use super::models::{
     UpdateProfileRequest, User, UserResponse,
 };
 use crate::api_response::ApiResponse;
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::utils::field_encryption;
 use crate::utils::file_url::get_file_url_from_string;
 use crate::utils::jwt::JwtService;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::{resolve_tenant_context, resolve_tenant_pool};
 use crate::AppState;
 use axum::{
     extract::{rejection::JsonRejection, Request, State},
@@ -17,6 +16,10 @@ use axum::{
     Json,
 };
 use tower_cookies::{Cookie, Cookies};
+
+async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
+    resolve_tenant_pool(state, headers).await
+}
 
 /// Login handler
 pub async fn login(
@@ -28,32 +31,14 @@ pub async fn login(
     let Json(payload) =
         payload_result.map_err(|rejection| AppError::ValidationError(rejection.body_text()))?;
 
-    // Extract subdomain from Origin header (secure, cannot be spoofed)
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
+    let tenant = resolve_tenant_context(&state, &headers).await?;
+    let subdomain = tenant.subdomain;
+    let pool = tenant.pool;
 
     println!(
         "🔐 Login attempt for school: {}, username: {}",
         subdomain, payload.username
     );
-
-    // Get school database URL from mapping
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียนหรือโรงเรียนไม่ได้เปิดใช้งาน".to_string())
-        })?;
-
-    // Connect to school database
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to connect to school database: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
 
     // Find user by username
     let user = sqlx::query_as::<_, LoginUser>(
@@ -216,10 +201,6 @@ pub async fn me(
     headers: HeaderMap,
     req: Request,
 ) -> Result<impl IntoResponse, AppError> {
-    // Extract subdomain from Origin header (secure)
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
     // Extract claims from middleware
     let claims = req
         .extensions()
@@ -227,23 +208,7 @@ pub async fn me(
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
-    // Get school database URL
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    // Get pool
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     // Fetch user from database
     let mut user = sqlx::query_as::<_, User>(
@@ -373,10 +338,6 @@ pub async fn get_profile(
     headers: HeaderMap,
     req: Request,
 ) -> Result<impl IntoResponse, AppError> {
-    // Extract subdomain from Origin header (secure)
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
     // Extract claims from middleware
     let claims = req
         .extensions()
@@ -384,23 +345,7 @@ pub async fn get_profile(
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
-    // Get school database URL
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    // Get pool
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     // Fetch user from database
     let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
@@ -451,10 +396,6 @@ pub async fn update_profile(
     headers: HeaderMap,
     Json(payload): Json<UpdateProfileRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Extract subdomain from Origin header (secure)
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
     // Extract token from Authorization header or cookie
     let token = headers
         .get("Authorization")
@@ -479,23 +420,7 @@ pub async fn update_profile(
     let claims = JwtService::verify_token(token)
         .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
 
-    // Get school database URL
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    // Get pool
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user_id = uuid::Uuid::parse_str(&claims.sub).map_err(|e| {
         eprintln!("❌ Invalid user ID: {}", e);
@@ -586,10 +511,6 @@ pub async fn change_password(
     headers: HeaderMap,
     Json(payload): Json<ChangePasswordRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Extract subdomain from Origin header (secure)
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
     // Extract token from Authorization header or cookie
     let token = headers
         .get("Authorization")
@@ -614,23 +535,7 @@ pub async fn change_password(
     let claims = JwtService::verify_token(token)
         .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
 
-    // Get school database URL
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    // Get pool
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     let user_id = uuid::Uuid::parse_str(&claims.sub).map_err(|e| {
         eprintln!("❌ Invalid user ID: {}", e);

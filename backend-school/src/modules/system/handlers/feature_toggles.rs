@@ -13,7 +13,7 @@ use crate::modules::menu::models::FeatureToggle;
 use crate::modules::system::services::feature_toggle_service;
 use crate::utils::field_encryption;
 use crate::utils::jwt::JwtService;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -226,17 +226,7 @@ async fn get_pool_and_authenticate(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<(PgPool, User, Vec<String>), AppError> {
-    let subdomain = extract_subdomain_from_request(headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-    let db_url =
-        crate::db::school_mapping::get_school_database_url(&state.admin_client, &subdomain)
-            .await
-            .map_err(|e| AppError::NotFound(format!("School not found: {}", e)))?;
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?;
+    let pool = resolve_tenant_pool(state, headers).await?;
     let (user, permissions) = authenticate_user(headers, &pool).await?;
     Ok((pool, user, permissions))
 }

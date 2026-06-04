@@ -1,8 +1,7 @@
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::modules::menu::models::{MenuGroup, MenuItem};
 use crate::modules::menu::services::menu_service;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 
 use axum::{
@@ -111,16 +110,7 @@ pub struct MenuItemResponse {
 }
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<PgPool, AppError> {
-    let subdomain = extract_subdomain_from_request(headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| AppError::NotFound(format!("School not found: {}", e)))?;
-    state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))
+    resolve_tenant_pool(state, headers).await
 }
 
 async fn auth(state: &AppState, headers: &HeaderMap) -> Result<(PgPool, Vec<String>), AppError> {

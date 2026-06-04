@@ -1,8 +1,7 @@
-use crate::db::school_mapping::get_school_database_url;
 use crate::middleware::permission::check_permission;
 use crate::modules::staff::models::Permission;
 use crate::permissions::registry::codes;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 use axum::{
     extract::State,
@@ -18,33 +17,9 @@ use std::collections::HashMap;
 // ===================================================================
 
 pub async fn list_permissions(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
-
-    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
-            eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "success": false, "error": "ไม่พบโรงเรียน" })),
-            )
-                .into_response();
-        }
-    };
-
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "success": false, "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้" })),
-            )
-                .into_response();
-        }
+    let pool = match resolve_tenant_pool(&state, &headers).await {
+        Ok(pool) => pool,
+        Err(error) => return error.into_response(),
     };
 
     // Check permission
@@ -92,33 +67,9 @@ pub async fn list_permissions_by_module(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    let subdomain = match extract_subdomain_from_request(&headers) {
-        Ok(s) => s,
-        Err(response) => return response,
-    };
-
-    let db_url = match get_school_database_url(&state.admin_client, &subdomain).await {
-        Ok(url) => url,
-        Err(e) => {
-            eprintln!("❌ Failed to get school database: {}", e);
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "success": false, "error": "ไม่พบโรงเรียน" })),
-            )
-                .into_response();
-        }
-    };
-
-    let pool = match state.pool_manager.get_pool(&db_url, &subdomain).await {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "success": false, "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้" })),
-            )
-                .into_response();
-        }
+    let pool = match resolve_tenant_pool(&state, &headers).await {
+        Ok(pool) => pool,
+        Err(error) => return error.into_response(),
     };
 
     // Check permission

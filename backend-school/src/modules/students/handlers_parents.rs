@@ -7,16 +7,19 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::permission::check_permission;
 use crate::permissions::registry::codes;
-use crate::utils::{field_encryption, subdomain::extract_subdomain_from_request};
+use crate::utils::{field_encryption, tenant::resolve_tenant_pool};
 use crate::AppState;
 use ::bcrypt::hash;
 use ::bcrypt::DEFAULT_COST;
 
 use super::models::CreateParentRequest;
+
+async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
+    resolve_tenant_pool(state, headers).await
+}
 
 // -----------------------------------------------------------------------------
 // Parent Management Handlers (New)
@@ -29,24 +32,7 @@ pub async fn add_parent_to_student(
     Path(student_id): Path<Uuid>,
     Json(payload): Json<CreateParentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     // Check permission against tenant pool
     if let Err(e) = check_permission(
@@ -191,24 +177,7 @@ pub async fn remove_parent_from_student(
     headers: HeaderMap,
     Path((student_id, parent_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing or invalid subdomain".to_string()))?;
-
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get school database: {}", e);
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
-        })?;
-
-    let pool = state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to get database pool: {}", e);
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+    let pool = get_pool(&state, &headers).await?;
 
     // Check permission against tenant pool
     if let Err(e) = check_permission(

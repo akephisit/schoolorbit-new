@@ -7,39 +7,18 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::db::school_mapping::get_school_database_url;
 use crate::error::AppError;
 use crate::middleware::permission::check_permission;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::user_role_service::{self, AssignRoleOutcome};
 use crate::permissions::registry::codes;
-use crate::utils::subdomain::extract_subdomain_from_request;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 
 async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, Response> {
-    let subdomain = extract_subdomain_from_request(headers).map_err(|response| response)?;
-    let db_url = get_school_database_url(&state.admin_client, &subdomain)
+    resolve_tenant_pool(state, headers)
         .await
-        .map_err(|e| {
-            eprintln!("Failed to get school database: {}", e);
-            (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "success": false, "error": "ไม่พบโรงเรียน" })),
-            )
-                .into_response()
-        })?;
-    state
-        .pool_manager
-        .get_pool(&db_url, &subdomain)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to get database pool: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "success": false, "error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้" })),
-            )
-                .into_response()
-        })
+        .map_err(IntoResponse::into_response)
 }
 
 fn err_response<E: Into<AppError>>(e: E) -> Response {
