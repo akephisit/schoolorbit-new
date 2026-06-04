@@ -8,6 +8,46 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
+#[derive(Clone, Debug)]
+pub struct ActorContext {
+    pub user_id: Uuid,
+    pub permissions: Vec<String>,
+}
+
+impl ActorContext {
+    pub fn has_permission(&self, required_permission: &str) -> bool {
+        permission_matches(&self.permissions, required_permission)
+    }
+
+    pub fn has_any_permission(&self, required_permissions: &[&str]) -> bool {
+        required_permissions
+            .iter()
+            .any(|permission| self.has_permission(permission))
+    }
+
+    pub fn require_permission(&self, required_permission: &str) -> Result<(), Response> {
+        if self.has_permission(required_permission) {
+            Ok(())
+        } else {
+            Err(forbidden_response(format!(
+                "ไม่มีสิทธิ์ {}",
+                required_permission
+            )))
+        }
+    }
+
+    pub fn require_any_permission(&self, required_permissions: &[&str]) -> Result<(), Response> {
+        if self.has_any_permission(required_permissions) {
+            Ok(())
+        } else {
+            Err(forbidden_response(format!(
+                "ไม่มีสิทธิ์ {}",
+                required_permissions.join(" หรือ ")
+            )))
+        }
+    }
+}
+
 /// Shared permission check — returns user_id (Uuid) on success.
 ///
 /// Cache hit (within 30-min TTL): 0 DB trips
@@ -21,7 +61,12 @@ pub async fn check_permission(
     required_permission: &str,
     cache: &PermissionCache,
 ) -> Result<Uuid, Response> {
-    // Extract token
+    let actor = get_actor_context(headers, pool, cache).await?;
+    actor.require_permission(required_permission)?;
+    Ok(actor.user_id)
+}
+
+fn extract_actor_user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
@@ -72,17 +117,7 @@ pub async fn check_permission(
         }
     };
 
-    let permissions = get_cached_user_permissions(user_id, pool, cache)
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "success": false, "error": "ไม่สามารถตรวจสอบสิทธิ์ได้" })),
-            )
-                .into_response()
-        })?;
-
-    check_permission_result(user_id, &permissions, required_permission)
+    Ok(user_id)
 }
 
 pub async fn get_cached_user_permissions(
@@ -105,40 +140,15 @@ pub async fn check_any_permission(
     required_permissions: &[&str],
     cache: &PermissionCache,
 ) -> Result<Uuid, Response> {
-    let (user_id, permissions) = get_user_with_permissions(headers, pool, cache).await?;
-
-    if required_permissions
-        .iter()
-        .any(|permission| permission_matches(&permissions, permission))
-    {
-        Ok(user_id)
-    } else {
-        Err(forbidden_response(format!(
-            "ไม่มีสิทธิ์ {}",
-            required_permissions.join(" หรือ ")
-        )))
-    }
+    let actor = get_actor_context(headers, pool, cache).await?;
+    actor.require_any_permission(required_permissions)?;
+    Ok(actor.user_id)
 }
 
 pub fn permission_matches(permissions: &[String], required_permission: &str) -> bool {
     permissions
         .iter()
         .any(|permission| permission == codes::WILDCARD || permission == required_permission)
-}
-
-fn check_permission_result(
-    user_id: Uuid,
-    permissions: &[String],
-    required_permission: &str,
-) -> Result<Uuid, Response> {
-    if permission_matches(permissions, required_permission) {
-        Ok(user_id)
-    } else {
-        Err(forbidden_response(format!(
-            "ไม่มีสิทธิ์ {}",
-            required_permission
-        )))
-    }
 }
 
 fn forbidden_response(error: String) -> Response {
@@ -153,7 +163,7 @@ fn forbidden_response(error: String) -> Response {
 }
 
 /// Fetch user's effective permissions from DB (position-aware + delegations).
-/// This is the single source of truth used by both check_permission and get_user_with_permissions.
+/// This is the single source of truth used by actor context and permission checks.
 async fn fetch_user_permissions(
     user_id: Uuid,
     pool: &sqlx::PgPool,
@@ -216,61 +226,12 @@ async fn fetch_user_permissions(
 /// Verify JWT and return (user_id, permissions) without checking a specific permission.
 /// Use this when a handler needs to check multiple permissions or determine scope.
 /// Returns Err(401 Response) on auth failure only.
-pub async fn get_user_with_permissions(
+pub async fn get_actor_context(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
     cache: &PermissionCache,
-) -> Result<(Uuid, Vec<String>), Response> {
-    let auth_header = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok());
-
-    let token_from_header = auth_header.and_then(|h| {
-        if h.starts_with("Bearer ") {
-            Some(h[7..].to_string())
-        } else {
-            None
-        }
-    });
-
-    let token_from_cookie = headers
-        .get(header::COOKIE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
-
-    let token = match token_from_header.or(token_from_cookie) {
-        Some(t) => t,
-        None => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "success": false, "error": "กรุณาเข้าสู่ระบบ" })),
-            )
-                .into_response());
-        }
-    };
-
-    let claims = match crate::utils::jwt::JwtService::verify_token(&token) {
-        Ok(c) => c,
-        Err(_) => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "success": false, "error": "Token ไม่ถูกต้อง" })),
-            )
-                .into_response());
-        }
-    };
-
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "success": false, "error": "Token ไม่ถูกต้อง" })),
-            )
-                .into_response());
-        }
-    };
-
+) -> Result<ActorContext, Response> {
+    let user_id = extract_actor_user_id(headers)?;
     let permissions = get_cached_user_permissions(user_id, pool, cache)
         .await
         .map_err(|_| {
@@ -281,5 +242,8 @@ pub async fn get_user_with_permissions(
                 .into_response()
         })?;
 
-    Ok((user_id, permissions))
+    Ok(ActorContext {
+        user_id,
+        permissions,
+    })
 }

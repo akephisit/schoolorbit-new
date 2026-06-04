@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::middleware::permission::{get_user_with_permissions, permission_matches};
+use crate::middleware::permission::get_actor_context;
 use crate::modules::achievement::models::*;
 use crate::permissions::registry::codes;
 use crate::utils::tenant::resolve_tenant_pool;
@@ -31,15 +31,14 @@ pub async fn list_achievements(
     Query(filter): Query<AchievementListFilter>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_db_pool(&state, &headers).await?;
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(actor) => actor,
-            Err(response) => return Ok(response),
-        };
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
 
     // Check Permissions
-    let can_read_all = permission_matches(&permissions, codes::ACHIEVEMENT_READ_ALL);
-    let can_read_own = permission_matches(&permissions, codes::ACHIEVEMENT_READ_OWN);
+    let can_read_all = actor.has_permission(codes::ACHIEVEMENT_READ_ALL);
+    let can_read_own = actor.has_permission(codes::ACHIEVEMENT_READ_OWN);
 
     if !can_read_all && !can_read_own {
         return Err(AppError::Forbidden("คุณไม่มีสิทธิ์ดูผลงาน".to_string()));
@@ -84,7 +83,7 @@ pub async fn list_achievements(
 
     let mut q = sqlx::query_as::<_, Achievement>(&query);
     if !can_read_all {
-        q = q.bind(user_id);
+        q = q.bind(actor.user_id);
     } else if let Some(target_user_id) = filter.user_id {
         q = q.bind(target_user_id);
     }
@@ -113,21 +112,20 @@ pub async fn create_achievement(
     Json(payload): Json<CreateAchievementRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_db_pool(&state, &headers).await?;
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(actor) => actor,
-            Err(response) => return Ok(response),
-        };
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
 
     // Determine target user
-    let target_user_id = payload.user_id.unwrap_or(user_id);
-    let is_own = target_user_id == user_id;
+    let target_user_id = payload.user_id.unwrap_or(actor.user_id);
+    let is_own = target_user_id == actor.user_id;
 
     // Check Permissions
     let allowed = if is_own {
-        permission_matches(&permissions, codes::ACHIEVEMENT_CREATE_OWN)
+        actor.has_permission(codes::ACHIEVEMENT_CREATE_OWN)
     } else {
-        permission_matches(&permissions, codes::ACHIEVEMENT_CREATE_ALL)
+        actor.has_permission(codes::ACHIEVEMENT_CREATE_ALL)
     };
 
     if !allowed {
@@ -148,7 +146,7 @@ pub async fn create_achievement(
     .bind(&payload.description)
     .bind(payload.achievement_date)
     .bind(&payload.image_path)
-    .bind(user_id)
+    .bind(actor.user_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -170,11 +168,10 @@ pub async fn update_achievement(
     Json(payload): Json<UpdateAchievementRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_db_pool(&state, &headers).await?;
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(actor) => actor,
-            Err(response) => return Ok(response),
-        };
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
 
     // Get existing achievement owner to check permission
     #[derive(sqlx::FromRow)]
@@ -191,13 +188,13 @@ pub async fn update_achievement(
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
     .ok_or(AppError::NotFound("ไม่พบข้อมูล".to_string()))?;
 
-    let is_own = existing.user_id == user_id;
+    let is_own = existing.user_id == actor.user_id;
 
     // Check Permissions
     let allowed = if is_own {
-        permission_matches(&permissions, codes::ACHIEVEMENT_UPDATE_OWN)
+        actor.has_permission(codes::ACHIEVEMENT_UPDATE_OWN)
     } else {
-        permission_matches(&permissions, codes::ACHIEVEMENT_UPDATE_ALL)
+        actor.has_permission(codes::ACHIEVEMENT_UPDATE_ALL)
     };
 
     if !allowed {
@@ -243,11 +240,10 @@ pub async fn delete_achievement(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_db_pool(&state, &headers).await?;
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(actor) => actor,
-            Err(response) => return Ok(response),
-        };
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
 
     // Get existing achievement owner for permission check
     #[derive(sqlx::FromRow)]
@@ -264,13 +260,13 @@ pub async fn delete_achievement(
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
     .ok_or(AppError::NotFound("ไม่พบข้อมูล".to_string()))?;
 
-    let is_own = existing.user_id == user_id;
+    let is_own = existing.user_id == actor.user_id;
 
     // Check Permissions
     let allowed = if is_own {
-        permission_matches(&permissions, codes::ACHIEVEMENT_DELETE_OWN)
+        actor.has_permission(codes::ACHIEVEMENT_DELETE_OWN)
     } else {
-        permission_matches(&permissions, codes::ACHIEVEMENT_DELETE_ALL)
+        actor.has_permission(codes::ACHIEVEMENT_DELETE_ALL)
     };
 
     if !allowed {

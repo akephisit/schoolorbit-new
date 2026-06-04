@@ -8,7 +8,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::get_user_with_permissions;
+use crate::middleware::permission::get_actor_context;
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, SubjectFilter,
     UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
@@ -28,15 +28,14 @@ pub async fn list_subject_groups(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (_, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
-    let has_access = permissions.contains(&"*".to_string())
-        || permissions.contains(&codes::ACADEMIC_CURRICULUM_READ_ALL.to_string())
-        || permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
-    if !has_access {
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
+    if !actor.has_any_permission(&[
+        codes::ACADEMIC_CURRICULUM_READ_ALL,
+        codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
+    ]) {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_READ_ALL) })),
@@ -54,14 +53,12 @@ pub async fn list_subjects(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
-    let has_all = permissions.contains(&"*".to_string())
-        || permissions.contains(&codes::ACADEMIC_CURRICULUM_READ_ALL.to_string());
-    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
+    let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_READ_ALL);
+    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -70,7 +67,7 @@ pub async fn list_subjects(
     }
 
     let dept_group_id: Option<Uuid> = if !has_all && has_dept {
-        match subject_service::get_user_subject_group_id(user_id, &pool).await {
+        match subject_service::get_user_subject_group_id(actor.user_id, &pool).await {
             Some(gid) => Some(gid),
             None => {
                 return Ok((
@@ -95,14 +92,12 @@ pub async fn create_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
-    let has_all = permissions.contains(&"*".to_string())
-        || permissions.contains(&codes::ACADEMIC_CURRICULUM_CREATE_ALL.to_string());
-    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
+    let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_CREATE_ALL);
+    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -111,7 +106,7 @@ pub async fn create_subject(
     }
 
     if !has_all && has_dept {
-        let teacher_group = subject_service::get_user_subject_group_id(user_id, &pool)
+        let teacher_group = subject_service::get_user_subject_group_id(actor.user_id, &pool)
             .await
             .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
         if payload.group_id != Some(teacher_group) {
@@ -137,14 +132,12 @@ pub async fn update_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
-    let has_all = permissions.contains(&"*".to_string())
-        || permissions.contains(&codes::ACADEMIC_CURRICULUM_UPDATE_ALL.to_string());
-    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
+    let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_UPDATE_ALL);
+    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -153,7 +146,7 @@ pub async fn update_subject(
     }
 
     if !has_all && has_dept {
-        let teacher_group = subject_service::get_user_subject_group_id(user_id, &pool)
+        let teacher_group = subject_service::get_user_subject_group_id(actor.user_id, &pool)
             .await
             .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
         let subject_group = subject_service::get_subject_group_id(&pool, id).await?;
@@ -175,14 +168,12 @@ pub async fn delete_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
-    let has_all = permissions.contains(&"*".to_string())
-        || permissions.contains(&codes::ACADEMIC_CURRICULUM_DELETE_ALL.to_string());
-    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
+    let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_DELETE_ALL);
+    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -191,7 +182,7 @@ pub async fn delete_subject(
     }
 
     if !has_all && has_dept {
-        let teacher_group = subject_service::get_user_subject_group_id(user_id, &pool)
+        let teacher_group = subject_service::get_user_subject_group_id(actor.user_id, &pool)
             .await
             .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
         let subject_group = subject_service::get_subject_group_id(&pool, id).await?;
@@ -215,21 +206,18 @@ async fn check_subject_manage(
     manage_code: &str,
     read_only: bool,
 ) -> Result<(), axum::response::Response> {
-    let (user_id, permissions) =
-        match get_user_with_permissions(headers, pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Err(resp),
-        };
-    let read_codes = [
-        "*".to_string(),
-        codes::ACADEMIC_CURRICULUM_READ_ALL.to_string(),
-        codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string(),
-        manage_code.to_string(),
-    ];
-    let has_all = permissions.contains(&"*".to_string())
-        || permissions.contains(&manage_code.to_string())
-        || (read_only && read_codes.iter().any(|c| permissions.contains(c)));
-    let has_dept = permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
+    let actor = match get_actor_context(headers, pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Err(resp),
+    };
+    let has_all = actor.has_permission(manage_code)
+        || (read_only
+            && actor.has_any_permission(&[
+                codes::ACADEMIC_CURRICULUM_READ_ALL,
+                codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
+                manage_code,
+            ]));
+    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
         return Err((
             StatusCode::FORBIDDEN,
@@ -238,16 +226,17 @@ async fn check_subject_manage(
             .into_response());
     }
     if !has_all && has_dept {
-        let teacher_group = match subject_service::get_user_subject_group_id(user_id, pool).await {
-            Some(gid) => gid,
-            None => {
-                return Err((
-                    StatusCode::FORBIDDEN,
-                    Json(json!({ "success": false, "error": "ไม่พบกลุ่มสาระที่สังกัด" })),
-                )
-                    .into_response())
-            }
-        };
+        let teacher_group =
+            match subject_service::get_user_subject_group_id(actor.user_id, pool).await {
+                Some(gid) => gid,
+                None => {
+                    return Err((
+                        StatusCode::FORBIDDEN,
+                        Json(json!({ "success": false, "error": "ไม่พบกลุ่มสาระที่สังกัด" })),
+                    )
+                        .into_response())
+                }
+            };
         let subject_group = subject_service::get_subject_group_id(pool, subject_id)
             .await
             .ok()
@@ -371,15 +360,14 @@ pub async fn batch_list_subject_default_instructors(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (_, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
-    let has_access = permissions.contains(&"*".to_string())
-        || permissions.contains(&codes::ACADEMIC_CURRICULUM_READ_ALL.to_string())
-        || permissions.contains(&codes::ACADEMIC_CURRICULUM_MANAGE_DEPT.to_string());
-    if !has_access {
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
+    if !actor.has_any_permission(&[
+        codes::ACADEMIC_CURRICULUM_READ_ALL,
+        codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
+    ]) {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_READ_ALL) })),

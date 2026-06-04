@@ -10,7 +10,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::get_user_with_permissions;
+use crate::middleware::permission::get_actor_context;
 use crate::modules::staff::services::delegation_service;
 use crate::permissions::registry::codes;
 use crate::utils::tenant::resolve_tenant_pool;
@@ -50,14 +50,12 @@ pub async fn list_delegatable_permissions(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (_, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
-    let has_access = permissions.contains(&"*".to_string())
-        || permissions.contains(&codes::DEPT_WORK_APPROVE.to_string());
-    if !has_access {
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
+    let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
+    if !can_approve_department_work {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(json!({ "success": false, "error": "ไม่มีสิทธิ์" })),
@@ -76,14 +74,12 @@ pub async fn list_delegations(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (_, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
-    let has_access = permissions.contains(&"*".to_string())
-        || permissions.contains(&codes::DEPT_WORK_APPROVE.to_string());
-    if !has_access {
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
+    let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
+    if !can_approve_department_work {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(json!({ "success": false, "error": "ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้" })),
@@ -103,14 +99,12 @@ pub async fn create_delegation(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
-    let has_access = permissions.contains(&"*".to_string())
-        || permissions.contains(&codes::DEPT_WORK_APPROVE.to_string());
-    if !has_access {
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
+    let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
+    if !can_approve_department_work {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(json!({ "success": false, "error": "ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้" })),
@@ -118,7 +112,7 @@ pub async fn create_delegation(
             .into_response());
     }
 
-    if !delegation_service::is_department_head(&pool, user_id, department_id).await? {
+    if !delegation_service::is_department_head(&pool, actor.user_id, department_id).await? {
         return Ok((StatusCode::FORBIDDEN,
             Json(json!({ "success": false, "error": "เฉพาะหัวหน้าหรือรองหัวหน้ากลุ่มเท่านั้นที่สามารถมอบหมายสิทธิ์ได้" }))).into_response());
     }
@@ -133,7 +127,7 @@ pub async fn create_delegation(
 
     let id = delegation_service::create_delegation(
         &pool,
-        user_id,
+        actor.user_id,
         body.to_user_id,
         body.permission_id,
         department_id,
@@ -154,11 +148,10 @@ pub async fn revoke_delegation(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let (user_id, permissions) =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok(r) => r,
-            Err(resp) => return Ok(resp),
-        };
+    let actor = match get_actor_context(&headers, &pool, &state.permission_cache).await {
+        Ok(actor) => actor,
+        Err(resp) => return Ok(resp),
+    };
 
     let (from_user_id, to_user_id) =
         match delegation_service::get_delegation_users(&pool, delegation_id).await? {
@@ -172,7 +165,7 @@ pub async fn revoke_delegation(
             }
         };
 
-    let can_revoke = user_id == from_user_id || permissions.contains(&"*".to_string());
+    let can_revoke = actor.user_id == from_user_id || actor.has_permission(codes::WILDCARD);
     if !can_revoke {
         return Ok((
             StatusCode::FORBIDDEN,

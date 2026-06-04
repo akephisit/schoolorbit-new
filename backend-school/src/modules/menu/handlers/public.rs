@@ -1,13 +1,12 @@
 use axum::{
     extract::State,
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
 };
 use std::collections::HashMap;
-use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::get_user_with_permissions;
+use crate::middleware::permission::get_actor_context;
 use crate::modules::menu::models::*;
 use crate::modules::menu::services::public_menu_service::{self, MenuRow};
 use crate::utils::tenant::resolve_tenant_pool;
@@ -18,38 +17,13 @@ pub async fn get_user_menu(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = resolve_tenant_pool(&state, &headers).await?;
-
-    let token_from_header = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer ").map(|t| t.to_string()));
-    let token_from_cookie = headers
-        .get(header::COOKIE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
-
-    let token = token_from_header
-        .or(token_from_cookie)
-        .ok_or(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
-    let claims = crate::utils::jwt::JwtService::verify_token(&token)
-        .map_err(|_| AppError::AuthError("Token ไม่ถูกต้อง".to_string()))?;
-
-    let user_id = Uuid::parse_str(&claims.sub)
-        .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?;
-    let user = public_menu_service::get_user(&pool, user_id).await?;
-
-    let user_permissions =
-        match get_user_with_permissions(&headers, &pool, &state.permission_cache).await {
-            Ok((_, perms)) => perms,
-            Err(_) => {
-                return Err(AppError::AuthError(
-                    "ไม่สามารถดึงข้อมูล permissions ได้".to_string(),
-                ))
-            }
-        };
+    let actor = get_actor_context(&headers, &pool, &state.permission_cache)
+        .await
+        .map_err(|_| AppError::AuthError("ไม่สามารถดึงข้อมูล permissions ได้".to_string()))?;
+    let user = public_menu_service::get_user(&pool, actor.user_id).await?;
 
     let rows = public_menu_service::fetch_menu_items(&pool, &user.user_type).await?;
-    let groups = group_and_filter_menu(rows, &user_permissions);
+    let groups = group_and_filter_menu(rows, &actor.permissions);
 
     Ok((
         StatusCode::OK,

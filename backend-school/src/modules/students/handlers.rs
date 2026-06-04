@@ -12,7 +12,7 @@ use super::models::{
     UpdateOwnProfileRequest, UpdateStudentRequest,
 };
 use crate::error::AppError;
-use crate::middleware::permission::{get_cached_user_permissions, permission_matches};
+use crate::middleware::permission::get_actor_context;
 use crate::modules::auth::models::User;
 use crate::permissions::registry::codes;
 use crate::utils::field_encryption;
@@ -113,22 +113,27 @@ async fn check_user_permission(
     pool: &sqlx::PgPool,
     required_permission: &str,
     cache: &crate::db::permission_cache::PermissionCache,
-) -> Result<User, AppError> {
-    let user = get_current_user(headers, pool).await?;
-    let permissions = get_cached_user_permissions(user.id, pool, cache)
+) -> Result<Uuid, AppError> {
+    let actor = get_actor_context(headers, pool, cache)
         .await
-        .map_err(|e| {
-            eprintln!("❌ Permission check error: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string())
-        })?;
+        .map_err(actor_context_error)?;
+    let has_required_permission = actor.has_permission(required_permission);
 
-    if permission_matches(&permissions, required_permission) {
-        Ok(user)
+    if has_required_permission {
+        Ok(actor.user_id)
     } else {
         Err(AppError::Forbidden(format!(
             "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
             required_permission
         )))
+    }
+}
+
+fn actor_context_error(response: axum::response::Response) -> AppError {
+    match response.status() {
+        StatusCode::UNAUTHORIZED => AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()),
+        StatusCode::FORBIDDEN => AppError::Forbidden("ไม่มีสิทธิ์".to_string()),
+        _ => AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string()),
     }
 }
 

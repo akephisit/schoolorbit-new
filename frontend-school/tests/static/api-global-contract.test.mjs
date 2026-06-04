@@ -241,7 +241,24 @@ test('backend permissions do not use the legacy UserPermissions resolver', async
 
 	for (const file of backendFiles) {
 		const source = await readFile(file, 'utf8');
-		if (/\bUserPermissions\b|\bhas_permission\s*\(/.test(source)) {
+		if (/\bUserPermissions\b|\bget_user_with_permissions\b/.test(source)) {
+			violations.push(relative(file));
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('backend module handlers use ActorContext instead of raw permission lists', async () => {
+	const backendFiles = await listFiles(
+		path.join(repoRoot, 'backend-school/src/modules'),
+		(file) => file.endsWith('.rs')
+	);
+	const violations = [];
+
+	for (const file of backendFiles) {
+		const source = await readFile(file, 'utf8');
+		if (/\bget_cached_user_permissions\b|\bpermission_matches\s*\(/.test(source)) {
 			violations.push(relative(file));
 		}
 	}

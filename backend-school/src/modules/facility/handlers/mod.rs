@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::middleware::permission::{check_permission, get_user_with_permissions};
+use crate::middleware::permission::{check_permission, get_actor_context};
 use crate::modules::facility::models::{
     Building, CreateBuildingRequest, CreateRoomRequest, Room, RoomFilter, UpdateBuildingRequest,
     UpdateRoomRequest,
@@ -181,8 +181,7 @@ pub async fn list_rooms(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     // Any authenticated staff can list rooms (used for timetable, exam rooms, etc.)
-    if let Err(response) = get_user_with_permissions(&headers, &pool, &state.permission_cache).await
-    {
+    if let Err(response) = get_actor_context(&headers, &pool, &state.permission_cache).await {
         return Ok(response);
     }
 
