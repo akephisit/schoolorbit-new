@@ -280,6 +280,9 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.match(timetableService, /pub\s+deleted:\s+Vec<BatchDeletedEntry>/);
 	assert.match(timetableService, /pub\s+excluded_instructors:\s+Vec<BatchExcludedInstructor>/);
 	assert.doesNotMatch(timetableService, /pub\s+skipped:\s+Vec<serde_json::Value>/);
+	assert.match(timetableService, /conflicts:\s+Vec<ConflictInfo>/);
+	assert.match(timetableService, /let mut conflict_list:\s+Vec<ConflictInfo>/);
+	assert.doesNotMatch(timetableService, /let mut conflict_list:\s+Vec<serde_json::Value>/);
 
 	assert.doesNotMatch(timetablePage, /await createTimetableEntry\([^)]*\)\) as/);
 	assert.doesNotMatch(timetablePage, /await updateTimetableEntry\([^)]*\)\) as/);

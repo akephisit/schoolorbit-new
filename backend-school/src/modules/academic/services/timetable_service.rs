@@ -5,7 +5,6 @@ use crate::modules::academic::models::timetable::{
     TimetableValidationResponse, UpdateTimetableEntryRequest, ValidateMovesRequest,
 };
 use serde::Serialize;
-use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -110,7 +109,7 @@ pub enum UpdateEntryOutcome {
         existing: TimetableEntry,
     },
     Conflict {
-        conflicts: Vec<serde_json::Value>,
+        conflicts: Vec<ConflictInfo>,
         existing: TimetableEntry,
     },
 }
@@ -1525,7 +1524,7 @@ pub async fn update_entry(
     let target_room = payload.room_id.or(existing_entry.room_id);
 
     // 3. Validate conflicts (excluding current entry ID)
-    let mut conflict_list: Vec<serde_json::Value> = Vec::new();
+    let mut conflict_list: Vec<ConflictInfo> = Vec::new();
 
     // 3a. Classroom conflict
     let classroom_conflict: Option<(String,)> = sqlx::query_as(
@@ -1548,10 +1547,11 @@ pub async fn update_entry(
     .unwrap_or(None);
 
     if let Some((cr_name,)) = classroom_conflict {
-        conflict_list.push(json!({
-            "conflict_type": "CLASSROOM_CONFLICT",
-            "message": format!("{} มีตารางในคาบนี้อยู่แล้ว", cr_name)
-        }));
+        conflict_list.push(ConflictInfo {
+            conflict_type: "CLASSROOM_CONFLICT".to_string(),
+            message: format!("{} มีตารางในคาบนี้อยู่แล้ว", cr_name),
+            existing_entry: None,
+        });
     }
 
     // 3b. Room conflict
@@ -1576,10 +1576,11 @@ pub async fn update_entry(
         .unwrap_or(None);
 
         if let Some((room_code,)) = room_conflict {
-            conflict_list.push(json!({
-                "conflict_type": "ROOM_CONFLICT",
-                "message": format!("ห้อง {} มีการใช้งานในคาบนี้อยู่แล้ว", room_code)
-            }));
+            conflict_list.push(ConflictInfo {
+                conflict_type: "ROOM_CONFLICT".to_string(),
+                message: format!("ห้อง {} มีการใช้งานในคาบนี้อยู่แล้ว", room_code),
+                existing_entry: None,
+            });
         }
     }
 
@@ -1613,10 +1614,11 @@ pub async fn update_entry(
         .unwrap_or_default();
 
         for (name,) in &conflict_instructors {
-            conflict_list.push(json!({
-                "conflict_type": "INSTRUCTOR_CONFLICT",
-                "message": format!("{} มีสอนในคาบนี้อยู่แล้ว", name)
-            }));
+            conflict_list.push(ConflictInfo {
+                conflict_type: "INSTRUCTOR_CONFLICT".to_string(),
+                message: format!("{} มีสอนในคาบนี้อยู่แล้ว", name),
+                existing_entry: None,
+            });
         }
     }
 

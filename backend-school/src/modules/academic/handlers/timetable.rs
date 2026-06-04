@@ -416,7 +416,7 @@ pub async fn update_timetable_entry(
             let subdomain_for_reject = extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
             let reason = conflicts
                 .iter()
-                .filter_map(|c| c.get("message").and_then(|m| m.as_str()))
+                .map(|c| c.message.as_str())
                 .collect::<Vec<_>>()
                 .join(" · ");
             state.websocket_manager.broadcast_ephemeral(
