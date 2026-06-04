@@ -71,6 +71,7 @@ pub async fn update_department_permissions(
 
     // Department permissions changed — all members of this department have stale cache
     state.permission_cache.clear_all();
+    state.notify_all_permissions_changed();
 
     Ok(Json(
         json!({ "success": true, "data": {}, "message": "Update department permissions successfully" }),

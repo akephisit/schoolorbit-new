@@ -251,7 +251,7 @@
 				</div>
 
 				<!-- Child Departments (ฝ่ายย่อย) -->
-				{#if $can.hasAny('roles.assign.all', '*')}
+				{#if $can.has('roles.assign.all')}
 					<div class="bg-card border border-border rounded-lg p-6 space-y-4">
 						<div class="flex items-center justify-between">
 							<h2 class="text-lg font-semibold flex items-center gap-2">

@@ -117,6 +117,15 @@ function createNotificationStore() {
 				}
 			};
 
+			eventSource.addEventListener('permission_changed', async () => {
+				try {
+					const { authAPI } = await import('$lib/api/auth');
+					await authAPI.refreshCurrentUser({ silent: true });
+				} catch (error) {
+					console.error('Failed to refresh auth context after permission change', error);
+				}
+			});
+
 			eventSource.onerror = () => {
 				if (!eventSource) return;
 

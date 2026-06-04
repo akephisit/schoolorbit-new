@@ -103,6 +103,7 @@ pub async fn add_member(
     .await?;
 
     state.permission_cache.invalidate(&body.user_id);
+    state.notify_permission_changed(body.user_id);
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
@@ -138,6 +139,7 @@ pub async fn update_member(
     }
 
     state.permission_cache.invalidate(&user_id);
+    state.notify_permission_changed(user_id);
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
@@ -156,5 +158,6 @@ pub async fn remove_member(
     }
     department_member_service::remove_member(&pool, department_id, user_id).await?;
     state.permission_cache.invalidate(&user_id);
+    state.notify_permission_changed(user_id);
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }

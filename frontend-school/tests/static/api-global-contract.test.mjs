@@ -333,7 +333,7 @@ test('permission registry covers backend and frontend permission references', as
 	);
 	const frontendPermissionPatterns = [
 		/\bpermission:\s*['"]([^'"]+)['"]/g,
-		/\$?can\.has\(\s*['"]([^'"]+)['"]\s*\)/g,
+		/\$?can\.(?:has|hasModule|hasAny|hasAll)\(\s*['"]([^'"]+)['"]/g,
 		/\bpermissions\.has\(\s*['"]([^'"]+)['"]\s*\)/g,
 		/\bpermissions(?:\?\.)?\.includes\(\s*['"]([^'"]+)['"]\s*\)/g
 	];
@@ -416,6 +416,94 @@ test('backend menu and feature handlers do not parse auth or query permissions d
 		const source = await readFile(path.join(repoRoot, relativePath), 'utf8');
 		if (/\bJwtService\b|\bfield_encryption\b|JOIN role_permissions|permission_delegations/.test(source)) {
 			violations.push(relativePath);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('backend permission cache invalidations notify active clients', async () => {
+	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src'), (file) =>
+		file.endsWith('.rs')
+	);
+	const violations = [];
+
+	for (const file of backendFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		const lines = source.split('\n');
+		for (let index = 0; index < lines.length; index += 1) {
+			const line = lines[index];
+			const nextLines = lines.slice(index + 1, index + 4).join('\n');
+			if (
+				line.includes('permission_cache.clear_all()') &&
+				!nextLines.includes('notify_all_permissions_changed()')
+			) {
+				violations.push(`${relative(file)}:${index + 1}: clear_all must emit permission_changed`);
+			}
+			if (
+				line.includes('permission_cache.invalidate(') &&
+				!nextLines.includes('notify_permission_changed(')
+			) {
+				violations.push(`${relative(file)}:${index + 1}: invalidate must emit permission_changed`);
+			}
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('frontend permission updates use SSE-triggered silent auth refresh', async () => {
+	const notificationStore = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/stores/notification.ts'),
+		'utf8'
+	);
+	const authApi = await readFile(path.join(repoRoot, 'frontend-school/src/lib/api/auth.ts'), 'utf8');
+
+	assert.match(notificationStore, /addEventListener\('permission_changed'/);
+	assert.match(notificationStore, /refreshCurrentUser\(\{\s*silent:\s*true\s*\}\)/);
+	assert.match(authApi, /async refreshCurrentUser\(/);
+	assert.match(authApi, /if \(!silent\) authStore\.setLoading\(true\)/);
+});
+
+test('frontend current-user permission checks go through the can store', async () => {
+	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
+		/\.(svelte|ts)$/.test(file)
+	);
+	const allowedFiles = new Set([
+		'frontend-school/src/routes/(app)/debug/+page.svelte',
+		'frontend-school/src/lib/stores/permissions.ts',
+		'frontend-school/src/lib/auth/route-access.ts'
+	]);
+	const violations = [];
+
+	for (const file of frontendFiles) {
+		const rel = relative(file);
+		if (allowedFiles.has(rel)) continue;
+
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (
+			/(?:authState|authStore|\$authStore|user)\.user\??\.permissions\??\.includes\(/.test(
+				source
+			)
+		) {
+			violations.push(`${rel}: use $can.has/$can.hasAny instead of direct current-user includes`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('frontend does not use legacy separate current-user permission loading', async () => {
+	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
+		/\.(svelte|ts)$/.test(file)
+	);
+	const violations = [];
+
+	for (const file of frontendFiles) {
+		const rel = relative(file);
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (/\bloadUserPermissions\b|\bpermissionsLoading\b/.test(source)) {
+			violations.push(`${rel}: current-user permissions must come from /api/auth/me`);
 		}
 	}
 

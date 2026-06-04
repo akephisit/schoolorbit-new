@@ -39,7 +39,7 @@
 	async function loadData() {
 		loading = true;
 		// admin เห็นทุกกลุ่ม, user ทั่วไปเห็นเฉพาะกลุ่มที่ตัวเองสังกัด
-		const isAdmin = $can.hasAny('roles.assign.all', '*');
+		const isAdmin = $can.has('roles.assign.all');
 		const res = await listDepartmentsLookup(isAdmin ? undefined : { member_only: true });
 		if (res.success && res.data) departments = res.data;
 		loading = false;
@@ -101,7 +101,7 @@
 							</div>
 						</div>
 						<div class="flex items-center gap-1">
-							{#if $can.hasAny('roles.assign.all', '*')}
+							{#if $can.has('roles.assign.all')}
 								<Button
 									variant="ghost"
 									size="icon"

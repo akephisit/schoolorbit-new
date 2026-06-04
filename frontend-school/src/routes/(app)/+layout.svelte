@@ -3,8 +3,15 @@
 	import Header from '$lib/components/layout/Header.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { authAPI } from '$lib/api/auth';
+	import {
+		dashboardPathForUser,
+		userCanAccessRoute
+	} from '$lib/auth/route-access';
+	import { authStore } from '$lib/stores/auth';
+	import { userPermissions } from '$lib/stores/permissions';
 
 	import { uiPreferences } from '$lib/stores/ui-preferences';
 	import { notificationStore } from '$lib/stores/notification';
@@ -24,6 +31,15 @@
 
 	function currentPath() {
 		return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+	}
+
+	async function redirectToDashboard() {
+		authStatus = 'redirecting';
+		await goto(resolve(dashboardPathForUser($authStore.user)), { replaceState: true });
+	}
+
+	function canAccessCurrentRoute() {
+		return userCanAccessRoute($authStore.user, $userPermissions, page.route.id);
 	}
 
 	async function enableMobileDragDrop() {
@@ -48,9 +64,25 @@
 			return;
 		}
 
+		if (!canAccessCurrentRoute()) {
+			await redirectToDashboard();
+			return;
+		}
+
 		authStatus = 'authenticated';
 		notificationStore.subscribeToPush();
 		await enableMobileDragDrop();
+	});
+
+	$effect(() => {
+		page.route.id;
+		$userPermissions;
+		$authStore.user;
+
+		if (authStatus !== 'authenticated') return;
+		if (canAccessCurrentRoute()) return;
+
+		void redirectToDashboard();
 	});
 </script>
 

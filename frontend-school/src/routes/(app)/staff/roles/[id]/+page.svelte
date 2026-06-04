@@ -38,7 +38,7 @@
 	let saving = $state(false);
 	let deleting = $state(false);
 	let showDeleteDialog = $state(false);
-	let permissionsLoading = $state(true);
+	let rolePermissionListLoading = $state(true);
 
 	// Role data
 	let role = $state<Partial<Role>>({
@@ -83,7 +83,7 @@
 	}
 
 	async function loadPermissions() {
-		permissionsLoading = true;
+		rolePermissionListLoading = true;
 		try {
 			const response = await permissionAPI.listPermissionsByModule();
 			if (response.success && response.data) {
@@ -93,7 +93,7 @@
 			console.error('Failed to load permissions:', error);
 			toast.error('ไม่สามารถโหลดรายการสิทธิ์ได้');
 		} finally {
-			permissionsLoading = false;
+			rolePermissionListLoading = false;
 		}
 	}
 
@@ -320,7 +320,7 @@
 					</div>
 				</CardHeader>
 				<CardContent>
-					{#if permissionsLoading}
+					{#if rolePermissionListLoading}
 						<div class="py-8 text-center">
 							<p class="text-muted-foreground">กำลังโหลดรายการสิทธิ์...</p>
 						</div>

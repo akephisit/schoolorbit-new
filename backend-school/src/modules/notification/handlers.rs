@@ -176,23 +176,43 @@ pub async fn stream_notifications(
         .await
         .map_err(|e| AppError::AuthError(e))?;
 
-    let mut rx = state.notification_channel.subscribe();
+    let mut notification_rx = state.notification_channel.subscribe();
+    let mut permission_rx = state.permission_event_channel.subscribe();
 
     let stream = async_stream::stream! {
         loop {
-            match rx.recv().await {
-                Ok((target_user_id, notification)) => {
-                    if target_user_id == user_id {
-                         if let Ok(data) = serde_json::to_string(&notification) {
-                             yield Ok(Event::default().data(data));
-                         }
+            tokio::select! {
+                notification_result = notification_rx.recv() => {
+                    match notification_result {
+                        Ok((target_user_id, notification)) => {
+                            if target_user_id == user_id {
+                                if let Ok(data) = serde_json::to_string(&notification) {
+                                    yield Ok(Event::default().data(data));
+                                }
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            // Skip lagged messages
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    // Skip lagged messages
-                }
-                Err(broadcast::error::RecvError::Closed) => {
-                    break;
+                permission_result = permission_rx.recv() => {
+                    match permission_result {
+                        Ok(event) => {
+                            if event.applies_to(user_id) {
+                                yield Ok(Event::default().event("permission_changed").data("{}"));
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            yield Ok(Event::default().event("permission_changed").data("{}"));
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
+                    }
                 }
             }
         }

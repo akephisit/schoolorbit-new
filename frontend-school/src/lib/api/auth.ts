@@ -102,8 +102,12 @@ class AuthAPI {
 	 * Check authentication status - Direct to backend through the shared client-side API wrapper.
 	 */
 	async checkAuth(): Promise<boolean> {
-		authStore.setLoading(true);
+		return this.refreshCurrentUser({ silent: false });
+	}
 
+	async refreshCurrentUser(options: { silent?: boolean } = {}): Promise<boolean> {
+		const silent = options.silent ?? true;
+		if (!silent) authStore.setLoading(true);
 		try {
 			const response = await apiClient.get<BackendUser>('/api/auth/me');
 			const userData = requireApiData(response, 'Failed to check auth');
@@ -118,7 +122,7 @@ class AuthAPI {
 			authStore.clearUser();
 			return false;
 		} finally {
-			authStore.setLoading(false);
+			if (!silent) authStore.setLoading(false);
 		}
 	}
 

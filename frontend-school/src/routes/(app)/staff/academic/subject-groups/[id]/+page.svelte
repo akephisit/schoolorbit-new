@@ -62,7 +62,7 @@
 				<p class="text-muted-foreground text-sm">{department.code}</p>
 			{/if}
 		</div>
-		{#if department && $can.hasAny('roles.assign.all', '*')}
+		{#if department && $can.has('roles.assign.all')}
 			<Button variant="outline" size="sm" onclick={() => (showPermissionDialog = true)}>
 				<Settings class="w-4 h-4 mr-1" />
 				ตั้งค่าสิทธิ์
