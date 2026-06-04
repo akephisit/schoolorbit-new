@@ -6,7 +6,7 @@ use axum::{
 use std::collections::HashMap;
 
 use crate::error::AppError;
-use crate::middleware::permission::get_actor_context;
+use crate::middleware::permission::{get_actor_context, module_permission_matches};
 use crate::modules::menu::models::*;
 use crate::modules::menu::services::public_menu_service::{self, MenuRow};
 use crate::utils::tenant::resolve_tenant_pool;
@@ -32,19 +32,6 @@ pub async fn get_user_menu(
             "data": { "groups": groups }
         })),
     ))
-}
-
-fn user_has_module_permission(user_permissions: &[String], module: &str) -> bool {
-    if user_permissions.contains(&"*".to_string()) {
-        return true;
-    }
-    if user_permissions.contains(&module.to_string()) {
-        return true;
-    }
-    let prefix = format!("{}.", module);
-    user_permissions
-        .iter()
-        .any(|perm| perm.starts_with(&prefix))
 }
 
 fn group_and_filter_menu(
@@ -76,7 +63,7 @@ fn group_and_filter_menu(
     ) in rows
     {
         if let Some(module) = &required_permission {
-            if !user_has_module_permission(user_permissions, module) {
+            if !module_permission_matches(user_permissions, module) {
                 continue;
             }
         }

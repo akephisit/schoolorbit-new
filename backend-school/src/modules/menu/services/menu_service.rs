@@ -1,91 +1,8 @@
 use crate::error::AppError;
-use crate::modules::auth::models::User;
+use crate::middleware::permission::module_permission_matches;
 use crate::modules::menu::models::{MenuGroup, MenuItem};
-use crate::utils::field_encryption;
-use crate::utils::jwt::JwtService;
-use axum::http::HeaderMap;
 use sqlx::PgPool;
 use uuid::Uuid;
-
-// ============================================
-// Auth helpers
-// ============================================
-
-pub fn has_module_permission(user_permissions: &[String], module: &str) -> bool {
-    if module.is_empty() {
-        return true;
-    }
-    if user_permissions.contains(&"*".to_string()) {
-        return true;
-    }
-    let prefix = format!("{}.", module);
-    user_permissions
-        .iter()
-        .any(|perm| perm.starts_with(&prefix) || perm.starts_with("*."))
-}
-
-pub async fn authenticate_user(
-    headers: &HeaderMap,
-    pool: &PgPool,
-) -> Result<(User, Vec<String>), AppError> {
-    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
-    let token_from_header = auth_header.and_then(|h| {
-        if h.starts_with("Bearer ") {
-            Some(h[7..].to_string())
-        } else {
-            None
-        }
-    });
-    let token_from_cookie = headers
-        .get("Cookie")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookie| JwtService::extract_token_from_cookie(Some(cookie)));
-    let token = token_from_header
-        .or(token_from_cookie)
-        .ok_or(AppError::AuthError(
-            "No authentication token found".to_string(),
-        ))?;
-
-    let claims = JwtService::verify_token(&token)
-        .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
-
-    let user_id = Uuid::parse_str(&claims.sub)
-        .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?;
-
-    let mut user = sqlx::query_as::<_, User>(
-        "SELECT id, username, national_id, email, password_hash, first_name, last_name, user_type,
-                phone, date_of_birth, address, status, metadata, created_at, updated_at,
-                title, nickname, emergency_contact, line_id, gender, profile_image_url,
-                hired_date, resigned_date
-         FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
-    .ok_or(AppError::AuthError("User not found".to_string()))?;
-
-    if let Some(ref nid) = user.national_id {
-        if let Ok(dec) = field_encryption::decrypt(nid) {
-            user.national_id = Some(dec);
-        }
-    }
-
-    let permissions: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT p.code
-         FROM user_roles ur
-         JOIN roles r ON ur.role_id = r.id
-         JOIN role_permissions rp ON r.id = rp.role_id
-         JOIN permissions p ON rp.permission_id = p.id
-         WHERE ur.user_id = $1 AND ur.ended_at IS NULL AND r.is_active = true",
-    )
-    .bind(user.id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch permissions: {}", e)))?;
-
-    Ok((user, permissions))
-}
 
 // ============================================
 // Menu Groups
@@ -278,7 +195,7 @@ pub async fn list_menu_items(
         .into_iter()
         .filter(|item| {
             if let Some(ref module) = item.required_permission {
-                has_module_permission(permissions, module)
+                module_permission_matches(permissions, module)
             } else {
                 true
             }
@@ -468,7 +385,7 @@ pub async fn reorder_menu_items(
 
     for item in &existing_items {
         if let Some(ref module) = item.required_permission {
-            if !has_module_permission(permissions, module) {
+            if !module_permission_matches(permissions, module) {
                 return Err(AppError::Forbidden(format!(
                     "No permission for module '{}' on item '{}'",
                     module, item.name

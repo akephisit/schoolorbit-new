@@ -4,6 +4,7 @@ use super::models::{
 };
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
+use crate::middleware::permission::get_cached_user_permissions;
 use crate::utils::field_encryption;
 use crate::utils::file_url::get_file_url_from_string;
 use crate::utils::jwt::JwtService;
@@ -82,56 +83,12 @@ pub async fn login(
     .await
     .unwrap_or(None);
 
-    // Fetch all user permissions (position-aware + delegations + parent-head inheritance)
-    let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
-        r#"SELECT DISTINCT code FROM (
-            -- 1. Role-based permissions
-            SELECT p.code
-            FROM user_roles ur
-            JOIN role_permissions rp ON ur.role_id = rp.role_id
-            JOIN permissions p ON rp.permission_id = p.id
-            WHERE ur.user_id = $1 AND ur.ended_at IS NULL
-
-            UNION
-
-            -- 2. Department permissions (position-aware)
-            SELECT p.code
-            FROM department_members dm
-            JOIN department_permissions dp ON dm.department_id = dp.department_id
-            JOIN permissions p ON dp.permission_id = p.id
-            WHERE dm.user_id = $1
-              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-              AND (dp.position IS NULL OR dp.position = dm.position)
-
-            UNION
-
-            -- 3. Delegated permissions
-            SELECT p.code
-            FROM permission_delegations pd
-            JOIN permissions p ON pd.permission_id = p.id
-            WHERE pd.to_user_id = $1
-              AND pd.revoked_at IS NULL
-              AND (pd.expires_at IS NULL OR pd.expires_at > NOW())
-
-            UNION
-
-            -- 4. Parent-head inheritance
-            SELECT p.code
-            FROM department_members dm
-            JOIN departments child ON child.parent_department_id = dm.department_id
-            JOIN department_permissions dp ON dp.department_id = child.id
-            JOIN permissions p ON dp.permission_id = p.id
-            WHERE dm.user_id = $1
-              AND dm.position = 'head'
-              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-              AND (dp.position IS NULL OR dp.position = 'head')
-        ) AS perms
-        ORDER BY code"#,
-    )
-    .bind(&user.id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    let permissions = get_cached_user_permissions(user.id, &pool, &state.permission_cache)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch login permissions: {}", e);
+            AppError::InternalServerError("ไม่สามารถดึงสิทธิ์ผู้ใช้ได้".to_string())
+        })?;
 
     // Create user response manually (LoginUser doesn't implement From)
     let user_response = UserResponse {
@@ -270,56 +227,12 @@ pub async fn me(
     .await
     .unwrap_or(None);
 
-    // Fetch all user permissions (position-aware + delegations + parent-head inheritance)
-    let permissions: Vec<String> = sqlx::query_scalar::<_, String>(
-        r#"SELECT DISTINCT code FROM (
-            -- 1. Role-based permissions
-            SELECT p.code
-            FROM user_roles ur
-            JOIN role_permissions rp ON ur.role_id = rp.role_id
-            JOIN permissions p ON rp.permission_id = p.id
-            WHERE ur.user_id = $1 AND ur.ended_at IS NULL
-
-            UNION
-
-            -- 2. Department permissions (position-aware)
-            SELECT p.code
-            FROM department_members dm
-            JOIN department_permissions dp ON dm.department_id = dp.department_id
-            JOIN permissions p ON dp.permission_id = p.id
-            WHERE dm.user_id = $1
-              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-              AND (dp.position IS NULL OR dp.position = dm.position)
-
-            UNION
-
-            -- 3. Delegated permissions
-            SELECT p.code
-            FROM permission_delegations pd
-            JOIN permissions p ON pd.permission_id = p.id
-            WHERE pd.to_user_id = $1
-              AND pd.revoked_at IS NULL
-              AND (pd.expires_at IS NULL OR pd.expires_at > NOW())
-
-            UNION
-
-            -- 4. Parent-head inheritance
-            SELECT p.code
-            FROM department_members dm
-            JOIN departments child ON child.parent_department_id = dm.department_id
-            JOIN department_permissions dp ON dp.department_id = child.id
-            JOIN permissions p ON dp.permission_id = p.id
-            WHERE dm.user_id = $1
-              AND dm.position = 'head'
-              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-              AND (dp.position IS NULL OR dp.position = 'head')
-        ) AS perms
-        ORDER BY code"#,
-    )
-    .bind(&user.id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    let permissions = get_cached_user_permissions(user.id, &pool, &state.permission_cache)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch current user permissions: {}", e);
+            AppError::InternalServerError("ไม่สามารถดึงสิทธิ์ผู้ใช้ได้".to_string())
+        })?;
 
     // Create response with primary role name and permissions
     let mut user_response = UserResponse::from(user);

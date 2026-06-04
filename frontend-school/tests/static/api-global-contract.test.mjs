@@ -257,9 +257,41 @@ test('backend module handlers use ActorContext instead of raw permission lists',
 	const violations = [];
 
 	for (const file of backendFiles) {
+		if (relative(file) === 'backend-school/src/modules/auth/handlers.rs') continue;
+
 		const source = await readFile(file, 'utf8');
 		if (/\bget_cached_user_permissions\b|\bpermission_matches\s*\(/.test(source)) {
 			violations.push(relative(file));
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('backend auth responses use the shared effective permission resolver', async () => {
+	const authHandler = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/auth/handlers.rs'),
+		'utf8'
+	);
+
+	assert.match(authHandler, /\bget_cached_user_permissions\b/);
+	assert.equal(authHandler.includes('permission_delegations'), false);
+	assert.equal(authHandler.includes('department_permissions dp'), false);
+	assert.equal(authHandler.includes('JOIN role_permissions'), false);
+});
+
+test('backend menu and feature handlers do not parse auth or query permissions directly', async () => {
+	const checkedFiles = [
+		'backend-school/src/modules/menu/handlers/admin.rs',
+		'backend-school/src/modules/menu/services/menu_service.rs',
+		'backend-school/src/modules/system/handlers/feature_toggles.rs'
+	];
+	const violations = [];
+
+	for (const relativePath of checkedFiles) {
+		const source = await readFile(path.join(repoRoot, relativePath), 'utf8');
+		if (/\bJwtService\b|\bfield_encryption\b|JOIN role_permissions|permission_delegations/.test(source)) {
+			violations.push(relativePath);
 		}
 	}
 

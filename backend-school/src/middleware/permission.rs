@@ -1,4 +1,5 @@
 use crate::db::permission_cache::PermissionCache;
+use crate::error::AppError;
 use crate::permissions::registry::codes;
 use axum::{
     http::{header, HeaderMap, StatusCode},
@@ -23,6 +24,10 @@ impl ActorContext {
         required_permissions
             .iter()
             .any(|permission| self.has_permission(permission))
+    }
+
+    pub fn has_module_permission(&self, module: &str) -> bool {
+        module_permission_matches(&self.permissions, module)
     }
 
     pub fn require_permission(&self, required_permission: &str) -> Result<(), Response> {
@@ -151,6 +156,20 @@ pub fn permission_matches(permissions: &[String], required_permission: &str) -> 
         .any(|permission| permission == codes::WILDCARD || permission == required_permission)
 }
 
+pub fn module_permission_matches(permissions: &[String], module: &str) -> bool {
+    if module.is_empty() {
+        return true;
+    }
+
+    let module_prefix = format!("{module}.");
+    permissions.iter().any(|permission| {
+        permission == codes::WILDCARD
+            || permission == module
+            || permission.starts_with(&module_prefix)
+            || permission.starts_with("*.")
+    })
+}
+
 fn forbidden_response(error: String) -> Response {
     (
         StatusCode::FORBIDDEN,
@@ -246,4 +265,22 @@ pub async fn get_actor_context(
         user_id,
         permissions,
     })
+}
+
+pub async fn get_actor_context_or_error(
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    cache: &PermissionCache,
+) -> Result<ActorContext, AppError> {
+    get_actor_context(headers, pool, cache)
+        .await
+        .map_err(actor_context_response_to_error)
+}
+
+fn actor_context_response_to_error(response: Response) -> AppError {
+    match response.status() {
+        StatusCode::UNAUTHORIZED => AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()),
+        StatusCode::FORBIDDEN => AppError::Forbidden("ไม่มีสิทธิ์".to_string()),
+        _ => AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์ได้".to_string()),
+    }
 }

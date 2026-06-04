@@ -12,7 +12,7 @@ use super::models::{
     UpdateOwnProfileRequest, UpdateStudentRequest,
 };
 use crate::error::AppError;
-use crate::middleware::permission::get_actor_context;
+use crate::middleware::permission::get_actor_context_or_error;
 use crate::modules::auth::models::User;
 use crate::permissions::registry::codes;
 use crate::utils::field_encryption;
@@ -114,9 +114,7 @@ async fn check_user_permission(
     required_permission: &str,
     cache: &crate::db::permission_cache::PermissionCache,
 ) -> Result<Uuid, AppError> {
-    let actor = get_actor_context(headers, pool, cache)
-        .await
-        .map_err(actor_context_error)?;
+    let actor = get_actor_context_or_error(headers, pool, cache).await?;
     let has_required_permission = actor.has_permission(required_permission);
 
     if has_required_permission {
@@ -126,14 +124,6 @@ async fn check_user_permission(
             "คุณไม่มีสิทธิ์ (ต้องการ {} permission)",
             required_permission
         )))
-    }
-}
-
-fn actor_context_error(response: axum::response::Response) -> AppError {
-    match response.status() {
-        StatusCode::UNAUTHORIZED => AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()),
-        StatusCode::FORBIDDEN => AppError::Forbidden("ไม่มีสิทธิ์".to_string()),
-        _ => AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์".to_string()),
     }
 }
 
