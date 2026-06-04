@@ -27,6 +27,10 @@ function relative(filePath) {
 	return path.relative(repoRoot, filePath);
 }
 
+function stripComments(source) {
+	return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
 function extractJsonResponseBlocks(source) {
 	const markers = ['Json(json!', 'Json(serde_json::json!', 'JsonResponse(serde_json::json!'];
 	const blocks = [];
@@ -129,6 +133,35 @@ function rawJsonResponseIdentifiers(source) {
 	return identifiers;
 }
 
+function extractPermissionRegistry(source) {
+	const constants = new Map();
+	const allPermissionConstantNames = new Set();
+	const modules = new Set();
+
+	for (const match of source.matchAll(/pub const ([A-Z0-9_]+): &str = "([^"]+)";/g)) {
+		constants.set(match[1], match[2]);
+	}
+
+	for (const match of source.matchAll(/code:\s*codes::([A-Z0-9_]+)/g)) {
+		allPermissionConstantNames.add(match[1]);
+	}
+
+	for (const match of source.matchAll(/module:\s*"([^"]+)"/g)) {
+		modules.add(match[1]);
+	}
+
+	const allPermissionCodes = new Set(
+		[...allPermissionConstantNames].map((name) => constants.get(name)).filter(Boolean)
+	);
+
+	return {
+		constants,
+		allPermissionConstantNames,
+		allPermissionCodes,
+		modules
+	};
+}
+
 test('backend JSON handler responses use the standard envelope shape', async () => {
 	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src/modules'), (file) =>
 		file.endsWith('.rs')
@@ -218,15 +251,86 @@ test('backend permission checks use registry constants instead of string literal
 		file.endsWith('.rs')
 	);
 	const callWithPermissionLiteral =
-		/\b(?:check_permission|check_any_permission|check_all_permissions|check_user_permission|has_permission)\s*\((?:(?!;).)*?"[a-z_]+(?:\.[a-z_]+){0,2}"/gs;
+		/\b(?:check_permission|check_any_permission|check_all_permissions|check_user_permission|has_permission|has_any_permission|has_all_permissions|require_permission|require_any_permission|require_all_permissions)\s*\((?:(?!;).)*?"[a-z_]+(?:\.[a-z_]+){0,2}"/gs;
 	const violations = [];
 
 	for (const file of backendFiles) {
-		const source = await readFile(file, 'utf8');
+		const source = stripComments(await readFile(file, 'utf8'));
 		const matches = source.matchAll(callWithPermissionLiteral);
 
 		for (const match of matches) {
+			if (match[0].includes('codes::')) continue;
 			violations.push(`${relative(file)}: ${match[0].replace(/\s+/g, ' ').slice(0, 140)}`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('permission registry covers backend and frontend permission references', async () => {
+	const registrySource = await readFile(
+		path.join(repoRoot, 'backend-school/src/permissions/registry.rs'),
+		'utf8'
+	);
+	const { constants, allPermissionConstantNames, allPermissionCodes, modules } =
+		extractPermissionRegistry(registrySource);
+	const violations = [];
+
+	for (const name of allPermissionConstantNames) {
+		if (!constants.has(name)) {
+			violations.push(`registry: ALL_PERMISSIONS references missing codes::${name}`);
+		}
+	}
+
+	for (const [name, code] of constants) {
+		if (!allPermissionConstantNames.has(name)) {
+			violations.push(`registry: codes::${name} (${code}) is not included in ALL_PERMISSIONS`);
+		}
+	}
+
+	const duplicateCodes = [...constants.values()].filter(
+		(code, index, codes) => codes.indexOf(code) !== index
+	);
+	for (const code of new Set(duplicateCodes)) {
+		violations.push(`registry: duplicate permission code ${code}`);
+	}
+
+	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src'), (file) =>
+		file.endsWith('.rs')
+	);
+	for (const file of backendFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		for (const match of source.matchAll(/\bcodes::([A-Z0-9_]+)/g)) {
+			const name = match[1];
+			if (!constants.has(name)) {
+				violations.push(`${relative(file)}: unknown permission constant codes::${name}`);
+			}
+		}
+	}
+
+	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
+		/\.(svelte|ts)$/.test(file)
+	);
+	const frontendPermissionPatterns = [
+		/\bpermission:\s*['"]([^'"]+)['"]/g,
+		/\$?can\.has\(\s*['"]([^'"]+)['"]\s*\)/g,
+		/\bpermissions\.has\(\s*['"]([^'"]+)['"]\s*\)/g,
+		/\bpermissions(?:\?\.)?\.includes\(\s*['"]([^'"]+)['"]\s*\)/g
+	];
+
+	for (const file of frontendFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		for (const pattern of frontendPermissionPatterns) {
+			for (const match of source.matchAll(pattern)) {
+				const permission = match[1];
+				if (
+					permission !== '*' &&
+					!allPermissionCodes.has(permission) &&
+					!modules.has(permission)
+				) {
+					violations.push(`${relative(file)}: unknown permission reference ${permission}`);
+				}
+			}
 		}
 	}
 

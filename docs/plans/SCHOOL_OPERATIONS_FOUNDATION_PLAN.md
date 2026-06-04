@@ -78,6 +78,13 @@ Operations
 - เพิ่ม static test ตรวจว่า permission ที่ใช้ใน backend/frontend มีอยู่ใน registry
 - ทำให้ permission cache invalidation ครอบคลุม role, department member, department permission และ delegation ทุก mutation
 
+สถานะล่าสุด:
+
+- มี `ActorContext`, `load_actor_context`, `require_permission`, `require_any_permission`, `require_all_permissions` เป็น helper กลางแล้ว
+- มี static contract ตรวจว่า backend/frontend permission references ต้องอยู่ใน registry หรือเป็น module ที่ประกาศใน registry
+- activity permissions ที่ frontend/backend ใช้จริงถูกเพิ่มเข้า permission registry แล้ว
+- ลบ frontend static menu helper เก่าที่ไม่ถูกใช้งานและใช้ permission name ไม่ตรง registry แล้ว
+
 ผลลัพธ์ที่ต้องได้:
 
 - เพิ่ม feature ใหม่แล้วไม่ต้องคิด auth/permission ใหม่ทุกครั้ง

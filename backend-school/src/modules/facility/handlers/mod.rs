@@ -32,13 +32,6 @@ pub async fn list_buildings(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    // Permission: READ
-    // Using a general FACILITY_READ code or similar. Let's use ACADEMIC_READ for now or create new codes.
-    // For now, let's assume if they can access academic, they can see rooms.
-    // Or better, create codes::FACILITY_READ
-
-    // For now using ACADEMIC_READ as fallback if FACILITY not defined, but user requested new codes.
-    // I will use placeholders and define codes later.
     if let Err(response) = check_permission(
         &headers,
         &pool,

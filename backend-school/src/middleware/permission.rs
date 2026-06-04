@@ -26,6 +26,13 @@ impl ActorContext {
             .any(|permission| self.has_permission(permission))
     }
 
+    #[allow(dead_code)]
+    pub fn has_all_permissions(&self, required_permissions: &[&str]) -> bool {
+        required_permissions
+            .iter()
+            .all(|permission| self.has_permission(permission))
+    }
+
     pub fn has_module_permission(&self, module: &str) -> bool {
         module_permission_matches(&self.permissions, module)
     }
@@ -48,6 +55,18 @@ impl ActorContext {
             Err(forbidden_response(format!(
                 "ไม่มีสิทธิ์ {}",
                 required_permissions.join(" หรือ ")
+            )))
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn require_all_permissions(&self, required_permissions: &[&str]) -> Result<(), Response> {
+        if self.has_all_permissions(required_permissions) {
+            Ok(())
+        } else {
+            Err(forbidden_response(format!(
+                "ไม่มีสิทธิ์ครบถ้วน: {}",
+                required_permissions.join(", ")
             )))
         }
     }
@@ -150,6 +169,18 @@ pub async fn check_any_permission(
     Ok(actor.user_id)
 }
 
+#[allow(dead_code)]
+pub async fn check_all_permissions(
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    required_permissions: &[&str],
+    cache: &PermissionCache,
+) -> Result<Uuid, Response> {
+    let actor = get_actor_context(headers, pool, cache).await?;
+    actor.require_all_permissions(required_permissions)?;
+    Ok(actor.user_id)
+}
+
 pub fn permission_matches(permissions: &[String], required_permission: &str) -> bool {
     permissions
         .iter()
@@ -246,6 +277,14 @@ async fn fetch_user_permissions(
 /// Use this when a handler needs to check multiple permissions or determine scope.
 /// Returns Err(401 Response) on auth failure only.
 pub async fn get_actor_context(
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    cache: &PermissionCache,
+) -> Result<ActorContext, Response> {
+    load_actor_context(headers, pool, cache).await
+}
+
+pub async fn load_actor_context(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
     cache: &PermissionCache,

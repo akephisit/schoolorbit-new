@@ -9,7 +9,7 @@ export const _meta = {
 		group: 'personnel',
 		order: 20,
 		user_type: 'staff',
-		permission: 'departments'
+		permission: 'roles'
 	}
 };
 

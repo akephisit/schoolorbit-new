@@ -623,6 +623,39 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "department",
         description: "อนุมัติหรือตรวจสอบงานของสมาชิกในฝ่าย",
     },
+    // Activity Group Permissions
+    PermissionDef {
+        code: codes::ACTIVITY_READ_ALL,
+        name: "ดูกิจกรรมพัฒนาผู้เรียน",
+        module: "activity",
+        action: "read",
+        scope: "all",
+        description: "ดูข้อมูลกิจกรรมพัฒนาผู้เรียนทั้งหมด",
+    },
+    PermissionDef {
+        code: codes::ACTIVITY_MANAGE_ALL,
+        name: "จัดการกิจกรรมพัฒนาผู้เรียน",
+        module: "activity",
+        action: "manage",
+        scope: "all",
+        description: "สร้าง/แก้ไข/ลบ และจัดการกิจกรรมพัฒนาผู้เรียนทั้งหมด",
+    },
+    PermissionDef {
+        code: codes::ACTIVITY_MANAGE_OWN,
+        name: "จัดการกิจกรรมของตนเอง",
+        module: "activity",
+        action: "manage",
+        scope: "own",
+        description: "ครูจัดการกิจกรรมพัฒนาผู้เรียนที่ตนเองรับผิดชอบ",
+    },
+    PermissionDef {
+        code: codes::ACTIVITY_MEMBERS_MANAGE,
+        name: "จัดการสมาชิกกิจกรรม",
+        module: "activity",
+        action: "members_manage",
+        scope: "all",
+        description: "จัดการสมาชิกในกิจกรรมพัฒนาผู้เรียน",
+    },
     // Admission Permissions
     PermissionDef {
         code: codes::ADMISSION_READ_ALL,
