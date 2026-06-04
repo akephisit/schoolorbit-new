@@ -60,6 +60,7 @@ If adding "User Profile Edit" feature:
   * **State:** Use `AppState` wrapped in `Arc` for sharing DB pools and config.
   * **Handlers:** Keep handlers thin. Move business logic to `services/` or `logic/` modules.
   * **DTOs:** Use `serde` structs for Request/Response bodies. Use `#[serde(rename_all = "camelCase")]` for JSON response compatibility with frontend.
+  * **Typed API Boundary:** Service functions that feed JSON API responses should return typed Rust structs or outcome enums, not `serde_json::Value`. Use `serde_json::Value` only for genuinely dynamic JSONB/storage payloads such as `metadata`, `form_data`, flexible settings/config, audit payloads, or third-party payloads. If database JSONB uses snake_case but the frontend API needs camelCase, keep separate storage and API response structs and map between them.
   * **API Response Contract:** JSON API endpoints must return a single envelope shape. Success responses use `{ success: true, data: T, message?: string }`. Error responses use `{ success: false, error: string, message?: string, data?: T }` when structured error details are needed. Do not return raw objects such as `User`, feature DTOs, or ad-hoc top-level fields directly from API routes. Exceptions are only for non-JSON responses such as file downloads, binary/image responses, WebSocket upgrades, and low-level health probes.
   * **Database:** Use `sqlx` for PostgreSQL interactions. Prefer compile-time checked queries (`sqlx::query_as!`) where possible.
 
@@ -85,6 +86,8 @@ If adding "User Profile Edit" feature:
 * **API Integration:**
   * Use the custom API client wrapper (e.g., `api.ts`) that handles `credentials: 'include'` for CORS/Cookies.
   * API client code should consume the standard backend envelope `{ success, data, error?, message? }`. Avoid adding raw-response variants just to support inconsistent backend responses; fix the backend contract instead.
+  * Known endpoints should use concrete `apiClient<T>` types. Avoid `unknown`, `ApiResponse<unknown>`, and `res.data as ...` casts for known backend contracts; fix or type the backend/frontend contract instead.
+  * When changing an API response shape, update the static contract checks that guard backend and frontend alignment.
   * Do not `fetch` directly in components if possible; use Loaders.
 
 ## 4. Realtime & WebSocket (Project Specific)
