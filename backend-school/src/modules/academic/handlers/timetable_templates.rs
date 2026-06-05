@@ -8,17 +8,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::academic::services::timetable_template_service;
 use crate::modules::academic::websockets::TimetableEvent;
 use crate::permissions::registry::codes;
+use crate::utils::request_context::actor_tenant_context;
 use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct TimetableTemplateView {
@@ -90,8 +85,9 @@ pub async fn list_templates(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = timetable_template_service::list_templates(&pool).await?;
     Ok(Json(serde_json::json!({ "success": true, "data": rows })).into_response())
@@ -102,8 +98,9 @@ pub async fn get_template(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let (template, entries) = timetable_template_service::get_template(&pool, id).await?;
     Ok(Json(serde_json::json!({ "success": true, "data": { "template": template, "entries": entries } })).into_response())
@@ -114,17 +111,16 @@ pub async fn create_template(
     headers: HeaderMap,
     Json(payload): Json<CreateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = actor.user_id;
     let id = timetable_template_service::create_template(
         &pool,
         &payload.name,
         payload.description.as_deref(),
-        user_id,
+        Some(user_id),
     )
     .await?;
     Ok(Json(serde_json::json!({ "success": true, "data": { "id": id } })).into_response())
@@ -136,8 +132,9 @@ pub async fn update_template(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     timetable_template_service::update_template(
         &pool,
@@ -154,8 +151,9 @@ pub async fn delete_template(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     timetable_template_service::delete_template(&pool, id).await?;
     Ok(Json(serde_json::json!({ "success": true, "data": {} })).into_response())
@@ -166,12 +164,11 @@ pub async fn from_current(
     headers: HeaderMap,
     Json(payload): Json<FromCurrentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = actor.user_id;
     let entry_types = payload.entry_types.unwrap_or_else(default_non_course_types);
 
     let id = timetable_template_service::from_current(
@@ -180,7 +177,7 @@ pub async fn from_current(
         &payload.name,
         payload.description.as_deref(),
         entry_types,
-        user_id,
+        Some(user_id),
     )
     .await?;
 
@@ -193,17 +190,16 @@ pub async fn apply_template(
     Path(template_id): Path<Uuid>,
     Json(payload): Json<ApplyTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = actor.user_id;
     let total_inserted = timetable_template_service::apply_template(
         &pool,
         template_id,
         payload.semester_id,
-        user_id,
+        Some(user_id),
     )
     .await?;
 
@@ -212,9 +208,7 @@ pub async fn apply_template(
     state.websocket_manager.broadcast_mutation(
         subdomain,
         payload.semester_id,
-        TimetableEvent::TableRefresh {
-            user_id: user_id.unwrap_or_default(),
-        },
+        TimetableEvent::TableRefresh { user_id },
     );
 
     Ok(
@@ -228,12 +222,11 @@ pub async fn clear_timetable(
     headers: HeaderMap,
     Json(payload): Json<ClearTimetableRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = actor.user_id;
     let entry_types = payload.entry_types.unwrap_or_else(default_non_course_types);
     let deleted =
         timetable_template_service::clear_timetable(&pool, payload.semester_id, entry_types)
@@ -244,9 +237,7 @@ pub async fn clear_timetable(
     state.websocket_manager.broadcast_mutation(
         subdomain,
         payload.semester_id,
-        TimetableEvent::TableRefresh {
-            user_id: user_id.unwrap_or_default(),
-        },
+        TimetableEvent::TableRefresh { user_id },
     );
 
     Ok(

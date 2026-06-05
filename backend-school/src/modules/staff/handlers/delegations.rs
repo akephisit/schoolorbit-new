@@ -10,10 +10,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::services::delegation_service;
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -39,18 +38,14 @@ pub struct CreateDelegationRequest {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 pub async fn list_delegatable_permissions(
     State(state): State<AppState>,
     Path(department_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
     if !can_approve_department_work {
         return Ok((
@@ -69,9 +64,9 @@ pub async fn list_delegations(
     Path(department_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
     if !can_approve_department_work {
         return Ok((
@@ -91,9 +86,9 @@ pub async fn create_delegation(
     headers: HeaderMap,
     Json(body): Json<CreateDelegationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
     if !can_approve_department_work {
         return Ok((
@@ -138,9 +133,9 @@ pub async fn revoke_delegation(
     Path(delegation_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
 
     let (from_user_id, to_user_id) =
         match delegation_service::get_delegation_users(&pool, delegation_id).await? {

@@ -30,11 +30,47 @@
 
 จุดที่ควรปรับก่อนเพิ่ม feature ใหญ่:
 
-- permission ยังไม่เป็น single source of truth ทุก module
-- handler หลายจุดทำซ้ำเรื่อง subdomain, pool, auth, permission
+- permission foundation ถูกย้ายมาใช้ `ActorContext`/registry/static guard แล้ว แต่ยังต้องตรวจ route/menu/frontend guard ตาม feature ใหม่ทุกครั้ง
+- handler หลายจุดยังมีรูปแบบ response และ request context ไม่สม่ำเสมอ ถึงแม้ permission flow หลักจะใช้ `load_actor_context` แล้ว
+- API หลาย endpoint ยังสร้าง `Json(json!({...}))` แบบ ad-hoc และยังไม่ได้มี typed response contract ครบทุก domain
 - mutation สำคัญยังไม่มี audit log สม่ำเสมอ
 - workflow เปิด/ปิด/ส่ง/ตรวจ/อนุมัติ ยังไม่มีกลางระบบ
 - notification ยังไม่ผูกกับ event/workflow กลาง
+
+## Foundation Backlog ล่าสุด
+
+> สถานะ ณ 2026-06-05: Permission foundation รอบ backend ถูกเก็บให้ใช้ `load_actor_context(...)` และ `actor.require_*` แล้ว, static architecture tests อยู่ฝั่ง backend-school แล้ว, และ `backend-school` ผ่าน `cargo clippy --all-targets -- -D warnings` โดยไม่ suppress lint
+
+ลำดับนี้คือรายการ “ต้องแก้เป็นฐานก่อนเพิ่ม feature ใหญ่” ไม่ใช่ feature เสริม:
+
+1. **Backend Handler / Request Context Foundation**
+   - เก็บ module ที่ยังมี helper local เช่น `get_pool`, auth, permission, response mapping ที่ไม่สม่ำเสมอ
+   - ใช้ `utils/request_context.rs` เป็น pattern กลางสำหรับ tenant, pool, actor และ request metadata
+   - handler ใหม่ควรมี flow เดียว: tenant/actor context → permission → service → typed response
+
+2. **API Contract Foundation**
+   - ทุก JSON API ใช้ envelope เดียว `{ success, data, error?, message? }`
+   - endpoint ที่ frontend ใช้จริงควรมี typed Rust response struct และ typed frontend API client
+   - ลด ad-hoc `Json(json!({...}))` ใน endpoint สำคัญ เพื่อให้ CSR frontend ไม่ต้องรองรับ response แปลกหลายแบบ
+
+3. **Audit / Logging Foundation**
+   - mutation สำคัญต้องเขียน `audit_logs` อย่างสม่ำเสมอ
+   - ใช้ `tracing` แทน `println!` / `eprintln!` ใน backend-school code path ปกติ
+   - audit/log ต้องไม่บันทึก plaintext `national_id` หรือข้อมูลอ่อนไหว
+
+4. **School Organization Foundation**
+   - API/UI สำหรับ `departments`, `department_members`, position, subject group link และ delegation ต้องชัด
+   - โครงสร้างองค์กรต้องเป็นฐานให้ permission, workflow, approval และงานกลุ่มสาระ/กลุ่มบริหาร
+
+5. **Resilience / Ops Foundation**
+   - เพิ่ม timeout/retry/backoff/circuit breaker ใน external clients ที่สำคัญ
+   - health/observability ต้องสะท้อน dependency จริง ไม่ใช่แค่ service ยังเปิดอยู่
+   - migration squash ให้ทำเป็น policy หลังยืนยัน tenant baseline แล้ว ไม่ใช่รื้อทันที
+
+6. **Data Model / Migration Foundation**
+   - ทำ schema map/ERD ของ domain หลักก่อนเพิ่มตารางใหญ่
+   - ตั้ง JSONB policy และ typed DTO สำหรับ JSONB ที่ยังจำเป็น
+   - เพิ่ม constraints/index ตาม query จริงและ migration policy ที่ตรวจสอบได้
 
 ## เป้าหมายสถาปัตยกรรม
 
@@ -316,12 +352,13 @@ Operations
 
 | ลำดับ | งาน | เหตุผล |
 |---|---|---|
-| 1 | Permission Foundation Cleanup | เป็นฐานของทุก feature และตอนนี้ยังมี legacy path |
-| 2 | Actor/Tenant Context กลาง | ลด code ซ้ำใน handler และทำให้ audit/workflow ง่ายขึ้น |
-| 3 | Audit Log สำหรับ mutation สำคัญ | ใช้งานจริงต้องตรวจย้อนหลังได้ |
-| 4 | Workflow/Work Item schema | เป็นแกนของเปิด-ปิด ส่งงาน ตรวจงาน อนุมัติ |
-| 5 | Notification Outbox + Reminder | ทำให้งานไม่ตกหล่น |
-| 6 | Schema Map + JSONB Policy + Migration Squash | ลดความซับซ้อนระยะยาว |
+| 1 | Backend Handler / Request Context Foundation | ลด code ซ้ำใน handler และทำให้ audit/API/workflow ใช้ข้อมูล actor/tenant ชุดเดียวกัน |
+| 2 | API Contract Foundation | frontend CSR และ service ใหม่จะพัฒนาง่ายขึ้นเมื่อ response shape และ typed client คาดเดาได้ |
+| 3 | Audit / Logging Foundation | ใช้งานจริงต้องตรวจย้อนหลังได้ และต้องไม่ log ข้อมูลอ่อนไหว |
+| 4 | School Organization Foundation | department/position/subject group/delegation เป็นฐานของงานฝ่าย กลุ่มสาระ และ approval |
+| 5 | Resilience / Ops Foundation | ลดความเสี่ยงจาก external services, deployment, health และ migration operations |
+| 6 | Data Model / Migration Foundation | ลดความซับซ้อนระยะยาวโดยไม่รื้อ schema เสี่ยง |
+| 7 | Workflow / Notification Foundation | เริ่มหลังฐาน actor/API/audit/org ชัด เพื่อไม่สร้างระบบส่งงาน/แจ้งเตือนซ้ำในแต่ละ feature |
 
 ## สิ่งที่ไม่ควรทำก่อน
 

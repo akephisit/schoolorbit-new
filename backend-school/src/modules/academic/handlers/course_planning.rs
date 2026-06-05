@@ -8,7 +8,6 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::academic::models::course_planning::{
     AddCourseInstructorRequest, AssignCoursesRequest, PlanQuery, UpdateCourseInstructorRoleRequest,
     UpdateCourseRequest,
@@ -16,33 +15,24 @@ use crate::modules::academic::models::course_planning::{
 use crate::modules::academic::services::course_planning_service;
 use crate::modules::academic::websockets::TimetableEvent;
 use crate::permissions::registry::codes;
+use crate::utils::request_context::actor_tenant_context;
 use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 async fn broadcast_course_refresh(
     state: &AppState,
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
+    user_id: Uuid,
     course_id: Uuid,
 ) {
     if let Some(sem_id) = course_planning_service::get_course_semester_id(pool, course_id).await {
-        let user_id = crate::middleware::auth::extract_user_id(headers, pool)
-            .await
-            .ok();
         let subdomain =
             extract_subdomain_from_request(headers).unwrap_or_else(|_| "default".to_string());
         state.websocket_manager.broadcast_mutation(
             subdomain,
             sem_id,
-            TimetableEvent::CourseTeamChanged {
-                user_id: user_id.unwrap_or_default(),
-                course_id,
-            },
+            TimetableEvent::CourseTeamChanged { user_id, course_id },
         );
     }
 }
@@ -52,8 +42,9 @@ pub async fn list_classroom_courses(
     headers: HeaderMap,
     Query(query): Query<PlanQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let courses = course_planning_service::list_classroom_courses(&pool, &query).await?;
     Ok(Json(json!({ "success": true, "data": courses })).into_response())
@@ -64,8 +55,9 @@ pub async fn assign_courses(
     headers: HeaderMap,
     Json(payload): Json<AssignCoursesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let added = course_planning_service::assign_courses(&pool, payload).await?;
     Ok(Json(
@@ -79,8 +71,9 @@ pub async fn remove_course(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     course_planning_service::remove_course(&pool, id).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
@@ -92,8 +85,9 @@ pub async fn update_course(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateCourseRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     course_planning_service::update_course(&pool, id, payload).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
@@ -109,8 +103,9 @@ pub async fn batch_list_course_instructors(
     headers: HeaderMap,
     Query(query): Query<BatchListCourseInstructorsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let ids: Vec<Uuid> = query
         .course_ids
@@ -126,8 +121,9 @@ pub async fn list_course_instructors(
     headers: HeaderMap,
     Path(course_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = course_planning_service::list_course_instructors(&pool, course_id).await?;
     Ok(Json(json!({ "success": true, "data": rows })).into_response())
@@ -139,13 +135,15 @@ pub async fn add_course_instructor(
     Path(course_id): Path<Uuid>,
     Json(body): Json<AddCourseInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    let user_id = actor.user_id;
     let role = body.role.unwrap_or_else(|| "secondary".to_string());
     course_planning_service::add_course_instructor(&pool, course_id, body.instructor_id, &role)
         .await?;
-    broadcast_course_refresh(&state, &headers, &pool, course_id).await;
+    broadcast_course_refresh(&state, &headers, &pool, user_id, course_id).await;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
@@ -154,11 +152,13 @@ pub async fn remove_course_instructor(
     headers: HeaderMap,
     Path((course_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    let user_id = actor.user_id;
     course_planning_service::remove_course_instructor(&pool, course_id, instructor_id).await?;
-    broadcast_course_refresh(&state, &headers, &pool, course_id).await;
+    broadcast_course_refresh(&state, &headers, &pool, user_id, course_id).await;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
@@ -168,9 +168,11 @@ pub async fn update_course_instructor_role(
     Path((course_id, instructor_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateCourseInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    let user_id = actor.user_id;
     course_planning_service::update_course_instructor_role(
         &pool,
         course_id,
@@ -178,7 +180,7 @@ pub async fn update_course_instructor_role(
         &body.role,
     )
     .await?;
-    broadcast_course_refresh(&state, &headers, &pool, course_id).await;
+    broadcast_course_refresh(&state, &headers, &pool, user_id, course_id).await;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
@@ -204,8 +206,9 @@ pub async fn list_classroom_activities(
     Path(classroom_id): Path<Uuid>,
     Query(query): Query<ClassroomActivityQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows =
         course_planning_service::list_classroom_activities(&pool, classroom_id, query.semester_id)
@@ -218,8 +221,9 @@ pub async fn remove_classroom_from_slot(
     headers: HeaderMap,
     Path((classroom_id, slot_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     course_planning_service::remove_classroom_from_slot(&pool, classroom_id, slot_id).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())

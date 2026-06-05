@@ -8,30 +8,24 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::academic::models::scheduling::*;
 use crate::modules::academic::services::scheduling_service;
 use crate::permissions::registry::codes;
+use crate::utils::request_context::actor_tenant_context;
 use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 pub async fn auto_schedule_timetable(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<CreateSchedulingJobRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = Some(actor.user_id);
     let job_id = Uuid::new_v4();
     let algorithm = payload
         .algorithm
@@ -98,8 +92,9 @@ pub async fn get_scheduling_job(
     headers: HeaderMap,
     Path(job_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
 
     let job = scheduling_service::get_scheduling_job(&pool, job_id).await?;
@@ -148,8 +143,9 @@ pub async fn undo_scheduling_job(
     headers: HeaderMap,
     Path(job_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
     let (semester_id, deleted) = scheduling_service::undo_scheduling_job(&pool, job_id).await?;
@@ -157,14 +153,11 @@ pub async fn undo_scheduling_job(
     if let Some(sid) = semester_id {
         let subdomain =
             extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-            .await
-            .ok();
         state.websocket_manager.broadcast_mutation(
             subdomain,
             sid,
             crate::modules::academic::websockets::TimetableEvent::TableRefresh {
-                user_id: user_id.unwrap_or_default(),
+                user_id: actor.user_id,
             },
         );
     }
@@ -186,8 +179,9 @@ pub async fn list_scheduling_jobs(
     headers: HeaderMap,
     Query(query): Query<ListJobsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let limit = query.limit.unwrap_or(50).min(100);
     let jobs = scheduling_service::list_scheduling_jobs(&pool, query.semester_id, limit).await?;
@@ -199,8 +193,9 @@ pub async fn create_instructor_preference(
     headers: HeaderMap,
     Json(payload): Json<CreateInstructorPreferenceRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let pref = scheduling_service::create_instructor_preference(&pool, payload).await?;
     Ok((
@@ -215,8 +210,9 @@ pub async fn create_instructor_room_assignment(
     headers: HeaderMap,
     Json(payload): Json<CreateInstructorRoomAssignmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let a = scheduling_service::create_instructor_room_assignment(&pool, payload).await?;
     Ok((
@@ -231,12 +227,11 @@ pub async fn create_locked_slot(
     headers: HeaderMap,
     Json(payload): Json<CreateLockedSlotRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = Some(actor.user_id);
     let locked = scheduling_service::create_locked_slot(&pool, payload, user_id).await?;
     Ok((
         StatusCode::CREATED,
@@ -250,8 +245,9 @@ pub async fn list_locked_slots(
     headers: HeaderMap,
     Query(query): Query<ListJobsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let slots = scheduling_service::list_locked_slots(&pool, query.semester_id).await?;
     Ok(Json(serde_json::json!({ "success": true, "data": slots })).into_response())
@@ -262,8 +258,9 @@ pub async fn delete_locked_slot(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     scheduling_service::delete_locked_slot(&pool, id).await?;
     Ok(StatusCode::NO_CONTENT.into_response())

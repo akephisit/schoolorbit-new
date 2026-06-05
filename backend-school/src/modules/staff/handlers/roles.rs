@@ -1,9 +1,8 @@
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::{department_service, role_service};
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -14,10 +13,6 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 // ============================================
 // Roles
 // ============================================
@@ -26,8 +21,9 @@ pub async fn list_roles(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let roles = role_service::list_roles(&pool).await?;
@@ -39,8 +35,9 @@ pub async fn get_role(
     headers: HeaderMap,
     Path(role_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let role = role_service::get_role(&pool, role_id).await?;
@@ -52,8 +49,9 @@ pub async fn create_role(
     headers: HeaderMap,
     Json(payload): Json<CreateRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_CREATE_ALL)?;
 
     let role_id = role_service::create_role(&pool, payload).await?;
@@ -70,8 +68,9 @@ pub async fn update_role(
     Path(role_id): Path<Uuid>,
     Json(payload): Json<UpdateRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_UPDATE_ALL)?;
 
     role_service::update_role(&pool, role_id, payload).await?;
@@ -91,8 +90,9 @@ pub async fn list_departments(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let departments = department_service::list_departments(&pool).await?;
@@ -104,8 +104,9 @@ pub async fn get_department(
     headers: HeaderMap,
     Path(dept_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let department = department_service::get_department(&pool, dept_id).await?;
@@ -117,8 +118,9 @@ pub async fn create_department(
     headers: HeaderMap,
     Json(payload): Json<CreateDepartmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_CREATE_ALL)?;
 
     let dept_id = department_service::create_department(&pool, payload).await?;
@@ -135,8 +137,9 @@ pub async fn update_department(
     Path(dept_id): Path<Uuid>,
     Json(payload): Json<UpdateDepartmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_UPDATE_ALL)?;
 
     department_service::update_department(&pool, dept_id, payload).await?;

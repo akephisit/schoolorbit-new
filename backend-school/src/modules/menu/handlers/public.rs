@@ -6,24 +6,25 @@ use axum::{
 use std::collections::HashMap;
 
 use crate::error::AppError;
-use crate::middleware::permission::{load_actor_context, module_permission_matches};
+use crate::middleware::permission::ActorContext;
 use crate::modules::menu::models::*;
 use crate::modules::menu::services::public_menu_service::{self, MenuRow};
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
 pub async fn get_user_menu(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = resolve_tenant_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache)
+    let context = actor_tenant_context(&state, &headers)
         .await
         .map_err(|_| AppError::AuthError("ไม่สามารถดึงข้อมูล permissions ได้".to_string()))?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let user = public_menu_service::get_user(&pool, actor.user_id).await?;
 
     let rows = public_menu_service::fetch_menu_items(&pool, &user.user_type).await?;
-    let groups = group_and_filter_menu(rows, &actor.permissions);
+    let groups = group_and_filter_menu(rows, &actor);
 
     Ok((
         StatusCode::OK,
@@ -34,10 +35,7 @@ pub async fn get_user_menu(
     ))
 }
 
-fn group_and_filter_menu(
-    rows: Vec<MenuRow>,
-    user_permissions: &[String],
-) -> Vec<MenuGroupResponse> {
+fn group_and_filter_menu(rows: Vec<MenuRow>, actor: &ActorContext) -> Vec<MenuGroupResponse> {
     struct GroupWithOrder {
         order: i32,
         code: String,
@@ -63,7 +61,7 @@ fn group_and_filter_menu(
     ) in rows
     {
         if let Some(module) = &required_permission {
-            if !module_permission_matches(user_permissions, module) {
+            if !actor.has_module_permission(module) {
                 continue;
             }
         }

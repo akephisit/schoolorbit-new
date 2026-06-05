@@ -8,18 +8,13 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::application_service;
 use crate::permissions::registry::codes;
 use crate::services::r2_client::R2Client;
+use crate::utils::request_context::{actor_tenant_context, tenant_pool};
 use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 // ==========================================
 // Public submit
@@ -31,7 +26,7 @@ pub async fn submit_application(
     Path(round_id): Path<Uuid>,
     Json(payload): Json<SubmitApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     let (application_number, application) =
         application_service::submit_application(&pool, round_id, payload).await?;
     Ok((
@@ -54,8 +49,9 @@ pub async fn list_applications(
     Path(round_id): Path<Uuid>,
     Query(filter): Query<ApplicationFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
     let applications = application_service::list_applications(&pool, round_id, filter).await?;
     Ok(Json(json!({ "success": true, "data": applications })).into_response())
@@ -66,8 +62,9 @@ pub async fn get_application(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
     let (application, documents) =
         application_service::get_application_with_documents(&pool, id).await?;
@@ -86,8 +83,9 @@ pub async fn verify_application(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     let verifier_id = actor.user_id;
     application_service::verify_application(&pool, id, verifier_id).await?;
@@ -100,8 +98,9 @@ pub async fn reject_application(
     Path(id): Path<Uuid>,
     Json(payload): Json<RejectApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     application_service::reject_application(&pool, id, &payload.rejection_reason).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ปฏิเสธใบสมัครแล้ว" })).into_response())
@@ -113,8 +112,9 @@ pub async fn mark_absent(
     Path(id): Path<Uuid>,
     Json(payload): Json<MarkAbsentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     application_service::mark_absent(&pool, id, payload.absent).await?;
     let msg = if payload.absent {
@@ -131,8 +131,9 @@ pub async fn update_application(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     application_service::update_application(&pool, id, payload).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "แก้ไขใบสมัครแล้ว" })).into_response())
@@ -143,8 +144,9 @@ pub async fn unverify_application(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     application_service::unverify_application(&pool, id).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ยกเลิกการอนุมัติแล้ว" })).into_response())
@@ -155,8 +157,9 @@ pub async fn delete_application(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
 
     let files_to_delete =
@@ -183,8 +186,9 @@ pub async fn list_enrollment_pending(
     headers: HeaderMap,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_ENROLL)?;
     let list = application_service::list_enrollment_pending(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": list })).into_response())
@@ -196,8 +200,9 @@ pub async fn complete_enrollment(
     Path(id): Path<Uuid>,
     Json(payload): Json<CompleteEnrollmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_ENROLL)?;
     let enroller_id = actor.user_id;
 
@@ -216,8 +221,9 @@ pub async fn change_application_track(
     Path(application_id): Path<Uuid>,
     Json(payload): Json<ChangeTrackRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     application_service::change_application_track(&pool, application_id, payload.track_id).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
@@ -229,8 +235,9 @@ pub async fn update_admission_track(
     Path(application_id): Path<Uuid>,
     Json(payload): Json<UpdateAdmissionTrackRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     application_service::update_admission_track(&pool, application_id, payload.track_id).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
@@ -248,9 +255,9 @@ pub async fn staff_upload_document(
 ) -> Result<impl IntoResponse, AppError> {
     let subdomain = extract_subdomain_from_request(&headers)
         .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
 
     // Parse multipart in handler (Multipart can't cross service boundary)
@@ -367,8 +374,9 @@ pub async fn staff_delete_document(
     headers: HeaderMap,
     Path((application_id, doc_type)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
 
     if !application_service::VALID_DOC_TYPES.contains(&doc_type.as_str()) {
@@ -398,8 +406,9 @@ pub async fn sort_room_students(
     headers: HeaderMap,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let updated = application_service::sort_room_students(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": { "updated": updated } })).into_response())
@@ -417,8 +426,9 @@ pub async fn auto_assign_student_ids(
     Path(round_id): Path<Uuid>,
     Json(payload): Json<AutoAssignStudentIdsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let assigned =
         application_service::auto_assign_student_ids(&pool, round_id, payload.start_number).await?;
@@ -430,8 +440,9 @@ pub async fn list_student_ids(
     headers: HeaderMap,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let rows = application_service::list_student_ids(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": rows })).into_response())
@@ -443,8 +454,9 @@ pub async fn move_application_room(
     Path(id): Path<Uuid>,
     Json(payload): Json<MoveRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     application_service::move_application_room(&pool, id, payload.room_id).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
@@ -456,8 +468,9 @@ pub async fn batch_update_student_ids(
     Path(round_id): Path<Uuid>,
     Json(payload): Json<Vec<UpdateStudentIdItem>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let updated = application_service::batch_update_student_ids(&pool, round_id, payload).await?;
     Ok(Json(json!({ "success": true, "data": { "updated": updated } })).into_response())

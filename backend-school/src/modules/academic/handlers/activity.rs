@@ -8,16 +8,13 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::academic::models::activity::*;
 use crate::modules::academic::services::activity_service;
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::{
+    actor_tenant_context, current_user_tenant_context_from_headers,
+};
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 // ============================================
 // Activity Slots
@@ -28,8 +25,9 @@ pub async fn list_activity_slots(
     headers: HeaderMap,
     Query(filter): Query<ActivitySlotFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let slots = activity_service::list_slots(&pool, filter).await?;
     Ok(Json(json!({ "success": true, "data": slots })).into_response())
@@ -41,8 +39,9 @@ pub async fn update_activity_slot(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateActivitySlotRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let row = activity_service::update_slot(&pool, id, body).await?;
     Ok(Json(json!({ "success": true, "data": row })).into_response())
@@ -53,8 +52,9 @@ pub async fn delete_activity_slot(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     activity_service::delete_slot(&pool, id).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ลบช่องกิจกรรมแล้ว" })).into_response())
@@ -69,8 +69,9 @@ pub async fn list_activity_groups(
     headers: HeaderMap,
     Query(filter): Query<ActivityGroupFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let groups = activity_service::list_groups(&pool, filter).await?;
     Ok(Json(json!({ "success": true, "data": groups })).into_response())
@@ -81,9 +82,9 @@ pub async fn create_activity_group(
     headers: HeaderMap,
     Json(body): Json<CreateActivityGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let has_manage_all = actor.has_permission(codes::ACTIVITY_MANAGE_ALL);
     let has_manage_own = actor.has_permission(codes::ACTIVITY_MANAGE_OWN);
     if !has_manage_all && !has_manage_own {
@@ -112,8 +113,9 @@ pub async fn update_activity_group(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateActivityGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_any_permission(&[codes::ACTIVITY_MANAGE_ALL, codes::ACTIVITY_MANAGE_OWN])?;
     let row = activity_service::update_group(&pool, id, body).await?;
     Ok(Json(json!({ "success": true, "data": row })).into_response())
@@ -124,8 +126,9 @@ pub async fn delete_activity_group(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     activity_service::delete_group(&pool, id).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ลบกลุ่มกิจกรรมแล้ว" })).into_response())
@@ -140,8 +143,9 @@ pub async fn list_members(
     headers: HeaderMap,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let members = activity_service::list_members(&pool, group_id).await?;
     Ok(Json(json!({ "success": true, "data": members })).into_response())
@@ -153,8 +157,9 @@ pub async fn add_members(
     Path(group_id): Path<Uuid>,
     Json(body): Json<AddMembersRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MEMBERS_MANAGE)?;
     match activity_service::add_members(&pool, group_id, body.student_ids).await? {
         activity_service::AddMembersOutcome::Inserted(n) => {
@@ -171,10 +176,9 @@ pub async fn my_enrollments(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .map_err(AppError::AuthError)?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let user_id = context.user_id;
     let ids = activity_service::my_enrollments(&pool, user_id).await?;
     Ok(Json(json!({ "success": true, "data": ids })).into_response())
 }
@@ -184,10 +188,9 @@ pub async fn self_enroll(
     headers: HeaderMap,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .map_err(AppError::AuthError)?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let user_id = context.user_id;
 
     match activity_service::self_enroll(&pool, group_id, user_id).await? {
         activity_service::SelfEnrollOutcome::Enrolled => Ok(Json(
@@ -219,10 +222,9 @@ pub async fn self_unenroll(
     headers: HeaderMap,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .map_err(AppError::AuthError)?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let user_id = context.user_id;
     activity_service::self_unenroll(&pool, group_id, user_id).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ยกเลิกลงทะเบียนแล้ว" })).into_response())
 }
@@ -232,8 +234,9 @@ pub async fn remove_member(
     headers: HeaderMap,
     Path((group_id, student_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MEMBERS_MANAGE)?;
     activity_service::remove_member(&pool, group_id, student_id).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ลบสมาชิกแล้ว" })).into_response())
@@ -245,8 +248,9 @@ pub async fn update_member_result(
     Path(member_id): Path<Uuid>,
     Json(body): Json<UpdateMemberResultRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MEMBERS_MANAGE)?;
     activity_service::update_member_result(&pool, member_id, &body.result).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "บันทึกผลแล้ว" })).into_response())
@@ -267,8 +271,9 @@ pub async fn list_instructors(
     headers: HeaderMap,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let rows = activity_service::list_group_instructors(&pool, group_id).await?;
     Ok(Json(json!({ "success": true, "data": rows })).into_response())
@@ -280,8 +285,9 @@ pub async fn add_instructor(
     Path(group_id): Path<Uuid>,
     Json(body): Json<InstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_any_permission(&[codes::ACTIVITY_MANAGE_ALL, codes::ACTIVITY_MANAGE_OWN])?;
     let role = body.role.unwrap_or_else(|| "assistant".to_string());
     activity_service::add_group_instructor(&pool, group_id, body.instructor_id, &role).await?;
@@ -293,8 +299,9 @@ pub async fn remove_instructor(
     headers: HeaderMap,
     Path((group_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_any_permission(&[codes::ACTIVITY_MANAGE_ALL, codes::ACTIVITY_MANAGE_OWN])?;
     activity_service::remove_group_instructor(&pool, group_id, instructor_id).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ลบครูแล้ว" })).into_response())
@@ -309,8 +316,9 @@ pub async fn list_slot_instructors(
     headers: HeaderMap,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let rows = activity_service::list_slot_instructors(&pool, slot_id).await?;
     Ok(Json(json!({ "success": true, "data": rows })).into_response())
@@ -322,8 +330,9 @@ pub async fn add_slot_instructor(
     Path(slot_id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let user_id = body
         .get("user_id")
@@ -341,8 +350,9 @@ pub async fn add_slot_instructors_batch(
     Path(slot_id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let user_ids: Vec<Uuid> = body
         .get("user_ids")
@@ -371,8 +381,9 @@ pub async fn remove_slot_instructor(
     headers: HeaderMap,
     Path((slot_id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     activity_service::remove_slot_instructor(&pool, slot_id, user_id).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ลบครูแล้ว" })).into_response())
@@ -383,8 +394,9 @@ pub async fn delete_slot_timetable_entries(
     headers: HeaderMap,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let n = activity_service::delete_slot_timetable_entries(&pool, slot_id).await?;
     Ok(Json(json!({ "success": true, "data": { "deleted_count": n }, "message": "ลบรายการตารางสอนแล้ว" })).into_response())
@@ -395,8 +407,9 @@ pub async fn delete_all_slot_groups(
     headers: HeaderMap,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let n = activity_service::delete_all_slot_groups(&pool, slot_id).await?;
     Ok(Json(
@@ -410,8 +423,9 @@ pub async fn remove_all_slot_instructors(
     headers: HeaderMap,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let n = activity_service::remove_all_slot_instructors(&pool, slot_id).await?;
     Ok(
@@ -429,8 +443,9 @@ pub async fn list_slot_classroom_assignments(
     headers: HeaderMap,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let rows = activity_service::list_slot_classroom_assignments(&pool, slot_id).await?;
     Ok(Json(json!({ "success": true, "data": rows })).into_response())
@@ -442,8 +457,9 @@ pub async fn batch_upsert_slot_classroom_assignments(
     Path(slot_id): Path<Uuid>,
     Json(body): Json<BatchUpsertSlotClassroomAssignmentsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let n = activity_service::batch_upsert_slot_classroom_assignments(&pool, slot_id, body).await?;
     Ok(
@@ -457,8 +473,9 @@ pub async fn delete_all_slot_classroom_assignments(
     headers: HeaderMap,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let n = activity_service::delete_all_slot_classroom_assignments(&pool, slot_id).await?;
     Ok(Json(json!({ "success": true, "data": { "deleted_count": n }, "message": "ลบครูประจำห้องทั้งหมดแล้ว" })).into_response())
@@ -469,8 +486,9 @@ pub async fn delete_slot_classroom_assignment(
     headers: HeaderMap,
     Path((slot_id, assignment_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     activity_service::delete_slot_classroom_assignment(&pool, slot_id, assignment_id).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ลบสำเร็จ" })).into_response())

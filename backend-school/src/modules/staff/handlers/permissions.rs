@@ -1,8 +1,7 @@
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::services::permission_service;
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 use axum::{
     extract::State,
@@ -20,9 +19,9 @@ pub async fn list_permissions(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = resolve_tenant_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::SETTINGS_READ)?;
 
     let permissions = permission_service::list_permissions(&pool).await?;
@@ -42,9 +41,9 @@ pub async fn list_permissions_by_module(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = resolve_tenant_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::SETTINGS_READ)?;
 
     let grouped = permission_service::list_permissions_by_module(&pool).await?;

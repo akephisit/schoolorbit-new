@@ -12,14 +12,10 @@ use super::models::{
 };
 use super::services as student_service;
 use crate::error::AppError;
-use crate::middleware::permission::{load_actor_context_or_error, ActorContext};
+use crate::middleware::permission::ActorContext;
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 fn require_permission(actor: &ActorContext, permission: &str) -> Result<(), AppError> {
     actor
@@ -32,8 +28,9 @@ pub async fn get_own_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let student = student_service::get_own_profile(&pool, actor.user_id).await?;
 
     Ok((
@@ -48,8 +45,9 @@ pub async fn update_own_profile(
     headers: HeaderMap,
     Json(payload): Json<UpdateOwnProfileRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     student_service::update_own_profile(&pool, actor.user_id, payload).await?;
 
     Ok((
@@ -64,8 +62,9 @@ pub async fn list_students(
     headers: HeaderMap,
     Query(filter): Query<ListStudentsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     require_permission(&actor, codes::STUDENT_READ_ALL)?;
 
     let students = student_service::list_students(&pool, filter).await?;
@@ -82,8 +81,9 @@ pub async fn create_student(
     headers: HeaderMap,
     Json(payload): Json<CreateStudentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     require_permission(&actor, codes::STUDENT_CREATE)?;
 
     let student = student_service::create_student(&pool, payload).await?;
@@ -104,8 +104,9 @@ pub async fn get_student(
     headers: HeaderMap,
     Path(student_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     require_permission(&actor, codes::STUDENT_READ_ALL)?;
 
     let student = student_service::get_student(&pool, student_id).await?;
@@ -123,8 +124,9 @@ pub async fn update_student(
     Path(student_id): Path<Uuid>,
     Json(payload): Json<UpdateStudentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     require_permission(&actor, codes::STUDENT_UPDATE_ALL)?;
 
     student_service::update_student(&pool, student_id, payload).await?;
@@ -141,8 +143,9 @@ pub async fn delete_student(
     headers: HeaderMap,
     Path(student_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     require_permission(&actor, codes::STUDENT_DELETE)?;
 
     student_service::delete_student(&pool, student_id).await?;

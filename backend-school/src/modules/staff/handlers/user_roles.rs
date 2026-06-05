@@ -8,24 +8,20 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::user_role_service::{self, AssignRoleOutcome};
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 pub async fn get_user_roles(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
     Ok(
         match user_role_service::get_user_roles(&pool, user_id).await {
@@ -45,8 +41,9 @@ pub async fn assign_user_role(
     Path(user_id): Path<Uuid>,
     Json(payload): Json<AssignRoleRequest>,
 ) -> Result<Response, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
 
     Ok(
@@ -89,8 +86,9 @@ pub async fn remove_user_role(
     headers: HeaderMap,
     Path((user_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_REMOVE_ALL)?;
 
     Ok(
@@ -119,8 +117,9 @@ pub async fn get_user_permissions(
     headers: HeaderMap,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
     Ok(
         match user_role_service::get_user_permissions(&pool, user_id).await {

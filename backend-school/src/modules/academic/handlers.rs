@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::tenant_pool;
 use crate::AppState;
 // ==========================================
 // Handlers Module
@@ -23,10 +23,6 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 // ==========================================
 // Academic Structure Handlers (Years, Semesters, Levels)
 // ==========================================
@@ -35,7 +31,7 @@ pub async fn list_academic_structure(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // Fetch Years
     let years =
@@ -81,7 +77,7 @@ pub async fn create_academic_year(
     headers: HeaderMap,
     Json(payload): Json<CreateAcademicYearRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // If setting as active, deactivate others
     if payload.is_active.unwrap_or(false) {
@@ -128,7 +124,7 @@ pub async fn update_academic_year(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateAcademicYearRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     if payload.is_active.unwrap_or(false) {
         sqlx::query("UPDATE academic_years SET is_active = false")
@@ -175,7 +171,7 @@ pub async fn toggle_active_year(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     let mut tx = pool
         .begin()
@@ -213,7 +209,7 @@ pub async fn create_semester(
     headers: HeaderMap,
     Json(payload): Json<CreateSemesterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // If setting as active, deactivate others globally
     if payload.is_active.unwrap_or(false) {
@@ -259,7 +255,7 @@ pub async fn update_semester(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateSemesterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // If setting as active, deactivate others globally
     if payload.is_active.unwrap_or(false) {
@@ -307,7 +303,7 @@ pub async fn delete_semester(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     let result = sqlx::query("DELETE FROM academic_semesters WHERE id = $1")
         .bind(id)
@@ -342,7 +338,7 @@ pub async fn list_classrooms(
     headers: HeaderMap,
     Query(filter): Query<ClassroomQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     let year_id_filter = filter.year_id;
 
@@ -408,7 +404,7 @@ pub async fn create_classroom(
     headers: HeaderMap,
     Json(payload): Json<CreateClassroomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // 1. Get Grade Level Info for Name Generation
     let grade_level = sqlx::query_as::<_, GradeLevel>("SELECT * FROM grade_levels WHERE id = $1")
@@ -600,7 +596,7 @@ pub async fn update_classroom(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateClassroomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // Validate advisors list if provided
     let advisors_opt = if payload.advisors.is_some() {
@@ -716,7 +712,7 @@ pub async fn create_grade_level(
     headers: HeaderMap,
     Json(payload): Json<CreateGradeLevelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // Validate level_type
     if !["kindergarten", "primary", "secondary"].contains(&payload.level_type.as_str()) {
@@ -761,7 +757,7 @@ pub async fn delete_grade_level(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // Check usage
     let usage_count: i64 =
@@ -805,7 +801,7 @@ pub async fn enroll_students(
     headers: HeaderMap,
     Json(payload): Json<EnrollStudentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // Validate Classroom
     sqlx::query_as::<_, Classroom>(
@@ -1007,7 +1003,7 @@ pub async fn get_class_enrollments(
     headers: HeaderMap,
     Path(class_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     let enrollments = sqlx::query_as::<_, StudentEnrollment>(
         "SELECT ske.*, 
@@ -1034,7 +1030,7 @@ pub async fn remove_enrollment(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     let mut tx = pool
         .begin()
@@ -1081,7 +1077,7 @@ pub async fn update_enrollment_number(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateEnrollmentNumberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // Check duplicate number in same class? optional, but good practice.
     // However, it might be annoying during re-ordering. Let's allow simple update first.
@@ -1118,7 +1114,7 @@ pub async fn auto_assign_class_numbers(
     Path(class_id): Path<Uuid>,
     Json(payload): Json<AutoAssignClassNumbersRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // Define struct for fetching student data with title
     #[derive(sqlx::FromRow)]
@@ -1222,7 +1218,7 @@ pub async fn get_year_levels(
     headers: HeaderMap,
     Path(year_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     // Return list of grade_level_ids that are active for this year
     let level_ids = sqlx::query_scalar::<_, Uuid>(
@@ -1242,7 +1238,7 @@ pub async fn update_year_levels(
     Path(year_id): Path<Uuid>,
     Json(payload): Json<UpdateYearLevelsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     let mut tx = pool
         .begin()

@@ -10,20 +10,15 @@ use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::portal_service;
 use crate::services::r2_client::R2Client;
-use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::{tenant_context, tenant_pool};
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 pub async fn check_application(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<PortalCredentials>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     let info = portal_service::check_application(&pool, payload).await?;
     Ok(Json(json!({ "success": true, "data": info, "message": "ตรวจสอบสำเร็จ" })).into_response())
 }
@@ -33,7 +28,7 @@ pub async fn get_status(
     headers: HeaderMap,
     Json(payload): Json<PortalCredentials>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     let data = portal_service::get_status(&pool, payload).await?;
     Ok(Json(json!({ "success": true, "data": data })).into_response())
 }
@@ -43,7 +38,7 @@ pub async fn confirm_enrollment(
     headers: HeaderMap,
     Json(payload): Json<PortalConfirmRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     portal_service::confirm_enrollment(&pool, payload).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัวด้านล่าง" })).into_response())
 }
@@ -53,7 +48,7 @@ pub async fn get_enrollment_form(
     headers: HeaderMap,
     Json(payload): Json<PortalCredentials>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     let form = portal_service::get_enrollment_form(&pool, payload).await?;
     Ok(Json(json!({ "success": true, "data": form })).into_response())
 }
@@ -63,7 +58,7 @@ pub async fn submit_enrollment_form(
     headers: HeaderMap,
     Json(payload): Json<PortalFormRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     portal_service::submit_enrollment_form(&pool, payload).await?;
     Ok(
         Json(json!({ "success": true, "data": {}, "message": "ยืนยันมอบตัวและบันทึกข้อมูลแล้ว" }))
@@ -76,7 +71,7 @@ pub async fn update_application(
     headers: HeaderMap,
     Json(payload): Json<UpdatePortalApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     portal_service::update_application(&pool, payload).await?;
     Ok(
         Json(json!({ "success": true, "data": {}, "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว" }))
@@ -89,9 +84,9 @@ pub async fn portal_upload_document(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
+    let tenant = tenant_context(&state, &headers).await?;
+    let pool = tenant.pool;
+    let subdomain = tenant.subdomain;
 
     let mut doc_type: Option<String> = None;
     let mut file_data: Option<Vec<u8>> = None;
@@ -213,7 +208,7 @@ pub async fn portal_delete_document(
     Path(doc_type): Path<String>,
     Query(query): Query<PortalDeleteDocumentQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     if !portal_service::VALID_DOC_TYPES.contains(&doc_type.as_str()) {
         return Err(AppError::BadRequest(format!(
@@ -240,7 +235,7 @@ pub async fn portal_get_exam_seat(
     headers: HeaderMap,
     Json(payload): Json<portal_service::PortalExamSeatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     let seat =
         portal_service::get_exam_seat(&pool, &payload.national_id, &payload.date_of_birth).await?;
     Ok(Json(json!({ "success": true, "data": seat })).into_response())

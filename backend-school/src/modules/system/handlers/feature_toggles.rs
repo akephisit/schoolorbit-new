@@ -7,10 +7,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::{load_actor_context_or_error, ActorContext};
 use crate::modules::menu::models::FeatureToggle;
 use crate::modules::system::services::feature_toggle_service;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -35,7 +34,9 @@ pub async fn list_features(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, actor) = get_pool_and_actor(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
 
     let all_features = feature_toggle_service::list_features(&pool).await?;
     let features: Vec<FeatureToggle> = all_features
@@ -60,7 +61,9 @@ pub async fn get_feature(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, actor) = get_pool_and_actor(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let feature = feature_toggle_service::get_feature(&pool, id).await?;
 
     if let Some(ref module) = feature.module {
@@ -88,7 +91,9 @@ pub async fn update_feature(
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<UpdateFeatureRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, actor) = get_pool_and_actor(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let existing = feature_toggle_service::get_feature(&pool, id).await?;
 
     if let Some(ref module) = existing.module {
@@ -116,7 +121,9 @@ pub async fn toggle_feature(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, actor) = get_pool_and_actor(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let existing = feature_toggle_service::get_feature(&pool, id).await?;
 
     if let Some(ref module) = existing.module {
@@ -148,13 +155,4 @@ pub async fn toggle_feature(
             )),
         }),
     ))
-}
-
-async fn get_pool_and_actor(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<(sqlx::PgPool, ActorContext), AppError> {
-    let pool = resolve_tenant_pool(state, headers).await?;
-    let actor = load_actor_context_or_error(headers, &pool, &state.permission_cache).await?;
-    Ok((pool, actor))
 }

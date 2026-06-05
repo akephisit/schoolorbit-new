@@ -8,27 +8,23 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
+use crate::middleware::permission::ActorContext;
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, SubjectFilter,
     UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
 };
 use crate::modules::academic::services::subject_service;
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 pub async fn list_subject_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     if !actor.has_any_permission(&[
         codes::ACADEMIC_CURRICULUM_READ_ALL,
         codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
@@ -48,9 +44,9 @@ pub async fn list_subjects(
     headers: HeaderMap,
     Query(filter): Query<SubjectFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_READ_ALL);
     let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
@@ -84,9 +80,9 @@ pub async fn create_subject(
     headers: HeaderMap,
     Json(payload): Json<CreateSubjectRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_CREATE_ALL);
     let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
@@ -121,9 +117,9 @@ pub async fn update_subject(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateSubjectRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_UPDATE_ALL);
     let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
@@ -154,9 +150,9 @@ pub async fn delete_subject(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_DELETE_ALL);
     let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
@@ -184,14 +180,12 @@ pub async fn delete_subject(
 
 /// Permission check for default instructors: read.all OR manage.department OR specified manage code.
 async fn check_subject_manage(
-    state: &AppState,
-    headers: &HeaderMap,
+    actor: &ActorContext,
     pool: &sqlx::PgPool,
     subject_id: Uuid,
     manage_code: &str,
     read_only: bool,
 ) -> Result<(), AppError> {
-    let actor = load_actor_context(headers, pool, &state.permission_cache).await?;
     let has_all = actor.has_permission(manage_code)
         || (read_only
             && actor.has_any_permission(&[
@@ -227,10 +221,11 @@ pub async fn list_subject_default_instructors(
     headers: HeaderMap,
     Path(subject_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     check_subject_manage(
-        &state,
-        &headers,
+        &actor,
         &pool,
         subject_id,
         codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
@@ -247,10 +242,11 @@ pub async fn add_subject_default_instructor(
     Path(subject_id): Path<Uuid>,
     Json(body): Json<AddSubjectDefaultInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     check_subject_manage(
-        &state,
-        &headers,
+        &actor,
         &pool,
         subject_id,
         codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
@@ -266,10 +262,11 @@ pub async fn remove_subject_default_instructor(
     headers: HeaderMap,
     Path((subject_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     check_subject_manage(
-        &state,
-        &headers,
+        &actor,
         &pool,
         subject_id,
         codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
@@ -286,10 +283,11 @@ pub async fn update_subject_default_instructor_role(
     Path((subject_id, instructor_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateSubjectDefaultInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     check_subject_manage(
-        &state,
-        &headers,
+        &actor,
         &pool,
         subject_id,
         codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
@@ -316,9 +314,9 @@ pub async fn batch_list_subject_default_instructors(
     headers: HeaderMap,
     Query(query): Query<BatchListSubjectDefaultInstructorsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     if !actor.has_any_permission(&[
         codes::ACADEMIC_CURRICULUM_READ_ALL,
         codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,

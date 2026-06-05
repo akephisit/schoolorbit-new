@@ -6,7 +6,9 @@ use crate::error::AppError;
 use crate::middleware::auth::extract_user_id;
 use crate::middleware::permission::{load_actor_context_or_error, ActorContext};
 use crate::modules::auth::models::Claims;
-use crate::utils::tenant::{resolve_tenant_context, TenantContext};
+use crate::utils::tenant::{
+    resolve_tenant_context, resolve_tenant_context_by_subdomain, TenantContext,
+};
 use crate::AppState;
 
 pub struct ActorTenantContext {
@@ -28,6 +30,13 @@ pub async fn tenant_context(
 
 pub async fn tenant_pool(state: &AppState, headers: &HeaderMap) -> Result<PgPool, AppError> {
     Ok(tenant_context(state, headers).await?.pool)
+}
+
+pub async fn tenant_context_by_subdomain(
+    state: &AppState,
+    subdomain: &str,
+) -> Result<TenantContext, AppError> {
+    resolve_tenant_context_by_subdomain(state, subdomain).await
 }
 
 pub async fn actor_tenant_context(
@@ -61,6 +70,10 @@ pub async fn current_user_tenant_context_from_headers(
         .map_err(AppError::AuthError)?;
 
     Ok(CurrentUserTenantContext { tenant, user_id })
+}
+
+pub async fn optional_user_id_from_headers(headers: &HeaderMap, pool: &PgPool) -> Option<Uuid> {
+    extract_user_id(headers, pool).await.ok()
 }
 
 pub fn user_id_from_claims(claims: &Claims) -> Result<Uuid, AppError> {

@@ -1,11 +1,12 @@
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::academic::models::timetable::*;
 use crate::modules::academic::services::{period_service, timetable_service};
 use crate::modules::academic::websockets::TimetableEvent;
 use crate::permissions::registry::codes;
+use crate::utils::request_context::{
+    actor_tenant_context, current_user_tenant_context_from_headers, tenant_pool,
+};
 use crate::utils::subdomain::extract_subdomain_from_request;
-use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -17,10 +18,6 @@ use serde_json::json;
 use uuid::Uuid;
 
 /// Helper
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 /// Fetch 1 entry พร้อม joined fields — re-export จาก service สำหรับ patch events
 async fn fetch_entry_with_joins(pool: &sqlx::PgPool, entry_id: Uuid) -> Option<TimetableEntry> {
     timetable_service::fetch_entry_by_id(pool, entry_id).await
@@ -36,9 +33,9 @@ pub async fn list_periods(
     headers: HeaderMap,
     Query(query): Query<PeriodQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_READ_ALL)?;
 
     let periods = period_service::list_periods(&pool, query).await?;
@@ -51,9 +48,9 @@ pub async fn create_period(
     headers: HeaderMap,
     Json(payload): Json<CreatePeriodRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
 
     let period = period_service::create_period(&pool, payload).await?;
@@ -71,9 +68,9 @@ pub async fn update_period(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdatePeriodRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
 
     let period = period_service::update_period(&pool, id, payload).await?;
@@ -86,9 +83,9 @@ pub async fn delete_period(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
 
     period_service::delete_period(&pool, id).await?;
@@ -101,9 +98,9 @@ pub async fn reorder_periods(
     headers: HeaderMap,
     Json(payload): Json<ReorderPeriodsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
 
     let updated = period_service::reorder_periods(&pool, payload).await?;
@@ -120,9 +117,9 @@ pub async fn list_timetable_entries(
     headers: HeaderMap,
     Query(query): Query<TimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
 
     let semester_id = query.academic_semester_id;
@@ -157,8 +154,8 @@ pub async fn replay_events(
     headers: HeaderMap,
     Query(query): Query<ReplayQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
 
     let subdomain =
@@ -189,7 +186,7 @@ pub async fn get_my_timetable(
     headers: HeaderMap,
     Query(query): Query<MyTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     let user = crate::middleware::auth::get_current_user(&headers, &pool).await?;
 
     let filter = match user.user_type.as_str() {
@@ -236,19 +233,17 @@ pub async fn create_timetable_entry(
     headers: HeaderMap,
     Json(payload): Json<CreateTimetableEntryRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = actor.user_id;
     let client_temp_id = payload.client_temp_id.clone();
     let payload_semester_id = payload.academic_semester_id;
     let payload_course_id = payload.classroom_course_id;
 
-    let outcome = timetable_service::create_entry(&pool, user_id, payload).await?;
+    let outcome = timetable_service::create_entry(&pool, Some(user_id), payload).await?;
 
     match outcome {
         timetable_service::CreateEntryOutcome::Conflict(conflicts) => {
@@ -280,7 +275,7 @@ pub async fn create_timetable_entry(
                         subdomain_for_reject,
                         sem,
                         TimetableEvent::EntryRejected {
-                            user_id: user_id.unwrap_or_default(),
+                            user_id,
                             temp_id,
                             reason: if reason.is_empty() {
                                 "พบข้อขัดแย้ง".to_string()
@@ -311,7 +306,7 @@ pub async fn create_timetable_entry(
                         subdomain,
                         full_entry.academic_semester_id,
                         TimetableEvent::EntryCreated {
-                            user_id: user_id.unwrap_or_default(),
+                            user_id,
                             entry: entry_json,
                             client_temp_id,
                         },
@@ -335,9 +330,9 @@ pub async fn delete_batch_timetable_entries(
     headers: HeaderMap,
     Json(payload): Json<DeleteBatchTimetableEntriesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
     let deleted_count = timetable_service::delete_entries_by_slot(
@@ -348,17 +343,13 @@ pub async fn delete_batch_timetable_entries(
     )
     .await?;
 
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = actor.user_id;
     let subdomain =
         extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
     state.websocket_manager.broadcast_mutation(
         subdomain,
         payload.academic_semester_id,
-        TimetableEvent::TableRefresh {
-            user_id: user_id.unwrap_or_default(),
-        },
+        TimetableEvent::TableRefresh { user_id },
     );
 
     Ok(
@@ -373,9 +364,9 @@ pub async fn delete_timetable_entry(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
     let semester_id = timetable_service::delete_entry(&pool, id).await?;
@@ -383,14 +374,12 @@ pub async fn delete_timetable_entry(
     if let Some(semester_id) = semester_id {
         let subdomain =
             extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-            .await
-            .ok();
+        let user_id = actor.user_id;
         state.websocket_manager.broadcast_mutation(
             subdomain,
             semester_id,
             TimetableEvent::EntryDeleted {
-                user_id: user_id.unwrap_or_default(),
+                user_id,
                 entry_id: id,
             },
         );
@@ -405,9 +394,9 @@ pub async fn delete_batch_group(
     headers: HeaderMap,
     Path(batch_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
     let (deleted_count, semester_id) =
@@ -416,15 +405,11 @@ pub async fn delete_batch_group(
     if let Some(sid) = semester_id {
         let subdomain =
             extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-            .await
-            .ok();
+        let user_id = actor.user_id;
         state.websocket_manager.broadcast_mutation(
             subdomain,
             sid,
-            TimetableEvent::TableRefresh {
-                user_id: user_id.unwrap_or_default(),
-            },
+            TimetableEvent::TableRefresh { user_id },
         );
     }
 
@@ -443,15 +428,13 @@ pub async fn update_timetable_entry(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateTimetableEntryRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
-    let outcome = timetable_service::update_entry(&pool, user_id, id, payload).await?;
+    let user_id = actor.user_id;
+    let outcome = timetable_service::update_entry(&pool, Some(user_id), id, payload).await?;
 
     match outcome {
         timetable_service::UpdateEntryOutcome::Conflict {
@@ -470,7 +453,7 @@ pub async fn update_timetable_entry(
                 subdomain_for_reject,
                 existing.academic_semester_id,
                 TimetableEvent::DropRejected {
-                    user_id: user_id.unwrap_or_default(),
+                    user_id,
                     entry_id: id,
                     original_day: existing.day_of_week.clone(),
                     original_period_id: existing.period_id,
@@ -504,7 +487,7 @@ pub async fn update_timetable_entry(
                         subdomain,
                         existing.academic_semester_id,
                         TimetableEvent::EntryUpdated {
-                            user_id: user_id.unwrap_or_default(),
+                            user_id,
                             entry: entry_json,
                         },
                     );
@@ -521,24 +504,20 @@ pub async fn create_batch_timetable_entries(
     headers: HeaderMap,
     Json(payload): Json<CreateBatchTimetableEntriesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
-    let outcome = timetable_service::create_batch_entries(&pool, user_id, payload).await?;
+    let user_id = actor.user_id;
+    let outcome = timetable_service::create_batch_entries(&pool, Some(user_id), payload).await?;
 
     let subdomain =
         extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
     state.websocket_manager.broadcast_mutation(
         subdomain,
         outcome.semester_id,
-        TimetableEvent::TableRefresh {
-            user_id: user_id.unwrap_or_default(),
-        },
+        TimetableEvent::TableRefresh { user_id },
     );
 
     Ok(Json(json!({ "success": true, "data": { "summary": {
@@ -558,10 +537,9 @@ pub async fn get_my_activity_for_entry(
     headers: HeaderMap,
     Path(entry_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .map_err(|_| AppError::AuthError("Not authenticated".to_string()))?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let user_id = context.user_id;
 
     let data = timetable_service::get_my_activity_for_entry(&pool, user_id, entry_id).await?;
     Ok(Json(json!({ "success": true, "data": data })).into_response())
@@ -580,12 +558,11 @@ pub async fn add_entry_instructor(
     Path(entry_id): Path<Uuid>,
     Json(body): Json<AddEntryInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = actor.user_id;
     let role = body.role.clone().unwrap_or_else(|| "primary".to_string());
 
     let result =
@@ -602,7 +579,7 @@ pub async fn add_entry_instructor(
                 subdomain,
                 sem_id,
                 TimetableEvent::EntryInstructorAdded {
-                    user_id: user_id.unwrap_or_default(),
+                    user_id,
                     entry_id,
                     instructor_id: body.instructor_id,
                     instructor_name: result.instructor_name,
@@ -621,12 +598,11 @@ pub async fn remove_entry_instructor(
     headers: HeaderMap,
     Path((entry_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok();
+    let user_id = actor.user_id;
 
     let result = timetable_service::remove_entry_instructor(&pool, entry_id, instructor_id).await?;
 
@@ -637,7 +613,7 @@ pub async fn remove_entry_instructor(
             subdomain,
             sem_id,
             TimetableEvent::EntryInstructorRemoved {
-                user_id: user_id.unwrap_or_default(),
+                user_id,
                 entry_id,
                 instructor_id,
                 entry_deleted: result.entry_deleted,
@@ -654,8 +630,9 @@ pub async fn restore_instructor_to_slot_entries(
     headers: HeaderMap,
     Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let inserted =
         timetable_service::restore_instructor_to_slot(&pool, slot_id, instructor_id).await?;
@@ -668,8 +645,9 @@ pub async fn hide_instructor_from_slot_entries(
     headers: HeaderMap,
     Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let (deleted, semester_id) =
         timetable_service::hide_instructor_from_slot(&pool, slot_id, instructor_id).await?;
@@ -677,15 +655,11 @@ pub async fn hide_instructor_from_slot_entries(
     if let Some(sid) = semester_id {
         let subdomain =
             extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-            .await
-            .ok();
+        let user_id = actor.user_id;
         state.websocket_manager.broadcast_mutation(
             subdomain,
             sid,
-            TimetableEvent::TableRefresh {
-                user_id: user_id.unwrap_or_default(),
-            },
+            TimetableEvent::TableRefresh { user_id },
         );
     }
 
@@ -705,8 +679,9 @@ pub async fn hide_instructor_from_slot_period_entries(
     Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
     Query(q): Query<HideSlotPeriodQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let (deleted, semester_id) = timetable_service::hide_instructor_from_slot_period(
         &pool,
@@ -720,15 +695,11 @@ pub async fn hide_instructor_from_slot_period_entries(
     if let Some(sid) = semester_id {
         let subdomain =
             extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
-        let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-            .await
-            .ok();
+        let user_id = actor.user_id;
         state.websocket_manager.broadcast_mutation(
             subdomain,
             sid,
-            TimetableEvent::TableRefresh {
-                user_id: user_id.unwrap_or_default(),
-            },
+            TimetableEvent::TableRefresh { user_id },
         );
     }
 
@@ -747,15 +718,12 @@ pub async fn swap_timetable_entries(
     headers: HeaderMap,
     Json(body): Json<SwapTimetableEntriesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
-    let user_id = crate::middleware::auth::extract_user_id(&headers, &pool)
-        .await
-        .ok()
-        .unwrap_or_default();
+    let user_id = actor.user_id;
     let subdomain =
         extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
 
@@ -799,9 +767,9 @@ pub async fn validate_timetable_moves(
     headers: HeaderMap,
     Json(body): Json<ValidateMovesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
 
     let cells = timetable_service::validate_moves(&pool, body).await?;
@@ -819,9 +787,9 @@ pub async fn get_timetable_occupancy(
     headers: HeaderMap,
     Query(q): Query<OccupancyQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
 
     let rows = timetable_service::get_occupancy(&pool, q.semester_id).await?;

@@ -1,7 +1,6 @@
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context_or_error;
 use crate::modules::parents::services as parent_service;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -12,17 +11,14 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 /// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
 pub async fn get_own_parent_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let profile = parent_service::get_own_parent_profile(&pool, actor.user_id).await?;
 
     Ok((
@@ -37,8 +33,9 @@ pub async fn get_child_profile(
     headers: HeaderMap,
     Path(student_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let student = parent_service::get_child_profile(&pool, actor.user_id, student_id).await?;
 
     Ok((
@@ -60,8 +57,9 @@ pub async fn get_child_timetable(
     Path(student_id): Path<Uuid>,
     Query(query): Query<ChildTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     let entries = parent_service::get_child_timetable(
         &pool,
         actor.user_id,

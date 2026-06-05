@@ -9,15 +9,10 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::admission::services::exam_room_service;
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,8 +53,9 @@ pub async fn list_exam_rooms(
     headers: HeaderMap,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let result = exam_room_service::list_exam_rooms(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": {
@@ -76,8 +72,9 @@ pub async fn add_exam_room(
     Path(round_id): Path<Uuid>,
     Json(payload): Json<AddExamRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     exam_room_service::add_exam_room(
         &pool,
@@ -97,8 +94,9 @@ pub async fn update_exam_room(
     Path((round_id, room_id)): Path<(Uuid, Uuid)>,
     Json(payload): Json<UpdateExamRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     exam_room_service::update_exam_room(
         &pool,
@@ -117,8 +115,9 @@ pub async fn remove_exam_room(
     headers: HeaderMap,
     Path((round_id, room_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     exam_room_service::remove_exam_room(&pool, round_id, room_id).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
@@ -129,8 +128,9 @@ pub async fn copy_exam_rooms_from_round(
     headers: HeaderMap,
     Path((round_id, from_round_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let n = exam_room_service::copy_exam_rooms_from_round(&pool, round_id, from_round_id).await?;
     Ok(Json(
@@ -145,8 +145,9 @@ pub async fn update_exam_config(
     Path(round_id): Path<Uuid>,
     Json(payload): Json<UpdateExamConfigRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     exam_room_service::update_exam_config(
         &pool,
@@ -164,8 +165,9 @@ pub async fn get_exam_config(
     headers: HeaderMap,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let config = exam_room_service::get_exam_config(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": config })).into_response())
@@ -177,8 +179,9 @@ pub async fn assign_exam_seats(
     Path(round_id): Path<Uuid>,
     Json(payload): Json<AssignExamSeatsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let user_id = actor.user_id;
     let result = exam_room_service::assign_exam_seats(
@@ -199,8 +202,9 @@ pub async fn get_exam_seats(
     headers: HeaderMap,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let groups = exam_room_service::get_exam_seats(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": groups })).into_response())
@@ -211,8 +215,9 @@ pub async fn get_application_exam_seat(
     headers: HeaderMap,
     Path(application_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
     let seat = exam_room_service::get_application_exam_seat(&pool, application_id).await?;
     Ok(Json(json!({ "success": true, "data": seat })).into_response())

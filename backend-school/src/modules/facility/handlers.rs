@@ -1,11 +1,10 @@
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::facility::models::{
     Building, CreateBuildingRequest, CreateRoomRequest, Room, RoomFilter, UpdateBuildingRequest,
     UpdateRoomRequest,
 };
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -18,11 +17,6 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-/// Helper
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 // ----------------------
 // Buildings
 // ----------------------
@@ -31,12 +25,12 @@ pub async fn list_buildings(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::FACILITY_READ_ALL)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context.actor.require_permission(codes::FACILITY_READ_ALL)?;
+    let pool = &context.tenant.pool;
 
     let buildings = sqlx::query_as::<_, Building>("SELECT * FROM buildings ORDER BY name_th ASC")
-        .fetch_all(&pool)
+        .fetch_all(pool)
         .await
         .map_err(|_| AppError::InternalServerError("Failed to fetch buildings".to_string()))?;
 
@@ -48,9 +42,11 @@ pub async fn create_building(
     headers: HeaderMap,
     Json(payload): Json<CreateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::FACILITY_CREATE_ALL)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::FACILITY_CREATE_ALL)?;
+    let pool = &context.tenant.pool;
 
     let building = sqlx::query_as::<_, Building>(
         r#"
@@ -63,7 +59,7 @@ pub async fn create_building(
     .bind(payload.name_en)
     .bind(payload.code)
     .bind(payload.description)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .map_err(|e| {
         eprintln!("Create Building Error: {}", e);
@@ -83,9 +79,11 @@ pub async fn update_building(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::FACILITY_UPDATE_ALL)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::FACILITY_UPDATE_ALL)?;
+    let pool = &context.tenant.pool;
 
     let building = sqlx::query_as::<_, Building>(
         r#"
@@ -104,7 +102,7 @@ pub async fn update_building(
     .bind(payload.code)
     .bind(payload.description)
     .bind(id)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .map_err(|_| AppError::InternalServerError("Failed to update building".to_string()))?;
 
@@ -116,13 +114,15 @@ pub async fn delete_building(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::FACILITY_DELETE_ALL)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::FACILITY_DELETE_ALL)?;
+    let pool = &context.tenant.pool;
 
     sqlx::query("DELETE FROM buildings WHERE id = $1")
         .bind(id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .map_err(|_| AppError::InternalServerError("Failed to delete building".to_string()))?;
 
@@ -138,9 +138,9 @@ pub async fn list_rooms(
     headers: HeaderMap,
     Query(filter): Query<RoomFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
     // Any authenticated staff can list rooms (used for timetable, exam rooms, etc.)
-    load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = &context.tenant.pool;
 
     let mut sql = String::from(
         r#"
@@ -185,7 +185,7 @@ pub async fn list_rooms(
         }
     }
 
-    let rooms = q.fetch_all(&pool).await.map_err(|e| {
+    let rooms = q.fetch_all(pool).await.map_err(|e| {
         eprintln!("List Rooms Error: {}", e);
         AppError::InternalServerError("Failed to fetch rooms".to_string())
     })?;
@@ -198,9 +198,11 @@ pub async fn create_room(
     headers: HeaderMap,
     Json(payload): Json<CreateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::FACILITY_CREATE_ALL)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::FACILITY_CREATE_ALL)?;
+    let pool = &context.tenant.pool;
 
     let room = sqlx::query_as::<_, Room>(
         r#"
@@ -221,7 +223,7 @@ pub async fn create_room(
     .bind(payload.floor)
     .bind(payload.status.unwrap_or("ACTIVE".to_string()))
     .bind(payload.description)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .map_err(|e| {
         eprintln!("Create Room Error: {}", e);
@@ -241,9 +243,11 @@ pub async fn update_room(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::FACILITY_UPDATE_ALL)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::FACILITY_UPDATE_ALL)?;
+    let pool = &context.tenant.pool;
 
     let room = sqlx::query_as::<_, Room>(
         r#"
@@ -272,7 +276,7 @@ pub async fn update_room(
     .bind(payload.status)
     .bind(payload.description)
     .bind(id)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .map_err(|_| AppError::InternalServerError("Failed to update room".to_string()))?;
 
@@ -284,13 +288,15 @@ pub async fn delete_room(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::FACILITY_DELETE_ALL)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::FACILITY_DELETE_ALL)?;
+    let pool = &context.tenant.pool;
 
     sqlx::query("DELETE FROM rooms WHERE id = $1")
         .bind(id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .map_err(|_| AppError::InternalServerError("Failed to delete room".to_string()))?;
 

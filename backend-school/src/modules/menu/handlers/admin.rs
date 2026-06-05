@@ -1,8 +1,8 @@
 use crate::error::AppError;
-use crate::middleware::permission::{load_actor_context_or_error, ActorContext};
+use crate::middleware::permission::ActorContext;
 use crate::modules::menu::models::{MenuGroup, MenuItem};
 use crate::modules::menu::services::menu_service;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
 use axum::{
@@ -110,14 +110,9 @@ pub struct MenuItemResponse {
     pub message: Option<String>,
 }
 
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 async fn auth(state: &AppState, headers: &HeaderMap) -> Result<(PgPool, ActorContext), AppError> {
-    let pool = get_pool(state, headers).await?;
-    let actor = load_actor_context_or_error(headers, &pool, &state.permission_cache).await?;
-    Ok((pool, actor))
+    let context = actor_tenant_context(state, headers).await?;
+    Ok((context.tenant.pool, context.actor))
 }
 
 async fn auth_check_module(

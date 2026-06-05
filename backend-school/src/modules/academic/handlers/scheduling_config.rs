@@ -8,10 +8,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::academic::services::scheduling_config_service;
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -152,17 +151,14 @@ pub struct RoomView {
     pub room_type: Option<String>,
 }
 
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 pub async fn list_classroom_course_constraints(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(q): Query<ListCcConstraintsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_classroom_course_constraints(&pool, q.instructor_id)
         .await?;
@@ -175,8 +171,9 @@ pub async fn update_classroom_course_constraints(
     Path(cc_id): Path<Uuid>,
     Json(payload): Json<UpdateClassroomCourseConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     if let Some(ref pattern) = payload.consecutive_pattern {
         scheduling_config_service::validate_consecutive_pattern(&pool, cc_id, pattern).await?;
@@ -200,8 +197,9 @@ pub async fn list_cc_preferred_rooms(
     headers: HeaderMap,
     Path(cc_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_cc_preferred_rooms(&pool, cc_id).await?;
     Ok(Json(ApiResponse::success(rows)).into_response())
@@ -213,8 +211,9 @@ pub async fn set_cc_preferred_rooms(
     Path(cc_id): Path<Uuid>,
     Json(payload): Json<SetCcRoomsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let rooms: Vec<(Uuid, i32, bool)> = payload
         .rooms
@@ -229,8 +228,9 @@ pub async fn list_all_rooms(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_all_rooms(&pool).await?;
     Ok(Json(ApiResponse::success(rows)).into_response())
@@ -240,8 +240,9 @@ pub async fn list_instructor_constraints(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_instructor_constraints(&pool).await?;
     Ok(Json(ApiResponse::success(rows)).into_response())
@@ -252,8 +253,9 @@ pub async fn reorder_instructor_priority(
     headers: HeaderMap,
     Json(payload): Json<ReorderInstructorPriorityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let n = scheduling_config_service::reorder_instructor_priority(&pool, payload.instructor_ids)
         .await?;
@@ -269,8 +271,9 @@ pub async fn get_scheduler_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let default_max_consecutive = scheduling_config_service::get_scheduler_settings(&pool).await?;
     Ok(Json(ApiResponse::success(SchedulerSettingsView {
@@ -284,8 +287,9 @@ pub async fn update_scheduler_settings(
     headers: HeaderMap,
     Json(payload): Json<UpdateSchedulerSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     scheduling_config_service::update_scheduler_settings(&pool, payload.default_max_consecutive)
         .await?;
@@ -301,8 +305,9 @@ pub async fn update_instructor_constraints(
     Path(instructor_id): Path<Uuid>,
     Json(payload): Json<UpdateInstructorConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     scheduling_config_service::update_instructor_constraints(
         &pool,
@@ -327,8 +332,9 @@ pub async fn list_subject_constraints(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_subject_constraints(&pool).await?;
     Ok(Json(ApiResponse::success(rows)).into_response())
@@ -340,8 +346,9 @@ pub async fn update_subject_constraints(
     Path(subject_id): Path<Uuid>,
     Json(payload): Json<UpdateSubjectConstraintRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     scheduling_config_service::update_subject_constraints(
         &pool,

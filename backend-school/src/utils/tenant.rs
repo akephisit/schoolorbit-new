@@ -55,10 +55,3 @@ pub async fn resolve_tenant_context_by_subdomain(
         pool,
     })
 }
-
-pub async fn resolve_tenant_pool(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<PgPool, AppError> {
-    Ok(resolve_tenant_context(state, headers).await?.pool)
-}

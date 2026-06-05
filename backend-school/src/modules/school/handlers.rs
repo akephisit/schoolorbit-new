@@ -4,25 +4,19 @@ use serde_json::json;
 use super::models::UpdateSchoolSettingsRequest;
 use super::services as school_service;
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::permissions::registry::codes;
-use crate::utils::tenant::{resolve_tenant_context, resolve_tenant_pool};
+use crate::utils::request_context::{actor_tenant_context, tenant_context};
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 /// GET /api/school/settings — staff only (SETTINGS_READ)
 pub async fn get_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::SETTINGS_READ)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context.actor.require_permission(codes::SETTINGS_READ)?;
 
-    let response = school_service::get_settings_response(&pool).await?;
+    let response = school_service::get_settings_response(&context.tenant.pool).await?;
 
     Ok(Json(json!({ "success": true, "data": response })).into_response())
 }
@@ -33,11 +27,10 @@ pub async fn update_settings(
     headers: HeaderMap,
     Json(payload): Json<UpdateSchoolSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::SETTINGS_UPDATE)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context.actor.require_permission(codes::SETTINGS_UPDATE)?;
 
-    school_service::update_settings(&pool, payload).await?;
+    school_service::update_settings(&context.tenant.pool, payload).await?;
 
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
@@ -48,10 +41,11 @@ pub async fn get_public_info(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let tenant = resolve_tenant_context(&state, &headers).await?;
-    let pool = tenant.pool;
+    let tenant = tenant_context(&state, &headers).await?;
 
-    let logo_url = school_service::get_settings_response(&pool).await?.logo_url;
+    let logo_url = school_service::get_settings_response(&tenant.pool)
+        .await?
+        .logo_url;
     let school_name = state
         .admin_client
         .get_school_name(&tenant.subdomain)
@@ -71,11 +65,10 @@ pub async fn delete_logo(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
-    actor.require_permission(codes::SETTINGS_UPDATE)?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    context.actor.require_permission(codes::SETTINGS_UPDATE)?;
 
-    school_service::delete_logo(&pool).await?;
+    school_service::delete_logo(&context.tenant.pool).await?;
 
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }

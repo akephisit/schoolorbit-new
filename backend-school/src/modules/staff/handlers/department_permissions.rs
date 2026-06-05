@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::modules::staff::models::UpdateDepartmentPermissionsRequest;
 use crate::modules::staff::services::department_permission_service;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::tenant_pool;
 use crate::AppState;
 
 use axum::{
@@ -18,7 +18,7 @@ pub async fn get_department_permissions(
     Path(department_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = resolve_tenant_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     let permission_ids =
         department_permission_service::list_department_permission_ids(&pool, department_id).await?;
@@ -33,7 +33,7 @@ pub async fn update_department_permissions(
     headers: HeaderMap,
     Json(payload): Json<UpdateDepartmentPermissionsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = resolve_tenant_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
 
     department_permission_service::replace_department_permissions(
         &pool,

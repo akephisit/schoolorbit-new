@@ -10,10 +10,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::services::department_member_service;
 use crate::permissions::registry::codes;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::{actor_tenant_context, tenant_pool};
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -50,17 +49,13 @@ pub struct UpdateMemberRequest {
     pub new_department_id: Option<Uuid>,
 }
 
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 pub async fn list_members(
     State(state): State<AppState>,
     Path(department_id): Path<Uuid>,
     Query(query): Query<ListMembersQuery>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     let members = department_member_service::list_members(
         &pool,
         department_id,
@@ -76,8 +71,9 @@ pub async fn add_member(
     headers: HeaderMap,
     Json(body): Json<AddMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
 
     if department_member_service::already_member(&pool, body.user_id, department_id).await? {
@@ -108,8 +104,9 @@ pub async fn update_member(
     headers: HeaderMap,
     Json(body): Json<UpdateMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
 
     let target_dept = body.new_department_id.unwrap_or(department_id);
@@ -138,8 +135,9 @@ pub async fn remove_member(
     Path((department_id, user_id)): Path<(Uuid, Uuid)>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
     department_member_service::remove_member(&pool, department_id, user_id).await?;
     state.permission_cache.invalidate(&user_id);

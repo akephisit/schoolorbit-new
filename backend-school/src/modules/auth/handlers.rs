@@ -8,7 +8,10 @@ use crate::middleware::permission::get_cached_user_permissions;
 use crate::utils::field_encryption;
 use crate::utils::file_url::get_file_url_from_string;
 use crate::utils::jwt::JwtService;
-use crate::utils::tenant::{resolve_tenant_context, resolve_tenant_pool};
+use crate::utils::request_context::{
+    current_user_tenant_context_from_claims, current_user_tenant_context_from_headers,
+    tenant_context,
+};
 use crate::AppState;
 use axum::{
     extract::{rejection::JsonRejection, Request, State},
@@ -17,10 +20,6 @@ use axum::{
     Json,
 };
 use tower_cookies::{Cookie, Cookies};
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
 
 /// Login handler
 pub async fn login(
@@ -32,7 +31,7 @@ pub async fn login(
     let Json(payload) =
         payload_result.map_err(|rejection| AppError::ValidationError(rejection.body_text()))?;
 
-    let tenant = resolve_tenant_context(&state, &headers).await?;
+    let tenant = tenant_context(&state, &headers).await?;
     let subdomain = tenant.subdomain;
     let pool = tenant.pool;
 
@@ -165,7 +164,8 @@ pub async fn me(
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
-    let pool = get_pool(&state, &headers).await?;
+    let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
+    let pool = context.tenant.pool;
 
     // Fetch user from database
     let mut user = sqlx::query_as::<_, User>(
@@ -196,10 +196,7 @@ pub async fn me(
          FROM users 
          WHERE id = $1",
     )
-    .bind(
-        uuid::Uuid::parse_str(&claims.sub)
-            .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?,
-    )
+    .bind(context.user_id)
     .fetch_optional(&pool)
     .await?
     .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
@@ -258,14 +255,12 @@ pub async fn get_profile(
         .ok_or(AppError::AuthError("ไม่พบข้อมูลผู้ใช้".to_string()))?
         .clone();
 
-    let pool = get_pool(&state, &headers).await?;
+    let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
+    let pool = context.tenant.pool;
 
     // Fetch user from database
     let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
-        .bind(
-            uuid::Uuid::parse_str(&claims.sub)
-                .map_err(|_| AppError::AuthError("Invalid user ID in token".to_string()))?,
-        )
+        .bind(context.user_id)
         .fetch_optional(&pool)
         .await?
         .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
@@ -309,36 +304,9 @@ pub async fn update_profile(
     headers: HeaderMap,
     Json(payload): Json<UpdateProfileRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Extract token from Authorization header or cookie
-    let token = headers
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "))
-        .or_else(|| {
-            // Try cookie as fallback
-            headers
-                .get("cookie")
-                .and_then(|h| h.to_str().ok())
-                .and_then(|cookies| {
-                    cookies
-                        .split(';')
-                        .find_map(|c| c.trim().strip_prefix("auth_token="))
-                })
-        })
-        .ok_or(AppError::AuthError(
-            "Missing authentication token".to_string(),
-        ))?;
-
-    // Validate JWT
-    let claims = JwtService::verify_token(token)
-        .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
-
-    let pool = get_pool(&state, &headers).await?;
-
-    let user_id = uuid::Uuid::parse_str(&claims.sub).map_err(|e| {
-        eprintln!("❌ Invalid user ID: {}", e);
-        AppError::BadRequest("Invalid user ID".to_string())
-    })?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let user_id = context.user_id;
 
     // Parse date_of_birth if provided
     let date_of_birth = payload
@@ -424,36 +392,9 @@ pub async fn change_password(
     headers: HeaderMap,
     Json(payload): Json<ChangePasswordRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Extract token from Authorization header or cookie
-    let token = headers
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "))
-        .or_else(|| {
-            // Try cookie as fallback
-            headers
-                .get("cookie")
-                .and_then(|h| h.to_str().ok())
-                .and_then(|cookies| {
-                    cookies
-                        .split(';')
-                        .find_map(|c| c.trim().strip_prefix("auth_token="))
-                })
-        })
-        .ok_or(AppError::AuthError(
-            "Missing authentication token".to_string(),
-        ))?;
-
-    // Validate JWT
-    let claims = JwtService::verify_token(token)
-        .map_err(|_| AppError::AuthError("Invalid or expired token".to_string()))?;
-
-    let pool = get_pool(&state, &headers).await?;
-
-    let user_id = uuid::Uuid::parse_str(&claims.sub).map_err(|e| {
-        eprintln!("❌ Invalid user ID: {}", e);
-        AppError::BadRequest("Invalid user ID".to_string())
-    })?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let user_id = context.user_id;
 
     // Find user by id to verify current password
     let user = sqlx::query_as::<_, LoginUser>(

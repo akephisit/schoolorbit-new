@@ -111,6 +111,22 @@ fn module_rs_files() -> Vec<PathBuf> {
     })
 }
 
+fn module_handler_files() -> Vec<PathBuf> {
+    let modules_dir = manifest_dir().join("src/modules");
+    list_files(&modules_dir, |path| {
+        if path.extension().is_none_or(|ext| ext != "rs") {
+            return false;
+        }
+
+        let Ok(relative_path) = path.strip_prefix(&modules_dir) else {
+            return false;
+        };
+        let path_text = relative_path.to_string_lossy().replace('\\', "/");
+
+        path_text.ends_with("/handlers.rs") || path_text.contains("/handlers/")
+    })
+}
+
 #[test]
 fn rust_module_roots_use_rust_2018_style() {
     let legacy_module_roots = list_files(manifest_dir().join("src"), |path| {
@@ -180,13 +196,6 @@ fn foundation_handlers_delegate_database_work_to_services() {
 
 #[test]
 fn migrated_utility_handlers_use_shared_request_context() {
-    let handler_files = [
-        "src/modules/achievement/handlers.rs",
-        "src/modules/consent/handlers.rs",
-        "src/modules/files/handlers.rs",
-        "src/modules/lookup/handlers.rs",
-        "src/modules/notification/handlers.rs",
-    ];
     let direct_context_patterns = [
         "resolve_tenant_pool",
         "resolve_tenant_context",
@@ -201,8 +210,12 @@ fn migrated_utility_handlers_use_shared_request_context() {
             .expect("valid regex");
     let mut violations = Vec::new();
 
-    for relative_path in handler_files {
-        let file = manifest_dir().join(relative_path);
+    for file in module_handler_files() {
+        let file_name = relative(&file);
+        if file_name == "src/modules/system/handlers/migration.rs" {
+            continue;
+        }
+
         let source = strip_comments(&read_source(&file));
 
         for pattern in direct_context_patterns {
