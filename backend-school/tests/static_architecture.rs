@@ -179,6 +179,53 @@ fn foundation_handlers_delegate_database_work_to_services() {
 }
 
 #[test]
+fn migrated_utility_handlers_use_shared_request_context() {
+    let handler_files = [
+        "src/modules/achievement/handlers.rs",
+        "src/modules/consent/handlers.rs",
+        "src/modules/files/handlers.rs",
+        "src/modules/lookup/handlers.rs",
+        "src/modules/notification/handlers.rs",
+    ];
+    let direct_context_patterns = [
+        "resolve_tenant_pool",
+        "resolve_tenant_context",
+        "resolve_tenant_context_by_subdomain",
+        "load_actor_context",
+        "load_actor_context_or_error",
+        "extract_user_id",
+        "Uuid::parse_str(&claims.sub",
+    ];
+    let local_helper_pattern =
+        Regex::new(r"\b(?:get_pool|get_db_pool|tenant_pool_by_subdomain|user_id_from_claims)\s*\(")
+            .expect("valid regex");
+    let mut violations = Vec::new();
+
+    for relative_path in handler_files {
+        let file = manifest_dir().join(relative_path);
+        let source = strip_comments(&read_source(&file));
+
+        for pattern in direct_context_patterns {
+            if source.contains(pattern) {
+                violations.push(format!(
+                    "{}: use utils::request_context instead of {pattern}",
+                    relative(&file)
+                ));
+            }
+        }
+
+        if local_helper_pattern.is_match(&source) {
+            violations.push(format!(
+                "{}: use shared request context helpers instead of local pool/user helpers",
+                relative(&file)
+            ));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
 fn permission_checks_use_registry_constants() {
     let call_with_permission_literal = Regex::new(
         r#"(?s)\b(?:has_permission|has_any_permission|has_all_permissions|require_permission|require_any_permission|require_all_permissions)\s*\([^;]*?"[a-z_]+(?:\.[a-z_]+){0,2}""#,
@@ -415,6 +462,8 @@ fn internal_api_secrets_use_constant_time_comparison_and_caller_headers() {
 #[test]
 fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
     let mut violations = Vec::new();
+    let pool_manager_get_pool =
+        Regex::new(r"\.pool_manager\s*\.get_pool\s*\(").expect("valid regex");
 
     for file in module_rs_files() {
         let source = read_source(&file);
@@ -433,9 +482,7 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
         }
 
         if file_name != "src/modules/system/handlers/migration.rs"
-            && Regex::new(r"\.pool_manager\s*\.get_pool\s*\(")
-                .expect("valid regex")
-                .is_match(&source)
+            && pool_manager_get_pool.is_match(&source)
         {
             violations.push(format!(
                 "{file_name}: use utils::tenant resolver instead of pool_manager.get_pool"

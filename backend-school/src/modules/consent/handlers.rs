@@ -12,16 +12,8 @@ use crate::error::AppError;
 use crate::modules::auth::models::Claims;
 use crate::modules::consent::models::CreateConsentRequest;
 use crate::modules::consent::services::{self as consent_service, ConsentRequestContext};
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::{current_user_tenant_context_from_claims, tenant_pool};
 use crate::AppState;
-
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
-fn user_id_from_claims(claims: &Claims) -> Result<Uuid, AppError> {
-    Uuid::parse_str(&claims.sub).map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))
-}
 
 fn request_context(headers: &HeaderMap) -> ConsentRequestContext {
     let ip_address = headers
@@ -47,7 +39,7 @@ pub async fn get_consent_types(
     headers: HeaderMap,
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     let user_type = query
         .get("user_type")
         .map(String::as_str)
@@ -67,9 +59,9 @@ pub async fn get_my_consent_status(
     headers: HeaderMap,
     Extension(claims): Extension<Claims>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = user_id_from_claims(&claims)?;
-    let status = consent_service::get_user_consent_status(&pool, user_id).await?;
+    let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
+    let status =
+        consent_service::get_user_consent_status(&context.tenant.pool, context.user_id).await?;
 
     Ok((
         StatusCode::OK,
@@ -85,10 +77,14 @@ pub async fn create_consent(
     Extension(claims): Extension<Claims>,
     Json(payload): Json<CreateConsentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = user_id_from_claims(&claims)?;
-    let consent_id =
-        consent_service::create_consent(&pool, user_id, payload, request_context(&headers)).await?;
+    let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
+    let consent_id = consent_service::create_consent(
+        &context.tenant.pool,
+        context.user_id,
+        payload,
+        request_context(&headers),
+    )
+    .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -106,9 +102,8 @@ pub async fn withdraw_consent(
     Extension(claims): Extension<Claims>,
     Path(consent_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = user_id_from_claims(&claims)?;
-    consent_service::withdraw_consent(&pool, user_id, consent_id).await?;
+    let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
+    consent_service::withdraw_consent(&context.tenant.pool, context.user_id, consent_id).await?;
 
     Ok((
         StatusCode::OK,
@@ -122,7 +117,7 @@ pub async fn get_consent_summary(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
+    let pool = tenant_pool(&state, &headers).await?;
     let summary = consent_service::get_consent_summary(&pool).await?;
 
     Ok((

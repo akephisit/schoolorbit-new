@@ -11,6 +11,13 @@ use crate::{
 
 use super::models::{File, FileListResponse, FileResponse, FileType, FileValidationConfig};
 
+struct ProcessedFileData {
+    data: Vec<u8>,
+    width: Option<i32>,
+    height: Option<i32>,
+    thumbnail_data: Option<Vec<u8>>,
+}
+
 pub async fn upload_file(
     pool: &PgPool,
     user_id: Uuid,
@@ -97,7 +104,7 @@ pub async fn upload_file(
         )));
     }
 
-    let (processed_data, width, height, thumbnail_data) = process_file_data(file_data, &file_type)?;
+    let processed = process_file_data(file_data, &file_type)?;
     let file_id = Uuid::new_v4();
     let extension = std::path::Path::new(&original_filename)
         .extension()
@@ -112,25 +119,25 @@ pub async fn upload_file(
         extension,
         &file_type,
     );
-    let thumbnail_path = thumbnail_data.as_ref().map(|_| {
+    let thumbnail_path = processed.thumbnail_data.as_ref().map(|_| {
         format!(
             "school-{}/{}/thumbnails/{}_thumb.jpg",
             subdomain, storage_folder, file_id
         )
     });
-    let checksum = FileHasher::sha256(&processed_data);
-    let file_size = processed_data.len() as i64;
+    let checksum = FileHasher::sha256(&processed.data);
+    let file_size = processed.data.len() as i64;
 
     info!("Uploading to R2: {}", storage_path);
     r2_client
-        .upload_file(&storage_path, processed_data, &mime_type)
+        .upload_file(&storage_path, processed.data, &mime_type)
         .await
         .map_err(|e| {
             error!("Failed to upload to R2: {}", e);
             AppError::InternalServerError("Failed to upload file".to_string())
         })?;
 
-    if let (Some(thumb_data), Some(thumb_path)) = (thumbnail_data, &thumbnail_path) {
+    if let (Some(thumb_data), Some(thumb_path)) = (processed.thumbnail_data, &thumbnail_path) {
         info!("Uploading thumbnail: {}", thumb_path);
         if let Err(error) = r2_client
             .upload_file(thumb_path, thumb_data, "image/jpeg")
@@ -160,8 +167,8 @@ pub async fn upload_file(
     .bind(&mime_type)
     .bind(&storage_path)
     .bind(file_type.as_str())
-    .bind(width)
-    .bind(height)
+    .bind(processed.width)
+    .bind(processed.height)
     .bind(thumbnail_path.is_some())
     .bind(&thumbnail_path)
     .bind(is_temporary)
@@ -255,12 +262,17 @@ pub async fn list_user_files(pool: &PgPool, user_id: Uuid) -> Result<FileListRes
 fn process_file_data(
     file_data: Vec<u8>,
     file_type: &FileType,
-) -> Result<(Vec<u8>, Option<i32>, Option<i32>, Option<Vec<u8>>), AppError> {
+) -> Result<ProcessedFileData, AppError> {
     if !matches!(
         file_type,
         FileType::ProfileImage | FileType::SchoolLogo | FileType::SchoolBanner
     ) {
-        return Ok((file_data, None, None, None));
+        return Ok(ProcessedFileData {
+            data: file_data,
+            width: None,
+            height: None,
+            thumbnail_data: None,
+        });
     }
 
     info!("Processing image file");
@@ -281,12 +293,12 @@ fn process_file_data(
         None
     };
 
-    Ok((
-        resized,
-        Some(original_width as i32),
-        Some(original_height as i32),
-        thumbnail,
-    ))
+    Ok(ProcessedFileData {
+        data: resized,
+        width: Some(original_width as i32),
+        height: Some(original_height as i32),
+        thumbnail_data: thumbnail,
+    })
 }
 
 fn storage_path(

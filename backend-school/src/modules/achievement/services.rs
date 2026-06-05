@@ -35,10 +35,13 @@ pub async fn list_achievements(
     );
     let mut idx = 0u32;
 
-    if !can_read_all {
-        idx += 1;
-        query.push_str(&format!(" AND a.user_id = ${idx}"));
-    } else if filter.user_id.is_some() {
+    let scoped_user_id = if can_read_all {
+        filter.user_id
+    } else {
+        Some(actor.user_id)
+    };
+
+    if scoped_user_id.is_some() {
         idx += 1;
         query.push_str(&format!(" AND a.user_id = ${idx}"));
     }
@@ -55,10 +58,8 @@ pub async fn list_achievements(
     query.push_str(" ORDER BY a.achievement_date DESC, a.created_at DESC");
 
     let mut query_builder = sqlx::query_as::<_, Achievement>(&query);
-    if !can_read_all {
-        query_builder = query_builder.bind(actor.user_id);
-    } else if let Some(target_user_id) = filter.user_id {
-        query_builder = query_builder.bind(target_user_id);
+    if let Some(user_id) = scoped_user_id {
+        query_builder = query_builder.bind(user_id);
     }
     if let Some(start) = filter.start_date {
         query_builder = query_builder.bind(start);

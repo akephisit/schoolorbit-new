@@ -6,5 +6,6 @@ pub mod file_url;
 pub mod jwt;
 pub mod logging;
 pub mod permission_sync;
+pub mod request_context;
 pub mod subdomain;
 pub mod tenant;

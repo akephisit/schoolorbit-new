@@ -1,10 +1,9 @@
 use crate::error::AppError;
-use crate::middleware::auth::extract_user_id;
 use crate::modules::notification::models::{
     CreateNotificationRequest, ListNotificationsQuery, SubscribePushRequest,
 };
 use crate::modules::notification::services as notification_service;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::current_user_tenant_context_from_headers;
 use crate::AppState;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
@@ -18,25 +17,16 @@ use std::convert::Infallible;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
-async fn current_user_id(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<Uuid, AppError> {
-    extract_user_id(headers, pool)
-        .await
-        .map_err(AppError::AuthError)
-}
-
 /// List notifications for current user
 pub async fn list_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<ListNotificationsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = current_user_id(&headers, &pool).await?;
-    let notifications = notification_service::list_notifications(&pool, user_id, query).await?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let notifications =
+        notification_service::list_notifications(&context.tenant.pool, context.user_id, query)
+            .await?;
 
     Ok((
         StatusCode::OK,
@@ -50,9 +40,8 @@ pub async fn mark_as_read(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = current_user_id(&headers, &pool).await?;
-    notification_service::mark_as_read(&pool, user_id, id).await?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    notification_service::mark_as_read(&context.tenant.pool, context.user_id, id).await?;
 
     Ok((
         StatusCode::OK,
@@ -65,9 +54,8 @@ pub async fn mark_all_as_read(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = current_user_id(&headers, &pool).await?;
-    notification_service::mark_all_as_read(&pool, user_id).await?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    notification_service::mark_all_as_read(&context.tenant.pool, context.user_id).await?;
 
     Ok((
         StatusCode::OK,
@@ -80,8 +68,8 @@ pub async fn stream_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = current_user_id(&headers, &pool).await?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let user_id = context.user_id;
 
     let mut notification_rx = state.notification_channel.subscribe();
     let mut permission_rx = state.permission_event_channel.subscribe();
@@ -132,10 +120,14 @@ pub async fn create_notification(
     headers: HeaderMap,
     Json(payload): Json<CreateNotificationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = current_user_id(&headers, &pool).await?;
-    notification_service::create_notification(&pool, &state.notification_channel, user_id, payload)
-        .await?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    notification_service::create_notification(
+        &context.tenant.pool,
+        &state.notification_channel,
+        context.user_id,
+        payload,
+    )
+    .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -149,9 +141,8 @@ pub async fn subscribe_push(
     headers: HeaderMap,
     Json(payload): Json<SubscribePushRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = current_user_id(&headers, &pool).await?;
-    notification_service::subscribe_push(&pool, user_id, payload).await?;
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    notification_service::subscribe_push(&context.tenant.pool, context.user_id, payload).await?;
 
     Ok((
         StatusCode::OK,

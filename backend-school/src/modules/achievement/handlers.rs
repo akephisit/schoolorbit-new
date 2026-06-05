@@ -1,8 +1,7 @@
 use crate::error::AppError;
-use crate::middleware::permission::load_actor_context;
 use crate::modules::achievement::models::*;
 use crate::modules::achievement::services as achievement_service;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -13,21 +12,15 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-async fn get_db_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
-
 pub async fn list_achievements(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(filter): Query<AchievementListFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_db_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    let items = achievement_service::list_achievements(&pool, &actor, filter).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let items =
+        achievement_service::list_achievements(&context.tenant.pool, &context.actor, filter)
+            .await?;
 
     Ok((
         StatusCode::OK,
@@ -41,12 +34,10 @@ pub async fn create_achievement(
     headers: HeaderMap,
     Json(payload): Json<CreateAchievementRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_db_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    let achievement = achievement_service::create_achievement(&pool, &actor, payload).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let achievement =
+        achievement_service::create_achievement(&context.tenant.pool, &context.actor, payload)
+            .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -61,12 +52,10 @@ pub async fn update_achievement(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateAchievementRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_db_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    let achievement = achievement_service::update_achievement(&pool, &actor, id, payload).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let achievement =
+        achievement_service::update_achievement(&context.tenant.pool, &context.actor, id, payload)
+            .await?;
 
     Ok((
         StatusCode::OK,
@@ -80,12 +69,8 @@ pub async fn delete_achievement(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_db_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    achievement_service::delete_achievement(&pool, &actor, id).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    achievement_service::delete_achievement(&context.tenant.pool, &context.actor, id).await?;
 
     Ok((StatusCode::OK, Json(json!({ "success": true, "data": {} }))).into_response())
 }

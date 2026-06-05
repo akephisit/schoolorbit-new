@@ -142,7 +142,7 @@ pub async fn create_consent(
     .bind(user_id)
     .bind(&user_type)
     .bind(&payload.consent_type)
-    .bind(&consent_type_data.description.unwrap_or_default())
+    .bind(consent_type_data.description.unwrap_or_default())
     .bind(serde_json::json!(["personal_info"]))
     .bind(&payload.consent_status)
     .bind(granted_at)

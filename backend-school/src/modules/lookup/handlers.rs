@@ -11,19 +11,20 @@ use crate::error::AppError;
 use crate::modules::auth::models::Claims;
 use crate::modules::lookup::models::{LookupQuery, LookupResponse};
 use crate::modules::lookup::services as lookup_service;
-use crate::utils::tenant::resolve_tenant_pool;
+use crate::utils::request_context::{
+    current_user_tenant_context_from_claims, CurrentUserTenantContext,
+};
 use crate::AppState;
 
-async fn get_pool(state: &AppState, headers: &HeaderMap) -> Result<sqlx::PgPool, AppError> {
-    resolve_tenant_pool(state, headers).await
-}
+async fn active_lookup_context(
+    state: &AppState,
+    headers: &HeaderMap,
+    claims: &Claims,
+) -> Result<CurrentUserTenantContext, AppError> {
+    let context = current_user_tenant_context_from_claims(state, headers, claims).await?;
+    lookup_service::verify_active_user(&context.tenant.pool, context.user_id).await?;
 
-async fn require_active_user(claims: &Claims, pool: &sqlx::PgPool) -> Result<Uuid, AppError> {
-    let user_id = Uuid::parse_str(&claims.sub)
-        .map_err(|_| AppError::AuthError("Invalid user ID".to_string()))?;
-    lookup_service::verify_active_user(pool, user_id).await?;
-
-    Ok(user_id)
+    Ok(context)
 }
 
 /// GET /api/lookup/staff
@@ -34,9 +35,8 @@ pub async fn lookup_staff(
     Extension(claims): Extension<Claims>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    require_active_user(&claims, &pool).await?;
-    let data = lookup_service::lookup_staff(&pool, query).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let data = lookup_service::lookup_staff(&context.tenant.pool, query).await?;
 
     Ok((
         StatusCode::OK,
@@ -55,9 +55,8 @@ pub async fn lookup_roles(
     Extension(claims): Extension<Claims>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    require_active_user(&claims, &pool).await?;
-    let data = lookup_service::lookup_roles(&pool, query).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let data = lookup_service::lookup_roles(&context.tenant.pool, query).await?;
 
     Ok((
         StatusCode::OK,
@@ -76,9 +75,9 @@ pub async fn lookup_departments(
     Extension(claims): Extension<Claims>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    let user_id = require_active_user(&claims, &pool).await?;
-    let data = lookup_service::lookup_departments(&pool, user_id, query).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let data =
+        lookup_service::lookup_departments(&context.tenant.pool, context.user_id, query).await?;
 
     Ok((
         StatusCode::OK,
@@ -97,9 +96,8 @@ pub async fn lookup_department_by_id(
     headers: HeaderMap,
     Extension(claims): Extension<Claims>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    require_active_user(&claims, &pool).await?;
-    let department = lookup_service::lookup_department_by_id(&pool, id).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let department = lookup_service::lookup_department_by_id(&context.tenant.pool, id).await?;
 
     Ok(Json(json!({ "success": true, "data": department })).into_response())
 }
@@ -112,9 +110,8 @@ pub async fn lookup_grade_levels(
     Extension(claims): Extension<Claims>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    require_active_user(&claims, &pool).await?;
-    let data = lookup_service::lookup_grade_levels(&pool, query).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let data = lookup_service::lookup_grade_levels(&context.tenant.pool, query).await?;
 
     Ok((
         StatusCode::OK,
@@ -133,9 +130,8 @@ pub async fn lookup_classrooms(
     Extension(claims): Extension<Claims>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    require_active_user(&claims, &pool).await?;
-    let data = lookup_service::lookup_classrooms(&pool, query).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let data = lookup_service::lookup_classrooms(&context.tenant.pool, query).await?;
 
     Ok((
         StatusCode::OK,
@@ -154,9 +150,8 @@ pub async fn lookup_academic_years(
     Extension(claims): Extension<Claims>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    require_active_user(&claims, &pool).await?;
-    let data = lookup_service::lookup_academic_years(&pool, query).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let data = lookup_service::lookup_academic_years(&context.tenant.pool, query).await?;
 
     Ok((
         StatusCode::OK,
@@ -175,9 +170,8 @@ pub async fn lookup_students(
     Extension(claims): Extension<Claims>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    require_active_user(&claims, &pool).await?;
-    let data = lookup_service::lookup_students(&pool, query).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let data = lookup_service::lookup_students(&context.tenant.pool, query).await?;
 
     Ok((
         StatusCode::OK,
@@ -195,9 +189,8 @@ pub async fn lookup_rooms(
     headers: HeaderMap,
     Extension(claims): Extension<Claims>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    require_active_user(&claims, &pool).await?;
-    let rooms = lookup_service::lookup_rooms(&pool).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let rooms = lookup_service::lookup_rooms(&context.tenant.pool).await?;
 
     Ok(Json(json!({ "success": true, "data": rooms })).into_response())
 }
@@ -210,9 +203,8 @@ pub async fn lookup_subjects(
     Extension(claims): Extension<Claims>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = get_pool(&state, &headers).await?;
-    require_active_user(&claims, &pool).await?;
-    let data = lookup_service::lookup_subjects(&pool, query).await?;
+    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let data = lookup_service::lookup_subjects(&context.tenant.pool, query).await?;
 
     Ok((
         StatusCode::OK,

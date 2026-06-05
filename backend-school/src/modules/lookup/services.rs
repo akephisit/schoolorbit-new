@@ -69,8 +69,6 @@ struct StudentWithInfoRow {
     title: Option<String>,
     first_name: String,
     last_name: String,
-    #[allow(dead_code)]
-    username: String,
     student_id: Option<String>,
     class_room: Option<String>,
 }
@@ -486,7 +484,7 @@ pub async fn lookup_students(
     let active_only = query.active_only.unwrap_or(true);
 
     let mut sql = String::from(
-        "SELECT u.id, u.title, u.first_name, u.last_name, u.username,
+        "SELECT u.id, u.title, u.first_name, u.last_name,
                 si.student_id,
                 c.name as class_room
          FROM users u
