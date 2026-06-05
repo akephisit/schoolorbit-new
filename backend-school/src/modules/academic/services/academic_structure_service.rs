@@ -1,0 +1,874 @@
+use crate::error::AppError;
+use crate::modules::academic::models::*;
+use serde::Serialize;
+use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::HashSet;
+use uuid::Uuid;
+
+#[derive(Serialize)]
+pub struct AcademicStructure {
+    pub years: Vec<AcademicYear>,
+    pub semesters: Vec<Semester>,
+    pub levels: Vec<GradeLevelResponse>,
+}
+
+#[derive(sqlx::FromRow)]
+struct StudentForNumbering {
+    id: Uuid,
+    student_code: String,
+    first_name: String,
+    title: Option<String>,
+}
+
+pub async fn list_academic_structure(pool: &PgPool) -> Result<AcademicStructure, AppError> {
+    let years =
+        sqlx::query_as::<_, AcademicYear>("SELECT * FROM academic_years ORDER BY year DESC")
+            .fetch_all(pool)
+            .await?;
+
+    let semesters =
+        sqlx::query_as::<_, Semester>("SELECT * FROM academic_semesters ORDER BY start_date DESC")
+            .fetch_all(pool)
+            .await?;
+
+    let levels_raw = sqlx::query_as::<_, GradeLevel>(
+        "SELECT * FROM grade_levels ORDER BY 
+         CASE level_type 
+            WHEN 'kindergarten' THEN 1 
+            WHEN 'primary' THEN 2 
+            WHEN 'secondary' THEN 3 
+            ELSE 4 
+         END, 
+         year ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(AcademicStructure {
+        years,
+        semesters,
+        levels: levels_raw
+            .into_iter()
+            .map(GradeLevelResponse::from)
+            .collect(),
+    })
+}
+
+pub async fn create_academic_year(
+    pool: &PgPool,
+    payload: CreateAcademicYearRequest,
+) -> Result<AcademicYear, AppError> {
+    if payload.is_active.unwrap_or(false) {
+        sqlx::query("UPDATE academic_years SET is_active = false")
+            .execute(pool)
+            .await?;
+    }
+
+    let school_days = payload
+        .school_days
+        .unwrap_or_else(|| "MON,TUE,WED,THU,FRI".to_string());
+
+    sqlx::query_as::<_, AcademicYear>(
+        "INSERT INTO academic_years (year, name, start_date, end_date, is_active, school_days)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *",
+    )
+    .bind(payload.year)
+    .bind(payload.name)
+    .bind(payload.start_date)
+    .bind(payload.end_date)
+    .bind(payload.is_active.unwrap_or(false))
+    .bind(&school_days)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn update_academic_year(
+    pool: &PgPool,
+    id: Uuid,
+    payload: UpdateAcademicYearRequest,
+) -> Result<AcademicYear, AppError> {
+    if payload.is_active.unwrap_or(false) {
+        sqlx::query("UPDATE academic_years SET is_active = false")
+            .execute(pool)
+            .await?;
+    }
+
+    sqlx::query_as::<_, AcademicYear>(
+        r#"UPDATE academic_years SET
+            year = COALESCE($2, year),
+            name = COALESCE($3, name),
+            start_date = COALESCE($4, start_date),
+            end_date = COALESCE($5, end_date),
+            is_active = COALESCE($6, is_active),
+            school_days = COALESCE($7, school_days),
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *"#,
+    )
+    .bind(id)
+    .bind(payload.year)
+    .bind(&payload.name)
+    .bind(payload.start_date)
+    .bind(payload.end_date)
+    .bind(payload.is_active)
+    .bind(&payload.school_days)
+    .fetch_one(pool)
+    .await
+    .map_err(|error| match error {
+        sqlx::Error::RowNotFound => AppError::NotFound("Academic year not found".to_string()),
+        error => AppError::from(error),
+    })
+}
+
+pub async fn toggle_active_year(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("UPDATE academic_years SET is_active = false")
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("UPDATE academic_years SET is_active = true WHERE id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn create_semester(
+    pool: &PgPool,
+    payload: CreateSemesterRequest,
+) -> Result<Semester, AppError> {
+    if payload.is_active.unwrap_or(false) {
+        sqlx::query("UPDATE academic_semesters SET is_active = false")
+            .execute(pool)
+            .await?;
+    }
+
+    sqlx::query_as::<_, Semester>(
+        "INSERT INTO academic_semesters (academic_year_id, term, name, start_date, end_date, is_active) 
+         VALUES ($1, $2, $3, $4, $5, $6) 
+         RETURNING *",
+    )
+    .bind(payload.academic_year_id)
+    .bind(payload.term)
+    .bind(payload.name)
+    .bind(payload.start_date)
+    .bind(payload.end_date)
+    .bind(payload.is_active.unwrap_or(false))
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn update_semester(
+    pool: &PgPool,
+    id: Uuid,
+    payload: UpdateSemesterRequest,
+) -> Result<Semester, AppError> {
+    if payload.is_active.unwrap_or(false) {
+        sqlx::query("UPDATE academic_semesters SET is_active = false")
+            .execute(pool)
+            .await?;
+    }
+
+    sqlx::query_as::<_, Semester>(
+        "UPDATE academic_semesters SET 
+            term = COALESCE($1, term),
+            name = COALESCE($2, name),
+            start_date = COALESCE($3, start_date),
+            end_date = COALESCE($4, end_date),
+            is_active = COALESCE($5, is_active),
+            updated_at = NOW()
+         WHERE id = $6
+         RETURNING *",
+    )
+    .bind(payload.term)
+    .bind(payload.name)
+    .bind(payload.start_date)
+    .bind(payload.end_date)
+    .bind(payload.is_active)
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn delete_semester(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM academic_semesters WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|error| {
+            if error.to_string().contains("foreign key constraint") {
+                AppError::BadRequest("ไม่สามารถลบภาคเรียนที่มีการใช้งานได้".to_string())
+            } else {
+                AppError::from(error)
+            }
+        })
+}
+
+pub async fn list_classrooms(
+    pool: &PgPool,
+    filter: ClassroomQuery,
+) -> Result<Vec<Classroom>, AppError> {
+    let mut query = String::from(
+        "SELECT c.*,
+                CASE gl.level_type
+                    WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                    WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                    WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                    ELSE CONCAT('?.', gl.year)
+                END as grade_level_name,
+                ay.name as academic_year_label,
+                (SELECT COUNT(*) FROM student_class_enrollments ske WHERE ske.class_room_id = c.id AND ske.status = 'active') as student_count,
+                COALESCE((
+                    SELECT jsonb_agg(
+                        jsonb_build_object(
+                            'user_id', ca.user_id,
+                            'role', ca.role,
+                            'name', CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)
+                        ) ORDER BY ca.role, u.first_name
+                    )
+                    FROM classroom_advisors ca
+                    JOIN users u ON u.id = ca.user_id
+                    WHERE ca.classroom_id = c.id
+                ), '[]'::jsonb) as advisors
+         FROM class_rooms c
+         JOIN grade_levels gl ON c.grade_level_id = gl.id
+         JOIN academic_years ay ON c.academic_year_id = ay.id
+         WHERE 1=1",
+    );
+
+    let mut idx = 0u32;
+
+    if filter.year_id.is_some() {
+        idx += 1;
+        query.push_str(&format!(" AND c.academic_year_id = ${idx}"));
+    }
+
+    query.push_str(
+        " ORDER BY
+         CASE gl.level_type
+            WHEN 'kindergarten' THEN 1
+            WHEN 'primary' THEN 2
+            WHEN 'secondary' THEN 3
+            ELSE 4
+         END,
+         gl.year ASC,
+         c.room_number ASC",
+    );
+
+    let mut q = sqlx::query_as::<_, Classroom>(&query);
+    if let Some(year_id) = filter.year_id {
+        q = q.bind(year_id);
+    }
+
+    q.fetch_all(pool).await.map_err(AppError::from)
+}
+
+pub async fn create_classroom(
+    pool: &PgPool,
+    payload: CreateClassroomRequest,
+) -> Result<Classroom, AppError> {
+    let grade_level = sqlx::query_as::<_, GradeLevel>("SELECT * FROM grade_levels WHERE id = $1")
+        .bind(payload.grade_level_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|_| AppError::BadRequest("Invalid grade level".to_string()))?;
+
+    let year = sqlx::query_as::<_, AcademicYear>("SELECT * FROM academic_years WHERE id = $1")
+        .bind(payload.academic_year_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|_| AppError::BadRequest("Invalid academic year".to_string()))?;
+
+    let advisors = validate_advisors(pool, &payload.advisors).await?;
+    let full_name = format!("{}/{}", grade_level.short_name(), payload.room_number);
+    let short_year = year.year % 100;
+    let code = format!(
+        "{}-{}-{}",
+        short_year,
+        grade_level.code(),
+        payload.room_number.replace(' ', "")
+    );
+
+    let mut tx = pool.begin().await?;
+
+    let classroom_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO class_rooms (code, name, academic_year_id, grade_level_id, room_number, study_plan_version_id, capacity)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id",
+    )
+    .bind(code)
+    .bind(full_name)
+    .bind(payload.academic_year_id)
+    .bind(payload.grade_level_id)
+    .bind(&payload.room_number)
+    .bind(payload.study_plan_version_id)
+    .bind(payload.capacity.unwrap_or(40))
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(classroom_create_error)?;
+
+    insert_advisors(&mut tx, classroom_id, &advisors).await?;
+
+    tx.commit().await?;
+
+    fetch_classroom_full(pool, classroom_id).await
+}
+
+pub async fn update_classroom(
+    pool: &PgPool,
+    id: Uuid,
+    payload: UpdateClassroomRequest,
+) -> Result<Classroom, AppError> {
+    let advisors_opt = if payload.advisors.is_some() {
+        Some(validate_advisors(pool, &payload.advisors).await?)
+    } else {
+        None
+    };
+
+    let mut tx = pool.begin().await?;
+
+    if let Some(ref new_room) = payload.room_number {
+        let current: (Uuid, Uuid) = sqlx::query_as(
+            "SELECT grade_level_id, academic_year_id FROM class_rooms WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| AppError::NotFound("Classroom not found".to_string()))?;
+
+        let grade_level = sqlx::query_as::<_, GradeLevel>(
+            "SELECT id, level_type, year, next_grade_level_id, is_active FROM grade_levels WHERE id = $1",
+        )
+        .bind(current.0)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let year = sqlx::query_as::<_, AcademicYear>(
+            "SELECT id, year, name, start_date, end_date, is_active, school_days, metadata, created_at, updated_at FROM academic_years WHERE id = $1",
+        )
+        .bind(current.1)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let full_name = format!("{}/{}", grade_level.short_name(), new_room);
+        let short_year = year.year % 100;
+        let code = format!(
+            "{}-{}-{}",
+            short_year,
+            grade_level.code(),
+            new_room.replace(' ', "")
+        );
+
+        sqlx::query("UPDATE class_rooms SET name = $1, code = $2, room_number = $3 WHERE id = $4")
+            .bind(full_name)
+            .bind(code)
+            .bind(new_room)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| {
+                if error.to_string().contains("unique") {
+                    AppError::BadRequest("ชื่อ/รหัสห้องเรียนซ้ำ".to_string())
+                } else {
+                    AppError::from(error)
+                }
+            })?;
+    }
+
+    sqlx::query(
+        "UPDATE class_rooms SET
+            study_plan_version_id = COALESCE($1, study_plan_version_id),
+            capacity = COALESCE($2, capacity),
+            is_active = COALESCE($3, is_active),
+            updated_at = NOW()
+         WHERE id = $4",
+    )
+    .bind(payload.study_plan_version_id)
+    .bind(payload.capacity)
+    .bind(payload.is_active)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+
+    if let Some(advisors) = advisors_opt {
+        sqlx::query("DELETE FROM classroom_advisors WHERE classroom_id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        insert_advisors(&mut tx, id, &advisors).await?;
+    }
+
+    tx.commit().await?;
+
+    fetch_classroom_full(pool, id).await
+}
+
+pub async fn create_grade_level(
+    pool: &PgPool,
+    payload: CreateGradeLevelRequest,
+) -> Result<GradeLevelResponse, AppError> {
+    if !["kindergarten", "primary", "secondary"].contains(&payload.level_type.as_str()) {
+        return Err(AppError::BadRequest("ประเภทระดับชั้นไม่ถูกต้อง".to_string()));
+    }
+
+    let level = sqlx::query_as::<_, GradeLevel>(
+        "INSERT INTO grade_levels (level_type, year, next_grade_level_id, is_active)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *",
+    )
+    .bind(&payload.level_type)
+    .bind(payload.year)
+    .bind(payload.next_grade_level_id)
+    .bind(payload.is_active.unwrap_or(true))
+    .fetch_one(pool)
+    .await
+    .map_err(|error| {
+        if error.to_string().contains("unique") {
+            AppError::BadRequest("ระดับชั้นนี้มีอยู่แล้ว".to_string())
+        } else {
+            AppError::from(error)
+        }
+    })?;
+
+    Ok(GradeLevelResponse::from(level))
+}
+
+pub async fn delete_grade_level(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    let usage_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM class_rooms WHERE grade_level_id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+
+    if usage_count > 0 {
+        return Err(AppError::BadRequest(format!(
+            "ไม่สามารถลบระดับชั้นได้เนื่องจากมีการใช้งานอยู่ {} ห้องเรียน",
+            usage_count
+        )));
+    }
+
+    sqlx::query("DELETE FROM grade_levels WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn enroll_students(
+    pool: &PgPool,
+    payload: EnrollStudentRequest,
+) -> Result<usize, AppError> {
+    ensure_classroom_exists(pool, payload.class_room_id).await?;
+
+    let enroll_date = payload
+        .enrollment_date
+        .unwrap_or(chrono::Local::now().date_naive());
+
+    let mut tx = pool.begin().await?;
+    let mut enrolled_count = 0;
+
+    for student_id in &payload.student_ids {
+        sqlx::query(
+            "UPDATE student_class_enrollments SET status = 'moved_out', updated_at = NOW() 
+             WHERE student_id = $1 AND status = 'active'",
+        )
+        .bind(student_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO student_class_enrollments (student_id, class_room_id, enrollment_date, status)
+             VALUES ($1, $2, $3, 'active')
+             ON CONFLICT (student_id, class_room_id) 
+             DO UPDATE SET status = 'active', enrollment_date = $3, updated_at = NOW()",
+        )
+        .bind(student_id)
+        .bind(payload.class_room_id)
+        .bind(enroll_date)
+        .execute(&mut *tx)
+        .await?;
+
+        enrolled_count += 1;
+    }
+
+    tx.commit().await?;
+
+    assign_numbers_after_enrollment(pool, &payload).await?;
+
+    Ok(enrolled_count)
+}
+
+pub async fn get_class_enrollments(
+    pool: &PgPool,
+    class_id: Uuid,
+) -> Result<Vec<StudentEnrollment>, AppError> {
+    sqlx::query_as::<_, StudentEnrollment>(
+        "SELECT ske.*, 
+                CONCAT(u.first_name, ' ', u.last_name) as student_name,
+                c.name as class_name,
+                s.student_id as student_code
+         FROM student_class_enrollments ske
+         LEFT JOIN users u ON ske.student_id = u.id
+         LEFT JOIN student_info s ON u.id = s.user_id
+         LEFT JOIN class_rooms c ON ske.class_room_id = c.id
+         WHERE ske.class_room_id = $1 AND ske.status = 'active'
+         ORDER BY ske.class_number ASC NULLS LAST, s.student_id ASC",
+    )
+    .bind(class_id)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn remove_enrollment(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    let enrollment_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM student_class_enrollments WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+    if enrollment_exists {
+        sqlx::query("DELETE FROM student_class_enrollments WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn update_enrollment_number(
+    pool: &PgPool,
+    id: Uuid,
+    class_number: Option<i32>,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "UPDATE student_class_enrollments SET class_number = $1, updated_at = NOW() WHERE id = $2",
+    )
+    .bind(class_number)
+    .bind(id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn auto_assign_class_numbers(
+    pool: &PgPool,
+    class_id: Uuid,
+    sort_by: &str,
+) -> Result<usize, AppError> {
+    let students = sorted_students_for_numbering(pool, class_id, sort_by).await?;
+    update_class_numbers(pool, &students).await?;
+    Ok(students.len())
+}
+
+pub async fn get_year_levels(pool: &PgPool, year_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT grade_level_id FROM academic_year_grade_levels WHERE academic_year_id = $1",
+    )
+    .bind(year_id)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn update_year_levels(
+    pool: &PgPool,
+    year_id: Uuid,
+    grade_level_ids: Vec<Uuid>,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("DELETE FROM academic_year_grade_levels WHERE academic_year_id = $1")
+        .bind(year_id)
+        .execute(&mut *tx)
+        .await?;
+
+    for level_id in grade_level_ids {
+        sqlx::query("INSERT INTO academic_year_grade_levels (academic_year_id, grade_level_id) VALUES ($1, $2)")
+            .bind(year_id)
+            .bind(level_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn validate_advisors(
+    pool: &PgPool,
+    advisors: &Option<Vec<ClassroomAdvisorInput>>,
+) -> Result<Vec<ClassroomAdvisorInput>, AppError> {
+    let Some(list) = advisors else {
+        return Ok(vec![]);
+    };
+
+    let primary_count = list
+        .iter()
+        .filter(|advisor| advisor.role == "primary")
+        .count();
+    if primary_count > 1 {
+        return Err(AppError::BadRequest(
+            "ครูที่ปรึกษาหลักต้องมีได้ไม่เกิน 1 คน".to_string(),
+        ));
+    }
+
+    for advisor in list {
+        if advisor.role != "primary" && advisor.role != "secondary" {
+            return Err(AppError::BadRequest(
+                "role ต้องเป็น 'primary' หรือ 'secondary' เท่านั้น".to_string(),
+            ));
+        }
+    }
+
+    if list.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let unique_ids: HashSet<Uuid> = list.iter().map(|advisor| advisor.user_id).collect();
+    let ids_vec: Vec<Uuid> = unique_ids.iter().copied().collect();
+
+    let staff_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id = ANY($1) AND user_type = 'staff'")
+            .bind(&ids_vec)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+
+    if staff_count != unique_ids.len() as i64 {
+        return Err(AppError::BadRequest(
+            "ครูที่ปรึกษาต้องเป็นบุคลากร (Staff)".to_string(),
+        ));
+    }
+
+    Ok(list.clone())
+}
+
+async fn insert_advisors(
+    tx: &mut Transaction<'_, Postgres>,
+    classroom_id: Uuid,
+    advisors: &[ClassroomAdvisorInput],
+) -> Result<(), AppError> {
+    for advisor in advisors {
+        sqlx::query(
+            "INSERT INTO classroom_advisors (classroom_id, user_id, role)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (classroom_id, user_id) DO UPDATE SET role = EXCLUDED.role",
+        )
+        .bind(classroom_id)
+        .bind(advisor.user_id)
+        .bind(&advisor.role)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn fetch_classroom_full(pool: &PgPool, id: Uuid) -> Result<Classroom, AppError> {
+    sqlx::query_as::<_, Classroom>(
+        "SELECT c.*,
+                CASE gl.level_type
+                    WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                    WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                    WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                    ELSE CONCAT('?.', gl.year)
+                END as grade_level_name,
+                ay.name as academic_year_label,
+                (SELECT COUNT(*) FROM student_class_enrollments ske WHERE ske.class_room_id = c.id AND ske.status = 'active') as student_count,
+                COALESCE((
+                    SELECT jsonb_agg(
+                        jsonb_build_object(
+                            'user_id', ca.user_id,
+                            'role', ca.role,
+                            'name', CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)
+                        ) ORDER BY ca.role, u.first_name
+                    )
+                    FROM classroom_advisors ca
+                    JOIN users u ON u.id = ca.user_id
+                    WHERE ca.classroom_id = c.id
+                ), '[]'::jsonb) as advisors
+         FROM class_rooms c
+         JOIN grade_levels gl ON c.grade_level_id = gl.id
+         JOIN academic_years ay ON c.academic_year_id = ay.id
+         WHERE c.id = $1",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+async fn ensure_classroom_exists(pool: &PgPool, class_room_id: Uuid) -> Result<(), AppError> {
+    sqlx::query_as::<_, Classroom>(
+        "SELECT c.*, 
+                CASE gl.level_type 
+                    WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                    WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                    WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                    ELSE CONCAT('?.', gl.year)
+                END as grade_level_name,
+                NULL::text as academic_year_label,
+                NULL::bigint as student_count,
+                '[]'::jsonb as advisors
+         FROM class_rooms c
+         JOIN grade_levels gl ON c.grade_level_id = gl.id
+         WHERE c.id = $1",
+    )
+    .bind(class_room_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound("Classroom not found".to_string()))?;
+
+    Ok(())
+}
+
+async fn assign_numbers_after_enrollment(
+    pool: &PgPool,
+    payload: &EnrollStudentRequest,
+) -> Result<(), AppError> {
+    let numbering_method = payload.numbering_method.as_deref().unwrap_or("append");
+
+    match numbering_method {
+        "none" => Ok(()),
+        "append" => append_class_numbers(pool, payload).await,
+        "student_code" | "name" | "gender_name" => {
+            let students =
+                sorted_students_for_numbering(pool, payload.class_room_id, numbering_method)
+                    .await?;
+            update_class_numbers(pool, &students).await
+        }
+        _ => Ok(()),
+    }
+}
+
+async fn append_class_numbers(
+    pool: &PgPool,
+    payload: &EnrollStudentRequest,
+) -> Result<(), AppError> {
+    let max_number: Option<i32> = sqlx::query_scalar(
+        "SELECT MAX(class_number) FROM student_class_enrollments 
+         WHERE class_room_id = $1 AND status = 'active'",
+    )
+    .bind(payload.class_room_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(None);
+
+    let start_number = max_number.unwrap_or(0) + 1;
+
+    for (index, student_id) in payload.student_ids.iter().enumerate() {
+        let class_number = start_number + index as i32;
+
+        sqlx::query(
+            "UPDATE student_class_enrollments 
+             SET class_number = $1, updated_at = NOW()
+             WHERE student_id = $2 AND class_room_id = $3 AND status = 'active'",
+        )
+        .bind(class_number)
+        .bind(student_id)
+        .bind(payload.class_room_id)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn sorted_students_for_numbering(
+    pool: &PgPool,
+    class_id: Uuid,
+    sort_by: &str,
+) -> Result<Vec<StudentForNumbering>, AppError> {
+    let mut students = sqlx::query_as::<_, StudentForNumbering>(
+        "SELECT ske.id, s.student_id as student_code, u.first_name, u.title
+         FROM student_class_enrollments ske
+         LEFT JOIN users u ON ske.student_id = u.id
+         LEFT JOIN student_info s ON u.id = s.user_id
+         WHERE ske.class_room_id = $1 AND ske.status = 'active'",
+    )
+    .bind(class_id)
+    .fetch_all(pool)
+    .await?;
+
+    match sort_by {
+        "student_code" => {
+            students.sort_by(|a, b| a.student_code.cmp(&b.student_code));
+        }
+        "name" => {
+            students.sort_by(|a, b| a.first_name.cmp(&b.first_name));
+        }
+        "gender_name" => {
+            students.sort_by(|a, b| {
+                let a_male = is_male_title(&a.title);
+                let b_male = is_male_title(&b.title);
+
+                match (a_male, b_male) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.first_name.cmp(&b.first_name),
+                }
+            });
+        }
+        _ => {
+            return Err(AppError::BadRequest(
+                "Invalid sort_by parameter".to_string(),
+            ));
+        }
+    }
+
+    Ok(students)
+}
+
+async fn update_class_numbers(
+    pool: &PgPool,
+    students: &[StudentForNumbering],
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    for (index, student) in students.iter().enumerate() {
+        let class_number = (index + 1) as i32;
+
+        sqlx::query(
+            "UPDATE student_class_enrollments SET class_number = $1, updated_at = NOW() 
+             WHERE id = $2",
+        )
+        .bind(class_number)
+        .bind(student.id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+fn is_male_title(title: &Option<String>) -> bool {
+    matches!(title.as_deref(), Some("เด็กชาย" | "นาย"))
+}
+
+fn classroom_create_error(error: sqlx::Error) -> AppError {
+    let message = error.to_string();
+    if message.contains("unique constraint") {
+        AppError::BadRequest("ห้องเรียนนี้มีอยู่แล้วในระบบ".to_string())
+    } else if message.contains("violates foreign key constraint") {
+        AppError::BadRequest("ข้อมูลอ้างอิงไม่ถูกต้อง (FK Violation)".to_string())
+    } else {
+        AppError::from(error)
+    }
+}

@@ -1,0 +1,164 @@
+use super::models::{LoginUser, UpdateProfileRequest, User};
+use crate::error::AppError;
+use crate::utils::field_encryption;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+pub async fn find_active_login_user_by_username(
+    pool: &PgPool,
+    username: &str,
+) -> Result<LoginUser, AppError> {
+    sqlx::query_as::<_, LoginUser>(
+        r#"
+        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
+        FROM users
+        WHERE username = $1 AND status = 'active'
+        "#,
+    )
+    .bind(username)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::AuthError(
+        "ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string(),
+    ))
+}
+
+pub async fn find_active_login_user_by_id(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<LoginUser, AppError> {
+    sqlx::query_as::<_, LoginUser>(
+        r#"
+        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
+        FROM users
+        WHERE id = $1 AND status = 'active'
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound(
+        "ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string(),
+    ))
+}
+
+pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<User, AppError> {
+    let mut user = sqlx::query_as::<_, User>(
+        "SELECT 
+            id,
+            username,
+            national_id,
+            email,
+            password_hash,
+            first_name,
+            last_name,
+            user_type,
+            phone,
+            date_of_birth,
+            address,
+            status,
+            metadata,
+            created_at,
+            updated_at,
+            title,
+            nickname,
+            emergency_contact,
+            line_id,
+            gender,
+            profile_image_url,
+            hired_date,
+            resigned_date
+         FROM users 
+         WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
+
+    decrypt_national_id(&mut user);
+    Ok(user)
+}
+
+pub async fn get_primary_role_name(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<String>, AppError> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT r.name 
+         FROM user_roles ur
+         JOIN roles r ON ur.role_id = r.id
+         WHERE ur.user_id = $1 
+           AND ur.is_primary = true 
+           AND ur.ended_at IS NULL
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn update_profile(
+    pool: &PgPool,
+    user_id: Uuid,
+    payload: UpdateProfileRequest,
+) -> Result<User, AppError> {
+    let date_of_birth = payload
+        .date_of_birth
+        .as_ref()
+        .and_then(|dob| chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok());
+
+    sqlx::query(
+        "UPDATE users 
+         SET title = COALESCE($1, title),
+             nickname = COALESCE($2, nickname),
+             email = COALESCE($3, email),
+             phone = COALESCE($4, phone),
+             emergency_contact = COALESCE($5, emergency_contact),
+             line_id = COALESCE($6, line_id),
+             date_of_birth = COALESCE($7, date_of_birth),
+             gender = COALESCE($8, gender),
+             address = COALESCE($9, address),
+             profile_image_url = COALESCE($10, profile_image_url),
+             updated_at = NOW()
+         WHERE id = $11",
+    )
+    .bind(&payload.title)
+    .bind(&payload.nickname)
+    .bind(&payload.email)
+    .bind(&payload.phone)
+    .bind(&payload.emergency_contact)
+    .bind(&payload.line_id)
+    .bind(date_of_birth)
+    .bind(&payload.gender)
+    .bind(&payload.address)
+    .bind(&payload.profile_image_url)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    find_user_by_id(pool, user_id).await
+}
+
+pub async fn update_password_hash(
+    pool: &PgPool,
+    user_id: Uuid,
+    password_hash: String,
+) -> Result<(), AppError> {
+    sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
+        .bind(password_hash)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+fn decrypt_national_id(user: &mut User) {
+    if let Some(national_id) = &user.national_id {
+        if let Ok(decrypted) = field_encryption::decrypt(national_id) {
+            user.national_id = Some(decrypted);
+        }
+    }
+}

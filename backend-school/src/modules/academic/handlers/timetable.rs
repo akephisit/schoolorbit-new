@@ -17,12 +17,6 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
-/// Helper
-/// Fetch 1 entry พร้อม joined fields — re-export จาก service สำหรับ patch events
-async fn fetch_entry_with_joins(pool: &sqlx::PgPool, entry_id: Uuid) -> Option<TimetableEntry> {
-    timetable_service::fetch_entry_by_id(pool, entry_id).await
-}
-
 // ============================================
 // Academic Periods API
 // ============================================
@@ -254,14 +248,9 @@ pub async fn create_timetable_entry(
                 let sem_for_reject: Option<Uuid> = if let Some(sem) = payload_semester_id {
                     Some(sem)
                 } else if let Some(cc_id) = payload_course_id {
-                    sqlx::query_scalar(
-                        "SELECT academic_semester_id FROM classroom_courses WHERE id = $1",
-                    )
-                    .bind(cc_id)
-                    .fetch_optional(&pool)
-                    .await
-                    .ok()
-                    .flatten()
+                    timetable_service::resolve_classroom_course_semester_id(&pool, cc_id)
+                        .await
+                        .unwrap_or(None)
                 } else {
                     None
                 };
@@ -300,7 +289,9 @@ pub async fn create_timetable_entry(
 
             // Re-fetch joined เฉพาะเมื่อต้อง broadcast
             if has_subs {
-                if let Some(full_entry) = fetch_entry_with_joins(&pool, entry.id).await {
+                if let Some(full_entry) =
+                    timetable_service::fetch_entry_by_id(&pool, entry.id).await
+                {
                     let entry_json = serde_json::to_value(&full_entry).unwrap_or_default();
                     state.websocket_manager.broadcast_mutation(
                         subdomain,
@@ -481,7 +472,9 @@ pub async fn update_timetable_entry(
                 .websocket_manager
                 .has_other_subscribers(subdomain.clone(), existing.academic_semester_id);
             if has_subs {
-                if let Some(full_entry) = fetch_entry_with_joins(&pool, updated.id).await {
+                if let Some(full_entry) =
+                    timetable_service::fetch_entry_by_id(&pool, updated.id).await
+                {
                     let entry_json = serde_json::to_value(&full_entry).unwrap_or_default();
                     state.websocket_manager.broadcast_mutation(
                         subdomain,

@@ -8,10 +8,8 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    error::AppError,
-    modules::{auth::models::Claims, files::models::DeleteFileResponse},
-    utils::request_context::current_user_tenant_context_from_claims,
-    AppState,
+    error::AppError, modules::auth::models::Claims,
+    utils::request_context::current_user_tenant_context_from_claims, AppState,
 };
 
 use super::services as file_service;
@@ -58,10 +56,11 @@ pub async fn delete_file(
 
     Ok((
         StatusCode::OK,
-        Json(DeleteFileResponse {
-            success: true,
-            message: "File deleted successfully".to_string(),
-        }),
+        Json(json!({
+            "success": true,
+            "data": {},
+            "message": "File deleted successfully"
+        })),
     ))
 }
 
@@ -76,5 +75,14 @@ pub async fn list_user_files(
     let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
     let response = file_service::list_user_files(&context.tenant.pool, context.user_id).await?;
 
-    Ok((StatusCode::OK, Json(response)))
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "success": true,
+            "data": {
+                "files": response.files,
+                "total": response.total
+            }
+        })),
+    ))
 }

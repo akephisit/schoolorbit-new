@@ -8,7 +8,6 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, SubjectFilter,
     UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
@@ -178,44 +177,6 @@ pub async fn delete_subject(
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
-/// Permission check for default instructors: read.all OR manage.department OR specified manage code.
-async fn check_subject_manage(
-    actor: &ActorContext,
-    pool: &sqlx::PgPool,
-    subject_id: Uuid,
-    manage_code: &str,
-    read_only: bool,
-) -> Result<(), AppError> {
-    let has_all = actor.has_permission(manage_code)
-        || (read_only
-            && actor.has_any_permission(&[
-                codes::ACADEMIC_CURRICULUM_READ_ALL,
-                codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
-                manage_code,
-            ]));
-    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
-    if !has_all && !has_dept {
-        return Err(AppError::Forbidden(format!("ไม่มีสิทธิ์ {}", manage_code)));
-    }
-    if !has_all && has_dept {
-        let teacher_group =
-            match subject_service::get_user_subject_group_id(actor.user_id, pool).await {
-                Some(gid) => gid,
-                None => return Err(AppError::Forbidden("ไม่พบกลุ่มสาระที่สังกัด".to_string())),
-            };
-        let subject_group = subject_service::get_subject_group_id(pool, subject_id)
-            .await
-            .ok()
-            .flatten();
-        if subject_group != Some(teacher_group) {
-            return Err(AppError::Forbidden(
-                "ไม่สามารถจัดการวิชาในกลุ่มสาระอื่นได้".to_string(),
-            ));
-        }
-    }
-    Ok(())
-}
-
 pub async fn list_subject_default_instructors(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -224,7 +185,7 @@ pub async fn list_subject_default_instructors(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    check_subject_manage(
+    subject_service::ensure_subject_manage(
         &actor,
         &pool,
         subject_id,
@@ -245,7 +206,7 @@ pub async fn add_subject_default_instructor(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    check_subject_manage(
+    subject_service::ensure_subject_manage(
         &actor,
         &pool,
         subject_id,
@@ -265,7 +226,7 @@ pub async fn remove_subject_default_instructor(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    check_subject_manage(
+    subject_service::ensure_subject_manage(
         &actor,
         &pool,
         subject_id,
@@ -286,7 +247,7 @@ pub async fn update_subject_default_instructor_role(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    check_subject_manage(
+    subject_service::ensure_subject_manage(
         &actor,
         &pool,
         subject_id,

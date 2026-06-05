@@ -30,20 +30,6 @@ impl<T> ApiResponse<T> {
     }
 }
 
-#[derive(Serialize, sqlx::FromRow)]
-pub struct InstructorConstraintView {
-    pub id: Uuid,
-    pub first_name: String,
-    pub last_name: String,
-    pub hard_unavailable_slots: Option<serde_json::Value>,
-    pub max_periods_per_day: Option<i32>,
-    pub min_periods_per_day: Option<i32>,
-    pub assigned_room_id: Option<Uuid>,
-    pub assigned_room_name: Option<String>,
-    pub priority: i32,
-    pub primary_course_count: i64,
-}
-
 #[derive(Deserialize)]
 pub struct UpdateInstructorConstraintRequest {
     pub hard_unavailable_slots: Option<serde_json::Value>,
@@ -69,19 +55,6 @@ pub struct UpdateSchedulerSettingsRequest {
     pub default_max_consecutive: Option<i32>,
 }
 
-#[derive(Serialize, sqlx::FromRow)]
-pub struct SubjectConstraintView {
-    pub id: Uuid,
-    pub code: String,
-    pub name: String,
-    pub min_consecutive_periods: i32,
-    pub max_consecutive_periods: Option<i32>,
-    pub allow_single_period: Option<bool>,
-    pub periods_per_week: Option<i32>,
-    pub allowed_period_ids: Option<serde_json::Value>,
-    pub allowed_days: Option<serde_json::Value>,
-}
-
 #[derive(Deserialize)]
 pub struct UpdateSubjectConstraintRequest {
     pub min_consecutive_periods: Option<i32>,
@@ -89,23 +62,6 @@ pub struct UpdateSubjectConstraintRequest {
     pub allow_single_period: Option<bool>,
     pub allowed_period_ids: Option<serde_json::Value>,
     pub allowed_days: Option<serde_json::Value>,
-}
-
-#[derive(Serialize, sqlx::FromRow)]
-pub struct ClassroomCourseConstraintView {
-    pub id: Uuid,
-    pub classroom_id: Uuid,
-    pub classroom_name: String,
-    pub subject_id: Uuid,
-    pub subject_code: String,
-    pub subject_name: String,
-    pub periods_per_week: Option<i32>,
-    pub primary_instructor_id: Option<Uuid>,
-    pub primary_instructor_name: Option<String>,
-    pub consecutive_pattern: Option<serde_json::Value>,
-    pub same_day_unique: bool,
-    pub hard_unavailable_slots: serde_json::Value,
-    pub team_unavailable_slots: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -120,17 +76,6 @@ pub struct ListCcConstraintsQuery {
     pub instructor_id: Option<Uuid>,
 }
 
-#[derive(Serialize, sqlx::FromRow)]
-pub struct CcPreferredRoomView {
-    pub id: Uuid,
-    pub classroom_course_id: Uuid,
-    pub room_id: Uuid,
-    pub room_code: String,
-    pub room_name: String,
-    pub rank: i32,
-    pub is_required: bool,
-}
-
 #[derive(Deserialize)]
 pub struct SetCcRoomsRequest {
     pub rooms: Vec<CcRoomItem>,
@@ -141,14 +86,6 @@ pub struct CcRoomItem {
     pub room_id: Uuid,
     pub rank: i32,
     pub is_required: Option<bool>,
-}
-
-#[derive(Serialize, sqlx::FromRow)]
-pub struct RoomView {
-    pub id: Uuid,
-    pub code: String,
-    pub name_th: String,
-    pub room_type: Option<String>,
 }
 
 pub async fn list_classroom_course_constraints(

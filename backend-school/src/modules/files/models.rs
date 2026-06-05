@@ -184,12 +184,6 @@ pub struct FileListResponse {
     pub total: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DeleteFileResponse {
-    pub success: bool,
-    pub message: String,
-}
-
 // ===================================================================
 // File Validation
 // ===================================================================

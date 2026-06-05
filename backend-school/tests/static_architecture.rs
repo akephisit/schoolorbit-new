@@ -145,24 +145,6 @@ fn rust_module_roots_use_rust_2018_style() {
 
 #[test]
 fn foundation_handlers_delegate_database_work_to_services() {
-    let mut handler_files = list_files(manifest_dir().join("src/modules/staff/handlers"), |path| {
-        path.extension().is_some_and(|ext| ext == "rs")
-    });
-
-    for relative_path in [
-        "src/modules/achievement/handlers.rs",
-        "src/modules/consent/handlers.rs",
-        "src/modules/files/handlers.rs",
-        "src/modules/lookup/handlers.rs",
-        "src/modules/notification/handlers.rs",
-        "src/modules/parents/handlers.rs",
-        "src/modules/school/handlers.rs",
-        "src/modules/students/handlers.rs",
-        "src/modules/students/handlers_parents.rs",
-    ] {
-        handler_files.push(manifest_dir().join(relative_path));
-    }
-
     let direct_database_patterns = [
         "sqlx::query",
         "sqlx::query_as",
@@ -175,7 +157,12 @@ fn foundation_handlers_delegate_database_work_to_services() {
     ];
     let mut violations = Vec::new();
 
-    for file in handler_files {
+    for file in module_handler_files() {
+        let file_name = relative(&file);
+        if file_name == "src/modules/system/handlers/migration.rs" {
+            continue;
+        }
+
         let source = fs::read_to_string(&file)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", file.display()));
         let source = strip_comments(&source);
@@ -188,6 +175,32 @@ fn foundation_handlers_delegate_database_work_to_services() {
                 "{}: move database work into services",
                 relative(&file)
             ));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
+fn foundation_handlers_do_not_own_database_row_or_pool_types() {
+    let database_type_patterns = ["sqlx::FromRow", "use sqlx::PgPool", "&sqlx::PgPool"];
+    let mut violations = Vec::new();
+
+    for file in module_handler_files() {
+        let file_name = relative(&file);
+        if file_name == "src/modules/system/handlers/migration.rs" {
+            continue;
+        }
+
+        let source = strip_comments(&read_source(&file));
+
+        for pattern in database_type_patterns {
+            if source.contains(pattern) {
+                violations.push(format!(
+                    "{}: move database row/pool types into models or services ({pattern})",
+                    relative(&file)
+                ));
+            }
         }
     }
 

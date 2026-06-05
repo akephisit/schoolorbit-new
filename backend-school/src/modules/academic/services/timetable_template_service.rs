@@ -1,10 +1,33 @@
 use crate::error::AppError;
+use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::modules::academic::handlers::timetable_templates::{
-    TimetableTemplateEntry, TimetableTemplateView,
-};
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct TimetableTemplateView {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_by: Option<Uuid>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub entry_count: i64,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct TimetableTemplateEntry {
+    pub id: Uuid,
+    pub template_id: Uuid,
+    pub day_of_week: String,
+    pub period_id: Uuid,
+    pub entry_type: String,
+    pub title: Option<String>,
+    pub activity_slot_id: Option<Uuid>,
+    pub grade_level_ids: serde_json::Value,
+    pub classroom_ids: serde_json::Value,
+    pub instructor_ids: serde_json::Value,
+    pub room_id: Option<Uuid>,
+}
 
 pub async fn list_templates(pool: &PgPool) -> Result<Vec<TimetableTemplateView>, AppError> {
     sqlx::query_as::<_, TimetableTemplateView>(

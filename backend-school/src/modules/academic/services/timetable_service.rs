@@ -321,6 +321,17 @@ pub async fn fetch_entry_by_id(pool: &PgPool, entry_id: Uuid) -> Option<Timetabl
         .flatten()
 }
 
+pub async fn resolve_classroom_course_semester_id(
+    pool: &PgPool,
+    classroom_course_id: Uuid,
+) -> Result<Option<Uuid>, AppError> {
+    sqlx::query_scalar("SELECT academic_semester_id FROM classroom_courses WHERE id = $1")
+        .bind(classroom_course_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AppError::from)
+}
+
 /// ตรวจ conflict ของ entry ที่กำลังจะสร้าง (instructor + classroom + room)
 pub async fn validate_entry(
     pool: &PgPool,

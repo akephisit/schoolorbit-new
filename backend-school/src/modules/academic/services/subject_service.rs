@@ -1,8 +1,10 @@
 use crate::error::AppError;
+use crate::middleware::permission::ActorContext;
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, Subject, SubjectDefaultInstructor,
     SubjectFilter, SubjectGroup, UpdateSubjectRequest,
 };
+use crate::permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -22,6 +24,41 @@ pub async fn get_user_subject_group_id(user_id: Uuid, pool: &PgPool) -> Option<U
     .await
     .ok()
     .flatten()
+}
+
+pub async fn ensure_subject_manage(
+    actor: &ActorContext,
+    pool: &PgPool,
+    subject_id: Uuid,
+    manage_code: &str,
+    read_only: bool,
+) -> Result<(), AppError> {
+    let has_all = actor.has_permission(manage_code)
+        || (read_only
+            && actor.has_any_permission(&[
+                codes::ACADEMIC_CURRICULUM_READ_ALL,
+                codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
+                manage_code,
+            ]));
+    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
+    if !has_all && !has_dept {
+        return Err(AppError::Forbidden(format!("ไม่มีสิทธิ์ {}", manage_code)));
+    }
+
+    if !has_all && has_dept {
+        let teacher_group = match get_user_subject_group_id(actor.user_id, pool).await {
+            Some(group_id) => group_id,
+            None => return Err(AppError::Forbidden("ไม่พบกลุ่มสาระที่สังกัด".to_string())),
+        };
+        let subject_group = get_subject_group_id(pool, subject_id).await.ok().flatten();
+        if subject_group != Some(teacher_group) {
+            return Err(AppError::Forbidden(
+                "ไม่สามารถจัดการวิชาในกลุ่มสาระอื่นได้".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn list_subject_groups(pool: &PgPool) -> Result<Vec<SubjectGroup>, AppError> {

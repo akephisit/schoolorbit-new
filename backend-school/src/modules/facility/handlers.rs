@@ -1,8 +1,8 @@
 use crate::error::AppError;
 use crate::modules::facility::models::{
-    Building, CreateBuildingRequest, CreateRoomRequest, Room, RoomFilter, UpdateBuildingRequest,
-    UpdateRoomRequest,
+    CreateBuildingRequest, CreateRoomRequest, RoomFilter, UpdateBuildingRequest, UpdateRoomRequest,
 };
+use crate::modules::facility::services;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
@@ -27,12 +27,7 @@ pub async fn list_buildings(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
     context.actor.require_permission(codes::FACILITY_READ_ALL)?;
-    let pool = &context.tenant.pool;
-
-    let buildings = sqlx::query_as::<_, Building>("SELECT * FROM buildings ORDER BY name_th ASC")
-        .fetch_all(pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to fetch buildings".to_string()))?;
+    let buildings = services::list_buildings(&context.tenant.pool).await?;
 
     Ok(Json(json!({ "success": true, "data": buildings })).into_response())
 }
@@ -46,25 +41,7 @@ pub async fn create_building(
     context
         .actor
         .require_permission(codes::FACILITY_CREATE_ALL)?;
-    let pool = &context.tenant.pool;
-
-    let building = sqlx::query_as::<_, Building>(
-        r#"
-        INSERT INTO buildings (name_th, name_en, code, description)
-        VALUES ($1, $2, $3, $4)
-        RETURNING *
-        "#,
-    )
-    .bind(payload.name_th)
-    .bind(payload.name_en)
-    .bind(payload.code)
-    .bind(payload.description)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Create Building Error: {}", e);
-        AppError::InternalServerError("Failed to create building".to_string())
-    })?;
+    let building = services::create_building(&context.tenant.pool, payload).await?;
 
     Ok((
         StatusCode::CREATED,
@@ -83,28 +60,7 @@ pub async fn update_building(
     context
         .actor
         .require_permission(codes::FACILITY_UPDATE_ALL)?;
-    let pool = &context.tenant.pool;
-
-    let building = sqlx::query_as::<_, Building>(
-        r#"
-        UPDATE buildings SET
-            name_th = COALESCE($1, name_th),
-            name_en = COALESCE($2, name_en),
-            code = COALESCE($3, code),
-            description = COALESCE($4, description),
-            updated_at = NOW()
-        WHERE id = $5
-        RETURNING *
-        "#,
-    )
-    .bind(payload.name_th)
-    .bind(payload.name_en)
-    .bind(payload.code)
-    .bind(payload.description)
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to update building".to_string()))?;
+    let building = services::update_building(&context.tenant.pool, id, payload).await?;
 
     Ok(Json(json!({ "success": true, "data": building })).into_response())
 }
@@ -118,13 +74,7 @@ pub async fn delete_building(
     context
         .actor
         .require_permission(codes::FACILITY_DELETE_ALL)?;
-    let pool = &context.tenant.pool;
-
-    sqlx::query("DELETE FROM buildings WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to delete building".to_string()))?;
+    services::delete_building(&context.tenant.pool, id).await?;
 
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
@@ -140,55 +90,7 @@ pub async fn list_rooms(
 ) -> Result<impl IntoResponse, AppError> {
     // Any authenticated staff can list rooms (used for timetable, exam rooms, etc.)
     let context = actor_tenant_context(&state, &headers).await?;
-    let pool = &context.tenant.pool;
-
-    let mut sql = String::from(
-        r#"
-        SELECT r.*, b.name_th as building_name
-        FROM rooms r
-        LEFT JOIN buildings b ON r.building_id = b.id
-        WHERE 1=1
-        "#,
-    );
-
-    let mut idx = 0u32;
-
-    if filter.building_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(" AND r.building_id = ${idx}"));
-    }
-    if filter.room_type.is_some() {
-        idx += 1;
-        sql.push_str(&format!(" AND r.room_type = ${idx}"));
-    }
-    if let Some(ref search) = filter.search {
-        if !search.is_empty() {
-            idx += 1;
-            sql.push_str(&format!(
-                " AND (r.name_th ILIKE ${idx} OR r.code ILIKE ${idx})"
-            ));
-        }
-    }
-
-    sql.push_str(" ORDER BY b.code NULLS LAST, r.floor NULLS FIRST, r.code ASC");
-
-    let mut q = sqlx::query_as::<_, Room>(&sql);
-    if let Some(bid) = filter.building_id {
-        q = q.bind(bid);
-    }
-    if let Some(rtype) = &filter.room_type {
-        q = q.bind(rtype);
-    }
-    if let Some(ref search) = filter.search {
-        if !search.is_empty() {
-            q = q.bind(format!("%{search}%"));
-        }
-    }
-
-    let rooms = q.fetch_all(pool).await.map_err(|e| {
-        eprintln!("List Rooms Error: {}", e);
-        AppError::InternalServerError("Failed to fetch rooms".to_string())
-    })?;
+    let rooms = services::list_rooms(&context.tenant.pool, filter).await?;
 
     Ok(Json(json!({ "success": true, "data": rooms })).into_response())
 }
@@ -202,33 +104,7 @@ pub async fn create_room(
     context
         .actor
         .require_permission(codes::FACILITY_CREATE_ALL)?;
-    let pool = &context.tenant.pool;
-
-    let room = sqlx::query_as::<_, Room>(
-        r#"
-        INSERT INTO rooms (
-            building_id, name_th, name_en, code, room_type, 
-            capacity, floor, status, description
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        RETURNING *, (SELECT name_th FROM buildings WHERE id = $1) as building_name
-        "#,
-    )
-    .bind(payload.building_id)
-    .bind(payload.name_th)
-    .bind(payload.name_en)
-    .bind(payload.code)
-    .bind(payload.room_type)
-    .bind(payload.capacity.unwrap_or(40))
-    .bind(payload.floor)
-    .bind(payload.status.unwrap_or("ACTIVE".to_string()))
-    .bind(payload.description)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Create Room Error: {}", e);
-        AppError::InternalServerError("Failed to create room".to_string())
-    })?;
+    let room = services::create_room(&context.tenant.pool, payload).await?;
 
     Ok((
         StatusCode::CREATED,
@@ -247,38 +123,7 @@ pub async fn update_room(
     context
         .actor
         .require_permission(codes::FACILITY_UPDATE_ALL)?;
-    let pool = &context.tenant.pool;
-
-    let room = sqlx::query_as::<_, Room>(
-        r#"
-        UPDATE rooms SET
-            building_id = COALESCE($1, building_id),
-            name_th = COALESCE($2, name_th),
-            name_en = COALESCE($3, name_en),
-            code = COALESCE($4, code),
-            room_type = COALESCE($5, room_type),
-            capacity = COALESCE($6, capacity),
-            floor = COALESCE($7, floor),
-            status = COALESCE($8, status),
-            description = COALESCE($9, description),
-            updated_at = NOW()
-        WHERE id = $10
-        RETURNING *, (SELECT name_th FROM buildings WHERE id = rooms.building_id) as building_name
-        "#,
-    )
-    .bind(payload.building_id)
-    .bind(payload.name_th)
-    .bind(payload.name_en)
-    .bind(payload.code)
-    .bind(payload.room_type)
-    .bind(payload.capacity)
-    .bind(payload.floor)
-    .bind(payload.status)
-    .bind(payload.description)
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to update room".to_string()))?;
+    let room = services::update_room(&context.tenant.pool, id, payload).await?;
 
     Ok(Json(json!({ "success": true, "data": room })).into_response())
 }
@@ -292,13 +137,7 @@ pub async fn delete_room(
     context
         .actor
         .require_permission(codes::FACILITY_DELETE_ALL)?;
-    let pool = &context.tenant.pool;
-
-    sqlx::query("DELETE FROM rooms WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to delete room".to_string()))?;
+    services::delete_room(&context.tenant.pool, id).await?;
 
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }

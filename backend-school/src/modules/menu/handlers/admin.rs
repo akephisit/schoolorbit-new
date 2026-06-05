@@ -1,8 +1,7 @@
 use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
 use crate::modules::menu::models::{MenuGroup, MenuItem};
 use crate::modules::menu::services::menu_service;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::{actor_tenant_context, ActorTenantContext};
 use crate::AppState;
 
 use axum::{
@@ -11,7 +10,6 @@ use axum::{
     response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -110,24 +108,23 @@ pub struct MenuItemResponse {
     pub message: Option<String>,
 }
 
-async fn auth(state: &AppState, headers: &HeaderMap) -> Result<(PgPool, ActorContext), AppError> {
-    let context = actor_tenant_context(state, headers).await?;
-    Ok((context.tenant.pool, context.actor))
+async fn auth(state: &AppState, headers: &HeaderMap) -> Result<ActorTenantContext, AppError> {
+    actor_tenant_context(state, headers).await
 }
 
 async fn auth_check_module(
     state: &AppState,
     headers: &HeaderMap,
     module: &str,
-) -> Result<PgPool, AppError> {
-    let (pool, actor) = auth(state, headers).await?;
-    if !actor.has_module_permission(module) {
+) -> Result<ActorTenantContext, AppError> {
+    let context = auth(state, headers).await?;
+    if !context.actor.has_module_permission(module) {
         return Err(AppError::Forbidden(format!(
             "No permission for module '{}'",
             module
         )));
     }
-    Ok(pool)
+    Ok(context)
 }
 
 // ==================== Menu Groups ====================
@@ -136,8 +133,8 @@ pub async fn list_menu_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, _) = auth(&state, &headers).await?;
-    let groups = menu_service::list_menu_groups(&pool).await?;
+    let context = auth(&state, &headers).await?;
+    let groups = menu_service::list_menu_groups(&context.tenant.pool).await?;
     Ok((
         StatusCode::OK,
         JsonResponse(MenuGroupListResponse {
@@ -152,9 +149,9 @@ pub async fn create_menu_group(
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<CreateMenuGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, _) = auth(&state, &headers).await?;
+    let context = auth(&state, &headers).await?;
     let group = menu_service::create_menu_group(
-        &pool,
+        &context.tenant.pool,
         menu_service::CreateMenuGroupInput {
             code: data.code,
             name: data.name,
@@ -181,9 +178,9 @@ pub async fn update_menu_group(
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<UpdateMenuGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, _) = auth(&state, &headers).await?;
+    let context = auth(&state, &headers).await?;
     let group = menu_service::update_menu_group(
-        &pool,
+        &context.tenant.pool,
         id,
         menu_service::UpdateMenuGroupInput {
             name: data.name,
@@ -210,8 +207,8 @@ pub async fn delete_menu_group(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = auth_check_module(&state, &headers, "settings").await?;
-    let moved = menu_service::delete_menu_group(&pool, id).await?;
+    let context = auth_check_module(&state, &headers, "settings").await?;
+    let moved = menu_service::delete_menu_group(&context.tenant.pool, id).await?;
     Ok((
         StatusCode::OK,
         JsonResponse(
@@ -227,8 +224,13 @@ pub async fn list_menu_items(
     headers: HeaderMap,
     Query(filter): Query<MenuItemFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, actor) = auth(&state, &headers).await?;
-    let items = menu_service::list_menu_items(&pool, filter.group_id, &actor.permissions).await?;
+    let context = auth(&state, &headers).await?;
+    let items = menu_service::list_menu_items(
+        &context.tenant.pool,
+        filter.group_id,
+        &context.actor.permissions,
+    )
+    .await?;
     Ok((
         StatusCode::OK,
         JsonResponse(MenuItemListResponse {
@@ -243,14 +245,13 @@ pub async fn create_menu_item(
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<CreateMenuItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = if let Some(ref module) = data.required_permission {
+    let context = if let Some(ref module) = data.required_permission {
         auth_check_module(&state, &headers, module).await?
     } else {
-        let (pool, _) = auth(&state, &headers).await?;
-        pool
+        auth(&state, &headers).await?
     };
     let item = menu_service::create_menu_item(
-        &pool,
+        &context.tenant.pool,
         menu_service::CreateMenuItemInput {
             code: data.code,
             name: data.name,
@@ -281,10 +282,10 @@ pub async fn update_menu_item(
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<UpdateMenuItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, actor) = auth(&state, &headers).await?;
-    let existing = menu_service::get_menu_item(&pool, id).await?;
+    let context = auth(&state, &headers).await?;
+    let existing = menu_service::get_menu_item(&context.tenant.pool, id).await?;
     if let Some(ref module) = existing.required_permission {
-        if !actor.has_module_permission(module) {
+        if !context.actor.has_module_permission(module) {
             return Err(AppError::Forbidden(format!(
                 "No permission for module '{}'",
                 module
@@ -292,7 +293,7 @@ pub async fn update_menu_item(
         }
     }
     let item = menu_service::update_menu_item(
-        &pool,
+        &context.tenant.pool,
         id,
         menu_service::UpdateMenuItemInput {
             name: data.name,
@@ -323,17 +324,17 @@ pub async fn delete_menu_item(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let (pool, actor) = auth(&state, &headers).await?;
-    let existing = menu_service::get_menu_item(&pool, id).await?;
+    let context = auth(&state, &headers).await?;
+    let existing = menu_service::get_menu_item(&context.tenant.pool, id).await?;
     if let Some(ref module) = existing.required_permission {
-        if !actor.has_module_permission(module) {
+        if !context.actor.has_module_permission(module) {
             return Err(AppError::Forbidden(format!(
                 "No permission for module '{}'",
                 module
             )));
         }
     }
-    menu_service::delete_menu_item(&pool, id).await?;
+    menu_service::delete_menu_item(&context.tenant.pool, id).await?;
     Ok((
         StatusCode::OK,
         JsonResponse(
@@ -355,13 +356,15 @@ pub async fn reorder_menu_items(
             ),
         ));
     }
-    let (pool, actor) = auth(&state, &headers).await?;
+    let context = auth(&state, &headers).await?;
     let items: Vec<(Uuid, i32, Option<Uuid>)> = data
         .items
         .into_iter()
         .map(|i| (i.id, i.display_order, i.group_id))
         .collect();
-    let count = menu_service::reorder_menu_items(&pool, items, &actor.permissions).await?;
+    let count =
+        menu_service::reorder_menu_items(&context.tenant.pool, items, &context.actor.permissions)
+            .await?;
     Ok((
         StatusCode::OK,
         JsonResponse(
@@ -375,13 +378,13 @@ pub async fn reorder_menu_groups(
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<ReorderGroupsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = auth_check_module(&state, &headers, "settings").await?;
+    let context = auth_check_module(&state, &headers, "settings").await?;
     let groups: Vec<(Uuid, i32)> = data
         .groups
         .into_iter()
         .map(|g| (g.id, g.display_order))
         .collect();
-    let count = menu_service::reorder_menu_groups(&pool, groups).await?;
+    let count = menu_service::reorder_menu_groups(&context.tenant.pool, groups).await?;
     Ok((
         StatusCode::OK,
         JsonResponse(
@@ -396,13 +399,13 @@ pub async fn move_item_to_group(
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<serde_json::Value>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = auth_check_module(&state, &headers, "settings").await?;
+    let context = auth_check_module(&state, &headers, "settings").await?;
     let group_id = match data.get("group_id").and_then(|v| v.as_str()) {
         Some(s) => Uuid::parse_str(s)
             .map_err(|_| AppError::BadRequest("Invalid group_id format".to_string()))?,
         None => return Err(AppError::BadRequest("group_id required".to_string())),
     };
-    let item = menu_service::move_item_to_group(&pool, id, group_id).await?;
+    let item = menu_service::move_item_to_group(&context.tenant.pool, id, group_id).await?;
     Ok((
         StatusCode::OK,
         JsonResponse(serde_json::json!({ "success": true, "data": item })),

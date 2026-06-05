@@ -5,6 +5,17 @@ use crate::modules::academic::models::course_planning::{
 use sqlx::PgPool;
 use uuid::Uuid;
 
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct ClassroomActivity {
+    pub slot_id: Uuid,
+    pub activity_catalog_id: Uuid,
+    pub name: String,
+    pub activity_type: String,
+    pub periods_per_week: i32,
+    pub scheduling_mode: String,
+    pub is_active: bool,
+}
+
 pub async fn list_classroom_courses(
     pool: &PgPool,
     query: &PlanQuery,
@@ -327,8 +338,6 @@ pub async fn get_course_semester_id(pool: &PgPool, course_id: Uuid) -> Option<Uu
         .ok()
         .flatten()
 }
-
-use crate::modules::academic::handlers::course_planning::ClassroomActivity;
 
 pub async fn list_classroom_activities(
     pool: &PgPool,

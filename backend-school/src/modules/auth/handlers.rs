@@ -1,11 +1,11 @@
 use super::models::{
-    ChangePasswordRequest, Claims, LoginData, LoginRequest, LoginUser, ProfileResponse,
-    UpdateProfileRequest, User, UserResponse,
+    ChangePasswordRequest, Claims, LoginData, LoginRequest, ProfileResponse, UpdateProfileRequest,
+    UserResponse,
 };
+use super::services;
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::middleware::permission::get_cached_user_permissions;
-use crate::utils::field_encryption;
 use crate::utils::file_url::get_file_url_from_string;
 use crate::utils::jwt::JwtService;
 use crate::utils::request_context::{
@@ -35,23 +35,9 @@ pub async fn login(
     let subdomain = tenant.subdomain;
     let pool = tenant.pool;
 
-    println!(
-        "🔐 Login attempt for school: {}, username: {}",
-        subdomain, payload.username
-    );
+    tracing::info!(school = %subdomain, username = %payload.username, "Login attempt");
 
-    // Find user by username
-    let user = sqlx::query_as::<_, LoginUser>(
-        r#"
-        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
-        FROM users
-        WHERE username = $1 AND status = 'active'
-        "#
-    )
-    .bind(&payload.username)
-    .fetch_optional(&pool)
-    .await?
-    .ok_or(AppError::AuthError("ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string()))?;
+    let user = services::find_active_login_user_by_username(&pool, &payload.username).await?;
 
     // Verify password
     let is_valid = bcrypt::verify(&payload.password, &user.password_hash).unwrap_or(false);
@@ -63,24 +49,11 @@ pub async fn login(
     // Generate JWT token
     let token = JwtService::generate_token(&user.id.to_string(), &user.username, &user.user_type)
         .map_err(|e| {
-        eprintln!("❌ Failed to generate token: {}", e);
+        tracing::error!("Failed to generate token: {}", e);
         AppError::InternalServerError("ไม่สามารถสร้าง token ได้".to_string())
     })?;
 
-    // Fetch primary role name
-    let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT r.name 
-         FROM user_roles ur
-         JOIN roles r ON ur.role_id = r.id
-         WHERE ur.user_id = $1 
-           AND ur.is_primary = true 
-           AND ur.ended_at IS NULL
-         LIMIT 1",
-    )
-    .bind(user.id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap_or(None);
+    let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
     let permissions = get_cached_user_permissions(user.id, &pool, &state.permission_cache)
         .await
@@ -167,62 +140,8 @@ pub async fn me(
     let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
     let pool = context.tenant.pool;
 
-    // Fetch user from database
-    let mut user = sqlx::query_as::<_, User>(
-        "SELECT 
-            id,
-            username,
-            national_id,
-            email,
-            password_hash,
-            first_name,
-            last_name,
-            user_type,
-            phone,
-            date_of_birth,
-            address,
-            status,
-            metadata,
-            created_at,
-            updated_at,
-            title,
-            nickname,
-            emergency_contact,
-            line_id,
-            gender,
-            profile_image_url,
-            hired_date,
-            resigned_date
-         FROM users 
-         WHERE id = $1",
-    )
-    .bind(context.user_id)
-    .fetch_optional(&pool)
-    .await?
-    .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
-
-    // Decrypt national_id
-    // Decrypt national_id
-    if let Some(nid) = &user.national_id {
-        if let Ok(dec) = field_encryption::decrypt(nid) {
-            user.national_id = Some(dec);
-        }
-    }
-
-    // Fetch primary role name
-    let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT r.name 
-         FROM user_roles ur
-         JOIN roles r ON ur.role_id = r.id
-         WHERE ur.user_id = $1 
-           AND ur.is_primary = true 
-           AND ur.ended_at IS NULL
-         LIMIT 1",
-    )
-    .bind(user.id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap_or(None);
+    let user = services::find_user_by_id(&pool, context.user_id).await?;
+    let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
     let permissions = get_cached_user_permissions(user.id, &pool, &state.permission_cache)
         .await
@@ -258,33 +177,8 @@ pub async fn get_profile(
     let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
     let pool = context.tenant.pool;
 
-    // Fetch user from database
-    let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
-        .bind(context.user_id)
-        .fetch_optional(&pool)
-        .await?
-        .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
-
-    if let Some(nid) = &user.national_id {
-        if let Ok(dec) = field_encryption::decrypt(nid) {
-            user.national_id = Some(dec);
-        }
-    }
-
-    // Fetch primary role name
-    let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT r.name 
-         FROM user_roles ur
-         JOIN roles r ON ur.role_id = r.id
-         WHERE ur.user_id = $1 
-           AND ur.is_primary = true 
-           AND ur.ended_at IS NULL
-         LIMIT 1",
-    )
-    .bind(user.id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap_or(None);
+    let user = services::find_user_by_id(&pool, context.user_id).await?;
+    let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
     // Create full profile response with primary role name
     let mut profile_response = ProfileResponse::from(user);
@@ -308,73 +202,8 @@ pub async fn update_profile(
     let pool = context.tenant.pool;
     let user_id = context.user_id;
 
-    // Parse date_of_birth if provided
-    let date_of_birth = payload
-        .date_of_birth
-        .as_ref()
-        .and_then(|dob| chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok());
-
-    // Update user profile
-    sqlx::query(
-        "UPDATE users 
-         SET title = COALESCE($1, title),
-             nickname = COALESCE($2, nickname),
-             email = COALESCE($3, email),
-             phone = COALESCE($4, phone),
-             emergency_contact = COALESCE($5, emergency_contact),
-             line_id = COALESCE($6, line_id),
-             date_of_birth = COALESCE($7, date_of_birth),
-             gender = COALESCE($8, gender),
-             address = COALESCE($9, address),
-             profile_image_url = COALESCE($10, profile_image_url),
-             updated_at = NOW()
-         WHERE id = $11",
-    )
-    .bind(&payload.title)
-    .bind(&payload.nickname)
-    .bind(&payload.email)
-    .bind(&payload.phone)
-    .bind(&payload.emergency_contact)
-    .bind(&payload.line_id)
-    .bind(date_of_birth)
-    .bind(&payload.gender)
-    .bind(&payload.address)
-    .bind(&payload.profile_image_url)
-    .bind(user_id)
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("❌ Failed to update profile: {}", e);
-        AppError::InternalServerError("ไม่สามารถอัพเดทข้อมูลได้".to_string())
-    })?;
-
-    // Fetch updated user
-    let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await?
-        .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
-
-    if let Some(nid) = &user.national_id {
-        if let Ok(dec) = field_encryption::decrypt(nid) {
-            user.national_id = Some(dec);
-        }
-    }
-
-    // Fetch primary role name
-    let primary_role_name: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT r.name 
-            FROM user_roles ur
-            JOIN roles r ON ur.role_id = r.id
-            WHERE ur.user_id = $1 
-            AND ur.is_primary = true 
-            AND ur.ended_at IS NULL
-            LIMIT 1",
-    )
-    .bind(user.id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap_or(None);
+    let user = services::update_profile(&pool, user_id, payload).await?;
+    let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
     // Return updated profile
     let mut profile_response = ProfileResponse::from(user);
@@ -396,18 +225,7 @@ pub async fn change_password(
     let pool = context.tenant.pool;
     let user_id = context.user_id;
 
-    // Find user by id to verify current password
-    let user = sqlx::query_as::<_, LoginUser>(
-        r#"
-        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
-        FROM users
-        WHERE id = $1 AND status = 'active'
-        "#
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await?
-    .ok_or(AppError::NotFound("ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string()))?;
+    let user = services::find_active_login_user_by_id(&pool, user_id).await?;
 
     // Verify current (old) password
     let is_valid = bcrypt::verify(&payload.current_password, &user.password_hash).unwrap_or(false);
@@ -418,20 +236,11 @@ pub async fn change_password(
 
     // Hash new password
     let new_password_hash = bcrypt::hash(&payload.new_password, 10).map_err(|e| {
-        eprintln!("❌ Failed to hash password: {}", e);
+        tracing::error!("Failed to hash password: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
-    // Update password
-    sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
-        .bind(new_password_hash)
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("❌ Failed to update password: {}", e);
-            AppError::InternalServerError("ไม่สามารถเปลี่ยนรหัสผ่านได้".to_string())
-        })?;
+    services::update_password_hash(&pool, user_id, new_password_hash).await?;
 
     Ok((
         StatusCode::OK,

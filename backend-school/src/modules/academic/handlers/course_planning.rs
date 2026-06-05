@@ -15,24 +15,28 @@ use crate::modules::academic::models::course_planning::{
 use crate::modules::academic::services::course_planning_service;
 use crate::modules::academic::websockets::TimetableEvent;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::{actor_tenant_context, ActorTenantContext};
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
 async fn broadcast_course_refresh(
     state: &AppState,
     headers: &HeaderMap,
-    pool: &sqlx::PgPool,
-    user_id: Uuid,
+    context: &ActorTenantContext,
     course_id: Uuid,
 ) {
-    if let Some(sem_id) = course_planning_service::get_course_semester_id(pool, course_id).await {
+    if let Some(sem_id) =
+        course_planning_service::get_course_semester_id(&context.tenant.pool, course_id).await
+    {
         let subdomain =
             extract_subdomain_from_request(headers).unwrap_or_else(|_| "default".to_string());
         state.websocket_manager.broadcast_mutation(
             subdomain,
             sem_id,
-            TimetableEvent::CourseTeamChanged { user_id, course_id },
+            TimetableEvent::CourseTeamChanged {
+                user_id: context.actor.user_id,
+                course_id,
+            },
         );
     }
 }
@@ -136,14 +140,18 @@ pub async fn add_course_instructor(
     Json(body): Json<AddCourseInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = actor.user_id;
+    context
+        .actor
+        .require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let role = body.role.unwrap_or_else(|| "secondary".to_string());
-    course_planning_service::add_course_instructor(&pool, course_id, body.instructor_id, &role)
-        .await?;
-    broadcast_course_refresh(&state, &headers, &pool, user_id, course_id).await;
+    course_planning_service::add_course_instructor(
+        &context.tenant.pool,
+        course_id,
+        body.instructor_id,
+        &role,
+    )
+    .await?;
+    broadcast_course_refresh(&state, &headers, &context, course_id).await;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
@@ -153,12 +161,16 @@ pub async fn remove_course_instructor(
     Path((course_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = actor.user_id;
-    course_planning_service::remove_course_instructor(&pool, course_id, instructor_id).await?;
-    broadcast_course_refresh(&state, &headers, &pool, user_id, course_id).await;
+    context
+        .actor
+        .require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
+    course_planning_service::remove_course_instructor(
+        &context.tenant.pool,
+        course_id,
+        instructor_id,
+    )
+    .await?;
+    broadcast_course_refresh(&state, &headers, &context, course_id).await;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
 
@@ -169,30 +181,18 @@ pub async fn update_course_instructor_role(
     Json(body): Json<UpdateCourseInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
-    let user_id = actor.user_id;
+    context
+        .actor
+        .require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     course_planning_service::update_course_instructor_role(
-        &pool,
+        &context.tenant.pool,
         course_id,
         instructor_id,
         &body.role,
     )
     .await?;
-    broadcast_course_refresh(&state, &headers, &pool, user_id, course_id).await;
+    broadcast_course_refresh(&state, &headers, &context, course_id).await;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
-}
-
-#[derive(serde::Serialize, sqlx::FromRow)]
-pub struct ClassroomActivity {
-    pub slot_id: Uuid,
-    pub activity_catalog_id: Uuid,
-    pub name: String,
-    pub activity_type: String,
-    pub periods_per_week: i32,
-    pub scheduling_mode: String,
-    pub is_active: bool,
 }
 
 #[derive(serde::Deserialize)]
