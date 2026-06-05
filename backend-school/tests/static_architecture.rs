@@ -134,6 +134,11 @@ fn foundation_handlers_delegate_database_work_to_services() {
     });
 
     for relative_path in [
+        "src/modules/achievement/handlers.rs",
+        "src/modules/consent/handlers.rs",
+        "src/modules/files/handlers.rs",
+        "src/modules/lookup/handlers.rs",
+        "src/modules/notification/handlers.rs",
         "src/modules/parents/handlers.rs",
         "src/modules/school/handlers.rs",
         "src/modules/students/handlers.rs",

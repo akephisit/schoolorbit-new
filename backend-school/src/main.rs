@@ -10,7 +10,7 @@ mod utils;
 #[cfg(test)]
 mod test_helpers;
 
-use crate::modules::notification::{events::PermissionChangeEvent, handlers::Notification};
+use crate::modules::notification::{events::PermissionChangeEvent, models::Notification};
 use axum::{
     middleware as axum_middleware,
     routing::{delete, get, post},

@@ -1,4 +1,4 @@
-use crate::modules::notification::handlers::Notification;
+use crate::modules::notification::models::Notification;
 use std::env;
 use tokio::sync::broadcast;
 use uuid::Uuid;
