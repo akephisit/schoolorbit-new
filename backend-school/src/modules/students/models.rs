@@ -68,6 +68,19 @@ pub struct StudentListItem {
     pub status: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct StudentListResponse {
+    pub items: Vec<StudentListItem>,
+    pub page: i64,
+    pub page_size: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateStudentResponse {
+    pub id: Uuid,
+    pub username: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct UpdateOwnProfileRequest {
     pub phone: Option<String>,

@@ -1,12 +1,11 @@
 use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
 use serde_json::json;
 
-use super::models::{SchoolSettingsResponse, SchoolSettingsRow, UpdateSchoolSettingsRequest};
+use super::models::UpdateSchoolSettingsRequest;
+use super::services as school_service;
 use crate::error::AppError;
 use crate::middleware::permission::load_actor_context;
 use crate::permissions::registry::codes;
-use crate::services::r2_client::R2Client;
-use crate::utils::file_url::get_file_url_from_string;
 use crate::utils::tenant::{resolve_tenant_context, resolve_tenant_pool};
 use crate::AppState;
 
@@ -27,24 +26,8 @@ pub async fn get_settings(
     if let Err(response) = actor.require_permission(codes::SETTINGS_READ) {
         return Ok(response);
     }
-    let row = sqlx::query_as::<_, SchoolSettingsRow>(
-        "SELECT logo_path, logo_file_id FROM school_settings LIMIT 1",
-    )
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("get_school_settings error: {}", e);
-        AppError::InternalServerError("Database error".to_string())
-    })?
-    .unwrap_or(SchoolSettingsRow {
-        logo_path: None,
-        logo_file_id: None,
-    });
 
-    let response = SchoolSettingsResponse {
-        logo_url: get_file_url_from_string(&row.logo_path),
-        logo_file_id: row.logo_file_id,
-    };
+    let response = school_service::get_settings_response(&pool).await?;
 
     Ok(Json(json!({ "success": true, "data": response })).into_response())
 }
@@ -63,15 +46,8 @@ pub async fn update_settings(
     if let Err(response) = actor.require_permission(codes::SETTINGS_UPDATE) {
         return Ok(response);
     }
-    sqlx::query("UPDATE school_settings SET logo_path = $1, logo_file_id = $2, updated_at = NOW()")
-        .bind(&payload.logo_path)
-        .bind(&payload.logo_file_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("update_school_settings error: {}", e);
-            AppError::InternalServerError("Database error".to_string())
-        })?;
+
+    school_service::update_settings(&pool, payload).await?;
 
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
@@ -85,18 +61,7 @@ pub async fn get_public_info(
     let tenant = resolve_tenant_context(&state, &headers).await?;
     let pool = tenant.pool;
 
-    let row = sqlx::query_as::<_, SchoolSettingsRow>(
-        "SELECT logo_path, logo_file_id FROM school_settings LIMIT 1",
-    )
-    .fetch_optional(&pool)
-    .await
-    .unwrap_or(None)
-    .unwrap_or(SchoolSettingsRow {
-        logo_path: None,
-        logo_file_id: None,
-    });
-
-    let logo_url = get_file_url_from_string(&row.logo_path);
+    let logo_url = school_service::get_settings_response(&pool).await?.logo_url;
     let school_name = state
         .admin_client
         .get_school_name(&tenant.subdomain)
@@ -125,50 +90,7 @@ pub async fn delete_logo(
         return Ok(response);
     }
 
-    let row = sqlx::query_as::<_, SchoolSettingsRow>(
-        "SELECT logo_path, logo_file_id FROM school_settings LIMIT 1",
-    )
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("delete_logo fetch error: {}", e);
-        AppError::InternalServerError("Database error".to_string())
-    })?
-    .unwrap_or(SchoolSettingsRow {
-        logo_path: None,
-        logo_file_id: None,
-    });
-
-    // ลบไฟล์จาก R2
-    if let Some(path) = &row.logo_path {
-        match R2Client::new().await {
-            Ok(r2) => {
-                if let Err(e) = r2.delete_file(path).await {
-                    eprintln!("Failed to delete logo from R2: {}", e);
-                }
-            }
-            Err(e) => eprintln!("R2Client init error: {}", e),
-        }
-    }
-
-    // Hard-delete record ใน files table
-    if let Some(file_id) = row.logo_file_id {
-        let _ = sqlx::query("DELETE FROM files WHERE id = $1")
-            .bind(file_id)
-            .execute(&pool)
-            .await;
-    }
-
-    // ล้างใน school_settings
-    sqlx::query(
-        "UPDATE school_settings SET logo_path = NULL, logo_file_id = NULL, updated_at = NOW()",
-    )
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("delete_logo clear error: {}", e);
-        AppError::InternalServerError("Database error".to_string())
-    })?;
+    school_service::delete_logo(&pool).await?;
 
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }

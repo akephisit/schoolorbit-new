@@ -511,6 +511,31 @@ test('backend module handlers use ActorContext instead of raw permission lists',
 	assert.deepEqual(violations, []);
 });
 
+test('backend foundation handlers delegate database work to services', async () => {
+	const handlerFiles = [
+		...(await listFiles(
+			path.join(repoRoot, 'backend-school/src/modules/staff/handlers'),
+			(file) => file.endsWith('.rs')
+		)),
+		path.join(repoRoot, 'backend-school/src/modules/parents/handlers.rs'),
+		path.join(repoRoot, 'backend-school/src/modules/school/handlers.rs'),
+		path.join(repoRoot, 'backend-school/src/modules/students/handlers.rs'),
+		path.join(repoRoot, 'backend-school/src/modules/students/handlers_parents.rs')
+	];
+	const directDatabaseWork =
+		/\bsqlx::(?:query|query_as|query_scalar)\b|\.(?:fetch_one|fetch_all|fetch_optional|execute)\s*\(|\.begin\s*\(/;
+	const violations = [];
+
+	for (const file of handlerFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (directDatabaseWork.test(source)) {
+			violations.push(`${relative(file)}: move database work into services`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
 test('backend auth responses use the shared effective permission resolver', async () => {
 	const authHandler = await readFile(
 		path.join(repoRoot, 'backend-school/src/modules/auth/handlers.rs'),

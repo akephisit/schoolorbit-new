@@ -1,9 +1,7 @@
-use super::models::{ChildDto, ParentDbRow, ParentProfile};
 use crate::error::AppError;
-use crate::middleware::auth::get_current_user;
-use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
-use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
-use crate::utils::{field_encryption, tenant::resolve_tenant_pool};
+use crate::middleware::permission::load_actor_context_or_error;
+use crate::modules::parents::services as parent_service;
+use crate::utils::tenant::resolve_tenant_pool;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -24,79 +22,8 @@ pub async fn get_own_parent_profile(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    // Get current user
-    let user = get_current_user(&headers, &pool).await?;
-
-    if user.user_type != "parent" {
-        return Err(AppError::Forbidden("เฉพาะผู้ปกครองเท่านั้น".to_string()));
-    }
-
-    // Query parent profile
-    let mut parent = sqlx::query_as::<_, ParentDbRow>(
-        r#"
-        SELECT 
-            id, username, first_name, last_name, title, phone, email, national_id
-        FROM users
-        WHERE id = $1 AND status = 'active'
-        "#,
-    )
-    .bind(user.id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("❌ Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
-    })?
-    .ok_or(AppError::NotFound("Parent not found".to_string()))?;
-
-    // Decrypt national_id
-    if let Some(nid) = &parent.national_id {
-        if let Ok(dec) = field_encryption::decrypt(nid) {
-            parent.national_id = Some(dec);
-        }
-    }
-
-    // Fetch children
-    let children = sqlx::query_as::<_, ChildDto>(
-        r#"
-        SELECT 
-            u.id, u.first_name, u.last_name, u.profile_image_url,
-            si.student_id, 
-            CASE gl.level_type 
-                WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
-                WHEN 'primary' THEN CONCAT('ป.', gl.year)
-                WHEN 'secondary' THEN CONCAT('ม.', gl.year)
-                ELSE CONCAT('?.', gl.year)
-            END as grade_level, 
-            c.name as class_room,
-            sp.relationship
-        FROM student_parents sp
-        INNER JOIN users u ON sp.student_user_id = u.id
-        LEFT JOIN student_info si ON u.id = si.user_id
-        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
-        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
-        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
-        WHERE sp.parent_user_id = $1 AND u.status = 'active'
-        ORDER BY u.first_name ASC
-        "#,
-    )
-    .bind(user.id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_else(|_| Vec::new());
-
-    let profile = ParentProfile {
-        id: parent.id,
-        username: parent.username,
-        first_name: parent.first_name,
-        last_name: parent.last_name,
-        title: parent.title,
-        phone: parent.phone,
-        email: parent.email,
-        national_id: parent.national_id,
-        children,
-    };
+    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let profile = parent_service::get_own_parent_profile(&pool, actor.user_id).await?;
 
     Ok((
         StatusCode::OK,
@@ -111,101 +38,8 @@ pub async fn get_child_profile(
     Path(student_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    // Get current user (Parent)
-    let user = get_current_user(&headers, &pool).await?;
-
-    if user.user_type != "parent" {
-        return Err(AppError::Forbidden("เฉพาะผู้ปกครองเท่านั้น".to_string()));
-    }
-
-    // Check if Parent is linked to this student
-    let is_linked: bool = sqlx::query_scalar(
-        r#"
-        SELECT EXISTS(
-            SELECT 1 FROM student_parents
-            WHERE parent_user_id = $1 AND student_user_id = $2
-        )
-        "#,
-    )
-    .bind(user.id)
-    .bind(student_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("❌ parent-child link check failed: {}", e);
-        AppError::InternalServerError("ตรวจสอบสิทธิ์ผิดพลาด".to_string())
-    })?;
-
-    if !is_linked {
-        return Err(AppError::Forbidden(
-            "คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string(),
-        ));
-    }
-
-    // Reuse logic from get_student to fetch full profile
-    // Query student profile
-    let mut student_row = sqlx::query_as::<_, StudentDbRow>(
-        r#"
-        SELECT 
-            u.id, u.username, u.national_id, u.email, u.first_name, u.last_name, 
-            u.title, u.nickname, u.phone, u.date_of_birth, u.gender, u.address, u.profile_image_url, u.status,
-            si.student_id, 
-            CASE gl.level_type 
-                WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
-                WHEN 'primary' THEN CONCAT('ป.', gl.year)
-                WHEN 'secondary' THEN CONCAT('ม.', gl.year)
-                ELSE CONCAT('?.', gl.year)
-            END as grade_level, 
-            c.name as class_room,
-            sce.class_number as student_number,
-            si.blood_type, si.allergies, si.medical_conditions
-        FROM users u
-        INNER JOIN student_info si ON u.id = si.user_id
-        LEFT JOIN student_class_enrollments sce ON u.id = sce.student_id AND sce.status = 'active'
-        LEFT JOIN class_rooms c ON sce.class_room_id = c.id
-        LEFT JOIN grade_levels gl ON c.grade_level_id = gl.id
-        WHERE u.id = $1 AND u.status = 'active'
-        "#
-    )
-    .bind(student_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("❌ Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูลนักเรียน".to_string())
-    })?
-    .ok_or(AppError::NotFound("Student not found".to_string()))?;
-
-    // Decrypt fields
-    if let Some(nid) = &student_row.national_id {
-        if let Ok(dec) = field_encryption::decrypt(nid) {
-            student_row.national_id = Some(dec);
-        }
-    }
-
-    // Note: Assuming other sensitive fields are handled.
-
-    // Fetch parents for this student
-    let parents = sqlx::query_as::<_, ParentDto>(
-        r#"
-        SELECT 
-            u.id, u.username, u.first_name, u.last_name, u.phone,
-            sp.relationship, sp.is_primary
-        FROM student_parents sp
-        INNER JOIN users u ON sp.parent_user_id = u.id
-        WHERE sp.student_user_id = $1
-        "#,
-    )
-    .bind(student_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_else(|_| Vec::new());
-
-    let student = StudentProfile {
-        info: student_row,
-        parents,
-    };
+    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let student = parent_service::get_child_profile(&pool, actor.user_id, student_id).await?;
 
     Ok((
         StatusCode::OK,
@@ -227,45 +61,12 @@ pub async fn get_child_timetable(
     Query(query): Query<ChildTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-
-    let user = get_current_user(&headers, &pool).await?;
-
-    if user.user_type != "parent" {
-        return Err(AppError::Forbidden("เฉพาะผู้ปกครองเท่านั้น".to_string()));
-    }
-
-    // Verify parent owns this student
-    let is_linked: bool = sqlx::query_scalar(
-        r#"
-        SELECT EXISTS(
-            SELECT 1 FROM student_parents
-            WHERE parent_user_id = $1 AND student_user_id = $2
-        )
-        "#,
-    )
-    .bind(user.id)
-    .bind(student_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("❌ parent-child link check failed: {}", e);
-        AppError::InternalServerError("ตรวจสอบสิทธิ์ผิดพลาด".to_string())
-    })?;
-
-    if !is_linked {
-        return Err(AppError::Forbidden(
-            "คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string(),
-        ));
-    }
-
-    // ใช้ service เดียวกับ list_timetable_entries — filter ตาม student_id ของลูก
-    let entries = timetable_service::list_entries(
+    let actor = load_actor_context_or_error(&headers, &pool, &state.permission_cache).await?;
+    let entries = parent_service::get_child_timetable(
         &pool,
-        TimetableFilter {
-            student_id: Some(student_id),
-            academic_semester_id: query.academic_semester_id,
-            ..Default::default()
-        },
+        actor.user_id,
+        student_id,
+        query.academic_semester_id,
     )
     .await?;
 
