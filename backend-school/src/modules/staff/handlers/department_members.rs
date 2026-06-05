@@ -77,13 +77,8 @@ pub async fn add_member(
     Json(body): Json<AddMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_ASSIGN_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
 
     if department_member_service::already_member(&pool, body.user_id, department_id).await? {
         return Ok(
@@ -114,13 +109,8 @@ pub async fn update_member(
     Json(body): Json<UpdateMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_ASSIGN_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
 
     let target_dept = body.new_department_id.unwrap_or(department_id);
     let updated = department_member_service::update_member(
@@ -149,13 +139,8 @@ pub async fn remove_member(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_ASSIGN_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
     department_member_service::remove_member(&pool, department_id, user_id).await?;
     state.permission_cache.invalidate(&user_id);
     state.notify_permission_changed(user_id);

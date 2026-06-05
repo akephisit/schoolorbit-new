@@ -346,15 +346,9 @@ impl WebSocketManager {
 
         let (tx, _rx) = broadcast::channel(100);
         self.rooms.insert(key.clone(), tx.clone());
-        self.room_users
-            .entry(key.clone())
-            .or_insert_with(DashMap::new);
-        self.room_drags
-            .entry(key.clone())
-            .or_insert_with(DashMap::new);
-        self.room_activities
-            .entry(key.clone())
-            .or_insert_with(DashMap::new);
+        self.room_users.entry(key.clone()).or_default();
+        self.room_drags.entry(key.clone()).or_default();
+        self.room_activities.entry(key.clone()).or_default();
         self.room_seq
             .entry(key.clone())
             .or_insert_with(|| Arc::new(AtomicU64::new(0)));

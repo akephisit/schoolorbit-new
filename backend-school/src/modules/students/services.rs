@@ -327,7 +327,7 @@ pub async fn update_student(
         "#,
     )
     .bind(student_id)
-    .bind(&payload.student_number)
+    .bind(payload.student_number)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
@@ -550,8 +550,8 @@ async fn insert_student_info(
         "#,
     )
     .bind(user_id)
-    .bind(&payload.student_id)
-    .bind(&payload.student_number)
+    .bind(payload.student_id.as_str())
+    .bind(payload.student_number)
     .execute(&mut **tx)
     .await
     .map_err(|e| {

@@ -10,6 +10,15 @@ pub struct BacktrackingScheduler {
     config: SchedulerConfig,
 }
 
+struct BacktrackSearch<'a> {
+    courses: &'a [CourseToSchedule],
+    available_slots: &'a [TimeSlot],
+    best_state: &'a mut Option<ScheduleState>,
+    best_score: &'a mut f64,
+    iterations: &'a mut u32,
+    start_time: &'a Instant,
+}
+
 impl BacktrackingScheduler {
     pub fn new(validator: ConstraintValidator, config: SchedulerConfig) -> Self {
         let scorer = QualityScorer::new(config.clone());
@@ -40,16 +49,17 @@ impl BacktrackingScheduler {
         let mut failed_courses = Vec::new();
 
         // Try to schedule
-        let success = self.backtrack(
-            courses,
-            0,
-            available_slots,
-            &mut state,
-            &mut best_state,
-            &mut best_score,
-            &mut iterations,
-            &start_time,
-        );
+        let success = {
+            let mut search = BacktrackSearch {
+                courses,
+                available_slots,
+                best_state: &mut best_state,
+                best_score: &mut best_score,
+                iterations: &mut iterations,
+                start_time: &start_time,
+            };
+            self.backtrack(&mut search, 0, &mut state)
+        };
 
         let duration_ms = start_time.elapsed().as_millis();
 
@@ -107,69 +117,46 @@ impl BacktrackingScheduler {
     /// Backtracking recursive function
     fn backtrack(
         &self,
-        courses: &[CourseToSchedule],
+        search: &mut BacktrackSearch<'_>,
         course_idx: usize,
-        available_slots: &[TimeSlot],
         state: &mut ScheduleState,
-        best_state: &mut Option<ScheduleState>,
-        best_score: &mut f64,
-        iterations: &mut u32,
-        start_time: &Instant,
     ) -> bool {
-        *iterations += 1;
+        *search.iterations += 1;
 
         // Check timeout
-        if start_time.elapsed().as_secs() >= self.config.timeout_seconds as u64 {
+        if search.start_time.elapsed().as_secs() >= self.config.timeout_seconds as u64 {
             return false; // Timeout
         }
 
         // Check max iterations
-        if *iterations >= self.config.max_iterations {
+        if *search.iterations >= self.config.max_iterations {
             return false;
         }
 
         // Base case: all courses scheduled
-        if course_idx >= courses.len() {
+        if course_idx >= search.courses.len() {
             // Calculate quality
-            let quality = self.scorer.calculate_quality(state, courses);
+            let quality = self.scorer.calculate_quality(state, search.courses);
 
             // Update best if better
-            if quality > *best_score {
-                *best_score = quality;
-                *best_state = Some(state.clone());
+            if quality > *search.best_score {
+                *search.best_score = quality;
+                *search.best_state = Some(state.clone());
             }
 
             // Accept if meets minimum quality
             return quality >= self.config.min_quality_score;
         }
 
-        let course = &courses[course_idx];
+        let course = &search.courses[course_idx];
         let periods_needed = course.periods_remaining;
 
         // Try to schedule this course
-        let success = self.schedule_course(
-            course,
-            periods_needed,
-            available_slots,
-            state,
-            best_state,
-            best_score,
-            iterations,
-            start_time,
-        );
+        let success = self.schedule_course(course, periods_needed, search.available_slots, state);
 
         if success {
             // Continue to next course
-            if self.backtrack(
-                courses,
-                course_idx + 1,
-                available_slots,
-                state,
-                best_state,
-                best_score,
-                iterations,
-                start_time,
-            ) {
+            if self.backtrack(search, course_idx + 1, state) {
                 return true; // Found acceptable solution
             }
         }
@@ -182,16 +169,7 @@ impl BacktrackingScheduler {
 
         // If partial scheduling allowed, continue anyway
         if self.config.allow_partial {
-            return self.backtrack(
-                courses,
-                course_idx + 1,
-                available_slots,
-                state,
-                best_state,
-                best_score,
-                iterations,
-                start_time,
-            );
+            return self.backtrack(search, course_idx + 1, state);
         }
 
         false
@@ -232,10 +210,6 @@ impl BacktrackingScheduler {
         periods_needed: i32,
         available_slots: &[TimeSlot],
         state: &mut ScheduleState,
-        _best_state: &mut Option<ScheduleState>,
-        _best_score: &mut f64,
-        _iterations: &mut u32,
-        _start_time: &Instant,
     ) -> bool {
         // Filter slots based on course constraints (allowed_period_ids, allowed_days)
         let filtered_slots = self.filter_allowed_slots(course, available_slots);
@@ -362,7 +336,11 @@ impl BacktrackingScheduler {
 
         // Validate consecutive after all assignments
         let assignments = state.get_course_assignments(course.id);
-        if let Err(_) = self.validator.validate_consecutive(course, &assignments) {
+        if self
+            .validator
+            .validate_consecutive(course, &assignments)
+            .is_err()
+        {
             return false;
         }
 
@@ -450,7 +428,7 @@ impl BacktrackingScheduler {
         for slot in available_slots {
             by_day
                 .entry(slot.day.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(slot.clone());
         }
 

@@ -27,7 +27,7 @@ pub async fn register_routes(
         AppError::InternalServerError("Server configuration error".to_string())
     })?;
 
-    if deploy_key != Some(&expected_key.as_str()) {
+    if deploy_key != Some(expected_key.as_str()) {
         eprintln!("❌ Invalid deploy key provided");
         return Err(AppError::AuthError("Invalid deploy key".to_string()));
     }

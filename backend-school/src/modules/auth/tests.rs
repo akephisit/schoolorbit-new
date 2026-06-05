@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod auth_tests {
     use crate::modules::auth::models::LoginRequest;
     use crate::test_helpers::*;
 

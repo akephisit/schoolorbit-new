@@ -27,13 +27,8 @@ pub async fn list_roles(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_READ_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let roles = role_service::list_roles(&pool).await?;
     Ok(Json(json!({ "success": true, "data": roles })).into_response())
@@ -45,13 +40,8 @@ pub async fn get_role(
     Path(role_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_READ_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let role = role_service::get_role(&pool, role_id).await?;
     Ok(Json(json!({ "success": true, "data": role })).into_response())
@@ -63,13 +53,8 @@ pub async fn create_role(
     Json(payload): Json<CreateRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_CREATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_CREATE_ALL)?;
 
     let role_id = role_service::create_role(&pool, payload).await?;
     Ok((
@@ -86,13 +71,8 @@ pub async fn update_role(
     Json(payload): Json<UpdateRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_UPDATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_UPDATE_ALL)?;
 
     role_service::update_role(&pool, role_id, payload).await?;
 
@@ -112,13 +92,8 @@ pub async fn list_departments(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_READ_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let departments = department_service::list_departments(&pool).await?;
     Ok(Json(json!({ "success": true, "data": departments })).into_response())
@@ -130,13 +105,8 @@ pub async fn get_department(
     Path(dept_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_READ_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let department = department_service::get_department(&pool, dept_id).await?;
     Ok(Json(json!({ "success": true, "data": department })).into_response())
@@ -148,13 +118,8 @@ pub async fn create_department(
     Json(payload): Json<CreateDepartmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_CREATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_CREATE_ALL)?;
 
     let dept_id = department_service::create_department(&pool, payload).await?;
     Ok((
@@ -171,13 +136,8 @@ pub async fn update_department(
     Json(payload): Json<UpdateDepartmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ROLES_UPDATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ROLES_UPDATE_ALL)?;
 
     department_service::update_department(&pool, dept_id, payload).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตฝ่ายสำเร็จ" })).into_response())

@@ -119,19 +119,17 @@ impl<'a> SchedulerDataLoader<'a> {
                     let uuids: Result<Vec<Uuid>, _> = arr
                         .iter()
                         .filter_map(|v| v.as_str())
-                        .map(|s| Uuid::parse_str(s))
+                        .map(Uuid::parse_str)
                         .collect();
                     uuids.ok()
                 })
             });
 
             let allowed_days = row.allowed_days.as_ref().and_then(|json| {
-                json.as_array().and_then(|arr| {
-                    Some(
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect(),
-                    )
+                json.as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
                 })
             });
 

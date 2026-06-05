@@ -28,10 +28,7 @@ pub async fn list_subject_groups(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
     if !actor.has_any_permission(&[
         codes::ACADEMIC_CURRICULUM_READ_ALL,
         codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
@@ -53,10 +50,7 @@ pub async fn list_subjects(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_READ_ALL);
     let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
@@ -92,10 +86,7 @@ pub async fn create_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_CREATE_ALL);
     let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
@@ -132,10 +123,7 @@ pub async fn update_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_UPDATE_ALL);
     let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
@@ -168,10 +156,7 @@ pub async fn delete_subject(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_DELETE_ALL);
     let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
@@ -205,11 +190,8 @@ async fn check_subject_manage(
     subject_id: Uuid,
     manage_code: &str,
     read_only: bool,
-) -> Result<(), axum::response::Response> {
-    let actor = match load_actor_context(headers, pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Err(resp),
-    };
+) -> Result<(), AppError> {
+    let actor = load_actor_context(headers, pool, &state.permission_cache).await?;
     let has_all = actor.has_permission(manage_code)
         || (read_only
             && actor.has_any_permission(&[
@@ -219,34 +201,22 @@ async fn check_subject_manage(
             ]));
     let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
     if !has_all && !has_dept {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", manage_code) })),
-        )
-            .into_response());
+        return Err(AppError::Forbidden(format!("ไม่มีสิทธิ์ {}", manage_code)));
     }
     if !has_all && has_dept {
         let teacher_group =
             match subject_service::get_user_subject_group_id(actor.user_id, pool).await {
                 Some(gid) => gid,
-                None => {
-                    return Err((
-                        StatusCode::FORBIDDEN,
-                        Json(json!({ "success": false, "error": "ไม่พบกลุ่มสาระที่สังกัด" })),
-                    )
-                        .into_response())
-                }
+                None => return Err(AppError::Forbidden("ไม่พบกลุ่มสาระที่สังกัด".to_string())),
             };
         let subject_group = subject_service::get_subject_group_id(pool, subject_id)
             .await
             .ok()
             .flatten();
         if subject_group != Some(teacher_group) {
-            return Err((
-                StatusCode::FORBIDDEN,
-                Json(json!({ "success": false, "error": "ไม่สามารถจัดการวิชาในกลุ่มสาระอื่นได้" })),
-            )
-                .into_response());
+            return Err(AppError::Forbidden(
+                "ไม่สามารถจัดการวิชาในกลุ่มสาระอื่นได้".to_string(),
+            ));
         }
     }
     Ok(())
@@ -258,7 +228,7 @@ pub async fn list_subject_default_instructors(
     Path(subject_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_subject_manage(
+    check_subject_manage(
         &state,
         &headers,
         &pool,
@@ -266,10 +236,7 @@ pub async fn list_subject_default_instructors(
         codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
         true,
     )
-    .await
-    {
-        return Ok(resp);
-    }
+    .await?;
     let rows = subject_service::list_subject_default_instructors(&pool, subject_id).await?;
     Ok(Json(json!({ "success": true, "data": rows })).into_response())
 }
@@ -281,7 +248,7 @@ pub async fn add_subject_default_instructor(
     Json(body): Json<AddSubjectDefaultInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_subject_manage(
+    check_subject_manage(
         &state,
         &headers,
         &pool,
@@ -289,10 +256,7 @@ pub async fn add_subject_default_instructor(
         codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
         false,
     )
-    .await
-    {
-        return Ok(resp);
-    }
+    .await?;
     subject_service::add_subject_default_instructor(&pool, subject_id, body).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
@@ -303,7 +267,7 @@ pub async fn remove_subject_default_instructor(
     Path((subject_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_subject_manage(
+    check_subject_manage(
         &state,
         &headers,
         &pool,
@@ -311,10 +275,7 @@ pub async fn remove_subject_default_instructor(
         codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
         false,
     )
-    .await
-    {
-        return Ok(resp);
-    }
+    .await?;
     subject_service::remove_subject_default_instructor(&pool, subject_id, instructor_id).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }
@@ -326,7 +287,7 @@ pub async fn update_subject_default_instructor_role(
     Json(body): Json<UpdateSubjectDefaultInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    if let Err(resp) = check_subject_manage(
+    check_subject_manage(
         &state,
         &headers,
         &pool,
@@ -334,10 +295,7 @@ pub async fn update_subject_default_instructor_role(
         codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
         false,
     )
-    .await
-    {
-        return Ok(resp);
-    }
+    .await?;
     subject_service::update_subject_default_instructor_role(
         &pool,
         subject_id,
@@ -360,10 +318,7 @@ pub async fn batch_list_subject_default_instructors(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
     if !actor.has_any_permission(&[
         codes::ACADEMIC_CURRICULUM_READ_ALL,
         codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,

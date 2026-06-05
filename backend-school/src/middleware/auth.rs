@@ -20,13 +20,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
 
-    let token_from_header = auth_header.and_then(|h| {
-        if h.starts_with("Bearer ") {
-            Some(h[7..].to_string())
-        } else {
-            None
-        }
-    });
+    let token_from_header = auth_header.and_then(|h| h.strip_prefix("Bearer ").map(str::to_string));
 
     // Fallback to cookie (for same-origin requests)
     let token_from_cookie = req
@@ -75,13 +69,7 @@ pub async fn extract_user_id(
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
 
-    let token_from_header = auth_header.and_then(|h| {
-        if h.starts_with("Bearer ") {
-            Some(h[7..].to_string())
-        } else {
-            None
-        }
-    });
+    let token_from_header = auth_header.and_then(|h| h.strip_prefix("Bearer ").map(str::to_string));
 
     // Fallback to cookie
     let token_from_cookie = headers
@@ -104,7 +92,7 @@ pub async fn extract_user_id(
 pub async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Result<User, AppError> {
     let user_id = extract_user_id(headers, pool)
         .await
-        .map_err(|e| AppError::AuthError(e))?;
+        .map_err(AppError::AuthError)?;
 
     let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
         .bind(user_id)

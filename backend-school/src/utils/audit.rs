@@ -133,12 +133,12 @@ impl AuditLogBuilder {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             RETURNING id",
         )
-        .bind(&self.user_id)
+        .bind(self.user_id)
         .bind(&self.user_email)
         .bind(&self.user_name)
         .bind(&self.action)
         .bind(&self.entity_type)
-        .bind(&self.entity_id)
+        .bind(self.entity_id)
         .bind(&self.entity_name)
         .bind(&self.old_values)
         .bind(&self.new_values)
@@ -175,23 +175,27 @@ pub async fn log_create(
         .await
 }
 
-pub async fn log_update(
-    pool: &PgPool,
-    user_id: Uuid,
-    entity_type: &str,
-    entity_id: Uuid,
-    entity_name: Option<String>,
-    old_values: JsonValue,
-    new_values: JsonValue,
-    changes: JsonValue,
-) -> Result<Uuid, sqlx::Error> {
-    AuditLogBuilder::new("update", entity_type)
-        .user(user_id, None, None)
-        .entity(entity_id, entity_name)
-        .old_values(old_values)
-        .new_values(new_values)
-        .changes(changes)
-        .description(format!("Updated {} with ID {}", entity_type, entity_id))
+pub struct AuditUpdateInput<'a> {
+    pub user_id: Uuid,
+    pub entity_type: &'a str,
+    pub entity_id: Uuid,
+    pub entity_name: Option<String>,
+    pub old_values: JsonValue,
+    pub new_values: JsonValue,
+    pub changes: JsonValue,
+}
+
+pub async fn log_update(pool: &PgPool, input: AuditUpdateInput<'_>) -> Result<Uuid, sqlx::Error> {
+    AuditLogBuilder::new("update", input.entity_type)
+        .user(input.user_id, None, None)
+        .entity(input.entity_id, input.entity_name)
+        .old_values(input.old_values)
+        .new_values(input.new_values)
+        .changes(input.changes)
+        .description(format!(
+            "Updated {} with ID {}",
+            input.entity_type, input.entity_id
+        ))
         .save(pool)
         .await
 }

@@ -308,21 +308,25 @@ pub async fn update_scheduler_settings(
     Ok(())
 }
 
+pub struct InstructorConstraintUpdate {
+    pub hard_unavailable_slots: Option<serde_json::Value>,
+    pub max_periods_per_day: Option<i32>,
+    pub preferred_slots: Option<serde_json::Value>,
+    pub priority: Option<i32>,
+    pub assigned_room_id: Option<Uuid>,
+    pub clear_assigned_room: bool,
+}
+
 pub async fn update_instructor_constraints(
     pool: &PgPool,
     instructor_id: Uuid,
-    hard_unavailable_slots: Option<serde_json::Value>,
-    max_periods_per_day: Option<i32>,
-    preferred_slots: Option<serde_json::Value>,
-    priority: Option<i32>,
-    assigned_room_id: Option<Uuid>,
-    clear_assigned_room: bool,
+    update: InstructorConstraintUpdate,
 ) -> Result<(), AppError> {
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let year_id = get_active_year_id_tx(&mut *tx).await?;
+    let year_id = get_active_year_id_tx(&mut tx).await?;
 
     sqlx::query(
         r#"INSERT INTO instructor_preferences (
@@ -342,15 +346,15 @@ pub async fn update_instructor_constraints(
     )
     .bind(instructor_id)
     .bind(year_id)
-    .bind(hard_unavailable_slots)
-    .bind(max_periods_per_day)
-    .bind(preferred_slots)
-    .bind(priority)
+    .bind(update.hard_unavailable_slots)
+    .bind(update.max_periods_per_day)
+    .bind(update.preferred_slots)
+    .bind(update.priority)
     .execute(&mut *tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    if let Some(room_id) = assigned_room_id {
+    if let Some(room_id) = update.assigned_room_id {
         sqlx::query(
             "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
         ).bind(instructor_id).bind(year_id).execute(&mut *tx).await
@@ -361,7 +365,7 @@ pub async fn update_instructor_constraints(
              VALUES ($1, $2, $3, true)"
         ).bind(instructor_id).bind(year_id).bind(room_id).execute(&mut *tx).await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    } else if clear_assigned_room {
+    } else if update.clear_assigned_room {
         sqlx::query(
             "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true"
         ).bind(instructor_id).bind(year_id).execute(&mut *tx).await

@@ -50,10 +50,7 @@ pub async fn list_delegatable_permissions(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
     let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
     if !can_approve_department_work {
         return Ok((
@@ -74,10 +71,7 @@ pub async fn list_delegations(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
     let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
     if !can_approve_department_work {
         return Ok((
@@ -99,10 +93,7 @@ pub async fn create_delegation(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
     let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
     if !can_approve_department_work {
         return Ok((
@@ -149,10 +140,7 @@ pub async fn revoke_delegation(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(resp) => return Ok(resp),
-    };
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
 
     let (from_user_id, to_user_id) =
         match delegation_service::get_delegation_users(&pool, delegation_id).await? {

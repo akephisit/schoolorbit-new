@@ -98,21 +98,35 @@ pub struct OccupancyRow {
 
 /// Outcome ของ create_entry — service ตัดสินใจ logic, handler ตัดสินใจ HTTP/WS broadcast
 pub enum CreateEntryOutcome {
-    Created(TimetableEntry),
+    Created(Box<TimetableEntry>),
     Conflict(Vec<ConflictInfo>),
 }
 
 /// Outcome ของ update_entry — handler ใช้ existing_entry เพื่อ broadcast DropRejected/EntryUpdated
 pub enum UpdateEntryOutcome {
     Updated {
-        updated: TimetableEntry,
-        existing: TimetableEntry,
+        updated: Box<TimetableEntry>,
+        existing: Box<TimetableEntry>,
     },
     Conflict {
         conflicts: Vec<ConflictInfo>,
-        existing: TimetableEntry,
+        existing: Box<TimetableEntry>,
     },
 }
+
+type SwapEntryRow = (
+    Uuid,
+    String,
+    Uuid,
+    Option<Uuid>,
+    Option<Uuid>,
+    Uuid,
+    Option<Uuid>,
+);
+type MoveSourceRow = (String, Uuid, Option<Uuid>, Option<Uuid>, Uuid, Uuid);
+type MoveEntryRow = (Uuid, String, Uuid, Option<Uuid>, Option<Uuid>);
+type MoveCellKey = (String, Uuid);
+type MoveEntryRefs<'a> = Vec<&'a MoveEntryRow>;
 
 #[derive(Serialize)]
 pub struct MyActivityInstructor {
@@ -661,7 +675,7 @@ pub async fn create_entry(
     tx.commit()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(CreateEntryOutcome::Created(entry))
+    Ok(CreateEntryOutcome::Created(Box::new(entry)))
 }
 
 /// ผลของ add_entry_instructor — handler ใช้ broadcast EntryInstructorAdded
@@ -969,20 +983,12 @@ pub async fn swap_entries(
     pool: &PgPool,
     body: SwapTimetableEntriesRequest,
 ) -> Result<SwapOutcome, AppError> {
-    let entries: Vec<(
-        Uuid,
-        String,
-        Uuid,
-        Option<Uuid>,
-        Option<Uuid>,
-        Uuid,
-        Option<Uuid>,
-    )> = sqlx::query_as(
+    let entries: Vec<SwapEntryRow> = sqlx::query_as(
         r#"SELECT id, day_of_week, period_id, room_id, classroom_id, academic_semester_id, batch_id
            FROM academic_timetable_entries
            WHERE id = ANY($1) AND is_active = true"#,
     )
-    .bind(&[body.entry_a_id, body.entry_b_id])
+    .bind([body.entry_a_id, body.entry_b_id])
     .fetch_all(pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
@@ -1224,7 +1230,7 @@ pub async fn validate_moves(
     pool: &PgPool,
     body: ValidateMovesRequest,
 ) -> Result<Vec<MoveValidityCell>, AppError> {
-    let src: Option<(String, Uuid, Option<Uuid>, Option<Uuid>, Uuid, Uuid)> = sqlx::query_as(
+    let src: Option<MoveSourceRow> = sqlx::query_as(
         r#"SELECT day_of_week, period_id, classroom_id, room_id, academic_semester_id, id
            FROM academic_timetable_entries WHERE id = $1 AND is_active = true"#,
     )
@@ -1238,7 +1244,7 @@ pub async fn validate_moves(
         None => return Err(AppError::NotFound("Entry not found".to_string())),
     };
 
-    let all_entries: Vec<(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+    let all_entries: Vec<MoveEntryRow> = sqlx::query_as(
         r#"SELECT id, day_of_week, period_id, classroom_id, room_id
            FROM academic_timetable_entries
            WHERE academic_semester_id = $1 AND is_active = true"#,
@@ -1271,10 +1277,7 @@ pub async fn validate_moves(
         by_entry.entry(*eid).or_default().push(*iid);
     }
 
-    let mut cell_entries: HashMap<
-        (String, Uuid),
-        Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)>,
-    > = HashMap::new();
+    let mut cell_entries: HashMap<MoveCellKey, MoveEntryRefs<'_>> = HashMap::new();
     for e in &all_entries {
         cell_entries.entry((e.1.clone(), e.2)).or_default().push(e);
     }
@@ -1309,9 +1312,8 @@ pub async fn validate_moves(
                 continue;
             }
 
-            let occupants: Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)> =
-                cell_entries.get(&key).cloned().unwrap_or_default();
-            let others: Vec<&(Uuid, String, Uuid, Option<Uuid>, Option<Uuid>)> = occupants
+            let occupants: MoveEntryRefs<'_> = cell_entries.get(&key).cloned().unwrap_or_default();
+            let others: MoveEntryRefs<'_> = occupants
                 .iter()
                 .filter(|e| e.0 != body.entry_id)
                 .copied()
@@ -1334,7 +1336,7 @@ pub async fn validate_moves(
                             e.0 != body.entry_id
                                 && e.1 == *day
                                 && e.2 == *pid
-                                && by_entry.get(&e.0).map_or(false, |ids| ids.contains(iid))
+                                && by_entry.get(&e.0).is_some_and(|ids| ids.contains(iid))
                         }) {
                             valid = false;
                             reason = "ครูติดคาบ".to_string();
@@ -1398,7 +1400,7 @@ pub async fn validate_moves(
                                 && e.0 != target_id
                                 && e.1 == *day
                                 && e.2 == *pid
-                                && by_entry.get(&e.0).map_or(false, |ids| ids.contains(iid))
+                                && by_entry.get(&e.0).is_some_and(|ids| ids.contains(iid))
                         }) {
                             valid = false;
                             reason = "ครูต้นทางติดคาบปลายทาง".to_string();
@@ -1415,7 +1417,7 @@ pub async fn validate_moves(
                                 && e.0 != target_id
                                 && e.1 == src_day
                                 && e.2 == src_period
-                                && by_entry.get(&e.0).map_or(false, |ids| ids.contains(iid))
+                                && by_entry.get(&e.0).is_some_and(|ids| ids.contains(iid))
                         }) {
                             valid = false;
                             reason = "ครูปลายทางติดคาบต้นทาง".to_string();
@@ -1699,7 +1701,7 @@ pub async fn update_entry(
     if !conflict_list.is_empty() {
         return Ok(UpdateEntryOutcome::Conflict {
             conflicts: conflict_list,
-            existing: existing_entry,
+            existing: Box::new(existing_entry),
         });
     }
 
@@ -1751,8 +1753,8 @@ pub async fn update_entry(
     })?;
 
     Ok(UpdateEntryOutcome::Updated {
-        updated: updated_entry,
-        existing: existing_entry,
+        updated: Box::new(updated_entry),
+        existing: Box::new(existing_entry),
     })
 }
 
@@ -2098,20 +2100,18 @@ pub async fn create_batch_entries(
                             if candidate_instructors.contains(iid) {
                                 let name = e.instructor_names.get(idx).cloned().unwrap_or_default();
                                 conflicting_instructors.push((*iid, name));
-                                if force {
-                                    if !entries_to_delete.contains(&e.id) {
-                                        entries_to_delete.push(e.id);
-                                        deleted.push(BatchDeletedEntry {
-                                            id: e.id,
-                                            classroom_name: e.classroom_name.clone(),
-                                            day_of_week: day.clone(),
-                                            period_id: *p_id,
-                                            period_name: e.period_name.clone(),
-                                            title: e.display_title.clone(),
-                                            entry_type: e.entry_type.clone(),
-                                            instructor_names: e.instructor_names.clone(),
-                                        });
-                                    }
+                                if force && !entries_to_delete.contains(&e.id) {
+                                    entries_to_delete.push(e.id);
+                                    deleted.push(BatchDeletedEntry {
+                                        id: e.id,
+                                        classroom_name: e.classroom_name.clone(),
+                                        day_of_week: day.clone(),
+                                        period_id: *p_id,
+                                        period_name: e.period_name.clone(),
+                                        title: e.display_title.clone(),
+                                        entry_type: e.entry_type.clone(),
+                                        instructor_names: e.instructor_names.clone(),
+                                    });
                                 }
                             }
                         }

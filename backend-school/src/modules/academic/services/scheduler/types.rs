@@ -141,29 +141,26 @@ impl ScheduleState {
         // Track classroom usage
         self.classroom_slots
             .entry(assignment.classroom_id.to_string())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(slot_key.clone());
 
         // Track instructor usage
         if let Some(instructor_id) = assignment.instructor_id {
             self.instructor_slots
                 .entry(instructor_id)
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(slot_key.clone());
         }
 
         // Track room usage
         if let Some(room_id) = assignment.room_id {
-            self.room_slots
-                .entry(room_id)
-                .or_insert_with(HashSet::new)
-                .insert(slot_key);
+            self.room_slots.entry(room_id).or_default().insert(slot_key);
         }
 
         // Track per-course
         self.course_assignments
             .entry(assignment.classroom_course_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(assignment.clone());
 
         self.assignments.push(assignment);

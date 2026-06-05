@@ -39,7 +39,7 @@ pub async fn update_settings(
 ) -> Result<(), AppError> {
     sqlx::query("UPDATE school_settings SET logo_path = $1, logo_file_id = $2, updated_at = NOW()")
         .bind(&payload.logo_path)
-        .bind(&payload.logo_file_id)
+        .bind(payload.logo_file_id)
         .execute(pool)
         .await
         .map_err(|e| {

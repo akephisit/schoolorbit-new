@@ -1,12 +1,13 @@
 use axum::{
     body::Body,
-    http::{HeaderMap, Request, StatusCode},
+    http::{HeaderMap, Request},
     middleware::Next,
-    response::{IntoResponse, Response},
-    Json,
+    response::Response,
 };
 use std::env;
 use subtle::ConstantTimeEq;
+
+use crate::error::AppError;
 
 pub const INTERNAL_SECRET_HEADER: &str = "X-Internal-Secret";
 pub const INTERNAL_CALLER_HEADER: &str = "X-Internal-Caller";
@@ -15,7 +16,7 @@ pub const INTERNAL_CALLER_HEADER: &str = "X-Internal-Caller";
 pub async fn validate_internal_secret(
     req: Request<Body>,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, AppError> {
     if verify_internal_secret(req.headers())? {
         Ok(next.run(req).await)
     } else {
@@ -23,7 +24,7 @@ pub async fn validate_internal_secret(
     }
 }
 
-fn verify_internal_secret(headers: &HeaderMap) -> Result<bool, Response> {
+fn verify_internal_secret(headers: &HeaderMap) -> Result<bool, AppError> {
     let expected_secret = expected_internal_secret(headers)?;
     let provided_secret = headers
         .get(INTERNAL_SECRET_HEADER)
@@ -33,21 +34,13 @@ fn verify_internal_secret(headers: &HeaderMap) -> Result<bool, Response> {
     Ok(secrets_match(provided_secret, &expected_secret))
 }
 
-fn expected_internal_secret(headers: &HeaderMap) -> Result<String, Response> {
+fn expected_internal_secret(headers: &HeaderMap) -> Result<String, AppError> {
     if let Some(caller_secret) = internal_caller(headers).and_then(secret_for_caller) {
         return Ok(caller_secret);
     }
 
-    env::var("INTERNAL_API_SECRET").map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "error": "Server configuration error"
-            })),
-        )
-            .into_response()
-    })
+    env::var("INTERNAL_API_SECRET")
+        .map_err(|_| AppError::ConfigError("INTERNAL_API_SECRET is not configured".to_string()))
 }
 
 fn internal_caller(headers: &HeaderMap) -> Option<&str> {
@@ -70,12 +63,8 @@ fn secrets_match(provided: &str, expected: &str) -> bool {
     provided.as_bytes().ct_eq(expected.as_bytes()).into()
 }
 
-fn unauthorized_response() -> Response {
-    let error = serde_json::json!({
-        "success": false,
-        "error": "Unauthorized - Invalid or missing internal secret"
-    });
-    (StatusCode::UNAUTHORIZED, Json(error)).into_response()
+fn unauthorized_response() -> AppError {
+    AppError::AuthError("Unauthorized - Invalid or missing internal secret".to_string())
 }
 
 #[cfg(test)]

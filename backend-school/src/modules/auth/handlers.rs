@@ -78,7 +78,7 @@ pub async fn login(
            AND ur.ended_at IS NULL
          LIMIT 1",
     )
-    .bind(&user.id)
+    .bind(user.id)
     .fetch_optional(&pool)
     .await
     .unwrap_or(None);
@@ -222,7 +222,7 @@ pub async fn me(
            AND ur.ended_at IS NULL
          LIMIT 1",
     )
-    .bind(&user.id)
+    .bind(user.id)
     .fetch_optional(&pool)
     .await
     .unwrap_or(None);
@@ -286,7 +286,7 @@ pub async fn get_profile(
            AND ur.ended_at IS NULL
          LIMIT 1",
     )
-    .bind(&user.id)
+    .bind(user.id)
     .fetch_optional(&pool)
     .await
     .unwrap_or(None);
@@ -403,7 +403,7 @@ pub async fn update_profile(
             AND ur.ended_at IS NULL
             LIMIT 1",
     )
-    .bind(&user.id)
+    .bind(user.id)
     .fetch_optional(&pool)
     .await
     .unwrap_or(None);

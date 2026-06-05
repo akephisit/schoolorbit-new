@@ -1,8 +1,5 @@
-use crate::api_response::ApiErrorResponse;
+use crate::error::AppError;
 use axum::http::HeaderMap;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
-use axum::Json;
 
 pub const SCHOOL_SUBDOMAIN_HEADER: &str = "x-school-subdomain";
 
@@ -10,7 +7,7 @@ pub const SCHOOL_SUBDOMAIN_HEADER: &str = "x-school-subdomain";
 ///
 /// Browser tenant requests normally rely on Origin/Referer. X-School-Subdomain
 /// is an explicit override for local, custom-host, script, or non-browser clients.
-pub fn extract_subdomain_from_request(headers: &HeaderMap) -> Result<String, Response> {
+pub fn extract_subdomain_from_request(headers: &HeaderMap) -> Result<String, AppError> {
     if let Some(subdomain_header) = headers.get(SCHOOL_SUBDOMAIN_HEADER) {
         let subdomain = subdomain_header
             .to_str()
@@ -84,8 +81,8 @@ fn normalize_subdomain(subdomain: &str) -> Option<String> {
     Some(subdomain)
 }
 
-fn bad_request(error: &str) -> Response {
-    (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new(error))).into_response()
+fn bad_request(error: &str) -> AppError {
+    AppError::BadRequest(error.to_string())
 }
 
 #[cfg(test)]

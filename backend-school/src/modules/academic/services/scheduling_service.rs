@@ -267,12 +267,13 @@ pub async fn run_scheduling_job(
     .execute(pool)
     .await?;
 
-    let mut scheduler_config =
-        crate::modules::academic::services::scheduler::types::SchedulerConfig::default();
-    scheduler_config.algorithm = algorithm.clone();
-    scheduler_config.timeout_seconds = config.timeout_seconds.unwrap_or(300);
-    scheduler_config.min_quality_score = config.min_quality_score.unwrap_or(70.0);
-    scheduler_config.allow_partial = config.allow_partial.unwrap_or(false);
+    let scheduler_config = crate::modules::academic::services::scheduler::types::SchedulerConfig {
+        algorithm: algorithm.clone(),
+        timeout_seconds: config.timeout_seconds.unwrap_or(300),
+        min_quality_score: config.min_quality_score.unwrap_or(70.0),
+        allow_partial: config.allow_partial.unwrap_or(false),
+        ..Default::default()
+    };
 
     let scheduler = SchedulerBuilder::new()
         .algorithm(algorithm)

@@ -228,7 +228,7 @@ impl ConstraintValidator {
         for assign in assignments {
             by_day
                 .entry(assign.time_slot.day.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(assign.time_slot.period_order);
         }
 

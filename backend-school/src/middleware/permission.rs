@@ -1,12 +1,7 @@
 use crate::db::permission_cache::PermissionCache;
 use crate::error::AppError;
 use crate::permissions::registry::codes;
-use axum::{
-    http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    Json,
-};
-use serde_json::json;
+use axum::http::{header, HeaderMap};
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -37,22 +32,22 @@ impl ActorContext {
         module_permission_matches(&self.permissions, module)
     }
 
-    pub fn require_permission(&self, required_permission: &str) -> Result<(), Response> {
+    pub fn require_permission(&self, required_permission: &str) -> Result<(), AppError> {
         if self.has_permission(required_permission) {
             Ok(())
         } else {
-            Err(forbidden_response(format!(
+            Err(AppError::Forbidden(format!(
                 "ไม่มีสิทธิ์ {}",
                 required_permission
             )))
         }
     }
 
-    pub fn require_any_permission(&self, required_permissions: &[&str]) -> Result<(), Response> {
+    pub fn require_any_permission(&self, required_permissions: &[&str]) -> Result<(), AppError> {
         if self.has_any_permission(required_permissions) {
             Ok(())
         } else {
-            Err(forbidden_response(format!(
+            Err(AppError::Forbidden(format!(
                 "ไม่มีสิทธิ์ {}",
                 required_permissions.join(" หรือ ")
             )))
@@ -60,11 +55,11 @@ impl ActorContext {
     }
 
     #[allow(dead_code)]
-    pub fn require_all_permissions(&self, required_permissions: &[&str]) -> Result<(), Response> {
+    pub fn require_all_permissions(&self, required_permissions: &[&str]) -> Result<(), AppError> {
         if self.has_all_permissions(required_permissions) {
             Ok(())
         } else {
-            Err(forbidden_response(format!(
+            Err(AppError::Forbidden(format!(
                 "ไม่มีสิทธิ์ครบถ้วน: {}",
                 required_permissions.join(", ")
             )))
@@ -72,18 +67,12 @@ impl ActorContext {
     }
 }
 
-fn extract_actor_user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
+fn extract_actor_user_id(headers: &HeaderMap) -> Result<Uuid, AppError> {
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
 
-    let token_from_header = auth_header.and_then(|h| {
-        if h.starts_with("Bearer ") {
-            Some(h[7..].to_string())
-        } else {
-            None
-        }
-    });
+    let token_from_header = auth_header.and_then(|h| h.strip_prefix("Bearer ").map(str::to_string));
 
     let token_from_cookie = headers
         .get(header::COOKIE)
@@ -92,35 +81,17 @@ fn extract_actor_user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
 
     let token = match token_from_header.or(token_from_cookie) {
         Some(t) => t,
-        None => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "success": false, "error": "กรุณาเข้าสู่ระบบ" })),
-            )
-                .into_response());
-        }
+        None => return Err(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string())),
     };
 
     let claims = match crate::utils::jwt::JwtService::verify_token(&token) {
         Ok(c) => c,
-        Err(_) => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "success": false, "error": "Token ไม่ถูกต้อง" })),
-            )
-                .into_response());
-        }
+        Err(_) => return Err(AppError::AuthError("Token ไม่ถูกต้อง".to_string())),
     };
 
     let user_id = match Uuid::parse_str(&claims.sub) {
         Ok(id) => id,
-        Err(_) => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "success": false, "error": "Token ไม่ถูกต้อง" })),
-            )
-                .into_response());
-        }
+        Err(_) => return Err(AppError::AuthError("Token ไม่ถูกต้อง".to_string())),
     };
 
     Ok(user_id)
@@ -158,17 +129,6 @@ pub fn module_permission_matches(permissions: &[String], module: &str) -> bool {
             || permission.starts_with(&module_prefix)
             || permission.starts_with("*.")
     })
-}
-
-fn forbidden_response(error: String) -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(json!({
-            "success": false,
-            "error": error
-        })),
-    )
-        .into_response()
 }
 
 /// Fetch user's effective permissions from DB (position-aware + delegations).
@@ -239,17 +199,11 @@ pub async fn load_actor_context(
     headers: &HeaderMap,
     pool: &sqlx::PgPool,
     cache: &PermissionCache,
-) -> Result<ActorContext, Response> {
+) -> Result<ActorContext, AppError> {
     let user_id = extract_actor_user_id(headers)?;
     let permissions = get_cached_user_permissions(user_id, pool, cache)
         .await
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "success": false, "error": "ไม่สามารถตรวจสอบสิทธิ์ได้" })),
-            )
-                .into_response()
-        })?;
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์ได้".to_string()))?;
 
     Ok(ActorContext {
         user_id,
@@ -262,15 +216,5 @@ pub async fn load_actor_context_or_error(
     pool: &sqlx::PgPool,
     cache: &PermissionCache,
 ) -> Result<ActorContext, AppError> {
-    load_actor_context(headers, pool, cache)
-        .await
-        .map_err(actor_context_response_to_error)
-}
-
-fn actor_context_response_to_error(response: Response) -> AppError {
-    match response.status() {
-        StatusCode::UNAUTHORIZED => AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()),
-        StatusCode::FORBIDDEN => AppError::Forbidden("ไม่มีสิทธิ์".to_string()),
-        _ => AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์ได้".to_string()),
-    }
+    load_actor_context(headers, pool, cache).await
 }

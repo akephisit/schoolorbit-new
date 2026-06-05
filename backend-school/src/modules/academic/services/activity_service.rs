@@ -223,7 +223,7 @@ pub async fn list_groups(
 
 /// Outcome ของ create_group — ให้ caller รู้ว่า slot ปิดอยู่หรือครูไม่อยู่ในรายชื่อ
 pub enum CreateGroupOutcome {
-    Created(ActivityGroup),
+    Created(Box<ActivityGroup>),
     SlotClosed,
     InstructorNotInSlot,
 }
@@ -289,7 +289,7 @@ pub async fn create_group(
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
-    Ok(CreateGroupOutcome::Created(row))
+    Ok(CreateGroupOutcome::Created(Box::new(row)))
 }
 
 pub async fn update_group(

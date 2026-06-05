@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::middleware::permission::load_actor_context;
 use crate::modules::staff::services::permission_service;
 use crate::permissions::registry::codes;
@@ -6,7 +7,7 @@ use crate::AppState;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 use serde_json::json;
@@ -15,30 +16,22 @@ use serde_json::json;
 // List All Permissions
 // ===================================================================
 
-pub async fn list_permissions(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let pool = match resolve_tenant_pool(&state, &headers).await {
-        Ok(pool) => pool,
-        Err(error) => return error.into_response(),
-    };
+pub async fn list_permissions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let pool = resolve_tenant_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
-    if let Err(response) = actor.require_permission(codes::SETTINGS_READ) {
-        return response;
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::SETTINGS_READ)?;
 
-    let permissions = match permission_service::list_permissions(&pool).await {
-        Ok(permissions) => permissions,
-        Err(error) => return error.into_response(),
-    };
+    let permissions = permission_service::list_permissions(&pool).await?;
 
-    (
+    Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": permissions })),
     )
-        .into_response()
+        .into_response())
 }
 
 // ===================================================================
@@ -48,28 +41,17 @@ pub async fn list_permissions(State(state): State<AppState>, headers: HeaderMap)
 pub async fn list_permissions_by_module(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Response {
-    let pool = match resolve_tenant_pool(&state, &headers).await {
-        Ok(pool) => pool,
-        Err(error) => return error.into_response(),
-    };
+) -> Result<impl IntoResponse, AppError> {
+    let pool = resolve_tenant_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
-    if let Err(response) = actor.require_permission(codes::SETTINGS_READ) {
-        return response;
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::SETTINGS_READ)?;
 
-    let grouped = match permission_service::list_permissions_by_module(&pool).await {
-        Ok(grouped) => grouped,
-        Err(error) => return error.into_response(),
-    };
+    let grouped = permission_service::list_permissions_by_module(&pool).await?;
 
-    (
+    Ok((
         StatusCode::OK,
         Json(json!({ "success": true, "data": grouped })),
     )
-        .into_response()
+        .into_response())
 }

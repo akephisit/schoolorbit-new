@@ -32,13 +32,8 @@ pub async fn list_buildings(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::FACILITY_READ_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::FACILITY_READ_ALL)?;
 
     let buildings = sqlx::query_as::<_, Building>("SELECT * FROM buildings ORDER BY name_th ASC")
         .fetch_all(&pool)
@@ -54,13 +49,8 @@ pub async fn create_building(
     Json(payload): Json<CreateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::FACILITY_CREATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::FACILITY_CREATE_ALL)?;
 
     let building = sqlx::query_as::<_, Building>(
         r#"
@@ -94,13 +84,8 @@ pub async fn update_building(
     Json(payload): Json<UpdateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::FACILITY_UPDATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::FACILITY_UPDATE_ALL)?;
 
     let building = sqlx::query_as::<_, Building>(
         r#"
@@ -132,13 +117,8 @@ pub async fn delete_building(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::FACILITY_DELETE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::FACILITY_DELETE_ALL)?;
 
     sqlx::query("DELETE FROM buildings WHERE id = $1")
         .bind(id)
@@ -160,9 +140,7 @@ pub async fn list_rooms(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
     // Any authenticated staff can list rooms (used for timetable, exam rooms, etc.)
-    if let Err(response) = load_actor_context(&headers, &pool, &state.permission_cache).await {
-        return Ok(response);
-    }
+    load_actor_context(&headers, &pool, &state.permission_cache).await?;
 
     let mut sql = String::from(
         r#"
@@ -175,11 +153,11 @@ pub async fn list_rooms(
 
     let mut idx = 0u32;
 
-    if let Some(_) = filter.building_id {
+    if filter.building_id.is_some() {
         idx += 1;
         sql.push_str(&format!(" AND r.building_id = ${idx}"));
     }
-    if let Some(_) = &filter.room_type {
+    if filter.room_type.is_some() {
         idx += 1;
         sql.push_str(&format!(" AND r.room_type = ${idx}"));
     }
@@ -221,13 +199,8 @@ pub async fn create_room(
     Json(payload): Json<CreateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::FACILITY_CREATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::FACILITY_CREATE_ALL)?;
 
     let room = sqlx::query_as::<_, Room>(
         r#"
@@ -269,13 +242,8 @@ pub async fn update_room(
     Json(payload): Json<UpdateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::FACILITY_UPDATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::FACILITY_UPDATE_ALL)?;
 
     let room = sqlx::query_as::<_, Room>(
         r#"
@@ -317,13 +285,8 @@ pub async fn delete_room(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::FACILITY_DELETE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::FACILITY_DELETE_ALL)?;
 
     sqlx::query("DELETE FROM rooms WHERE id = $1")
         .bind(id)

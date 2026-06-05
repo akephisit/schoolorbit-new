@@ -30,15 +30,8 @@ pub async fn list_staff(
     let pool = get_pool(&state, &headers).await?;
 
     // staff.read.all OR achievement.create.all (latter for non-staff viewing teacher list)
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) =
-        actor.require_any_permission(&[codes::STAFF_READ_ALL, codes::ACHIEVEMENT_CREATE_ALL])
-    {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_any_permission(&[codes::STAFF_READ_ALL, codes::ACHIEVEMENT_CREATE_ALL])?;
 
     let (items, total, page, page_size) = staff_service::list_staff(&pool, filter).await?;
     let total_pages = (total as f64 / page_size as f64).ceil() as i64;
@@ -65,13 +58,8 @@ pub async fn get_staff_profile(
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::STAFF_READ_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::STAFF_READ_ALL)?;
 
     let profile = staff_service::get_staff_profile(&pool, staff_id).await?;
     Ok((
@@ -87,13 +75,8 @@ pub async fn create_staff(
     Json(payload): Json<CreateStaffRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::STAFF_CREATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::STAFF_CREATE_ALL)?;
 
     let user_id = staff_service::create_staff(&pool, payload).await?;
     Ok((
@@ -110,13 +93,8 @@ pub async fn update_staff(
     Json(payload): Json<UpdateStaffRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::STAFF_UPDATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::STAFF_UPDATE_ALL)?;
 
     staff_service::update_staff(&pool, staff_id, payload).await?;
 
@@ -137,13 +115,8 @@ pub async fn delete_staff(
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::STAFF_DELETE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::STAFF_DELETE_ALL)?;
 
     staff_service::soft_delete_staff(&pool, staff_id).await?;
     Ok((
@@ -165,13 +138,7 @@ pub async fn get_public_staff_profile(
     let auth_header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
-    let token_from_header = auth_header.and_then(|h| {
-        if h.starts_with("Bearer ") {
-            Some(h[7..].to_string())
-        } else {
-            None
-        }
-    });
+    let token_from_header = auth_header.and_then(|h| h.strip_prefix("Bearer ").map(str::to_string));
     let token_from_cookie = headers
         .get(header::COOKIE)
         .and_then(|h| h.to_str().ok())

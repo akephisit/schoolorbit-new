@@ -34,13 +34,8 @@ pub async fn get_ranking(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let data = selection_service::get_round_ranking(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": data })).into_response())
 }
@@ -52,13 +47,8 @@ pub async fn get_track_ranking(
     Query(params): Query<RankingQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let data = selection_service::get_track_ranking(
         &pool,
         track_id,
@@ -76,13 +66,8 @@ pub async fn assign_rooms(
     Json(payload): Json<AssignRoomsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let user_id = actor.user_id;
     let assigned_count = selection_service::assign_rooms(&pool, round_id, payload, user_id).await?;
     Ok(Json(json!({ "success": true, "data": { "assigned_count": assigned_count }, "message": format!("จัดห้องสำเร็จ {} คน", assigned_count) })).into_response())
@@ -94,13 +79,8 @@ pub async fn reset_all_room_assignments(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let deleted = selection_service::reset_all_room_assignments(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": { "deleted": deleted } })).into_response())
 }
@@ -112,13 +92,8 @@ pub async fn assign_rooms_global(
     Json(payload): Json<AssignRoomsGlobalRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let user_id = actor.user_id;
     let assigned_count =
         selection_service::assign_rooms_global(&pool, round_id, payload, user_id).await?;
@@ -131,13 +106,8 @@ pub async fn get_global_ranking(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let data = selection_service::get_global_ranking(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": data })).into_response())
 }
@@ -148,13 +118,8 @@ pub async fn get_round_rooms(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let rooms = selection_service::get_round_rooms(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": rooms })).into_response())
 }
@@ -166,13 +131,8 @@ pub async fn update_selection_settings(
     Json(payload): Json<UpdateSelectionSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     selection_service::update_selection_settings(&pool, round_id, payload).await?;
     Ok(Json(json!({ "success": true, "data": {} })).into_response())
 }

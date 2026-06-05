@@ -30,7 +30,7 @@ fn get_cipher() -> Result<Aes256Gcm, String> {
     hasher.update(key_str.as_bytes());
     let key_bytes = hasher.finalize();
 
-    Ok(Aes256Gcm::new(&key_bytes.into()))
+    Ok(Aes256Gcm::new(&key_bytes))
 }
 
 /// Encrypt any string data

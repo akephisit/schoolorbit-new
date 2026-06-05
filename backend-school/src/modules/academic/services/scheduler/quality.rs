@@ -68,12 +68,12 @@ impl QualityScorer {
         let base_quality = if total_weight == 0.0 {
             100.0
         } else {
-            (total_score / total_weight).min(100.0).max(0.0)
+            (total_score / total_weight).clamp(0.0, 100.0)
         };
 
         // Apply completion penalty: final score = base_quality * completion_rate
         // This ensures partial schedules get lower scores
-        (base_quality * completion_rate).min(100.0).max(0.0)
+        (base_quality * completion_rate).clamp(0.0, 100.0)
     }
 
     /// SC-1: Score how well subjects are distributed across days
@@ -81,7 +81,7 @@ impl QualityScorer {
         let mut total_score = 0.0;
         let mut count = 0;
 
-        for (_course_id, assignments) in &state.course_assignments {
+        for assignments in state.course_assignments.values() {
             if assignments.len() <= 1 {
                 total_score += 100.0; // Single period = perfect
                 count += 1;
@@ -137,7 +137,7 @@ impl QualityScorer {
             for assign in &assignments {
                 by_day
                     .entry(assign.time_slot.day.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(assign.time_slot.period_order);
             }
 
@@ -200,7 +200,7 @@ impl QualityScorer {
         for assign in &state.assignments {
             *by_classroom
                 .entry(assign.classroom_id)
-                .or_insert_with(HashMap::new)
+                .or_default()
                 .entry(assign.time_slot.day.clone())
                 .or_insert(0) += 1;
         }
@@ -246,7 +246,7 @@ impl QualityScorer {
         let mut total_score = 0.0;
         let mut count = 0;
 
-        for (_course_id, assignments) in &state.course_assignments {
+        for assignments in state.course_assignments.values() {
             if assignments.len() <= 1 {
                 total_score += 100.0;
                 count += 1;

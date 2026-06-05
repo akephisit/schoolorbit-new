@@ -25,13 +25,8 @@ pub async fn get_all_scores(
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let scores = score_service::get_all_scores(&pool, round_id).await?;
     Ok(Json(json!({ "success": true, "data": scores })).into_response())
 }
@@ -42,13 +37,8 @@ pub async fn get_application_scores(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let scores = score_service::get_application_scores(&pool, id).await?;
     Ok(Json(json!({ "success": true, "data": scores })).into_response())
 }
@@ -60,13 +50,8 @@ pub async fn update_scores(
     Json(payload): Json<UpdateApplicationScoresRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let user_id = actor.user_id;
     score_service::update_application_scores(&pool, id, user_id, &payload.scores).await?;
     Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตคะแนนแล้ว" })).into_response())
@@ -79,13 +64,8 @@ pub async fn bulk_update_scores(
     Json(payload): Json<BulkUpdateScoresRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::ADMISSION_SCORES) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::ADMISSION_SCORES)?;
     let user_id = actor.user_id;
     let updated =
         score_service::bulk_update_scores(&pool, round_id, user_id, &payload.entries).await?;

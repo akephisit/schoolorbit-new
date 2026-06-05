@@ -33,13 +33,8 @@ pub async fn add_parent_to_student(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::STUDENT_UPDATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
 
     student_service::add_parent_to_student(&pool, student_id, payload).await?;
 
@@ -58,13 +53,8 @@ pub async fn remove_parent_from_student(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = get_pool(&state, &headers).await?;
 
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return Ok(response),
-    };
-    if let Err(response) = actor.require_permission(codes::STUDENT_UPDATE_ALL) {
-        return Ok(response);
-    }
+    let actor = load_actor_context(&headers, &pool, &state.permission_cache).await?;
+    actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
 
     student_service::remove_parent_from_student(&pool, student_id, parent_id).await?;
 

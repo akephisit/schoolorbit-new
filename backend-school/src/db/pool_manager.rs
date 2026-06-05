@@ -59,7 +59,7 @@ impl PoolManager {
             None => {
                 // Create new connection pool
                 println!("🔄 Creating new connection pool for: {}", subdomain);
-                let connect_opts = PgConnectOptions::from_str(&database_url)
+                let connect_opts = PgConnectOptions::from_str(database_url)
                     .map_err(|e| format!("Invalid database URL for {}: {}", subdomain, e))?
                     .statement_cache_capacity(0); // ปิด prepared statement cache ป้องกัน "cached plan must not change result type" หลัง migration
 

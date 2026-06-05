@@ -639,9 +639,13 @@ async fn main() {
     tracing::info!("  GET  /ws/timetable              - Real-time Timetable Collaboration");
 
     // Run server
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .expect(&format!("Failed to bind to {}", addr));
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            tracing::error!(address = %addr, error = %error, "Failed to bind server listener");
+            std::process::exit(1);
+        }
+    };
 
     // Initialize Job Scheduler for background tasks
     // Run daily cleaning at 3:00 AM
