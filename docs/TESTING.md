@@ -22,6 +22,14 @@ cd backend-school
 cargo check
 ```
 
+For backend architecture guard changes (module roots, service-layer handler boundaries,
+permission guards, tenant resolver rules, internal auth rules):
+
+```bash
+cd backend-school
+cargo test --test static_architecture
+```
+
 For encryption or `national_id` / admission PII changes, also run:
 
 ```bash
