@@ -154,6 +154,8 @@
 | ✅ L-2 | `/health` return healthy เสมอ ไม่ตรวจ DB จริง | เพิ่ม `SELECT 1` ping + 503 on failure แล้ว | Small |
 | L-3 | ไม่มี shared type contracts ระหว่าง services | สร้าง `schoolorbit-contracts` workspace crate | Medium |
 | L-4 | RBAC มีใน code แต่ไม่ enforce | เพิ่ม `require_role()` middleware factory ใน backend-admin | Small |
+| ✅ L-5 | backend-school ยังใช้ Rust module-root แบบ `mod.rs` | migrate เป็น Rust 2018-style module roots (`foo.rs` + `foo/` children) และคง `.rules` ว่าไม่สร้าง `mod.rs` ใหม่ | Small |
+| L-6 | backend-only architecture guards ยังอยู่ใน `frontend-school` static tests | ย้ายกฎ backend-only เช่น no `mod.rs` และ service-layer handler guard ไป `backend-school` test หรือ script กลาง แล้วให้ frontend static เหลือเฉพาะ API/frontend contract | Small |
 
 ---
 

@@ -511,6 +511,15 @@ test('backend module handlers use ActorContext instead of raw permission lists',
 	assert.deepEqual(violations, []);
 });
 
+test('backend-school Rust module roots use Rust 2018 style', async () => {
+	const legacyModuleRoots = await listFiles(
+		path.join(repoRoot, 'backend-school/src'),
+		(file) => path.basename(file) === 'mod.rs'
+	);
+
+	assert.deepEqual(legacyModuleRoots.map(relative), []);
+});
+
 test('backend foundation handlers delegate database work to services', async () => {
 	const handlerFiles = [
 		...(await listFiles(
