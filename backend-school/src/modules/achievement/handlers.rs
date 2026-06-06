@@ -1,3 +1,4 @@
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::achievement::models::*;
 use crate::modules::achievement::services as achievement_service;
@@ -9,7 +10,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
 pub async fn list_achievements(
@@ -22,11 +22,7 @@ pub async fn list_achievements(
         achievement_service::list_achievements(&context.tenant.pool, &context.actor, filter)
             .await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": items })),
-    )
-        .into_response())
+    Ok((StatusCode::OK, Json(ApiResponse::ok(items))).into_response())
 }
 
 pub async fn create_achievement(
@@ -39,11 +35,7 @@ pub async fn create_achievement(
         achievement_service::create_achievement(&context.tenant.pool, &context.actor, payload)
             .await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "success": true, "data": achievement })),
-    )
-        .into_response())
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(achievement))).into_response())
 }
 
 pub async fn update_achievement(
@@ -57,11 +49,7 @@ pub async fn update_achievement(
         achievement_service::update_achievement(&context.tenant.pool, &context.actor, id, payload)
             .await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": achievement })),
-    )
-        .into_response())
+    Ok((StatusCode::OK, Json(ApiResponse::ok(achievement))).into_response())
 }
 
 pub async fn delete_achievement(
@@ -72,5 +60,5 @@ pub async fn delete_achievement(
     let context = actor_tenant_context(&state, &headers).await?;
     achievement_service::delete_achievement(&context.tenant.pool, &context.actor, id).await?;
 
-    Ok((StatusCode::OK, Json(json!({ "success": true, "data": {} }))).into_response())
+    Ok((StatusCode::OK, Json(ApiResponse::empty())).into_response())
 }
