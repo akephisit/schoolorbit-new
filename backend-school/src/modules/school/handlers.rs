@@ -1,12 +1,20 @@
 use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
-use serde_json::json;
+use serde::Serialize;
 
 use super::models::UpdateSchoolSettingsRequest;
 use super::services as school_service;
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{actor_tenant_context, tenant_context};
 use crate::AppState;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicSchoolInfoData {
+    logo_url: Option<String>,
+    school_name: Option<String>,
+}
 
 /// GET /api/school/settings — staff only (SETTINGS_READ)
 pub async fn get_settings(
@@ -18,7 +26,7 @@ pub async fn get_settings(
 
     let response = school_service::get_settings_response(&context.tenant.pool).await?;
 
-    Ok(Json(json!({ "success": true, "data": response })).into_response())
+    Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
 /// PATCH /api/school/settings — staff only (SETTINGS_UPDATE)
@@ -32,7 +40,7 @@ pub async fn update_settings(
 
     school_service::update_settings(&context.tenant.pool, payload).await?;
 
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 /// GET /api/school/public — no auth required
@@ -52,10 +60,10 @@ pub async fn get_public_info(
         .await
         .ok();
 
-    Ok(Json(json!({ "success": true, "data": {
-            "logoUrl": logo_url,
-            "schoolName": school_name,
-        } }))
+    Ok(Json(ApiResponse::ok(PublicSchoolInfoData {
+        logo_url,
+        school_name,
+    }))
     .into_response())
 }
 
@@ -70,5 +78,5 @@ pub async fn delete_logo(
 
     school_service::delete_logo(&context.tenant.pool).await?;
 
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
