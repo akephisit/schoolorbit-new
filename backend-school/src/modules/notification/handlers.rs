@@ -1,3 +1,4 @@
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::notification::models::{
     CreateNotificationRequest, ListNotificationsQuery, SubscribePushRequest,
@@ -28,10 +29,7 @@ pub async fn list_notifications(
         notification_service::list_notifications(&context.tenant.pool, context.user_id, query)
             .await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(serde_json::json!({ "success": true, "data": notifications })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(notifications))))
 }
 
 /// Mark a notification as read
@@ -45,7 +43,7 @@ pub async fn mark_as_read(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({ "success": true, "data": {}, "message": "อ่านแล้ว" })),
+        Json(ApiResponse::empty_with_message("อ่านแล้ว")),
     ))
 }
 
@@ -59,7 +57,7 @@ pub async fn mark_all_as_read(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({ "success": true, "data": {}, "message": "อ่านทั้งหมดแล้ว" })),
+        Json(ApiResponse::empty_with_message("อ่านทั้งหมดแล้ว")),
     ))
 }
 
@@ -131,7 +129,7 @@ pub async fn create_notification(
 
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({ "success": true, "data": {}, "message": "Notification created" })),
+        Json(ApiResponse::empty_with_message("Notification created")),
     ))
 }
 
@@ -146,8 +144,8 @@ pub async fn subscribe_push(
 
     Ok((
         StatusCode::OK,
-        Json(
-            serde_json::json!({ "success": true, "data": {}, "message": "Subscribed to push notifications" }),
-        ),
+        Json(ApiResponse::empty_with_message(
+            "Subscribed to push notifications",
+        )),
     ))
 }
