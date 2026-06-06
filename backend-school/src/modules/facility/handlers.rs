@@ -1,3 +1,4 @@
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::facility::models::{
     CreateBuildingRequest, CreateRoomRequest, RoomFilter, UpdateBuildingRequest, UpdateRoomRequest,
@@ -14,7 +15,6 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
-use serde_json::json;
 use uuid::Uuid;
 
 // ----------------------
@@ -29,7 +29,7 @@ pub async fn list_buildings(
     context.actor.require_permission(codes::FACILITY_READ_ALL)?;
     let buildings = services::list_buildings(&context.tenant.pool).await?;
 
-    Ok(Json(json!({ "success": true, "data": buildings })).into_response())
+    Ok(Json(ApiResponse::ok(buildings)).into_response())
 }
 
 pub async fn create_building(
@@ -43,11 +43,7 @@ pub async fn create_building(
         .require_permission(codes::FACILITY_CREATE_ALL)?;
     let building = services::create_building(&context.tenant.pool, payload).await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "success": true, "data": building })),
-    )
-        .into_response())
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(building))).into_response())
 }
 
 pub async fn update_building(
@@ -62,7 +58,7 @@ pub async fn update_building(
         .require_permission(codes::FACILITY_UPDATE_ALL)?;
     let building = services::update_building(&context.tenant.pool, id, payload).await?;
 
-    Ok(Json(json!({ "success": true, "data": building })).into_response())
+    Ok(Json(ApiResponse::ok(building)).into_response())
 }
 
 pub async fn delete_building(
@@ -76,7 +72,7 @@ pub async fn delete_building(
         .require_permission(codes::FACILITY_DELETE_ALL)?;
     services::delete_building(&context.tenant.pool, id).await?;
 
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 // ----------------------
@@ -92,7 +88,7 @@ pub async fn list_rooms(
     let context = actor_tenant_context(&state, &headers).await?;
     let rooms = services::list_rooms(&context.tenant.pool, filter).await?;
 
-    Ok(Json(json!({ "success": true, "data": rooms })).into_response())
+    Ok(Json(ApiResponse::ok(rooms)).into_response())
 }
 
 pub async fn create_room(
@@ -106,11 +102,7 @@ pub async fn create_room(
         .require_permission(codes::FACILITY_CREATE_ALL)?;
     let room = services::create_room(&context.tenant.pool, payload).await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "success": true, "data": room })),
-    )
-        .into_response())
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(room))).into_response())
 }
 
 pub async fn update_room(
@@ -125,7 +117,7 @@ pub async fn update_room(
         .require_permission(codes::FACILITY_UPDATE_ALL)?;
     let room = services::update_room(&context.tenant.pool, id, payload).await?;
 
-    Ok(Json(json!({ "success": true, "data": room })).into_response())
+    Ok(Json(ApiResponse::ok(room)).into_response())
 }
 
 pub async fn delete_room(
@@ -139,7 +131,7 @@ pub async fn delete_room(
         .require_permission(codes::FACILITY_DELETE_ALL)?;
     services::delete_room(&context.tenant.pool, id).await?;
 
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub fn routes() -> Router<AppState> {

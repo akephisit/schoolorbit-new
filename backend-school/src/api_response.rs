@@ -27,6 +27,19 @@ impl<T> ApiResponse<T> {
     }
 }
 
+#[derive(Debug, Default, Serialize)]
+pub struct EmptyData {}
+
+impl ApiResponse<EmptyData> {
+    pub fn empty() -> Self {
+        Self::ok(EmptyData::default())
+    }
+
+    pub fn empty_with_message(message: impl Into<String>) -> Self {
+        Self::with_message(EmptyData::default(), message)
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiErrorResponse {
