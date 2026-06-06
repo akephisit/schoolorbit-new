@@ -191,6 +191,24 @@ fn backend_runtime_uses_organization_units_not_department_tables() {
 }
 
 #[test]
+fn backend_permission_contracts_use_organization_units_not_department_names() {
+    let legacy_permission_patterns = Regex::new(
+        r#""[^"]*(?:dept_work|\.department)[^"]*"|\bDEPT_WORK_[A-Z0-9_]*\b|\bACADEMIC_CURRICULUM_MANAGE_DEPT\b"#,
+    )
+    .expect("valid regex");
+    let mut violations = Vec::new();
+
+    for file in backend_rs_files() {
+        let source = read_source(&file);
+        if legacy_permission_patterns.is_match(&source) {
+            violations.push(relative(&file));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
 fn foundation_handlers_delegate_database_work_to_services() {
     let direct_database_patterns = [
         "sqlx::query",

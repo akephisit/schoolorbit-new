@@ -138,7 +138,7 @@
 	});
 
 	$effect(() => {
-		if (!loading && $can.has(PERMISSIONS.DEPT_WORK_APPROVE_DEPARTMENT) && deptId) {
+		if (!loading && $can.has(PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT) && deptId) {
 			loadDelegations();
 		}
 	});
@@ -288,7 +288,7 @@
 				{/if}
 
 				<!-- Delegation Section (heads only) -->
-				{#if $can.has(PERMISSIONS.DEPT_WORK_APPROVE_DEPARTMENT)}
+				{#if $can.has(PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT)}
 					<div class="bg-card border border-border rounded-lg p-6 space-y-4">
 						<div class="flex items-center justify-between">
 							<h2 class="text-lg font-semibold flex items-center gap-2">

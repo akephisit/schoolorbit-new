@@ -26,7 +26,7 @@ pub async fn list_subject_groups(
     let actor = context.actor;
     if !actor.has_any_permission(&[
         codes::ACADEMIC_CURRICULUM_READ_ALL,
-        codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
+        codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
     ]) {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -51,8 +51,9 @@ pub async fn list_subjects(
     let pool = context.tenant.pool;
     let actor = context.actor;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_READ_ALL);
-    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
-    if !has_all && !has_dept {
+    let has_organization_unit =
+        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
+    if !has_all && !has_organization_unit {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -63,7 +64,7 @@ pub async fn list_subjects(
             .into_response());
     }
 
-    let dept_group_id: Option<Uuid> = if !has_all && has_dept {
+    let organization_unit_group_id: Option<Uuid> = if !has_all && has_organization_unit {
         match subject_service::get_user_subject_group_id(actor.user_id, &pool).await {
             Some(gid) => Some(gid),
             None => {
@@ -78,7 +79,8 @@ pub async fn list_subjects(
         None
     };
 
-    let subjects = subject_service::list_subjects(&pool, filter, dept_group_id).await?;
+    let subjects =
+        subject_service::list_subjects(&pool, filter, organization_unit_group_id).await?;
     Ok(Json(ApiResponse::ok(subjects)).into_response())
 }
 
@@ -91,8 +93,9 @@ pub async fn create_subject(
     let pool = context.tenant.pool;
     let actor = context.actor;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_CREATE_ALL);
-    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
-    if !has_all && !has_dept {
+    let has_organization_unit =
+        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
+    if !has_all && !has_organization_unit {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -103,7 +106,7 @@ pub async fn create_subject(
             .into_response());
     }
 
-    if !has_all && has_dept {
+    if !has_all && has_organization_unit {
         let teacher_group = subject_service::get_user_subject_group_id(actor.user_id, &pool)
             .await
             .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
@@ -128,8 +131,9 @@ pub async fn update_subject(
     let pool = context.tenant.pool;
     let actor = context.actor;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_UPDATE_ALL);
-    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
-    if !has_all && !has_dept {
+    let has_organization_unit =
+        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
+    if !has_all && !has_organization_unit {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -140,7 +144,7 @@ pub async fn update_subject(
             .into_response());
     }
 
-    if !has_all && has_dept {
+    if !has_all && has_organization_unit {
         let teacher_group = subject_service::get_user_subject_group_id(actor.user_id, &pool)
             .await
             .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
@@ -165,8 +169,9 @@ pub async fn delete_subject(
     let pool = context.tenant.pool;
     let actor = context.actor;
     let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_DELETE_ALL);
-    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
-    if !has_all && !has_dept {
+    let has_organization_unit =
+        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
+    if !has_all && !has_organization_unit {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -177,7 +182,7 @@ pub async fn delete_subject(
             .into_response());
     }
 
-    if !has_all && has_dept {
+    if !has_all && has_organization_unit {
         let teacher_group = subject_service::get_user_subject_group_id(actor.user_id, &pool)
             .await
             .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
@@ -296,7 +301,7 @@ pub async fn batch_list_subject_default_instructors(
     let actor = context.actor;
     if !actor.has_any_permission(&[
         codes::ACADEMIC_CURRICULUM_READ_ALL,
-        codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
+        codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
     ]) {
         return Ok((
             StatusCode::FORBIDDEN,

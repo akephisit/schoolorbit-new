@@ -65,9 +65,9 @@
 
 	let { data } = $props();
 
-	// true = ครูกลุ่มสาระ (manage.department เท่านั้น) — lock group filter
-	let isDeptScope = $derived(
-		$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_DEPARTMENT) &&
+	// true = ครูกลุ่มสาระ (manage.organization_unit เท่านั้น) — lock group filter
+	let isOrganizationUnitScope = $derived(
+		$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT) &&
 			!$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL)
 	);
 
@@ -414,7 +414,7 @@
 			await loadSubjects();
 
 			// dept-scope: lock group filter to teacher's group (inferred from returned subjects)
-			if (isDeptScope && subjects.length > 0 && subjects[0].group_id) {
+			if (isOrganizationUnitScope && subjects.length > 0 && subjects[0].group_id) {
 				selectedGroupId = subjects[0].group_id;
 			}
 		} catch (e) {
@@ -656,7 +656,7 @@
 	function openUnifiedAdd() {
 		// init both forms for safety so either branch starts fresh
 		currentSubject = getInitialSubjectState();
-		if (isDeptScope && selectedGroupId) currentSubject.group_id = selectedGroupId;
+		if (isOrganizationUnitScope && selectedGroupId) currentSubject.group_id = selectedGroupId;
 		isEditing = false;
 		isNewVersion = false;
 		resetTeamDraft();
@@ -784,7 +784,7 @@
 
 	function clearFilters() {
 		searchQuery = '';
-		if (!isDeptScope) selectedGroupId = '';
+		if (!isOrganizationUnitScope) selectedGroupId = '';
 		selectedSubjectType = '';
 		// Reset year filter back to current academic year (the default)
 		const current = academicYears.find((y) => y.is_current);
@@ -799,7 +799,7 @@
 		const current = academicYears.find((y) => y.is_current);
 		const defaultYear = current?.id ?? academicYears[0]?.id ?? '';
 		if (searchQuery) return true;
-		if (!isDeptScope && selectedGroupId) return true;
+		if (!isOrganizationUnitScope && selectedGroupId) return true;
 		if (selectedSubjectType) return true;
 		if (selectedYearFilter && selectedYearFilter !== defaultYear) return true;
 		if (showAllVersions) return true;
@@ -908,7 +908,7 @@
 						type="single"
 						bind:value={selectedGroupId}
 						onValueChange={() => loadData()}
-						disabled={isDeptScope}
+						disabled={isOrganizationUnitScope}
 					>
 						<Select.Trigger class="truncate">
 							{groups.find((g) => g.id === selectedGroupId)?.name_th || 'ทุกกลุ่มสาระฯ'}
@@ -1416,7 +1416,7 @@
 					</div>
 					<div class="space-y-2">
 						<Label>กลุ่มสาระฯ <span class="text-destructive">*</span></Label>
-						<Select.Root type="single" bind:value={currentSubject.group_id} disabled={isDeptScope}>
+						<Select.Root type="single" bind:value={currentSubject.group_id} disabled={isOrganizationUnitScope}>
 							<Select.Trigger class="truncate">
 								{groups.find((g) => g.id === currentSubject.group_id)?.name_th || 'เลือกกลุ่มสาระ'}
 							</Select.Trigger>
@@ -1426,7 +1426,7 @@
 								{/each}
 							</Select.Content>
 						</Select.Root>
-						{#if isDeptScope}
+						{#if isOrganizationUnitScope}
 							<p class="text-[11px] text-muted-foreground">
 								กลุ่มสาระที่ท่านสังกัด (ไม่สามารถเปลี่ยนได้)
 							</p>
@@ -2146,7 +2146,7 @@
 							<Select.Root
 								type="single"
 								bind:value={currentSubject.group_id}
-								disabled={isDeptScope}
+								disabled={isOrganizationUnitScope}
 							>
 								<Select.Trigger class="truncate">
 									{groups.find((g) => g.id === currentSubject.group_id)?.name_th ||
@@ -2158,7 +2158,7 @@
 									{/each}
 								</Select.Content>
 							</Select.Root>
-							{#if isDeptScope}
+							{#if isOrganizationUnitScope}
 								<p class="text-[11px] text-muted-foreground">
 									กลุ่มสาระที่ท่านสังกัด (ไม่สามารถเปลี่ยนได้)
 								</p>

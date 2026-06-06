@@ -12,7 +12,8 @@ export const PERMISSIONS = {
 	ACADEMIC_CLASSROOM_READ_ALL: 'academic_classroom.read.all',
 	ACADEMIC_COURSE_PLAN_MANAGE_ALL: 'academic_course_plan.manage.all',
 	ACADEMIC_COURSE_PLAN_READ_ALL: 'academic_course_plan.read.all',
-	ACADEMIC_CURRICULUM_MANAGE_DEPARTMENT: 'academic_curriculum.manage.department',
+	ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT:
+		'academic_curriculum.manage.organization_unit',
 	ACADEMIC_CURRICULUM_READ_ALL: 'academic_curriculum.read.all',
 	ACADEMIC_ENROLLMENT_READ_ALL: 'academic_enrollment.read.all',
 	ACADEMIC_STRUCTURE_MANAGE_ALL: 'academic_structure.manage.all',
@@ -22,7 +23,7 @@ export const PERMISSIONS = {
 	ACTIVITY_MANAGE_OWN: 'activity.manage.own',
 	ACTIVITY_MEMBERS_MANAGE: 'activity.members.manage',
 	ADMISSION_READ_ALL: 'admission.read.all',
-	DEPT_WORK_APPROVE_DEPARTMENT: 'dept_work.approve.department',
+	ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT: 'organization_work.approve.organization_unit',
 	FACILITY_READ_ALL: 'facility.read.all',
 	ROLES_ASSIGN_ALL: 'roles.assign.all',
 	SETTINGS_UPDATE: 'settings.update',

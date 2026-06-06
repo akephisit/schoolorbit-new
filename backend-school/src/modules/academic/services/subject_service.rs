@@ -37,15 +37,16 @@ pub async fn ensure_subject_manage(
         || (read_only
             && actor.has_any_permission(&[
                 codes::ACADEMIC_CURRICULUM_READ_ALL,
-                codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
+                codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
                 manage_code,
             ]));
-    let has_dept = actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_DEPT);
-    if !has_all && !has_dept {
+    let has_organization_unit =
+        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
+    if !has_all && !has_organization_unit {
         return Err(AppError::Forbidden(format!("ไม่มีสิทธิ์ {}", manage_code)));
     }
 
-    if !has_all && has_dept {
+    if !has_all && has_organization_unit {
         let teacher_group = match get_user_subject_group_id(actor.user_id, pool).await {
             Some(group_id) => group_id,
             None => return Err(AppError::Forbidden("ไม่พบกลุ่มสาระที่สังกัด".to_string())),

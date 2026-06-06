@@ -138,7 +138,7 @@ function extractPermissionRegistry(source) {
 	const allPermissionConstantNames = new Set();
 	const modules = new Set();
 
-	for (const match of source.matchAll(/pub const ([A-Z0-9_]+): &str = "([^"]+)";/g)) {
+	for (const match of source.matchAll(/pub const ([A-Z0-9_]+): &str =\s*"([^"]+)";/g)) {
 		constants.set(match[1], match[2]);
 	}
 
@@ -506,6 +506,24 @@ test('frontend runtime uses organization units instead of legacy department endp
 	for (const file of frontendFiles) {
 		const source = stripComments(await readFile(file, 'utf8'));
 		if (legacyOrganizationPatterns.test(source)) {
+			violations.push(relative(file));
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('frontend permission contracts use organization units instead of department names', async () => {
+	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
+		/\.(svelte|ts)$/.test(file)
+	);
+	const legacyPermissionPatterns =
+		/(['"`])(?:(?:(?!\1).)*)(?:dept_work|\.department)(?:(?:(?!\1).)*)\1|\bDEPT_WORK_[A-Z0-9_]*\b|\bACADEMIC_CURRICULUM_MANAGE_DEPARTMENT\b/;
+	const violations = [];
+
+	for (const file of frontendFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (legacyPermissionPatterns.test(source)) {
 			violations.push(relative(file));
 		}
 	}

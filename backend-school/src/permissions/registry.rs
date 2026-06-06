@@ -90,8 +90,9 @@ pub mod codes {
     pub const ACADEMIC_CURRICULUM_CREATE_ALL: &str = "academic_curriculum.create.all";
     pub const ACADEMIC_CURRICULUM_UPDATE_ALL: &str = "academic_curriculum.update.all";
     pub const ACADEMIC_CURRICULUM_DELETE_ALL: &str = "academic_curriculum.delete.all";
-    // Department-scoped: manage subjects only within own กลุ่มสาระ
-    pub const ACADEMIC_CURRICULUM_MANAGE_DEPT: &str = "academic_curriculum.manage.department";
+    // Organization-unit scoped: manage subjects only within own กลุ่มสาระ
+    pub const ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT: &str =
+        "academic_curriculum.manage.organization_unit";
 
     // Course Planning (Assigning subjects to classrooms)
     pub const ACADEMIC_COURSE_PLAN_READ_ALL: &str = "academic_course_plan.read.all";
@@ -103,12 +104,14 @@ pub mod codes {
     pub const FACILITY_UPDATE_ALL: &str = "facility.update.all";
     pub const FACILITY_DELETE_ALL: &str = "facility.delete.all";
 
-    // Department Work Permissions (Task Management)
-    pub const DEPT_WORK_READ_OWN: &str = "dept_work.read.own";
-    pub const DEPT_WORK_READ_DEPT: &str = "dept_work.read.department";
-    pub const DEPT_WORK_CREATE: &str = "dept_work.create";
-    pub const DEPT_WORK_UPDATE_OWN: &str = "dept_work.update.own";
-    pub const DEPT_WORK_APPROVE: &str = "dept_work.approve.department";
+    // Organization Work Permissions (Task Management)
+    pub const ORGANIZATION_WORK_READ_OWN: &str = "organization_work.read.own";
+    pub const ORGANIZATION_WORK_READ_ORGANIZATION_UNIT: &str =
+        "organization_work.read.organization_unit";
+    pub const ORGANIZATION_WORK_CREATE: &str = "organization_work.create";
+    pub const ORGANIZATION_WORK_UPDATE_OWN: &str = "organization_work.update.own";
+    pub const ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT: &str =
+        "organization_work.approve.organization_unit";
 
     // Activity Group Permissions (กิจกรรมพัฒนาผู้เรียน)
     pub const ACTIVITY_READ_ALL: &str = "activity.read.all";
@@ -501,11 +504,11 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "ดูข้อมูลรายวิชาและหลักสูตรทั้งหมด",
     },
     PermissionDef {
-        code: codes::ACADEMIC_CURRICULUM_MANAGE_DEPT,
+        code: codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
         name: "จัดการรายวิชากลุ่มสาระตัวเอง",
         module: "academic_curriculum",
         action: "manage",
-        scope: "department",
+        scope: "organization_unit",
         description: "เพิ่ม/แก้ไข/ลบ รายวิชาเฉพาะกลุ่มสาระที่ตัวเองสังกัด",
     },
     PermissionDef {
@@ -582,46 +585,46 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         scope: "all",
         description: "ลบข้อมูลอาคารและห้อง",
     },
-    // Department Work Permissions
+    // Organization Work Permissions
     PermissionDef {
-        code: codes::DEPT_WORK_READ_OWN,
+        code: codes::ORGANIZATION_WORK_READ_OWN,
         name: "ดูงานของตนเอง",
-        module: "dept_work",
+        module: "organization_work",
         action: "read",
         scope: "own",
         description: "ดูรายการงานที่ตนเองรับผิดชอบ",
     },
     PermissionDef {
-        code: codes::DEPT_WORK_READ_DEPT,
-        name: "ดูงานในฝ่าย",
-        module: "dept_work",
+        code: codes::ORGANIZATION_WORK_READ_ORGANIZATION_UNIT,
+        name: "ดูงานในหน่วยงาน",
+        module: "organization_work",
         action: "read",
-        scope: "department",
-        description: "ดูรายการงานทั้งหมดในฝ่ายที่สังกัด",
+        scope: "organization_unit",
+        description: "ดูรายการงานทั้งหมดในหน่วยงานที่สังกัด",
     },
     PermissionDef {
-        code: codes::DEPT_WORK_CREATE,
+        code: codes::ORGANIZATION_WORK_CREATE,
         name: "สร้าง/ส่งงาน",
-        module: "dept_work",
+        module: "organization_work",
         action: "create",
         scope: "own",
         description: "ส่งงานหรือสร้างบันทึกงานใหม่",
     },
     PermissionDef {
-        code: codes::DEPT_WORK_UPDATE_OWN,
+        code: codes::ORGANIZATION_WORK_UPDATE_OWN,
         name: "แก้ไขงานตนเอง",
-        module: "dept_work",
+        module: "organization_work",
         action: "update",
         scope: "own",
         description: "แก้ไขรายละเอียดงานของตนเอง",
     },
     PermissionDef {
-        code: codes::DEPT_WORK_APPROVE,
-        name: "อนุมัติงานในฝ่าย",
-        module: "dept_work",
+        code: codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,
+        name: "อนุมัติงานในหน่วยงาน",
+        module: "organization_work",
         action: "approve",
-        scope: "department",
-        description: "อนุมัติหรือตรวจสอบงานของสมาชิกในฝ่าย",
+        scope: "organization_unit",
+        description: "อนุมัติหรือตรวจสอบงานของสมาชิกในหน่วยงาน",
     },
     // Activity Group Permissions
     PermissionDef {

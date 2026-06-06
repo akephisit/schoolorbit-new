@@ -51,7 +51,8 @@ pub async fn list_delegatable_permissions(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let can_approve_organization_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
+    let can_approve_organization_work =
+        actor.has_permission(codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT);
     if !can_approve_organization_work {
         return Ok((StatusCode::FORBIDDEN, Json(ApiErrorResponse::new("ไม่มีสิทธิ์"))).into_response());
     }
@@ -70,7 +71,8 @@ pub async fn list_delegations(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let can_approve_organization_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
+    let can_approve_organization_work =
+        actor.has_permission(codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT);
     if !can_approve_organization_work {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -93,7 +95,8 @@ pub async fn create_delegation(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let can_approve_organization_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
+    let can_approve_organization_work =
+        actor.has_permission(codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT);
     if !can_approve_organization_work {
         return Ok((
             StatusCode::FORBIDDEN,
