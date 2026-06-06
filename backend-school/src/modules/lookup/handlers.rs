@@ -4,12 +4,12 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::auth::models::Claims;
-use crate::modules::lookup::models::{LookupQuery, LookupResponse};
+use crate::modules::lookup::models::LookupQuery;
 use crate::modules::lookup::services as lookup_service;
 use crate::utils::request_context::{
     current_user_tenant_context_from_claims, CurrentUserTenantContext,
@@ -38,13 +38,7 @@ pub async fn lookup_staff(
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let data = lookup_service::lookup_staff(&context.tenant.pool, query).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(LookupResponse {
-            success: true,
-            data,
-        }),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
 /// GET /api/lookup/roles
@@ -58,13 +52,7 @@ pub async fn lookup_roles(
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let data = lookup_service::lookup_roles(&context.tenant.pool, query).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(LookupResponse {
-            success: true,
-            data,
-        }),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
 /// GET /api/lookup/departments
@@ -79,13 +67,7 @@ pub async fn lookup_departments(
     let data =
         lookup_service::lookup_departments(&context.tenant.pool, context.user_id, query).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(LookupResponse {
-            success: true,
-            data,
-        }),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
 /// GET /api/lookup/departments/:id
@@ -99,7 +81,7 @@ pub async fn lookup_department_by_id(
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let department = lookup_service::lookup_department_by_id(&context.tenant.pool, id).await?;
 
-    Ok(Json(json!({ "success": true, "data": department })).into_response())
+    Ok(Json(ApiResponse::ok(department)).into_response())
 }
 
 /// GET /api/lookup/grade-levels
@@ -113,13 +95,7 @@ pub async fn lookup_grade_levels(
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let data = lookup_service::lookup_grade_levels(&context.tenant.pool, query).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(LookupResponse {
-            success: true,
-            data,
-        }),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
 /// GET /api/lookup/classrooms
@@ -133,13 +109,7 @@ pub async fn lookup_classrooms(
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let data = lookup_service::lookup_classrooms(&context.tenant.pool, query).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(LookupResponse {
-            success: true,
-            data,
-        }),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
 /// GET /api/lookup/academic-years
@@ -153,13 +123,7 @@ pub async fn lookup_academic_years(
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let data = lookup_service::lookup_academic_years(&context.tenant.pool, query).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(LookupResponse {
-            success: true,
-            data,
-        }),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
 /// GET /api/lookup/students
@@ -173,13 +137,7 @@ pub async fn lookup_students(
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let data = lookup_service::lookup_students(&context.tenant.pool, query).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(LookupResponse {
-            success: true,
-            data,
-        }),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
 /// GET /api/lookup/rooms
@@ -192,7 +150,7 @@ pub async fn lookup_rooms(
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let rooms = lookup_service::lookup_rooms(&context.tenant.pool).await?;
 
-    Ok(Json(json!({ "success": true, "data": rooms })).into_response())
+    Ok(Json(ApiResponse::ok(rooms)).into_response())
 }
 
 /// GET /api/lookup/subjects
@@ -206,11 +164,5 @@ pub async fn lookup_subjects(
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let data = lookup_service::lookup_subjects(&context.tenant.pool, query).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(LookupResponse {
-            success: true,
-            data,
-        }),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }

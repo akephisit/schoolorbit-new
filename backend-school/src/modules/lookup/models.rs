@@ -94,13 +94,6 @@ pub struct StudentLookupItem {
     pub class_room: Option<String>,
 }
 
-/// Lookup response wrapper
-#[derive(Debug, Serialize)]
-pub struct LookupResponse<T> {
-    pub success: bool,
-    pub data: Vec<T>,
-}
-
 /// Query parameters for lookup endpoints
 #[derive(Debug, Deserialize)]
 pub struct LookupQuery {
