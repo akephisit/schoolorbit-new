@@ -6,14 +6,21 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use serde::Serialize;
 use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::auth::models::Claims;
 use crate::modules::consent::models::CreateConsentRequest;
 use crate::modules::consent::services::{self as consent_service, ConsentRequestContext};
 use crate::utils::request_context::{current_user_tenant_context_from_claims, tenant_pool};
 use crate::AppState;
+
+#[derive(Debug, Serialize)]
+struct CreateConsentData {
+    consent_id: Uuid,
+}
 
 fn request_context(headers: &HeaderMap) -> ConsentRequestContext {
     let ip_address = headers
@@ -46,10 +53,7 @@ pub async fn get_consent_types(
         .unwrap_or("student");
     let responses = consent_service::list_consent_types(&pool, user_type).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(serde_json::json!({ "success": true, "data": responses })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(responses))))
 }
 
 /// Get user's consent status
@@ -63,10 +67,7 @@ pub async fn get_my_consent_status(
     let status =
         consent_service::get_user_consent_status(&context.tenant.pool, context.user_id).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(serde_json::json!({ "success": true, "data": status })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(status))))
 }
 
 /// Give consent
@@ -88,9 +89,10 @@ pub async fn create_consent(
 
     Ok((
         StatusCode::CREATED,
-        Json(
-            serde_json::json!({ "success": true, "data": { "consent_id": consent_id }, "message": "บันทึกความยินยอมสำเร็จ" }),
-        ),
+        Json(ApiResponse::with_message(
+            CreateConsentData { consent_id },
+            "บันทึกความยินยอมสำเร็จ",
+        )),
     ))
 }
 
@@ -107,7 +109,7 @@ pub async fn withdraw_consent(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({ "success": true, "data": {}, "message": "ถอนความยินยอมสำเร็จ" })),
+        Json(ApiResponse::empty_with_message("ถอนความยินยอมสำเร็จ")),
     ))
 }
 
@@ -120,8 +122,5 @@ pub async fn get_consent_summary(
     let pool = tenant_pool(&state, &headers).await?;
     let summary = consent_service::get_consent_summary(&pool).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(serde_json::json!({ "success": true, "data": summary })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(summary))))
 }
