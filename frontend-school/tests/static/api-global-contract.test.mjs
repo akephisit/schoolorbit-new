@@ -541,3 +541,77 @@ test('frontend application code routes backend API calls through apiClient', asy
 
 	assert.deepEqual(violations, []);
 });
+
+test('frontend API contract avoids unknown endpoint generics and blind envelope casts', async () => {
+	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
+		/\.(svelte|ts)$/.test(file)
+	);
+	const apiFiles = await listFiles(path.join(repoRoot, 'frontend-school/src/lib/api'), (file) =>
+		file.endsWith('.ts')
+	);
+	const violations = [];
+
+	for (const file of frontendFiles) {
+		const rel = relative(file);
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (
+			/\bapiClient\.(?:get|post|put|patch|delete|deleteWithBody|postMultipart)<\s*unknown\s*>/.test(
+				source
+			)
+		) {
+			violations.push(`${rel}: use a concrete apiClient<T> response type instead of unknown`);
+		}
+		if (/\bApiResponse<\s*unknown\s*>/.test(source)) {
+			violations.push(`${rel}: use a concrete ApiResponse<T> type instead of unknown`);
+		}
+	}
+
+	for (const file of apiFiles) {
+		const rel = relative(file);
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (/fetchApi<\s*T\s*=\s*unknown\s*>/.test(source)) {
+			violations.push(`${rel}: fetchApi default generic must be a concrete empty response type`);
+		}
+		if (/return\s+(?:response|res)\s+as\b/.test(source)) {
+			violations.push(`${rel}: API helpers must not return blind response casts`);
+		}
+		if (/\b(?:response|res)\.data\s+as\b/.test(source)) {
+			violations.push(`${rel}: API helpers must not cast envelope data in endpoint wrappers`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('frontend apiClient validates the backend envelope before returning typed responses', async () => {
+	const source = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/api/client.ts'),
+		'utf8'
+	);
+
+	assert.match(source, /function\s+normalizeApiResponse<T>/);
+	assert.match(source, /typeof\s+payload\.success\s*!==\s*'boolean'/);
+	assert.match(source, /!\('data'\s+in\s+payload\)/);
+	assert.doesNotMatch(source, /return\s+data\s+as\s+ApiResponse<T>/);
+});
+
+test('backend services do not return raw serde_json::Value for API contracts', async () => {
+	const serviceFiles = await listFiles(
+		path.join(repoRoot, 'backend-school/src/modules'),
+		(file) => file.endsWith('.rs') && /\/services(?:\/|\.rs$)/.test(file)
+	);
+	const violations = [];
+
+	for (const file of serviceFiles) {
+		const rel = relative(file);
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (/Result\s*<\s*serde_json::Value\s*,\s*AppError\s*>/.test(source)) {
+			violations.push(`${rel}: return a typed DTO/outcome instead of serde_json::Value`);
+		}
+		if (/Result\s*<\s*Vec\s*<\s*serde_json::Value\s*>\s*,\s*AppError\s*>/.test(source)) {
+			violations.push(`${rel}: return a typed DTO vector instead of Vec<serde_json::Value>`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});

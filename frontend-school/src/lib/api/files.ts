@@ -9,6 +9,7 @@ export interface FileUploadResponse {
 		file_size: number;
 		mime_type: string;
 		file_type: string;
+		storage_path: string;
 		url: string;
 		thumbnail_url: string | null;
 		width: number | null;

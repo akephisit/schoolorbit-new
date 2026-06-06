@@ -1,9 +1,10 @@
 import { apiClient, type ApiResponse } from '$lib/api/client';
 
+type EmptyResponseData = Record<string, never>;
 type LoadedApiResponse<T> = ApiResponse<T> & { success: true; data: T };
 
 // Helper for authenticated requests
-async function fetchApi<T = unknown>(
+async function fetchApi<T = EmptyResponseData>(
 	path: string,
 	options: RequestInit = {}
 ): Promise<LoadedApiResponse<T>> {
@@ -120,9 +121,7 @@ export const listRooms = async (
 	return await fetchApi<Room[]>(`${BASE}/rooms${queryString}`);
 };
 
-export const createRoom = async (
-	data: CreateRoomRequest
-): Promise<LoadedApiResponse<Room>> => {
+export const createRoom = async (data: CreateRoomRequest): Promise<LoadedApiResponse<Room>> => {
 	return await fetchApi<Room>(`${BASE}/rooms`, {
 		method: 'POST',
 		body: JSON.stringify(data)
@@ -139,8 +138,6 @@ export const updateRoom = async (
 	});
 };
 
-export const deleteRoom = async (
-	id: string
-): Promise<LoadedApiResponse<Record<string, never>>> => {
+export const deleteRoom = async (id: string): Promise<LoadedApiResponse<Record<string, never>>> => {
 	return await fetchApi<Record<string, never>>(`${BASE}/rooms/${id}`, { method: 'DELETE' });
 };

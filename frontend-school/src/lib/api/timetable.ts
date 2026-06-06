@@ -1,9 +1,10 @@
 import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
 
+type EmptyResponseData = Record<string, never>;
 type LoadedApiResponse<T> = ApiResponse<T> & { success: true; data: T };
 
 // Helper for authenticated requests
-async function fetchApi<T = unknown>(
+async function fetchApi<T = EmptyResponseData>(
 	path: string,
 	options: RequestInit = {}
 ): Promise<LoadedApiResponse<T>> {
@@ -171,7 +172,9 @@ export interface TimetableConflictResponse {
 
 type TimetableMutationResponse = LoadedApiResponse<TimetableEntry> | TimetableConflictResponse;
 
-function isConflictPayload(data: TimetableEntry | ConflictPayload | undefined): data is ConflictPayload {
+function isConflictPayload(
+	data: TimetableEntry | ConflictPayload | undefined
+): data is ConflictPayload {
 	return !!data && typeof data === 'object' && 'conflicts' in data;
 }
 
@@ -455,7 +458,9 @@ export const updateTimetableEntry = async (
 };
 
 export const deleteTimetableEntry = async (id: string) => {
-	return await fetchApi<Record<string, never>>(`/api/academic/timetable/${id}`, { method: 'DELETE' });
+	return await fetchApi<Record<string, never>>(`/api/academic/timetable/${id}`, {
+		method: 'DELETE'
+	});
 };
 
 export const deleteBatchGroup = async (
@@ -494,7 +499,9 @@ export interface MyActivityForEntry {
 export const getMyActivityForEntry = async (
 	entryId: string
 ): Promise<{ data: MyActivityForEntry | null }> => {
-	return await fetchApi<MyActivityForEntry | null>(`/api/academic/timetable/${entryId}/my-activity`);
+	return await fetchApi<MyActivityForEntry | null>(
+		`/api/academic/timetable/${entryId}/my-activity`
+	);
 };
 
 export const addEntryInstructor = async (

@@ -15,6 +15,39 @@ export interface ApiResponse<T> {
 	message?: string;
 }
 
+const INVALID_API_RESPONSE_ERROR = 'รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeApiResponse<T>(data: unknown): ApiResponse<T> {
+	if (!isRecord(data)) {
+		return { success: false, error: INVALID_API_RESPONSE_ERROR };
+	}
+
+	const payload = data;
+	const message = typeof payload.message === 'string' ? payload.message : undefined;
+
+	if (typeof payload.success !== 'boolean') {
+		return { success: false, error: INVALID_API_RESPONSE_ERROR, message };
+	}
+
+	if (!payload.success) {
+		const error =
+			typeof payload.error === 'string' && payload.error
+				? payload.error
+				: (message ?? 'เกิดข้อผิดพลาด');
+		return { success: false, error, message };
+	}
+
+	if (!('data' in payload)) {
+		return { success: false, error: INVALID_API_RESPONSE_ERROR, message };
+	}
+
+	return { success: true, data: payload.data as T, message };
+}
+
 function normalizeSchoolSubdomain(value: string | undefined): string | null {
 	const subdomain = value?.trim().toLowerCase();
 	if (!subdomain || subdomain === 'www') return null;
@@ -107,6 +140,7 @@ class APIClient {
 		});
 
 		const data = await this.parseResponse(response);
+		const normalized = normalizeApiResponse<T>(data);
 
 		if (!response.ok) {
 			if (response.status === 401) {
@@ -115,11 +149,12 @@ class APIClient {
 
 			return {
 				success: false,
-				error: this.errorMessage(data)
+				error: normalized.error ?? this.errorMessage(data),
+				message: normalized.message
 			};
 		}
 
-		return data as ApiResponse<T>;
+		return normalized;
 	}
 
 	async get<T>(endpoint: string): Promise<ApiResponse<T>> {
@@ -170,14 +205,19 @@ class APIClient {
 			body
 		});
 		const data = await this.parseResponse(response);
+		const normalized = normalizeApiResponse<T>(data);
 		if (!response.ok) {
 			if (response.status === 401) {
 				this.handleUnauthorized();
 			}
 
-			return { success: false, error: this.errorMessage(data) };
+			return {
+				success: false,
+				error: normalized.error ?? this.errorMessage(data),
+				message: normalized.message
+			};
 		}
-		return data as ApiResponse<T>;
+		return normalized;
 	}
 }
 

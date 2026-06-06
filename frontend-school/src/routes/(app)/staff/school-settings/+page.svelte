@@ -14,7 +14,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { getSchoolSettings, updateSchoolSettings, deleteSchoolLogo } from '$lib/api/school';
-	import { apiClient } from '$lib/api/client';
+	import { uploadFile } from '$lib/api/files';
 
 	let logoUrl = $state<string | undefined>(undefined); // URL สำหรับ preview (จาก backend)
 	let logoPath = $state<string | undefined>(undefined); // storage_path ที่เก็บใน DB
@@ -49,17 +49,7 @@
 		try {
 			let pathToSave = logoPath;
 			if (pendingFile) {
-				const form = new FormData();
-				form.append('file', pendingFile);
-				form.append('file_type', 'school_logo');
-				form.append('is_public', 'true');
-				const res = (await apiClient.postMultipart<unknown>('/api/files/upload', form)) as {
-					success: boolean;
-					error?: string;
-					file?: { id: string; url: string; storage_path: string };
-				};
-				const uploaded = res.file;
-				if (!res.success || !uploaded) throw new Error(res.error ?? 'อัปโหลดไม่สำเร็จ');
+				const uploaded = (await uploadFile(pendingFile, 'school_logo')).file;
 				pathToSave = uploaded.storage_path;
 				logoUrl = uploaded.url;
 				logoFileId = uploaded.id;
