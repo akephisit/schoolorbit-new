@@ -10,13 +10,13 @@ use uuid::Uuid;
 
 pub async fn get_user_subject_group_id(user_id: Uuid, pool: &PgPool) -> Option<Uuid> {
     sqlx::query_scalar(
-        r#"SELECT d.subject_group_id
-           FROM department_members dm
-           JOIN departments d ON d.id = dm.department_id
-           WHERE dm.user_id = $1
-             AND d.subject_group_id IS NOT NULL
-             AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-           ORDER BY dm.is_primary_department DESC NULLS LAST
+        r#"SELECT ou.subject_group_id
+           FROM organization_members om
+           JOIN organization_units ou ON ou.id = om.organization_unit_id
+           WHERE om.user_id = $1
+             AND ou.subject_group_id IS NOT NULL
+             AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
+           ORDER BY om.is_primary DESC NULLS LAST
            LIMIT 1"#,
     )
     .bind(user_id)
@@ -512,9 +512,9 @@ pub async fn batch_list_subject_default_instructors(
 
 fn effective_subject_group_filter(
     requested_group_id: Option<Uuid>,
-    department_group_id: Option<Uuid>,
+    organization_group_id: Option<Uuid>,
 ) -> Option<Uuid> {
-    department_group_id.or(requested_group_id)
+    organization_group_id.or(requested_group_id)
 }
 
 fn subject_search_pattern(search: Option<String>) -> Option<String> {
@@ -542,13 +542,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn effective_subject_group_filter_prefers_department_scope() {
-        let department_group_id = Uuid::new_v4();
+    fn effective_subject_group_filter_prefers_organization_scope() {
+        let organization_group_id = Uuid::new_v4();
         let requested_group_id = Uuid::new_v4();
 
         assert_eq!(
-            effective_subject_group_filter(Some(requested_group_id), Some(department_group_id)),
-            Some(department_group_id)
+            effective_subject_group_filter(Some(requested_group_id), Some(organization_group_id)),
+            Some(organization_group_id)
         );
         assert_eq!(
             effective_subject_group_filter(Some(requested_group_id), None),

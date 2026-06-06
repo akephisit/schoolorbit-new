@@ -2,8 +2,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { listDepartments, updateDepartment } from '$lib/api/staff';
-	import type { Department } from '$lib/api/staff';
+	import { listOrganizationUnits, updateOrganizationUnit } from '$lib/api/staff';
+	import type { OrganizationUnit } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
@@ -16,11 +16,11 @@
 		GraduationCap,
 		Settings
 	} from 'lucide-svelte';
-	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
-	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte'; // New import
+	import OrganizationUnitDialog from '$lib/components/staff/OrganizationUnitDialog.svelte';
+	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte'; // New import
 	import { toast } from 'svelte-sonner';
 
-	let departments: Department[] = $state([]);
+	let departments: OrganizationUnit[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
 	let searchQuery = $state('');
@@ -30,11 +30,11 @@
 	let dragOverDeptId: string | null = $state(null);
 
 	let showDialog = $state(false);
-	let editingDepartment: Department | null = $state(null);
+	let editingDepartment: OrganizationUnit | null = $state(null);
 
 	// Permission Dialog State
 	let showPermissionDialog = $state(false);
-	let permissionDepartment = $state<Department | null>(null);
+	let permissionDepartment = $state<OrganizationUnit | null>(null);
 
 	// Hierarchical Data Processing
 	// Filter logic: Only Administrative or Miscellaneous
@@ -46,7 +46,7 @@
 				dept.code.toLowerCase().includes(query) ||
 				(dept.name_en && dept.name_en.toLowerCase().includes(query));
 
-			const isNotSubjectGroup = !dept.code.startsWith('SUBJ-');
+			const isNotSubjectGroup = dept.unit_type !== 'subject_group';
 
 			return matchesSearch && isNotSubjectGroup;
 		})
@@ -58,13 +58,13 @@
 		isSearching
 			? []
 			: departments
-					.filter((d) => !d.parent_department_id && !d.code.startsWith('SUBJ-'))
+					.filter((d) => !d.parent_unit_id && d.unit_type !== 'subject_group')
 					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
 	);
 
-	function getChildren(parentId: string): Department[] {
+	function getChildren(parentId: string): OrganizationUnit[] {
 		return departments
-			.filter((d) => d.parent_department_id === parentId && !d.code.startsWith('SUBJ-'))
+			.filter((d) => d.parent_unit_id === parentId && d.unit_type !== 'subject_group')
 			.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 	}
 
@@ -72,7 +72,7 @@
 		try {
 			loading = true;
 			error = '';
-			const response = await listDepartments();
+			const response = await listOrganizationUnits();
 
 			if (response.success && response.data) {
 				departments = response.data;
@@ -92,16 +92,16 @@
 		showDialog = true;
 	}
 
-	function handleEdit(dept: Department) {
+	function handleEdit(dept: OrganizationUnit) {
 		editingDepartment = dept;
 		showDialog = true;
 	}
 
 	function goToDept(id: string) {
-		goto(resolve(`/staff/departments/${id}`));
+		goto(resolve(`/staff/organization/${id}`));
 	}
 
-	function handlePermission(dept: Department) {
+	function handlePermission(dept: OrganizationUnit) {
 		permissionDepartment = dept;
 		showPermissionDialog = true;
 	}
@@ -155,8 +155,8 @@
 		// Direct move without confirmation
 		const loadingToast = toast.loading('กำลังย้ายฝ่าย...');
 		try {
-			const result = await updateDepartment(sourceDeptId, {
-				parent_department_id: targetParentId ?? undefined
+			const result = await updateOrganizationUnit(sourceDeptId, {
+				parent_unit_id: targetParentId ?? undefined
 			});
 
 			if (result.success) {
@@ -212,7 +212,7 @@
 		</div>
 	</div>
 
-	<!-- Departments List -->
+	<!-- Organization Units List -->
 	{#if loading}
 		<div class="bg-card border border-border rounded-lg p-12 text-center">
 			<div
@@ -305,7 +305,7 @@
 					<!-- Children Container -->
 					<div class="flex flex-col gap-2 min-h-[50px]">
 						<!-- Snippet for Recursive Children -->
-						{#snippet departmentNode(dept: Department)}
+						{#snippet departmentNode(dept: OrganizationUnit)}
 							<div
 								class="bg-card border border-border/60 hover:border-primary/50 shadow-sm rounded-lg p-3
 									   cursor-move transition-all group relative list-item-card
@@ -398,13 +398,16 @@
 		</div>
 	{/if}
 
-	<DepartmentDialog
+	<OrganizationUnitDialog
 		bind:open={showDialog}
-		departmentToEdit={editingDepartment}
-		{departments}
+		organizationUnitToEdit={editingDepartment}
+		organizationUnits={departments}
 		onSuccess={loadDepartments}
-		forcedCategory="administrative"
+		forcedCategory="general"
 	/>
 
-	<DepartmentPermissionDialog bind:open={showPermissionDialog} department={permissionDepartment} />
+	<OrganizationPermissionDialog
+		bind:open={showPermissionDialog}
+		organizationUnit={permissionDepartment}
+	/>
 </div>

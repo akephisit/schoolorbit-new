@@ -55,9 +55,9 @@ pub async fn lookup_roles(
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
-/// GET /api/lookup/departments
-/// Returns department data. Supports ?member_only=true to filter to user's own depts.
-pub async fn lookup_departments(
+/// GET /api/lookup/organization-units
+/// Returns organization unit data. Supports ?member_only=true to filter to user's own units.
+pub async fn lookup_organization_units(
     State(state): State<AppState>,
     headers: HeaderMap,
     Extension(claims): Extension<Claims>,
@@ -65,23 +65,24 @@ pub async fn lookup_departments(
 ) -> Result<impl IntoResponse, AppError> {
     let context = active_lookup_context(&state, &headers, &claims).await?;
     let data =
-        lookup_service::lookup_departments(&context.tenant.pool, context.user_id, query).await?;
+        lookup_service::lookup_organization_units(&context.tenant.pool, context.user_id, query)
+            .await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
 }
 
-/// GET /api/lookup/departments/:id
-/// Returns single department by ID (auth only, no permission required)
-pub async fn lookup_department_by_id(
+/// GET /api/lookup/organization-units/:id
+/// Returns single organization unit by ID (auth only, no permission required)
+pub async fn lookup_organization_unit_by_id(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     Extension(claims): Extension<Claims>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = active_lookup_context(&state, &headers, &claims).await?;
-    let department = lookup_service::lookup_department_by_id(&context.tenant.pool, id).await?;
+    let unit = lookup_service::lookup_organization_unit_by_id(&context.tenant.pool, id).await?;
 
-    Ok(Json(ApiResponse::ok(department)).into_response())
+    Ok(Json(ApiResponse::ok(unit)).into_response())
 }
 
 /// GET /api/lookup/grade-levels

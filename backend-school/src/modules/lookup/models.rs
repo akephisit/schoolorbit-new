@@ -32,9 +32,9 @@ pub struct RoleLookupItem {
     pub user_type: String,
 }
 
-/// Department lookup item
+/// Organization unit lookup item
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DepartmentLookupItem {
+pub struct OrganizationUnitLookupItem {
     pub id: Uuid,
     pub code: String,
     pub name: String,
@@ -47,7 +47,11 @@ pub struct DepartmentLookupItem {
     pub display_order: i32,
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_department_id: Option<Uuid>,
+    pub parent_unit_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_group_id: Option<Uuid>,
 }
 
 /// Grade level lookup item
@@ -110,6 +114,6 @@ pub struct LookupQuery {
     /// Filter by level type (kindergarten, primary, secondary)
     pub level_type: Option<String>,
     pub subject_type: Option<String>,
-    /// Filter to departments where the current user is a member
+    /// Filter to organization units where the current user is a member
     pub member_only: Option<bool>,
 }

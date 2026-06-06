@@ -31,7 +31,7 @@ export interface UserRoleAssignment {
 	id: string;
 	user_id: string;
 	role_id: string;
-	department_id: string | null;
+	organization_unit_id: string | null;
 	role: Role;
 	is_primary: boolean;
 	started_at: string;

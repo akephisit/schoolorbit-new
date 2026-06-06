@@ -5,8 +5,8 @@ use crate::error::AppError;
 use crate::modules::facility::models::Room;
 
 use super::models::{
-    AcademicYearLookupItem, ClassroomLookupItem, DepartmentLookupItem, GradeLevelLookupItem,
-    LookupItem, LookupQuery, RoleLookupItem, StaffLookupItem, StudentLookupItem,
+    AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem, LookupQuery,
+    OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
 };
 
 #[derive(Debug, FromRow)]
@@ -27,7 +27,7 @@ struct RoleRow {
 }
 
 #[derive(Debug, FromRow)]
-struct DepartmentRow {
+struct OrganizationUnitRow {
     id: Uuid,
     code: String,
     name: String,
@@ -36,7 +36,9 @@ struct DepartmentRow {
     category: Option<String>,
     display_order: i32,
     is_active: bool,
-    parent_department_id: Option<Uuid>,
+    parent_unit_id: Option<Uuid>,
+    unit_type: Option<String>,
+    subject_group_id: Option<Uuid>,
 }
 
 #[derive(Debug, FromRow)]
@@ -187,18 +189,19 @@ pub async fn lookup_roles(
         .collect())
 }
 
-pub async fn lookup_departments(
+pub async fn lookup_organization_units(
     pool: &PgPool,
     user_id: Uuid,
     query: LookupQuery,
-) -> Result<Vec<DepartmentLookupItem>, AppError> {
+) -> Result<Vec<OrganizationUnitLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
     let member_only = query.member_only.unwrap_or(false);
 
     let mut sql = String::from(
-        "SELECT id, code, name, name_en, description, category, display_order, is_active, parent_department_id
-         FROM departments
+        "SELECT id, code, name, name_en, description, category, display_order,
+                is_active, parent_unit_id, unit_type, subject_group_id
+         FROM organization_units
          WHERE 1=1",
     );
 
@@ -208,7 +211,12 @@ pub async fn lookup_departments(
 
     if member_only {
         sql.push_str(
-            " AND EXISTS (SELECT 1 FROM department_members dm WHERE dm.department_id = departments.id AND dm.user_id = $1 AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE))",
+            " AND EXISTS (
+                SELECT 1 FROM organization_members om
+                WHERE om.organization_unit_id = organization_units.id
+                  AND om.user_id = $1
+                  AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
+            )",
         );
     }
 
@@ -223,7 +231,7 @@ pub async fn lookup_departments(
 
     sql.push_str(&format!(" ORDER BY display_order, name LIMIT {}", limit));
 
-    let mut query_builder = sqlx::query_as::<_, DepartmentRow>(&sql);
+    let mut query_builder = sqlx::query_as::<_, OrganizationUnitRow>(&sql);
     if member_only {
         query_builder = query_builder.bind(user_id);
     }
@@ -236,16 +244,20 @@ pub async fn lookup_departments(
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
-    Ok(rows.into_iter().map(department_lookup_item).collect())
+    Ok(rows
+        .into_iter()
+        .map(organization_unit_lookup_item)
+        .collect())
 }
 
-pub async fn lookup_department_by_id(
+pub async fn lookup_organization_unit_by_id(
     pool: &PgPool,
     id: Uuid,
-) -> Result<DepartmentLookupItem, AppError> {
-    sqlx::query_as::<_, DepartmentRow>(
-        "SELECT id, code, name, name_en, description, category, display_order, is_active, parent_department_id
-         FROM departments
+) -> Result<OrganizationUnitLookupItem, AppError> {
+    sqlx::query_as::<_, OrganizationUnitRow>(
+        "SELECT id, code, name, name_en, description, category, display_order,
+                is_active, parent_unit_id, unit_type, subject_group_id
+         FROM organization_units
          WHERE id = $1",
     )
     .bind(id)
@@ -255,8 +267,8 @@ pub async fn lookup_department_by_id(
         eprintln!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?
-    .map(department_lookup_item)
-    .ok_or(AppError::NotFound("ไม่พบฝ่าย/กลุ่มนี้".to_string()))
+    .map(organization_unit_lookup_item)
+    .ok_or(AppError::NotFound("ไม่พบหน่วยงานนี้".to_string()))
 }
 
 pub async fn lookup_grade_levels(
@@ -564,8 +576,8 @@ pub async fn lookup_subjects(
         .collect())
 }
 
-fn department_lookup_item(row: DepartmentRow) -> DepartmentLookupItem {
-    DepartmentLookupItem {
+fn organization_unit_lookup_item(row: OrganizationUnitRow) -> OrganizationUnitLookupItem {
+    OrganizationUnitLookupItem {
         id: row.id,
         code: row.code,
         name: row.name,
@@ -574,7 +586,9 @@ fn department_lookup_item(row: DepartmentRow) -> DepartmentLookupItem {
         category: row.category,
         display_order: row.display_order,
         is_active: row.is_active,
-        parent_department_id: row.parent_department_id,
+        parent_unit_id: row.parent_unit_id,
+        unit_type: row.unit_type,
+        subject_group_id: row.subject_group_id,
     }
 }
 

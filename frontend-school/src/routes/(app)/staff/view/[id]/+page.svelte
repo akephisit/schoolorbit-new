@@ -170,8 +170,8 @@
 								{/each}
 							{/if}
 
-							{#if staff.departments && staff.departments.length > 0}
-								{#each staff.departments as dept (dept.id || dept.name)}
+							{#if staff.organization_units && staff.organization_units.length > 0}
+								{#each staff.organization_units as dept (dept.id || dept.name)}
 									<Badge variant="outline" class="border-border/60">
 										<Building2 class="w-3 h-3 mr-1" />
 										{dept.name}

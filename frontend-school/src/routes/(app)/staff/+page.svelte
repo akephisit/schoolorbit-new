@@ -75,7 +75,7 @@
 				<span>จัดการนักเรียน</span>
 			</Button>
 
-			<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/departments">
+			<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/organization">
 				<FileText class="w-6 h-6" />
 				<span>ฝ่าย/แผนก</span>
 			</Button>

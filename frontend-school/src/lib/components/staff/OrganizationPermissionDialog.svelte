@@ -4,9 +4,9 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { permissionAPI, type PermissionsByModule } from '$lib/api/roles';
 	import {
-		getDepartmentPermissions,
-		updateDepartmentPermissions,
-		type Department
+		getOrganizationPermissions,
+		updateOrganizationPermissions,
+		type OrganizationUnit
 	} from '$lib/api/staff';
 	import { toast } from 'svelte-sonner';
 	import { LoaderCircle, Shield, Layers } from 'lucide-svelte';
@@ -14,10 +14,10 @@
 
 	let {
 		open = $bindable(false),
-		department,
+		organizationUnit,
 		onSuccess
 	} = $props<{
-		department: Department | null;
+		organizationUnit: OrganizationUnit | null;
 		open: boolean;
 		onSuccess?: () => void;
 	}>();
@@ -30,7 +30,7 @@
 	let moduleKeys = $derived(Object.keys(permissionModules).sort());
 
 	$effect(() => {
-		if (open && department) {
+		if (open && organizationUnit) {
 			loadData();
 		}
 	});
@@ -41,7 +41,7 @@
 			// Load permissions and current access
 			const [permResp, currentAccess] = await Promise.all([
 				permissionAPI.listPermissionsByModule(),
-				getDepartmentPermissions(department!.id)
+				getOrganizationPermissions(organizationUnit!.id)
 			]);
 
 			if (permResp.success && permResp.data) {
@@ -49,7 +49,9 @@
 			}
 
 			selectedPermissionIds.clear();
-			for (const id of currentAccess) selectedPermissionIds.add(id);
+			for (const grant of currentAccess) {
+				if (!grant.position_code) selectedPermissionIds.add(grant.permission_id);
+			}
 		} catch (e) {
 			toast.error('โหลดข้อมูลสิทธิ์ไม่สำเร็จ');
 			console.error(e);
@@ -59,10 +61,16 @@
 	}
 
 	async function handleSave() {
-		if (!department) return;
+		if (!organizationUnit) return;
 		try {
 			saving = true;
-			await updateDepartmentPermissions(department.id, Array.from(selectedPermissionIds));
+			await updateOrganizationPermissions(
+				organizationUnit.id,
+				Array.from(selectedPermissionIds).map((permission_id) => ({
+					permission_id,
+					position_code: null
+				}))
+			);
 			toast.success('บันทึกสิทธิ์การเข้าใช้งานสำเร็จ');
 			open = false;
 			onSuccess?.();
@@ -110,12 +118,12 @@
 				กำหนดสิทธิ์การใช้งาน (Permissions)
 			</Dialog.Title>
 			<Dialog.Description>
-				เลือกสิทธิ์การใช้งานระบบสำหรับฝ่าย <span class="font-bold text-foreground"
-					>{department?.name}</span
+				เลือกสิทธิ์การใช้งานระบบสำหรับหน่วยงาน <span class="font-bold text-foreground"
+					>{organizationUnit?.name}</span
 				><br />
 				<span class="text-xs text-muted-foreground"
 					>* เมื่อได้รับสิทธิ์
-					บุคลากรในฝ่ายจะสามารถเข้าถึงเมนูและใช้งานฟังก์ชันที่เกี่ยวข้องได้ทันที</span
+					บุคลากรในหน่วยงานจะสามารถเข้าถึงเมนูและใช้งานฟังก์ชันที่เกี่ยวข้องได้ทันที</span
 				>
 			</Dialog.Description>
 		</Dialog.Header>

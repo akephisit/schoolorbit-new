@@ -149,40 +149,44 @@ async fn fetch_user_permissions(
 
             UNION
 
-            -- 2. Department permissions (position-aware)
-            --    dp.position IS NULL  → applies to all positions
-            --    dp.position = dm.position → applies to that specific position only
+            -- 2. Organization permission grants (position-aware)
+            --    opg.position_code IS NULL  → applies to all positions
+            --    opg.position_code = om.position_code → applies to that specific position only
             SELECT p.code
-            FROM department_members dm
-            JOIN department_permissions dp ON dm.department_id = dp.department_id
-            JOIN permissions p ON dp.permission_id = p.id
-            WHERE dm.user_id = $1
-              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-              AND (dp.position IS NULL OR dp.position = dm.position)
+            FROM organization_members om
+            JOIN organization_permission_grants opg
+              ON om.organization_unit_id = opg.organization_unit_id
+            JOIN permissions p ON opg.permission_id = p.id
+            WHERE om.user_id = $1
+              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
+              AND (opg.position_code IS NULL OR opg.position_code = om.position_code)
 
             UNION
 
-            -- 3. Delegated permissions (from head → this user)
+            -- 3. Delegated permissions (from organization leader → this user)
             SELECT p.code
-            FROM permission_delegations pd
-            JOIN permissions p ON pd.permission_id = p.id
-            WHERE pd.to_user_id = $1
-              AND pd.revoked_at IS NULL
-              AND (pd.expires_at IS NULL OR pd.expires_at > NOW())
+            FROM organization_permission_delegations opd
+            JOIN permissions p ON opd.permission_id = p.id
+            WHERE opd.to_user_id = $1
+              AND opd.revoked_at IS NULL
+              AND (opd.expires_at IS NULL OR opd.expires_at > NOW())
 
             UNION
 
-            -- 4. Parent-head inheritance: head of a parent dept
-            --    automatically inherits permissions of all child depts
+            -- 4. Parent-leader inheritance: leader of a parent unit
+            --    automatically inherits grants of all direct child units
             SELECT p.code
-            FROM department_members dm
-            JOIN departments child ON child.parent_department_id = dm.department_id
-            JOIN department_permissions dp ON dp.department_id = child.id
-            JOIN permissions p ON dp.permission_id = p.id
-            WHERE dm.user_id = $1
-              AND dm.position = 'head'
-              AND (dm.ended_at IS NULL OR dm.ended_at > CURRENT_DATE)
-              AND (dp.position IS NULL OR dp.position = 'head')
+            FROM organization_members om
+            JOIN organization_units child ON child.parent_unit_id = om.organization_unit_id
+            JOIN organization_permission_grants opg ON opg.organization_unit_id = child.id
+            JOIN permissions p ON opg.permission_id = p.id
+            WHERE om.user_id = $1
+              AND om.position_code IN ('director', 'deputy_director', 'head', 'deputy_head')
+              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
+              AND (
+                  opg.position_code IS NULL
+                  OR opg.position_code IN ('director', 'deputy_director', 'head', 'deputy_head')
+              )
         ) AS perms
         ORDER BY code
         "#,

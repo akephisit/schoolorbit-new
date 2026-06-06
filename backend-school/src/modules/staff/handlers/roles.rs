@@ -1,7 +1,7 @@
 use crate::api_response::{ApiResponse, IdData};
 use crate::error::AppError;
 use crate::modules::staff::models::*;
-use crate::modules::staff::services::{department_service, role_service};
+use crate::modules::staff::services::{organization_unit_service, role_service};
 use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
@@ -86,10 +86,10 @@ pub async fn update_role(
 }
 
 // ============================================
-// Departments
+// Organization Units
 // ============================================
 
-pub async fn list_departments(
+pub async fn list_organization_units(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
@@ -98,56 +98,56 @@ pub async fn list_departments(
     let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
-    let departments = department_service::list_departments(&pool).await?;
-    Ok(Json(ApiResponse::ok(departments)).into_response())
+    let units = organization_unit_service::list_organization_units(&pool).await?;
+    Ok(Json(ApiResponse::ok(units)).into_response())
 }
 
-pub async fn get_department(
+pub async fn get_organization_unit(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(dept_id): Path<Uuid>,
+    Path(unit_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
-    let department = department_service::get_department(&pool, dept_id).await?;
-    Ok(Json(ApiResponse::ok(department)).into_response())
+    let unit = organization_unit_service::get_organization_unit(&pool, unit_id).await?;
+    Ok(Json(ApiResponse::ok(unit)).into_response())
 }
 
-pub async fn create_department(
+pub async fn create_organization_unit(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<CreateDepartmentRequest>,
+    Json(payload): Json<CreateOrganizationUnitRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_CREATE_ALL)?;
 
-    let dept_id = department_service::create_department(&pool, payload).await?;
+    let unit_id = organization_unit_service::create_organization_unit(&pool, payload).await?;
     Ok((
         StatusCode::CREATED,
         Json(ApiResponse::with_message(
-            IdData::new(dept_id),
-            "สร้างฝ่ายสำเร็จ",
+            IdData::new(unit_id),
+            "สร้างหน่วยงานสำเร็จ",
         )),
     )
         .into_response())
 }
 
-pub async fn update_department(
+pub async fn update_organization_unit(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(dept_id): Path<Uuid>,
-    Json(payload): Json<UpdateDepartmentRequest>,
+    Path(unit_id): Path<Uuid>,
+    Json(payload): Json<UpdateOrganizationUnitRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_UPDATE_ALL)?;
 
-    department_service::update_department(&pool, dept_id, payload).await?;
-    Ok(Json(ApiResponse::empty_with_message("อัปเดตฝ่ายสำเร็จ")).into_response())
+    organization_unit_service::update_organization_unit(&pool, unit_id, payload).await?;
+    Ok(Json(ApiResponse::empty_with_message("อัปเดตหน่วยงานสำเร็จ")).into_response())
 }

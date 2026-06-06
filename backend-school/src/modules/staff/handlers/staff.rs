@@ -104,7 +104,7 @@ pub async fn update_staff(
 
     staff_service::update_staff(&pool, staff_id, payload).await?;
 
-    // Roles/departments may have changed — invalidate this user's permission cache
+    // Roles/organization memberships may have changed — invalidate this user's permission cache
     state.permission_cache.invalidate(&staff_id);
     state.notify_permission_changed(staff_id);
 

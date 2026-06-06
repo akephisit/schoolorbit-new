@@ -1,18 +1,18 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
-	import { getDepartmentLookup, type Department } from '$lib/api/staff';
+	import { getOrganizationUnitLookup, type OrganizationUnit } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import DeptMembersSection from '$lib/components/staff/DeptMembersSection.svelte';
-	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte';
+	import OrganizationMembersSection from '$lib/components/staff/OrganizationMembersSection.svelte';
+	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { GraduationCap, ArrowLeft, Building2, Settings } from 'lucide-svelte';
 
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
-	let department: Department | null = $state(null);
+	let department: OrganizationUnit | null = $state(null);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -22,7 +22,7 @@
 		if (!deptId) return;
 		try {
 			loading = true;
-			const res = await getDepartmentLookup(deptId);
+			const res = await getOrganizationUnitLookup(deptId);
 			if (res.success && res.data) {
 				department = res.data;
 			} else {
@@ -105,10 +105,10 @@
 
 			<!-- Right: Members -->
 			<div>
-				<DeptMembersSection departmentId={deptId} />
+				<OrganizationMembersSection organizationUnitId={deptId} />
 			</div>
 		</div>
 	{/if}
 </div>
 
-<DepartmentPermissionDialog bind:open={showPermissionDialog} {department} />
+<OrganizationPermissionDialog bind:open={showPermissionDialog} organizationUnit={department} />

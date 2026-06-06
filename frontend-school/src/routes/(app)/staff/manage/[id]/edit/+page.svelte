@@ -7,10 +7,10 @@
 		getStaffProfile,
 		updateStaff,
 		listRoles,
-		listDepartments,
+		listOrganizationUnits,
 		type StaffProfileResponse,
 		type Role,
-		type Department
+		type OrganizationUnit
 	} from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -34,12 +34,12 @@
 	let loadingProfile = $state(true);
 	let saving = $state(false);
 	let loadingRoles = $state(true);
-	let loadingDepartments = $state(true);
+	let loadingOrganizationUnits = $state(true);
 
 	// Data
 	let staff: StaffProfileResponse | null = $state(null);
 	let roles: Role[] = $state([]);
-	let departments: Department[] = $state([]);
+	let organizationUnits: OrganizationUnit[] = $state([]);
 
 	// Form data
 	let formData = $state({
@@ -69,10 +69,10 @@
 		role_ids: [] as string[],
 		primary_role_id: '',
 
-		// Departments
-		department_assignments: [] as Array<{
-			department_id: string;
-			position: string;
+		// Organization Units
+		organization_assignments: [] as Array<{
+			organization_unit_id: string;
+			position_code: string;
 			is_primary: boolean;
 			responsibilities: string;
 		}>
@@ -114,11 +114,11 @@
 					university: staff.staff_info?.university || '',
 					role_ids: staff.roles?.map((r) => r.id) || [],
 					primary_role_id: staff.roles?.find((r) => r.is_primary)?.id || '',
-					department_assignments:
-						staff.departments?.map((d) => ({
-							department_id: d.id,
-							position: d.position || 'member',
-							is_primary: d.is_primary_department || false,
+					organization_assignments:
+						staff.organization_units?.map((d) => ({
+							organization_unit_id: d.id,
+							position_code: d.position_code || 'member',
+							is_primary: d.is_primary || false,
 							responsibilities: d.responsibilities || ''
 						})) || []
 				};
@@ -131,23 +131,23 @@
 		}
 	}
 
-	// Load roles and departments
+	// Load roles and organizationUnits
 	async function loadOptions() {
 		try {
-			const [rolesRes, deptsRes] = await Promise.all([listRoles(), listDepartments()]);
+			const [rolesRes, deptsRes] = await Promise.all([listRoles(), listOrganizationUnits()]);
 
 			if (rolesRes.success && rolesRes.data) {
 				// Filter to show only staff roles
 				roles = rolesRes.data.filter((role) => role.user_type === 'staff');
 			}
 			if (deptsRes.success && deptsRes.data) {
-				departments = deptsRes.data;
+				organizationUnits = deptsRes.data;
 			}
 		} catch (e) {
 			console.error('Failed to load options:', e);
 		} finally {
 			loadingRoles = false;
-			loadingDepartments = false;
+			loadingOrganizationUnits = false;
 		}
 	}
 
@@ -198,14 +198,14 @@
 	function validateStep4(): boolean {
 		errors = {};
 
-		if (formData.department_assignments.length === 0) {
-			errors.departments = 'กรุณาเพิ่มสังกัดฝ่ายอย่างน้อย 1 ฝ่าย';
+		if (formData.organization_assignments.length === 0) {
+			errors.organization_units = 'กรุณาเพิ่มสังกัดฝ่ายอย่างน้อย 1 ฝ่าย';
 			return false;
 		}
 
-		const hasPrimary = formData.department_assignments.some((d) => d.is_primary);
+		const hasPrimary = formData.organization_assignments.some((d) => d.is_primary);
 		if (!hasPrimary) {
-			errors.departments = 'กรุณาระบุฝ่ายหลัก';
+			errors.organization_units = 'กรุณาระบุฝ่ายหลัก';
 			return false;
 		}
 
@@ -258,26 +258,26 @@
 		}
 	}
 
-	// Department management
-	function addDepartment() {
-		const isFirst = formData.department_assignments.length === 0;
-		formData.department_assignments = [
-			...formData.department_assignments,
+	// OrganizationUnit management
+	function addOrganizationUnit() {
+		const isFirst = formData.organization_assignments.length === 0;
+		formData.organization_assignments = [
+			...formData.organization_assignments,
 			{
-				department_id: '',
-				position: 'member',
+				organization_unit_id: '',
+				position_code: 'member',
 				is_primary: isFirst,
 				responsibilities: ''
 			}
 		];
 	}
 
-	function removeDepartment(index: number) {
-		formData.department_assignments = formData.department_assignments.filter((_, i) => i !== index);
+	function removeOrganizationUnit(index: number) {
+		formData.organization_assignments = formData.organization_assignments.filter((_, i) => i !== index);
 	}
 
-	function setPrimaryDepartment(index: number) {
-		formData.department_assignments = formData.department_assignments.map((dept, i) => ({
+	function setPrimaryOrganizationUnit(index: number) {
+		formData.organization_assignments = formData.organization_assignments.map((dept, i) => ({
 			...dept,
 			is_primary: i === index
 		}));
@@ -314,7 +314,7 @@
 				},
 				role_ids: formData.role_ids,
 				primary_role_id: formData.primary_role_id || formData.role_ids[0],
-				department_assignments: formData.department_assignments.filter((d) => d.department_id)
+				organization_assignments: formData.organization_assignments.filter((d) => d.organization_unit_id)
 			};
 
 			const result = await updateStaff(staffId, payload);
@@ -386,7 +386,7 @@
 			case 3:
 				return Building2; // Roles
 			case 4:
-				return Building2; // Departments
+				return Building2; // Organization Units
 			default:
 				return User;
 		}
@@ -801,10 +801,10 @@
 							</div>
 						{/if}
 					{:else if currentStep === 4}
-						<!-- Step 4: Departments -->
+						<!-- Step 4: Organization Units -->
 						<h2 class="text-xl font-semibold mb-6">สังกัดฝ่าย</h2>
 
-						{#if loadingDepartments}
+						{#if loadingOrganizationUnits}
 							<div class="flex justify-center py-8">
 								<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
 							</div>
@@ -814,20 +814,20 @@
 									ระบุฝ่ายที่บุคลากรสังกัดและตำแหน่งในฝ่าย
 								</p>
 
-								{#if errors.departments}
-									<p class="text-sm text-destructive">{errors.departments}</p>
+								{#if errors.organization_units}
+									<p class="text-sm text-destructive">{errors.organization_units}</p>
 								{/if}
 
-								{#each formData.department_assignments as dept, i (i)}
+								{#each formData.organization_assignments as dept, i (i)}
 									<div class="p-4 border border-border rounded-lg">
 										<div class="flex items-start justify-between mb-4">
 											<h3 class="font-medium">ฝ่ายที่ {i + 1}</h3>
-											{#if formData.department_assignments.length > 1}
+											{#if formData.organization_assignments.length > 1}
 												<Button
 													variant="ghost"
 													size="sm"
 													type="button"
-													onclick={() => removeDepartment(i)}
+													onclick={() => removeOrganizationUnit(i)}
 													class="text-destructive hover:text-destructive/80 text-sm"
 												>
 													ลบ
@@ -838,10 +838,10 @@
 										<div class="space-y-3">
 											<div>
 												<Label class="mb-2">ชื่อฝ่าย</Label>
-												<Select.Root type="single" bind:value={dept.department_id}>
+												<Select.Root type="single" bind:value={dept.organization_unit_id}>
 													<Select.Trigger>
-														{#if dept.department_id}
-															{departments.find((d) => d.id === dept.department_id)?.name ||
+														{#if dept.organization_unit_id}
+															{organizationUnits.find((d) => d.id === dept.organization_unit_id)?.name ||
 																'เลือกฝ่าย'}
 														{:else}
 															เลือกฝ่าย
@@ -852,8 +852,8 @@
 													>
 														<Select.Item value="">เลือกฝ่าย</Select.Item>
 
-														<!-- Group by Parent Departments (Administrative Groups) -->
-														{#each departments.filter((d) => !d.parent_department_id) as parentDept (parentDept.id)}
+														<!-- Group by Parent Organization Units (Administrative Groups) -->
+														{#each organizationUnits.filter((d) => !d.parent_unit_id) as parentDept (parentDept.id)}
 															<Select.Group>
 																<Select.Label
 																	class="font-bold text-primary flex items-center gap-2 bg-muted/30 px-2 py-1"
@@ -870,8 +870,8 @@
 																	— สังกัด {parentDept.name} (ส่วนกลาง) —
 																</Select.Item>
 
-																<!-- Child Departments -->
-																{#each departments.filter((d) => d.parent_department_id === parentDept.id) as childDept (childDept.id)}
+																<!-- Child Organization Units -->
+																{#each organizationUnits.filter((d) => d.parent_unit_id === parentDept.id) as childDept (childDept.id)}
 																	<Select.Item value={childDept.id} class="pl-6">
 																		<div class="flex flex-col">
 																			<span>{childDept.name}</span>
@@ -887,13 +887,13 @@
 															<Select.Separator />
 														{/each}
 
-														<!-- Orphan Departments (No Parent) -->
-														{#if departments.some((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id))}
+														<!-- Orphan Organization Units (No Parent) -->
+														{#if organizationUnits.some((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id))}
 															<Select.Group>
 																<Select.Label class="font-bold text-muted-foreground"
 																	>อื่นๆ</Select.Label
 																>
-																{#each departments.filter((d) => d.parent_department_id && !departments.find((p) => p.id === d.parent_department_id)) as orphan (orphan.id)}
+																{#each organizationUnits.filter((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id)) as orphan (orphan.id)}
 																	<Select.Item value={orphan.id} class="pl-6">
 																		{orphan.name}
 																	</Select.Item>
@@ -906,8 +906,8 @@
 
 											<div>
 												<Label class="mb-2">ตำแหน่งในฝ่าย</Label>
-												<Select.Root type="single" bind:value={dept.position}>
-													<Select.Trigger>{getPositionLabel(dept.position)}</Select.Trigger>
+												<Select.Root type="single" bind:value={dept.position_code}>
+													<Select.Trigger>{getPositionLabel(dept.position_code)}</Select.Trigger>
 													<Select.Content>
 														<Select.Item value="member">สมาชิก</Select.Item>
 														<Select.Item value="head">หัวหน้าฝ่าย</Select.Item>
@@ -928,7 +928,7 @@
 												<div class="flex items-center gap-2 cursor-pointer">
 													<Checkbox
 														checked={dept.is_primary}
-														onCheckedChange={() => setPrimaryDepartment(i)}
+														onCheckedChange={() => setPrimaryOrganizationUnit(i)}
 													/>
 													<span class="text-sm">ฝ่ายหลัก</span>
 												</div>
@@ -937,7 +937,7 @@
 									</div>
 								{/each}
 
-								<Button type="button" onclick={addDepartment} variant="outline" class="w-full">
+								<Button type="button" onclick={addOrganizationUnit} variant="outline" class="w-full">
 									+ เพิ่มฝ่าย
 								</Button>
 							</div>

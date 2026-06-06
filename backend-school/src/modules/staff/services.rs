@@ -1,7 +1,7 @@
-pub mod delegation_service;
-pub mod department_member_service;
-pub mod department_permission_service;
-pub mod department_service;
+pub mod organization_delegation_service;
+pub mod organization_member_service;
+pub mod organization_permission_service;
+pub mod organization_unit_service;
 pub mod permission_service;
 pub mod role_service;
 pub mod staff_service;

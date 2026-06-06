@@ -58,7 +58,7 @@ export const staffWorkInfoSchema = z.object({
 	employee_id: z.string().min(1, 'กรุณากรอกรหัสพนักงาน'),
 	hired_date: z.string().min(1, 'กรุณาเลือกวันที่เริ่มงาน'),
 	position: z.string().optional().or(z.literal('')),
-	department: z.string().optional(),
+	organization_unit_id: z.string().uuid().optional(),
 	salary: z.number().positive('เงินเดือนต้องมากกว่า 0').optional()
 });
 
@@ -84,9 +84,9 @@ export const createStaffSchema = z.object({
 	// Password (for new users)
 	password: passwordSchema.optional(),
 
-	// Role and department assignments
+	// Role and organization assignments
 	roles: z.array(z.string()).min(1, 'กรุณาเลือกตำแหน่งอย่างน้อย 1 ตำแหน่ง'),
-	departments: z.array(z.string()).optional()
+	organization_units: z.array(z.string()).optional()
 });
 
 export const updateStaffSchema = createStaffSchema.partial({
@@ -105,15 +105,21 @@ export const createRoleSchema = z.object({
 
 export const updateRoleSchema = createRoleSchema;
 
-// ===== Department Schemas =====
+// ===== OrganizationUnit Schemas =====
 
-export const createDepartmentSchema = z.object({
-	name: z.string().min(2, 'ชื่อแผนกต้องมีอย่างน้อย 2 ตัวอักษร'),
+export const createOrganizationUnitSchema = z.object({
+	code: z.string().min(2, 'รหัสหน่วยงานต้องมีอย่างน้อย 2 ตัวอักษร'),
+	name: z.string().min(2, 'ชื่อหน่วยงานต้องมีอย่างน้อย 2 ตัวอักษร'),
 	description: z.string().optional().or(z.literal('')),
-	parent_id: z.string().uuid().optional().nullable()
+	parent_unit_id: z.string().uuid().optional().nullable(),
+	category: z.enum(['academic', 'personnel', 'budget', 'general', 'other']).optional(),
+	unit_type: z
+		.enum(['school', 'management_group', 'division', 'subject_group', 'committee', 'team', 'custom'])
+		.optional(),
+	subject_group_id: z.string().uuid().optional().nullable()
 });
 
-export const updateDepartmentSchema = createDepartmentSchema;
+export const updateOrganizationUnitSchema = createOrganizationUnitSchema;
 
 // ===== Student Schemas (for future use) =====
 
@@ -139,8 +145,8 @@ export type CreateStaffInput = z.infer<typeof createStaffSchema>;
 export type UpdateStaffInput = z.infer<typeof updateStaffSchema>;
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
-export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>;
-export type UpdateDepartmentInput = z.infer<typeof updateDepartmentSchema>;
+export type CreateOrganizationUnitInput = z.infer<typeof createOrganizationUnitSchema>;
+export type UpdateOrganizationUnitInput = z.infer<typeof updateOrganizationUnitSchema>;
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;
 
 // ===== Achievement Schemas =====

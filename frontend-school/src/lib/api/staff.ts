@@ -10,7 +10,7 @@ export interface StaffListItem {
 	first_name: string;
 	last_name: string;
 	roles: string[];
-	departments: string[];
+	organization_units: string[];
 	status: string;
 }
 
@@ -33,15 +33,16 @@ export interface RoleResponse {
 	is_primary?: boolean;
 }
 
-export interface DepartmentResponse {
+export interface OrganizationUnitResponse {
 	id: string;
 	code: string;
 	name: string;
-	position?: string;
-	is_primary_department?: boolean;
+	position_code?: string;
+	position_title?: string;
 	is_primary?: boolean;
 	category?: string;
-	org_type?: string;
+	unit_type?: string;
+	subject_group_id?: string;
 	responsibilities?: string;
 }
 
@@ -97,7 +98,7 @@ export interface StaffProfileResponse {
 	staff_info?: StaffInfoResponse;
 	roles: RoleResponse[];
 	primary_role?: RoleResponse;
-	departments: DepartmentResponse[];
+	organization_units: OrganizationUnitResponse[];
 	teaching_courses: TeachingCourseItem[];
 	advisor_classrooms: AdvisorClassroomItem[];
 	permissions: string[];
@@ -110,11 +111,12 @@ export interface PublicStaffRoleResponse {
 	level?: number;
 }
 
-export interface PublicStaffDepartmentResponse {
+export interface PublicStaffOrganizationUnitResponse {
 	id: string;
 	code: string;
 	name: string;
-	position: string;
+	position_code: string;
+	position_title?: string;
 }
 
 export interface PublicStaffProfileResponse {
@@ -131,7 +133,7 @@ export interface PublicStaffProfileResponse {
 	status: string;
 	profile_image_url?: string | null;
 	roles: PublicStaffRoleResponse[];
-	departments: PublicStaffDepartmentResponse[];
+	organization_units: PublicStaffOrganizationUnitResponse[];
 }
 
 export interface CreateStaffRequest {
@@ -160,9 +162,10 @@ export interface CreateStaffRequest {
 	profile_image_url?: string;
 	role_ids: string[];
 	primary_role_id?: string;
-	department_assignments?: Array<{
-		department_id: string;
-		position: string;
+	organization_assignments?: Array<{
+		organization_unit_id: string;
+		position_code: string;
+		position_title?: string;
 		is_primary?: boolean;
 		responsibilities?: string;
 	}>;
@@ -192,9 +195,10 @@ export interface UpdateStaffRequest {
 	};
 	role_ids?: string[];
 	primary_role_id?: string;
-	department_assignments?: Array<{
-		department_id: string;
-		position: string;
+	organization_assignments?: Array<{
+		organization_unit_id: string;
+		position_code: string;
+		position_title?: string;
 		is_primary?: boolean;
 		responsibilities?: string;
 	}>;
@@ -214,15 +218,16 @@ export interface Role {
 	updated_at: string;
 }
 
-export interface Department {
+export interface OrganizationUnit {
 	id: string;
 	code: string;
 	name: string;
 	name_en?: string;
 	description?: string;
-	parent_department_id?: string;
-	category?: string; // administrative, academic
-	org_type?: string; // group, unit
+	parent_unit_id?: string;
+	category?: string;
+	unit_type?: string;
+	subject_group_id?: string;
 	phone?: string;
 	email?: string;
 	location?: string;
@@ -235,7 +240,7 @@ export interface Department {
 interface StaffFilter {
 	user_type?: string;
 	role_id?: string;
-	department_id?: string;
+	organization_unit_id?: string;
 	status?: string;
 	search?: string;
 	page?: number;
@@ -312,40 +317,45 @@ export async function getRole(roleId: string): Promise<ApiResponse<Role>> {
 }
 
 // ===================================================================
-// Department APIs
+// Organization Unit APIs
 // ===================================================================
 
-export async function listDepartments(): Promise<ApiResponse<Department[]>> {
-	return apiClient.get<Department[]>('/api/departments');
+export async function listOrganizationUnits(): Promise<ApiResponse<OrganizationUnit[]>> {
+	return apiClient.get<OrganizationUnit[]>('/api/organization/units');
 }
 
 // Auth-only version (no roles.read.all required) — for non-admin pages
-export async function listDepartmentsLookup(options?: {
+export async function listOrganizationUnitsLookup(options?: {
 	member_only?: boolean;
-}): Promise<ApiResponse<Department[]>> {
+}): Promise<ApiResponse<OrganizationUnit[]>> {
 	const params = new URLSearchParams();
 	if (options?.member_only) params.set('member_only', 'true');
 	const qs = params.toString() ? `?${params}` : '';
-	return apiClient.get<Department[]>(`/api/lookup/departments${qs}`);
+	return apiClient.get<OrganizationUnit[]>(`/api/lookup/organization-units${qs}`);
 }
 
-// Get single department (auth only, no roles.read.all required)
-export async function getDepartmentLookup(id: string): Promise<ApiResponse<Department>> {
-	return apiClient.get<Department>(`/api/lookup/departments/${id}`);
+// Get single organization unit (auth only, no roles.read.all required)
+export async function getOrganizationUnitLookup(
+	id: string
+): Promise<ApiResponse<OrganizationUnit>> {
+	return apiClient.get<OrganizationUnit>(`/api/lookup/organization-units/${id}`);
 }
 
-export async function getDepartment(deptId: string): Promise<ApiResponse<Department>> {
-	return apiClient.get<Department>(`/api/departments/${deptId}`);
+export async function getOrganizationUnit(
+	unitId: string
+): Promise<ApiResponse<OrganizationUnit>> {
+	return apiClient.get<OrganizationUnit>(`/api/organization/units/${unitId}`);
 }
 
-export interface CreateDepartmentRequest {
+export interface CreateOrganizationUnitRequest {
 	code: string;
 	name: string;
 	name_en?: string;
 	description?: string;
-	parent_department_id?: string;
+	parent_unit_id?: string;
 	category?: string;
-	org_type?: string;
+	unit_type?: string;
+	subject_group_id?: string;
 	phone?: string;
 	email?: string;
 	location?: string;
@@ -353,13 +363,14 @@ export interface CreateDepartmentRequest {
 	display_order?: number;
 }
 
-export interface UpdateDepartmentRequest {
+export interface UpdateOrganizationUnitRequest {
 	name?: string;
 	name_en?: string;
 	description?: string;
-	parent_department_id?: string;
+	parent_unit_id?: string;
 	category?: string;
-	org_type?: string;
+	unit_type?: string;
+	subject_group_id?: string;
 	phone?: string;
 	email?: string;
 	location?: string;
@@ -367,40 +378,49 @@ export interface UpdateDepartmentRequest {
 	display_order?: number;
 }
 
-export async function createDepartment(
-	data: CreateDepartmentRequest
+export async function createOrganizationUnit(
+	data: CreateOrganizationUnitRequest
 ): Promise<ApiResponse<{ id: string }>> {
-	return apiClient.post<{ id: string }>('/api/departments', data);
+	return apiClient.post<{ id: string }>('/api/organization/units', data);
 }
 
-export async function updateDepartment(
-	deptId: string,
-	data: UpdateDepartmentRequest
+export async function updateOrganizationUnit(
+	unitId: string,
+	data: UpdateOrganizationUnitRequest
 ): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.put<Record<string, never>>(`/api/departments/${deptId}`, data);
+	return apiClient.put<Record<string, never>>(`/api/organization/units/${unitId}`, data);
 }
 
-export async function deleteDepartment(
-	deptId: string
+export async function deleteOrganizationUnit(
+	unitId: string
 ): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.delete<Record<string, never>>(`/api/departments/${deptId}`);
+	return apiClient.delete<Record<string, never>>(`/api/organization/units/${unitId}`);
 }
 
 // ===================================================================
-// Department Permissions APIs
+// Organization Permission APIs
 // ===================================================================
 
-export async function getDepartmentPermissions(deptId: string): Promise<string[]> {
-	const response = await apiClient.get<string[]>(`/api/departments/${deptId}/permissions`);
-	return requireApiData(response, 'Failed to fetch department permissions');
+export interface OrganizationPermissionGrant {
+	permission_id: string;
+	position_code?: string | null;
 }
 
-export async function updateDepartmentPermissions(
-	deptId: string,
-	permission_ids: string[]
+export async function getOrganizationPermissions(
+	unitId: string
+): Promise<OrganizationPermissionGrant[]> {
+	const response = await apiClient.get<OrganizationPermissionGrant[]>(
+		`/api/organization/units/${unitId}/permissions`
+	);
+	return requireApiData(response, 'Failed to fetch organization permissions');
+}
+
+export async function updateOrganizationPermissions(
+	unitId: string,
+	grants: OrganizationPermissionGrant[]
 ): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.put<Record<string, never>>(`/api/departments/${deptId}/permissions`, {
-		permission_ids
+	return apiClient.put<Record<string, never>>(`/api/organization/units/${unitId}/permissions`, {
+		grants
 	});
 }
 
@@ -436,25 +456,27 @@ export interface DelegatablePermission {
 }
 
 export async function listDelegatablePermissions(
-	departmentId: string
+	organizationUnitId: string
 ): Promise<ApiResponse<DelegatablePermission[]>> {
 	return apiClient.get<DelegatablePermission[]>(
-		`/api/departments/${departmentId}/delegatable-permissions`
+		`/api/organization/units/${organizationUnitId}/delegatable-permissions`
 	);
 }
 
 export async function listDelegations(
-	departmentId: string
+	organizationUnitId: string
 ): Promise<ApiResponse<DelegationItem[]>> {
-	return apiClient.get<DelegationItem[]>(`/api/departments/${departmentId}/delegations`);
+	return apiClient.get<DelegationItem[]>(
+		`/api/organization/units/${organizationUnitId}/delegations`
+	);
 }
 
 export async function createDelegation(
-	departmentId: string,
+	organizationUnitId: string,
 	body: CreateDelegationBody
 ): Promise<ApiResponse<{ delegation_id: string }>> {
 	return apiClient.post<{ delegation_id: string }>(
-		`/api/departments/${departmentId}/delegations`,
+		`/api/organization/units/${organizationUnitId}/delegations`,
 		body
 	);
 }
@@ -462,20 +484,21 @@ export async function createDelegation(
 export async function revokeDelegation(
 	delegationId: string
 ): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.delete<Record<string, never>>(`/api/delegations/${delegationId}`);
+	return apiClient.delete<Record<string, never>>(`/api/organization/delegations/${delegationId}`);
 }
 
 // ===================================================================
-// Department Member Management APIs
+// Organization Member Management APIs
 // ===================================================================
 
-export interface DeptMemberItem {
+export interface OrganizationMemberItem {
 	user_id: string;
-	department_id: string;
-	department_name: string;
+	organization_unit_id: string;
+	organization_unit_name: string;
 	name: string;
 	title: string;
-	position: string;
+	position_code: string;
+	position_title?: string | null;
 	is_primary: boolean;
 	responsibilities: string | null;
 	started_at: string;
@@ -483,47 +506,53 @@ export interface DeptMemberItem {
 
 export interface AddMemberBody {
 	user_id: string;
-	position: string;
+	position_code: string;
+	position_title?: string;
 	is_primary?: boolean;
 	responsibilities?: string;
 }
 
 export interface UpdateMemberBody {
-	position: string;
+	position_code: string;
+	position_title?: string;
 	is_primary?: boolean;
 	responsibilities?: string;
-	new_department_id?: string;
+	new_organization_unit_id?: string;
 }
 
-export async function listDeptMembers(
-	deptId: string,
+export async function listOrganizationMembers(
+	unitId: string,
 	options?: { include_children?: boolean }
-): Promise<ApiResponse<DeptMemberItem[]>> {
+): Promise<ApiResponse<OrganizationMemberItem[]>> {
 	const params = options?.include_children ? '?include_children=true' : '';
-	return apiClient.get<DeptMemberItem[]>(`/api/departments/${deptId}/members${params}`);
+	return apiClient.get<OrganizationMemberItem[]>(
+		`/api/organization/units/${unitId}/members${params}`
+	);
 }
 
-export async function addDeptMember(
-	deptId: string,
+export async function addOrganizationMember(
+	unitId: string,
 	body: AddMemberBody
 ): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.post<Record<string, never>>(`/api/departments/${deptId}/members`, body);
+	return apiClient.post<Record<string, never>>(`/api/organization/units/${unitId}/members`, body);
 }
 
-export async function updateDeptMember(
-	deptId: string,
+export async function updateOrganizationMember(
+	unitId: string,
 	userId: string,
 	body: UpdateMemberBody
 ): Promise<ApiResponse<Record<string, never>>> {
 	return apiClient.put<Record<string, never>>(
-		`/api/departments/${deptId}/members/${userId}`,
+		`/api/organization/units/${unitId}/members/${userId}`,
 		body
 	);
 }
 
-export async function removeDeptMember(
-	deptId: string,
+export async function removeOrganizationMember(
+	unitId: string,
 	userId: string
 ): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.delete<Record<string, never>>(`/api/departments/${deptId}/members/${userId}`);
+	return apiClient.delete<Record<string, never>>(
+		`/api/organization/units/${unitId}/members/${userId}`
+	);
 }

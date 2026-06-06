@@ -53,7 +53,7 @@ pub struct UserRoleAssignmentResponse {
     pub id: Uuid,
     pub user_id: Uuid,
     pub role_id: Uuid,
-    pub department_id: Option<Uuid>,
+    pub organization_unit_id: Option<Uuid>,
     pub role: Role,
     pub is_primary: bool,
     pub started_at: NaiveDate,
@@ -64,54 +64,57 @@ pub struct UserRoleAssignmentResponse {
 }
 
 // ===================================================================
-// Department (ฝ่าย/แผนก)
+// Organization Unit (หน่วยงาน/กลุ่ม/ฝ่าย/กลุ่มสาระ)
 // ===================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Department {
+pub struct OrganizationUnit {
     pub id: Uuid,
     pub code: String,
     pub name: String,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    pub parent_department_id: Option<Uuid>,
+    pub parent_unit_id: Option<Uuid>,
     pub phone: Option<String>,
     pub email: Option<String>,
     pub location: Option<String>,
     pub is_active: bool,
     pub display_order: i32,
-    pub category: String, // administrative, academic
-    pub org_type: String, // group, unit
+    pub category: String,
+    pub unit_type: String,
+    pub subject_group_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateDepartmentRequest {
+pub struct CreateOrganizationUnitRequest {
     pub code: String,
     pub name: String,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    pub parent_department_id: Option<Uuid>,
+    pub parent_unit_id: Option<Uuid>,
     pub phone: Option<String>,
     pub email: Option<String>,
     pub location: Option<String>,
     pub category: Option<String>,
-    pub org_type: Option<String>,
+    pub unit_type: Option<String>,
+    pub subject_group_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateDepartmentRequest {
+pub struct UpdateOrganizationUnitRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    pub parent_department_id: Option<Uuid>,
+    pub parent_unit_id: Option<Uuid>,
     pub phone: Option<String>,
     pub email: Option<String>,
     pub location: Option<String>,
     pub is_active: Option<bool>,
     pub category: Option<String>,
-    pub org_type: Option<String>,
+    pub unit_type: Option<String>,
+    pub subject_group_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,14 +142,17 @@ pub struct RoleResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DepartmentResponse {
+pub struct OrganizationUnitResponse {
     pub id: Uuid,
     pub code: String,
     pub name: String,
-    pub position: Option<String>,
-    pub is_primary_department: Option<bool>,
+    pub position_code: Option<String>,
+    pub position_title: Option<String>,
+    pub is_primary: Option<bool>,
     pub category: Option<String>,
-    pub org_type: Option<String>,
+    pub unit_type: Option<String>,
+    pub subject_group_id: Option<Uuid>,
+    pub responsibilities: Option<String>,
 }
 
 /// วิชาที่ครูสอน — ดึงจาก classroom_courses (+ classroom_course_instructors)
@@ -203,8 +209,8 @@ pub struct StaffProfileResponse {
     // Roles
     pub roles: Vec<RoleResponse>,
 
-    // Departments
-    pub departments: Vec<DepartmentResponse>,
+    // Organization units
+    pub organization_units: Vec<OrganizationUnitResponse>,
 
     // วิชาที่สอน (จาก classroom_courses)
     pub teaching_courses: Vec<TeachingCourseItem>,
@@ -254,14 +260,15 @@ pub struct CreateStaffRequest {
     pub role_ids: Vec<Uuid>,
     pub primary_role_id: Option<Uuid>,
 
-    // Departments
-    pub department_assignments: Option<Vec<DepartmentAssignment>>,
+    // Organization units
+    pub organization_assignments: Option<Vec<OrganizationAssignment>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DepartmentAssignment {
-    pub department_id: Uuid,
-    pub position: String,
+pub struct OrganizationAssignment {
+    pub organization_unit_id: Uuid,
+    pub position_code: String,
+    pub position_title: Option<String>,
     pub is_primary: Option<bool>,
     pub responsibilities: Option<String>,
 }
@@ -292,8 +299,8 @@ pub struct UpdateStaffRequest {
     pub role_ids: Option<Vec<Uuid>>,
     pub primary_role_id: Option<Uuid>,
 
-    // Departments
-    pub department_assignments: Option<Vec<DepartmentAssignment>>,
+    // Organization units
+    pub organization_assignments: Option<Vec<OrganizationAssignment>>,
 }
 
 // ===================================================================
@@ -304,7 +311,7 @@ pub struct UpdateStaffRequest {
 pub struct StaffListFilter {
     pub user_type: Option<String>,
     pub role_id: Option<Uuid>,
-    pub department_id: Option<Uuid>,
+    pub organization_unit_id: Option<Uuid>,
     pub status: Option<String>,
     pub search: Option<String>,
     pub page: Option<i64>,
@@ -319,7 +326,7 @@ pub struct StaffListItem {
     pub first_name: String,
     pub last_name: String,
     pub roles: Vec<String>,
-    pub departments: Vec<String>,
+    pub organization_units: Vec<String>,
     pub status: String,
 }
 
@@ -342,6 +349,12 @@ pub struct Permission {
 
 // ===================================================================
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateDepartmentPermissionsRequest {
-    pub permission_ids: Vec<Uuid>,
+pub struct OrganizationPermissionGrantInput {
+    pub permission_id: Uuid,
+    pub position_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateOrganizationPermissionsRequest {
+    pub grants: Vec<OrganizationPermissionGrantInput>,
 }

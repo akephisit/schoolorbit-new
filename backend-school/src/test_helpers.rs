@@ -35,7 +35,17 @@ pub async fn cleanup_test_data(pool: &PgPool) {
         .await
         .ok();
 
-    sqlx::query("DELETE FROM department_members")
+    sqlx::query("DELETE FROM organization_permission_delegations")
+        .execute(pool)
+        .await
+        .ok();
+
+    sqlx::query("DELETE FROM organization_permission_grants")
+        .execute(pool)
+        .await
+        .ok();
+
+    sqlx::query("DELETE FROM organization_members")
         .execute(pool)
         .await
         .ok();
@@ -50,7 +60,7 @@ pub async fn cleanup_test_data(pool: &PgPool) {
         .await
         .ok();
 
-    sqlx::query("DELETE FROM departments WHERE name LIKE '%test%'")
+    sqlx::query("DELETE FROM organization_units WHERE name LIKE '%test%'")
         .execute(pool)
         .await
         .ok();

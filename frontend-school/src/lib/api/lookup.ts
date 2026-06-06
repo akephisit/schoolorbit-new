@@ -29,10 +29,13 @@ export interface RoleLookupItem {
 	user_type: string;
 }
 
-export interface DepartmentLookupItem {
+export interface OrganizationUnitLookupItem {
 	id: string;
 	code: string;
 	name: string;
+	parent_unit_id?: string;
+	unit_type?: string;
+	subject_group_id?: string;
 }
 
 export interface GradeLevelLookupItem {
@@ -141,11 +144,13 @@ export async function lookupRoles(options?: LookupOptions): Promise<RoleLookupIt
 }
 
 /**
- * Fetch departments list for dropdowns
+ * Fetch organization units list for dropdowns
  * Returns: id, code, name
  */
-export async function lookupDepartments(options?: LookupOptions): Promise<DepartmentLookupItem[]> {
-	return fetchLookup<DepartmentLookupItem>('departments', options);
+export async function lookupOrganizationUnits(
+	options?: LookupOptions
+): Promise<OrganizationUnitLookupItem[]> {
+	return fetchLookup<OrganizationUnitLookupItem>('organization-units', options);
 }
 
 /**

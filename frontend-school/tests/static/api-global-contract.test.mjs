@@ -495,6 +495,24 @@ test('frontend does not use legacy separate current-user permission loading', as
 	assert.deepEqual(violations, []);
 });
 
+test('frontend runtime uses organization units instead of legacy department endpoints', async () => {
+	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
+		/\.(svelte|ts)$/.test(file)
+	);
+	const legacyOrganizationPatterns =
+		/\/staff\/departments|\/api\/departments|\/api\/lookup\/departments|\bdepartment_assignments\b|\bdepartment_id\b|\bparent_department_id\b|\bis_primary_department\b|\borg_type\b|\bstaff\.departments\b|\blistDepartments\b|\bgetDepartment\b|\bcreateDepartment\b|\bupdateDepartment\b|\bdeleteDepartment\b/;
+	const violations = [];
+
+	for (const file of frontendFiles) {
+		const source = stripComments(await readFile(file, 'utf8'));
+		if (legacyOrganizationPatterns.test(source)) {
+			violations.push(relative(file));
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
 test('tenant routing uses Origin by default with explicit X-School-Subdomain override', async () => {
 	const subdomainResolver = await readFile(
 		path.join(repoRoot, 'backend-school/src/utils/subdomain.rs'),

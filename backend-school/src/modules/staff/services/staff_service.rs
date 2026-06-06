@@ -48,14 +48,17 @@ struct RoleRow {
 }
 
 #[derive(Debug, FromRow)]
-struct DepartmentRow {
+struct OrganizationUnitRow {
     id: Uuid,
     code: String,
     name: String,
-    position: String,
-    is_primary_department: bool,
+    position_code: String,
+    position_title: Option<String>,
+    is_primary: bool,
     category: Option<String>,
-    org_type: Option<String>,
+    unit_type: Option<String>,
+    subject_group_id: Option<Uuid>,
+    responsibilities: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -67,11 +70,12 @@ pub struct PublicStaffRole {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PublicStaffDepartment {
+pub struct PublicStaffOrganizationUnit {
     pub id: Uuid,
     pub code: String,
     pub name: String,
-    pub position: String,
+    pub position_code: String,
+    pub position_title: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,7 +93,7 @@ pub struct PublicStaffProfile {
     pub user_type: String,
     pub status: String,
     pub roles: Vec<PublicStaffRole>,
-    pub departments: Vec<PublicStaffDepartment>,
+    pub organization_units: Vec<PublicStaffOrganizationUnit>,
 }
 
 #[derive(Debug, FromRow)]
@@ -185,7 +189,7 @@ pub async fn list_staff(
                 first_name,
                 last_name,
                 roles: vec![],
-                departments: vec![],
+                organization_units: vec![],
                 status,
             },
         )
@@ -238,12 +242,13 @@ pub async fn get_staff_profile(
     .bind(staff_id)
     .fetch_all(pool);
 
-    let departments_fut = sqlx::query_as::<_, DepartmentRow>(
-        "SELECT d.id, d.code, d.name, d.category, d.org_type, dm.position, dm.is_primary_department
-         FROM department_members dm
-         JOIN departments d ON dm.department_id = d.id
-         WHERE dm.user_id = $1 AND dm.ended_at IS NULL
-         ORDER BY dm.is_primary_department DESC",
+    let organization_units_fut = sqlx::query_as::<_, OrganizationUnitRow>(
+        "SELECT ou.id, ou.code, ou.name, ou.category, ou.unit_type, ou.subject_group_id,
+                om.position_code, om.position_title, om.is_primary, om.responsibilities
+         FROM organization_members om
+         JOIN organization_units ou ON om.organization_unit_id = ou.id
+         WHERE om.user_id = $1 AND om.ended_at IS NULL
+         ORDER BY om.is_primary DESC",
     )
     .bind(staff_id)
     .fetch_all(pool);
@@ -299,10 +304,10 @@ pub async fn get_staff_profile(
     .bind(staff_id)
     .fetch_all(pool);
 
-    let (staff_info_res, roles_res, departments_res, teaching_res, advisor_res) = tokio::join!(
+    let (staff_info_res, roles_res, organization_units_res, teaching_res, advisor_res) = tokio::join!(
         staff_info_fut,
         roles_fut,
-        departments_fut,
+        organization_units_fut,
         teaching_fut,
         advisor_fut
     );
@@ -323,17 +328,20 @@ pub async fn get_staff_profile(
         })
         .collect();
 
-    let departments: Vec<DepartmentResponse> = departments_res
+    let organization_units: Vec<OrganizationUnitResponse> = organization_units_res
         .unwrap_or_default()
         .into_iter()
-        .map(|row| DepartmentResponse {
+        .map(|row| OrganizationUnitResponse {
             id: row.id,
             code: row.code,
             name: row.name,
-            position: Some(row.position),
-            is_primary_department: Some(row.is_primary_department),
+            position_code: Some(row.position_code),
+            position_title: row.position_title,
+            is_primary: Some(row.is_primary),
             category: row.category,
-            org_type: row.org_type,
+            unit_type: row.unit_type,
+            subject_group_id: row.subject_group_id,
+            responsibilities: row.responsibilities,
         })
         .collect();
 
@@ -392,14 +400,14 @@ pub async fn get_staff_profile(
             university: si.university,
         }),
         roles,
-        departments,
+        organization_units,
         teaching_courses,
         advisor_classrooms,
         permissions: vec![],
     })
 }
 
-/// Create staff — encrypt national_id, insert user + staff_info + roles + departments in transaction
+/// Create staff — encrypt national_id, insert user + staff_info + roles + organization memberships in transaction
 pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<Uuid, AppError> {
     let password_hash = bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST).map_err(|e| {
         eprintln!("❌ Password hashing failed: {}", e);
@@ -555,24 +563,25 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
         })?;
     }
 
-    if let Some(dept_assignments) = &payload.department_assignments {
-        for assignment in dept_assignments {
+    if let Some(organization_assignments) = &payload.organization_assignments {
+        for assignment in organization_assignments {
             sqlx::query(
-                "INSERT INTO department_members (
-                    user_id, department_id, position, is_primary_department,
-                    responsibilities, started_at
-                ) VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)",
+                "INSERT INTO organization_members (
+                    user_id, organization_unit_id, position_code, position_title,
+                    is_primary, responsibilities, started_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)",
             )
             .bind(user_id)
-            .bind(assignment.department_id)
-            .bind(&assignment.position)
+            .bind(assignment.organization_unit_id)
+            .bind(&assignment.position_code)
+            .bind(&assignment.position_title)
             .bind(assignment.is_primary.unwrap_or(false))
             .bind(&assignment.responsibilities)
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to assign department: {}", e);
-                AppError::InternalServerError("ไม่สามารถบันทึกแผนกได้".to_string())
+                eprintln!("❌ Failed to assign organization unit: {}", e);
+                AppError::InternalServerError("ไม่สามารถบันทึกหน่วยงานได้".to_string())
             })?;
         }
     }
@@ -586,7 +595,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
     Ok(user_id)
 }
 
-/// Update staff — patch user + staff_info + replace roles + replace departments
+/// Update staff — patch user + staff_info + replace roles + replace organization memberships
 pub async fn update_staff(
     pool: &PgPool,
     staff_id: Uuid,
@@ -720,33 +729,34 @@ pub async fn update_staff(
         }
     }
 
-    if let Some(dept_assignments) = &payload.department_assignments {
-        sqlx::query("DELETE FROM department_members WHERE user_id = $1")
+    if let Some(organization_assignments) = &payload.organization_assignments {
+        sqlx::query("DELETE FROM organization_members WHERE user_id = $1")
             .bind(staff_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to delete department members: {}", e);
-                AppError::InternalServerError("ไม่สามารถอัพเดตแผนกได้".to_string())
+                eprintln!("❌ Failed to delete organization members: {}", e);
+                AppError::InternalServerError("ไม่สามารถอัพเดตหน่วยงานได้".to_string())
             })?;
 
-        for assignment in dept_assignments {
+        for assignment in organization_assignments {
             sqlx::query(
-                "INSERT INTO department_members (
-                    user_id, department_id, position, is_primary_department,
-                    responsibilities, started_at
-                ) VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)",
+                "INSERT INTO organization_members (
+                    user_id, organization_unit_id, position_code, position_title,
+                    is_primary, responsibilities, started_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)",
             )
             .bind(staff_id)
-            .bind(assignment.department_id)
-            .bind(&assignment.position)
+            .bind(assignment.organization_unit_id)
+            .bind(&assignment.position_code)
+            .bind(&assignment.position_title)
             .bind(assignment.is_primary.unwrap_or(false))
             .bind(&assignment.responsibilities)
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to insert department member: {}", e);
-                AppError::InternalServerError("ไม่สามารถเพิ่มแผนกได้".to_string())
+                eprintln!("❌ Failed to insert organization member: {}", e);
+                AppError::InternalServerError("ไม่สามารถเพิ่มหน่วยงานได้".to_string())
             })?;
         }
     }
@@ -835,18 +845,19 @@ pub async fn get_public_staff_profile(
     .unwrap_or_default();
 
     #[derive(sqlx::FromRow)]
-    struct PublicDeptRow {
+    struct PublicOrganizationUnitRow {
         id: Uuid,
         code: String,
         name: String,
-        position: String,
+        position_code: String,
+        position_title: Option<String>,
     }
 
-    let departments = sqlx::query_as::<_, PublicDeptRow>(
-        "SELECT d.id, d.code, d.name, dm.position
-         FROM department_members dm
-         JOIN departments d ON dm.department_id = d.id
-         WHERE dm.user_id = $1",
+    let organization_units = sqlx::query_as::<_, PublicOrganizationUnitRow>(
+        "SELECT ou.id, ou.code, ou.name, om.position_code, om.position_title
+         FROM organization_members om
+         JOIN organization_units ou ON om.organization_unit_id = ou.id
+         WHERE om.user_id = $1",
     )
     .bind(staff_id)
     .fetch_all(pool)
@@ -875,13 +886,14 @@ pub async fn get_public_staff_profile(
                 level: r.level,
             })
             .collect(),
-        departments: departments
+        organization_units: organization_units
             .into_iter()
-            .map(|d| PublicStaffDepartment {
-                id: d.id,
-                code: d.code,
-                name: d.name,
-                position: d.position,
+            .map(|unit| PublicStaffOrganizationUnit {
+                id: unit.id,
+                code: unit.code,
+                name: unit.name,
+                position_code: unit.position_code,
+                position_title: unit.position_title,
             })
             .collect(),
     })
@@ -925,7 +937,7 @@ mod tests {
         StaffListFilter {
             user_type: None,
             role_id: None,
-            department_id: None,
+            organization_unit_id: None,
             page,
             page_size,
             search,

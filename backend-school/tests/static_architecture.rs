@@ -173,6 +173,24 @@ fn rust_module_roots_use_rust_2018_style() {
 }
 
 #[test]
+fn backend_runtime_uses_organization_units_not_department_tables() {
+    let legacy_organization_runtime_patterns = Regex::new(
+        r"\bdepartments\b|\bdepartment_members\b|\bdepartment_permissions\b|\bpermission_delegations\b|\bdepartment_id\b|\bparent_department_id\b|\bis_primary_department\b|/api/departments|/api/lookup/departments",
+    )
+    .expect("valid regex");
+    let mut violations = Vec::new();
+
+    for file in backend_rs_files() {
+        let source = read_source(&file);
+        if legacy_organization_runtime_patterns.is_match(&source) {
+            violations.push(relative(&file));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
 fn foundation_handlers_delegate_database_work_to_services() {
     let direct_database_patterns = [
         "sqlx::query",

@@ -4,25 +4,25 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
-		getDepartment,
-		listDepartments,
+		getOrganizationUnit,
+		listOrganizationUnits,
 		listDelegations,
 		listDelegatablePermissions,
 		createDelegation,
 		revokeDelegation,
-		listDeptMembers,
-		type Department,
+		listOrganizationMembers,
+		type OrganizationUnit,
 		type DelegationItem,
 		type DelegatablePermission,
-		type DeptMemberItem,
+		type OrganizationMemberItem,
 		type CreateDelegationBody
 	} from '$lib/api/staff';
-	import DepartmentDialog from '$lib/components/staff/DepartmentDialog.svelte';
+	import OrganizationUnitDialog from '$lib/components/staff/OrganizationUnitDialog.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import DeptMembersSection from '$lib/components/staff/DeptMembersSection.svelte';
+	import OrganizationMembersSection from '$lib/components/staff/OrganizationMembersSection.svelte';
 	import {
 		Building2,
 		ArrowLeft,
@@ -38,10 +38,10 @@
 
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
-	let department: Department | null = $state(null);
-	let allDepartments: Department[] = $state([]);
-	let childDepts: Department[] = $state([]);
-	let deptMembers: DeptMemberItem[] = $state([]);
+	let department: OrganizationUnit | null = $state(null);
+	let allDepartments: OrganizationUnit[] = $state([]);
+	let childDepts: OrganizationUnit[] = $state([]);
+	let deptMembers: OrganizationMemberItem[] = $state([]);
 	let delegations: DelegationItem[] = $state([]);
 
 	// Child dept dialog
@@ -61,14 +61,14 @@
 		try {
 			loading = true;
 			const [deptRes, membersRes, allDeptsRes] = await Promise.all([
-				getDepartment(deptId),
-				listDeptMembers(deptId),
-				listDepartments()
+				getOrganizationUnit(deptId),
+				listOrganizationMembers(deptId),
+				listOrganizationUnits()
 			]);
 			if (deptRes.success && deptRes.data) {
 				department = deptRes.data;
 			} else {
-				throw new Error(deptRes.error || 'Department not found');
+				throw new Error(deptRes.error || 'OrganizationUnit not found');
 			}
 			if (membersRes.success && membersRes.data) {
 				deptMembers = membersRes.data;
@@ -76,7 +76,7 @@
 			if (allDeptsRes.success && allDeptsRes.data) {
 				allDepartments = allDeptsRes.data;
 				childDepts = allDeptsRes.data
-					.filter((d) => d.parent_department_id === deptId)
+					.filter((d) => d.parent_unit_id === deptId)
 					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 			}
 		} catch (e: unknown) {
@@ -97,7 +97,7 @@
 	}
 
 	function goToChildDept(id: string) {
-		goto(resolve(`/staff/departments/${id}`));
+		goto(resolve(`/staff/organization/${id}`));
 	}
 
 	async function handleRevoke(delegationId: string) {
@@ -151,7 +151,7 @@
 <div class="space-y-6">
 	<!-- Header / Back -->
 	<div class="flex items-center gap-4">
-		<Button href="/staff/departments" variant="ghost" size="sm">
+		<Button href="/staff/organization" variant="ghost" size="sm">
 			<ArrowLeft class="w-4 h-4" />
 		</Button>
 		<div class="flex-1">
@@ -202,8 +202,10 @@
 								<Badge variant="outline"
 									>{department.category === 'academic' ? 'วิชาการ' : 'บริหารจัดการ'}</Badge
 								>
-								<Badge variant={department.org_type === 'group' ? 'default' : 'secondary'}>
-									{department.org_type === 'group' ? 'กลุ่ม (Group)' : 'หน่วยงาน (Unit)'}
+								<Badge
+									variant={department.unit_type === 'management_group' ? 'default' : 'secondary'}
+								>
+									{department.unit_type === 'management_group' ? 'กลุ่มบริหาร' : 'ฝ่าย/งาน'}
 								</Badge>
 							</div>
 						</div>
@@ -251,7 +253,7 @@
 					</div>
 				</div>
 
-				<!-- Child Departments (ฝ่ายย่อย) -->
+				<!-- Child Organization Units (ฝ่ายย่อย) -->
 				{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
 					<div class="bg-card border border-border rounded-lg p-6 space-y-4">
 						<div class="flex items-center justify-between">
@@ -337,15 +339,15 @@
 
 			<!-- Right Column: Members -->
 			<div class="space-y-6">
-				<DeptMembersSection departmentId={deptId} subDepartments={childDepts} />
+				<OrganizationMembersSection organizationUnitId={deptId} childUnits={childDepts} />
 			</div>
 		</div>
 	{/if}
 </div>
 
-<DepartmentDialog
+<OrganizationUnitDialog
 	bind:open={showAddChildDialog}
-	departments={allDepartments}
+	organizationUnits={allDepartments}
 	forcedParentId={deptId}
 	forcedCategory={department?.category}
 	onSuccess={loadData}
@@ -372,7 +374,7 @@
 						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 					>
 						<option value="">-- เลือกสมาชิก --</option>
-						{#each deptMembers as m (m.user_id + '-' + m.department_id)}
+						{#each deptMembers as m (m.user_id + '-' + m.organization_unit_id)}
 							<option value={m.user_id}>{m.name}</option>
 						{/each}
 					</select>

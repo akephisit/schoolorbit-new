@@ -1,5 +1,5 @@
 /**
- * Departments Management Page
+ * Organization Unit Management Page
  */
 
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
@@ -17,6 +17,6 @@ export const _meta = {
 
 export const load = async () => {
 	return {
-		title: 'จัดการฝ่าย'
+		title: 'โครงสร้างองค์กร'
 	};
 };

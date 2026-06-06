@@ -320,17 +320,17 @@
 					{/if}
 				</div>
 
-				<!-- Departments Card -->
+				<!-- Organization Units Card -->
 				<div class="bg-card border border-border rounded-lg p-6">
 					<h3 class="font-semibold text-foreground mb-4 flex items-center gap-2">
 						<Building2 class="w-5 h-5" />
 						สังกัดฝ่าย
 					</h3>
-					{#if staff.departments.length > 0}
+					{#if staff.organization_units.length > 0}
 						<div class="space-y-3">
-							{#each staff.departments as dept (dept.id)}
+							{#each staff.organization_units as dept (dept.id)}
 								<div
-									class="px-4 py-3 rounded-lg border border-border {dept.is_primary_department
+									class="px-4 py-3 rounded-lg border border-border {dept.is_primary
 										? 'bg-primary/5 border-primary/30'
 										: 'bg-muted/50'}"
 								>
@@ -338,10 +338,10 @@
 										<div>
 											<p class="font-medium text-foreground">{dept.name}</p>
 											<p class="text-sm text-muted-foreground mt-1">
-												{dept.position || 'สมาชิก'}
+												{dept.position_title || dept.position_code || 'สมาชิก'}
 											</p>
 										</div>
-										{#if dept.is_primary_department}
+										{#if dept.is_primary}
 											<span
 												class="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-full"
 											>

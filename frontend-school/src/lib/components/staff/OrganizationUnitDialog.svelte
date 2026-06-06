@@ -6,27 +6,27 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
-		createDepartment,
-		updateDepartment,
-		type Department,
-		type CreateDepartmentRequest
+		createOrganizationUnit,
+		updateOrganizationUnit,
+		type OrganizationUnit,
+		type CreateOrganizationUnitRequest
 	} from '$lib/api/staff';
 	import { toast } from 'svelte-sonner';
 
 	let {
 		open = $bindable(false),
-		departmentToEdit = null,
-		departments = [],
+		organizationUnitToEdit = null,
+		organizationUnits = [],
 		onSuccess,
 		forcedCategory = undefined,
 		forcedParentId = undefined
 	} = $props<{
 		open: boolean;
-		departmentToEdit?: Department | null;
-		departments: Department[];
+		organizationUnitToEdit?: OrganizationUnit | null;
+		organizationUnits: OrganizationUnit[];
 		onSuccess: () => void;
 		forcedCategory?: string;
-		forcedParentId?: string; // If set, locks the parent department
+		forcedParentId?: string;
 	}>();
 
 	let loading = $state(false);
@@ -36,41 +36,40 @@
 		name: '',
 		name_en: '',
 		description: '',
-		parent_department_id: 'none',
-		category: 'administrative',
-		org_type: 'unit',
+		parent_unit_id: 'none',
+		category: 'general',
+		unit_type: 'division',
 		phone: '',
 		email: '',
 		location: '',
 		display_order: 0
 	});
 
-	// Pre-fill data when departmentToEdit changes
+	// Pre-fill data when organizationUnitToEdit changes
 	$effect(() => {
-		if (departmentToEdit) {
+		if (organizationUnitToEdit) {
 			formData = {
-				code: departmentToEdit.code,
-				name: departmentToEdit.name,
-				name_en: departmentToEdit.name_en || '',
-				description: departmentToEdit.description || '',
-				parent_department_id: departmentToEdit.parent_department_id || 'none',
-				category: departmentToEdit.category || forcedCategory || 'administrative',
-				org_type: departmentToEdit.org_type || 'unit',
-				phone: departmentToEdit.phone || '',
-				email: departmentToEdit.email || '',
-				location: departmentToEdit.location || '',
-				display_order: departmentToEdit.display_order || 0
+				code: organizationUnitToEdit.code,
+				name: organizationUnitToEdit.name,
+				name_en: organizationUnitToEdit.name_en || '',
+				description: organizationUnitToEdit.description || '',
+				parent_unit_id: organizationUnitToEdit.parent_unit_id || 'none',
+				category: organizationUnitToEdit.category || forcedCategory || 'general',
+				unit_type: organizationUnitToEdit.unit_type || 'division',
+				phone: organizationUnitToEdit.phone || '',
+				email: organizationUnitToEdit.email || '',
+				location: organizationUnitToEdit.location || '',
+				display_order: organizationUnitToEdit.display_order || 0
 			};
 		} else {
-			// Reset for create mode
 			formData = {
 				code: '',
 				name: '',
 				name_en: '',
 				description: '',
-				parent_department_id: forcedParentId || 'none',
-				category: forcedCategory || 'administrative',
-				org_type: 'unit',
+				parent_unit_id: forcedParentId || 'none',
+				category: forcedCategory || 'general',
+				unit_type: 'division',
 				phone: '',
 				email: '',
 				location: '',
@@ -84,20 +83,20 @@
 		loading = true;
 
 		try {
-			const payload: Partial<Department> & { parent_department_id?: string } = { ...formData };
-			if (payload.parent_department_id === 'none') {
-				delete payload.parent_department_id;
+			const payload: Partial<OrganizationUnit> & { parent_unit_id?: string } = { ...formData };
+			if (payload.parent_unit_id === 'none') {
+				delete payload.parent_unit_id;
 			}
 
 			// Convert types if needed (e.g. string -> number)
 			payload.display_order = Number(payload.display_order);
 
-			if (departmentToEdit) {
-				await updateDepartment(departmentToEdit.id, payload);
-				toast.success('อัปเดตฝ่ายสำเร็จ');
+			if (organizationUnitToEdit) {
+				await updateOrganizationUnit(organizationUnitToEdit.id, payload);
+				toast.success('อัปเดตหน่วยงานสำเร็จ');
 			} else {
-				await createDepartment(payload as CreateDepartmentRequest);
-				toast.success('สร้างฝ่ายสำเร็จ');
+				await createOrganizationUnit(payload as CreateOrganizationUnitRequest);
+				toast.success('สร้างหน่วยงานสำเร็จ');
 			}
 			open = false;
 			onSuccess?.();
@@ -112,20 +111,20 @@
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
 		<Dialog.Header>
-			<Dialog.Title>{departmentToEdit ? 'แก้ไขฝ่าย' : 'สร้างฝ่ายใหม่'}</Dialog.Title>
-			<Dialog.Description>กรอกข้อมูลรายละเอียดของฝ่าย/กลุ่มสาระ/หน่วยงาน</Dialog.Description>
+			<Dialog.Title>{organizationUnitToEdit ? 'แก้ไขหน่วยงาน' : 'สร้างหน่วยงานใหม่'}</Dialog.Title>
+			<Dialog.Description>กรอกข้อมูลรายละเอียดของหน่วยงาน กลุ่มงาน หรือกลุ่มสาระ</Dialog.Description>
 		</Dialog.Header>
 
 		<form onsubmit={handleSubmit} class="space-y-4 py-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<Label for="code">รหัสฝ่าย *</Label>
+					<Label for="code">รหัสหน่วยงาน *</Label>
 					<Input
 						id="code"
 						bind:value={formData.code}
 						placeholder="เช่น ACADEMIC"
 						required
-						disabled={!!departmentToEdit}
+						disabled={!!organizationUnitToEdit}
 					/>
 				</div>
 				<div class="space-y-2">
@@ -136,7 +135,7 @@
 
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<Label for="name">ชื่อฝ่าย (ไทย) *</Label>
+					<Label for="name">ชื่อหน่วยงาน (ไทย) *</Label>
 					<Input
 						id="name"
 						bind:value={formData.name}
@@ -145,7 +144,7 @@
 					/>
 				</div>
 				<div class="space-y-2">
-					<Label for="name_en">ชื่อฝ่าย (อังกฤษ)</Label>
+					<Label for="name_en">ชื่อหน่วยงาน (อังกฤษ)</Label>
 					<Input id="name_en" bind:value={formData.name_en} placeholder="e.g. Academic Affairs" />
 				</div>
 			</div>
@@ -155,51 +154,64 @@
 					<Label>ประเภท (Category)</Label>
 					<Select.Root type="single" bind:value={formData.category} disabled={!!forcedCategory}>
 						<Select.Trigger>
-							{formData.category === 'administrative'
-								? 'บริหารจัดการ (Administrative)'
+							{formData.category === 'general'
+								? 'ทั่วไป (General)'
 								: formData.category === 'academic'
 									? 'วิชาการ (Academic)'
+									: formData.category === 'personnel'
+										? 'บุคลากร (Personnel)'
+										: formData.category === 'budget'
+											? 'งบประมาณ (Budget)'
 									: formData.category}
 						</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="administrative">บริหารจัดการ (Administrative)</Select.Item>
+							<Select.Item value="general">ทั่วไป (General)</Select.Item>
 							<Select.Item value="academic">วิชาการ (Academic)</Select.Item>
-							<Select.Item value="miscellaneous">ทั่วไป (Miscellaneous)</Select.Item>
+							<Select.Item value="personnel">บุคลากร (Personnel)</Select.Item>
+							<Select.Item value="budget">งบประมาณ (Budget)</Select.Item>
+							<Select.Item value="other">อื่น ๆ (Other)</Select.Item>
 						</Select.Content>
 					</Select.Root>
 				</div>
 				<div class="space-y-2">
-					<Label>ระดับหน่วยงาน (Org Type)</Label>
-					<Select.Root type="single" bind:value={formData.org_type}>
+					<Label>ชนิดหน่วยงาน (Unit Type)</Label>
+					<Select.Root type="single" bind:value={formData.unit_type}>
 						<Select.Trigger>
-							{formData.org_type === 'group'
-								? 'กลุ่ม (Group/Cluster)'
-								: formData.org_type === 'unit'
-									? 'หน่วยงาน/ฝ่าย (Unit/Dept)'
-									: formData.org_type}
+							{formData.unit_type === 'management_group'
+								? 'กลุ่มบริหาร'
+								: formData.unit_type === 'division'
+									? 'ฝ่าย/งาน'
+									: formData.unit_type === 'subject_group'
+										? 'กลุ่มสาระ'
+										: formData.unit_type === 'team'
+											? 'ทีม'
+									: formData.unit_type}
 						</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="group">กลุ่ม (Group/Cluster)</Select.Item>
-							<Select.Item value="unit">หน่วยงาน/ฝ่าย (Unit/Dept)</Select.Item>
+							<Select.Item value="management_group">กลุ่มบริหาร</Select.Item>
+							<Select.Item value="division">ฝ่าย/งาน</Select.Item>
+							<Select.Item value="subject_group">กลุ่มสาระ</Select.Item>
+							<Select.Item value="team">ทีม</Select.Item>
+							<Select.Item value="custom">กำหนดเอง</Select.Item>
 						</Select.Content>
 					</Select.Root>
 				</div>
 			</div>
 
 			<div class="space-y-2">
-				<Label>สังกัดภายใต้ (Parent Department)</Label>
+				<Label>สังกัดภายใต้</Label>
 				<Select.Root
 					type="single"
-					bind:value={formData.parent_department_id}
+					bind:value={formData.parent_unit_id}
 					disabled={!!forcedParentId}
 				>
 					<Select.Trigger>
-						{departments.find((d: Department) => d.id === formData.parent_department_id)?.name ||
+						{organizationUnits.find((d: OrganizationUnit) => d.id === formData.parent_unit_id)?.name ||
 							'ไม่มี (ระดับสูงสุด)'}
 					</Select.Trigger>
 					<Select.Content class="max-h-[200px] overflow-y-auto">
 						<Select.Item value="none">ไม่มี (ระดับสูงสุด)</Select.Item>
-						{#each departments.filter((d: Department) => d.id !== departmentToEdit?.id) as dept (dept.id)}
+						{#each organizationUnits.filter((d: OrganizationUnit) => d.id !== organizationUnitToEdit?.id) as dept (dept.id)}
 							<Select.Item value={dept.id}>{dept.name} ({dept.code})</Select.Item>
 						{/each}
 					</Select.Content>
@@ -229,7 +241,7 @@
 			<Dialog.Footer>
 				<Button variant="outline" type="button" onclick={() => (open = false)}>ยกเลิก</Button>
 				<Button type="submit" disabled={loading}>
-					{loading ? 'กำลังบันทึก...' : departmentToEdit ? 'บันทึกการแก้ไข' : 'สร้างฝ่าย'}
+					{loading ? 'กำลังบันทึก...' : organizationUnitToEdit ? 'บันทึกการแก้ไข' : 'สร้างหน่วยงาน'}
 				</Button>
 			</Dialog.Footer>
 		</form>

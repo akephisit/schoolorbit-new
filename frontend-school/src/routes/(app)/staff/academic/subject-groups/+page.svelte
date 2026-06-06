@@ -2,21 +2,21 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { listDepartmentsLookup, type Department } from '$lib/api/staff';
+	import { listOrganizationUnitsLookup, type OrganizationUnit } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { GraduationCap, ChevronRight, Search, Settings } from 'lucide-svelte';
-	import DepartmentPermissionDialog from '$lib/components/staff/DepartmentPermissionDialog.svelte';
+	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
-	let departments: Department[] = $state([]);
+	let departments: OrganizationUnit[] = $state([]);
 	let loading = $state(true);
 	let searchQuery = $state('');
 
 	let subjectGroups = $derived(
 		departments
 			.filter((d) => {
-				if (!d.code.startsWith('SUBJ-')) return false;
+				if (d.unit_type !== 'subject_group' && !d.subject_group_id) return false;
 				if (!searchQuery) return true;
 				const q = searchQuery.toLowerCase();
 				return d.name.toLowerCase().includes(q) || d.code.toLowerCase().includes(q);
@@ -25,13 +25,13 @@
 	);
 
 	let showPermissionDialog = $state(false);
-	let permissionDepartment = $state<Department | null>(null);
+	let permissionDepartment = $state<OrganizationUnit | null>(null);
 
 	function goToSubjectGroup(id: string) {
 		goto(resolve(`/staff/academic/subject-groups/${id}`));
 	}
 
-	function handlePermission(dept: Department, e: MouseEvent) {
+	function handlePermission(dept: OrganizationUnit, e: MouseEvent) {
 		e.preventDefault();
 		permissionDepartment = dept;
 		showPermissionDialog = true;
@@ -41,7 +41,7 @@
 		loading = true;
 		// admin เห็นทุกกลุ่ม, user ทั่วไปเห็นเฉพาะกลุ่มที่ตัวเองสังกัด
 		const isAdmin = $can.has(PERMISSIONS.ROLES_ASSIGN_ALL);
-		const res = await listDepartmentsLookup(isAdmin ? undefined : { member_only: true });
+		const res = await listOrganizationUnitsLookup(isAdmin ? undefined : { member_only: true });
 		if (res.success && res.data) departments = res.data;
 		loading = false;
 	}
@@ -127,4 +127,7 @@
 	{/if}
 </div>
 
-<DepartmentPermissionDialog bind:open={showPermissionDialog} department={permissionDepartment} />
+<OrganizationPermissionDialog
+	bind:open={showPermissionDialog}
+	organizationUnit={permissionDepartment}
+/>

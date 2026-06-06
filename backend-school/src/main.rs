@@ -274,61 +274,61 @@ async fn main() {
             axum::routing::put(modules::staff::handlers::roles::update_role)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
-        // Department Management routes (protected)
+        // Organization Unit Management routes (protected)
         .route(
-            "/api/departments",
-            get(modules::staff::handlers::roles::list_departments)
+            "/api/organization/units",
+            get(modules::staff::handlers::roles::list_organization_units)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/departments/{id}",
-            get(modules::staff::handlers::roles::get_department)
+            "/api/organization/units/{id}",
+            get(modules::staff::handlers::roles::get_organization_unit)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/departments",
-            post(modules::staff::handlers::roles::create_department)
+            "/api/organization/units",
+            post(modules::staff::handlers::roles::create_organization_unit)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/departments/{id}",
-            axum::routing::put(modules::staff::handlers::roles::update_department)
+            "/api/organization/units/{id}",
+            axum::routing::put(modules::staff::handlers::roles::update_organization_unit)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/departments/{id}/permissions",
-            get(modules::staff::handlers::department_permissions::get_department_permissions)
+            "/api/organization/units/{id}/permissions",
+            get(modules::staff::handlers::organization_permissions::get_organization_permissions)
                 .put(
-                    modules::staff::handlers::department_permissions::update_department_permissions,
+                    modules::staff::handlers::organization_permissions::update_organization_permissions,
                 )
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/departments/{id}/delegatable-permissions",
-            get(modules::staff::handlers::delegations::list_delegatable_permissions)
+            "/api/organization/units/{id}/delegatable-permissions",
+            get(modules::staff::handlers::organization_delegations::list_delegatable_permissions)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/departments/{id}/delegations",
-            get(modules::staff::handlers::delegations::list_delegations)
-                .post(modules::staff::handlers::delegations::create_delegation)
+            "/api/organization/units/{id}/delegations",
+            get(modules::staff::handlers::organization_delegations::list_delegations)
+                .post(modules::staff::handlers::organization_delegations::create_delegation)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/delegations/{id}",
-            axum::routing::delete(modules::staff::handlers::delegations::revoke_delegation)
+            "/api/organization/delegations/{id}",
+            axum::routing::delete(modules::staff::handlers::organization_delegations::revoke_delegation)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/departments/{id}/members",
-            get(modules::staff::handlers::department_members::list_members)
-                .post(modules::staff::handlers::department_members::add_member)
+            "/api/organization/units/{id}/members",
+            get(modules::staff::handlers::organization_members::list_members)
+                .post(modules::staff::handlers::organization_members::add_member)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/departments/{id}/members/{user_id}",
-            axum::routing::put(modules::staff::handlers::department_members::update_member)
-                .delete(modules::staff::handlers::department_members::remove_member)
+            "/api/organization/units/{id}/members/{user_id}",
+            axum::routing::put(modules::staff::handlers::organization_members::update_member)
+                .delete(modules::staff::handlers::organization_members::remove_member)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         // User Role Assignment routes (protected)
@@ -555,13 +555,13 @@ async fn main() {
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/lookup/departments",
-            get(modules::lookup::handlers::lookup_departments)
+            "/api/lookup/organization-units",
+            get(modules::lookup::handlers::lookup_organization_units)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
-            "/api/lookup/departments/{id}",
-            get(modules::lookup::handlers::lookup_department_by_id)
+            "/api/lookup/organization-units/{id}",
+            get(modules::lookup::handlers::lookup_organization_unit_by_id)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
@@ -629,7 +629,7 @@ async fn main() {
     tracing::info!("  POST /api/auth/logout           - Logout");
     tracing::info!("  GET  /api/auth/me               - Get current user (protected)\n");
     tracing::info!("  Staff & Student Management:");
-    tracing::info!("  /api/staff/*                    - Staff, Roles, Departments");
+    tracing::info!("  /api/staff/*                    - Staff, Roles, Organization");
     tracing::info!("  /api/students/*                 - Student Management\n");
     tracing::info!("  Internal Admin APIs (Protected by Secret):");
     tracing::info!("  POST /internal/provision        - Provision tenant database");

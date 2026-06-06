@@ -58,7 +58,7 @@ test('user role assignment API contract stays aligned across backend and fronten
 		'backend-school/src/modules/staff/services/user_role_service.rs'
 	);
 	const delegationService = await readRepoFile(
-		'backend-school/src/modules/staff/services/delegation_service.rs'
+		'backend-school/src/modules/staff/services/organization_delegation_service.rs'
 	);
 	const staffService = await readRepoFile(
 		'backend-school/src/modules/staff/services/staff_service.rs'
