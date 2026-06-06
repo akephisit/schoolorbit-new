@@ -270,6 +270,23 @@ fn module_handlers_use_central_api_response_envelope() {
 }
 
 #[test]
+fn module_json_handlers_do_not_return_no_content_for_empty_mutations() {
+    let mut violations = Vec::new();
+
+    for file in module_handler_files() {
+        let source = strip_comments(&read_source(&file));
+        if source.contains("StatusCode::NO_CONTENT") {
+            violations.push(format!(
+                "{}: JSON mutations should return ApiResponse::empty() instead of 204 No Content",
+                relative(&file)
+            ));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
 fn module_service_logic_has_focused_unit_tests() {
     let mut violations = Vec::new();
 
@@ -330,6 +347,54 @@ fn module_handlers_use_typed_api_dtos_instead_of_raw_json_values() {
                     relative(&file)
                 ));
             }
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
+fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
+    let forbidden_fields = [
+        (
+            "src/modules/academic/models/activity.rs",
+            "allowed_grade_level_ids: Option<serde_json::Value",
+        ),
+        (
+            "src/modules/academic/models/activity.rs",
+            "allowed_classroom_ids: Option<serde_json::Value",
+        ),
+        (
+            "src/modules/admission/models/rounds.rs",
+            "scoring_subject_ids: serde_json::Value",
+        ),
+        (
+            "src/modules/consent/models.rs",
+            "data_categories: serde_json::Value",
+        ),
+    ];
+    let legacy_value_helpers = Regex::new(
+        r"fn\s+\w*(?:uuid|ids|categories)\w*_json\s*\([^)]*\)\s*->\s*(?:Option\s*<\s*)?serde_json::Value",
+    )
+    .expect("valid regex");
+    let mut violations = Vec::new();
+
+    for (relative_path, pattern) in forbidden_fields {
+        let source = strip_comments(&read_source(manifest_dir().join(relative_path)));
+        if source.contains(pattern) {
+            violations.push(format!(
+                "{relative_path}: known-shape JSONB arrays should expose Vec<T> at the API boundary"
+            ));
+        }
+    }
+
+    for file in module_service_files() {
+        let source = strip_comments(&read_source(&file));
+        if legacy_value_helpers.is_match(&source) {
+            violations.push(format!(
+                "{}: known-shape JSONB helper should return sqlx::types::Json<Vec<T>>, not serde_json::Value",
+                relative(&file)
+            ));
         }
     }
 

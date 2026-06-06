@@ -212,8 +212,8 @@ pub async fn get_round_ranking(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<Vec<RoundRankingResult>, AppError> {
-    let tracks: Vec<(Uuid, String, serde_json::Value, String)> = sqlx::query_as(
-        "SELECT id, name, scoring_subject_ids, tiebreak_method FROM admission_tracks WHERE admission_round_id = $1 ORDER BY display_order ASC"
+    let tracks: Vec<(Uuid, String, String)> = sqlx::query_as(
+        "SELECT id, name, tiebreak_method FROM admission_tracks WHERE admission_round_id = $1 ORDER BY display_order ASC"
     )
     .bind(round_id)
     .fetch_all(pool)
@@ -222,7 +222,7 @@ pub async fn get_round_ranking(
 
     let mut all_rankings: Vec<RoundRankingResult> = Vec::new();
 
-    for (track_id, track_name, _scoring_ids, tiebreak) in tracks {
+    for (track_id, track_name, tiebreak) in tracks {
         let tiebreak_order = if tiebreak == "gpa" {
             "aa.previous_gpa DESC NULLS LAST"
         } else {

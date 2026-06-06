@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use sqlx::PgPool;
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -13,6 +13,67 @@ use super::models::{
 pub struct ConsentRequestContext {
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ConsentRecordRow {
+    id: Uuid,
+    user_id: Uuid,
+    user_type: String,
+    consent_type: String,
+    purpose: String,
+    data_categories: Json<Vec<String>>,
+    consent_status: String,
+    granted_at: Option<chrono::DateTime<chrono::Utc>>,
+    withdrawn_at: Option<chrono::DateTime<chrono::Utc>>,
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    consent_method: String,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+    consent_text: Option<String>,
+    consent_version: String,
+    is_minor_consent: bool,
+    parent_guardian_id: Option<Uuid>,
+    parent_guardian_name: Option<String>,
+    parent_relationship: Option<String>,
+    notes: Option<String>,
+    metadata: serde_json::Value,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<ConsentRecordRow> for ConsentRecord {
+    fn from(row: ConsentRecordRow) -> Self {
+        Self {
+            id: row.id,
+            user_id: row.user_id,
+            user_type: row.user_type,
+            consent_type: row.consent_type,
+            purpose: row.purpose,
+            data_categories: row.data_categories.0,
+            consent_status: row.consent_status,
+            granted_at: row.granted_at,
+            withdrawn_at: row.withdrawn_at,
+            expires_at: row.expires_at,
+            consent_method: row.consent_method,
+            ip_address: row.ip_address,
+            user_agent: row.user_agent,
+            consent_text: row.consent_text,
+            consent_version: row.consent_version,
+            is_minor_consent: row.is_minor_consent,
+            parent_guardian_id: row.parent_guardian_id,
+            parent_guardian_name: row.parent_guardian_name,
+            parent_relationship: row.parent_relationship,
+            notes: row.notes,
+            metadata: row.metadata,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+fn default_consent_data_categories() -> Json<Vec<String>> {
+    Json(vec!["personal_info".to_string()])
 }
 
 pub async fn list_consent_types(
@@ -59,7 +120,7 @@ pub async fn get_user_consent_status(
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
-    let consents = sqlx::query_as::<_, ConsentRecord>(
+    let consent_rows = sqlx::query_as::<_, ConsentRecordRow>(
         "SELECT * FROM consent_records
          WHERE user_id = $1
          ORDER BY created_at DESC",
@@ -72,8 +133,11 @@ pub async fn get_user_consent_status(
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
-    let consent_responses: Vec<ConsentRecordResponse> =
-        consents.into_iter().map(consent_record_response).collect();
+    let consent_responses: Vec<ConsentRecordResponse> = consent_rows
+        .into_iter()
+        .map(ConsentRecord::from)
+        .map(consent_record_response)
+        .collect();
 
     let required_codes: Vec<String> = required_types
         .iter()
@@ -130,7 +194,7 @@ pub async fn create_consent(
     .bind(&user_type)
     .bind(&payload.consent_type)
     .bind(consent_type_data.description.unwrap_or_default())
-    .bind(serde_json::json!(["personal_info"]))
+    .bind(default_consent_data_categories())
     .bind(&payload.consent_status)
     .bind(granted_at)
     .bind(expires_at)
@@ -155,8 +219,8 @@ pub async fn withdraw_consent(
     user_id: Uuid,
     consent_id: Uuid,
 ) -> Result<(), AppError> {
-    let consent = sqlx::query_as::<_, ConsentRecord>(
-        "SELECT * FROM consent_records WHERE id = $1 AND user_id = $2",
+    let consent_type: String = sqlx::query_scalar(
+        "SELECT consent_type FROM consent_records WHERE id = $1 AND user_id = $2",
     )
     .bind(consent_id)
     .bind(user_id)
@@ -170,7 +234,7 @@ pub async fn withdraw_consent(
 
     let is_required: bool =
         sqlx::query_scalar("SELECT is_required FROM consent_types WHERE code = $1")
-            .bind(&consent.consent_type)
+            .bind(&consent_type)
             .fetch_optional(pool)
             .await
             .map_err(|e| {
@@ -261,8 +325,6 @@ async fn count_scalar(pool: &PgPool, query: &str) -> Result<i64, AppError> {
 }
 
 fn consent_record_response(record: ConsentRecord) -> ConsentRecordResponse {
-    let data_categories: Vec<String> =
-        serde_json::from_value(record.data_categories.clone()).unwrap_or_default();
     let is_expired = record
         .expires_at
         .map(|expires_at| expires_at < chrono::Utc::now())
@@ -275,7 +337,7 @@ fn consent_record_response(record: ConsentRecord) -> ConsentRecordResponse {
         consent_type: record.consent_type,
         consent_type_name: None,
         purpose: record.purpose,
-        data_categories,
+        data_categories: record.data_categories,
         consent_status: record.consent_status,
         granted_at: record.granted_at,
         withdrawn_at: record.withdrawn_at,
@@ -428,5 +490,13 @@ mod tests {
     #[test]
     fn compliance_rate_uses_granted_consents_over_total_users() {
         assert_eq!(consent_compliance_rate(4, 10), 40.0);
+    }
+
+    #[test]
+    fn default_consent_categories_are_typed_and_stable() {
+        assert_eq!(
+            default_consent_data_categories().0,
+            vec!["personal_info".to_string()]
+        );
     }
 }

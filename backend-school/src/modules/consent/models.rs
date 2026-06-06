@@ -6,14 +6,14 @@ use uuid::Uuid;
 // Consent Record (บันทึกความยินยอม)
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsentRecord {
     pub id: Uuid,
     pub user_id: Uuid,
     pub user_type: String,
     pub consent_type: String,
     pub purpose: String,
-    pub data_categories: serde_json::Value,
+    pub data_categories: Vec<String>,
     pub consent_status: String,
     pub granted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub withdrawn_at: Option<chrono::DateTime<chrono::Utc>>,

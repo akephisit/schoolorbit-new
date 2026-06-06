@@ -45,9 +45,9 @@ export async function updateAchievement(
 	}
 }
 
-export async function deleteAchievement(id: string): Promise<ApiResponse<void>> {
+export async function deleteAchievement(id: string): Promise<ApiResponse<Record<string, never>>> {
 	try {
-		return await apiClient.delete<void>(`/api/achievements/${id}`);
+		return await apiClient.delete<Record<string, never>>(`/api/achievements/${id}`);
 	} catch (e) {
 		console.error('Delete achievement error:', e);
 		return { success: false, error: 'Network error' };

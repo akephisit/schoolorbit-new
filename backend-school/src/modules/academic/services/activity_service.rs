@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::modules::academic::models::activity::*;
-use chrono::Utc;
-use sqlx::PgPool;
+use chrono::{DateTime, Utc};
+use sqlx::{types::Json, FromRow, PgPool};
 use uuid::Uuid;
 
 fn activity_datetime_from_rfc3339(value: Option<&str>) -> Option<chrono::DateTime<Utc>> {
@@ -10,8 +10,108 @@ fn activity_datetime_from_rfc3339(value: Option<&str>) -> Option<chrono::DateTim
         .map(|d| d.with_timezone(&Utc))
 }
 
-fn optional_uuid_list_json(ids: Option<&[Uuid]>) -> Option<serde_json::Value> {
-    ids.map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null))
+fn optional_uuid_list_json(ids: Option<&[Uuid]>) -> Option<Json<Vec<Uuid>>> {
+    ids.map(|ids| Json(ids.to_vec()))
+}
+
+#[derive(Debug, FromRow)]
+struct ActivitySlotRow {
+    id: Uuid,
+    activity_catalog_id: Uuid,
+    semester_id: Uuid,
+    registration_type: String,
+    teacher_reg_open: bool,
+    student_reg_open: bool,
+    student_reg_start: Option<DateTime<Utc>>,
+    student_reg_end: Option<DateTime<Utc>>,
+    created_by: Option<Uuid>,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    name: Option<String>,
+    description: Option<String>,
+    activity_type: Option<String>,
+    periods_per_week: Option<i32>,
+    scheduling_mode: Option<String>,
+    allowed_grade_level_ids: Option<Json<Vec<Uuid>>>,
+    semester_name: Option<String>,
+    group_count: Option<i64>,
+    total_members: Option<i64>,
+    classroom_ids: Option<Vec<Uuid>>,
+}
+
+impl From<ActivitySlotRow> for ActivitySlot {
+    fn from(row: ActivitySlotRow) -> Self {
+        Self {
+            id: row.id,
+            activity_catalog_id: row.activity_catalog_id,
+            semester_id: row.semester_id,
+            registration_type: row.registration_type,
+            teacher_reg_open: row.teacher_reg_open,
+            student_reg_open: row.student_reg_open,
+            student_reg_start: row.student_reg_start,
+            student_reg_end: row.student_reg_end,
+            created_by: row.created_by,
+            is_active: row.is_active,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            name: row.name,
+            description: row.description,
+            activity_type: row.activity_type,
+            periods_per_week: row.periods_per_week,
+            scheduling_mode: row.scheduling_mode,
+            allowed_grade_level_ids: row.allowed_grade_level_ids.map(|Json(ids)| ids),
+            semester_name: row.semester_name,
+            group_count: row.group_count,
+            total_members: row.total_members,
+            classroom_ids: row.classroom_ids,
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct ActivityGroupRow {
+    id: Uuid,
+    slot_id: Option<Uuid>,
+    name: String,
+    description: Option<String>,
+    instructor_id: Option<Uuid>,
+    max_capacity: Option<i32>,
+    registration_open: bool,
+    allowed_classroom_ids: Option<Json<Vec<Uuid>>>,
+    created_by: Option<Uuid>,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    instructor_name: Option<String>,
+    member_count: Option<i64>,
+    slot_name: Option<String>,
+    activity_type: Option<String>,
+    semester_name: Option<String>,
+}
+
+impl From<ActivityGroupRow> for ActivityGroup {
+    fn from(row: ActivityGroupRow) -> Self {
+        Self {
+            id: row.id,
+            slot_id: row.slot_id,
+            name: row.name,
+            description: row.description,
+            instructor_id: row.instructor_id,
+            max_capacity: row.max_capacity,
+            registration_open: row.registration_open,
+            allowed_classroom_ids: row.allowed_classroom_ids.map(|Json(ids)| ids),
+            created_by: row.created_by,
+            is_active: row.is_active,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            instructor_name: row.instructor_name,
+            member_count: row.member_count,
+            slot_name: row.slot_name,
+            activity_type: row.activity_type,
+            semester_name: row.semester_name,
+        }
+    }
 }
 
 // ============================================
@@ -66,7 +166,7 @@ pub async fn list_slots(
 
     sql.push_str(" GROUP BY s.id, ac.id, sem.name ORDER BY ac.activity_type, ac.name");
 
-    let mut q = sqlx::query_as::<_, ActivitySlot>(&sql);
+    let mut q = sqlx::query_as::<_, ActivitySlotRow>(&sql);
     if let Some(v) = filter.semester_id {
         q = q.bind(v);
     }
@@ -80,10 +180,12 @@ pub async fn list_slots(
         q = q.bind(v);
     }
 
-    q.fetch_all(pool).await.map_err(|e| {
+    let rows = q.fetch_all(pool).await.map_err(|e| {
         eprintln!("list_activity_slots error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })
+    })?;
+
+    Ok(rows.into_iter().map(ActivitySlot::from).collect())
 }
 
 pub async fn update_slot(
@@ -91,7 +193,7 @@ pub async fn update_slot(
     id: Uuid,
     body: UpdateActivitySlotRequest,
 ) -> Result<ActivitySlot, AppError> {
-    sqlx::query_as(
+    sqlx::query_as::<_, ActivitySlotRow>(
         r#"WITH upd AS (
             UPDATE activity_slots SET
                 registration_type = COALESCE($2, registration_type),
@@ -134,6 +236,7 @@ pub async fn update_slot(
         eprintln!("update_activity_slot error: {e}");
         AppError::NotFound("ไม่พบช่องกิจกรรม".to_string())
     })
+    .map(ActivitySlot::from)
 }
 
 pub async fn delete_slot(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
@@ -203,7 +306,7 @@ pub async fn list_groups(
 
     sql.push_str(" GROUP BY ag.id, u.first_name, u.last_name, ac.name, ac.activity_type, sem.name ORDER BY ac.activity_type, ag.name");
 
-    let mut q = sqlx::query_as::<_, ActivityGroup>(&sql);
+    let mut q = sqlx::query_as::<_, ActivityGroupRow>(&sql);
     if let Some(v) = filter.slot_id {
         q = q.bind(v);
     }
@@ -225,10 +328,12 @@ pub async fn list_groups(
         }
     }
 
-    q.fetch_all(pool).await.map_err(|e| {
+    let rows = q.fetch_all(pool).await.map_err(|e| {
         eprintln!("list_activity_groups error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })
+    })?;
+
+    Ok(rows.into_iter().map(ActivityGroup::from).collect())
 }
 
 /// Outcome ของ create_group — ให้ caller รู้ว่า slot ปิดอยู่หรือครูไม่อยู่ในรายชื่อ
@@ -277,7 +382,7 @@ pub async fn create_group(
 
     let allowed = optional_uuid_list_json(body.allowed_classroom_ids.as_deref());
 
-    let row: ActivityGroup = sqlx::query_as(
+    let row: ActivityGroupRow = sqlx::query_as(
         r#"INSERT INTO activity_groups
             (slot_id, name, description, instructor_id, max_capacity, allowed_classroom_ids)
            VALUES ($1, $2, $3, $4, $5, $6)
@@ -297,7 +402,9 @@ pub async fn create_group(
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
-    Ok(CreateGroupOutcome::Created(Box::new(row)))
+    Ok(CreateGroupOutcome::Created(Box::new(ActivityGroup::from(
+        row,
+    ))))
 }
 
 pub async fn update_group(
@@ -307,7 +414,7 @@ pub async fn update_group(
 ) -> Result<ActivityGroup, AppError> {
     let allowed = optional_uuid_list_json(body.allowed_classroom_ids.as_deref());
 
-    sqlx::query_as(
+    sqlx::query_as::<_, ActivityGroupRow>(
         r#"UPDATE activity_groups SET
             name = COALESCE($2, name),
             description = COALESCE($3, description),
@@ -335,6 +442,7 @@ pub async fn update_group(
         eprintln!("update_activity_group error: {e}");
         AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string())
     })
+    .map(ActivityGroup::from)
 }
 
 pub async fn delete_group(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
@@ -1044,13 +1152,13 @@ mod tests {
     }
 
     #[test]
-    fn optional_uuid_list_json_serializes_some_values_and_preserves_none() {
+    fn optional_uuid_list_json_wraps_some_values_and_preserves_none() {
         let id = Uuid::new_v4();
 
         assert_eq!(optional_uuid_list_json(None), None);
         assert_eq!(
-            optional_uuid_list_json(Some(&[id])),
-            Some(serde_json::json!([id]))
+            optional_uuid_list_json(Some(&[id])).map(|Json(ids)| ids),
+            Some(vec![id])
         );
     }
 }

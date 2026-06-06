@@ -236,5 +236,5 @@ pub async fn delete_locked_slot(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     scheduling_service::delete_locked_slot(&pool, id).await?;
-    Ok(StatusCode::NO_CONTENT.into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }

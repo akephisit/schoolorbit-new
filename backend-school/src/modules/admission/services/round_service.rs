@@ -1,7 +1,8 @@
 use crate::error::AppError;
 use crate::modules::admission::models::rounds::*;
 use crate::services::r2_client::R2Client;
-use sqlx::PgPool;
+use chrono::{DateTime, Utc};
+use sqlx::{types::Json, FromRow, PgPool};
 use uuid::Uuid;
 
 const ROUND_GRADE_LEVEL_CASE: &str = r#"CASE gl.level_type
@@ -10,6 +11,43 @@ const ROUND_GRADE_LEVEL_CASE: &str = r#"CASE gl.level_type
     WHEN 'secondary'    THEN CONCAT('ม.', gl.year)
     ELSE CONCAT('?.', gl.year)
 END"#;
+
+#[derive(Debug, FromRow)]
+struct AdmissionTrackRow {
+    id: Uuid,
+    admission_round_id: Uuid,
+    study_plan_id: Uuid,
+    name: String,
+    capacity_override: Option<i32>,
+    scoring_subject_ids: Json<Vec<Uuid>>,
+    tiebreak_method: String,
+    display_order: i32,
+    created_at: DateTime<Utc>,
+    study_plan_name: Option<String>,
+    computed_capacity: Option<i64>,
+    room_count: Option<i64>,
+    application_count: Option<i64>,
+}
+
+impl From<AdmissionTrackRow> for AdmissionTrack {
+    fn from(row: AdmissionTrackRow) -> Self {
+        Self {
+            id: row.id,
+            admission_round_id: row.admission_round_id,
+            study_plan_id: row.study_plan_id,
+            name: row.name,
+            capacity_override: row.capacity_override,
+            scoring_subject_ids: row.scoring_subject_ids.0,
+            tiebreak_method: row.tiebreak_method,
+            display_order: row.display_order,
+            created_at: row.created_at,
+            study_plan_name: row.study_plan_name,
+            computed_capacity: row.computed_capacity,
+            room_count: row.room_count,
+            application_count: row.application_count,
+        }
+    }
+}
 
 pub async fn list_public_rounds(pool: &PgPool) -> Result<Vec<AdmissionRound>, AppError> {
     sqlx::query_as::<_, AdmissionRound>(&format!(
@@ -54,7 +92,7 @@ pub async fn get_public_round_info(
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร หรือไม่ได้เปิดรับสมัครในขณะนี้".to_string()))?;
 
-    let tracks = sqlx::query_as::<_, AdmissionTrack>(
+    let track_rows = sqlx::query_as::<_, AdmissionTrackRow>(
         r#"SELECT at2.*, sp.name_th AS study_plan_name,
                   0::bigint AS computed_capacity, 0::bigint AS room_count, 0::bigint AS application_count
            FROM admission_tracks at2
@@ -62,9 +100,18 @@ pub async fn get_public_round_info(
            WHERE at2.admission_round_id = $1
            ORDER BY at2.display_order ASC"#
     )
-    .bind(id).fetch_all(pool).await.unwrap_or_default();
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to fetch public tracks: {}", e);
+        AppError::InternalServerError("Database error".to_string())
+    })?;
 
-    Ok((round, tracks))
+    Ok((
+        round,
+        track_rows.into_iter().map(AdmissionTrack::from).collect(),
+    ))
 }
 
 pub async fn list_rounds(pool: &PgPool) -> Result<Vec<AdmissionRound>, AppError> {
@@ -339,7 +386,7 @@ pub async fn delete_exam_subject(pool: &PgPool, id: Uuid) -> Result<(), AppError
 // --- Admission Tracks ---
 
 pub async fn list_tracks(pool: &PgPool, round_id: Uuid) -> Result<Vec<AdmissionTrack>, AppError> {
-    sqlx::query_as::<_, AdmissionTrack>(
+    let rows = sqlx::query_as::<_, AdmissionTrackRow>(
         r#"SELECT t.*, sp.name_th AS study_plan_name,
                (SELECT COUNT(DISTINCT cr.id)
                 FROM study_plan_versions spv
@@ -368,7 +415,9 @@ pub async fn list_tracks(pool: &PgPool, round_id: Uuid) -> Result<Vec<AdmissionT
     .map_err(|e| {
         eprintln!("Failed to fetch tracks: {}", e);
         AppError::InternalServerError("Failed to fetch tracks".to_string())
-    })
+    })?;
+
+    Ok(rows.into_iter().map(AdmissionTrack::from).collect())
 }
 
 pub async fn create_track(
@@ -378,7 +427,7 @@ pub async fn create_track(
 ) -> Result<AdmissionTrack, AppError> {
     let scoring_ids = scoring_subject_ids_json(payload.scoring_subject_ids);
 
-    sqlx::query_as::<_, AdmissionTrack>(
+    sqlx::query_as::<_, AdmissionTrackRow>(
         r#"INSERT INTO admission_tracks (
                admission_round_id, study_plan_id, name, capacity_override,
                scoring_subject_ids, tiebreak_method, display_order
@@ -403,6 +452,7 @@ pub async fn create_track(
         eprintln!("Failed to create track: {}", e);
         AppError::InternalServerError("Failed to create track".to_string())
     })
+    .map(AdmissionTrack::from)
 }
 
 pub async fn update_track(
@@ -414,7 +464,7 @@ pub async fn update_track(
         .scoring_subject_ids
         .map(|v| scoring_subject_ids_json(Some(v)));
 
-    sqlx::query_as::<_, AdmissionTrack>(
+    sqlx::query_as::<_, AdmissionTrackRow>(
         r#"UPDATE admission_tracks SET
                name = COALESCE($1, name),
                capacity_override = COALESCE($2, capacity_override),
@@ -435,6 +485,7 @@ pub async fn update_track(
         eprintln!("Failed to update track: {}", e);
         AppError::InternalServerError("Failed to update track".to_string())
     })
+    .map(AdmissionTrack::from)
 }
 
 pub async fn delete_track(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
@@ -522,8 +573,8 @@ fn track_tiebreak_method_or_default(tiebreak_method: Option<String>) -> String {
     tiebreak_method.unwrap_or_else(|| "applied_at".to_string())
 }
 
-fn scoring_subject_ids_json(scoring_subject_ids: Option<Vec<Uuid>>) -> serde_json::Value {
-    serde_json::to_value(scoring_subject_ids.unwrap_or_default()).unwrap_or(serde_json::json!([]))
+fn scoring_subject_ids_json(scoring_subject_ids: Option<Vec<Uuid>>) -> Json<Vec<Uuid>> {
+    Json(scoring_subject_ids.unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -552,21 +603,18 @@ mod tests {
     }
 
     #[test]
-    fn track_defaults_use_applied_at_tiebreak_and_empty_scoring_array() {
+    fn track_defaults_use_applied_at_tiebreak_and_empty_scoring_ids() {
         assert_eq!(track_tiebreak_method_or_default(None), "applied_at");
         assert_eq!(
             track_tiebreak_method_or_default(Some("score".to_string())),
             "score"
         );
 
-        assert_eq!(
-            scoring_subject_ids_json(None),
-            serde_json::Value::Array(Vec::new())
-        );
+        assert_eq!(scoring_subject_ids_json(None).0, Vec::<Uuid>::new());
         let subject_id = Uuid::new_v4();
         assert_eq!(
-            scoring_subject_ids_json(Some(vec![subject_id])),
-            serde_json::json!([subject_id])
+            scoring_subject_ids_json(Some(vec![subject_id])).0,
+            vec![subject_id]
         );
     }
 }

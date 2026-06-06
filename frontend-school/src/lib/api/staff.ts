@@ -291,12 +291,12 @@ export async function createStaff(data: CreateStaffRequest): Promise<ApiResponse
 export async function updateStaff(
 	staffId: string,
 	data: UpdateStaffRequest
-): Promise<ApiResponse<void>> {
-	return apiClient.put<void>(`/api/staff/${staffId}`, data);
+): Promise<ApiResponse<Record<string, never>>> {
+	return apiClient.put<Record<string, never>>(`/api/staff/${staffId}`, data);
 }
 
-export async function deleteStaff(staffId: string): Promise<ApiResponse<void>> {
-	return apiClient.delete<void>(`/api/staff/${staffId}`);
+export async function deleteStaff(staffId: string): Promise<ApiResponse<Record<string, never>>> {
+	return apiClient.delete<Record<string, never>>(`/api/staff/${staffId}`);
 }
 
 // ===================================================================
@@ -376,12 +376,14 @@ export async function createDepartment(
 export async function updateDepartment(
 	deptId: string,
 	data: UpdateDepartmentRequest
-): Promise<ApiResponse<void>> {
-	return apiClient.put<void>(`/api/departments/${deptId}`, data);
+): Promise<ApiResponse<Record<string, never>>> {
+	return apiClient.put<Record<string, never>>(`/api/departments/${deptId}`, data);
 }
 
-export async function deleteDepartment(deptId: string): Promise<ApiResponse<void>> {
-	return apiClient.delete<void>(`/api/departments/${deptId}`);
+export async function deleteDepartment(
+	deptId: string
+): Promise<ApiResponse<Record<string, never>>> {
+	return apiClient.delete<Record<string, never>>(`/api/departments/${deptId}`);
 }
 
 // ===================================================================
@@ -396,8 +398,10 @@ export async function getDepartmentPermissions(deptId: string): Promise<string[]
 export async function updateDepartmentPermissions(
 	deptId: string,
 	permission_ids: string[]
-): Promise<ApiResponse<void>> {
-	return apiClient.put<void>(`/api/departments/${deptId}/permissions`, { permission_ids });
+): Promise<ApiResponse<Record<string, never>>> {
+	return apiClient.put<Record<string, never>>(`/api/departments/${deptId}/permissions`, {
+		permission_ids
+	});
 }
 
 // ===================================================================
@@ -455,8 +459,10 @@ export async function createDelegation(
 	);
 }
 
-export async function revokeDelegation(delegationId: string): Promise<ApiResponse<void>> {
-	return apiClient.delete<void>(`/api/delegations/${delegationId}`);
+export async function revokeDelegation(
+	delegationId: string
+): Promise<ApiResponse<Record<string, never>>> {
+	return apiClient.delete<Record<string, never>>(`/api/delegations/${delegationId}`);
 }
 
 // ===================================================================
@@ -500,18 +506,24 @@ export async function listDeptMembers(
 export async function addDeptMember(
 	deptId: string,
 	body: AddMemberBody
-): Promise<ApiResponse<void>> {
-	return apiClient.post<void>(`/api/departments/${deptId}/members`, body);
+): Promise<ApiResponse<Record<string, never>>> {
+	return apiClient.post<Record<string, never>>(`/api/departments/${deptId}/members`, body);
 }
 
 export async function updateDeptMember(
 	deptId: string,
 	userId: string,
 	body: UpdateMemberBody
-): Promise<ApiResponse<void>> {
-	return apiClient.put<void>(`/api/departments/${deptId}/members/${userId}`, body);
+): Promise<ApiResponse<Record<string, never>>> {
+	return apiClient.put<Record<string, never>>(
+		`/api/departments/${deptId}/members/${userId}`,
+		body
+	);
 }
 
-export async function removeDeptMember(deptId: string, userId: string): Promise<ApiResponse<void>> {
-	return apiClient.delete<void>(`/api/departments/${deptId}/members/${userId}`);
+export async function removeDeptMember(
+	deptId: string,
+	userId: string
+): Promise<ApiResponse<Record<string, never>>> {
+	return apiClient.delete<Record<string, never>>(`/api/departments/${deptId}/members/${userId}`);
 }

@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 // Activity Slot Models (ช่องกิจกรรม)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActivitySlot {
     pub id: Uuid,
     pub activity_catalog_id: Uuid,
@@ -25,41 +25,31 @@ pub struct ActivitySlot {
 
     // Joined fields from activity_catalog (live link — version snapshot via activity_catalog_id)
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub activity_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub periods_per_week: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub scheduling_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
-    pub allowed_grade_level_ids: Option<serde_json::Value>,
+    pub allowed_grade_level_ids: Option<Vec<Uuid>>,
 
     // Other joins
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub semester_name: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub group_count: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub total_members: Option<i64>,
 
     /// UUIDs of classrooms participating in this slot (from activity_slot_classrooms junction).
     /// Used on the activities page to show only real participants (instead of grade-matched set).
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub classroom_ids: Option<Vec<Uuid>>,
 }
 
@@ -87,7 +77,7 @@ pub struct ActivitySlotFilter {
 // Activity Group Models (กิจกรรมจริง ภายใต้ slot)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActivityGroup {
     pub id: Uuid,
     pub slot_id: Option<Uuid>,
@@ -97,7 +87,7 @@ pub struct ActivityGroup {
     pub max_capacity: Option<i32>,
     pub registration_open: bool,
     /// ห้องที่ group นี้รับ (override slot). NULL = รับทุกห้องที่ slot รับ
-    pub allowed_classroom_ids: Option<serde_json::Value>,
+    pub allowed_classroom_ids: Option<Vec<Uuid>>,
     pub created_by: Option<Uuid>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
@@ -105,23 +95,18 @@ pub struct ActivityGroup {
 
     // Joined fields
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub instructor_name: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub member_count: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub slot_name: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub activity_type: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub semester_name: Option<String>,
 }
 

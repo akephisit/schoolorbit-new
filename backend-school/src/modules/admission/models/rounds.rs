@@ -136,7 +136,7 @@ pub struct UpdateExamSubjectRequest {
 // Admission Track Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdmissionTrack {
     pub id: Uuid,
@@ -145,7 +145,7 @@ pub struct AdmissionTrack {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capacity_override: Option<i32>,
-    pub scoring_subject_ids: serde_json::Value, // JSONB array of UUID strings
+    pub scoring_subject_ids: Vec<Uuid>,
     pub tiebreak_method: String,
     pub display_order: i32,
     pub created_at: DateTime<Utc>,

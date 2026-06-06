@@ -564,6 +564,17 @@ test('frontend API contract avoids unknown endpoint generics and blind envelope 
 		if (/\bApiResponse<\s*unknown\s*>/.test(source)) {
 			violations.push(`${rel}: use a concrete ApiResponse<T> type instead of unknown`);
 		}
+		if (
+			/\b(?:ApiResponse|LoadedApiResponse)<\s*void\s*>/.test(source) ||
+			/\bapiClient\.(?:get|post|put|patch|delete|deleteWithBody|postMultipart)<\s*void\s*>/.test(
+				source
+			) ||
+			/\bfetchApi<\s*void\s*>/.test(source)
+		) {
+			violations.push(
+				`${rel}: empty mutation responses must use Record<string, never> instead of void`
+			);
+		}
 	}
 
 	for (const file of apiFiles) {
