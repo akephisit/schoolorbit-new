@@ -27,10 +27,7 @@ pub async fn update_feature(
     id: Uuid,
     is_enabled: Option<bool>,
 ) -> Result<FeatureToggle, AppError> {
-    let mut query = String::from("UPDATE feature_toggles SET updated_at = NOW()");
-    if let Some(enabled) = is_enabled {
-        query.push_str(&format!(", is_enabled = {}", enabled));
-    }
+    let mut query = feature_update_set_clause(is_enabled);
     query.push_str(" WHERE id = $1 RETURNING id, code, name, name_en, module, is_enabled");
 
     sqlx::query_as::<_, FeatureToggle>(&query)
@@ -51,4 +48,37 @@ pub async fn toggle_feature(pool: &PgPool, id: Uuid) -> Result<FeatureToggle, Ap
     .await
     .map_err(|e| AppError::InternalServerError(format!("Failed to toggle feature: {}", e)))?
     .ok_or(AppError::NotFound("Feature toggle not found".to_string()))
+}
+
+fn feature_update_set_clause(is_enabled: Option<bool>) -> String {
+    let mut query = String::from("UPDATE feature_toggles SET updated_at = NOW()");
+    if let Some(enabled) = is_enabled {
+        query.push_str(&format!(", is_enabled = {}", enabled));
+    }
+    query
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feature_update_set_clause_only_updates_timestamp_when_enabled_is_absent() {
+        assert_eq!(
+            feature_update_set_clause(None),
+            "UPDATE feature_toggles SET updated_at = NOW()"
+        );
+    }
+
+    #[test]
+    fn feature_update_set_clause_includes_explicit_enabled_value() {
+        assert_eq!(
+            feature_update_set_clause(Some(true)),
+            "UPDATE feature_toggles SET updated_at = NOW(), is_enabled = true"
+        );
+        assert_eq!(
+            feature_update_set_clause(Some(false)),
+            "UPDATE feature_toggles SET updated_at = NOW(), is_enabled = false"
+        );
+    }
 }

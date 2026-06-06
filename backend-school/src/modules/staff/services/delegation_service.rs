@@ -13,6 +13,10 @@ pub struct DelegatablePermission {
     pub name: String,
 }
 
+fn delegation_display_name(name: Option<String>) -> String {
+    name.unwrap_or_default()
+}
+
 pub async fn list_delegatable_permissions(
     pool: &PgPool,
     department_id: Uuid,
@@ -62,13 +66,9 @@ pub async fn list_delegations(
         .map(|row| DelegationItem {
             id: row.get("id"),
             from_user_id: row.get("from_user_id"),
-            from_user_name: row
-                .get::<Option<String>, _>("from_user_name")
-                .unwrap_or_default(),
+            from_user_name: delegation_display_name(row.get("from_user_name")),
             to_user_id: row.get("to_user_id"),
-            to_user_name: row
-                .get::<Option<String>, _>("to_user_name")
-                .unwrap_or_default(),
+            to_user_name: delegation_display_name(row.get("to_user_name")),
             permission_id: row.get("permission_id"),
             permission_code: row.get("permission_code"),
             permission_name: row.get("permission_name"),
@@ -166,4 +166,18 @@ pub async fn revoke_delegation(pool: &PgPool, id: Uuid) -> Result<(), AppError> 
         .execute(pool)
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delegation_display_name_defaults_missing_names_to_empty_string() {
+        assert_eq!(delegation_display_name(None), "");
+        assert_eq!(
+            delegation_display_name(Some("ครูสมชาย ใจดี".to_string())),
+            "ครูสมชาย ใจดี"
+        );
+    }
 }

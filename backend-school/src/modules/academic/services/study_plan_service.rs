@@ -3,6 +3,24 @@ use crate::modules::academic::models::study_plans::*;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+fn grade_level_ids_json(ids: Option<&[Uuid]>) -> Option<serde_json::Value> {
+    ids.map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null))
+}
+
+fn study_plan_subject_display_order(display_order: Option<i32>) -> i32 {
+    display_order.unwrap_or(0)
+}
+
+fn validate_catalog_instructor_role(role: &str) -> Result<(), AppError> {
+    if role == "primary" || role == "secondary" {
+        return Ok(());
+    }
+
+    Err(AppError::BadRequest(
+        "role must be 'primary' or 'secondary'".to_string(),
+    ))
+}
+
 // ============================================
 // Study Plans CRUD
 // ============================================
@@ -31,9 +49,7 @@ pub async fn create_plan(
     pool: &PgPool,
     req: CreateStudyPlanRequest,
 ) -> Result<StudyPlan, AppError> {
-    let grade_ids = req
-        .grade_level_ids
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    let grade_ids = grade_level_ids_json(req.grade_level_ids.as_deref());
     sqlx::query_as::<_, StudyPlan>(
         "INSERT INTO study_plans (code, name_th, name_en, description, grade_level_ids)
          VALUES ($1, $2, $3, $4, $5) RETURNING *",
@@ -101,8 +117,8 @@ pub async fn update_plan(
     if let Some(ref v) = req.description {
         q = q.bind(v);
     }
-    if let Some(ref v) = req.grade_level_ids {
-        q = q.bind(serde_json::to_value(v).unwrap_or(serde_json::Value::Null));
+    if req.grade_level_ids.is_some() {
+        q = q.bind(grade_level_ids_json(req.grade_level_ids.as_deref()));
     }
     if let Some(v) = req.is_active {
         q = q.bind(v);
@@ -288,7 +304,7 @@ pub async fn add_subjects_to_version(
         .bind(subject.grade_level_id)
         .bind(&subject.term)
         .bind(subject.subject_id)
-        .bind(subject.display_order.unwrap_or(0))
+        .bind(study_plan_subject_display_order(subject.display_order))
         .execute(&mut *tx)
         .await?;
     }
@@ -798,9 +814,7 @@ pub async fn create_activity_catalog(
     pool: &PgPool,
     req: CreateCatalogRequest,
 ) -> Result<ActivityCatalog, AppError> {
-    let allowed = req
-        .grade_level_ids
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    let allowed = grade_level_ids_json(req.grade_level_ids.as_deref());
     let mut tx = pool
         .begin()
         .await
@@ -827,11 +841,7 @@ pub async fn create_activity_catalog(
 
     if let Some(team) = &req.default_instructors {
         for t in team {
-            if t.role != "primary" && t.role != "secondary" {
-                return Err(AppError::BadRequest(
-                    "role must be 'primary' or 'secondary'".to_string(),
-                ));
-            }
+            validate_catalog_instructor_role(&t.role)?;
             sqlx::query(
                 "INSERT INTO activity_catalog_default_instructors (catalog_id, instructor_id, role)
                  VALUES ($1, $2, $3)
@@ -857,10 +867,7 @@ pub async fn update_activity_catalog(
     id: Uuid,
     req: UpdateCatalogRequest,
 ) -> Result<ActivityCatalog, AppError> {
-    let allowed = req
-        .grade_level_ids
-        .as_ref()
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    let allowed = grade_level_ids_json(req.grade_level_ids.as_deref());
     sqlx::query_as::<_, ActivityCatalog>(
         "UPDATE activity_catalog SET
             name = COALESCE($2, name),
@@ -930,11 +937,7 @@ pub async fn add_catalog_default_instructor(
     instructor_id: Uuid,
     role: &str,
 ) -> Result<(), AppError> {
-    if role != "primary" && role != "secondary" {
-        return Err(AppError::BadRequest(
-            "role must be 'primary' or 'secondary'".to_string(),
-        ));
-    }
+    validate_catalog_instructor_role(role)?;
     let mut tx = pool
         .begin()
         .await
@@ -988,11 +991,7 @@ pub async fn update_catalog_default_instructor_role(
     instructor_id: Uuid,
     role: &str,
 ) -> Result<(), AppError> {
-    if role != "primary" && role != "secondary" {
-        return Err(AppError::BadRequest(
-            "role must be 'primary' or 'secondary'".to_string(),
-        ));
-    }
+    validate_catalog_instructor_role(role)?;
     let mut tx = pool
         .begin()
         .await
@@ -1025,4 +1024,40 @@ pub async fn update_catalog_default_instructor_role(
         .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grade_level_ids_json_serializes_some_values_and_preserves_none() {
+        let id = Uuid::new_v4();
+
+        assert_eq!(grade_level_ids_json(None), None);
+        assert_eq!(
+            grade_level_ids_json(Some(&[id])),
+            Some(serde_json::json!([id]))
+        );
+    }
+
+    #[test]
+    fn study_plan_subject_display_order_defaults_to_zero() {
+        assert_eq!(study_plan_subject_display_order(None), 0);
+        assert_eq!(study_plan_subject_display_order(Some(7)), 7);
+    }
+
+    #[test]
+    fn validate_catalog_instructor_role_accepts_supported_roles() {
+        assert!(validate_catalog_instructor_role("primary").is_ok());
+        assert!(validate_catalog_instructor_role("secondary").is_ok());
+    }
+
+    #[test]
+    fn validate_catalog_instructor_role_rejects_unknown_roles() {
+        assert!(matches!(
+            validate_catalog_instructor_role("owner"),
+            Err(AppError::BadRequest(_))
+        ));
+    }
 }

@@ -15,9 +15,7 @@ pub async fn list_notifications(
     user_id: Uuid,
     query: ListNotificationsQuery,
 ) -> Result<ListNotificationsResponse, AppError> {
-    let page = query.page.unwrap_or(1);
-    let limit = query.limit.unwrap_or(20);
-    let offset = (page - 1) * limit;
+    let params = notification_page_params(&query);
 
     let mut sql = r#"
         SELECT id, title, message, type AS type_, link, read_at, created_at
@@ -34,8 +32,8 @@ pub async fn list_notifications(
 
     let items = sqlx::query_as::<_, Notification>(&sql)
         .bind(user_id)
-        .bind(limit)
-        .bind(offset)
+        .bind(params.limit)
+        .bind(params.offset)
         .fetch_all(pool)
         .await
         .map_err(|e| {
@@ -57,8 +55,8 @@ pub async fn list_notifications(
     Ok(ListNotificationsResponse {
         items,
         unread_count,
-        page,
-        limit,
+        page: params.page,
+        limit: params.limit,
     })
 }
 
@@ -99,13 +97,8 @@ pub async fn create_notification(
     actor_user_id: Uuid,
     payload: CreateNotificationRequest,
 ) -> Result<(), AppError> {
-    let notification_type = match payload.type_.as_str() {
-        "success" => NotificationType::Success,
-        "warning" => NotificationType::Warning,
-        "error" => NotificationType::Error,
-        _ => NotificationType::Info,
-    };
-    let target_user_id = payload.user_id.unwrap_or(actor_user_id);
+    let notification_type = notification_type_from_str(&payload.type_);
+    let target_user_id = notification_target_user_id(payload.user_id, actor_user_id);
 
     NotificationService::send(
         pool,
@@ -153,4 +146,85 @@ pub async fn subscribe_push(
     })?;
 
     Ok(())
+}
+
+struct NotificationPageParams {
+    page: i64,
+    limit: i64,
+    offset: i64,
+}
+
+fn notification_page_params(query: &ListNotificationsQuery) -> NotificationPageParams {
+    let page = query.page.unwrap_or(1);
+    let limit = query.limit.unwrap_or(20);
+    NotificationPageParams {
+        page,
+        limit,
+        offset: (page - 1) * limit,
+    }
+}
+
+fn notification_type_from_str(value: &str) -> NotificationType {
+    match value {
+        "success" => NotificationType::Success,
+        "warning" => NotificationType::Warning,
+        "error" => NotificationType::Error,
+        _ => NotificationType::Info,
+    }
+}
+
+fn notification_target_user_id(requested_user_id: Option<Uuid>, actor_user_id: Uuid) -> Uuid {
+    requested_user_id.unwrap_or(actor_user_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notification_page_params_default_to_first_page_and_twenty_items() {
+        let params = notification_page_params(&ListNotificationsQuery {
+            page: None,
+            limit: None,
+            unread_only: None,
+        });
+
+        assert_eq!(params.page, 1);
+        assert_eq!(params.limit, 20);
+        assert_eq!(params.offset, 0);
+    }
+
+    #[test]
+    fn notification_page_params_calculate_offset_from_page_and_limit() {
+        let params = notification_page_params(&ListNotificationsQuery {
+            page: Some(3),
+            limit: Some(15),
+            unread_only: None,
+        });
+
+        assert_eq!(params.page, 3);
+        assert_eq!(params.limit, 15);
+        assert_eq!(params.offset, 30);
+    }
+
+    #[test]
+    fn notification_type_defaults_unknown_input_to_info() {
+        assert_eq!(notification_type_from_str("unknown").as_str(), "info");
+        assert_eq!(notification_type_from_str("warning").as_str(), "warning");
+    }
+
+    #[test]
+    fn notification_target_user_defaults_to_actor() {
+        let actor_user_id = Uuid::new_v4();
+        let requested_user_id = Uuid::new_v4();
+
+        assert_eq!(
+            notification_target_user_id(None, actor_user_id),
+            actor_user_id
+        );
+        assert_eq!(
+            notification_target_user_id(Some(requested_user_id), actor_user_id),
+            requested_user_id
+        );
+    }
 }

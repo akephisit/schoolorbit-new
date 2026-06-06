@@ -18,6 +18,14 @@ pub struct ScoreRow {
     pub score: Option<f64>,
 }
 
+fn should_mark_application_scored(total_subjects: i64, scored_subjects: i64) -> bool {
+    total_subjects > 0 && scored_subjects >= total_subjects
+}
+
+fn bulk_score_entry_count(entries: &[BulkScoreEntry]) -> usize {
+    entries.iter().map(|entry| entry.scores.len()).sum()
+}
+
 pub async fn get_all_scores(pool: &PgPool, round_id: Uuid) -> Result<Vec<ScoreRow>, AppError> {
     sqlx::query_as::<_, ScoreRow>(
         r#"SELECT aa.id AS application_id, aa.application_number,
@@ -97,7 +105,7 @@ pub async fn update_application_scores(
     )
     .bind(application_id).fetch_one(&mut *tx).await.unwrap_or(0);
 
-    if total > 0 && scored >= total {
+    if should_mark_application_scored(total, scored) {
         sqlx::query(
             "UPDATE admission_applications SET status = 'scored', updated_at = NOW() WHERE id = $1 AND status = 'verified'"
         )
@@ -128,7 +136,7 @@ pub async fn bulk_update_scores(
         }
     }
 
-    let updated = app_ids.len();
+    let updated = bulk_score_entry_count(entries);
 
     if updated > 0 {
         sqlx::query(
@@ -165,4 +173,44 @@ pub async fn bulk_update_scores(
     .ok();
 
     Ok(updated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_mark_application_scored_requires_at_least_one_subject_and_all_scores() {
+        assert!(!should_mark_application_scored(0, 0));
+        assert!(!should_mark_application_scored(3, 2));
+        assert!(should_mark_application_scored(3, 3));
+        assert!(should_mark_application_scored(3, 4));
+    }
+
+    #[test]
+    fn bulk_score_entry_count_counts_nested_scores() {
+        let subject_a = Uuid::new_v4();
+        let subject_b = Uuid::new_v4();
+        let entries = vec![
+            BulkScoreEntry {
+                application_id: Uuid::new_v4(),
+                scores: vec![
+                    UpdateScoreEntry {
+                        exam_subject_id: subject_a,
+                        score: Some(10.0),
+                    },
+                    UpdateScoreEntry {
+                        exam_subject_id: subject_b,
+                        score: None,
+                    },
+                ],
+            },
+            BulkScoreEntry {
+                application_id: Uuid::new_v4(),
+                scores: vec![],
+            },
+        ];
+
+        assert_eq!(bulk_score_entry_count(&entries), 2);
+    }
 }

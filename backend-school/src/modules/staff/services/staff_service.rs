@@ -121,9 +121,7 @@ pub async fn list_staff(
     pool: &PgPool,
     filter: StaffListFilter,
 ) -> Result<(Vec<StaffListItem>, i64, i64, i64), AppError> {
-    let page = filter.page.unwrap_or(1);
-    let page_size = filter.page_size.unwrap_or(20);
-    let offset = (page - 1) * page_size;
+    let page_params = staff_page_params(&filter);
 
     let mut query = String::from(
         "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status
@@ -140,13 +138,12 @@ pub async fn list_staff(
         query.push_str(" AND u.status = 'active'");
     }
 
-    if let Some(ref search) = filter.search {
-        if !search.is_empty() {
-            idx += 1;
-            query.push_str(&format!(
-                " AND (u.first_name ILIKE ${idx} OR u.last_name ILIKE ${idx} OR u.username ILIKE ${idx})"
-            ));
-        }
+    let search_pattern = staff_search_pattern(filter.search.clone());
+    if search_pattern.is_some() {
+        idx += 1;
+        query.push_str(&format!(
+            " AND (u.first_name ILIKE ${idx} OR u.last_name ILIKE ${idx} OR u.username ILIKE ${idx})"
+        ));
     }
 
     idx += 1;
@@ -161,13 +158,11 @@ pub async fn list_staff(
     if let Some(ref status) = filter.status {
         q = q.bind(status);
     }
-    if let Some(ref search) = filter.search {
-        if !search.is_empty() {
-            q = q.bind(format!("%{search}%"));
-        }
+    if let Some(ref pattern) = search_pattern {
+        q = q.bind(pattern);
     }
-    q = q.bind(page_size);
-    q = q.bind(offset);
+    q = q.bind(page_params.page_size);
+    q = q.bind(page_params.offset);
 
     let staff_rows = q.fetch_all(pool).await.map_err(|e| {
         eprintln!("❌ Database error: {}", e);
@@ -186,7 +181,7 @@ pub async fn list_staff(
             |(id, username, title, first_name, last_name, status)| StaffListItem {
                 id,
                 username,
-                title: title.unwrap_or_default(),
+                title: staff_title_or_default(title),
                 first_name,
                 last_name,
                 roles: vec![],
@@ -196,7 +191,7 @@ pub async fn list_staff(
         )
         .collect();
 
-    Ok((items, total, page, page_size))
+    Ok((items, total, page_params.page, page_params.page_size))
 }
 
 /// Get staff full profile with parallel queries
@@ -890,4 +885,83 @@ pub async fn get_public_staff_profile(
             })
             .collect(),
     })
+}
+
+struct StaffPageParams {
+    page: i64,
+    page_size: i64,
+    offset: i64,
+}
+
+fn staff_page_params(filter: &StaffListFilter) -> StaffPageParams {
+    let page = filter.page.unwrap_or(1);
+    let page_size = filter.page_size.unwrap_or(20);
+    StaffPageParams {
+        page,
+        page_size,
+        offset: (page - 1) * page_size,
+    }
+}
+
+fn staff_search_pattern(search: Option<String>) -> Option<String> {
+    search
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{value}%"))
+}
+
+fn staff_title_or_default(title: Option<String>) -> String {
+    title.unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn staff_filter(
+        page: Option<i64>,
+        page_size: Option<i64>,
+        search: Option<String>,
+    ) -> StaffListFilter {
+        StaffListFilter {
+            user_type: None,
+            role_id: None,
+            department_id: None,
+            page,
+            page_size,
+            search,
+            status: None,
+        }
+    }
+
+    #[test]
+    fn staff_page_params_default_to_first_page_and_twenty_items() {
+        let params = staff_page_params(&staff_filter(None, None, None));
+
+        assert_eq!(params.page, 1);
+        assert_eq!(params.page_size, 20);
+        assert_eq!(params.offset, 0);
+    }
+
+    #[test]
+    fn staff_page_params_calculate_offset() {
+        let params = staff_page_params(&staff_filter(Some(3), Some(15), None));
+
+        assert_eq!(params.offset, 30);
+    }
+
+    #[test]
+    fn staff_search_pattern_ignores_empty_values() {
+        assert_eq!(staff_search_pattern(None), None);
+        assert_eq!(staff_search_pattern(Some("".to_string())), None);
+        assert_eq!(
+            staff_search_pattern(Some("ครู".to_string())),
+            Some("%ครู%".to_string())
+        );
+    }
+
+    #[test]
+    fn staff_title_or_default_uses_empty_string_when_missing() {
+        assert_eq!(staff_title_or_default(None), "");
+        assert_eq!(staff_title_or_default(Some("นาย".to_string())), "นาย");
+    }
 }

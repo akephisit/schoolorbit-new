@@ -149,21 +149,7 @@ pub async fn validate_consecutive_pattern(
     cc_id: Uuid,
     pattern: &serde_json::Value,
 ) -> Result<(), AppError> {
-    let arr = pattern
-        .as_array()
-        .ok_or_else(|| AppError::BadRequest("consecutive_pattern ต้องเป็น array".to_string()))?;
-    let mut sum: i64 = 0;
-    for v in arr {
-        let n = v
-            .as_i64()
-            .ok_or_else(|| AppError::BadRequest("consecutive_pattern มีค่าที่ไม่ใช่ตัวเลข".to_string()))?;
-        if !(1..=20).contains(&n) {
-            return Err(AppError::BadRequest(
-                "consecutive_pattern แต่ละค่าต้องอยู่ระหว่าง 1-20".to_string(),
-            ));
-        }
-        sum += n;
-    }
+    let sum = consecutive_pattern_sum(pattern)?;
 
     let pw: Option<i32> = sqlx::query_scalar(
         "SELECT s.periods_per_week FROM classroom_courses cc JOIN subjects s ON s.id = cc.subject_id WHERE cc.id = $1"
@@ -172,15 +158,7 @@ pub async fn validate_consecutive_pattern(
     .map_err(|e| AppError::InternalServerError(e.to_string()))?
     .flatten();
 
-    if let Some(ppw) = pw {
-        if sum != ppw as i64 {
-            return Err(AppError::BadRequest(format!(
-                "ผลรวมของ pattern ({}) ต้องเท่ากับ periods_per_week ของวิชา ({})",
-                sum, ppw
-            )));
-        }
-    }
-    Ok(())
+    validate_consecutive_sum_matches_periods_per_week(sum, pw)
 }
 
 pub async fn update_classroom_course_constraints(
@@ -338,13 +316,7 @@ pub async fn get_scheduler_settings(pool: &PgPool) -> Result<i32, AppError> {
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let mut default_max_consecutive: i32 = 4;
-    for (key, value) in rows {
-        if key == "default_max_consecutive" {
-            default_max_consecutive = value.as_i64().unwrap_or(4) as i32;
-        }
-    }
-    Ok(default_max_consecutive)
+    Ok(scheduler_default_max_consecutive(rows))
 }
 
 pub async fn update_scheduler_settings(
@@ -481,4 +453,107 @@ pub async fn update_subject_constraints(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
+}
+
+fn consecutive_pattern_sum(pattern: &serde_json::Value) -> Result<i64, AppError> {
+    let arr = pattern
+        .as_array()
+        .ok_or_else(|| AppError::BadRequest("consecutive_pattern ต้องเป็น array".to_string()))?;
+    let mut sum: i64 = 0;
+    for value in arr {
+        let number = value
+            .as_i64()
+            .ok_or_else(|| AppError::BadRequest("consecutive_pattern มีค่าที่ไม่ใช่ตัวเลข".to_string()))?;
+        if !(1..=20).contains(&number) {
+            return Err(AppError::BadRequest(
+                "consecutive_pattern แต่ละค่าต้องอยู่ระหว่าง 1-20".to_string(),
+            ));
+        }
+        sum += number;
+    }
+    Ok(sum)
+}
+
+fn validate_consecutive_sum_matches_periods_per_week(
+    sum: i64,
+    periods_per_week: Option<i32>,
+) -> Result<(), AppError> {
+    if let Some(periods_per_week) = periods_per_week {
+        if sum != periods_per_week as i64 {
+            return Err(AppError::BadRequest(format!(
+                "ผลรวมของ pattern ({}) ต้องเท่ากับ periods_per_week ของวิชา ({})",
+                sum, periods_per_week
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn scheduler_default_max_consecutive(rows: Vec<(String, serde_json::Value)>) -> i32 {
+    rows.into_iter()
+        .find_map(|(key, value)| {
+            if key == "default_max_consecutive" {
+                value.as_i64().map(|value| value as i32)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(4)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn consecutive_pattern_sum_accepts_integer_array() {
+        let pattern = serde_json::json!([2, 1, 2]);
+
+        assert_eq!(consecutive_pattern_sum(&pattern).unwrap(), 5);
+    }
+
+    #[test]
+    fn consecutive_pattern_sum_rejects_non_array_values() {
+        assert!(matches!(
+            consecutive_pattern_sum(&serde_json::json!({"days": [1]})),
+            Err(AppError::BadRequest(message)) if message == "consecutive_pattern ต้องเป็น array"
+        ));
+    }
+
+    #[test]
+    fn consecutive_pattern_sum_rejects_out_of_range_items() {
+        assert!(matches!(
+            consecutive_pattern_sum(&serde_json::json!([0, 2])),
+            Err(AppError::BadRequest(message)) if message == "consecutive_pattern แต่ละค่าต้องอยู่ระหว่าง 1-20"
+        ));
+    }
+
+    #[test]
+    fn validate_consecutive_sum_matches_subject_periods_per_week() {
+        assert!(validate_consecutive_sum_matches_periods_per_week(5, Some(5)).is_ok());
+        assert!(matches!(
+            validate_consecutive_sum_matches_periods_per_week(4, Some(5)),
+            Err(AppError::BadRequest(message)) if message.contains("ต้องเท่ากับ periods_per_week")
+        ));
+        assert!(validate_consecutive_sum_matches_periods_per_week(4, None).is_ok());
+    }
+
+    #[test]
+    fn scheduler_setting_value_defaults_to_four_when_missing_or_invalid() {
+        assert_eq!(
+            scheduler_default_max_consecutive(vec![(
+                "default_max_consecutive".to_string(),
+                serde_json::json!(6)
+            )]),
+            6
+        );
+        assert_eq!(scheduler_default_max_consecutive(Vec::new()), 4);
+        assert_eq!(
+            scheduler_default_max_consecutive(vec![(
+                "default_max_consecutive".to_string(),
+                serde_json::json!("bad")
+            )]),
+            4
+        );
+    }
 }

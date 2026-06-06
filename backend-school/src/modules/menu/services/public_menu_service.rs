@@ -4,6 +4,10 @@ use crate::utils::field_encryption;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+fn decrypt_national_id_if_possible(national_id: Option<String>) -> Option<String> {
+    national_id.map(|value| field_encryption::decrypt(&value).unwrap_or(value))
+}
+
 pub async fn get_user(pool: &PgPool, user_id: Uuid) -> Result<User, AppError> {
     let mut user: User = sqlx::query_as(
         "SELECT id, username, national_id, email, password_hash, first_name, last_name,
@@ -20,11 +24,7 @@ pub async fn get_user(pool: &PgPool, user_id: Uuid) -> Result<User, AppError> {
         AppError::InternalServerError(format!("Database error: {}", e))
     })?;
 
-    if let Some(nid) = &user.national_id {
-        if let Ok(dec) = field_encryption::decrypt(nid) {
-            user.national_id = Some(dec);
-        }
-    }
+    user.national_id = decrypt_national_id_if_possible(user.national_id);
     Ok(user)
 }
 
@@ -59,4 +59,22 @@ pub async fn fetch_menu_items(pool: &PgPool, user_type: &str) -> Result<Vec<Menu
         eprintln!("Failed to fetch menu items: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลเมนูได้".to_string())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decrypt_national_id_if_possible_preserves_none() {
+        assert_eq!(decrypt_national_id_if_possible(None), None);
+    }
+
+    #[test]
+    fn decrypt_national_id_if_possible_keeps_plaintext_when_decryption_fails() {
+        assert_eq!(
+            decrypt_national_id_if_possible(Some("not-encrypted".to_string())),
+            Some("not-encrypted".to_string())
+        );
+    }
 }

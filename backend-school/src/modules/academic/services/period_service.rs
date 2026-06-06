@@ -38,14 +38,9 @@ pub async fn create_period(
     pool: &PgPool,
     payload: CreatePeriodRequest,
 ) -> Result<AcademicPeriod, AppError> {
-    let start_time = NaiveTime::parse_from_str(&payload.start_time, "%H:%M")
-        .map_err(|_| AppError::BadRequest("Invalid start_time format (use HH:MM)".to_string()))?;
-    let end_time = NaiveTime::parse_from_str(&payload.end_time, "%H:%M")
-        .map_err(|_| AppError::BadRequest("Invalid end_time format (use HH:MM)".to_string()))?;
-
-    if end_time <= start_time {
-        return Err(AppError::BadRequest("เวลาจบต้องมากกว่าเวลาเริ่ม".to_string()));
-    }
+    let start_time = parse_period_time(&payload.start_time)?;
+    let end_time = parse_period_time(&payload.end_time)?;
+    validate_period_time_range(start_time, end_time)?;
 
     // Auto-assign order_index = MAX + 1 ถ้าไม่ส่งมา
     let order_index = match payload.order_index {
@@ -72,7 +67,7 @@ pub async fn create_period(
         "#,
     )
     .bind(payload.academic_year_id)
-    .bind(payload.name.filter(|s| !s.trim().is_empty()))
+    .bind(normalized_period_name(payload.name))
     .bind(start_time)
     .bind(end_time)
     .bind(order_index)
@@ -98,29 +93,21 @@ pub async fn update_period(
     payload: UpdatePeriodRequest,
 ) -> Result<AcademicPeriod, AppError> {
     let start_time = if let Some(ref st) = payload.start_time {
-        Some(
-            NaiveTime::parse_from_str(st, "%H:%M")
-                .map_err(|_| AppError::BadRequest("Invalid start_time format".to_string()))?,
-        )
+        Some(parse_period_time(st)?)
     } else {
         None
     };
 
     let end_time = if let Some(ref et) = payload.end_time {
-        Some(
-            NaiveTime::parse_from_str(et, "%H:%M")
-                .map_err(|_| AppError::BadRequest("Invalid end_time format".to_string()))?,
-        )
+        Some(parse_period_time(et)?)
     } else {
         None
     };
 
     // name: ถ้า field ไม่ส่งมา → คงเดิม; ถ้าส่ง "" → clear เป็น NULL; ส่งค่า → set
     // ใช้ flag separate เพราะ COALESCE แยก "ไม่ส่ง" กับ "ส่ง NULL" ไม่ได้
-    let (name_set, name_value) = match payload.name {
-        None => (false, None),
-        Some(s) => (true, Some(s).filter(|s| !s.trim().is_empty())),
-    };
+    let name_set = payload.name.is_some();
+    let name_value = normalized_period_name(payload.name);
 
     sqlx::query_as::<_, AcademicPeriod>(
         r#"
@@ -206,4 +193,74 @@ pub async fn reorder_periods(
     })?;
 
     Ok(payload.items.len())
+}
+
+fn parse_period_time(value: &str) -> Result<NaiveTime, AppError> {
+    let is_hour_minute = value.len() == 5
+        && value.as_bytes()[2] == b':'
+        && value
+            .chars()
+            .enumerate()
+            .all(|(index, char)| index == 2 || char.is_ascii_digit());
+    if !is_hour_minute {
+        return Err(AppError::BadRequest(
+            "Invalid time format (use HH:MM)".to_string(),
+        ));
+    }
+
+    NaiveTime::parse_from_str(value, "%H:%M")
+        .map_err(|_| AppError::BadRequest("Invalid time format (use HH:MM)".to_string()))
+}
+
+fn validate_period_time_range(start_time: NaiveTime, end_time: NaiveTime) -> Result<(), AppError> {
+    if end_time <= start_time {
+        return Err(AppError::BadRequest("เวลาจบต้องมากกว่าเวลาเริ่ม".to_string()));
+    }
+    Ok(())
+}
+
+fn normalized_period_name(name: Option<String>) -> Option<String> {
+    name.filter(|value| !value.trim().is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_period_time_accepts_hour_minute_values() {
+        assert_eq!(
+            parse_period_time("08:30").unwrap(),
+            NaiveTime::from_hms_opt(8, 30, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_period_time_rejects_invalid_values() {
+        assert!(matches!(
+            parse_period_time("8:30"),
+            Err(AppError::BadRequest(message)) if message.contains("HH:MM")
+        ));
+    }
+
+    #[test]
+    fn validate_period_time_range_requires_end_after_start() {
+        let start = NaiveTime::from_hms_opt(8, 30, 0).unwrap();
+        let end = NaiveTime::from_hms_opt(8, 30, 0).unwrap();
+
+        assert!(matches!(
+            validate_period_time_range(start, end),
+            Err(AppError::BadRequest(message)) if message == "เวลาจบต้องมากกว่าเวลาเริ่ม"
+        ));
+    }
+
+    #[test]
+    fn normalized_period_name_treats_blank_names_as_none() {
+        assert_eq!(normalized_period_name(Some("  ".to_string())), None);
+        assert_eq!(
+            normalized_period_name(Some("คาบ 1".to_string())),
+            Some("คาบ 1".to_string())
+        );
+        assert_eq!(normalized_period_name(None), None);
+    }
 }

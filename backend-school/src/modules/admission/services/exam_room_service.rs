@@ -100,11 +100,7 @@ pub async fn add_exam_room(
     capacity_override: Option<i32>,
     display_order: Option<i32>,
 ) -> Result<(), AppError> {
-    if room_id.is_none() && custom_name.is_none() {
-        return Err(AppError::BadRequest(
-            "ต้องระบุ room_id หรือ custom_name".to_string(),
-        ));
-    }
+    validate_exam_room_source(room_id, custom_name.clone())?;
 
     let max_order: Option<i32> = sqlx::query_scalar(
         "SELECT MAX(display_order) FROM admission_exam_rooms WHERE admission_round_id = $1",
@@ -115,7 +111,7 @@ pub async fn add_exam_room(
     .unwrap_or(None)
     .flatten();
 
-    let display_order = display_order.unwrap_or_else(|| max_order.unwrap_or(-1) + 1);
+    let display_order = exam_room_display_order(display_order, max_order);
 
     sqlx::query(
         r#"INSERT INTO admission_exam_rooms
@@ -317,11 +313,7 @@ pub async fn assign_exam_seats(
         track_name: Option<String>,
     }
 
-    let order_clause = match sort_order.as_str() {
-        "by_track" => "ORDER BY at.name ASC NULLS LAST, aa.application_number ASC",
-        "random" => "ORDER BY random()",
-        _ => "ORDER BY aa.application_number ASC",
-    };
+    let order_clause = exam_assignment_order_clause(&sort_order);
 
     let query = format!(
         r#"SELECT aa.id, aa.application_number, at.name AS track_name
@@ -742,4 +734,63 @@ pub async fn get_application_exam_seat(
     .fetch_optional(pool)
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+}
+
+fn validate_exam_room_source(
+    room_id: Option<Uuid>,
+    custom_name: Option<String>,
+) -> Result<(), AppError> {
+    if room_id.is_none() && custom_name.is_none() {
+        return Err(AppError::BadRequest(
+            "ต้องระบุ room_id หรือ custom_name".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn exam_room_display_order(display_order: Option<i32>, max_order: Option<i32>) -> i32 {
+    display_order.unwrap_or_else(|| max_order.unwrap_or(-1) + 1)
+}
+
+fn exam_assignment_order_clause(sort_order: &str) -> &'static str {
+    match sort_order {
+        "by_track" => "ORDER BY at.name ASC NULLS LAST, aa.application_number ASC",
+        "random" => "ORDER BY random()",
+        _ => "ORDER BY aa.application_number ASC",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_exam_room_source_requires_room_or_custom_name() {
+        assert!(validate_exam_room_source(Some(Uuid::new_v4()), None).is_ok());
+        assert!(validate_exam_room_source(None, Some("ห้องประชุม".to_string())).is_ok());
+        assert!(matches!(
+            validate_exam_room_source(None, None),
+            Err(AppError::BadRequest(message)) if message == "ต้องระบุ room_id หรือ custom_name"
+        ));
+    }
+
+    #[test]
+    fn exam_room_display_order_uses_next_order_after_existing_max() {
+        assert_eq!(exam_room_display_order(None, None), 0);
+        assert_eq!(exam_room_display_order(None, Some(4)), 5);
+        assert_eq!(exam_room_display_order(Some(9), Some(4)), 9);
+    }
+
+    #[test]
+    fn exam_assignment_order_clause_defaults_to_application_number() {
+        assert_eq!(
+            exam_assignment_order_clause("by_track"),
+            "ORDER BY at.name ASC NULLS LAST, aa.application_number ASC"
+        );
+        assert_eq!(exam_assignment_order_clause("random"), "ORDER BY random()");
+        assert_eq!(
+            exam_assignment_order_clause("unknown"),
+            "ORDER BY aa.application_number ASC"
+        );
+    }
 }

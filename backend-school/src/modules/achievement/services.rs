@@ -79,13 +79,13 @@ pub async fn create_achievement(
     actor: &ActorContext,
     payload: CreateAchievementRequest,
 ) -> Result<Achievement, AppError> {
-    let target_user_id = payload.user_id.unwrap_or(actor.user_id);
+    let target_user_id = target_achievement_user_id(payload.user_id, actor.user_id);
     let is_own = target_user_id == actor.user_id;
-    let allowed = if is_own {
-        actor.has_permission(codes::ACHIEVEMENT_CREATE_OWN)
-    } else {
-        actor.has_permission(codes::ACHIEVEMENT_CREATE_ALL)
-    };
+    let allowed = achievement_scope_allowed(
+        is_own,
+        actor.has_permission(codes::ACHIEVEMENT_CREATE_OWN),
+        actor.has_permission(codes::ACHIEVEMENT_CREATE_ALL),
+    );
 
     if !allowed {
         return Err(AppError::Forbidden("คุณไม่มีสิทธิ์เพิ่มผลงานนี้".to_string()));
@@ -120,11 +120,11 @@ pub async fn update_achievement(
     payload: UpdateAchievementRequest,
 ) -> Result<Achievement, AppError> {
     let owner_id = get_achievement_owner_id(pool, id).await?;
-    let allowed = if owner_id == actor.user_id {
-        actor.has_permission(codes::ACHIEVEMENT_UPDATE_OWN)
-    } else {
-        actor.has_permission(codes::ACHIEVEMENT_UPDATE_ALL)
-    };
+    let allowed = achievement_scope_allowed(
+        owner_id == actor.user_id,
+        actor.has_permission(codes::ACHIEVEMENT_UPDATE_OWN),
+        actor.has_permission(codes::ACHIEVEMENT_UPDATE_ALL),
+    );
 
     if !allowed {
         return Err(AppError::Forbidden("คุณไม่มีสิทธิ์แก้ไขข้อมูลนี้".to_string()));
@@ -162,11 +162,11 @@ pub async fn delete_achievement(
     id: Uuid,
 ) -> Result<(), AppError> {
     let owner_id = get_achievement_owner_id(pool, id).await?;
-    let allowed = if owner_id == actor.user_id {
-        actor.has_permission(codes::ACHIEVEMENT_DELETE_OWN)
-    } else {
-        actor.has_permission(codes::ACHIEVEMENT_DELETE_ALL)
-    };
+    let allowed = achievement_scope_allowed(
+        owner_id == actor.user_id,
+        actor.has_permission(codes::ACHIEVEMENT_DELETE_OWN),
+        actor.has_permission(codes::ACHIEVEMENT_DELETE_ALL),
+    );
 
     if !allowed {
         return Err(AppError::Forbidden("คุณไม่มีสิทธิ์ลบข้อมูลนี้".to_string()));
@@ -194,4 +194,54 @@ async fn get_achievement_owner_id(pool: &PgPool, id: Uuid) -> Result<Uuid, AppEr
             AppError::InternalServerError("Database error".to_string())
         })?
         .ok_or(AppError::NotFound("ไม่พบข้อมูล".to_string()))
+}
+
+fn target_achievement_user_id(requested_user_id: Option<Uuid>, actor_user_id: Uuid) -> Uuid {
+    requested_user_id.unwrap_or(actor_user_id)
+}
+
+fn achievement_scope_allowed(is_own: bool, can_own: bool, can_all: bool) -> bool {
+    if is_own {
+        can_own
+    } else {
+        can_all
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_achievement_user_id_defaults_to_actor_for_own_create() {
+        let actor_user_id = Uuid::new_v4();
+
+        assert_eq!(
+            target_achievement_user_id(None, actor_user_id),
+            actor_user_id
+        );
+    }
+
+    #[test]
+    fn target_achievement_user_id_uses_requested_user_for_admin_create() {
+        let actor_user_id = Uuid::new_v4();
+        let requested_user_id = Uuid::new_v4();
+
+        assert_eq!(
+            target_achievement_user_id(Some(requested_user_id), actor_user_id),
+            requested_user_id
+        );
+    }
+
+    #[test]
+    fn achievement_scope_permission_uses_own_permission_for_owned_records() {
+        assert!(achievement_scope_allowed(true, true, false));
+        assert!(!achievement_scope_allowed(true, false, false));
+    }
+
+    #[test]
+    fn achievement_scope_permission_uses_all_permission_for_other_records() {
+        assert!(achievement_scope_allowed(false, false, true));
+        assert!(!achievement_scope_allowed(false, true, false));
+    }
 }

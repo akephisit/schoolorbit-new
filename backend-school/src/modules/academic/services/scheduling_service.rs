@@ -5,6 +5,19 @@ use crate::modules::academic::services::SchedulerBuilder;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+fn scheduler_config_from_request(
+    config: &SchedulingConfig,
+    algorithm: crate::modules::academic::services::SchedulingAlgorithm,
+) -> crate::modules::academic::services::scheduler::types::SchedulerConfig {
+    crate::modules::academic::services::scheduler::types::SchedulerConfig {
+        algorithm,
+        timeout_seconds: config.timeout_seconds.unwrap_or(300),
+        min_quality_score: config.min_quality_score.unwrap_or(70.0),
+        allow_partial: config.allow_partial.unwrap_or(false),
+        ..Default::default()
+    }
+}
+
 pub async fn create_scheduling_job(
     pool: &PgPool,
     job_id: Uuid,
@@ -267,13 +280,7 @@ pub async fn run_scheduling_job(
     .execute(pool)
     .await?;
 
-    let scheduler_config = crate::modules::academic::services::scheduler::types::SchedulerConfig {
-        algorithm: algorithm.clone(),
-        timeout_seconds: config.timeout_seconds.unwrap_or(300),
-        min_quality_score: config.min_quality_score.unwrap_or(70.0),
-        allow_partial: config.allow_partial.unwrap_or(false),
-        ..Default::default()
-    };
+    let scheduler_config = scheduler_config_from_request(&config, algorithm.clone());
 
     let scheduler = SchedulerBuilder::new()
         .algorithm(algorithm)
@@ -401,4 +408,63 @@ pub async fn mark_job_failed(pool: &PgPool, job_id: Uuid, error: String) {
     let _ = sqlx::query(
         "UPDATE timetable_scheduling_jobs SET status = 'FAILED', error_message = $1, updated_at = NOW() WHERE id = $2"
     ).bind(error).bind(job_id).execute(pool).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::academic::services::SchedulingAlgorithm;
+
+    #[test]
+    fn scheduler_config_from_request_applies_defaults() {
+        let config = SchedulingConfig {
+            force_overwrite: None,
+            respect_preferences: None,
+            allow_partial: None,
+            min_quality_score: None,
+            timeout_seconds: None,
+            weight_distribution: None,
+            weight_consecutive: None,
+            weight_time_of_day: None,
+            weight_instructor_preference: None,
+            weight_daily_load: None,
+        };
+
+        let scheduler_config =
+            scheduler_config_from_request(&config, SchedulingAlgorithm::Backtracking);
+
+        assert_eq!(scheduler_config.timeout_seconds, 300);
+        assert_eq!(scheduler_config.min_quality_score, 70.0);
+        assert!(!scheduler_config.allow_partial);
+        assert_eq!(
+            scheduler_config.algorithm,
+            crate::modules::academic::services::scheduler::types::SchedulingAlgorithm::Backtracking
+        );
+    }
+
+    #[test]
+    fn scheduler_config_from_request_uses_explicit_values() {
+        let config = SchedulingConfig {
+            force_overwrite: Some(false),
+            respect_preferences: Some(true),
+            allow_partial: Some(true),
+            min_quality_score: Some(85.0),
+            timeout_seconds: Some(45),
+            weight_distribution: None,
+            weight_consecutive: None,
+            weight_time_of_day: None,
+            weight_instructor_preference: None,
+            weight_daily_load: None,
+        };
+
+        let scheduler_config = scheduler_config_from_request(&config, SchedulingAlgorithm::Greedy);
+
+        assert_eq!(scheduler_config.timeout_seconds, 45);
+        assert_eq!(scheduler_config.min_quality_score, 85.0);
+        assert!(scheduler_config.allow_partial);
+        assert_eq!(
+            scheduler_config.algorithm,
+            crate::modules::academic::services::scheduler::types::SchedulingAlgorithm::Greedy
+        );
+    }
 }

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -73,32 +75,17 @@ pub async fn get_user_consent_status(
     let consent_responses: Vec<ConsentRecordResponse> =
         consents.into_iter().map(consent_record_response).collect();
 
-    let granted_required_codes: Vec<String> = consent_responses
-        .iter()
-        .filter(|consent| consent.consent_status == "granted" && !consent.is_expired)
-        .map(|consent| consent.consent_type.clone())
-        .collect();
-
     let required_codes: Vec<String> = required_types
         .iter()
         .map(|item| item.code.clone())
         .collect();
 
-    let missing_required: Vec<String> = required_codes
-        .iter()
-        .filter(|code| !granted_required_codes.contains(code))
-        .cloned()
-        .collect();
-
-    Ok(UserConsentStatus {
+    Ok(build_user_consent_status(
         user_id,
         user_type,
-        total_required: required_codes.len() as i32,
-        granted_required: granted_required_codes.len() as i32,
-        is_compliant: missing_required.is_empty(),
-        missing_required_consents: missing_required,
-        consents: consent_responses,
-    })
+        required_codes,
+        consent_responses,
+    ))
 }
 
 pub async fn create_consent(
@@ -239,11 +226,7 @@ pub async fn get_consent_summary(pool: &PgPool) -> Result<ConsentSummary, AppErr
     )
     .await?;
 
-    let compliance_rate = if total_users > 0 {
-        (granted as f64 / total_users as f64) * 100.0
-    } else {
-        0.0
-    };
+    let compliance_rate = consent_compliance_rate(granted, total_users);
 
     Ok(ConsentSummary {
         total_users,
@@ -303,5 +286,147 @@ fn consent_record_response(record: ConsentRecord) -> ConsentRecordResponse {
         is_minor_consent: record.is_minor_consent,
         parent_guardian_name: record.parent_guardian_name,
         created_at: record.created_at,
+    }
+}
+
+fn build_user_consent_status(
+    user_id: Uuid,
+    user_type: String,
+    required_codes: Vec<String>,
+    consents: Vec<ConsentRecordResponse>,
+) -> UserConsentStatus {
+    let required_code_set: HashSet<&str> = required_codes.iter().map(String::as_str).collect();
+    let granted_required_codes: HashSet<&str> = consents
+        .iter()
+        .filter(|consent| {
+            required_code_set.contains(consent.consent_type.as_str())
+                && consent.consent_status == "granted"
+                && !consent.is_expired
+        })
+        .map(|consent| consent.consent_type.as_str())
+        .collect();
+
+    let missing_required: Vec<String> = required_codes
+        .iter()
+        .filter(|code| !granted_required_codes.contains(code.as_str()))
+        .cloned()
+        .collect();
+
+    UserConsentStatus {
+        user_id,
+        user_type,
+        total_required: required_codes.len() as i32,
+        granted_required: granted_required_codes.len() as i32,
+        is_compliant: missing_required.is_empty(),
+        missing_required_consents: missing_required,
+        consents,
+    }
+}
+
+fn consent_compliance_rate(granted: i64, total_users: i64) -> f64 {
+    if total_users > 0 {
+        (granted as f64 / total_users as f64) * 100.0
+    } else {
+        0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn consent_response(code: &str, status: &str, is_expired: bool) -> ConsentRecordResponse {
+        ConsentRecordResponse {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            user_type: "student".to_string(),
+            consent_type: code.to_string(),
+            consent_type_name: None,
+            purpose: "test".to_string(),
+            data_categories: vec![],
+            consent_status: status.to_string(),
+            granted_at: None,
+            withdrawn_at: None,
+            expires_at: None,
+            is_expired,
+            is_required: false,
+            consent_method: "web_form".to_string(),
+            is_minor_consent: false,
+            parent_guardian_name: None,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn consent_status_marks_user_compliant_when_all_required_are_granted_and_current() {
+        let user_id = Uuid::new_v4();
+        let status = build_user_consent_status(
+            user_id,
+            "student".to_string(),
+            vec!["pdpa".to_string(), "photo".to_string()],
+            vec![
+                consent_response("pdpa", "granted", false),
+                consent_response("photo", "granted", false),
+            ],
+        );
+
+        assert!(status.is_compliant);
+        assert_eq!(status.total_required, 2);
+        assert_eq!(status.granted_required, 2);
+        assert!(status.missing_required_consents.is_empty());
+    }
+
+    #[test]
+    fn consent_status_reports_missing_expired_or_denied_required_consents() {
+        let user_id = Uuid::new_v4();
+        let status = build_user_consent_status(
+            user_id,
+            "student".to_string(),
+            vec![
+                "pdpa".to_string(),
+                "photo".to_string(),
+                "health".to_string(),
+            ],
+            vec![
+                consent_response("pdpa", "granted", false),
+                consent_response("photo", "granted", true),
+                consent_response("health", "denied", false),
+            ],
+        );
+
+        assert!(!status.is_compliant);
+        assert_eq!(status.granted_required, 1);
+        assert_eq!(
+            status.missing_required_consents,
+            vec!["photo".to_string(), "health".to_string()]
+        );
+    }
+
+    #[test]
+    fn consent_status_counts_only_required_granted_consents() {
+        let user_id = Uuid::new_v4();
+        let status = build_user_consent_status(
+            user_id,
+            "student".to_string(),
+            vec!["pdpa".to_string()],
+            vec![
+                consent_response("pdpa", "granted", false),
+                consent_response("optional_marketing", "granted", false),
+            ],
+        );
+
+        assert!(status.is_compliant);
+        assert_eq!(status.total_required, 1);
+        assert_eq!(status.granted_required, 1);
+    }
+
+    #[test]
+    fn compliance_rate_is_zero_when_there_are_no_users() {
+        assert_eq!(consent_compliance_rate(0, 5), 0.0);
+    }
+
+    #[test]
+    fn compliance_rate_uses_granted_consents_over_total_users() {
+        assert_eq!(consent_compliance_rate(4, 10), 40.0);
     }
 }

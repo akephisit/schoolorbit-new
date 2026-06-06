@@ -132,9 +132,9 @@ pub async fn create_room(pool: &PgPool, payload: CreateRoomRequest) -> Result<Ro
     .bind(payload.name_en)
     .bind(payload.code)
     .bind(payload.room_type)
-    .bind(payload.capacity.unwrap_or(40))
+    .bind(room_capacity_or_default(payload.capacity))
     .bind(payload.floor)
-    .bind(payload.status.unwrap_or("ACTIVE".to_string()))
+    .bind(room_status_or_default(payload.status))
     .bind(payload.description)
     .fetch_one(pool)
     .await
@@ -185,4 +185,32 @@ pub async fn delete_room(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
         .await?;
 
     Ok(())
+}
+
+fn room_capacity_or_default(capacity: Option<i32>) -> i32 {
+    capacity.unwrap_or(40)
+}
+
+fn room_status_or_default(status: Option<String>) -> String {
+    status.unwrap_or_else(|| "ACTIVE".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn room_capacity_defaults_to_forty_when_missing() {
+        assert_eq!(room_capacity_or_default(None), 40);
+        assert_eq!(room_capacity_or_default(Some(12)), 12);
+    }
+
+    #[test]
+    fn room_status_defaults_to_active_when_missing() {
+        assert_eq!(room_status_or_default(None), "ACTIVE");
+        assert_eq!(
+            room_status_or_default(Some("MAINTENANCE".to_string())),
+            "MAINTENANCE"
+        );
+    }
 }

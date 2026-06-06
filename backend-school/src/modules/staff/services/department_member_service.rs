@@ -4,6 +4,10 @@ use uuid::Uuid;
 
 use crate::modules::staff::handlers::department_members::DeptMemberItem;
 
+fn department_member_display_name(name: Option<String>) -> String {
+    name.unwrap_or_default()
+}
+
 pub async fn list_members(
     pool: &PgPool,
     department_id: Uuid,
@@ -48,7 +52,7 @@ pub async fn list_members(
             user_id: r.get("user_id"),
             department_id: r.get("department_id"),
             department_name: r.get("department_name"),
-            name: r.get::<Option<String>, _>("name").unwrap_or_default(),
+            name: department_member_display_name(r.get("name")),
             title: r.get("title"),
             position: r.get("position"),
             is_primary: r.get("is_primary"),
@@ -142,4 +146,18 @@ pub async fn remove_member(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn department_member_display_name_defaults_missing_names_to_empty_string() {
+        assert_eq!(department_member_display_name(None), "");
+        assert_eq!(
+            department_member_display_name(Some("ครูสมหญิง ใจดี".to_string())),
+            "ครูสมหญิง ใจดี"
+        );
+    }
 }

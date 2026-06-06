@@ -44,8 +44,8 @@ pub async fn create_department(
     .bind(&payload.phone)
     .bind(&payload.email)
     .bind(&payload.location)
-    .bind(payload.category.unwrap_or_else(|| "administrative".to_string()))
-    .bind(payload.org_type.unwrap_or_else(|| "unit".to_string()))
+    .bind(department_category_or_default(payload.category))
+    .bind(department_org_type_or_default(payload.org_type))
     .fetch_one(pool)
     .await
     .map_err(|e| {
@@ -108,4 +108,35 @@ pub async fn update_department(
     }
 
     Ok(())
+}
+
+fn department_category_or_default(category: Option<String>) -> String {
+    category.unwrap_or_else(|| "administrative".to_string())
+}
+
+fn department_org_type_or_default(org_type: Option<String>) -> String {
+    org_type.unwrap_or_else(|| "unit".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn department_category_or_default_uses_administrative_when_missing() {
+        assert_eq!(department_category_or_default(None), "administrative");
+        assert_eq!(
+            department_category_or_default(Some("academic".to_string())),
+            "academic"
+        );
+    }
+
+    #[test]
+    fn department_org_type_or_default_uses_unit_when_missing() {
+        assert_eq!(department_org_type_or_default(None), "unit");
+        assert_eq!(
+            department_org_type_or_default(Some("group".to_string())),
+            "group"
+        );
+    }
 }

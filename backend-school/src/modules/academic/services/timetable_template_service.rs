@@ -3,6 +3,34 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+fn uuid_vec_from_json(value: &serde_json::Value) -> Vec<Uuid> {
+    value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .filter_map(|s| Uuid::parse_str(s).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn merge_unique_classroom_ids(mut resolved: Vec<Uuid>, specific: Vec<Uuid>) -> Vec<Uuid> {
+    for classroom_id in specific {
+        if !resolved.contains(&classroom_id) {
+            resolved.push(classroom_id);
+        }
+    }
+    resolved
+}
+
+fn template_group_key(
+    title: &Option<String>,
+    activity_slot_id: Option<Uuid>,
+) -> (Option<String>, Option<Uuid>) {
+    (title.clone(), activity_slot_id)
+}
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct TimetableTemplateView {
     pub id: Uuid,
@@ -185,14 +213,11 @@ pub async fn apply_template(
     let mut group_batch_ids: HashMap<(Option<String>, Option<Uuid>), Uuid> = HashMap::new();
 
     for entry in &entries {
-        let specific_classrooms: Vec<Uuid> =
-            serde_json::from_value(entry.classroom_ids.clone()).unwrap_or_default();
-        let grade_level_ids: Vec<Uuid> =
-            serde_json::from_value(entry.grade_level_ids.clone()).unwrap_or_default();
-        let instructor_ids: Vec<Uuid> =
-            serde_json::from_value(entry.instructor_ids.clone()).unwrap_or_default();
+        let specific_classrooms = uuid_vec_from_json(&entry.classroom_ids);
+        let grade_level_ids = uuid_vec_from_json(&entry.grade_level_ids);
+        let instructor_ids = uuid_vec_from_json(&entry.instructor_ids);
 
-        let mut resolved_classrooms: Vec<Uuid> = if !grade_level_ids.is_empty() {
+        let resolved_by_grade: Vec<Uuid> = if !grade_level_ids.is_empty() {
             sqlx::query_scalar(
                 r#"SELECT cr.id FROM class_rooms cr
                    JOIN academic_semesters s ON s.academic_year_id = cr.academic_year_id
@@ -207,13 +232,10 @@ pub async fn apply_template(
             Vec::new()
         };
 
-        for c in specific_classrooms {
-            if !resolved_classrooms.contains(&c) {
-                resolved_classrooms.push(c);
-            }
-        }
+        let resolved_classrooms =
+            merge_unique_classroom_ids(resolved_by_grade, specific_classrooms);
 
-        let group_key = (entry.title.clone(), entry.activity_slot_id);
+        let group_key = template_group_key(&entry.title, entry.activity_slot_id);
         let batch_uuid = *group_batch_ids
             .entry(group_key)
             .or_insert_with(Uuid::new_v4);
@@ -324,4 +346,42 @@ pub async fn clear_timetable(
     .execute(pool).await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(result.rows_affected())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uuid_vec_from_json_returns_valid_uuids_only() {
+        let id = Uuid::new_v4();
+        let value = serde_json::json!([id.to_string(), "bad", 12]);
+
+        assert_eq!(uuid_vec_from_json(&value), vec![id]);
+        assert!(uuid_vec_from_json(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn merge_unique_classroom_ids_appends_specific_ids_without_duplicates() {
+        let classroom_a = Uuid::new_v4();
+        let classroom_b = Uuid::new_v4();
+        let classroom_c = Uuid::new_v4();
+
+        assert_eq!(
+            merge_unique_classroom_ids(
+                vec![classroom_a, classroom_b],
+                vec![classroom_b, classroom_c]
+            ),
+            vec![classroom_a, classroom_b, classroom_c]
+        );
+    }
+
+    #[test]
+    fn template_group_key_uses_title_and_activity_slot() {
+        let slot_id = Uuid::new_v4();
+        assert_eq!(
+            template_group_key(&Some("Assembly".to_string()), Some(slot_id)),
+            (Some("Assembly".to_string()), Some(slot_id))
+        );
+    }
 }

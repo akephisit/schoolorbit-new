@@ -20,10 +20,10 @@ pub async fn sync_routes(
     let mut active_codes: Vec<String> = Vec::new();
 
     for route in &data.routes {
-        let code = route.path.trim_start_matches('/').replace('/', "-");
+        let code = route_code(&route.path);
         active_codes.push(code.clone());
 
-        let user_type = route.user_type.as_deref().unwrap_or("staff");
+        let user_type = route_user_type(route.user_type.as_deref());
 
         let result = sqlx::query(
             r#"
@@ -96,10 +96,7 @@ async fn cleanup_orphaned_menu_items(pool: &PgPool, active_codes: &[String]) {
         return;
     }
 
-    let placeholders: Vec<String> = (1..=active_codes.len())
-        .map(|index| format!("${index}"))
-        .collect();
-    let in_clause = placeholders.join(", ");
+    let in_clause = cleanup_placeholder_clause(active_codes.len());
 
     let delete_query = format!("DELETE FROM menu_items WHERE code NOT IN ({in_clause})");
 
@@ -118,5 +115,43 @@ async fn cleanup_orphaned_menu_items(pool: &PgPool, active_codes: &[String]) {
         Err(error) => {
             tracing::warn!("Failed to clean orphaned menu items: {}", error);
         }
+    }
+}
+
+fn route_code(path: &str) -> String {
+    path.trim_start_matches('/').replace('/', "-")
+}
+
+fn route_user_type(user_type: Option<&str>) -> &str {
+    user_type.unwrap_or("staff")
+}
+
+fn cleanup_placeholder_clause(count: usize) -> String {
+    (1..=count)
+        .map(|index| format!("${index}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn route_code_removes_leading_slash_and_replaces_nested_slashes() {
+        assert_eq!(route_code("/academic/timetable"), "academic-timetable");
+        assert_eq!(route_code("staff"), "staff");
+    }
+
+    #[test]
+    fn route_user_type_defaults_to_staff() {
+        assert_eq!(route_user_type(None), "staff");
+        assert_eq!(route_user_type(Some("student")), "student");
+    }
+
+    #[test]
+    fn cleanup_placeholder_clause_uses_one_based_placeholders() {
+        assert_eq!(cleanup_placeholder_clause(3), "$1, $2, $3");
+        assert_eq!(cleanup_placeholder_clause(0), "");
     }
 }

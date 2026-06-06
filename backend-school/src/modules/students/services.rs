@@ -193,12 +193,7 @@ pub async fn create_student(
         eprintln!("Student national_id blind index failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูล".to_string())
     })?;
-    let username = payload
-        .username
-        .as_ref()
-        .filter(|username| !username.is_empty())
-        .cloned()
-        .unwrap_or_else(|| payload.student_id.clone());
+    let username = student_username_or_default(payload.username.clone(), &payload.student_id);
 
     let mut tx = pool.begin().await.map_err(|e| {
         eprintln!("Failed to start create student transaction: {}", e);
@@ -500,6 +495,12 @@ fn parse_optional_date(value: Option<&str>) -> Result<Option<NaiveDate>, AppErro
     }
 }
 
+fn student_username_or_default(username: Option<String>, student_id: &str) -> String {
+    username
+        .filter(|username| !username.is_empty())
+        .unwrap_or_else(|| student_id.to_string())
+}
+
 async fn insert_student_user(
     tx: &mut Transaction<'_, Postgres>,
     payload: &CreateStudentRequest,
@@ -778,5 +779,43 @@ fn map_duplicate_student_error(error: sqlx::Error, fallback: &str) -> AppError {
         }
     } else {
         AppError::InternalServerError(fallback.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn student_username_or_default_uses_student_id_when_username_missing_or_blank() {
+        assert_eq!(student_username_or_default(None, "S001"), "S001");
+        assert_eq!(
+            student_username_or_default(Some("".to_string()), "S001"),
+            "S001"
+        );
+    }
+
+    #[test]
+    fn student_username_or_default_preserves_explicit_username() {
+        assert_eq!(
+            student_username_or_default(Some("custom".to_string()), "S001"),
+            "custom"
+        );
+    }
+
+    #[test]
+    fn parse_optional_date_accepts_iso_dates() {
+        assert_eq!(
+            parse_optional_date(Some("2026-06-06")).unwrap(),
+            Some(NaiveDate::from_ymd_opt(2026, 6, 6).unwrap())
+        );
+    }
+
+    #[test]
+    fn parse_optional_date_rejects_invalid_dates() {
+        assert!(matches!(
+            parse_optional_date(Some("06/06/2026")),
+            Err(AppError::BadRequest(message)) if message.contains("YYYY-MM-DD")
+        ));
     }
 }

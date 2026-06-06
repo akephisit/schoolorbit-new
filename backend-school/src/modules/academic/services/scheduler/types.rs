@@ -350,3 +350,99 @@ pub struct PeriodInfo {
     pub id: Uuid,
     pub order: i32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_course() -> CourseToSchedule {
+        CourseToSchedule {
+            id: Uuid::new_v4(),
+            classroom_course_id: Uuid::new_v4(),
+            classroom_id: Uuid::new_v4(),
+            classroom_name: "ม.1/1".to_string(),
+            subject_id: Uuid::new_v4(),
+            subject_code: "MATH".to_string(),
+            subject_name: "Mathematics".to_string(),
+            instructor_id: Some(Uuid::new_v4()),
+            instructor_name: Some("Teacher".to_string()),
+            periods_needed: 1,
+            periods_remaining: 1,
+            min_consecutive: 1,
+            max_consecutive: 1,
+            allow_single_period: true,
+            fixed_room_id: Some(Uuid::new_v4()),
+            allowed_period_ids: None,
+            allowed_days: None,
+            cc_hard_unavailable: HashSet::new(),
+            same_day_unique: true,
+            consecutive_pattern: None,
+            preferred_rooms: Vec::new(),
+            activity_slot_id: None,
+        }
+    }
+
+    #[test]
+    fn time_slot_key_uses_day_and_period_id() {
+        let period_id = Uuid::new_v4();
+        let slot = TimeSlot {
+            day: "MON".to_string(),
+            period_id,
+            period_order: 1,
+        };
+
+        assert_eq!(slot.key(), format!("MON__{period_id}"));
+    }
+
+    #[test]
+    fn schedule_state_indexes_assignment_by_classroom_instructor_room_and_course() {
+        let course = sample_course();
+        let room_id = course.fixed_room_id;
+        let instructor_id = course.instructor_id;
+        let slot = TimeSlot {
+            day: "MON".to_string(),
+            period_id: Uuid::new_v4(),
+            period_order: 1,
+        };
+        let slot_key = slot.key();
+        let assignment = Assignment::new(&course, slot, room_id, false);
+        let mut state = ScheduleState::new();
+
+        state.add_assignment(assignment);
+
+        assert!(state.is_classroom_slot_occupied(course.classroom_id, &slot_key));
+        assert!(state.is_instructor_slot_occupied(instructor_id.unwrap(), &slot_key));
+        assert!(state.is_room_slot_occupied(room_id.unwrap(), &slot_key));
+        assert_eq!(
+            state
+                .get_course_assignments(course.classroom_course_id)
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn schedule_state_remove_last_assignment_clears_indexes() {
+        let course = sample_course();
+        let room_id = course.fixed_room_id.unwrap();
+        let instructor_id = course.instructor_id.unwrap();
+        let slot = TimeSlot {
+            day: "MON".to_string(),
+            period_id: Uuid::new_v4(),
+            period_order: 1,
+        };
+        let slot_key = slot.key();
+        let assignment = Assignment::new(&course, slot, Some(room_id), false);
+        let mut state = ScheduleState::new();
+
+        state.add_assignment(assignment);
+        state.remove_last_assignment();
+
+        assert!(!state.is_classroom_slot_occupied(course.classroom_id, &slot_key));
+        assert!(!state.is_instructor_slot_occupied(instructor_id, &slot_key));
+        assert!(!state.is_room_slot_occupied(room_id, &slot_key));
+        assert!(state
+            .get_course_assignments(course.classroom_course_id)
+            .is_empty());
+    }
+}

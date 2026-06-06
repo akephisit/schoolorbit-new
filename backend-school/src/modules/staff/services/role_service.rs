@@ -61,7 +61,7 @@ pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uu
     .bind(&payload.name_en)
     .bind(&payload.description)
     .bind(&payload.user_type)
-    .bind(payload.level.unwrap_or(0))
+    .bind(role_level_or_default(payload.level))
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
@@ -205,4 +205,19 @@ pub async fn update_role(
     })?;
 
     Ok(())
+}
+
+fn role_level_or_default(level: Option<i32>) -> i32 {
+    level.unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn role_level_or_default_uses_zero_when_missing() {
+        assert_eq!(role_level_or_default(None), 0);
+        assert_eq!(role_level_or_default(Some(7)), 7);
+    }
 }

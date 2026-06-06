@@ -97,11 +97,7 @@ pub async fn list_subjects(
         }
     }
 
-    let effective_group_id: Option<Uuid> = if dept_group_id.is_some() {
-        dept_group_id
-    } else {
-        filter.group_id
-    };
+    let effective_group_id = effective_subject_group_filter(filter.group_id, dept_group_id);
     if effective_group_id.is_some() {
         idx += 1;
         query.push_str(&format!(" AND s.group_id = ${idx}"));
@@ -111,13 +107,7 @@ pub async fn list_subjects(
         query.push_str(&format!(" AND s.type = ${idx}"));
     }
 
-    let search_pattern = filter.search.as_ref().and_then(|s| {
-        if s.is_empty() {
-            None
-        } else {
-            Some(format!("%{s}%"))
-        }
-    });
+    let search_pattern = subject_search_pattern(filter.search.clone());
     if search_pattern.is_some() {
         idx += 1;
         query.push_str(&format!(
@@ -253,11 +243,7 @@ pub async fn create_subject(
             .await
             .map_err(|e| AppError::InternalServerError(format!("Failed to clear team: {}", e)))?;
         for t in team {
-            if t.role != "primary" && t.role != "secondary" {
-                return Err(AppError::BadRequest(
-                    "role must be 'primary' or 'secondary'".to_string(),
-                ));
-            }
+            validate_subject_instructor_role(&t.role)?;
             sqlx::query(
                 "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
                  VALUES ($1, $2, $3)
@@ -337,11 +323,7 @@ pub async fn update_subject(
             .await
             .map_err(|e| AppError::InternalServerError(format!("Failed to clear team: {}", e)))?;
         for t in team {
-            if t.role != "primary" && t.role != "secondary" {
-                return Err(AppError::BadRequest(
-                    "role must be 'primary' or 'secondary'".to_string(),
-                ));
-            }
+            validate_subject_instructor_role(&t.role)?;
             sqlx::query(
                 "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
                  VALUES ($1, $2, $3)
@@ -405,12 +387,8 @@ pub async fn add_subject_default_instructor(
     subject_id: Uuid,
     body: AddSubjectDefaultInstructorRequest,
 ) -> Result<(), AppError> {
-    let role = body.role.unwrap_or_else(|| "secondary".to_string());
-    if role != "primary" && role != "secondary" {
-        return Err(AppError::BadRequest(
-            "role must be 'primary' or 'secondary'".to_string(),
-        ));
-    }
+    let role = subject_instructor_role_or_default(body.role);
+    validate_subject_instructor_role(&role)?;
 
     let mut tx = pool
         .begin()
@@ -469,11 +447,7 @@ pub async fn update_subject_default_instructor_role(
     instructor_id: Uuid,
     role: &str,
 ) -> Result<(), AppError> {
-    if role != "primary" && role != "secondary" {
-        return Err(AppError::BadRequest(
-            "role must be 'primary' or 'secondary'".to_string(),
-        ));
-    }
+    validate_subject_instructor_role(role)?;
 
     let mut tx = pool
         .begin()
@@ -534,4 +508,80 @@ pub async fn batch_list_subject_default_instructors(
         grouped.entry(row.subject_id).or_default().push(row);
     }
     Ok(grouped)
+}
+
+fn effective_subject_group_filter(
+    requested_group_id: Option<Uuid>,
+    department_group_id: Option<Uuid>,
+) -> Option<Uuid> {
+    department_group_id.or(requested_group_id)
+}
+
+fn subject_search_pattern(search: Option<String>) -> Option<String> {
+    search
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{value}%"))
+}
+
+fn subject_instructor_role_or_default(role: Option<String>) -> String {
+    role.unwrap_or_else(|| "secondary".to_string())
+}
+
+fn validate_subject_instructor_role(role: &str) -> Result<(), AppError> {
+    if role == "primary" || role == "secondary" {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(
+            "role must be 'primary' or 'secondary'".to_string(),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effective_subject_group_filter_prefers_department_scope() {
+        let department_group_id = Uuid::new_v4();
+        let requested_group_id = Uuid::new_v4();
+
+        assert_eq!(
+            effective_subject_group_filter(Some(requested_group_id), Some(department_group_id)),
+            Some(department_group_id)
+        );
+        assert_eq!(
+            effective_subject_group_filter(Some(requested_group_id), None),
+            Some(requested_group_id)
+        );
+    }
+
+    #[test]
+    fn subject_search_pattern_ignores_empty_values() {
+        assert_eq!(subject_search_pattern(None), None);
+        assert_eq!(subject_search_pattern(Some("".to_string())), None);
+        assert_eq!(
+            subject_search_pattern(Some("math".to_string())),
+            Some("%math%".to_string())
+        );
+    }
+
+    #[test]
+    fn subject_instructor_role_defaults_to_secondary() {
+        assert_eq!(subject_instructor_role_or_default(None), "secondary");
+        assert_eq!(
+            subject_instructor_role_or_default(Some("primary".to_string())),
+            "primary"
+        );
+    }
+
+    #[test]
+    fn validate_subject_instructor_role_accepts_primary_and_secondary_only() {
+        assert!(validate_subject_instructor_role("primary").is_ok());
+        assert!(validate_subject_instructor_role("secondary").is_ok());
+        assert!(matches!(
+            validate_subject_instructor_role("assistant"),
+            Err(AppError::BadRequest(message)) if message == "role must be 'primary' or 'secondary'"
+        ));
+    }
 }

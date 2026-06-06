@@ -5,6 +5,7 @@ use crate::utils::file_url::FileUrlBuilder;
 use chrono::{Datelike, FixedOffset, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 fn pii_error(context: &str, error: String) -> AppError {
@@ -30,6 +31,36 @@ fn decrypt_optional_national_id(value: &mut Option<String>) -> Result<(), AppErr
     *value = pii::decrypt_optional(value.as_deref())
         .map_err(|error| pii_error("decrypt optional national_id", error))?;
     Ok(())
+}
+
+fn application_number_prefix(now: chrono::DateTime<FixedOffset>, round_number: i64) -> String {
+    let be_year = now.year() + 543;
+    format!(
+        "{:02}{:02}{:02}{:02}",
+        be_year % 100,
+        now.month(),
+        now.day(),
+        round_number
+    )
+}
+
+fn next_application_number(prefix: &str, max_sequence: i64) -> String {
+    format!("{prefix}{:05}", max_sequence + 1)
+}
+
+fn occupied_student_numbers(existing: &[String]) -> HashSet<i64> {
+    existing
+        .iter()
+        .filter_map(|s| s.trim().parse::<i64>().ok())
+        .collect()
+}
+
+fn next_available_student_number(occupied: &HashSet<i64>, start_number: i64) -> i64 {
+    let mut next = start_number;
+    while occupied.contains(&next) {
+        next += 1;
+    }
+    next
 }
 
 // ==========================================
@@ -123,14 +154,7 @@ pub async fn submit_application(
         AppError::InternalServerError("ไม่สามารถสร้าง timezone offset ได้".to_string())
     })?;
     let now = Utc::now().with_timezone(&bangkok);
-    let be_year = now.year() + 543;
-    let app_prefix = format!(
-        "{:02}{:02}{:02}{:02}",
-        be_year % 100,
-        now.month(),
-        now.day(),
-        round_number
-    );
+    let app_prefix = application_number_prefix(now, round_number);
     let app_pattern = format!("{}%", app_prefix);
 
     let max_seq: i64 = sqlx::query_scalar(
@@ -147,7 +171,7 @@ pub async fn submit_application(
         AppError::InternalServerError("Failed to compute application number".to_string())
     })?;
 
-    let application_number = format!("{}{:05}", app_prefix, max_seq + 1);
+    let application_number = next_application_number(&app_prefix, max_seq);
 
     let application = sqlx::query_as::<_, AdmissionApplication>(
         r#"
@@ -1358,10 +1382,7 @@ pub async fn auto_assign_student_ids(
     .await
     .unwrap_or_default();
 
-    let mut occupied: std::collections::HashSet<i64> = existing
-        .iter()
-        .filter_map(|s| s.trim().parse::<i64>().ok())
-        .collect();
+    let mut occupied = occupied_student_numbers(&existing);
 
     #[derive(sqlx::FromRow)]
     struct AppIdRow {
@@ -1397,9 +1418,7 @@ pub async fn auto_assign_student_ids(
     let mut assigned: i64 = 0;
 
     for student in &students {
-        while occupied.contains(&next) {
-            next += 1;
-        }
+        next = next_available_student_number(&occupied, next);
         sqlx::query(
             "UPDATE admission_applications SET assigned_student_id = $1, updated_at = NOW() WHERE id = $2",
         )
@@ -1604,6 +1623,42 @@ pub fn build_full_file_url(storage_path: &str) -> Result<String, AppError> {
     let url_builder = FileUrlBuilder::new()
         .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
     Ok(format!("{}/{}", url_builder.base_url(), storage_path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn application_number_prefix_uses_buddhist_year_date_and_round_number() {
+        let bangkok = FixedOffset::east_opt(7 * 3600).unwrap();
+        let now = bangkok.with_ymd_and_hms(2026, 6, 6, 8, 30, 0).unwrap();
+
+        assert_eq!(application_number_prefix(now, 3), "69060603");
+    }
+
+    #[test]
+    fn next_application_number_pads_sequence_to_five_digits() {
+        assert_eq!(next_application_number("69060603", 0), "6906060300001");
+        assert_eq!(next_application_number("69060603", 42), "6906060300043");
+    }
+
+    #[test]
+    fn occupied_student_numbers_ignores_non_numeric_values() {
+        assert_eq!(
+            occupied_student_numbers(&[" 1001 ".to_string(), "abc".to_string()]),
+            HashSet::from([1001])
+        );
+    }
+
+    #[test]
+    fn next_available_student_number_skips_occupied_numbers() {
+        let occupied = HashSet::from([1001, 1002, 1004]);
+
+        assert_eq!(next_available_student_number(&occupied, 1001), 1003);
+        assert_eq!(next_available_student_number(&occupied, 1005), 1005);
+    }
 }
 
 #[derive(Serialize)]

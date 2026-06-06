@@ -34,12 +34,10 @@ pub async fn list_classroom_courses(
     );
 
     let mut idx = 0u32;
-    let mut has_filter = false;
 
     if query.classroom_id.is_some() {
         idx += 1;
         sql.push_str(&format!(" AND cc.classroom_id = ${idx}"));
-        has_filter = true;
     }
     if query.instructor_id.is_some() {
         idx += 1;
@@ -47,20 +45,17 @@ pub async fn list_classroom_courses(
             " AND EXISTS (SELECT 1 FROM classroom_course_instructors cci \
                WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx})"
         ));
-        has_filter = true;
     }
     if query.academic_semester_id.is_some() {
         idx += 1;
         sql.push_str(&format!(" AND cc.academic_semester_id = ${idx}"));
-        has_filter = true;
     }
     if query.subject_id.is_some() {
         idx += 1;
         sql.push_str(&format!(" AND cc.subject_id = ${idx}"));
-        has_filter = true;
     }
 
-    if !has_filter {
+    if !plan_query_has_course_filter(query) {
         return Ok(Vec::new());
     }
 
@@ -178,15 +173,7 @@ pub async fn batch_list_course_instructors(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let mut grouped: std::collections::HashMap<Uuid, Vec<CourseInstructor>> =
-        std::collections::HashMap::new();
-    for row in rows {
-        grouped
-            .entry(row.classroom_course_id)
-            .or_default()
-            .push(row);
-    }
-    Ok(grouped)
+    Ok(group_course_instructors(rows))
 }
 
 pub async fn list_course_instructors(
@@ -376,4 +363,71 @@ pub async fn remove_classroom_from_slot(
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
+}
+
+fn plan_query_has_course_filter(query: &PlanQuery) -> bool {
+    query.classroom_id.is_some()
+        || query.instructor_id.is_some()
+        || query.academic_semester_id.is_some()
+        || query.subject_id.is_some()
+}
+
+fn group_course_instructors(
+    rows: Vec<CourseInstructor>,
+) -> std::collections::HashMap<Uuid, Vec<CourseInstructor>> {
+    let mut grouped: std::collections::HashMap<Uuid, Vec<CourseInstructor>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        grouped
+            .entry(row.classroom_course_id)
+            .or_default()
+            .push(row);
+    }
+    grouped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn course_instructor(classroom_course_id: Uuid, role: &str) -> CourseInstructor {
+        CourseInstructor {
+            id: Uuid::new_v4(),
+            classroom_course_id,
+            instructor_id: Uuid::new_v4(),
+            role: role.to_string(),
+            created_at: chrono::Utc::now(),
+            instructor_name: None,
+        }
+    }
+
+    #[test]
+    fn plan_query_has_course_filter_when_any_filter_is_present() {
+        assert!(!plan_query_has_course_filter(&PlanQuery {
+            classroom_id: None,
+            instructor_id: None,
+            academic_semester_id: None,
+            subject_id: None,
+        }));
+        assert!(plan_query_has_course_filter(&PlanQuery {
+            classroom_id: Some(Uuid::new_v4()),
+            instructor_id: None,
+            academic_semester_id: None,
+            subject_id: None,
+        }));
+    }
+
+    #[test]
+    fn group_course_instructors_groups_rows_by_classroom_course_id() {
+        let course_a = Uuid::new_v4();
+        let course_b = Uuid::new_v4();
+        let grouped = group_course_instructors(vec![
+            course_instructor(course_a, "primary"),
+            course_instructor(course_a, "secondary"),
+            course_instructor(course_b, "primary"),
+        ]);
+
+        assert_eq!(grouped[&course_a].len(), 2);
+        assert_eq!(grouped[&course_b].len(), 1);
+    }
 }

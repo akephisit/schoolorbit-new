@@ -20,6 +20,11 @@ struct StudentForNumbering {
     title: Option<String>,
 }
 
+struct ClassroomIdentity {
+    name: String,
+    code: String,
+}
+
 pub async fn list_academic_structure(pool: &PgPool) -> Result<AcademicStructure, AppError> {
     let years =
         sqlx::query_as::<_, AcademicYear>("SELECT * FROM academic_years ORDER BY year DESC")
@@ -288,14 +293,7 @@ pub async fn create_classroom(
         .map_err(|_| AppError::BadRequest("Invalid academic year".to_string()))?;
 
     let advisors = validate_advisors(pool, &payload.advisors).await?;
-    let full_name = format!("{}/{}", grade_level.short_name(), payload.room_number);
-    let short_year = year.year % 100;
-    let code = format!(
-        "{}-{}-{}",
-        short_year,
-        grade_level.code(),
-        payload.room_number.replace(' ', "")
-    );
+    let identity = classroom_identity(year.year, &grade_level, &payload.room_number);
 
     let mut tx = pool.begin().await?;
 
@@ -304,8 +302,8 @@ pub async fn create_classroom(
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id",
     )
-    .bind(code)
-    .bind(full_name)
+    .bind(identity.code)
+    .bind(identity.name)
     .bind(payload.academic_year_id)
     .bind(payload.grade_level_id)
     .bind(&payload.room_number)
@@ -358,18 +356,11 @@ pub async fn update_classroom(
         .fetch_one(&mut *tx)
         .await?;
 
-        let full_name = format!("{}/{}", grade_level.short_name(), new_room);
-        let short_year = year.year % 100;
-        let code = format!(
-            "{}-{}-{}",
-            short_year,
-            grade_level.code(),
-            new_room.replace(' ', "")
-        );
+        let identity = classroom_identity(year.year, &grade_level, new_room);
 
         sqlx::query("UPDATE class_rooms SET name = $1, code = $2, room_number = $3 WHERE id = $4")
-            .bind(full_name)
-            .bind(code)
+            .bind(identity.name)
+            .bind(identity.code)
             .bind(new_room)
             .bind(id)
             .execute(&mut *tx)
@@ -795,7 +786,7 @@ async fn sorted_students_for_numbering(
     class_id: Uuid,
     sort_by: &str,
 ) -> Result<Vec<StudentForNumbering>, AppError> {
-    let mut students = sqlx::query_as::<_, StudentForNumbering>(
+    let students = sqlx::query_as::<_, StudentForNumbering>(
         "SELECT ske.id, s.student_id as student_code, u.first_name, u.title
          FROM student_class_enrollments ske
          LEFT JOIN users u ON ske.student_id = u.id
@@ -806,6 +797,13 @@ async fn sorted_students_for_numbering(
     .fetch_all(pool)
     .await?;
 
+    sort_students_for_numbering(students, sort_by)
+}
+
+fn sort_students_for_numbering(
+    mut students: Vec<StudentForNumbering>,
+    sort_by: &str,
+) -> Result<Vec<StudentForNumbering>, AppError> {
     match sort_by {
         "student_code" => {
             students.sort_by(|a, b| a.student_code.cmp(&b.student_code));
@@ -833,6 +831,19 @@ async fn sorted_students_for_numbering(
     }
 
     Ok(students)
+}
+
+fn classroom_identity(year: i32, grade_level: &GradeLevel, room_number: &str) -> ClassroomIdentity {
+    let short_year = year % 100;
+    ClassroomIdentity {
+        name: format!("{}/{}", grade_level.short_name(), room_number),
+        code: format!(
+            "{}-{}-{}",
+            short_year,
+            grade_level.code(),
+            room_number.replace(' ', "")
+        ),
+    }
 }
 
 async fn update_class_numbers(
@@ -870,5 +881,73 @@ fn classroom_create_error(error: sqlx::Error) -> AppError {
         AppError::BadRequest("ข้อมูลอ้างอิงไม่ถูกต้อง (FK Violation)".to_string())
     } else {
         AppError::from(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn student(student_code: &str, first_name: &str, title: Option<&str>) -> StudentForNumbering {
+        StudentForNumbering {
+            id: Uuid::new_v4(),
+            student_code: student_code.to_string(),
+            first_name: first_name.to_string(),
+            title: title.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn classroom_identity_uses_short_year_grade_code_and_trimmed_room_number_for_code() {
+        let grade_level = GradeLevel {
+            id: Uuid::new_v4(),
+            level_type: "secondary".to_string(),
+            year: 1,
+            next_grade_level_id: None,
+            is_active: true,
+        };
+
+        let identity = classroom_identity(2567, &grade_level, "EP 1");
+
+        assert_eq!(identity.name, "ม.1/EP 1");
+        assert_eq!(identity.code, "67-M1-EP1");
+    }
+
+    #[test]
+    fn sort_students_for_numbering_orders_by_student_code() {
+        let students = vec![
+            student("S003", "Gamma", None),
+            student("S001", "Alpha", None),
+            student("S002", "Beta", None),
+        ];
+
+        let sorted = sort_students_for_numbering(students, "student_code").unwrap();
+
+        let codes: Vec<_> = sorted.iter().map(|row| row.student_code.as_str()).collect();
+        assert_eq!(codes, vec!["S001", "S002", "S003"]);
+    }
+
+    #[test]
+    fn sort_students_for_numbering_places_male_titles_before_other_titles_then_name() {
+        let students = vec![
+            student("S001", "มาลี", Some("เด็กหญิง")),
+            student("S002", "ก้อง", Some("เด็กชาย")),
+            student("S003", "บอย", Some("นาย")),
+            student("S004", "อร", Some("นางสาว")),
+        ];
+
+        let sorted = sort_students_for_numbering(students, "gender_name").unwrap();
+
+        let names: Vec<_> = sorted.iter().map(|row| row.first_name.as_str()).collect();
+        assert_eq!(names, vec!["ก้อง", "บอย", "มาลี", "อร"]);
+    }
+
+    #[test]
+    fn sort_students_for_numbering_rejects_unknown_method() {
+        let result = sort_students_for_numbering(Vec::new(), "random");
+
+        assert!(
+            matches!(result, Err(AppError::BadRequest(message)) if message == "Invalid sort_by parameter")
+        );
     }
 }

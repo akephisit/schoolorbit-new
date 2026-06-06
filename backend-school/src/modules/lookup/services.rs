@@ -105,7 +105,7 @@ pub async fn lookup_staff(
     pool: &PgPool,
     query: LookupQuery,
 ) -> Result<Vec<StaffLookupItem>, AppError> {
-    let limit = query.limit.unwrap_or(100).min(500);
+    let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
 
     let mut sql = String::from(
@@ -118,7 +118,7 @@ pub async fn lookup_staff(
         sql.push_str(" AND status = 'active'");
     }
 
-    let search_pattern = query.search.as_ref().map(|search| format!("%{}%", search));
+    let search_pattern = search_pattern(query.search.clone());
     if search_pattern.is_some() {
         sql.push_str(" AND (first_name ILIKE $1 OR last_name ILIKE $1 OR username ILIKE $1)");
     }
@@ -150,7 +150,7 @@ pub async fn lookup_roles(
     pool: &PgPool,
     query: LookupQuery,
 ) -> Result<Vec<RoleLookupItem>, AppError> {
-    let limit = query.limit.unwrap_or(100).min(500);
+    let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
 
     let mut sql = String::from("SELECT id, code, name, user_type FROM roles WHERE 1=1");
@@ -159,7 +159,7 @@ pub async fn lookup_roles(
         sql.push_str(" AND is_active = true");
     }
 
-    let search_pattern = query.search.as_ref().map(|search| format!("%{}%", search));
+    let search_pattern = search_pattern(query.search.clone());
     if search_pattern.is_some() {
         sql.push_str(" AND (name ILIKE $1 OR code ILIKE $1)");
     }
@@ -192,7 +192,7 @@ pub async fn lookup_departments(
     user_id: Uuid,
     query: LookupQuery,
 ) -> Result<Vec<DepartmentLookupItem>, AppError> {
-    let limit = query.limit.unwrap_or(100).min(500);
+    let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
     let member_only = query.member_only.unwrap_or(false);
 
@@ -212,7 +212,7 @@ pub async fn lookup_departments(
         );
     }
 
-    let search_pattern = query.search.as_ref().map(|search| format!("%{}%", search));
+    let search_pattern = search_pattern(query.search.clone());
     if search_pattern.is_some() {
         let param_idx = if member_only { 2 } else { 1 };
         sql.push_str(&format!(
@@ -263,7 +263,7 @@ pub async fn lookup_grade_levels(
     pool: &PgPool,
     query: LookupQuery,
 ) -> Result<Vec<GradeLevelLookupItem>, AppError> {
-    let limit = query.limit.unwrap_or(100).min(500);
+    let limit = lookup_limit(query.limit);
     let search = query.search.clone();
     let mut target_year_id = query.academic_year_id;
 
@@ -323,48 +323,7 @@ pub async fn lookup_grade_levels(
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
-    let data: Vec<GradeLevelLookupItem> = rows
-        .into_iter()
-        .map(|row| {
-            let (name, code, short_name) = match row.level_type.as_str() {
-                "kindergarten" => (
-                    format!("อนุบาลปีที่ {}", row.year),
-                    format!("K{}", row.year),
-                    format!("อ.{}", row.year),
-                ),
-                "primary" => (
-                    format!("ประถมศึกษาปีที่ {}", row.year),
-                    format!("P{}", row.year),
-                    format!("ป.{}", row.year),
-                ),
-                "secondary" => (
-                    format!("มัธยมศึกษาปีที่ {}", row.year),
-                    format!("M{}", row.year),
-                    format!("ม.{}", row.year),
-                ),
-                _ => (
-                    format!("Other {}", row.year),
-                    format!("O{}", row.year),
-                    format!("?{}", row.year),
-                ),
-            };
-            let order_base = match row.level_type.as_str() {
-                "kindergarten" => 1,
-                "primary" => 2,
-                "secondary" => 3,
-                _ => 4,
-            };
-
-            GradeLevelLookupItem {
-                id: row.id,
-                code,
-                name,
-                short_name: Some(short_name),
-                level_type: row.level_type,
-                level_order: order_base * 100 + row.year,
-            }
-        })
-        .collect();
+    let data: Vec<GradeLevelLookupItem> = rows.into_iter().map(grade_level_lookup_item).collect();
 
     if let Some(search) = search {
         Ok(data
@@ -381,7 +340,7 @@ pub async fn lookup_classrooms(
     pool: &PgPool,
     query: LookupQuery,
 ) -> Result<Vec<ClassroomLookupItem>, AppError> {
-    let limit = query.limit.unwrap_or(100).min(500);
+    let limit = lookup_limit(query.limit);
 
     let mut sql = String::from(
         "SELECT c.id, c.name, g.level_type, g.year, c.grade_level_id
@@ -395,7 +354,7 @@ pub async fn lookup_classrooms(
         sql.push_str(" AND ay.is_active = true");
     }
 
-    let search_pattern = query.search.as_ref().map(|search| format!("%{}%", search));
+    let search_pattern = search_pattern(query.search.clone());
     if search_pattern.is_some() {
         sql.push_str(" AND c.name ILIKE $1");
     }
@@ -414,20 +373,11 @@ pub async fn lookup_classrooms(
 
     Ok(rows
         .into_iter()
-        .map(|row| {
-            let grade_level = match (row.level_type.as_deref(), row.year) {
-                (Some("kindergarten"), Some(year)) => Some(format!("อ.{}", year)),
-                (Some("primary"), Some(year)) => Some(format!("ป.{}", year)),
-                (Some("secondary"), Some(year)) => Some(format!("ม.{}", year)),
-                _ => None,
-            };
-
-            ClassroomLookupItem {
-                id: row.id,
-                name: row.name,
-                grade_level,
-                grade_level_id: row.grade_level_id,
-            }
+        .map(|row| ClassroomLookupItem {
+            id: row.id,
+            name: row.name,
+            grade_level: classroom_grade_level_label(row.level_type.as_deref(), row.year),
+            grade_level_id: row.grade_level_id,
         })
         .collect())
 }
@@ -436,7 +386,7 @@ pub async fn lookup_academic_years(
     pool: &PgPool,
     query: LookupQuery,
 ) -> Result<Vec<AcademicYearLookupItem>, AppError> {
-    let limit = query.limit.unwrap_or(100).min(500);
+    let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
 
     let mut sql = String::from("SELECT id, name, year, is_active FROM academic_years WHERE 1=1");
@@ -445,7 +395,7 @@ pub async fn lookup_academic_years(
         sql.push_str(" AND is_active = true");
     }
 
-    let search_pattern = query.search.as_ref().map(|search| format!("%{}%", search));
+    let search_pattern = search_pattern(query.search.clone());
     if search_pattern.is_some() {
         sql.push_str(" AND name ILIKE $1");
     }
@@ -480,7 +430,7 @@ pub async fn lookup_students(
     pool: &PgPool,
     query: LookupQuery,
 ) -> Result<Vec<StudentLookupItem>, AppError> {
-    let limit = query.limit.unwrap_or(100).min(500);
+    let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
 
     let mut sql = String::from(
@@ -498,7 +448,7 @@ pub async fn lookup_students(
         sql.push_str(" AND u.status = 'active'");
     }
 
-    let search_pattern = query.search.as_ref().map(|search| format!("%{}%", search));
+    let search_pattern = search_pattern(query.search.clone());
     if search_pattern.is_some() {
         sql.push_str(
             " AND (u.first_name ILIKE $1 OR u.last_name ILIKE $1 OR u.username ILIKE $1 OR si.student_id ILIKE $1)",
@@ -556,7 +506,7 @@ pub async fn lookup_subjects(
     pool: &PgPool,
     query: LookupQuery,
 ) -> Result<Vec<LookupItem>, AppError> {
-    let limit = query.limit.unwrap_or(100).min(500);
+    let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
 
     let mut sql = String::from(
@@ -580,12 +530,12 @@ pub async fn lookup_subjects(
         param_idx += 1;
     }
 
-    if let Some(ref search) = query.search {
+    if let Some(ref pattern) = search_pattern(query.search.clone()) {
         sql.push_str(&format!(
             " AND (name_th ILIKE ${0} OR code ILIKE ${0})",
             param_idx
         ));
-        bind_search = Some(format!("%{}%", search));
+        bind_search = Some(pattern.clone());
     }
 
     sql.push_str(&format!(" ORDER BY code, name_th LIMIT {}", limit));
@@ -625,5 +575,110 @@ fn department_lookup_item(row: DepartmentRow) -> DepartmentLookupItem {
         display_order: row.display_order,
         is_active: row.is_active,
         parent_department_id: row.parent_department_id,
+    }
+}
+
+fn lookup_limit(limit: Option<i32>) -> i32 {
+    limit.unwrap_or(100).min(500)
+}
+
+fn search_pattern(search: Option<String>) -> Option<String> {
+    search
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{value}%"))
+}
+
+fn grade_level_lookup_item(row: GradeLevelRow) -> GradeLevelLookupItem {
+    let (name, code, short_name) = match row.level_type.as_str() {
+        "kindergarten" => (
+            format!("อนุบาลปีที่ {}", row.year),
+            format!("K{}", row.year),
+            format!("อ.{}", row.year),
+        ),
+        "primary" => (
+            format!("ประถมศึกษาปีที่ {}", row.year),
+            format!("P{}", row.year),
+            format!("ป.{}", row.year),
+        ),
+        "secondary" => (
+            format!("มัธยมศึกษาปีที่ {}", row.year),
+            format!("M{}", row.year),
+            format!("ม.{}", row.year),
+        ),
+        _ => (
+            format!("Other {}", row.year),
+            format!("O{}", row.year),
+            format!("?{}", row.year),
+        ),
+    };
+    let order_base = match row.level_type.as_str() {
+        "kindergarten" => 1,
+        "primary" => 2,
+        "secondary" => 3,
+        _ => 4,
+    };
+
+    GradeLevelLookupItem {
+        id: row.id,
+        code,
+        name,
+        short_name: Some(short_name),
+        level_type: row.level_type,
+        level_order: order_base * 100 + row.year,
+    }
+}
+
+fn classroom_grade_level_label(level_type: Option<&str>, year: Option<i32>) -> Option<String> {
+    match (level_type, year) {
+        (Some("kindergarten"), Some(year)) => Some(format!("อ.{}", year)),
+        (Some("primary"), Some(year)) => Some(format!("ป.{}", year)),
+        (Some("secondary"), Some(year)) => Some(format!("ม.{}", year)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lookup_limit_defaults_to_one_hundred_and_caps_at_five_hundred() {
+        assert_eq!(lookup_limit(None), 100);
+        assert_eq!(lookup_limit(Some(20)), 20);
+        assert_eq!(lookup_limit(Some(900)), 500);
+    }
+
+    #[test]
+    fn search_pattern_wraps_non_empty_input_for_ilike() {
+        assert_eq!(
+            search_pattern(Some("math".to_string())),
+            Some("%math%".to_string())
+        );
+        assert_eq!(search_pattern(Some("".to_string())), None);
+        assert_eq!(search_pattern(None), None);
+    }
+
+    #[test]
+    fn grade_level_lookup_item_formats_secondary_level_consistently() {
+        let item = grade_level_lookup_item(GradeLevelRow {
+            id: Uuid::new_v4(),
+            level_type: "secondary".to_string(),
+            year: 4,
+        });
+
+        assert_eq!(item.code, "M4");
+        assert_eq!(item.name, "มัธยมศึกษาปีที่ 4");
+        assert_eq!(item.short_name.as_deref(), Some("ม.4"));
+        assert_eq!(item.level_order, 304);
+    }
+
+    #[test]
+    fn classroom_grade_level_label_returns_none_for_missing_level_data() {
+        assert_eq!(
+            classroom_grade_level_label(Some("primary"), Some(6)),
+            Some("ป.6".to_string())
+        );
+        assert_eq!(classroom_grade_level_label(None, Some(6)), None);
+        assert_eq!(classroom_grade_level_label(Some("primary"), None), None);
     }
 }

@@ -563,3 +563,120 @@ impl BacktrackingScheduler {
         difficulty
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+
+    fn scheduler() -> BacktrackingScheduler {
+        let validator = ConstraintValidator::with_settings(Vec::new(), HashMap::new(), 4);
+        BacktrackingScheduler::new(validator, SchedulerConfig::default())
+    }
+
+    fn sample_course() -> CourseToSchedule {
+        CourseToSchedule {
+            id: Uuid::new_v4(),
+            classroom_course_id: Uuid::new_v4(),
+            classroom_id: Uuid::new_v4(),
+            classroom_name: "ม.1/1".to_string(),
+            subject_id: Uuid::new_v4(),
+            subject_code: "MATH".to_string(),
+            subject_name: "Mathematics".to_string(),
+            instructor_id: None,
+            instructor_name: None,
+            periods_needed: 1,
+            periods_remaining: 1,
+            min_consecutive: 1,
+            max_consecutive: 1,
+            allow_single_period: true,
+            fixed_room_id: None,
+            allowed_period_ids: None,
+            allowed_days: None,
+            cc_hard_unavailable: HashSet::new(),
+            same_day_unique: true,
+            consecutive_pattern: None,
+            preferred_rooms: Vec::new(),
+            activity_slot_id: None,
+        }
+    }
+
+    #[test]
+    fn filter_allowed_slots_applies_day_and_period_constraints() {
+        let scheduler = scheduler();
+        let period_a = Uuid::new_v4();
+        let period_b = Uuid::new_v4();
+        let mut course = sample_course();
+        course.allowed_days = Some(vec!["MON".to_string()]);
+        course.allowed_period_ids = Some(vec![period_b]);
+        let slots = vec![
+            TimeSlot {
+                day: "MON".to_string(),
+                period_id: period_a,
+                period_order: 1,
+            },
+            TimeSlot {
+                day: "MON".to_string(),
+                period_id: period_b,
+                period_order: 2,
+            },
+            TimeSlot {
+                day: "TUE".to_string(),
+                period_id: period_b,
+                period_order: 2,
+            },
+        ];
+
+        let filtered = scheduler.filter_allowed_slots(&course, &slots);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].day, "MON");
+        assert_eq!(filtered[0].period_id, period_b);
+    }
+
+    #[test]
+    fn is_consecutive_periods_accepts_adjacent_period_order_only() {
+        let scheduler = scheduler();
+        let slots = vec![
+            TimeSlot {
+                day: "MON".to_string(),
+                period_id: Uuid::new_v4(),
+                period_order: 1,
+            },
+            TimeSlot {
+                day: "MON".to_string(),
+                period_id: Uuid::new_v4(),
+                period_order: 2,
+            },
+        ];
+        let gap_slots = vec![
+            TimeSlot {
+                day: "MON".to_string(),
+                period_id: Uuid::new_v4(),
+                period_order: 1,
+            },
+            TimeSlot {
+                day: "MON".to_string(),
+                period_id: Uuid::new_v4(),
+                period_order: 3,
+            },
+        ];
+
+        assert!(scheduler.is_consecutive_periods(&slots));
+        assert!(!scheduler.is_consecutive_periods(&gap_slots));
+    }
+
+    #[test]
+    fn calculate_difficulty_weights_periods_consecutive_room_and_instructor() {
+        let scheduler = scheduler();
+        let easy = sample_course();
+        let mut hard = sample_course();
+        hard.periods_needed = 3;
+        hard.min_consecutive = 2;
+        hard.fixed_room_id = Some(Uuid::new_v4());
+        hard.instructor_id = Some(Uuid::new_v4());
+
+        assert_eq!(scheduler.calculate_difficulty(&easy), 10);
+        assert_eq!(scheduler.calculate_difficulty(&hard), 200);
+    }
+}

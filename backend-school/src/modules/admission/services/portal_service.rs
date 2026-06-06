@@ -42,28 +42,7 @@ pub async fn verify_credentials(
     national_id: &str,
     date_of_birth: &str,
 ) -> Result<Uuid, AppError> {
-    if date_of_birth.len() != 8 {
-        return Err(AppError::BadRequest(
-            "รูปแบบวันเกิดไม่ถูกต้อง (ต้องกรอก 8 หลัก ววดดปปปป เช่น 20082543)".to_string(),
-        ));
-    }
-    let year_be: i32 = date_of_birth[4..].parse().unwrap_or(0);
-    let year_ce = year_be - 543;
-    let dob = chrono::NaiveDate::parse_from_str(
-        &format!(
-            "{}/{}/{}",
-            &date_of_birth[0..2],
-            &date_of_birth[2..4],
-            year_ce
-        ),
-        "%d/%m/%Y",
-    )
-    .ok();
-    let Some(dob) = dob else {
-        return Err(AppError::BadRequest(
-            "รูปแบบวันเกิดไม่ถูกต้อง (กรอก ววดดปปปป พ.ศ. เช่น 20082543)".to_string(),
-        ));
-    };
+    let dob = parse_portal_birth_date(date_of_birth)?;
     let national_id_hash =
         pii::hash_required(national_id).map_err(|error| pii_error("hash credential", error))?;
     sqlx::query_scalar(
@@ -705,4 +684,55 @@ pub fn build_file_url_full(storage_path: &str) -> Result<String, AppError> {
     let url_builder = FileUrlBuilder::new()
         .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
     Ok(format!("{}/{}", url_builder.base_url(), storage_path))
+}
+
+fn parse_portal_birth_date(date_of_birth: &str) -> Result<chrono::NaiveDate, AppError> {
+    if date_of_birth.len() != 8 || !date_of_birth.chars().all(|char| char.is_ascii_digit()) {
+        return Err(AppError::BadRequest(
+            "รูปแบบวันเกิดไม่ถูกต้อง (ต้องกรอก 8 หลัก ววดดปปปป เช่น 20082543)".to_string(),
+        ));
+    }
+    let year_be: i32 = date_of_birth[4..].parse().unwrap_or(0);
+    let year_ce = year_be - 543;
+    chrono::NaiveDate::parse_from_str(
+        &format!(
+            "{}/{}/{}",
+            &date_of_birth[0..2],
+            &date_of_birth[2..4],
+            year_ce
+        ),
+        "%d/%m/%Y",
+    )
+    .map_err(|_| {
+        AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (กรอก ววดดปปปป พ.ศ. เช่น 20082543)".to_string())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_portal_birth_date_accepts_ddmmyyyy_buddhist_year() {
+        assert_eq!(
+            parse_portal_birth_date("20082543").unwrap(),
+            chrono::NaiveDate::from_ymd_opt(2000, 8, 20).unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_portal_birth_date_rejects_non_eight_digit_input() {
+        assert!(matches!(
+            parse_portal_birth_date("200825"),
+            Err(AppError::BadRequest(message)) if message.contains("8 หลัก")
+        ));
+    }
+
+    #[test]
+    fn parse_portal_birth_date_rejects_invalid_calendar_dates() {
+        assert!(matches!(
+            parse_portal_birth_date("32082543"),
+            Err(AppError::BadRequest(message)) if message.contains("ววดดปปปป")
+        ));
+    }
 }

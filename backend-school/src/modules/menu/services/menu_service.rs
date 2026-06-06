@@ -41,7 +41,7 @@ pub async fn create_menu_group(
     .bind(&input.name_en)
     .bind(&input.description)
     .bind(&input.icon)
-    .bind(input.display_order.unwrap_or(0))
+    .bind(menu_display_order(input.display_order))
     .fetch_one(pool)
     .await
     .map_err(|e| AppError::InternalServerError(format!("Failed to create menu group: {}", e)))
@@ -193,13 +193,7 @@ pub async fn list_menu_items(
 
     Ok(all_items
         .into_iter()
-        .filter(|item| {
-            if let Some(ref module) = item.required_permission {
-                module_permission_matches(permissions, module)
-            } else {
-                true
-            }
-        })
+        .filter(|item| menu_item_allowed_by_permissions(item, permissions))
         .collect())
 }
 
@@ -229,7 +223,7 @@ pub async fn create_menu_item(
     )
     .bind(&input.code).bind(&input.name).bind(&input.name_en).bind(&input.description)
     .bind(&input.path).bind(&input.icon).bind(input.group_id).bind(input.parent_id)
-    .bind(&input.required_permission).bind(input.display_order.unwrap_or(0))
+    .bind(&input.required_permission).bind(menu_display_order(input.display_order))
     .fetch_one(pool).await
     .map_err(|e| AppError::InternalServerError(format!("Failed to create menu item: {}", e)))
 }
@@ -385,7 +379,7 @@ pub async fn reorder_menu_items(
 
     for item in &existing_items {
         if let Some(ref module) = item.required_permission {
-            if !module_permission_matches(permissions, module) {
+            if !menu_item_allowed_by_permissions(item, permissions) {
                 return Err(AppError::Forbidden(format!(
                     "No permission for module '{}' on item '{}'",
                     module, item.name
@@ -472,4 +466,67 @@ pub async fn move_item_to_group(
     )
     .bind(group_id).bind(id).fetch_one(pool).await
     .map_err(|e| AppError::InternalServerError(format!("Failed to move item: {}", e)))
+}
+
+fn menu_display_order(display_order: Option<i32>) -> i32 {
+    display_order.unwrap_or(0)
+}
+
+fn menu_item_allowed_by_permissions(item: &MenuItem, permissions: &[String]) -> bool {
+    if let Some(ref module) = item.required_permission {
+        module_permission_matches(permissions, module)
+    } else {
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn menu_item(required_permission: Option<&str>) -> MenuItem {
+        MenuItem {
+            id: Uuid::new_v4(),
+            code: "dashboard".to_string(),
+            name: "Dashboard".to_string(),
+            name_en: None,
+            path: "/dashboard".to_string(),
+            icon: None,
+            required_permission: required_permission.map(str::to_string),
+            user_type: "staff".to_string(),
+            group_id: None,
+            parent_id: None,
+            display_order: 1,
+            is_active: true,
+        }
+    }
+
+    #[test]
+    fn menu_display_order_defaults_to_zero() {
+        assert_eq!(menu_display_order(None), 0);
+        assert_eq!(menu_display_order(Some(12)), 12);
+    }
+
+    #[test]
+    fn menu_item_is_allowed_when_no_permission_is_required() {
+        assert!(menu_item_allowed_by_permissions(
+            &menu_item(None),
+            &Vec::<String>::new()
+        ));
+    }
+
+    #[test]
+    fn menu_item_permission_filter_uses_module_permission_matching() {
+        let permissions =
+            vec![crate::permissions::registry::codes::ACADEMIC_CURRICULUM_READ_ALL.to_string()];
+
+        assert!(menu_item_allowed_by_permissions(
+            &menu_item(Some("academic_curriculum")),
+            &permissions
+        ));
+        assert!(!menu_item_allowed_by_permissions(
+            &menu_item(Some("staff")),
+            &permissions
+        ));
+    }
 }

@@ -2521,3 +2521,44 @@ pub async fn create_batch_entries(
         semester_id: payload.academic_semester_id,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_query() -> TimetableQuery {
+        TimetableQuery {
+            classroom_id: None,
+            student_id: None,
+            instructor_id: None,
+            room_id: None,
+            academic_semester_id: None,
+            day_of_week: None,
+            entry_type: None,
+            include_team_ghosts: None,
+        }
+    }
+
+    #[test]
+    fn timetable_filter_defaults_include_team_ghosts_to_false() {
+        let filter = TimetableFilter::from(empty_query());
+
+        assert!(!filter.include_team_ghosts);
+    }
+
+    #[test]
+    fn timetable_filter_preserves_query_fields() {
+        let classroom_id = Uuid::new_v4();
+        let query = TimetableQuery {
+            classroom_id: Some(classroom_id),
+            day_of_week: Some("MON".to_string()),
+            include_team_ghosts: Some(true),
+            ..empty_query()
+        };
+        let filter = TimetableFilter::from(query);
+
+        assert_eq!(filter.classroom_id, Some(classroom_id));
+        assert_eq!(filter.day_of_week.as_deref(), Some("MON"));
+        assert!(filter.include_team_ghosts);
+    }
+}

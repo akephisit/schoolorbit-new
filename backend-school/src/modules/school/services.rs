@@ -11,6 +11,13 @@ fn empty_settings_row() -> SchoolSettingsRow {
     }
 }
 
+fn settings_response_from_row(row: SchoolSettingsRow) -> SchoolSettingsResponse {
+    SchoolSettingsResponse {
+        logo_url: get_file_url_from_string(&row.logo_path),
+        logo_file_id: row.logo_file_id,
+    }
+}
+
 pub async fn get_settings_row(pool: &PgPool) -> Result<SchoolSettingsRow, AppError> {
     sqlx::query_as::<_, SchoolSettingsRow>(
         "SELECT logo_path, logo_file_id FROM school_settings LIMIT 1",
@@ -27,10 +34,7 @@ pub async fn get_settings_row(pool: &PgPool) -> Result<SchoolSettingsRow, AppErr
 pub async fn get_settings_response(pool: &PgPool) -> Result<SchoolSettingsResponse, AppError> {
     let row = get_settings_row(pool).await?;
 
-    Ok(SchoolSettingsResponse {
-        logo_url: get_file_url_from_string(&row.logo_path),
-        logo_file_id: row.logo_file_id,
-    })
+    Ok(settings_response_from_row(row))
 }
 
 pub async fn update_settings(
@@ -88,4 +92,28 @@ pub async fn delete_logo(pool: &PgPool) -> Result<(), AppError> {
     })?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_response_from_row_preserves_logo_file_id() {
+        let logo_file_id = uuid::Uuid::new_v4();
+        let response = settings_response_from_row(SchoolSettingsRow {
+            logo_path: None,
+            logo_file_id: Some(logo_file_id),
+        });
+
+        assert_eq!(response.logo_file_id, Some(logo_file_id));
+    }
+
+    #[test]
+    fn empty_settings_row_has_no_logo_fields() {
+        let row = empty_settings_row();
+
+        assert!(row.logo_path.is_none());
+        assert!(row.logo_file_id.is_none());
+    }
 }

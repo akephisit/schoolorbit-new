@@ -183,22 +183,7 @@ pub async fn update_round(
 }
 
 pub async fn update_round_status(pool: &PgPool, id: Uuid, status: &str) -> Result<(), AppError> {
-    let valid = [
-        "draft",
-        "open",
-        "exam_announced",
-        "announced",
-        "enrolling",
-        "closed",
-    ];
-    if !valid.contains(&status) {
-        return Err(AppError::BadRequest(format!("สถานะ '{}' ไม่ถูกต้อง", status)));
-    }
-    if status == "draft" {
-        return Err(AppError::BadRequest(
-            "ไม่สามารถเปลี่ยนกลับไปสถานะ 'ร่าง' ได้".to_string(),
-        ));
-    }
+    validate_round_status(status)?;
 
     let exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM admission_rounds WHERE id = $1)")
@@ -312,8 +297,8 @@ pub async fn create_exam_subject(
            RETURNING id, admission_round_id, name, code, max_score::FLOAT8 AS max_score, display_order, created_at"#
     )
     .bind(round_id).bind(&payload.name).bind(&payload.code)
-    .bind(payload.max_score.unwrap_or(100.0))
-    .bind(payload.display_order.unwrap_or(0))
+    .bind(exam_subject_max_score_or_default(payload.max_score))
+    .bind(display_order_or_default(payload.display_order))
     .fetch_one(pool).await
     .map_err(|e| {
         eprintln!("Failed to create subject: {}", e);
@@ -391,8 +376,7 @@ pub async fn create_track(
     round_id: Uuid,
     payload: CreateAdmissionTrackRequest,
 ) -> Result<AdmissionTrack, AppError> {
-    let scoring_ids = serde_json::to_value(payload.scoring_subject_ids.unwrap_or_default())
-        .unwrap_or(serde_json::json!([]));
+    let scoring_ids = scoring_subject_ids_json(payload.scoring_subject_ids);
 
     sqlx::query_as::<_, AdmissionTrack>(
         r#"INSERT INTO admission_tracks (
@@ -411,12 +395,8 @@ pub async fn create_track(
     .bind(&payload.name)
     .bind(payload.capacity_override)
     .bind(scoring_ids)
-    .bind(
-        payload
-            .tiebreak_method
-            .unwrap_or_else(|| "applied_at".to_string()),
-    )
-    .bind(payload.display_order.unwrap_or(0))
+    .bind(track_tiebreak_method_or_default(payload.tiebreak_method))
+    .bind(display_order_or_default(payload.display_order))
     .fetch_one(pool)
     .await
     .map_err(|e| {
@@ -432,7 +412,7 @@ pub async fn update_track(
 ) -> Result<AdmissionTrack, AppError> {
     let scoring_ids = payload
         .scoring_subject_ids
-        .map(|v| serde_json::to_value(v).unwrap_or(serde_json::json!([])));
+        .map(|v| scoring_subject_ids_json(Some(v)));
 
     sqlx::query_as::<_, AdmissionTrack>(
         r#"UPDATE admission_tracks SET
@@ -508,4 +488,85 @@ pub async fn get_track_capacity(pool: &PgPool, id: Uuid) -> Result<Vec<RoomCapac
         eprintln!("Failed to fetch track capacity: {}", e);
         AppError::InternalServerError("Failed to fetch capacity".to_string())
     })
+}
+
+fn validate_round_status(status: &str) -> Result<(), AppError> {
+    let valid = [
+        "draft",
+        "open",
+        "exam_announced",
+        "announced",
+        "enrolling",
+        "closed",
+    ];
+    if !valid.contains(&status) {
+        return Err(AppError::BadRequest(format!("สถานะ '{}' ไม่ถูกต้อง", status)));
+    }
+    if status == "draft" {
+        return Err(AppError::BadRequest(
+            "ไม่สามารถเปลี่ยนกลับไปสถานะ 'ร่าง' ได้".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn exam_subject_max_score_or_default(max_score: Option<f64>) -> f64 {
+    max_score.unwrap_or(100.0)
+}
+
+fn display_order_or_default(display_order: Option<i32>) -> i32 {
+    display_order.unwrap_or(0)
+}
+
+fn track_tiebreak_method_or_default(tiebreak_method: Option<String>) -> String {
+    tiebreak_method.unwrap_or_else(|| "applied_at".to_string())
+}
+
+fn scoring_subject_ids_json(scoring_subject_ids: Option<Vec<Uuid>>) -> serde_json::Value {
+    serde_json::to_value(scoring_subject_ids.unwrap_or_default()).unwrap_or(serde_json::json!([]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_round_status_accepts_forward_statuses_but_rejects_draft() {
+        assert!(validate_round_status("open").is_ok());
+        assert!(matches!(
+            validate_round_status("draft"),
+            Err(AppError::BadRequest(message)) if message.contains("ร่าง")
+        ));
+        assert!(matches!(
+            validate_round_status("archived"),
+            Err(AppError::BadRequest(message)) if message.contains("ไม่ถูกต้อง")
+        ));
+    }
+
+    #[test]
+    fn exam_subject_defaults_are_stable() {
+        assert_eq!(exam_subject_max_score_or_default(None), 100.0);
+        assert_eq!(exam_subject_max_score_or_default(Some(80.0)), 80.0);
+        assert_eq!(display_order_or_default(None), 0);
+        assert_eq!(display_order_or_default(Some(3)), 3);
+    }
+
+    #[test]
+    fn track_defaults_use_applied_at_tiebreak_and_empty_scoring_array() {
+        assert_eq!(track_tiebreak_method_or_default(None), "applied_at");
+        assert_eq!(
+            track_tiebreak_method_or_default(Some("score".to_string())),
+            "score"
+        );
+
+        assert_eq!(
+            scoring_subject_ids_json(None),
+            serde_json::Value::Array(Vec::new())
+        );
+        let subject_id = Uuid::new_v4();
+        assert_eq!(
+            scoring_subject_ids_json(Some(vec![subject_id])),
+            serde_json::json!([subject_id])
+        );
+    }
 }

@@ -127,11 +127,7 @@ async fn ensure_parent_user(pool: &PgPool, parent_id: Uuid) -> Result<(), AppErr
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string())
         })?;
 
-    match user_type.as_deref() {
-        Some("parent") => Ok(()),
-        Some(_) => Err(AppError::Forbidden("เฉพาะผู้ปกครองเท่านั้น".to_string())),
-        None => Err(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string())),
-    }
+    parent_user_access(user_type.as_deref())
 }
 
 async fn ensure_parent_student_link(
@@ -233,5 +229,39 @@ fn decrypt_child_student_fields(student: &mut StudentDbRow) {
             Ok(decrypted) => student.national_id = Some(decrypted),
             Err(error) => eprintln!("Failed to decrypt child national_id: {}", error),
         }
+    }
+}
+
+fn parent_user_access(user_type: Option<&str>) -> Result<(), AppError> {
+    match user_type {
+        Some("parent") => Ok(()),
+        Some(_) => Err(AppError::Forbidden("เฉพาะผู้ปกครองเท่านั้น".to_string())),
+        None => Err(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parent_user_access_allows_parent_users() {
+        assert!(parent_user_access(Some("parent")).is_ok());
+    }
+
+    #[test]
+    fn parent_user_access_rejects_non_parent_users() {
+        assert!(matches!(
+            parent_user_access(Some("staff")),
+            Err(AppError::Forbidden(message)) if message == "เฉพาะผู้ปกครองเท่านั้น"
+        ));
+    }
+
+    #[test]
+    fn parent_user_access_treats_missing_user_as_auth_error() {
+        assert!(matches!(
+            parent_user_access(None),
+            Err(AppError::AuthError(message)) if message == "กรุณาเข้าสู่ระบบ"
+        ));
     }
 }

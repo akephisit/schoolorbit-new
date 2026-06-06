@@ -4,6 +4,16 @@ use chrono::Utc;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+fn activity_datetime_from_rfc3339(value: Option<&str>) -> Option<chrono::DateTime<Utc>> {
+    value
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.with_timezone(&Utc))
+}
+
+fn optional_uuid_list_json(ids: Option<&[Uuid]>) -> Option<serde_json::Value> {
+    ids.map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null))
+}
+
 // ============================================
 // Activity Slots
 // ============================================
@@ -115,8 +125,8 @@ pub async fn update_slot(
     .bind(&body.registration_type)
     .bind(body.teacher_reg_open)
     .bind(body.student_reg_open)
-    .bind(body.student_reg_start.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&Utc)))
-    .bind(body.student_reg_end.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&Utc)))
+    .bind(activity_datetime_from_rfc3339(body.student_reg_start.as_deref()))
+    .bind(activity_datetime_from_rfc3339(body.student_reg_end.as_deref()))
     .bind(body.is_active)
     .fetch_one(pool)
     .await
@@ -265,9 +275,7 @@ pub async fn create_group(
         }
     }
 
-    let allowed = body
-        .allowed_classroom_ids
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    let allowed = optional_uuid_list_json(body.allowed_classroom_ids.as_deref());
 
     let row: ActivityGroup = sqlx::query_as(
         r#"INSERT INTO activity_groups
@@ -297,10 +305,7 @@ pub async fn update_group(
     id: Uuid,
     body: UpdateActivityGroupRequest,
 ) -> Result<ActivityGroup, AppError> {
-    let allowed = body
-        .allowed_classroom_ids
-        .as_ref()
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    let allowed = optional_uuid_list_json(body.allowed_classroom_ids.as_deref());
 
     sqlx::query_as(
         r#"UPDATE activity_groups SET
@@ -1021,4 +1026,31 @@ pub async fn delete_slot_classroom_assignment(
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn activity_datetime_from_rfc3339_accepts_valid_values() {
+        assert!(activity_datetime_from_rfc3339(Some("2026-06-06T08:30:00+07:00")).is_some());
+        assert!(activity_datetime_from_rfc3339(None).is_none());
+    }
+
+    #[test]
+    fn activity_datetime_from_rfc3339_ignores_invalid_values() {
+        assert!(activity_datetime_from_rfc3339(Some("not-a-date")).is_none());
+    }
+
+    #[test]
+    fn optional_uuid_list_json_serializes_some_values_and_preserves_none() {
+        let id = Uuid::new_v4();
+
+        assert_eq!(optional_uuid_list_json(None), None);
+        assert_eq!(
+            optional_uuid_list_json(Some(&[id])),
+            Some(serde_json::json!([id]))
+        );
+    }
 }

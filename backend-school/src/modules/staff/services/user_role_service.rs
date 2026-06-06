@@ -124,11 +124,6 @@ pub async fn assign_user_role(
             AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลผู้ใช้ได้".to_string())
         })?;
 
-    let user_type = match user_type {
-        Some(ut) => ut,
-        None => return Ok(AssignRoleOutcome::UserNotFound),
-    };
-
     let role_user_type: Option<String> =
         sqlx::query_scalar("SELECT user_type FROM roles WHERE id = $1 AND is_active = true")
             .bind(payload.role_id)
@@ -139,13 +134,8 @@ pub async fn assign_user_role(
                 AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลบทบาทได้".to_string())
             })?;
 
-    let role_user_type = match role_user_type {
-        Some(rut) => rut,
-        None => return Ok(AssignRoleOutcome::RoleNotFound),
-    };
-
-    if user_type != role_user_type {
-        return Ok(AssignRoleOutcome::UserTypeMismatch(role_user_type));
+    if let Some(outcome) = assign_role_outcome_for_types(user_type, role_user_type) {
+        return Ok(outcome);
     }
 
     let user_role_id: Uuid = sqlx::query_scalar(
@@ -192,6 +182,26 @@ pub async fn remove_user_role(
     Ok(result.rows_affected() > 0)
 }
 
+fn assign_role_outcome_for_types(
+    user_type: Option<String>,
+    role_user_type: Option<String>,
+) -> Option<AssignRoleOutcome> {
+    let user_type = match user_type {
+        Some(user_type) => user_type,
+        None => return Some(AssignRoleOutcome::UserNotFound),
+    };
+    let role_user_type = match role_user_type {
+        Some(role_user_type) => role_user_type,
+        None => return Some(AssignRoleOutcome::RoleNotFound),
+    };
+
+    if user_type != role_user_type {
+        Some(AssignRoleOutcome::UserTypeMismatch(role_user_type))
+    } else {
+        None
+    }
+}
+
 pub async fn get_user_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<String>, AppError> {
     sqlx::query_scalar(
         "SELECT DISTINCT p.code
@@ -208,4 +218,38 @@ pub async fn get_user_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<St
         eprintln!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn assign_role_outcome_for_types_reports_missing_user_or_role() {
+        assert!(matches!(
+            assign_role_outcome_for_types(None, Some("staff".to_string())),
+            Some(AssignRoleOutcome::UserNotFound)
+        ));
+        assert!(matches!(
+            assign_role_outcome_for_types(Some("staff".to_string()), None),
+            Some(AssignRoleOutcome::RoleNotFound)
+        ));
+    }
+
+    #[test]
+    fn assign_role_outcome_for_types_reports_type_mismatch() {
+        assert!(matches!(
+            assign_role_outcome_for_types(Some("student".to_string()), Some("staff".to_string())),
+            Some(AssignRoleOutcome::UserTypeMismatch(role_user_type)) if role_user_type == "staff"
+        ));
+    }
+
+    #[test]
+    fn assign_role_outcome_for_types_allows_matching_user_and_role_types() {
+        assert!(assign_role_outcome_for_types(
+            Some("staff".to_string()),
+            Some("staff".to_string())
+        )
+        .is_none());
+    }
 }

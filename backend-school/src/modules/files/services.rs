@@ -324,3 +324,44 @@ fn storage_path(
         subdomain, storage_folder, file_id, extension
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn storage_path_for_documents_scopes_file_under_user_folder() {
+        let user_id = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let file_id = Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap();
+
+        assert_eq!(
+            storage_path(
+                "snwsb",
+                "documents",
+                user_id,
+                file_id,
+                "pdf",
+                &FileType::Document,
+            ),
+            "school-snwsb/documents/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.pdf"
+        );
+    }
+
+    #[test]
+    fn storage_path_for_profile_images_uses_shared_type_folder() {
+        let user_id = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let file_id = Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap();
+
+        assert_eq!(
+            storage_path(
+                "snwsb",
+                "profile-images",
+                user_id,
+                file_id,
+                "jpg",
+                &FileType::ProfileImage,
+            ),
+            "school-snwsb/profile-images/22222222-2222-2222-2222-222222222222.jpg"
+        );
+    }
+}

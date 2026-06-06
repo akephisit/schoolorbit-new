@@ -104,10 +104,7 @@ pub async fn update_profile(
     user_id: Uuid,
     payload: UpdateProfileRequest,
 ) -> Result<User, AppError> {
-    let date_of_birth = payload
-        .date_of_birth
-        .as_ref()
-        .and_then(|dob| chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok());
+    let date_of_birth = parse_profile_date(payload.date_of_birth.as_deref());
 
     sqlx::query(
         "UPDATE users 
@@ -160,5 +157,65 @@ fn decrypt_national_id(user: &mut User) {
         if let Ok(decrypted) = field_encryption::decrypt(national_id) {
             user.national_id = Some(decrypted);
         }
+    }
+}
+
+fn parse_profile_date(value: Option<&str>) -> Option<chrono::NaiveDate> {
+    value.and_then(|date| chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user_with_national_id(national_id: Option<&str>) -> User {
+        User {
+            id: Uuid::new_v4(),
+            username: "test-user".to_string(),
+            national_id: national_id.map(str::to_string),
+            email: Some("test@example.com".to_string()),
+            password_hash: "hash".to_string(),
+            first_name: "Test".to_string(),
+            last_name: "User".to_string(),
+            user_type: "staff".to_string(),
+            phone: None,
+            date_of_birth: None,
+            address: None,
+            status: "active".to_string(),
+            metadata: serde_json::json!({}),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            title: None,
+            nickname: None,
+            emergency_contact: None,
+            line_id: None,
+            gender: None,
+            profile_image_url: None,
+            hired_date: None,
+            resigned_date: None,
+        }
+    }
+
+    #[test]
+    fn parse_profile_date_accepts_iso_date() {
+        let parsed = parse_profile_date(Some("2026-06-06"));
+
+        assert_eq!(parsed, chrono::NaiveDate::from_ymd_opt(2026, 6, 6));
+    }
+
+    #[test]
+    fn parse_profile_date_ignores_invalid_date() {
+        let parsed = parse_profile_date(Some("06/06/2026"));
+
+        assert_eq!(parsed, None);
+    }
+
+    #[test]
+    fn decrypt_national_id_keeps_invalid_ciphertext_unchanged() {
+        let mut user = user_with_national_id(Some("not-ciphertext"));
+
+        decrypt_national_id(&mut user);
+
+        assert_eq!(user.national_id.as_deref(), Some("not-ciphertext"));
     }
 }

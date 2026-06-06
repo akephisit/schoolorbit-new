@@ -3,6 +3,70 @@ use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+fn parse_uuid_json_array(value: Option<&serde_json::Value>) -> Option<Vec<Uuid>> {
+    value.and_then(|json| {
+        json.as_array().map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .filter_map(|s| Uuid::parse_str(s).ok())
+                .collect()
+        })
+    })
+}
+
+fn parse_string_json_array(value: Option<&serde_json::Value>) -> Option<Vec<String>> {
+    value.and_then(|json| {
+        json.as_array().map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+    })
+}
+
+fn parse_i32_json_array(value: Option<&serde_json::Value>) -> Option<Vec<i32>> {
+    value.and_then(|json| {
+        json.as_array().map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_i64().map(|n| n as i32))
+                .collect()
+        })
+    })
+}
+
+fn hard_unavailable_slots_from_json(value: &serde_json::Value) -> HashSet<String> {
+    let mut set = HashSet::new();
+    if let Some(arr) = value.as_array() {
+        for slot in arr {
+            let day = slot.get("day").and_then(|v| v.as_str()).map(String::from);
+            let period_id = slot
+                .get("period_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| Uuid::parse_str(s).ok());
+            if let (Some(d), Some(p)) = (day, period_id) {
+                set.insert(format!("{d}__{p}"));
+            }
+        }
+    }
+    set
+}
+
+fn applicable_classrooms_for_locked_scope(
+    scope_type: &str,
+    scope_ids: &[Uuid],
+    classroom_ids: &[Uuid],
+) -> Vec<Uuid> {
+    match scope_type {
+        "ALL_SCHOOL" | "GRADE_LEVEL" => classroom_ids.to_vec(),
+        "CLASSROOM" => scope_ids
+            .iter()
+            .filter(|id| classroom_ids.contains(id))
+            .copied()
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// Phase D: cc preferred rooms — load all in 1 query → group by cc_id
 async fn load_cc_preferred_rooms_batch(
     pool: &PgPool,
@@ -114,52 +178,16 @@ impl<'a> SchedulerDataLoader<'a> {
             };
 
             // Parse JSONB arrays
-            let allowed_period_ids = row.allowed_period_ids.as_ref().and_then(|json| {
-                json.as_array().and_then(|arr| {
-                    let uuids: Result<Vec<Uuid>, _> = arr
-                        .iter()
-                        .filter_map(|v| v.as_str())
-                        .map(Uuid::parse_str)
-                        .collect();
-                    uuids.ok()
-                })
-            });
+            let allowed_period_ids = parse_uuid_json_array(row.allowed_period_ids.as_ref());
 
-            let allowed_days = row.allowed_days.as_ref().and_then(|json| {
-                json.as_array().map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-            });
+            let allowed_days = parse_string_json_array(row.allowed_days.as_ref());
 
             // Phase B: parse cc.consecutive_pattern (Option<Vec<i32>>)
-            let consecutive_pattern: Option<Vec<i32>> =
-                row.consecutive_pattern.as_ref().and_then(|json| {
-                    json.as_array().map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_i64().map(|n| n as i32))
-                            .collect()
-                    })
-                });
+            let consecutive_pattern = parse_i32_json_array(row.consecutive_pattern.as_ref());
 
             // Phase B: parse cc.hard_unavailable_slots → HashSet<key>
-            let cc_hard_unavailable: HashSet<String> = {
-                let mut set = HashSet::new();
-                if let Some(arr) = row.cc_hard_unavailable_slots.as_array() {
-                    for slot in arr {
-                        let day = slot.get("day").and_then(|v| v.as_str()).map(String::from);
-                        let period_id = slot
-                            .get("period_id")
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| Uuid::parse_str(s).ok());
-                        if let (Some(d), Some(p)) = (day, period_id) {
-                            set.insert(format!("{}__{}", d, p));
-                        }
-                    }
-                }
-                set
-            };
+            let cc_hard_unavailable =
+                hard_unavailable_slots_from_json(&row.cc_hard_unavailable_slots);
 
             // Phase D: pull cc preferred rooms from batch map
             let preferred_rooms = cc_room_map
@@ -379,23 +407,8 @@ impl<'a> SchedulerDataLoader<'a> {
                 .unwrap_or_default();
 
             // Filter by scope
-            let applicable_classrooms = match row.scope_type.as_str() {
-                "ALL_SCHOOL" => classroom_ids.to_vec(),
-                "CLASSROOM" => {
-                    // Only include classrooms in both scope_ids and classroom_ids
-                    scope_ids
-                        .iter()
-                        .filter(|id| classroom_ids.contains(id))
-                        .copied()
-                        .collect()
-                }
-                "GRADE_LEVEL" => {
-                    // TODO: Load classrooms by grade level
-                    // For now, include all requested classrooms
-                    classroom_ids.to_vec()
-                }
-                _ => vec![],
-            };
+            let applicable_classrooms =
+                applicable_classrooms_for_locked_scope(&row.scope_type, &scope_ids, classroom_ids);
 
             if !applicable_classrooms.is_empty() {
                 locked_slots.push(LockedSlotData {
@@ -603,4 +616,69 @@ struct TimeSlotJson {
     day: String,
     period_id: Option<Uuid>,
     period_index: Option<i32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_uuid_json_array_returns_only_valid_uuid_strings() {
+        let id = Uuid::new_v4();
+        let value = serde_json::json!([id.to_string(), "not-a-uuid", 123]);
+
+        assert_eq!(parse_uuid_json_array(Some(&value)), Some(vec![id]));
+        assert_eq!(parse_uuid_json_array(None), None);
+    }
+
+    #[test]
+    fn parse_string_json_array_returns_string_values_only() {
+        let value = serde_json::json!(["MON", 123, "TUE"]);
+
+        assert_eq!(
+            parse_string_json_array(Some(&value)),
+            Some(vec!["MON".to_string(), "TUE".to_string()])
+        );
+    }
+
+    #[test]
+    fn parse_i32_json_array_returns_integer_values_only() {
+        let value = serde_json::json!([2, "x", 1]);
+
+        assert_eq!(parse_i32_json_array(Some(&value)), Some(vec![2, 1]));
+    }
+
+    #[test]
+    fn hard_unavailable_slots_from_json_ignores_incomplete_entries() {
+        let period_id = Uuid::new_v4();
+        let value = serde_json::json!([
+            {"day": "MON", "period_id": period_id.to_string()},
+            {"day": "TUE"},
+            {"period_id": period_id.to_string()}
+        ]);
+
+        assert_eq!(
+            hard_unavailable_slots_from_json(&value),
+            HashSet::from([format!("MON__{period_id}")])
+        );
+    }
+
+    #[test]
+    fn applicable_classrooms_for_locked_scope_filters_classroom_scope() {
+        let classroom_a = Uuid::new_v4();
+        let classroom_b = Uuid::new_v4();
+        let classroom_c = Uuid::new_v4();
+        let requested = vec![classroom_a, classroom_b];
+        let scope = vec![classroom_b, classroom_c];
+
+        assert_eq!(
+            applicable_classrooms_for_locked_scope("CLASSROOM", &scope, &requested),
+            vec![classroom_b]
+        );
+        assert_eq!(
+            applicable_classrooms_for_locked_scope("ALL_SCHOOL", &scope, &requested),
+            requested
+        );
+        assert!(applicable_classrooms_for_locked_scope("UNKNOWN", &scope, &requested).is_empty());
+    }
 }

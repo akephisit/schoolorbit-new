@@ -1142,3 +1142,32 @@ pub async fn update_selection_settings(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compute_room_assignments_fills_rooms_sequentially_by_default() {
+        assert_eq!(
+            compute_room_assignments(5, &[2, 3], "sequential"),
+            vec![(0, 1), (0, 2), (1, 1), (1, 2), (1, 3)]
+        );
+    }
+
+    #[test]
+    fn compute_room_assignments_distributes_round_robin_with_capacity() {
+        assert_eq!(
+            compute_room_assignments(4, &[2, 2], "round_robin"),
+            vec![(0, 1), (1, 1), (0, 2), (1, 2)]
+        );
+    }
+
+    #[test]
+    fn parse_subject_ids_ignores_invalid_uuid_values() {
+        let valid = Uuid::new_v4();
+        let parsed = parse_subject_ids(&format!("{valid}, not-a-uuid"));
+
+        assert_eq!(parsed, vec![valid]);
+    }
+}

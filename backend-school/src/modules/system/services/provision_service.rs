@@ -7,6 +7,10 @@ pub struct ProvisionOutcome {
     pub admin_username: String,
 }
 
+fn teacher_username_from_sequence(sequence: i64) -> String {
+    format!("T{sequence:04}")
+}
+
 pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutcome, AppError> {
     tracing::info!(
         school_id = %payload.school_id,
@@ -73,7 +77,7 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
     .await
     .unwrap_or(Some(1))
     .unwrap_or(1);
-    let username = format!("T{:04}", next_num);
+    let username = teacher_username_from_sequence(next_num);
 
     let user_id = sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
@@ -139,4 +143,21 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
         school_id: payload.school_id,
         admin_username: username,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn teacher_username_from_sequence_pads_to_four_digits() {
+        assert_eq!(teacher_username_from_sequence(1), "T0001");
+        assert_eq!(teacher_username_from_sequence(42), "T0042");
+        assert_eq!(teacher_username_from_sequence(9999), "T9999");
+    }
+
+    #[test]
+    fn teacher_username_from_sequence_keeps_longer_numbers() {
+        assert_eq!(teacher_username_from_sequence(12000), "T12000");
+    }
 }
