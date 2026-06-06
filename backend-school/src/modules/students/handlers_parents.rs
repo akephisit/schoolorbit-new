@@ -4,9 +4,9 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::students::services as student_service;
 use crate::permissions::registry::codes;
@@ -35,7 +35,7 @@ pub async fn add_parent_to_student(
 
     Ok((
         StatusCode::OK,
-        Json(json!({ "success": true, "data": {}, "message": "เพิ่มผู้ปกครองสำเร็จ" })),
+        Json(ApiResponse::empty_with_message("เพิ่มผู้ปกครองสำเร็จ")),
     )
         .into_response())
 }
@@ -55,7 +55,7 @@ pub async fn remove_parent_from_student(
 
     Ok((
         StatusCode::OK,
-        Json(json!({ "success": true, "data": {}, "message": "ลบผู้ปกครองสำเร็จ" })),
+        Json(ApiResponse::empty_with_message("ลบผู้ปกครองสำเร็จ")),
     )
         .into_response())
 }

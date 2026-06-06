@@ -4,24 +4,17 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
 use super::models::{
     CreateStudentRequest, ListStudentsQuery, UpdateOwnProfileRequest, UpdateStudentRequest,
 };
 use super::services as student_service;
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
-use crate::middleware::permission::ActorContext;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
-
-fn require_permission(actor: &ActorContext, permission: &str) -> Result<(), AppError> {
-    actor
-        .require_permission(permission)
-        .map_err(|_| AppError::Forbidden(format!("คุณไม่มีสิทธิ์ (ต้องการ {permission} permission)")))
-}
 
 /// GET /api/student/profile - นักเรียนดูข้อมูลตนเอง
 pub async fn get_own_profile(
@@ -33,10 +26,7 @@ pub async fn get_own_profile(
     let actor = context.actor;
     let student = student_service::get_own_profile(&pool, actor.user_id).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": student })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }
 
 /// PUT /api/student/profile - นักเรียนแก้ไขข้อมูลตนเอง (จำกัดฟิลด์)
@@ -52,7 +42,7 @@ pub async fn update_own_profile(
 
     Ok((
         StatusCode::OK,
-        Json(json!({ "success": true, "data": {}, "message": "อัพเดตข้อมูลสำเร็จ" })),
+        Json(ApiResponse::empty_with_message("อัพเดตข้อมูลสำเร็จ")),
     ))
 }
 
@@ -65,14 +55,11 @@ pub async fn list_students(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    require_permission(&actor, codes::STUDENT_READ_ALL)?;
+    actor.require_permission(codes::STUDENT_READ_ALL)?;
 
     let students = student_service::list_students(&pool, filter).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": students })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(students))))
 }
 
 /// POST /api/students - เพิ่มนักเรียนใหม่
@@ -84,17 +71,13 @@ pub async fn create_student(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    require_permission(&actor, codes::STUDENT_CREATE)?;
+    actor.require_permission(codes::STUDENT_CREATE)?;
 
     let student = student_service::create_student(&pool, payload).await?;
 
     Ok((
         StatusCode::CREATED,
-        Json(json!({
-            "success": true,
-            "data": student,
-            "message": "เพิ่มนักเรียนสำเร็จ"
-        })),
+        Json(ApiResponse::with_message(student, "เพิ่มนักเรียนสำเร็จ")),
     ))
 }
 
@@ -107,14 +90,11 @@ pub async fn get_student(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    require_permission(&actor, codes::STUDENT_READ_ALL)?;
+    actor.require_permission(codes::STUDENT_READ_ALL)?;
 
     let student = student_service::get_student(&pool, student_id).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": student })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }
 
 /// PUT /api/students/:id - แก้ไขข้อมูลนักเรียน
@@ -127,13 +107,13 @@ pub async fn update_student(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    require_permission(&actor, codes::STUDENT_UPDATE_ALL)?;
+    actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
 
     student_service::update_student(&pool, student_id, payload).await?;
 
     Ok((
         StatusCode::OK,
-        Json(json!({ "success": true, "data": {}, "message": "อัพเดตข้อมูลนักเรียนสำเร็จ" })),
+        Json(ApiResponse::empty_with_message("อัพเดตข้อมูลนักเรียนสำเร็จ")),
     ))
 }
 
@@ -146,12 +126,12 @@ pub async fn delete_student(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    require_permission(&actor, codes::STUDENT_DELETE)?;
+    actor.require_permission(codes::STUDENT_DELETE)?;
 
     student_service::delete_student(&pool, student_id).await?;
 
     Ok((
         StatusCode::OK,
-        Json(json!({ "success": true, "data": {}, "message": "ลบนักเรียนสำเร็จ" })),
+        Json(ApiResponse::empty_with_message("ลบนักเรียนสำเร็จ")),
     ))
 }
