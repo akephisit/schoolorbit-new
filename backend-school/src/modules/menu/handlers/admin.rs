@@ -1,5 +1,5 @@
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
-use crate::modules::menu::models::{MenuGroup, MenuItem};
 use crate::modules::menu::services::menu_service;
 use crate::utils::request_context::{actor_tenant_context, ActorTenantContext};
 use crate::AppState;
@@ -83,29 +83,13 @@ pub struct ReorderGroupsRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub struct MenuGroupListResponse {
-    pub success: bool,
-    pub data: Vec<MenuGroup>,
+struct MovedCountData {
+    moved_count: u64,
 }
 
-#[derive(Debug, Serialize)]
-pub struct MenuItemListResponse {
-    pub success: bool,
-    pub data: Vec<MenuItem>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct MenuGroupResponse {
-    pub success: bool,
-    pub data: Option<MenuGroup>,
-    pub message: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct MenuItemResponse {
-    pub success: bool,
-    pub data: Option<MenuItem>,
-    pub message: Option<String>,
+#[derive(Debug, Deserialize)]
+pub struct MoveItemToGroupRequest {
+    pub group_id: Uuid,
 }
 
 async fn auth(state: &AppState, headers: &HeaderMap) -> Result<ActorTenantContext, AppError> {
@@ -135,13 +119,7 @@ pub async fn list_menu_groups(
 ) -> Result<impl IntoResponse, AppError> {
     let context = auth(&state, &headers).await?;
     let groups = menu_service::list_menu_groups(&context.tenant.pool).await?;
-    Ok((
-        StatusCode::OK,
-        JsonResponse(MenuGroupListResponse {
-            success: true,
-            data: groups,
-        }),
-    ))
+    Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(groups))))
 }
 
 pub async fn create_menu_group(
@@ -164,11 +142,10 @@ pub async fn create_menu_group(
     .await?;
     Ok((
         StatusCode::CREATED,
-        JsonResponse(MenuGroupResponse {
-            success: true,
-            data: Some(group),
-            message: Some("Menu group created successfully".to_string()),
-        }),
+        JsonResponse(ApiResponse::with_message(
+            group,
+            "Menu group created successfully",
+        )),
     ))
 }
 
@@ -194,11 +171,10 @@ pub async fn update_menu_group(
     .await?;
     Ok((
         StatusCode::OK,
-        JsonResponse(MenuGroupResponse {
-            success: true,
-            data: Some(group),
-            message: Some("Menu group updated successfully".to_string()),
-        }),
+        JsonResponse(ApiResponse::with_message(
+            group,
+            "Menu group updated successfully",
+        )),
     ))
 }
 
@@ -211,9 +187,10 @@ pub async fn delete_menu_group(
     let moved = menu_service::delete_menu_group(&context.tenant.pool, id).await?;
     Ok((
         StatusCode::OK,
-        JsonResponse(
-            serde_json::json!({ "success": true, "data": { "moved_count": moved }, "message": format!("Deleted group and moved {} items to 'other'", moved) }),
-        ),
+        JsonResponse(ApiResponse::with_message(
+            MovedCountData { moved_count: moved },
+            format!("Deleted group and moved {} items to 'other'", moved),
+        )),
     ))
 }
 
@@ -231,13 +208,7 @@ pub async fn list_menu_items(
         &context.actor.permissions,
     )
     .await?;
-    Ok((
-        StatusCode::OK,
-        JsonResponse(MenuItemListResponse {
-            success: true,
-            data: items,
-        }),
-    ))
+    Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(items))))
 }
 
 pub async fn create_menu_item(
@@ -268,11 +239,10 @@ pub async fn create_menu_item(
     .await?;
     Ok((
         StatusCode::CREATED,
-        JsonResponse(MenuItemResponse {
-            success: true,
-            data: Some(item),
-            message: Some("Menu item created successfully".to_string()),
-        }),
+        JsonResponse(ApiResponse::with_message(
+            item,
+            "Menu item created successfully",
+        )),
     ))
 }
 
@@ -311,11 +281,10 @@ pub async fn update_menu_item(
     .await?;
     Ok((
         StatusCode::OK,
-        JsonResponse(MenuItemResponse {
-            success: true,
-            data: Some(item),
-            message: Some("Menu item updated successfully".to_string()),
-        }),
+        JsonResponse(ApiResponse::with_message(
+            item,
+            "Menu item updated successfully",
+        )),
     ))
 }
 
@@ -337,9 +306,9 @@ pub async fn delete_menu_item(
     menu_service::delete_menu_item(&context.tenant.pool, id).await?;
     Ok((
         StatusCode::OK,
-        JsonResponse(
-            serde_json::json!({ "success": true, "data": {}, "message": "Menu item deleted successfully" }),
-        ),
+        JsonResponse(ApiResponse::empty_with_message(
+            "Menu item deleted successfully",
+        )),
     ))
 }
 
@@ -351,9 +320,7 @@ pub async fn reorder_menu_items(
     if data.items.is_empty() {
         return Ok((
             StatusCode::OK,
-            JsonResponse(
-                serde_json::json!({ "success": true, "data": {}, "message": "No items to reorder" }),
-            ),
+            JsonResponse(ApiResponse::empty_with_message("No items to reorder")),
         ));
     }
     let context = auth(&state, &headers).await?;
@@ -367,9 +334,10 @@ pub async fn reorder_menu_items(
             .await?;
     Ok((
         StatusCode::OK,
-        JsonResponse(
-            serde_json::json!({ "success": true, "data": {}, "message": format!("Reordered {} items successfully", count) }),
-        ),
+        JsonResponse(ApiResponse::empty_with_message(format!(
+            "Reordered {} items successfully",
+            count
+        ))),
     ))
 }
 
@@ -387,9 +355,10 @@ pub async fn reorder_menu_groups(
     let count = menu_service::reorder_menu_groups(&context.tenant.pool, groups).await?;
     Ok((
         StatusCode::OK,
-        JsonResponse(
-            serde_json::json!({ "success": true, "data": {}, "message": format!("Reordered {} groups", count) }),
-        ),
+        JsonResponse(ApiResponse::empty_with_message(format!(
+            "Reordered {} groups",
+            count
+        ))),
     ))
 }
 
@@ -397,17 +366,9 @@ pub async fn move_item_to_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-    JsonResponse(data): JsonResponse<serde_json::Value>,
+    JsonResponse(data): JsonResponse<MoveItemToGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = auth_check_module(&state, &headers, "settings").await?;
-    let group_id = match data.get("group_id").and_then(|v| v.as_str()) {
-        Some(s) => Uuid::parse_str(s)
-            .map_err(|_| AppError::BadRequest("Invalid group_id format".to_string()))?,
-        None => return Err(AppError::BadRequest("group_id required".to_string())),
-    };
-    let item = menu_service::move_item_to_group(&context.tenant.pool, id, group_id).await?;
-    Ok((
-        StatusCode::OK,
-        JsonResponse(serde_json::json!({ "success": true, "data": item })),
-    ))
+    let item = menu_service::move_item_to_group(&context.tenant.pool, id, data.group_id).await?;
+    Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(item))))
 }

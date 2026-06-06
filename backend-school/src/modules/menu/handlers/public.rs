@@ -3,14 +3,21 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
 };
+use serde::Serialize;
 use std::collections::HashMap;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::modules::menu::models::*;
 use crate::modules::menu::services::public_menu_service::{self, MenuRow};
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
+
+#[derive(Debug, Serialize)]
+struct UserMenuData {
+    groups: Vec<MenuGroupResponse>,
+}
 
 pub async fn get_user_menu(
     State(state): State<AppState>,
@@ -28,10 +35,7 @@ pub async fn get_user_menu(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "data": { "groups": groups }
-        })),
+        Json(ApiResponse::ok(UserMenuData { groups })),
     ))
 }
 
