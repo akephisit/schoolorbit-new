@@ -4,9 +4,9 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::models::course_planning::{
     AddCourseInstructorRequest, AssignCoursesRequest, PlanQuery, UpdateCourseInstructorRoleRequest,
@@ -51,7 +51,7 @@ pub async fn list_classroom_courses(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let courses = course_planning_service::list_classroom_courses(&pool, &query).await?;
-    Ok(Json(json!({ "success": true, "data": courses })).into_response())
+    Ok(Json(ApiResponse::ok(courses)).into_response())
 }
 
 pub async fn assign_courses(
@@ -64,9 +64,10 @@ pub async fn assign_courses(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let added = course_planning_service::assign_courses(&pool, payload).await?;
-    Ok(Json(
-        json!({ "success": true, "data": {}, "message": format!("Assigned {} courses", added) }),
-    )
+    Ok(Json(ApiResponse::empty_with_message(format!(
+        "Assigned {} courses",
+        added
+    )))
     .into_response())
 }
 
@@ -80,7 +81,7 @@ pub async fn remove_course(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     course_planning_service::remove_course(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn update_course(
@@ -94,7 +95,7 @@ pub async fn update_course(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     course_planning_service::update_course(&pool, id, payload).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -117,7 +118,7 @@ pub async fn batch_list_course_instructors(
         .filter_map(|s| s.trim().parse::<Uuid>().ok())
         .collect();
     let grouped = course_planning_service::batch_list_course_instructors(&pool, &ids).await?;
-    Ok(Json(json!({ "success": true, "data": grouped })).into_response())
+    Ok(Json(ApiResponse::ok(grouped)).into_response())
 }
 
 pub async fn list_course_instructors(
@@ -130,7 +131,7 @@ pub async fn list_course_instructors(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = course_planning_service::list_course_instructors(&pool, course_id).await?;
-    Ok(Json(json!({ "success": true, "data": rows })).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn add_course_instructor(
@@ -152,7 +153,7 @@ pub async fn add_course_instructor(
     )
     .await?;
     broadcast_course_refresh(&state, &headers, &context, course_id).await;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn remove_course_instructor(
@@ -171,7 +172,7 @@ pub async fn remove_course_instructor(
     )
     .await?;
     broadcast_course_refresh(&state, &headers, &context, course_id).await;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn update_course_instructor_role(
@@ -192,7 +193,7 @@ pub async fn update_course_instructor_role(
     )
     .await?;
     broadcast_course_refresh(&state, &headers, &context, course_id).await;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 #[derive(serde::Deserialize)]
@@ -213,7 +214,7 @@ pub async fn list_classroom_activities(
     let rows =
         course_planning_service::list_classroom_activities(&pool, classroom_id, query.semester_id)
             .await?;
-    Ok(Json(json!({ "success": true, "data": rows })).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn remove_classroom_from_slot(
@@ -226,5 +227,5 @@ pub async fn remove_classroom_from_slot(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     course_planning_service::remove_classroom_from_slot(&pool, classroom_id, slot_id).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }

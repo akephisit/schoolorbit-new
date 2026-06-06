@@ -1,3 +1,4 @@
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::services::academic_structure_service;
 use crate::utils::request_context::tenant_pool;
@@ -19,7 +20,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
 pub async fn list_academic_structure(
@@ -29,7 +29,7 @@ pub async fn list_academic_structure(
     let pool = tenant_pool(&state, &headers).await?;
     let structure = academic_structure_service::list_academic_structure(&pool).await?;
 
-    Ok(Json(json!({ "success": true, "data": structure })))
+    Ok(Json(ApiResponse::ok(structure)))
 }
 
 pub async fn create_academic_year(
@@ -40,10 +40,7 @@ pub async fn create_academic_year(
     let pool = tenant_pool(&state, &headers).await?;
     let year = academic_structure_service::create_academic_year(&pool, payload).await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "success": true, "data": year })),
-    ))
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(year))))
 }
 
 pub async fn update_academic_year(
@@ -55,7 +52,7 @@ pub async fn update_academic_year(
     let pool = tenant_pool(&state, &headers).await?;
     let year = academic_structure_service::update_academic_year(&pool, id, payload).await?;
 
-    Ok(Json(json!({ "success": true, "data": year })).into_response())
+    Ok(Json(ApiResponse::ok(year)).into_response())
 }
 
 pub async fn toggle_active_year(
@@ -66,11 +63,7 @@ pub async fn toggle_active_year(
     let pool = tenant_pool(&state, &headers).await?;
     academic_structure_service::toggle_active_year(&pool, id).await?;
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {},
-        "message": "Updated active year"
-    })))
+    Ok(Json(ApiResponse::empty_with_message("Updated active year")))
 }
 
 pub async fn create_semester(
@@ -81,10 +74,7 @@ pub async fn create_semester(
     let pool = tenant_pool(&state, &headers).await?;
     let semester = academic_structure_service::create_semester(&pool, payload).await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "success": true, "data": semester })),
-    ))
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(semester))))
 }
 
 pub async fn update_semester(
@@ -96,7 +86,7 @@ pub async fn update_semester(
     let pool = tenant_pool(&state, &headers).await?;
     let semester = academic_structure_service::update_semester(&pool, id, payload).await?;
 
-    Ok(Json(json!({ "success": true, "data": semester })))
+    Ok(Json(ApiResponse::ok(semester)))
 }
 
 pub async fn delete_semester(
@@ -107,11 +97,7 @@ pub async fn delete_semester(
     let pool = tenant_pool(&state, &headers).await?;
     academic_structure_service::delete_semester(&pool, id).await?;
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {},
-        "message": "Semester deleted"
-    })))
+    Ok(Json(ApiResponse::empty_with_message("Semester deleted")))
 }
 
 pub async fn list_classrooms(
@@ -122,7 +108,7 @@ pub async fn list_classrooms(
     let pool = tenant_pool(&state, &headers).await?;
     let classrooms = academic_structure_service::list_classrooms(&pool, filter).await?;
 
-    Ok(Json(json!({ "success": true, "data": classrooms })))
+    Ok(Json(ApiResponse::ok(classrooms)))
 }
 
 pub async fn create_classroom(
@@ -133,10 +119,7 @@ pub async fn create_classroom(
     let pool = tenant_pool(&state, &headers).await?;
     let classroom = academic_structure_service::create_classroom(&pool, payload).await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "success": true, "data": classroom })),
-    ))
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(classroom))))
 }
 
 pub async fn update_classroom(
@@ -148,7 +131,7 @@ pub async fn update_classroom(
     let pool = tenant_pool(&state, &headers).await?;
     let classroom = academic_structure_service::update_classroom(&pool, id, payload).await?;
 
-    Ok(Json(json!({ "success": true, "data": classroom })))
+    Ok(Json(ApiResponse::ok(classroom)))
 }
 
 pub async fn create_grade_level(
@@ -159,10 +142,7 @@ pub async fn create_grade_level(
     let pool = tenant_pool(&state, &headers).await?;
     let level = academic_structure_service::create_grade_level(&pool, payload).await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "success": true, "data": level })),
-    ))
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(level))))
 }
 
 pub async fn delete_grade_level(
@@ -173,11 +153,7 @@ pub async fn delete_grade_level(
     let pool = tenant_pool(&state, &headers).await?;
     academic_structure_service::delete_grade_level(&pool, id).await?;
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {},
-        "message": "Grade level deleted"
-    })))
+    Ok(Json(ApiResponse::empty_with_message("Grade level deleted")))
 }
 
 pub async fn enroll_students(
@@ -188,11 +164,10 @@ pub async fn enroll_students(
     let pool = tenant_pool(&state, &headers).await?;
     let enrolled_count = academic_structure_service::enroll_students(&pool, payload).await?;
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {},
-        "message": format!("Enrolled {} students successfully", enrolled_count)
-    })))
+    Ok(Json(ApiResponse::empty_with_message(format!(
+        "Enrolled {} students successfully",
+        enrolled_count
+    ))))
 }
 
 pub async fn get_class_enrollments(
@@ -203,7 +178,7 @@ pub async fn get_class_enrollments(
     let pool = tenant_pool(&state, &headers).await?;
     let enrollments = academic_structure_service::get_class_enrollments(&pool, class_id).await?;
 
-    Ok(Json(json!({ "success": true, "data": enrollments })))
+    Ok(Json(ApiResponse::ok(enrollments)))
 }
 
 pub async fn remove_enrollment(
@@ -214,11 +189,7 @@ pub async fn remove_enrollment(
     let pool = tenant_pool(&state, &headers).await?;
     academic_structure_service::remove_enrollment(&pool, id).await?;
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {},
-        "message": "Enrollment removed"
-    })))
+    Ok(Json(ApiResponse::empty_with_message("Enrollment removed")))
 }
 
 #[derive(serde::Deserialize)]
@@ -235,11 +206,9 @@ pub async fn update_enrollment_number(
     let pool = tenant_pool(&state, &headers).await?;
     academic_structure_service::update_enrollment_number(&pool, id, payload.class_number).await?;
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {},
-        "message": "Class number updated"
-    })))
+    Ok(Json(ApiResponse::empty_with_message(
+        "Class number updated",
+    )))
 }
 
 #[derive(serde::Deserialize)]
@@ -258,11 +227,10 @@ pub async fn auto_assign_class_numbers(
         academic_structure_service::auto_assign_class_numbers(&pool, class_id, &payload.sort_by)
             .await?;
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {},
-        "message": format!("เรียงเลขที่สำหรับ {} คนเรียบร้อยแล้ว", updated_count)
-    })))
+    Ok(Json(ApiResponse::empty_with_message(format!(
+        "เรียงเลขที่สำหรับ {} คนเรียบร้อยแล้ว",
+        updated_count
+    ))))
 }
 
 pub async fn get_year_levels(
@@ -273,7 +241,7 @@ pub async fn get_year_levels(
     let pool = tenant_pool(&state, &headers).await?;
     let level_ids = academic_structure_service::get_year_levels(&pool, year_id).await?;
 
-    Ok(Json(json!({ "success": true, "data": level_ids })))
+    Ok(Json(ApiResponse::ok(level_ids)))
 }
 
 pub async fn update_year_levels(
@@ -285,9 +253,5 @@ pub async fn update_year_levels(
     let pool = tenant_pool(&state, &headers).await?;
     academic_structure_service::update_year_levels(&pool, year_id, payload.grade_level_ids).await?;
 
-    Ok(Json(json!({
-        "success": true,
-        "data": {},
-        "message": "Year levels updated"
-    })))
+    Ok(Json(ApiResponse::empty_with_message("Year levels updated")))
 }

@@ -7,28 +7,12 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::services::scheduling_config_service;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
-
-#[derive(Serialize)]
-pub struct ApiResponse<T> {
-    pub success: bool,
-    pub data: Option<T>,
-    pub error: Option<String>,
-}
-
-impl<T> ApiResponse<T> {
-    pub fn success(data: T) -> Self {
-        Self {
-            success: true,
-            data: Some(data),
-            error: None,
-        }
-    }
-}
 
 #[derive(Deserialize)]
 pub struct UpdateInstructorConstraintRequest {
@@ -99,7 +83,7 @@ pub async fn list_classroom_course_constraints(
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_classroom_course_constraints(&pool, q.instructor_id)
         .await?;
-    Ok(Json(ApiResponse::success(rows)).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn update_classroom_course_constraints(
@@ -123,7 +107,7 @@ pub async fn update_classroom_course_constraints(
         payload.hard_unavailable_slots,
     )
     .await?;
-    Ok(Json(ApiResponse::success(
+    Ok(Json(ApiResponse::ok(
         "Updated classroom course constraints".to_string(),
     ))
     .into_response())
@@ -139,7 +123,7 @@ pub async fn list_cc_preferred_rooms(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_cc_preferred_rooms(&pool, cc_id).await?;
-    Ok(Json(ApiResponse::success(rows)).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn set_cc_preferred_rooms(
@@ -158,7 +142,7 @@ pub async fn set_cc_preferred_rooms(
         .map(|r| (r.room_id, r.rank, r.is_required.unwrap_or(false)))
         .collect();
     let count = scheduling_config_service::set_cc_preferred_rooms(&pool, cc_id, rooms).await?;
-    Ok(Json(ApiResponse::success(format!("Updated {} rooms", count))).into_response())
+    Ok(Json(ApiResponse::ok(format!("Updated {} rooms", count))).into_response())
 }
 
 pub async fn list_all_rooms(
@@ -170,7 +154,7 @@ pub async fn list_all_rooms(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_all_rooms(&pool).await?;
-    Ok(Json(ApiResponse::success(rows)).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn list_instructor_constraints(
@@ -182,7 +166,7 @@ pub async fn list_instructor_constraints(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_instructor_constraints(&pool).await?;
-    Ok(Json(ApiResponse::success(rows)).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn reorder_instructor_priority(
@@ -201,7 +185,7 @@ pub async fn reorder_instructor_priority(
     } else {
         format!("Reordered {} instructors", n)
     };
-    Ok(Json(ApiResponse::success(msg)).into_response())
+    Ok(Json(ApiResponse::ok(msg)).into_response())
 }
 
 pub async fn get_scheduler_settings(
@@ -213,7 +197,7 @@ pub async fn get_scheduler_settings(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let default_max_consecutive = scheduling_config_service::get_scheduler_settings(&pool).await?;
-    Ok(Json(ApiResponse::success(SchedulerSettingsView {
+    Ok(Json(ApiResponse::ok(SchedulerSettingsView {
         default_max_consecutive,
     }))
     .into_response())
@@ -230,10 +214,7 @@ pub async fn update_scheduler_settings(
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     scheduling_config_service::update_scheduler_settings(&pool, payload.default_max_consecutive)
         .await?;
-    Ok(Json(ApiResponse::success(
-        "Updated scheduler settings".to_string(),
-    ))
-    .into_response())
+    Ok(Json(ApiResponse::ok("Updated scheduler settings".to_string())).into_response())
 }
 
 pub async fn update_instructor_constraints(
@@ -259,7 +240,7 @@ pub async fn update_instructor_constraints(
         },
     )
     .await?;
-    Ok(Json(ApiResponse::success(
+    Ok(Json(ApiResponse::ok(
         "Updated instructor constraints".to_string(),
     ))
     .into_response())
@@ -274,7 +255,7 @@ pub async fn list_subject_constraints(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = scheduling_config_service::list_subject_constraints(&pool).await?;
-    Ok(Json(ApiResponse::success(rows)).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn update_subject_constraints(
@@ -297,8 +278,5 @@ pub async fn update_subject_constraints(
         payload.allowed_days,
     )
     .await?;
-    Ok(Json(ApiResponse::success(
-        "Updated subject constraints".to_string(),
-    ))
-    .into_response())
+    Ok(Json(ApiResponse::ok("Updated subject constraints".to_string())).into_response())
 }

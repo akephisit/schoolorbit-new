@@ -69,3 +69,33 @@ impl ApiErrorResponse {
         }
     }
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiErrorResponseWithData<T> {
+    pub success: bool,
+    pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    pub data: T,
+}
+
+impl<T> ApiErrorResponseWithData<T> {
+    pub fn new(error: impl Into<String>, data: T) -> Self {
+        Self {
+            success: false,
+            error: error.into(),
+            message: None,
+            data,
+        }
+    }
+
+    pub fn with_message(error: impl Into<String>, message: impl Into<String>, data: T) -> Self {
+        Self {
+            success: false,
+            error: error.into(),
+            message: Some(message.into()),
+            data,
+        }
+    }
+}

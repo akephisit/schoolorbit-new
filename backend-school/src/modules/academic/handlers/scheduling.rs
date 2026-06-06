@@ -4,9 +4,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::models::scheduling::*;
 use crate::modules::academic::services::scheduling_service;
@@ -14,6 +15,17 @@ use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
+
+#[derive(Debug, Serialize)]
+struct SchedulingJobStartedData {
+    job_id: Uuid,
+    status: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct DeletedData<T> {
+    deleted: T,
+}
 
 pub async fn auto_schedule_timetable(
     State(state): State<AppState>,
@@ -83,8 +95,15 @@ pub async fn auto_schedule_timetable(
 
     Ok((
         StatusCode::ACCEPTED,
-        Json(serde_json::json!({ "success": true, "data": { "job_id": job_id, "status": "PENDING" }, "message": "Scheduling job started" }))
-    ).into_response())
+        Json(ApiResponse::with_message(
+            SchedulingJobStartedData {
+                job_id,
+                status: "PENDING",
+            },
+            "Scheduling job started",
+        )),
+    )
+        .into_response())
 }
 
 pub async fn get_scheduling_job(
@@ -135,7 +154,7 @@ pub async fn get_scheduling_job(
         created_at: job.created_at,
     };
 
-    Ok(Json(serde_json::json!({ "success": true, "data": response })).into_response())
+    Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
 pub async fn undo_scheduling_job(
@@ -162,10 +181,7 @@ pub async fn undo_scheduling_job(
         );
     }
 
-    Ok(
-        Json(serde_json::json!({ "success": true, "data": { "deleted": deleted } }))
-            .into_response(),
-    )
+    Ok(Json(ApiResponse::ok(DeletedData { deleted })).into_response())
 }
 
 #[derive(Deserialize)]
@@ -185,7 +201,7 @@ pub async fn list_scheduling_jobs(
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let limit = query.limit.unwrap_or(50).min(100);
     let jobs = scheduling_service::list_scheduling_jobs(&pool, query.semester_id, limit).await?;
-    Ok(Json(serde_json::json!({ "success": true, "data": jobs })).into_response())
+    Ok(Json(ApiResponse::ok(jobs)).into_response())
 }
 
 pub async fn create_instructor_preference(
@@ -198,11 +214,7 @@ pub async fn create_instructor_preference(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let pref = scheduling_service::create_instructor_preference(&pool, payload).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(serde_json::json!({ "success": true, "data": pref })),
-    )
-        .into_response())
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(pref))).into_response())
 }
 
 pub async fn create_instructor_room_assignment(
@@ -215,11 +227,7 @@ pub async fn create_instructor_room_assignment(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let a = scheduling_service::create_instructor_room_assignment(&pool, payload).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(serde_json::json!({ "success": true, "data": a })),
-    )
-        .into_response())
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(a))).into_response())
 }
 
 pub async fn create_locked_slot(
@@ -233,11 +241,7 @@ pub async fn create_locked_slot(
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let user_id = Some(actor.user_id);
     let locked = scheduling_service::create_locked_slot(&pool, payload, user_id).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(serde_json::json!({ "success": true, "data": locked })),
-    )
-        .into_response())
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(locked))).into_response())
 }
 
 pub async fn list_locked_slots(
@@ -250,7 +254,7 @@ pub async fn list_locked_slots(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let slots = scheduling_service::list_locked_slots(&pool, query.semester_id).await?;
-    Ok(Json(serde_json::json!({ "success": true, "data": slots })).into_response())
+    Ok(Json(ApiResponse::ok(slots)).into_response())
 }
 
 pub async fn delete_locked_slot(

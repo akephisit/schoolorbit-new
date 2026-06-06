@@ -4,9 +4,9 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, SubjectFilter,
@@ -30,12 +30,16 @@ pub async fn list_subject_groups(
     ]) {
         return Ok((
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_READ_ALL) })),
-        ).into_response());
+            Json(ApiErrorResponse::new(format!(
+                "ไม่มีสิทธิ์ {}",
+                codes::ACADEMIC_CURRICULUM_READ_ALL
+            ))),
+        )
+            .into_response());
     }
 
     let groups = subject_service::list_subject_groups(&pool).await?;
-    Ok(Json(json!({ "success": true, "data": groups })).into_response())
+    Ok(Json(ApiResponse::ok(groups)).into_response())
 }
 
 pub async fn list_subjects(
@@ -51,8 +55,12 @@ pub async fn list_subjects(
     if !has_all && !has_dept {
         return Ok((
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_READ_ALL) })),
-        ).into_response());
+            Json(ApiErrorResponse::new(format!(
+                "ไม่มีสิทธิ์ {}",
+                codes::ACADEMIC_CURRICULUM_READ_ALL
+            ))),
+        )
+            .into_response());
     }
 
     let dept_group_id: Option<Uuid> = if !has_all && has_dept {
@@ -61,7 +69,7 @@ pub async fn list_subjects(
             None => {
                 return Ok((
                     StatusCode::FORBIDDEN,
-                    Json(json!({ "success": false, "error": "ไม่พบกลุ่มสาระที่สังกัด" })),
+                    Json(ApiErrorResponse::new("ไม่พบกลุ่มสาระที่สังกัด")),
                 )
                     .into_response());
             }
@@ -71,7 +79,7 @@ pub async fn list_subjects(
     };
 
     let subjects = subject_service::list_subjects(&pool, filter, dept_group_id).await?;
-    Ok(Json(json!({ "success": true, "data": subjects })).into_response())
+    Ok(Json(ApiResponse::ok(subjects)).into_response())
 }
 
 pub async fn create_subject(
@@ -87,8 +95,12 @@ pub async fn create_subject(
     if !has_all && !has_dept {
         return Ok((
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_CREATE_ALL) })),
-        ).into_response());
+            Json(ApiErrorResponse::new(format!(
+                "ไม่มีสิทธิ์ {}",
+                codes::ACADEMIC_CURRICULUM_CREATE_ALL
+            ))),
+        )
+            .into_response());
     }
 
     if !has_all && has_dept {
@@ -103,11 +115,7 @@ pub async fn create_subject(
     }
 
     let subject = subject_service::create_subject(&pool, payload).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "success": true, "data": subject })),
-    )
-        .into_response())
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(subject))).into_response())
 }
 
 pub async fn update_subject(
@@ -124,8 +132,12 @@ pub async fn update_subject(
     if !has_all && !has_dept {
         return Ok((
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_UPDATE_ALL) })),
-        ).into_response());
+            Json(ApiErrorResponse::new(format!(
+                "ไม่มีสิทธิ์ {}",
+                codes::ACADEMIC_CURRICULUM_UPDATE_ALL
+            ))),
+        )
+            .into_response());
     }
 
     if !has_all && has_dept {
@@ -141,7 +153,7 @@ pub async fn update_subject(
     }
 
     let subject = subject_service::update_subject(&pool, id, payload).await?;
-    Ok(Json(json!({ "success": true, "data": subject })).into_response())
+    Ok(Json(ApiResponse::ok(subject)).into_response())
 }
 
 pub async fn delete_subject(
@@ -157,8 +169,12 @@ pub async fn delete_subject(
     if !has_all && !has_dept {
         return Ok((
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_DELETE_ALL) })),
-        ).into_response());
+            Json(ApiErrorResponse::new(format!(
+                "ไม่มีสิทธิ์ {}",
+                codes::ACADEMIC_CURRICULUM_DELETE_ALL
+            ))),
+        )
+            .into_response());
     }
 
     if !has_all && has_dept {
@@ -174,7 +190,7 @@ pub async fn delete_subject(
     }
 
     subject_service::delete_subject(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn list_subject_default_instructors(
@@ -194,7 +210,7 @@ pub async fn list_subject_default_instructors(
     )
     .await?;
     let rows = subject_service::list_subject_default_instructors(&pool, subject_id).await?;
-    Ok(Json(json!({ "success": true, "data": rows })).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn add_subject_default_instructor(
@@ -215,7 +231,7 @@ pub async fn add_subject_default_instructor(
     )
     .await?;
     subject_service::add_subject_default_instructor(&pool, subject_id, body).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn remove_subject_default_instructor(
@@ -235,7 +251,7 @@ pub async fn remove_subject_default_instructor(
     )
     .await?;
     subject_service::remove_subject_default_instructor(&pool, subject_id, instructor_id).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn update_subject_default_instructor_role(
@@ -262,7 +278,7 @@ pub async fn update_subject_default_instructor_role(
         &body.role,
     )
     .await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -284,8 +300,12 @@ pub async fn batch_list_subject_default_instructors(
     ]) {
         return Ok((
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_CURRICULUM_READ_ALL) })),
-        ).into_response());
+            Json(ApiErrorResponse::new(format!(
+                "ไม่มีสิทธิ์ {}",
+                codes::ACADEMIC_CURRICULUM_READ_ALL
+            ))),
+        )
+            .into_response());
     }
 
     let ids: Vec<Uuid> = query
@@ -295,5 +315,5 @@ pub async fn batch_list_subject_default_instructors(
         .collect();
 
     let grouped = subject_service::batch_list_subject_default_instructors(&pool, ids).await?;
-    Ok(Json(json!({ "success": true, "data": grouped })).into_response())
+    Ok(Json(ApiResponse::ok(grouped)).into_response())
 }

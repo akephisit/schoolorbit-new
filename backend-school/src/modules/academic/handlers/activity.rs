@@ -4,9 +4,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::activity::*;
 use crate::modules::academic::services::activity_service;
@@ -15,6 +16,36 @@ use crate::utils::request_context::{
     actor_tenant_context, current_user_tenant_context_from_headers,
 };
 use crate::AppState;
+
+#[derive(Debug, Serialize)]
+struct InsertedData<T> {
+    inserted: T,
+}
+
+#[derive(Debug, Serialize)]
+struct AddedData<T> {
+    added: T,
+}
+
+#[derive(Debug, Serialize)]
+struct DeletedCountData<T> {
+    deleted_count: T,
+}
+
+#[derive(Debug, Serialize)]
+struct CountData<T> {
+    count: T,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddSlotInstructorRequest {
+    user_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddSlotInstructorsBatchRequest {
+    user_ids: Vec<Uuid>,
+}
 
 // ============================================
 // Activity Slots
@@ -30,7 +61,7 @@ pub async fn list_activity_slots(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let slots = activity_service::list_slots(&pool, filter).await?;
-    Ok(Json(json!({ "success": true, "data": slots })).into_response())
+    Ok(Json(ApiResponse::ok(slots)).into_response())
 }
 
 pub async fn update_activity_slot(
@@ -44,7 +75,7 @@ pub async fn update_activity_slot(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let row = activity_service::update_slot(&pool, id, body).await?;
-    Ok(Json(json!({ "success": true, "data": row })).into_response())
+    Ok(Json(ApiResponse::ok(row)).into_response())
 }
 
 pub async fn delete_activity_slot(
@@ -57,7 +88,7 @@ pub async fn delete_activity_slot(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     activity_service::delete_slot(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบช่องกิจกรรมแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ลบช่องกิจกรรมแล้ว")).into_response())
 }
 
 // ============================================
@@ -74,7 +105,7 @@ pub async fn list_activity_groups(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let groups = activity_service::list_groups(&pool, filter).await?;
-    Ok(Json(json!({ "success": true, "data": groups })).into_response())
+    Ok(Json(ApiResponse::ok(groups)).into_response())
 }
 
 pub async fn create_activity_group(
@@ -94,16 +125,14 @@ pub async fn create_activity_group(
     let outcome = activity_service::create_group(&pool, body, has_manage_all).await?;
     match outcome {
         activity_service::CreateGroupOutcome::Created(row) => {
-            Ok(Json(json!({ "success": true, "data": *row })).into_response())
+            Ok(Json(ApiResponse::ok(*row)).into_response())
         }
-        activity_service::CreateGroupOutcome::SlotClosed => Ok(Json(
-            json!({ "success": false, "error": "ช่องกิจกรรมนี้ยังไม่เปิดให้ลงทะเบียน" }),
-        )
-        .into_response()),
-        activity_service::CreateGroupOutcome::InstructorNotInSlot => Ok(Json(
-            json!({ "success": false, "error": "ครูคนนี้ไม่ได้อยู่ในรายชื่อครูของช่องกิจกรรมนี้" }),
-        )
-        .into_response()),
+        activity_service::CreateGroupOutcome::SlotClosed => {
+            Ok(Json(ApiErrorResponse::new("ช่องกิจกรรมนี้ยังไม่เปิดให้ลงทะเบียน")).into_response())
+        }
+        activity_service::CreateGroupOutcome::InstructorNotInSlot => {
+            Ok(Json(ApiErrorResponse::new("ครูคนนี้ไม่ได้อยู่ในรายชื่อครูของช่องกิจกรรมนี้")).into_response())
+        }
     }
 }
 
@@ -118,7 +147,7 @@ pub async fn update_activity_group(
     let actor = context.actor;
     actor.require_any_permission(&[codes::ACTIVITY_MANAGE_ALL, codes::ACTIVITY_MANAGE_OWN])?;
     let row = activity_service::update_group(&pool, id, body).await?;
-    Ok(Json(json!({ "success": true, "data": row })).into_response())
+    Ok(Json(ApiResponse::ok(row)).into_response())
 }
 
 pub async fn delete_activity_group(
@@ -131,7 +160,7 @@ pub async fn delete_activity_group(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     activity_service::delete_group(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบกลุ่มกิจกรรมแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ลบกลุ่มกิจกรรมแล้ว")).into_response())
 }
 
 // ============================================
@@ -148,7 +177,7 @@ pub async fn list_members(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let members = activity_service::list_members(&pool, group_id).await?;
-    Ok(Json(json!({ "success": true, "data": members })).into_response())
+    Ok(Json(ApiResponse::ok(members)).into_response())
 }
 
 pub async fn add_members(
@@ -163,12 +192,11 @@ pub async fn add_members(
     actor.require_permission(codes::ACTIVITY_MEMBERS_MANAGE)?;
     match activity_service::add_members(&pool, group_id, body.student_ids).await? {
         activity_service::AddMembersOutcome::Inserted(n) => {
-            Ok(Json(json!({ "success": true, "data": { "inserted": n } })).into_response())
+            Ok(Json(ApiResponse::ok(InsertedData { inserted: n })).into_response())
         }
-        activity_service::AddMembersOutcome::OverCapacity(cap) => Ok(Json(
-            json!({ "success": false, "error": format!("จำนวนเกินที่รับได้ ({cap} คน)") }),
-        )
-        .into_response()),
+        activity_service::AddMembersOutcome::OverCapacity(cap) => {
+            Ok(Json(ApiErrorResponse::new(format!("จำนวนเกินที่รับได้ ({cap} คน)"))).into_response())
+        }
     }
 }
 
@@ -180,7 +208,7 @@ pub async fn my_enrollments(
     let pool = context.tenant.pool;
     let user_id = context.user_id;
     let ids = activity_service::my_enrollments(&pool, user_id).await?;
-    Ok(Json(json!({ "success": true, "data": ids })).into_response())
+    Ok(Json(ApiResponse::ok(ids)).into_response())
 }
 
 pub async fn self_enroll(
@@ -193,27 +221,24 @@ pub async fn self_enroll(
     let user_id = context.user_id;
 
     match activity_service::self_enroll(&pool, group_id, user_id).await? {
-        activity_service::SelfEnrollOutcome::Enrolled => Ok(Json(
-            json!({ "success": true, "data": {}, "message": "ลงทะเบียนสำเร็จ" }),
-        )
-        .into_response()),
-        activity_service::SelfEnrollOutcome::AlreadyEnrolled => {
-            Ok(Json(json!({ "success": false, "error": "ลงทะเบียนแล้วก่อนหน้านี้" })).into_response())
+        activity_service::SelfEnrollOutcome::Enrolled => {
+            Ok(Json(ApiResponse::empty_with_message("ลงทะเบียนสำเร็จ")).into_response())
         }
-        activity_service::SelfEnrollOutcome::NotSelfRegistrationType => Ok(Json(
-            json!({ "success": false, "error": "กลุ่มนี้ไม่เปิดให้ลงทะเบียนด้วยตนเอง" }),
-        )
-        .into_response()),
+        activity_service::SelfEnrollOutcome::AlreadyEnrolled => {
+            Ok(Json(ApiErrorResponse::new("ลงทะเบียนแล้วก่อนหน้านี้")).into_response())
+        }
+        activity_service::SelfEnrollOutcome::NotSelfRegistrationType => {
+            Ok(Json(ApiErrorResponse::new("กลุ่มนี้ไม่เปิดให้ลงทะเบียนด้วยตนเอง")).into_response())
+        }
         activity_service::SelfEnrollOutcome::NotOpen => {
-            Ok(Json(json!({ "success": false, "error": "ยังไม่เปิดรับสมัคร" })).into_response())
+            Ok(Json(ApiErrorResponse::new("ยังไม่เปิดรับสมัคร")).into_response())
         }
         activity_service::SelfEnrollOutcome::Full => {
-            Ok(Json(json!({ "success": false, "error": "กลุ่มเต็มแล้ว" })).into_response())
+            Ok(Json(ApiErrorResponse::new("กลุ่มเต็มแล้ว")).into_response())
         }
-        activity_service::SelfEnrollOutcome::ClassroomNotAllowed => Ok(Json(
-            json!({ "success": false, "error": "ห้องเรียนของคุณไม่อยู่ในห้องที่รับ" }),
-        )
-        .into_response()),
+        activity_service::SelfEnrollOutcome::ClassroomNotAllowed => {
+            Ok(Json(ApiErrorResponse::new("ห้องเรียนของคุณไม่อยู่ในห้องที่รับ")).into_response())
+        }
     }
 }
 
@@ -226,7 +251,7 @@ pub async fn self_unenroll(
     let pool = context.tenant.pool;
     let user_id = context.user_id;
     activity_service::self_unenroll(&pool, group_id, user_id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ยกเลิกลงทะเบียนแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ยกเลิกลงทะเบียนแล้ว")).into_response())
 }
 
 pub async fn remove_member(
@@ -239,7 +264,7 @@ pub async fn remove_member(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MEMBERS_MANAGE)?;
     activity_service::remove_member(&pool, group_id, student_id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบสมาชิกแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ลบสมาชิกแล้ว")).into_response())
 }
 
 pub async fn update_member_result(
@@ -253,7 +278,7 @@ pub async fn update_member_result(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MEMBERS_MANAGE)?;
     activity_service::update_member_result(&pool, member_id, &body.result).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "บันทึกผลแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("บันทึกผลแล้ว")).into_response())
 }
 
 // ============================================
@@ -276,7 +301,7 @@ pub async fn list_instructors(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let rows = activity_service::list_group_instructors(&pool, group_id).await?;
-    Ok(Json(json!({ "success": true, "data": rows })).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn add_instructor(
@@ -291,7 +316,7 @@ pub async fn add_instructor(
     actor.require_any_permission(&[codes::ACTIVITY_MANAGE_ALL, codes::ACTIVITY_MANAGE_OWN])?;
     let role = body.role.unwrap_or_else(|| "assistant".to_string());
     activity_service::add_group_instructor(&pool, group_id, body.instructor_id, &role).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "เพิ่มครูแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("เพิ่มครูแล้ว")).into_response())
 }
 
 pub async fn remove_instructor(
@@ -304,7 +329,7 @@ pub async fn remove_instructor(
     let actor = context.actor;
     actor.require_any_permission(&[codes::ACTIVITY_MANAGE_ALL, codes::ACTIVITY_MANAGE_OWN])?;
     activity_service::remove_group_instructor(&pool, group_id, instructor_id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบครูแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ลบครูแล้ว")).into_response())
 }
 
 // ============================================
@@ -321,59 +346,43 @@ pub async fn list_slot_instructors(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let rows = activity_service::list_slot_instructors(&pool, slot_id).await?;
-    Ok(Json(json!({ "success": true, "data": rows })).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn add_slot_instructor(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(slot_id): Path<Uuid>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<AddSlotInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
-    let user_id = body
-        .get("user_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .ok_or_else(|| AppError::BadRequest("user_id required".to_string()))?;
-
-    activity_service::add_slot_instructor(&pool, slot_id, user_id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "เพิ่มครูแล้ว" })).into_response())
+    activity_service::add_slot_instructor(&pool, slot_id, body.user_id).await?;
+    Ok(Json(ApiResponse::empty_with_message("เพิ่มครูแล้ว")).into_response())
 }
 
 pub async fn add_slot_instructors_batch(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(slot_id): Path<Uuid>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<AddSlotInstructorsBatchRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
-    let user_ids: Vec<Uuid> = body
-        .get("user_ids")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| AppError::BadRequest("user_ids array required".to_string()))?
-        .iter()
-        .filter_map(|v| v.as_str().and_then(|s| Uuid::parse_str(s).ok()))
-        .collect();
-
-    if user_ids.is_empty() {
-        return Ok(Json(
-            json!({ "success": true, "data": { "added": 0 }, "message": "ไม่มีครูที่จะเพิ่ม" }),
-        )
+    if body.user_ids.is_empty() {
+        return Ok(Json(ApiResponse::with_message(
+            AddedData { added: 0 },
+            "ไม่มีครูที่จะเพิ่ม",
+        ))
         .into_response());
     }
 
-    let added = activity_service::add_slot_instructors_batch(&pool, slot_id, user_ids).await?;
-    Ok(
-        Json(json!({ "success": true, "data": { "added": added }, "message": "เพิ่มครูแล้ว" }))
-            .into_response(),
-    )
+    let added = activity_service::add_slot_instructors_batch(&pool, slot_id, body.user_ids).await?;
+    Ok(Json(ApiResponse::with_message(AddedData { added }, "เพิ่มครูแล้ว")).into_response())
 }
 
 pub async fn remove_slot_instructor(
@@ -386,7 +395,7 @@ pub async fn remove_slot_instructor(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     activity_service::remove_slot_instructor(&pool, slot_id, user_id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบครูแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ลบครูแล้ว")).into_response())
 }
 
 pub async fn delete_slot_timetable_entries(
@@ -399,7 +408,11 @@ pub async fn delete_slot_timetable_entries(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     let n = activity_service::delete_slot_timetable_entries(&pool, slot_id).await?;
-    Ok(Json(json!({ "success": true, "data": { "deleted_count": n }, "message": "ลบรายการตารางสอนแล้ว" })).into_response())
+    Ok(Json(ApiResponse::with_message(
+        DeletedCountData { deleted_count: n },
+        "ลบรายการตารางสอนแล้ว",
+    ))
+    .into_response())
 }
 
 pub async fn delete_all_slot_groups(
@@ -412,9 +425,10 @@ pub async fn delete_all_slot_groups(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let n = activity_service::delete_all_slot_groups(&pool, slot_id).await?;
-    Ok(Json(
-        json!({ "success": true, "data": { "deleted_count": n }, "message": "ลบกิจกรรมทั้งหมดแล้ว" }),
-    )
+    Ok(Json(ApiResponse::with_message(
+        DeletedCountData { deleted_count: n },
+        "ลบกิจกรรมทั้งหมดแล้ว",
+    ))
     .into_response())
 }
 
@@ -428,10 +442,11 @@ pub async fn remove_all_slot_instructors(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let n = activity_service::remove_all_slot_instructors(&pool, slot_id).await?;
-    Ok(
-        Json(json!({ "success": true, "data": { "deleted_count": n }, "message": "ลบครูทั้งหมดแล้ว" }))
-            .into_response(),
-    )
+    Ok(Json(ApiResponse::with_message(
+        DeletedCountData { deleted_count: n },
+        "ลบครูทั้งหมดแล้ว",
+    ))
+    .into_response())
 }
 
 // ============================================
@@ -448,7 +463,7 @@ pub async fn list_slot_classroom_assignments(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_READ_ALL)?;
     let rows = activity_service::list_slot_classroom_assignments(&pool, slot_id).await?;
-    Ok(Json(json!({ "success": true, "data": rows })).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn batch_upsert_slot_classroom_assignments(
@@ -462,10 +477,11 @@ pub async fn batch_upsert_slot_classroom_assignments(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let n = activity_service::batch_upsert_slot_classroom_assignments(&pool, slot_id, body).await?;
-    Ok(
-        Json(json!({ "success": true, "data": { "count": n }, "message": "บันทึกสำเร็จ" }))
-            .into_response(),
-    )
+    Ok(Json(ApiResponse::with_message(
+        CountData { count: n },
+        "บันทึกสำเร็จ",
+    ))
+    .into_response())
 }
 
 pub async fn delete_all_slot_classroom_assignments(
@@ -478,7 +494,11 @@ pub async fn delete_all_slot_classroom_assignments(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     let n = activity_service::delete_all_slot_classroom_assignments(&pool, slot_id).await?;
-    Ok(Json(json!({ "success": true, "data": { "deleted_count": n }, "message": "ลบครูประจำห้องทั้งหมดแล้ว" })).into_response())
+    Ok(Json(ApiResponse::with_message(
+        DeletedCountData { deleted_count: n },
+        "ลบครูประจำห้องทั้งหมดแล้ว",
+    ))
+    .into_response())
 }
 
 pub async fn delete_slot_classroom_assignment(
@@ -491,5 +511,5 @@ pub async fn delete_slot_classroom_assignment(
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
     activity_service::delete_slot_classroom_assignment(&pool, slot_id, assignment_id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบสำเร็จ" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ลบสำเร็จ")).into_response())
 }

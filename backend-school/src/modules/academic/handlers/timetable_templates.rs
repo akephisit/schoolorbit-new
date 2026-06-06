@@ -4,9 +4,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::api_response::{ApiResponse, IdData};
 use crate::error::AppError;
 use crate::modules::academic::services::timetable_template_service;
 use crate::modules::academic::websockets::TimetableEvent;
@@ -46,6 +47,22 @@ pub struct UpdateTemplateRequest {
     pub description: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct TemplateWithEntriesData<T, U> {
+    template: T,
+    entries: U,
+}
+
+#[derive(Debug, Serialize)]
+struct AppliedData<T> {
+    applied: T,
+}
+
+#[derive(Debug, Serialize)]
+struct DeletedData<T> {
+    deleted: T,
+}
+
 fn default_non_course_types() -> Vec<String> {
     vec![
         "BREAK".into(),
@@ -64,7 +81,7 @@ pub async fn list_templates(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let rows = timetable_template_service::list_templates(&pool).await?;
-    Ok(Json(serde_json::json!({ "success": true, "data": rows })).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn get_template(
@@ -77,7 +94,11 @@ pub async fn get_template(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let (template, entries) = timetable_template_service::get_template(&pool, id).await?;
-    Ok(Json(serde_json::json!({ "success": true, "data": { "template": template, "entries": entries } })).into_response())
+    Ok(Json(ApiResponse::ok(TemplateWithEntriesData {
+        template,
+        entries,
+    }))
+    .into_response())
 }
 
 pub async fn create_template(
@@ -97,7 +118,7 @@ pub async fn create_template(
         Some(user_id),
     )
     .await?;
-    Ok(Json(serde_json::json!({ "success": true, "data": { "id": id } })).into_response())
+    Ok(Json(ApiResponse::ok(IdData::new(id))).into_response())
 }
 
 pub async fn update_template(
@@ -117,7 +138,7 @@ pub async fn update_template(
         payload.description.as_deref(),
     )
     .await?;
-    Ok(Json(serde_json::json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn delete_template(
@@ -130,7 +151,7 @@ pub async fn delete_template(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     timetable_template_service::delete_template(&pool, id).await?;
-    Ok(Json(serde_json::json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn from_current(
@@ -155,7 +176,7 @@ pub async fn from_current(
     )
     .await?;
 
-    Ok(Json(serde_json::json!({ "success": true, "data": { "id": id } })).into_response())
+    Ok(Json(ApiResponse::ok(IdData::new(id))).into_response())
 }
 
 pub async fn apply_template(
@@ -185,10 +206,10 @@ pub async fn apply_template(
         TimetableEvent::TableRefresh { user_id },
     );
 
-    Ok(
-        Json(serde_json::json!({ "success": true, "data": { "applied": total_inserted } }))
-            .into_response(),
-    )
+    Ok(Json(ApiResponse::ok(AppliedData {
+        applied: total_inserted,
+    }))
+    .into_response())
 }
 
 pub async fn clear_timetable(
@@ -214,8 +235,5 @@ pub async fn clear_timetable(
         TimetableEvent::TableRefresh { user_id },
     );
 
-    Ok(
-        Json(serde_json::json!({ "success": true, "data": { "deleted": deleted } }))
-            .into_response(),
-    )
+    Ok(Json(ApiResponse::ok(DeletedData { deleted })).into_response())
 }
