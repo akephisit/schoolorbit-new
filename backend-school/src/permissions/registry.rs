@@ -23,6 +23,12 @@ pub mod codes {
     pub const STAFF_CREATE_ALL: &str = "staff.create.all";
     pub const STAFF_UPDATE_ALL: &str = "staff.update.all";
     pub const STAFF_DELETE_ALL: &str = "staff.delete.all";
+    pub const STAFF_PROFILE_READ_OWN: &str = "staff_profile.read.own";
+    pub const STAFF_PROFILE_READ_ORGANIZATION_UNIT: &str = "staff_profile.read.organization_unit";
+    pub const STAFF_PROFILE_READ_ORGANIZATION_TREE: &str = "staff_profile.read.organization_tree";
+    pub const STAFF_PROFILE_READ_SCHOOL: &str = "staff_profile.read.school";
+    pub const STAFF_PII_READ_OWN: &str = "staff_pii.read.own";
+    pub const STAFF_PII_READ_SCHOOL: &str = "staff_pii.read.school";
 
     // Role permissions
     pub const ROLES_READ_ALL: &str = "roles.read.all";
@@ -170,6 +176,54 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "delete",
         scope: "all",
         description: "ลบบุคลากร",
+    },
+    PermissionDef {
+        code: codes::STAFF_PROFILE_READ_OWN,
+        name: "ดูโปรไฟล์บุคลากรของตนเอง",
+        module: "staff_profile",
+        action: "read",
+        scope: "own",
+        description: "ดูข้อมูลโปรไฟล์บุคลากรของตนเอง",
+    },
+    PermissionDef {
+        code: codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+        name: "ดูโปรไฟล์บุคลากรในหน่วยงาน",
+        module: "staff_profile",
+        action: "read",
+        scope: "organization_unit",
+        description: "ดูข้อมูลโปรไฟล์บุคลากรที่อยู่ในหน่วยงานเดียวกัน",
+    },
+    PermissionDef {
+        code: codes::STAFF_PROFILE_READ_ORGANIZATION_TREE,
+        name: "ดูโปรไฟล์บุคลากรในสายงาน",
+        module: "staff_profile",
+        action: "read",
+        scope: "organization_tree",
+        description: "ดูข้อมูลโปรไฟล์บุคลากรในหน่วยงานของตนเองและหน่วยงานย่อย",
+    },
+    PermissionDef {
+        code: codes::STAFF_PROFILE_READ_SCHOOL,
+        name: "ดูโปรไฟล์บุคลากรทั้งโรงเรียน",
+        module: "staff_profile",
+        action: "read",
+        scope: "school",
+        description: "ดูข้อมูลโปรไฟล์บุคลากรทั้งโรงเรียน",
+    },
+    PermissionDef {
+        code: codes::STAFF_PII_READ_OWN,
+        name: "ดูข้อมูลอ่อนไหวบุคลากรของตนเอง",
+        module: "staff_pii",
+        action: "read",
+        scope: "own",
+        description: "ดูข้อมูลอ่อนไหวของบุคลากรเฉพาะของตนเอง",
+    },
+    PermissionDef {
+        code: codes::STAFF_PII_READ_SCHOOL,
+        name: "ดูข้อมูลอ่อนไหวบุคลากรทั้งโรงเรียน",
+        module: "staff_pii",
+        action: "read",
+        scope: "school",
+        description: "ดูข้อมูลอ่อนไหวของบุคลากรทั้งโรงเรียน",
     },
     // Role permissions
     PermissionDef {

@@ -7,15 +7,16 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
-	import {
-		Building2,
-		Plus,
-		Pencil,
-		Search,
-		Briefcase,
-		GraduationCap,
-		Settings
-	} from 'lucide-svelte';
+		import {
+			Building2,
+			Plus,
+			Pencil,
+			Search,
+			Briefcase,
+			GraduationCap,
+			Settings,
+			School
+		} from 'lucide-svelte';
 	import OrganizationUnitDialog from '$lib/components/staff/OrganizationUnitDialog.svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte'; // New import
 	import { toast } from 'svelte-sonner';
@@ -36,37 +37,56 @@
 	let showPermissionDialog = $state(false);
 	let permissionDepartment = $state<OrganizationUnit | null>(null);
 
-	// Hierarchical Data Processing
-	// Filter logic: Only Administrative or Miscellaneous
-	let filteredDepartments = $derived(
-		departments.filter((dept) => {
-			const query = searchQuery.toLowerCase();
-			const matchesSearch =
-				dept.name.toLowerCase().includes(query) ||
-				dept.code.toLowerCase().includes(query) ||
-				(dept.name_en && dept.name_en.toLowerCase().includes(query));
+		let filteredDepartments = $derived(
+			departments.filter((dept) => {
+				const query = searchQuery.toLowerCase();
+				const matchesSearch =
+					dept.name.toLowerCase().includes(query) ||
+					dept.code.toLowerCase().includes(query) ||
+					(dept.name_en && dept.name_en.toLowerCase().includes(query));
 
-			const isNotSubjectGroup = dept.unit_type !== 'subject_group';
-
-			return matchesSearch && isNotSubjectGroup;
-		})
-	);
+				return matchesSearch;
+			})
+		);
 
 	let isSearching = $derived(searchQuery.length > 0);
 
 	let rootDepartments = $derived(
-		isSearching
-			? []
-			: departments
-					.filter((d) => !d.parent_unit_id && d.unit_type !== 'subject_group')
-					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-	);
+			isSearching
+				? []
+				: departments
+						.filter((d) => !d.parent_unit_id)
+						.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+		);
 
-	function getChildren(parentId: string): OrganizationUnit[] {
-		return departments
-			.filter((d) => d.parent_unit_id === parentId && d.unit_type !== 'subject_group')
-			.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
-	}
+		function getChildren(parentId: string): OrganizationUnit[] {
+			return departments
+				.filter((d) => d.parent_unit_id === parentId)
+				.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+		}
+
+		function isSchoolRoot(unit: OrganizationUnit): boolean {
+			return unit.code === 'SCHOOL' || unit.unit_type === 'school';
+		}
+
+		function unitTypeLabel(unit: OrganizationUnit): string {
+			if (isSchoolRoot(unit)) return 'โรงเรียน';
+			if (unit.unit_type === 'management_group') return 'กลุ่มบริหาร';
+			if (unit.unit_type === 'subject_group') return 'กลุ่มสาระ';
+			if (unit.unit_type === 'division') return 'ฝ่าย/งาน';
+			if (unit.unit_type === 'committee') return 'คณะกรรมการ';
+			if (unit.unit_type === 'team') return 'ทีม';
+			return 'หน่วยงาน';
+		}
+
+		function isDescendantOf(unitId: string, possibleAncestorId: string): boolean {
+			let current = departments.find((unit) => unit.id === unitId);
+			while (current?.parent_unit_id) {
+				if (current.parent_unit_id === possibleAncestorId) return true;
+				current = departments.find((unit) => unit.id === current?.parent_unit_id);
+			}
+			return false;
+		}
 
 	async function loadDepartments() {
 		try {
@@ -77,7 +97,7 @@
 			if (response.success && response.data) {
 				departments = response.data;
 			} else {
-				error = response.error || 'ไม่สามารถโหลดข้อมูลฝ่ายได้';
+					error = response.error || 'ไม่สามารถโหลดข้อมูลหน่วยงานได้';
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'เกิดข้อผิดพลาด';
@@ -143,28 +163,31 @@
 		if (sourceDeptId === targetParentId) return;
 
 		const sourceDept = departments.find((d) => d.id === sourceDeptId);
-		if (!sourceDept) return;
+			if (!sourceDept) return;
 
-		// Validation: Prevent nesting deeper than 2 levels
-		// Case: Moving a parent (Dept with children) into another parent (creating level 3)
-		if (targetParentId && getChildren(sourceDept.id).length > 0) {
-			toast.error('ไม่สามารถย้ายฝ่ายที่มีฝ่ายย่อยไปอยู่ใต้ฝ่ายอื่นได้ (จำกัดโครงสร้าง 2 ระดับ)');
-			return;
-		}
-
-		// Direct move without confirmation
-		const loadingToast = toast.loading('กำลังย้ายฝ่าย...');
-		try {
-			const result = await updateOrganizationUnit(sourceDeptId, {
-				parent_unit_id: targetParentId ?? undefined
-			});
-
-			if (result.success) {
-				toast.success('ย้ายฝ่ายสำเร็จ', { id: loadingToast });
-				loadDepartments();
-			} else {
-				toast.error('ย้ายฝ่ายไม่สำเร็จ: ' + result.error, { id: loadingToast });
+			if (isSchoolRoot(sourceDept)) {
+				toast.error('ไม่สามารถย้ายหน่วยรากของโรงเรียนได้');
+				return;
 			}
+
+			if (targetParentId && isDescendantOf(targetParentId, sourceDept.id)) {
+				toast.error('ไม่สามารถย้ายหน่วยงานไปอยู่ใต้หน่วยงานย่อยของตัวเองได้');
+				return;
+			}
+
+			// Direct move without confirmation
+			const loadingToast = toast.loading('กำลังย้ายหน่วยงาน...');
+			try {
+				const result = await updateOrganizationUnit(sourceDeptId, {
+					parent_unit_id: targetParentId ?? undefined
+				});
+
+				if (result.success) {
+					toast.success('ย้ายหน่วยงานสำเร็จ', { id: loadingToast });
+					loadDepartments();
+				} else {
+					toast.error('ย้ายหน่วยงานไม่สำเร็จ: ' + result.error, { id: loadingToast });
+				}
 		} catch (err: unknown) {
 			toast.error('เกิดข้อผิดพลาด: ' + (err instanceof Error ? err.message : String(err)), {
 				id: loadingToast
@@ -177,25 +200,27 @@
 	});
 </script>
 
-<svelte:head>
-	<title>จัดการฝ่าย - SchoolOrbit</title>
-</svelte:head>
+	<svelte:head>
+		<title>โครงสร้างโรงเรียน - SchoolOrbit</title>
+	</svelte:head>
 
 <div class="space-y-6">
 	<!-- Header -->
 	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 		<div>
 			<h1 class="text-3xl font-bold text-foreground flex items-center gap-2">
-				<Building2 class="w-8 h-8" />
-				จัดการฝ่าย
-			</h1>
-			<p class="text-muted-foreground mt-1">จัดการโครงสร้างองค์กรและฝ่ายบริหารทั่วไป</p>
+					<Building2 class="w-8 h-8" />
+					โครงสร้างโรงเรียน
+				</h1>
+				<p class="text-muted-foreground mt-1">
+					จัดวางโรงเรียน กลุ่มบริหาร ฝ่ายงาน กลุ่มสาระ และตำแหน่งที่ใช้เป็นฐานสิทธิ์
+				</p>
+			</div>
+			<Button onclick={handleCreate} class="flex items-center gap-2">
+				<Plus class="w-4 h-4" />
+				เพิ่มหน่วยงาน
+			</Button>
 		</div>
-		<Button onclick={handleCreate} class="flex items-center gap-2">
-			<Plus class="w-4 h-4" />
-			เพิ่มฝ่าย
-		</Button>
-	</div>
 
 	<!-- Search & Filter Bar (No Category Select) -->
 	<div class="flex flex-col sm:flex-row gap-4">
@@ -203,11 +228,11 @@
 			<div class="relative">
 				<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
 				<Input
-					type="text"
-					bind:value={searchQuery}
-					placeholder="ค้นหาฝ่าย..."
-					class="pl-10 border-0 focus-visible:ring-0"
-				/>
+						type="text"
+						bind:value={searchQuery}
+						placeholder="ค้นหาหน่วยงาน..."
+						class="pl-10 border-0 focus-visible:ring-0"
+					/>
 			</div>
 		</div>
 	</div>
@@ -221,25 +246,26 @@
 			<p class="mt-4 text-muted-foreground">กำลังโหลด...</p>
 		</div>
 	{:else if error}
-		<div class="bg-destructive/10 border border-destructive/20 rounded-lg p-6 text-center">
-			<p class="text-destructive">{error}</p>
-			<Button onclick={loadDepartments} variant="outline" class="mt-4">ลองอีกครั้ง</Button>
+				<div class="bg-destructive/10 border border-destructive/20 rounded-lg p-6 text-center">
+					<p class="text-destructive">{error}</p>
+					<Button onclick={loadDepartments} variant="outline" class="mt-4">ลองอีกครั้ง</Button>
 		</div>
 	{:else if isSearching}
 		<!-- Search Results Mode (Flat Grid) -->
 		{#if filteredDepartments.length === 0}
-			<div class="bg-card border border-border rounded-lg p-12 text-center">
-				<p class="text-lg font-medium text-foreground">ไม่พบฝ่ายที่ค้นหา</p>
-			</div>
+				<div class="bg-card border border-border rounded-lg p-12 text-center">
+					<p class="text-lg font-medium text-foreground">ไม่พบหน่วยงานที่ค้นหา</p>
+				</div>
 		{:else}
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 				{#each filteredDepartments as dept (dept.id)}
 					<!-- Reusing the Card UI in a flat structure -->
 					<div class="bg-card border border-border rounded-lg p-4 relative group">
-						<div class="flex items-center gap-2 mb-2">
-							<Badge variant="outline">{dept.code}</Badge>
-							<span class="font-semibold">{dept.name}</span>
-						</div>
+							<div class="flex items-center gap-2 mb-2">
+								<Badge variant="outline">{dept.code}</Badge>
+								<Badge variant="secondary">{unitTypeLabel(dept)}</Badge>
+								<span class="font-semibold">{dept.name}</span>
+							</div>
 						<div class="text-sm text-muted-foreground mb-4 line-clamp-2">
 							{dept.description || '-'}
 						</div>
@@ -271,17 +297,22 @@
 					<div class="flex items-start justify-between">
 						<div class="flex-1">
 							<div class="flex items-center gap-2 mb-1">
-								{#if root.category === 'academic'}
-									<GraduationCap class="w-5 h-5 text-orange-500" />
-								{:else}
-									<Briefcase class="w-5 h-5 text-blue-500" />
-								{/if}
+									{#if isSchoolRoot(root)}
+										<School class="w-5 h-5 text-primary" />
+									{:else if root.category === 'academic'}
+										<GraduationCap class="w-5 h-5 text-orange-500" />
+									{:else}
+										<Briefcase class="w-5 h-5 text-blue-500" />
+									{/if}
 								<h3 class="font-bold text-lg text-foreground">
 									<button onclick={() => goToDept(root.id)} class="hover:underline cursor-pointer"
 										>{root.name}</button
 									>
-								</h3>
-							</div>
+									</h3>
+									<Badge variant={isSchoolRoot(root) ? 'default' : 'secondary'}
+										>{unitTypeLabel(root)}</Badge
+									>
+								</div>
 							{#if root.name_en}<p class="text-xs text-muted-foreground ml-7">
 									{root.name_en}
 								</p>{/if}
@@ -291,9 +322,9 @@
 								variant="ghost"
 								size="icon"
 								class="h-8 w-8 text-muted-foreground hover:text-foreground"
-								onclick={() => handlePermission(root)}
-								title="จัดการสิทธิ์เมนู"
-							>
+									onclick={() => handlePermission(root)}
+									title="จัดการสิทธิ์ตามหน่วยงาน"
+								>
 								<Settings class="w-4 h-4" />
 							</Button>
 							<Button variant="ghost" size="icon" class="h-8 w-8" onclick={() => handleEdit(root)}>
@@ -308,11 +339,11 @@
 						{#snippet departmentNode(dept: OrganizationUnit)}
 							<div
 								class="bg-card border border-border/60 hover:border-primary/50 shadow-sm rounded-lg p-3
-									   cursor-move transition-all group relative list-item-card
-									   {draggedDeptId === dept.id ? 'opacity-40' : ''}"
-								draggable="true"
-								role="listitem"
-								ondragstart={(e) => handleDragStart(e, dept.id)}
+										   {isSchoolRoot(dept) ? '' : 'cursor-move'} transition-all group relative list-item-card
+										   {draggedDeptId === dept.id ? 'opacity-40' : ''}"
+									draggable={!isSchoolRoot(dept)}
+									role="listitem"
+									ondragstart={(e) => handleDragStart(e, dept.id)}
 								ondragend={handleDragEnd}
 							>
 								<div class="flex items-center justify-between gap-2">
@@ -322,16 +353,21 @@
 												? 'bg-green-500'
 												: 'bg-gray-300'} shrink-0"
 										></div>
-										<div class="flex flex-col truncate">
-											<span class="font-medium truncate text-sm">
-												<button
-													onclick={() => goToDept(dept.id)}
-													class="hover:underline cursor-pointer">{dept.name}</button
-												>
-											</span>
-											<span class="text-[10px] text-muted-foreground flex gap-2">
-												<span>{dept.code}</span>
-												{#if dept.phone}<span>• 📞 {dept.phone}</span>{/if}
+											<div class="flex flex-col truncate">
+												<div class="flex items-center gap-2">
+													<span class="font-medium truncate text-sm">
+														<button
+															onclick={() => goToDept(dept.id)}
+															class="hover:underline cursor-pointer">{dept.name}</button
+														>
+													</span>
+													<Badge variant="secondary" class="text-[10px] h-5">
+														{unitTypeLabel(dept)}
+													</Badge>
+												</div>
+												<span class="text-[10px] text-muted-foreground flex gap-2">
+													<span>{dept.code}</span>
+													{#if dept.phone}<span>• 📞 {dept.phone}</span>{/if}
 											</span>
 										</div>
 									</div>
@@ -342,9 +378,9 @@
 											variant="ghost"
 											size="icon"
 											class="h-7 w-7 text-muted-foreground hover:text-foreground"
-											onclick={() => handlePermission(dept)}
-											title="จัดการสิทธิ์เมนู"
-										>
+												onclick={() => handlePermission(dept)}
+												title="จัดการสิทธิ์ตามหน่วยงาน"
+											>
 											<Settings class="w-3.5 h-3.5" />
 										</Button>
 										<Button
@@ -378,11 +414,11 @@
 						{/each}
 
 						{#if children.length === 0}
-							<div
-								class="text-center py-4 border-2 border-dashed border-border/50 rounded-lg text-muted-foreground/50 text-xs"
-							>
-								ลากฝ่ายย่อยมาวางที่นี่
-							</div>
+								<div
+									class="text-center py-4 border-2 border-dashed border-border/50 rounded-lg text-muted-foreground/50 text-xs"
+								>
+									ลากหน่วยงานย่อยมาวางที่นี่
+								</div>
 						{/if}
 					</div>
 				</div>
@@ -390,10 +426,10 @@
 
 			<!-- Add New Placeholders or Empty State if no roots -->
 			{#if rootDepartments.length === 0}
-				<div class="col-span-full py-12 text-center text-muted-foreground">
-					ไม่พบข้อมูลฝ่าย
-					<Button variant="link" onclick={handleCreate}>เพิ่มฝ่ายใหม่</Button>
-				</div>
+					<div class="col-span-full py-12 text-center text-muted-foreground">
+						ไม่พบข้อมูลหน่วยงาน
+						<Button variant="link" onclick={handleCreate}>เพิ่มหน่วยงานใหม่</Button>
+					</div>
 			{/if}
 		</div>
 	{/if}

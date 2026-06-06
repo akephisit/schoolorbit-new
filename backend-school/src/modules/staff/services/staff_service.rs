@@ -202,6 +202,7 @@ pub async fn list_staff(
 pub async fn get_staff_profile(
     pool: &PgPool,
     staff_id: Uuid,
+    include_pii: bool,
 ) -> Result<StaffProfileResponse, AppError> {
     let mut user = sqlx::query_as::<_, UserBasicRow>(
         "SELECT id, username, national_id, email, title, first_name, last_name, nickname, phone,
@@ -219,10 +220,14 @@ pub async fn get_staff_profile(
     })?
     .ok_or(AppError::NotFound("ไม่พบบุคลากร".to_string()))?;
 
-    if let Some(nid) = &user.national_id {
-        if let Ok(dec) = field_encryption::decrypt(nid) {
-            user.national_id = Some(dec);
+    if include_pii {
+        if let Some(nid) = &user.national_id {
+            if let Ok(dec) = field_encryption::decrypt(nid) {
+                user.national_id = Some(dec);
+            }
         }
+    } else {
+        user.national_id = None;
     }
 
     // 5 independent queries — run in parallel

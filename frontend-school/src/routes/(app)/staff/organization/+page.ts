@@ -1,12 +1,12 @@
 /**
- * Organization Unit Management Page
+ * School Organization Management Page
  */
 
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
-		title: 'โครงสร้างองค์กร',
+			title: 'โครงสร้างโรงเรียน',
 		icon: 'Building2',
 		group: 'personnel',
 		order: 20,
@@ -17,6 +17,6 @@ export const _meta = {
 
 export const load = async () => {
 	return {
-		title: 'โครงสร้างองค์กร'
+			title: 'โครงสร้างโรงเรียน'
 	};
 };

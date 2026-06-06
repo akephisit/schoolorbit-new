@@ -11,8 +11,9 @@ use crate::error::AppError;
 use crate::modules::auth::models::Claims;
 use crate::modules::lookup::models::LookupQuery;
 use crate::modules::lookup::services as lookup_service;
+use crate::permissions::registry::codes;
 use crate::utils::request_context::{
-    current_user_tenant_context_from_claims, CurrentUserTenantContext,
+    actor_tenant_context, current_user_tenant_context_from_claims, CurrentUserTenantContext,
 };
 use crate::AppState;
 
@@ -46,10 +47,13 @@ pub async fn lookup_staff(
 pub async fn lookup_roles(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    lookup_service::verify_active_user(&context.tenant.pool, context.actor.user_id).await?;
+    context
+        .actor
+        .require_any_permission(&[codes::ROLES_READ_ALL, codes::ROLES_ASSIGN_ALL])?;
     let data = lookup_service::lookup_roles(&context.tenant.pool, query).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))

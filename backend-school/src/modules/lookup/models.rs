@@ -19,8 +19,6 @@ pub struct StaffLookupItem {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub username: Option<String>,
 }
 
 /// Role lookup item

@@ -4,6 +4,7 @@ pub mod error;
 mod middleware;
 mod modules;
 mod permissions;
+mod policies;
 mod services;
 mod utils;
 

@@ -15,7 +15,6 @@ struct StaffRow {
     title: Option<String>,
     first_name: String,
     last_name: String,
-    username: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -111,7 +110,7 @@ pub async fn lookup_staff(
     let active_only = query.active_only.unwrap_or(true);
 
     let mut sql = String::from(
-        "SELECT id, title, first_name, last_name, username
+        "SELECT id, title, first_name, last_name
          FROM users
          WHERE user_type = 'staff'",
     );
@@ -143,7 +142,6 @@ pub async fn lookup_staff(
             id: row.id,
             name: format!("{} {}", row.first_name, row.last_name),
             title: row.title,
-            username: Some(row.username),
         })
         .collect())
 }

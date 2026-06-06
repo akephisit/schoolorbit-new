@@ -291,7 +291,7 @@
 
 				<label class="flex items-center gap-2 text-sm cursor-pointer">
 					<input type="checkbox" bind:checked={addForm.is_primary} class="rounded" />
-					เป็นฝ่าย/กลุ่มหลักของบุคลากรนี้
+					เป็นสังกัดหลักของบุคลากรนี้
 				</label>
 			</div>
 
@@ -349,7 +349,7 @@
 
 				<label class="flex items-center gap-2 text-sm cursor-pointer">
 					<input type="checkbox" bind:checked={editForm.is_primary} class="rounded" />
-					เป็นฝ่าย/กลุ่มหลัก
+					เป็นสังกัดหลัก
 				</label>
 			</div>
 

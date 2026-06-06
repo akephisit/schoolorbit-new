@@ -1,6 +1,6 @@
 // Lookup API Client
-// API for fetching minimal data for dropdowns (only requires authentication)
-// These endpoints return id + name only, safe for any authenticated user
+// API for fetching minimal reference data for dropdowns.
+// Generic lookup responses must stay small; workflow-specific detail belongs in options endpoints.
 
 import { apiClient, requireApiData } from '$lib/api/client';
 
@@ -19,7 +19,6 @@ export interface StaffLookupItem {
 	id: string;
 	name: string;
 	title?: string;
-	username?: string;
 }
 
 export interface RoleLookupItem {
@@ -121,7 +120,7 @@ async function fetchLookup<T>(endpoint: string, options?: LookupOptions): Promis
 
 /**
  * Fetch staff list for dropdowns
- * Returns: id, name, title, username
+ * Returns: id, name, title
  */
 export async function lookupStaff(options?: LookupOptions): Promise<StaffLookupItem[]> {
 	return fetchLookup<StaffLookupItem>('staff', options);
@@ -138,6 +137,7 @@ export async function lookupStudents(options?: LookupOptions): Promise<StudentLo
 /**
  * Fetch roles list for dropdowns
  * Returns: id, code, name, user_type
+ * Requires roles.read.all or roles.assign.all.
  */
 export async function lookupRoles(options?: LookupOptions): Promise<RoleLookupItem[]> {
 	return fetchLookup<RoleLookupItem>('roles', options);

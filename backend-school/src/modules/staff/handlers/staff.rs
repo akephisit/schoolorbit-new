@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::staff_service;
 use crate::permissions::registry::codes;
+use crate::policies::staff_access_policy;
 use crate::utils::request_context::{
     actor_tenant_context, current_user_tenant_context_from_headers,
 };
@@ -37,8 +38,13 @@ pub async fn list_staff(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    // staff.read.all OR achievement.create.all (latter for non-staff viewing teacher list)
-    actor.require_any_permission(&[codes::STAFF_READ_ALL, codes::ACHIEVEMENT_CREATE_ALL])?;
+    // staff_profile.read.school OR legacy staff.read.all OR achievement.create.all
+    // (achievement.create.all is used by achievement flows that need a teacher picker)
+    actor.require_any_permission(&[
+        codes::STAFF_PROFILE_READ_SCHOOL,
+        codes::STAFF_READ_ALL,
+        codes::ACHIEVEMENT_CREATE_ALL,
+    ])?;
 
     let (items, total, page, page_size) = staff_service::list_staff(&pool, filter).await?;
     let total_pages = (total as f64 / page_size as f64).ceil() as i64;
@@ -64,9 +70,10 @@ pub async fn get_staff_profile(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::STAFF_READ_ALL)?;
+    staff_access_policy::can_read_staff_profile(&pool, &actor, staff_id).await?;
+    let include_pii = staff_access_policy::can_read_staff_pii(&actor, staff_id);
 
-    let profile = staff_service::get_staff_profile(&pool, staff_id).await?;
+    let profile = staff_service::get_staff_profile(&pool, staff_id, include_pii).await?;
     Ok((StatusCode::OK, Json(ApiResponse::ok(profile))).into_response())
 }
 

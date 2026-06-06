@@ -5,7 +5,9 @@ export const PERMISSION_MODULES = {
 	ACTIVITY: 'activity',
 	ROLES: 'roles',
 	SETTINGS: 'settings',
-	STAFF: 'staff'
+	STAFF: 'staff',
+	STAFF_PII: 'staff_pii',
+	STAFF_PROFILE: 'staff_profile'
 } as const;
 
 export const PERMISSIONS = {
@@ -27,6 +29,12 @@ export const PERMISSIONS = {
 	FACILITY_READ_ALL: 'facility.read.all',
 	ROLES_ASSIGN_ALL: 'roles.assign.all',
 	SETTINGS_UPDATE: 'settings.update',
+	STAFF_PII_READ_OWN: 'staff_pii.read.own',
+	STAFF_PII_READ_SCHOOL: 'staff_pii.read.school',
+	STAFF_PROFILE_READ_OWN: 'staff_profile.read.own',
+	STAFF_PROFILE_READ_ORGANIZATION_TREE: 'staff_profile.read.organization_tree',
+	STAFF_PROFILE_READ_ORGANIZATION_UNIT: 'staff_profile.read.organization_unit',
+	STAFF_PROFILE_READ_SCHOOL: 'staff_profile.read.school',
 	STUDENT_READ_ALL: 'student.read.all'
 } as const;
 

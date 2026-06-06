@@ -209,6 +209,33 @@ fn backend_permission_contracts_use_organization_units_not_department_names() {
 }
 
 #[test]
+fn lookup_models_expose_reference_data_only() {
+    let lookup_models = strip_comments(&read_source(
+        manifest_dir().join("src/modules/lookup/models.rs"),
+    ));
+    let forbidden_lookup_fields =
+        Regex::new(r"\b(?:username|national_id|phone|email|address|line_id)\s*:")
+            .expect("valid regex");
+
+    assert!(
+        !forbidden_lookup_fields.is_match(&lookup_models),
+        "lookup DTOs must stay minimal reference data; move sensitive or account fields behind workflow-specific endpoints"
+    );
+}
+
+#[test]
+fn staff_profile_handler_uses_scoped_access_policy_and_pii_flag() {
+    let staff_handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/staff/handlers/staff.rs"),
+    ));
+
+    assert!(staff_handler.contains("staff_access_policy::can_read_staff_profile"));
+    assert!(staff_handler.contains("staff_access_policy::can_read_staff_pii"));
+    assert!(staff_handler.contains("get_staff_profile(&pool, staff_id, include_pii)"));
+    assert!(!staff_handler.contains("actor.require_permission(codes::STAFF_READ_ALL)?;"));
+}
+
+#[test]
 fn foundation_handlers_delegate_database_work_to_services() {
     let direct_database_patterns = [
         "sqlx::query",

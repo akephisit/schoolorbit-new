@@ -145,7 +145,7 @@
 </script>
 
 <svelte:head>
-	<title>{department ? department.name : 'รายละเอียดฝ่าย'} - SchoolOrbit</title>
+	<title>{department ? department.name : 'รายละเอียดหน่วยงาน'} - SchoolOrbit</title>
 </svelte:head>
 
 <div class="space-y-6">
@@ -193,7 +193,7 @@
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						<div>
-							<span class="text-sm text-muted-foreground">รหัสฝ่าย</span>
+							<span class="text-sm text-muted-foreground">รหัสหน่วยงาน</span>
 							<p class="font-medium">{department.code}</p>
 						</div>
 						<div>
@@ -253,21 +253,21 @@
 					</div>
 				</div>
 
-				<!-- Child Organization Units (ฝ่ายย่อย) -->
+				<!-- Child Organization Units -->
 				{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
 					<div class="bg-card border border-border rounded-lg p-6 space-y-4">
 						<div class="flex items-center justify-between">
 							<h2 class="text-lg font-semibold flex items-center gap-2">
 								<Building2 class="w-5 h-5" />
-								ฝ่ายย่อย
+								หน่วยงานย่อย
 							</h2>
 							<Button size="sm" onclick={() => (showAddChildDialog = true)}>
 								<Plus class="w-4 h-4 mr-1" />
-								เพิ่มฝ่าย
+								เพิ่มหน่วยงาน
 							</Button>
 						</div>
 						{#if childDepts.length === 0}
-							<p class="text-sm text-muted-foreground text-center py-4">ยังไม่มีฝ่ายย่อย</p>
+							<p class="text-sm text-muted-foreground text-center py-4">ยังไม่มีหน่วยงานย่อย</p>
 						{:else}
 							<div class="divide-y divide-border">
 								{#each childDepts as child (child.id)}

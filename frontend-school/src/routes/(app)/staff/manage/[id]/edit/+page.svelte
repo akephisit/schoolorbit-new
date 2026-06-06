@@ -199,13 +199,13 @@
 		errors = {};
 
 		if (formData.organization_assignments.length === 0) {
-			errors.organization_units = 'กรุณาเพิ่มสังกัดฝ่ายอย่างน้อย 1 ฝ่าย';
+			errors.organization_units = 'กรุณาเพิ่มสังกัดหน่วยงานอย่างน้อย 1 หน่วยงาน';
 			return false;
 		}
 
 		const hasPrimary = formData.organization_assignments.some((d) => d.is_primary);
 		if (!hasPrimary) {
-			errors.organization_units = 'กรุณาระบุฝ่ายหลัก';
+			errors.organization_units = 'กรุณาระบุสังกัดหลัก';
 			return false;
 		}
 
@@ -371,7 +371,7 @@
 	function getPositionLabel(value: string): string {
 		const labels: Record<string, string> = {
 			member: 'สมาชิก',
-			head: 'หัวหน้าฝ่าย'
+			head: 'หัวหน้า'
 		};
 		return labels[value] || 'เลือกตำแหน่ง';
 	}
@@ -472,7 +472,7 @@
 								{:else if step === 3}
 									บทบาท
 								{:else}
-									สังกัดฝ่าย
+									สังกัดหน่วยงาน
 								{/if}
 							</p>
 						</div>
@@ -802,7 +802,7 @@
 						{/if}
 					{:else if currentStep === 4}
 						<!-- Step 4: Organization Units -->
-						<h2 class="text-xl font-semibold mb-6">สังกัดฝ่าย</h2>
+						<h2 class="text-xl font-semibold mb-6">สังกัดหน่วยงาน</h2>
 
 						{#if loadingOrganizationUnits}
 							<div class="flex justify-center py-8">
@@ -811,7 +811,7 @@
 						{:else}
 							<div class="space-y-4">
 								<p class="text-sm text-muted-foreground">
-									ระบุฝ่ายที่บุคลากรสังกัดและตำแหน่งในฝ่าย
+									ระบุหน่วยงาน/กลุ่มที่บุคลากรสังกัดและตำแหน่งในหน่วยงาน
 								</p>
 
 								{#if errors.organization_units}
@@ -821,7 +821,7 @@
 								{#each formData.organization_assignments as dept, i (i)}
 									<div class="p-4 border border-border rounded-lg">
 										<div class="flex items-start justify-between mb-4">
-											<h3 class="font-medium">ฝ่ายที่ {i + 1}</h3>
+											<h3 class="font-medium">หน่วยงานที่ {i + 1}</h3>
 											{#if formData.organization_assignments.length > 1}
 												<Button
 													variant="ghost"
@@ -837,20 +837,20 @@
 
 										<div class="space-y-3">
 											<div>
-												<Label class="mb-2">ชื่อฝ่าย</Label>
+												<Label class="mb-2">ชื่อหน่วยงาน</Label>
 												<Select.Root type="single" bind:value={dept.organization_unit_id}>
 													<Select.Trigger>
 														{#if dept.organization_unit_id}
 															{organizationUnits.find((d) => d.id === dept.organization_unit_id)?.name ||
-																'เลือกฝ่าย'}
+																'เลือกหน่วยงาน'}
 														{:else}
-															เลือกฝ่าย
+															เลือกหน่วยงาน
 														{/if}
 													</Select.Trigger>
 													<Select.Content
 														class="max-h-[300px] overflow-y-auto w-full max-w-[400px]"
 													>
-														<Select.Item value="">เลือกฝ่าย</Select.Item>
+														<Select.Item value="">เลือกหน่วยงาน</Select.Item>
 
 														<!-- Group by Parent Organization Units (Administrative Groups) -->
 														{#each organizationUnits.filter((d) => !d.parent_unit_id) as parentDept (parentDept.id)}
@@ -905,12 +905,12 @@
 											</div>
 
 											<div>
-												<Label class="mb-2">ตำแหน่งในฝ่าย</Label>
+												<Label class="mb-2">ตำแหน่งในหน่วยงาน</Label>
 												<Select.Root type="single" bind:value={dept.position_code}>
 													<Select.Trigger>{getPositionLabel(dept.position_code)}</Select.Trigger>
 													<Select.Content>
 														<Select.Item value="member">สมาชิก</Select.Item>
-														<Select.Item value="head">หัวหน้าฝ่าย</Select.Item>
+														<Select.Item value="head">หัวหน้า</Select.Item>
 													</Select.Content>
 												</Select.Root>
 											</div>
@@ -930,7 +930,7 @@
 														checked={dept.is_primary}
 														onCheckedChange={() => setPrimaryOrganizationUnit(i)}
 													/>
-													<span class="text-sm">ฝ่ายหลัก</span>
+													<span class="text-sm">สังกัดหลัก</span>
 												</div>
 											</div>
 										</div>
@@ -938,7 +938,7 @@
 								{/each}
 
 								<Button type="button" onclick={addOrganizationUnit} variant="outline" class="w-full">
-									+ เพิ่มฝ่าย
+									+ เพิ่มหน่วยงาน
 								</Button>
 							</div>
 						{/if}

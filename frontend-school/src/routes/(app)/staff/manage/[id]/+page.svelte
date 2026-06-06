@@ -324,7 +324,7 @@
 				<div class="bg-card border border-border rounded-lg p-6">
 					<h3 class="font-semibold text-foreground mb-4 flex items-center gap-2">
 						<Building2 class="w-5 h-5" />
-						สังกัดฝ่าย
+						สังกัดหน่วยงาน
 					</h3>
 					{#if staff.organization_units.length > 0}
 						<div class="space-y-3">
@@ -345,7 +345,7 @@
 											<span
 												class="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-full"
 											>
-												ฝ่ายหลัก
+												สังกัดหลัก
 											</span>
 										{/if}
 									</div>
@@ -353,7 +353,7 @@
 							{/each}
 						</div>
 					{:else}
-						<p class="text-muted-foreground">ยังไม่ได้สังกัดฝ่าย</p>
+						<p class="text-muted-foreground">ยังไม่ได้สังกัดหน่วยงาน</p>
 					{/if}
 				</div>
 
