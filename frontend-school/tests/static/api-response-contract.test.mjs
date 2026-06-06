@@ -122,7 +122,8 @@ test('admission application detail contract returns application and documents in
 		'frontend-school/src/routes/(public)/apply/status/+page.svelte'
 	);
 
-	assert.match(backendHandler, /"data":\s*\{\s*"application": application,\s*"documents": documents\s*\}/);
+	assert.match(backendHandler, /struct\s+ApplicationWithDocumentsData\s*\{[\s\S]*application:\s*AdmissionApplication,[\s\S]*documents:\s*Vec<ApplicationDocument>,[\s\S]*\}/);
+	assert.match(backendHandler, /ApiResponse::ok\(ApplicationWithDocumentsData\s*\{[\s\S]*application,[\s\S]*documents,[\s\S]*\}\)/);
 	assert.doesNotMatch(backendHandler, /"data":\s*\{\s*"items": application,\s*"documents": documents\s*\}/);
 
 	assert.match(frontendApi, /interface\s+ApplicationDetailResponse/);
@@ -131,7 +132,7 @@ test('admission application detail contract returns application and documents in
 	assert.match(frontendApi, /apiClient\.get<ApplicationDetailResponse>/);
 	assert.doesNotMatch(frontendApi, /ApiResponse<AdmissionApplication>[\s\S]*documents\?: ApplicationDocument\[\]/);
 
-	assert.match(backendHandler, /"applicationNumber": application_number/);
+	assert.match(backendHandler, /#\[serde\(rename_all = "camelCase"\)\][\s\S]*struct\s+SubmitApplicationData\s*\{[\s\S]*application_number:\s*String,/);
 	assert.doesNotMatch(backendHandler, /"application_number": application_number/);
 	assert.match(frontendApi, /apiClient\.post<\{\s*applicationNumber:\s*string\s*\}>/);
 	assert.match(frontendApi, /interface\s+PortalStatusResult/);
@@ -142,8 +143,9 @@ test('admission application detail contract returns application and documents in
 	assert.match(frontendApi, /portalGetStatus[\s\S]*requireApiData\(res,\s*'ไม่สามารถโหลดสถานะใบสมัครได้'\)/);
 	assert.match(portalStatusPage, /PortalStatusResult/);
 
-	assert.match(backendHandler, /"userId": result\.user_id/);
-	assert.match(backendHandler, /"studentCode": result\.student_code/);
+	assert.match(backendHandler, /#\[serde\(rename_all = "camelCase"\)\][\s\S]*struct\s+CompleteEnrollmentData\s*\{[\s\S]*user_id:\s*Uuid,[\s\S]*student_code:\s*String,/);
+	assert.match(backendHandler, /user_id:\s*result\.user_id/);
+	assert.match(backendHandler, /student_code:\s*result\.student_code/);
 	assert.doesNotMatch(backendHandler, /"user_id": result\.user_id/);
 	assert.doesNotMatch(backendHandler, /"student_code": result\.student_code/);
 	assert.match(frontendApi, /interface\s+CompleteEnrollmentResponse/);

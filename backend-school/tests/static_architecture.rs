@@ -208,6 +208,35 @@ fn foundation_handlers_do_not_own_database_row_or_pool_types() {
 }
 
 #[test]
+fn module_handlers_use_central_api_response_envelope() {
+    let legacy_envelope_patterns = [
+        "Json(json!({ \"success\"",
+        "Json(serde_json::json!({ \"success\"",
+        "JsonResponse(serde_json::json!({ \"success\"",
+        "json!({ \"success\"",
+        "serde_json::json!({ \"success\"",
+        "struct ApiResponse",
+        "ApiResponse::success(",
+    ];
+    let mut violations = Vec::new();
+
+    for file in module_handler_files() {
+        let source = strip_comments(&read_source(&file));
+
+        for pattern in legacy_envelope_patterns {
+            if source.contains(pattern) {
+                violations.push(format!(
+                    "{}: use crate::api_response::ApiResponse instead of local/ad-hoc envelopes ({pattern})",
+                    relative(&file)
+                ));
+            }
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
 fn migrated_utility_handlers_use_shared_request_context() {
     let direct_context_patterns = [
         "resolve_tenant_pool",
