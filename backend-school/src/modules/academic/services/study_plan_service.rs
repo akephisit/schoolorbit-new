@@ -1,10 +1,28 @@
 use crate::error::AppError;
 use crate::modules::academic::models::study_plans::*;
-use sqlx::PgPool;
+use chrono::{DateTime, Utc};
+use sqlx::{types::Json, FromRow, PgPool};
 use uuid::Uuid;
 
-fn grade_level_ids_json(ids: Option<&[Uuid]>) -> Option<serde_json::Value> {
-    ids.map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null))
+fn grade_level_ids_json(ids: Option<&[Uuid]>) -> Option<Json<&[Uuid]>> {
+    ids.map(Json)
+}
+
+fn grade_level_ids_from_jsonb(
+    value: Option<serde_json::Value>,
+    field_name: &str,
+) -> Result<Option<Vec<Uuid>>, AppError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+
+    if value.is_null() {
+        return Ok(None);
+    }
+
+    serde_json::from_value(value).map(Some).map_err(|error| {
+        AppError::InternalServerError(format!("Invalid {field_name} JSONB shape: {error}"))
+    })
 }
 
 fn study_plan_subject_display_order(display_order: Option<i32>) -> i32 {
@@ -21,6 +39,123 @@ fn validate_catalog_instructor_role(role: &str) -> Result<(), AppError> {
     ))
 }
 
+#[derive(Debug, FromRow)]
+struct StudyPlanRow {
+    id: Uuid,
+    code: String,
+    name_th: String,
+    name_en: Option<String>,
+    description: Option<String>,
+    grade_level_ids: Option<serde_json::Value>,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct StudyPlanVersionActivityRow {
+    id: Uuid,
+    study_plan_version_id: Uuid,
+    activity_catalog_id: Uuid,
+    grade_level_id: Uuid,
+    term: Option<String>,
+    display_order: i32,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    #[sqlx(default)]
+    catalog_name: Option<String>,
+    #[sqlx(default)]
+    catalog_activity_type: Option<String>,
+    #[sqlx(default)]
+    catalog_description: Option<String>,
+    #[sqlx(default)]
+    catalog_periods_per_week: Option<i32>,
+    #[sqlx(default)]
+    catalog_scheduling_mode: Option<String>,
+    #[sqlx(default)]
+    catalog_term: Option<String>,
+    #[sqlx(default)]
+    catalog_grade_level_ids: Option<serde_json::Value>,
+}
+
+#[derive(Debug, FromRow)]
+struct ActivityCatalogRow {
+    id: Uuid,
+    name: String,
+    start_academic_year_id: Uuid,
+    activity_type: String,
+    description: Option<String>,
+    periods_per_week: i32,
+    scheduling_mode: String,
+    is_active: bool,
+    term: Option<String>,
+    grade_level_ids: Option<serde_json::Value>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+fn study_plan_from_row(row: StudyPlanRow) -> Result<StudyPlan, AppError> {
+    Ok(StudyPlan {
+        id: row.id,
+        code: row.code,
+        name_th: row.name_th,
+        name_en: row.name_en,
+        description: row.description,
+        grade_level_ids: grade_level_ids_from_jsonb(
+            row.grade_level_ids,
+            "study_plans.grade_level_ids",
+        )?,
+        is_active: row.is_active,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn plan_activity_from_row(
+    row: StudyPlanVersionActivityRow,
+) -> Result<StudyPlanVersionActivity, AppError> {
+    Ok(StudyPlanVersionActivity {
+        id: row.id,
+        study_plan_version_id: row.study_plan_version_id,
+        activity_catalog_id: row.activity_catalog_id,
+        grade_level_id: row.grade_level_id,
+        term: row.term,
+        display_order: row.display_order,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        catalog_name: row.catalog_name,
+        catalog_activity_type: row.catalog_activity_type,
+        catalog_description: row.catalog_description,
+        catalog_periods_per_week: row.catalog_periods_per_week,
+        catalog_scheduling_mode: row.catalog_scheduling_mode,
+        catalog_term: row.catalog_term,
+        catalog_grade_level_ids: grade_level_ids_from_jsonb(
+            row.catalog_grade_level_ids,
+            "activity_catalog.grade_level_ids",
+        )?,
+    })
+}
+
+fn activity_catalog_from_row(row: ActivityCatalogRow) -> Result<ActivityCatalog, AppError> {
+    Ok(ActivityCatalog {
+        id: row.id,
+        name: row.name,
+        start_academic_year_id: row.start_academic_year_id,
+        activity_type: row.activity_type,
+        description: row.description,
+        periods_per_week: row.periods_per_week,
+        scheduling_mode: row.scheduling_mode,
+        is_active: row.is_active,
+        term: row.term,
+        grade_level_ids: grade_level_ids_from_jsonb(
+            row.grade_level_ids,
+            "activity_catalog.grade_level_ids",
+        )?,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
 // ============================================
 // Study Plans CRUD
 // ============================================
@@ -31,18 +166,22 @@ pub async fn list_plans(pool: &PgPool, query: StudyPlanQuery) -> Result<Vec<Stud
         sql.push_str(" AND is_active = true");
     }
     sql.push_str(" ORDER BY code");
-    Ok(sqlx::query_as::<_, StudyPlan>(&sql)
+    let rows = sqlx::query_as::<_, StudyPlanRow>(&sql)
         .fetch_all(pool)
         .await
-        .unwrap_or_default())
+        .map_err(AppError::from)?;
+
+    rows.into_iter().map(study_plan_from_row).collect()
 }
 
 pub async fn get_plan(pool: &PgPool, plan_id: Uuid) -> Result<StudyPlan, AppError> {
-    sqlx::query_as::<_, StudyPlan>("SELECT * FROM study_plans WHERE id = $1")
+    let row = sqlx::query_as::<_, StudyPlanRow>("SELECT * FROM study_plans WHERE id = $1")
         .bind(plan_id)
         .fetch_one(pool)
         .await
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+
+    study_plan_from_row(row)
 }
 
 pub async fn create_plan(
@@ -50,7 +189,7 @@ pub async fn create_plan(
     req: CreateStudyPlanRequest,
 ) -> Result<StudyPlan, AppError> {
     let grade_ids = grade_level_ids_json(req.grade_level_ids.as_deref());
-    sqlx::query_as::<_, StudyPlan>(
+    let row = sqlx::query_as::<_, StudyPlanRow>(
         "INSERT INTO study_plans (code, name_th, name_en, description, grade_level_ids)
          VALUES ($1, $2, $3, $4, $5) RETURNING *",
     )
@@ -58,10 +197,12 @@ pub async fn create_plan(
     .bind(&req.name_th)
     .bind(&req.name_en)
     .bind(&req.description)
-    .bind(&grade_ids)
+    .bind(grade_ids)
     .fetch_one(pool)
     .await
-    .map_err(AppError::from)
+    .map_err(AppError::from)?;
+
+    study_plan_from_row(row)
 }
 
 pub async fn update_plan(
@@ -104,7 +245,7 @@ pub async fn update_plan(
         updates.join(", "),
         param_count
     );
-    let mut q = sqlx::query_as::<_, StudyPlan>(&sql);
+    let mut q = sqlx::query_as::<_, StudyPlanRow>(&sql);
     if let Some(ref v) = req.code {
         q = q.bind(v);
     }
@@ -124,7 +265,8 @@ pub async fn update_plan(
         q = q.bind(v);
     }
     q = q.bind(plan_id);
-    q.fetch_one(pool).await.map_err(AppError::from)
+    let row = q.fetch_one(pool).await.map_err(AppError::from)?;
+    study_plan_from_row(row)
 }
 
 pub async fn delete_plan(pool: &PgPool, plan_id: Uuid) -> Result<(), AppError> {
@@ -556,7 +698,7 @@ pub async fn list_plan_activities(
     pool: &PgPool,
     version_id: Uuid,
 ) -> Result<Vec<StudyPlanVersionActivity>, AppError> {
-    sqlx::query_as::<_, StudyPlanVersionActivity>(
+    let rows = sqlx::query_as::<_, StudyPlanVersionActivityRow>(
         "SELECT sva.*,
                 ac.name AS catalog_name,
                 ac.activity_type AS catalog_activity_type,
@@ -573,7 +715,9 @@ pub async fn list_plan_activities(
     .bind(version_id)
     .fetch_all(pool)
     .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    rows.into_iter().map(plan_activity_from_row).collect()
 }
 
 pub async fn add_plan_activity(
@@ -581,7 +725,7 @@ pub async fn add_plan_activity(
     version_id: Uuid,
     req: CreatePlanActivityRequest,
 ) -> Result<StudyPlanVersionActivity, AppError> {
-    sqlx::query_as::<_, StudyPlanVersionActivity>(
+    let row = sqlx::query_as::<_, StudyPlanVersionActivityRow>(
         "INSERT INTO study_plan_version_activities
          (study_plan_version_id, activity_catalog_id, grade_level_id, term, display_order)
          SELECT $1, ac.id, $5, COALESCE($4, ac.term), COALESCE($3, 0)
@@ -597,7 +741,9 @@ pub async fn add_plan_activity(
     .fetch_optional(pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?
-    .ok_or_else(|| AppError::BadRequest("กิจกรรมนี้อยู่ในหลักสูตรสำหรับชั้น+เทอมนี้แล้ว".to_string()))
+    .ok_or_else(|| AppError::BadRequest("กิจกรรมนี้อยู่ในหลักสูตรสำหรับชั้น+เทอมนี้แล้ว".to_string()))?;
+
+    plan_activity_from_row(row)
 }
 
 pub async fn update_plan_activity(
@@ -605,7 +751,7 @@ pub async fn update_plan_activity(
     id: Uuid,
     req: UpdatePlanActivityRequest,
 ) -> Result<StudyPlanVersionActivity, AppError> {
-    sqlx::query_as::<_, StudyPlanVersionActivity>(
+    let row = sqlx::query_as::<_, StudyPlanVersionActivityRow>(
         "UPDATE study_plan_version_activities SET
             display_order = COALESCE($2, display_order),
             term = $3,
@@ -617,7 +763,9 @@ pub async fn update_plan_activity(
     .bind(&req.term)
     .fetch_one(pool)
     .await
-    .map_err(|e| AppError::NotFound(e.to_string()))
+    .map_err(|e| AppError::NotFound(e.to_string()))?;
+
+    plan_activity_from_row(row)
 }
 
 pub async fn delete_plan_activity(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
@@ -804,10 +952,12 @@ pub async fn list_activity_catalog(
          WHERE ac.is_active = true
          ORDER BY ac.name, ay.year DESC"
     };
-    sqlx::query_as::<_, ActivityCatalog>(sql)
+    let rows = sqlx::query_as::<_, ActivityCatalogRow>(sql)
         .fetch_all(pool)
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    rows.into_iter().map(activity_catalog_from_row).collect()
 }
 
 pub async fn create_activity_catalog(
@@ -820,7 +970,7 @@ pub async fn create_activity_catalog(
         .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    let row: ActivityCatalog = sqlx::query_as(
+    let row: ActivityCatalogRow = sqlx::query_as(
         "INSERT INTO activity_catalog
              (name, start_academic_year_id, activity_type, description,
               periods_per_week, scheduling_mode, term, grade_level_ids)
@@ -834,7 +984,7 @@ pub async fn create_activity_catalog(
     .bind(req.periods_per_week)
     .bind(&req.scheduling_mode)
     .bind(&req.term)
-    .bind(&allowed)
+    .bind(allowed)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -859,7 +1009,7 @@ pub async fn create_activity_catalog(
     tx.commit()
         .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
-    Ok(row)
+    activity_catalog_from_row(row)
 }
 
 pub async fn update_activity_catalog(
@@ -868,7 +1018,7 @@ pub async fn update_activity_catalog(
     req: UpdateCatalogRequest,
 ) -> Result<ActivityCatalog, AppError> {
     let allowed = grade_level_ids_json(req.grade_level_ids.as_deref());
-    sqlx::query_as::<_, ActivityCatalog>(
+    let row = sqlx::query_as::<_, ActivityCatalogRow>(
         "UPDATE activity_catalog SET
             name = COALESCE($2, name),
             activity_type = COALESCE($3, activity_type),
@@ -889,10 +1039,12 @@ pub async fn update_activity_catalog(
     .bind(&req.scheduling_mode)
     .bind(req.is_active)
     .bind(&req.term)
-    .bind(&allowed)
+    .bind(allowed)
     .fetch_one(pool)
     .await
-    .map_err(|e| AppError::NotFound(e.to_string()))
+    .map_err(|e| AppError::NotFound(e.to_string()))?;
+
+    activity_catalog_from_row(row)
 }
 
 pub async fn delete_activity_catalog(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
@@ -1033,12 +1185,25 @@ mod tests {
     #[test]
     fn grade_level_ids_json_serializes_some_values_and_preserves_none() {
         let id = Uuid::new_v4();
+        let ids = vec![id];
 
-        assert_eq!(grade_level_ids_json(None), None);
+        assert!(grade_level_ids_json(None).is_none());
+        let Some(encoded) = grade_level_ids_json(Some(&ids)) else {
+            panic!("ids should encode");
+        };
+        assert_eq!(encoded.0, ids.as_slice());
+    }
+
+    #[test]
+    fn grade_level_ids_from_jsonb_decodes_uuid_arrays() {
+        let id = Uuid::new_v4();
+
         assert_eq!(
-            grade_level_ids_json(Some(&[id])),
-            Some(serde_json::json!([id]))
+            grade_level_ids_from_jsonb(Some(serde_json::json!([id])), "field").unwrap(),
+            Some(vec![id])
         );
+        assert_eq!(grade_level_ids_from_jsonb(None, "field").unwrap(), None);
+        assert!(grade_level_ids_from_jsonb(Some(serde_json::json!({})), "field").is_err());
     }
 
     #[test]

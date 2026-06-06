@@ -3,16 +3,14 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-fn uuid_vec_from_json(value: &serde_json::Value) -> Vec<Uuid> {
-    value
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .filter_map(|s| Uuid::parse_str(s).ok())
-                .collect()
-        })
-        .unwrap_or_default()
+fn uuid_vec_from_jsonb(value: serde_json::Value, field_name: &str) -> Result<Vec<Uuid>, AppError> {
+    if value.is_null() {
+        return Ok(Vec::new());
+    }
+
+    serde_json::from_value(value).map_err(|error| {
+        AppError::InternalServerError(format!("Invalid {field_name} JSONB shape: {error}"))
+    })
 }
 
 fn merge_unique_classroom_ids(mut resolved: Vec<Uuid>, specific: Vec<Uuid>) -> Vec<Uuid> {
@@ -42,7 +40,22 @@ pub struct TimetableTemplateView {
     pub entry_count: i64,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
+struct TimetableTemplateEntryRow {
+    id: Uuid,
+    template_id: Uuid,
+    day_of_week: String,
+    period_id: Uuid,
+    entry_type: String,
+    title: Option<String>,
+    activity_slot_id: Option<Uuid>,
+    grade_level_ids: serde_json::Value,
+    classroom_ids: serde_json::Value,
+    instructor_ids: serde_json::Value,
+    room_id: Option<Uuid>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct TimetableTemplateEntry {
     pub id: Uuid,
     pub template_id: Uuid,
@@ -51,10 +64,37 @@ pub struct TimetableTemplateEntry {
     pub entry_type: String,
     pub title: Option<String>,
     pub activity_slot_id: Option<Uuid>,
-    pub grade_level_ids: serde_json::Value,
-    pub classroom_ids: serde_json::Value,
-    pub instructor_ids: serde_json::Value,
+    pub grade_level_ids: Vec<Uuid>,
+    pub classroom_ids: Vec<Uuid>,
+    pub instructor_ids: Vec<Uuid>,
     pub room_id: Option<Uuid>,
+}
+
+fn template_entry_from_row(
+    row: TimetableTemplateEntryRow,
+) -> Result<TimetableTemplateEntry, AppError> {
+    Ok(TimetableTemplateEntry {
+        id: row.id,
+        template_id: row.template_id,
+        day_of_week: row.day_of_week,
+        period_id: row.period_id,
+        entry_type: row.entry_type,
+        title: row.title,
+        activity_slot_id: row.activity_slot_id,
+        grade_level_ids: uuid_vec_from_jsonb(
+            row.grade_level_ids,
+            "timetable_template_entries.grade_level_ids",
+        )?,
+        classroom_ids: uuid_vec_from_jsonb(
+            row.classroom_ids,
+            "timetable_template_entries.classroom_ids",
+        )?,
+        instructor_ids: uuid_vec_from_jsonb(
+            row.instructor_ids,
+            "timetable_template_entries.instructor_ids",
+        )?,
+        room_id: row.room_id,
+    })
 }
 
 pub async fn list_templates(pool: &PgPool) -> Result<Vec<TimetableTemplateView>, AppError> {
@@ -84,11 +124,15 @@ pub async fn get_template(
     .map_err(|e| AppError::InternalServerError(e.to_string()))?
     .ok_or_else(|| AppError::NotFound("Template not found".to_string()))?;
 
-    let entries = sqlx::query_as::<_, TimetableTemplateEntry>(
+    let entry_rows = sqlx::query_as::<_, TimetableTemplateEntryRow>(
         "SELECT * FROM timetable_template_entries WHERE template_id = $1 ORDER BY day_of_week, period_id"
     )
     .bind(id).fetch_all(pool).await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let entries = entry_rows
+        .into_iter()
+        .map(template_entry_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok((template, entries))
 }
@@ -191,13 +235,17 @@ pub async fn apply_template(
     semester_id: Uuid,
     user_id: Option<Uuid>,
 ) -> Result<u64, AppError> {
-    let entries = sqlx::query_as::<_, TimetableTemplateEntry>(
+    let entry_rows = sqlx::query_as::<_, TimetableTemplateEntryRow>(
         "SELECT * FROM timetable_template_entries WHERE template_id = $1",
     )
     .bind(template_id)
     .fetch_all(pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let entries = entry_rows
+        .into_iter()
+        .map(template_entry_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
 
     if entries.is_empty() {
         return Ok(0);
@@ -213,9 +261,9 @@ pub async fn apply_template(
     let mut group_batch_ids: HashMap<(Option<String>, Option<Uuid>), Uuid> = HashMap::new();
 
     for entry in &entries {
-        let specific_classrooms = uuid_vec_from_json(&entry.classroom_ids);
-        let grade_level_ids = uuid_vec_from_json(&entry.grade_level_ids);
-        let instructor_ids = uuid_vec_from_json(&entry.instructor_ids);
+        let specific_classrooms = entry.classroom_ids.clone();
+        let grade_level_ids = entry.grade_level_ids.clone();
+        let instructor_ids = entry.instructor_ids.clone();
 
         let resolved_by_grade: Vec<Uuid> = if !grade_level_ids.is_empty() {
             sqlx::query_scalar(
@@ -353,12 +401,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn uuid_vec_from_json_returns_valid_uuids_only() {
+    fn uuid_vec_from_jsonb_decodes_uuid_arrays() {
         let id = Uuid::new_v4();
-        let value = serde_json::json!([id.to_string(), "bad", 12]);
+        let value = serde_json::json!([id.to_string()]);
 
-        assert_eq!(uuid_vec_from_json(&value), vec![id]);
-        assert!(uuid_vec_from_json(&serde_json::json!({})).is_empty());
+        assert_eq!(uuid_vec_from_jsonb(value, "field").unwrap(), vec![id]);
+        assert!(uuid_vec_from_jsonb(serde_json::Value::Null, "field")
+            .unwrap()
+            .is_empty());
+        assert!(uuid_vec_from_jsonb(serde_json::json!({}), "field").is_err());
     }
 
     #[test]

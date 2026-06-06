@@ -1,34 +1,29 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 use uuid::Uuid;
 
 // ==================== Instructor Preferences ====================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InstructorPreference {
     pub id: Uuid,
     pub instructor_id: Uuid,
     pub academic_year_id: Uuid,
 
     // Unavailable time slots (HARD constraint)
-    #[sqlx(default)]
-    pub hard_unavailable_slots: serde_json::Value, // Array of {day, period_id}
+    pub hard_unavailable_slots: Vec<TimeSlot>,
 
     // Preferred time slots (SOFT constraint)
-    #[sqlx(default)]
-    pub preferred_slots: serde_json::Value, // Array of {day, period_id}
+    pub preferred_slots: Vec<TimeSlot>,
 
     // Daily load preferences
     pub max_periods_per_day: Option<i32>,
     pub min_periods_per_day: Option<i32>,
 
     // Day preferences
-    #[sqlx(default)]
-    pub preferred_days: serde_json::Value, // Array of day strings
+    pub preferred_days: Vec<String>,
 
-    #[sqlx(default)]
-    pub avoid_days: serde_json::Value, // Array of day strings
+    pub avoid_days: Vec<String>,
 
     pub notes: Option<String>,
 
@@ -36,7 +31,7 @@ pub struct InstructorPreference {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct TimeSlot {
     pub day: String, // "MON", "TUE", etc.
     pub period_id: Uuid,
@@ -57,7 +52,7 @@ pub struct CreateInstructorPreferenceRequest {
 
 // ==================== Instructor Room Assignments ====================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InstructorRoomAssignment {
     pub id: Uuid,
     pub instructor_id: Uuid,
@@ -67,8 +62,7 @@ pub struct InstructorRoomAssignment {
     pub is_preferred: Option<bool>,
     pub is_required: Option<bool>,
 
-    #[sqlx(default)]
-    pub for_subjects: serde_json::Value, // Array of subject codes or empty
+    pub for_subjects: Vec<String>,
 
     pub reason: Option<String>,
 
@@ -97,21 +91,19 @@ pub enum LockedSlotScope {
     AllSchool,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TimetableLockedSlot {
     pub id: Uuid,
     pub academic_semester_id: Uuid,
 
     pub scope_type: String, // Will be converted to/from LockedSlotScope
 
-    #[sqlx(default)]
-    pub scope_ids: serde_json::Value, // Array of UUIDs or null
+    pub scope_ids: Option<Vec<Uuid>>,
 
     pub subject_id: Uuid,
     pub day_of_week: String,
 
-    #[sqlx(default)]
-    pub period_ids: serde_json::Value, // Array of period UUIDs
+    pub period_ids: Vec<Uuid>,
 
     pub room_id: Option<Uuid>,
     pub instructor_id: Option<Uuid>,
@@ -156,29 +148,25 @@ pub enum SchedulingAlgorithm {
     Hybrid,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TimetableSchedulingJob {
     pub id: Uuid,
     pub academic_semester_id: Uuid,
 
-    #[sqlx(default)]
-    pub classroom_ids: serde_json::Value, // Array of classroom UUIDs
+    pub classroom_ids: Vec<Uuid>,
 
     pub algorithm: String, // Will be converted to/from SchedulingAlgorithm
 
-    #[sqlx(default)]
-    pub config: serde_json::Value, // Scheduling configuration
+    pub config: SchedulingConfig,
 
     pub status: String,        // Will be converted to/from SchedulingStatus
     pub progress: Option<i32>, // 0-100
 
-    #[sqlx(default)]
     pub quality_score: Option<f32>,
     pub scheduled_courses: Option<i32>,
     pub total_courses: Option<i32>,
 
-    #[sqlx(default)]
-    pub failed_courses: serde_json::Value, // Array of failed course info
+    pub failed_courses: Vec<FailedCourseInfo>,
 
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,

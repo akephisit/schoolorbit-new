@@ -2,8 +2,238 @@ use crate::error::AppError;
 use crate::modules::academic::models::scheduling::*;
 use crate::modules::academic::services::scheduler_data::SchedulerDataLoader;
 use crate::modules::academic::services::SchedulerBuilder;
-use sqlx::PgPool;
+use chrono::{DateTime, Utc};
+use serde::de::DeserializeOwned;
+use sqlx::{types::Json, FromRow, PgPool};
 use uuid::Uuid;
+
+fn jsonb_or_default<T>(value: serde_json::Value, field_name: &str) -> Result<T, AppError>
+where
+    T: DeserializeOwned + Default,
+{
+    if value.is_null() {
+        return Ok(T::default());
+    }
+
+    serde_json::from_value(value).map_err(|error| {
+        AppError::InternalServerError(format!("Invalid {field_name} JSONB shape: {error}"))
+    })
+}
+
+fn optional_jsonb_vec<T>(
+    value: serde_json::Value,
+    field_name: &str,
+) -> Result<Option<Vec<T>>, AppError>
+where
+    T: DeserializeOwned,
+{
+    if value.is_null() {
+        return Ok(None);
+    }
+
+    serde_json::from_value(value).map(Some).map_err(|error| {
+        AppError::InternalServerError(format!("Invalid {field_name} JSONB shape: {error}"))
+    })
+}
+
+#[derive(Debug, FromRow)]
+struct InstructorPreferenceRow {
+    id: Uuid,
+    instructor_id: Uuid,
+    academic_year_id: Uuid,
+    hard_unavailable_slots: serde_json::Value,
+    preferred_slots: serde_json::Value,
+    max_periods_per_day: Option<i32>,
+    min_periods_per_day: Option<i32>,
+    preferred_days: serde_json::Value,
+    avoid_days: serde_json::Value,
+    notes: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct InstructorRoomAssignmentRow {
+    id: Uuid,
+    instructor_id: Uuid,
+    room_id: Uuid,
+    academic_year_id: Uuid,
+    is_preferred: Option<bool>,
+    is_required: Option<bool>,
+    for_subjects: serde_json::Value,
+    reason: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct TimetableLockedSlotRow {
+    id: Uuid,
+    academic_semester_id: Uuid,
+    scope_type: String,
+    scope_ids: serde_json::Value,
+    subject_id: Uuid,
+    day_of_week: String,
+    period_ids: serde_json::Value,
+    room_id: Option<Uuid>,
+    instructor_id: Option<Uuid>,
+    reason: Option<String>,
+    locked_by: Option<Uuid>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct TimetableSchedulingJobRow {
+    id: Uuid,
+    academic_semester_id: Uuid,
+    classroom_ids: serde_json::Value,
+    algorithm: String,
+    config: serde_json::Value,
+    status: String,
+    progress: Option<i32>,
+    quality_score: Option<f32>,
+    scheduled_courses: Option<i32>,
+    total_courses: Option<i32>,
+    failed_courses: serde_json::Value,
+    started_at: Option<DateTime<Utc>>,
+    completed_at: Option<DateTime<Utc>>,
+    duration_seconds: Option<i32>,
+    error_message: Option<String>,
+    created_by: Option<Uuid>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+fn instructor_preference_from_row(
+    row: InstructorPreferenceRow,
+) -> Result<InstructorPreference, AppError> {
+    Ok(InstructorPreference {
+        id: row.id,
+        instructor_id: row.instructor_id,
+        academic_year_id: row.academic_year_id,
+        hard_unavailable_slots: jsonb_or_default(
+            row.hard_unavailable_slots,
+            "instructor_preferences.hard_unavailable_slots",
+        )?,
+        preferred_slots: jsonb_or_default(
+            row.preferred_slots,
+            "instructor_preferences.preferred_slots",
+        )?,
+        max_periods_per_day: row.max_periods_per_day,
+        min_periods_per_day: row.min_periods_per_day,
+        preferred_days: jsonb_or_default(
+            row.preferred_days,
+            "instructor_preferences.preferred_days",
+        )?,
+        avoid_days: jsonb_or_default(row.avoid_days, "instructor_preferences.avoid_days")?,
+        notes: row.notes,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn instructor_room_assignment_from_row(
+    row: InstructorRoomAssignmentRow,
+) -> Result<InstructorRoomAssignment, AppError> {
+    Ok(InstructorRoomAssignment {
+        id: row.id,
+        instructor_id: row.instructor_id,
+        room_id: row.room_id,
+        academic_year_id: row.academic_year_id,
+        is_preferred: row.is_preferred,
+        is_required: row.is_required,
+        for_subjects: jsonb_or_default(
+            row.for_subjects,
+            "instructor_room_assignments.for_subjects",
+        )?,
+        reason: row.reason,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn locked_slot_from_row(row: TimetableLockedSlotRow) -> Result<TimetableLockedSlot, AppError> {
+    Ok(TimetableLockedSlot {
+        id: row.id,
+        academic_semester_id: row.academic_semester_id,
+        scope_type: row.scope_type,
+        scope_ids: optional_jsonb_vec(row.scope_ids, "timetable_locked_slots.scope_ids")?,
+        subject_id: row.subject_id,
+        day_of_week: row.day_of_week,
+        period_ids: jsonb_or_default(row.period_ids, "timetable_locked_slots.period_ids")?,
+        room_id: row.room_id,
+        instructor_id: row.instructor_id,
+        reason: row.reason,
+        locked_by: row.locked_by,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn scheduling_job_from_row(
+    row: TimetableSchedulingJobRow,
+) -> Result<TimetableSchedulingJob, AppError> {
+    Ok(TimetableSchedulingJob {
+        id: row.id,
+        academic_semester_id: row.academic_semester_id,
+        classroom_ids: jsonb_or_default(
+            row.classroom_ids,
+            "timetable_scheduling_jobs.classroom_ids",
+        )?,
+        algorithm: row.algorithm,
+        config: jsonb_or_default(row.config, "timetable_scheduling_jobs.config")?,
+        status: row.status,
+        progress: row.progress,
+        quality_score: row.quality_score,
+        scheduled_courses: row.scheduled_courses,
+        total_courses: row.total_courses,
+        failed_courses: jsonb_or_default(
+            row.failed_courses,
+            "timetable_scheduling_jobs.failed_courses",
+        )?,
+        started_at: row.started_at,
+        completed_at: row.completed_at,
+        duration_seconds: row.duration_seconds,
+        error_message: row.error_message,
+        created_by: row.created_by,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+pub fn scheduling_job_response(job: TimetableSchedulingJob) -> SchedulingJobResponse {
+    SchedulingJobResponse {
+        id: job.id,
+        academic_semester_id: job.academic_semester_id,
+        classroom_ids: job.classroom_ids,
+        algorithm: match job.algorithm.as_str() {
+            "GREEDY" => SchedulingAlgorithm::Greedy,
+            "BACKTRACKING" => SchedulingAlgorithm::Backtracking,
+            "HYBRID" => SchedulingAlgorithm::Hybrid,
+            _ => SchedulingAlgorithm::Backtracking,
+        },
+        status: match job.status.as_str() {
+            "PENDING" => SchedulingStatus::Pending,
+            "RUNNING" => SchedulingStatus::Running,
+            "COMPLETED" => SchedulingStatus::Completed,
+            "FAILED" => SchedulingStatus::Failed,
+            "CANCELLED" => SchedulingStatus::Cancelled,
+            _ => SchedulingStatus::Pending,
+        },
+        progress: job.progress.unwrap_or(0),
+        quality_score: job.quality_score.map(f64::from),
+        scheduled_courses: job.scheduled_courses.unwrap_or(0),
+        total_courses: job.total_courses.unwrap_or(0),
+        failed_courses: job.failed_courses,
+        started_at: job.started_at,
+        completed_at: job.completed_at,
+        duration_seconds: job.duration_seconds,
+        error_message: job.error_message,
+        created_by: job.created_by,
+        created_at: job.created_at,
+    }
+}
 
 fn scheduler_config_from_request(
     config: &SchedulingConfig,
@@ -27,18 +257,13 @@ pub async fn create_scheduling_job(
     config: &SchedulingConfig,
     user_id: Option<Uuid>,
 ) -> Result<(), AppError> {
-    let classroom_ids_json = serde_json::to_value(classroom_ids)
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let config_json =
-        serde_json::to_value(config).map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
     sqlx::query(
         r#"INSERT INTO timetable_scheduling_jobs
                (id, academic_semester_id, classroom_ids, algorithm, config, status, progress, created_by)
            VALUES ($1, $2, $3, $4::scheduling_algorithm, $5, 'PENDING'::scheduling_status, 0, $6)"#
     )
-    .bind(job_id).bind(semester_id).bind(classroom_ids_json)
-    .bind(algorithm_label).bind(config_json).bind(user_id)
+    .bind(job_id).bind(semester_id).bind(Json(classroom_ids))
+    .bind(algorithm_label).bind(Json(config)).bind(user_id)
     .execute(pool).await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
@@ -48,7 +273,7 @@ pub async fn get_scheduling_job(
     pool: &PgPool,
     job_id: Uuid,
 ) -> Result<TimetableSchedulingJob, AppError> {
-    sqlx::query_as::<_, TimetableSchedulingJob>(
+    let row = sqlx::query_as::<_, TimetableSchedulingJobRow>(
         r#"SELECT id, academic_semester_id, classroom_ids, algorithm::TEXT, config,
                   status::TEXT, progress, quality_score::REAL, scheduled_courses, total_courses,
                   failed_courses, started_at, completed_at, duration_seconds,
@@ -59,7 +284,9 @@ pub async fn get_scheduling_job(
     .fetch_optional(pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?
-    .ok_or(AppError::NotFound("Job not found".to_string()))
+    .ok_or(AppError::NotFound("Job not found".to_string()))?;
+
+    scheduling_job_from_row(row)
 }
 
 pub async fn undo_scheduling_job(
@@ -88,7 +315,7 @@ pub async fn list_scheduling_jobs(
 
     let result = if let Some(sid) = semester_id {
         let sql = format!("SELECT {} FROM timetable_scheduling_jobs WHERE academic_semester_id = $1 ORDER BY created_at DESC LIMIT $2", select_fields);
-        sqlx::query_as::<_, TimetableSchedulingJob>(&sql)
+        sqlx::query_as::<_, TimetableSchedulingJobRow>(&sql)
             .bind(sid)
             .bind(limit)
             .fetch_all(pool)
@@ -98,28 +325,29 @@ pub async fn list_scheduling_jobs(
             "SELECT {} FROM timetable_scheduling_jobs ORDER BY created_at DESC LIMIT $1",
             select_fields
         );
-        sqlx::query_as::<_, TimetableSchedulingJob>(&sql)
+        sqlx::query_as::<_, TimetableSchedulingJobRow>(&sql)
             .bind(limit)
             .fetch_all(pool)
             .await
     };
-    result.map_err(|e| AppError::InternalServerError(e.to_string()))
+
+    result
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .into_iter()
+        .map(scheduling_job_from_row)
+        .collect()
 }
 
 pub async fn create_instructor_preference(
     pool: &PgPool,
     payload: CreateInstructorPreferenceRequest,
 ) -> Result<InstructorPreference, AppError> {
-    let hard_slots = serde_json::to_value(payload.hard_unavailable_slots.unwrap_or_default())
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let pref_slots = serde_json::to_value(payload.preferred_slots.unwrap_or_default())
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let pref_days = serde_json::to_value(payload.preferred_days.unwrap_or_default())
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let avoid_days = serde_json::to_value(payload.avoid_days.unwrap_or_default())
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let hard_slots = payload.hard_unavailable_slots.unwrap_or_default();
+    let pref_slots = payload.preferred_slots.unwrap_or_default();
+    let pref_days = payload.preferred_days.unwrap_or_default();
+    let avoid_days = payload.avoid_days.unwrap_or_default();
 
-    sqlx::query_as::<_, InstructorPreference>(
+    let row = sqlx::query_as::<_, InstructorPreferenceRow>(
         r#"INSERT INTO instructor_preferences
                (instructor_id, academic_year_id, hard_unavailable_slots, preferred_slots,
                 max_periods_per_day, min_periods_per_day, preferred_days, avoid_days, notes)
@@ -136,26 +364,27 @@ pub async fn create_instructor_preference(
     )
     .bind(payload.instructor_id)
     .bind(payload.academic_year_id)
-    .bind(hard_slots)
-    .bind(pref_slots)
+    .bind(Json(hard_slots))
+    .bind(Json(pref_slots))
     .bind(payload.max_periods_per_day)
     .bind(payload.min_periods_per_day)
-    .bind(pref_days)
-    .bind(avoid_days)
+    .bind(Json(pref_days))
+    .bind(Json(avoid_days))
     .bind(payload.notes)
     .fetch_one(pool)
     .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    instructor_preference_from_row(row)
 }
 
 pub async fn create_instructor_room_assignment(
     pool: &PgPool,
     payload: CreateInstructorRoomAssignmentRequest,
 ) -> Result<InstructorRoomAssignment, AppError> {
-    let for_subjects = serde_json::to_value(payload.for_subjects.unwrap_or_default())
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let for_subjects = payload.for_subjects.unwrap_or_default();
 
-    sqlx::query_as::<_, InstructorRoomAssignment>(
+    let row = sqlx::query_as::<_, InstructorRoomAssignmentRow>(
         r#"INSERT INTO instructor_room_assignments
                (instructor_id, room_id, academic_year_id, is_preferred, is_required, for_subjects, reason)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -163,9 +392,11 @@ pub async fn create_instructor_room_assignment(
     )
     .bind(payload.instructor_id).bind(payload.room_id).bind(payload.academic_year_id)
     .bind(payload.is_preferred).bind(payload.is_required)
-    .bind(for_subjects).bind(payload.reason)
+    .bind(Json(for_subjects)).bind(payload.reason)
     .fetch_one(pool).await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    instructor_room_assignment_from_row(row)
 }
 
 pub async fn create_locked_slot(
@@ -178,12 +409,8 @@ pub async fn create_locked_slot(
         LockedSlotScope::GradeLevel => "GRADE_LEVEL",
         LockedSlotScope::AllSchool => "ALL_SCHOOL",
     };
-    let scope_ids = serde_json::to_value(&payload.scope_ids)
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    let period_ids = serde_json::to_value(&payload.period_ids)
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    sqlx::query_as::<_, TimetableLockedSlot>(
+    let row = sqlx::query_as::<_, TimetableLockedSlotRow>(
         r#"INSERT INTO timetable_locked_slots
                (academic_semester_id, scope_type, scope_ids, subject_id, day_of_week,
                 period_ids, room_id, instructor_id, reason, locked_by)
@@ -192,17 +419,19 @@ pub async fn create_locked_slot(
     )
     .bind(payload.academic_semester_id)
     .bind(scope_type)
-    .bind(scope_ids)
+    .bind(Json(payload.scope_ids))
     .bind(payload.subject_id)
     .bind(payload.day_of_week)
-    .bind(period_ids)
+    .bind(Json(payload.period_ids))
     .bind(payload.room_id)
     .bind(payload.instructor_id)
     .bind(payload.reason)
     .bind(user_id)
     .fetch_one(pool)
     .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    locked_slot_from_row(row)
 }
 
 pub async fn list_locked_slots(
@@ -210,18 +439,23 @@ pub async fn list_locked_slots(
     semester_id: Option<Uuid>,
 ) -> Result<Vec<TimetableLockedSlot>, AppError> {
     let result = if let Some(sid) = semester_id {
-        sqlx::query_as::<_, TimetableLockedSlot>(
+        sqlx::query_as::<_, TimetableLockedSlotRow>(
             "SELECT * FROM timetable_locked_slots WHERE academic_semester_id = $1",
         )
         .bind(sid)
         .fetch_all(pool)
         .await
     } else {
-        sqlx::query_as::<_, TimetableLockedSlot>("SELECT * FROM timetable_locked_slots")
+        sqlx::query_as::<_, TimetableLockedSlotRow>("SELECT * FROM timetable_locked_slots")
             .fetch_all(pool)
             .await
     };
-    result.map_err(|e| AppError::InternalServerError(e.to_string()))
+
+    result
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .into_iter()
+        .map(locked_slot_from_row)
+        .collect()
 }
 
 pub async fn delete_locked_slot(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
@@ -384,7 +618,6 @@ pub async fn run_scheduling_job(
         }
     }
 
-    let failed_courses_json = serde_json::to_value(&result.failed_courses)?;
     sqlx::query(
         r#"UPDATE timetable_scheduling_jobs
            SET status = 'COMPLETED', progress = 100,
@@ -396,7 +629,7 @@ pub async fn run_scheduling_job(
     .bind(result.quality_score as f32)
     .bind(result.scheduled_courses as i32)
     .bind(result.total_courses as i32)
-    .bind(failed_courses_json)
+    .bind(Json(&result.failed_courses))
     .bind((result.duration_ms / 1000) as i32)
     .bind(job_id)
     .execute(pool)

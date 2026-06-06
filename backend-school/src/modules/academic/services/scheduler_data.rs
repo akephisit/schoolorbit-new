@@ -1,54 +1,19 @@
 use crate::modules::academic::services::scheduler::{types::*, validator::LockedSlotData};
+use sqlx::types::Json;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-fn parse_uuid_json_array(value: Option<&serde_json::Value>) -> Option<Vec<Uuid>> {
-    value.and_then(|json| {
-        json.as_array().map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .filter_map(|s| Uuid::parse_str(s).ok())
-                .collect()
-        })
-    })
+fn optional_json_vec<T>(value: Option<Json<Vec<T>>>) -> Option<Vec<T>> {
+    value.map(|json| json.0)
 }
 
-fn parse_string_json_array(value: Option<&serde_json::Value>) -> Option<Vec<String>> {
-    value.and_then(|json| {
-        json.as_array().map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-    })
-}
-
-fn parse_i32_json_array(value: Option<&serde_json::Value>) -> Option<Vec<i32>> {
-    value.and_then(|json| {
-        json.as_array().map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_i64().map(|n| n as i32))
-                .collect()
-        })
-    })
-}
-
-fn hard_unavailable_slots_from_json(value: &serde_json::Value) -> HashSet<String> {
-    let mut set = HashSet::new();
-    if let Some(arr) = value.as_array() {
-        for slot in arr {
-            let day = slot.get("day").and_then(|v| v.as_str()).map(String::from);
-            let period_id = slot
-                .get("period_id")
-                .and_then(|v| v.as_str())
-                .and_then(|s| Uuid::parse_str(s).ok());
-            if let (Some(d), Some(p)) = (day, period_id) {
-                set.insert(format!("{d}__{p}"));
-            }
-        }
-    }
-    set
+fn hard_unavailable_slots_from_slots(slots: &[TimeSlotJson]) -> HashSet<String> {
+    slots
+        .iter()
+        .filter_map(|slot| slot.period_id.map(|period_id| (&slot.day, period_id)))
+        .map(|(day, period_id)| format!("{day}__{period_id}"))
+        .collect()
 }
 
 fn applicable_classrooms_for_locked_scope(
@@ -134,13 +99,13 @@ impl<'a> SchedulerDataLoader<'a> {
                 COALESCE(s.min_consecutive_periods, 1) as min_consecutive,
                 2 as max_consecutive,
                 COALESCE(s.allow_single_period, true) as allow_single_period,
-                s.allowed_period_ids,
-                s.allowed_days,
+                NULLIF(s.allowed_period_ids, 'null'::jsonb) AS allowed_period_ids,
+                NULLIF(s.allowed_days, 'null'::jsonb) AS allowed_days,
 
                 -- Phase B: classroom_course-level constraints
-                cc.consecutive_pattern AS consecutive_pattern,
+                NULLIF(cc.consecutive_pattern, 'null'::jsonb) AS consecutive_pattern,
                 cc.same_day_unique AS same_day_unique,
-                cc.hard_unavailable_slots AS cc_hard_unavailable_slots
+                COALESCE(NULLIF(cc.hard_unavailable_slots, 'null'::jsonb), '[]'::jsonb) AS cc_hard_unavailable_slots
 
             FROM classroom_courses cc
             JOIN subjects s ON s.id = cc.subject_id
@@ -177,17 +142,11 @@ impl<'a> SchedulerDataLoader<'a> {
                 None
             };
 
-            // Parse JSONB arrays
-            let allowed_period_ids = parse_uuid_json_array(row.allowed_period_ids.as_ref());
-
-            let allowed_days = parse_string_json_array(row.allowed_days.as_ref());
-
-            // Phase B: parse cc.consecutive_pattern (Option<Vec<i32>>)
-            let consecutive_pattern = parse_i32_json_array(row.consecutive_pattern.as_ref());
-
-            // Phase B: parse cc.hard_unavailable_slots → HashSet<key>
+            let allowed_period_ids = optional_json_vec(row.allowed_period_ids);
+            let allowed_days = optional_json_vec(row.allowed_days);
+            let consecutive_pattern = optional_json_vec(row.consecutive_pattern);
             let cc_hard_unavailable =
-                hard_unavailable_slots_from_json(&row.cc_hard_unavailable_slots);
+                hard_unavailable_slots_from_slots(&row.cc_hard_unavailable_slots.0);
 
             // Phase D: pull cc preferred rooms from batch map
             let preferred_rooms = cc_room_map
@@ -381,9 +340,9 @@ impl<'a> SchedulerDataLoader<'a> {
             SELECT 
                 subject_id,
                 day_of_week,
-                period_ids,
+                COALESCE(NULLIF(period_ids, 'null'::jsonb), '[]'::jsonb) AS period_ids,
                 scope_type,
-                scope_ids
+                NULLIF(scope_ids, 'null'::jsonb) AS scope_ids
             FROM timetable_locked_slots
             WHERE academic_semester_id = $1
         "#;
@@ -396,15 +355,8 @@ impl<'a> SchedulerDataLoader<'a> {
         let mut locked_slots = Vec::new();
 
         for row in rows {
-            // Parse period_ids from JSONB
-            let period_ids: Vec<Uuid> = serde_json::from_value(row.period_ids).unwrap_or_default();
-
-            // Parse scope_ids
-            let scope_ids: Vec<Uuid> = row
-                .scope_ids
-                .as_ref()
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
+            let period_ids = row.period_ids.0;
+            let scope_ids = optional_json_vec(row.scope_ids).unwrap_or_default();
 
             // Filter by scope
             let applicable_classrooms =
@@ -446,7 +398,7 @@ impl<'a> SchedulerDataLoader<'a> {
         let query = r#"
             SELECT 
                 instructor_id,
-                hard_unavailable_slots,
+                COALESCE(NULLIF(hard_unavailable_slots, 'null'::jsonb), '[]'::jsonb) AS hard_unavailable_slots,
                 COALESCE(max_periods_per_day, 7) as max_periods_per_day
             FROM instructor_preferences
             WHERE academic_year_id = $1
@@ -460,12 +412,8 @@ impl<'a> SchedulerDataLoader<'a> {
         let mut prefs = HashMap::new();
 
         for row in rows {
-            // Parse hard unavailable slots
-            let hard_unavailable: Vec<TimeSlotJson> =
-                serde_json::from_value(row.hard_unavailable_slots).unwrap_or_default();
-
             let mut hard_unavailable_set = HashSet::new();
-            for slot in hard_unavailable {
+            for slot in row.hard_unavailable_slots.0 {
                 if let Some(pid) = resolve_period_id(&slot) {
                     hard_unavailable_set.insert(format!("{}__{}", slot.day, pid));
                 }
@@ -570,11 +518,11 @@ struct CourseRow {
     min_consecutive: i32,
     max_consecutive: i32,
     allow_single_period: bool,
-    allowed_period_ids: Option<serde_json::Value>, // JSONB
-    allowed_days: Option<serde_json::Value>,       // JSONB
-    consecutive_pattern: Option<serde_json::Value>, // jsonb [1,1,1] etc.
+    allowed_period_ids: Option<Json<Vec<Uuid>>>,
+    allowed_days: Option<Json<Vec<String>>>,
+    consecutive_pattern: Option<Json<Vec<i32>>>,
     same_day_unique: bool,
-    cc_hard_unavailable_slots: serde_json::Value, // [{"day","period_id"}]
+    cc_hard_unavailable_slots: Json<Vec<TimeSlotJson>>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -599,15 +547,15 @@ struct PeriodRow {
 struct LockedSlotRow {
     subject_id: Uuid,
     day_of_week: String,
-    period_ids: serde_json::Value,
+    period_ids: Json<Vec<Uuid>>,
     scope_type: String,
-    scope_ids: Option<serde_json::Value>,
+    scope_ids: Option<Json<Vec<Uuid>>>,
 }
 
 #[derive(sqlx::FromRow)]
 struct InstructorPrefRow {
     instructor_id: Uuid,
-    hard_unavailable_slots: serde_json::Value,
+    hard_unavailable_slots: Json<Vec<TimeSlotJson>>,
     max_periods_per_day: i32,
 }
 
@@ -623,42 +571,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_uuid_json_array_returns_only_valid_uuid_strings() {
+    fn optional_json_vec_returns_inner_values() {
         let id = Uuid::new_v4();
-        let value = serde_json::json!([id.to_string(), "not-a-uuid", 123]);
 
-        assert_eq!(parse_uuid_json_array(Some(&value)), Some(vec![id]));
-        assert_eq!(parse_uuid_json_array(None), None);
+        assert_eq!(optional_json_vec(Some(Json(vec![id]))), Some(vec![id]));
+        assert_eq!(optional_json_vec::<Uuid>(None), None);
     }
 
     #[test]
-    fn parse_string_json_array_returns_string_values_only() {
-        let value = serde_json::json!(["MON", 123, "TUE"]);
-
+    fn optional_json_vec_supports_string_and_integer_arrays() {
         assert_eq!(
-            parse_string_json_array(Some(&value)),
+            optional_json_vec(Some(Json(vec!["MON".to_string(), "TUE".to_string()]))),
             Some(vec!["MON".to_string(), "TUE".to_string()])
         );
+
+        assert_eq!(optional_json_vec(Some(Json(vec![2, 1]))), Some(vec![2, 1]));
     }
 
     #[test]
-    fn parse_i32_json_array_returns_integer_values_only() {
-        let value = serde_json::json!([2, "x", 1]);
-
-        assert_eq!(parse_i32_json_array(Some(&value)), Some(vec![2, 1]));
-    }
-
-    #[test]
-    fn hard_unavailable_slots_from_json_ignores_incomplete_entries() {
+    fn hard_unavailable_slots_from_slots_ignores_entries_without_period_id() {
         let period_id = Uuid::new_v4();
-        let value = serde_json::json!([
-            {"day": "MON", "period_id": period_id.to_string()},
-            {"day": "TUE"},
-            {"period_id": period_id.to_string()}
-        ]);
+        let slots = vec![
+            TimeSlotJson {
+                day: "MON".to_string(),
+                period_id: Some(period_id),
+                period_index: None,
+            },
+            TimeSlotJson {
+                day: "TUE".to_string(),
+                period_id: None,
+                period_index: None,
+            },
+        ];
 
         assert_eq!(
-            hard_unavailable_slots_from_json(&value),
+            hard_unavailable_slots_from_slots(&slots),
             HashSet::from([format!("MON__{period_id}")])
         );
     }

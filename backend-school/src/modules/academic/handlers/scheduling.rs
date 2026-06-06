@@ -118,42 +118,7 @@ pub async fn get_scheduling_job(
 
     let job = scheduling_service::get_scheduling_job(&pool, job_id).await?;
 
-    let classroom_ids: Vec<Uuid> =
-        serde_json::from_value(job.classroom_ids.clone()).unwrap_or_default();
-    let failed_courses: Vec<FailedCourseInfo> =
-        serde_json::from_value(job.failed_courses.clone()).unwrap_or_default();
-
-    let response = SchedulingJobResponse {
-        id: job.id,
-        academic_semester_id: job.academic_semester_id,
-        classroom_ids,
-        algorithm: match job.algorithm.as_str() {
-            "GREEDY" => SchedulingAlgorithm::Greedy,
-            "BACKTRACKING" => SchedulingAlgorithm::Backtracking,
-            "HYBRID" => SchedulingAlgorithm::Hybrid,
-            _ => SchedulingAlgorithm::Backtracking,
-        },
-        status: match job.status.as_str() {
-            "PENDING" => SchedulingStatus::Pending,
-            "RUNNING" => SchedulingStatus::Running,
-            "COMPLETED" => SchedulingStatus::Completed,
-            "FAILED" => SchedulingStatus::Failed,
-            "CANCELLED" => SchedulingStatus::Cancelled,
-            _ => SchedulingStatus::Pending,
-        },
-        progress: job.progress.unwrap_or(0),
-        quality_score: job.quality_score.map(|f| f as f64),
-        scheduled_courses: job.scheduled_courses.unwrap_or(0),
-        total_courses: job.total_courses.unwrap_or(0),
-        failed_courses,
-        started_at: job.started_at,
-        completed_at: job.completed_at,
-        duration_seconds: job.duration_seconds,
-        error_message: job.error_message,
-        created_by: job.created_by,
-        created_at: job.created_at,
-    };
-
+    let response = scheduling_service::scheduling_job_response(job);
     Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
@@ -201,7 +166,11 @@ pub async fn list_scheduling_jobs(
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
     let limit = query.limit.unwrap_or(50).min(100);
     let jobs = scheduling_service::list_scheduling_jobs(&pool, query.semester_id, limit).await?;
-    Ok(Json(ApiResponse::ok(jobs)).into_response())
+    let responses: Vec<SchedulingJobResponse> = jobs
+        .into_iter()
+        .map(scheduling_service::scheduling_job_response)
+        .collect();
+    Ok(Json(ApiResponse::ok(responses)).into_response())
 }
 
 pub async fn create_instructor_preference(

@@ -8,15 +8,14 @@ use chrono::{DateTime, Utc};
 // Study Plan Models (หลักสูตรสถานศึกษา)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StudyPlan {
     pub id: Uuid,
     pub code: String,
     pub name_th: String,
     pub name_en: Option<String>,
     pub description: Option<String>,
-    #[sqlx(default)]
-    pub grade_level_ids: Option<serde_json::Value>,
+    pub grade_level_ids: Option<Vec<Uuid>>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -183,7 +182,7 @@ pub struct GenerateCoursesResponse {
 // Study Plan Version Activities (template กิจกรรมพัฒนาผู้เรียน)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StudyPlanVersionActivity {
     pub id: Uuid,
     pub study_plan_version_id: Uuid,
@@ -199,26 +198,19 @@ pub struct StudyPlanVersionActivity {
 
     // Joined fields from catalog (for display)
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub catalog_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub catalog_activity_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub catalog_description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub catalog_periods_per_week: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub catalog_scheduling_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
     pub catalog_term: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
-    pub catalog_grade_level_ids: Option<serde_json::Value>,
+    pub catalog_grade_level_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -249,7 +241,7 @@ pub struct GenerateActivitiesFromPlanRequest {
 // Activity Catalog (คลังกิจกรรม — pattern เดียวกับ subjects)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActivityCatalog {
     pub id: Uuid,
     pub name: String,
@@ -260,7 +252,7 @@ pub struct ActivityCatalog {
     pub scheduling_mode: String,
     pub is_active: bool,
     pub term: Option<String>,
-    pub grade_level_ids: Option<serde_json::Value>,
+    pub grade_level_ids: Option<Vec<Uuid>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
