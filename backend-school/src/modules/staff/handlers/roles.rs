@@ -1,3 +1,4 @@
+use crate::api_response::{ApiResponse, IdData};
 use crate::error::AppError;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::{department_service, role_service};
@@ -10,7 +11,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
 // ============================================
@@ -27,7 +27,7 @@ pub async fn list_roles(
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let roles = role_service::list_roles(&pool).await?;
-    Ok(Json(json!({ "success": true, "data": roles })).into_response())
+    Ok(Json(ApiResponse::ok(roles)).into_response())
 }
 
 pub async fn get_role(
@@ -41,7 +41,7 @@ pub async fn get_role(
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let role = role_service::get_role(&pool, role_id).await?;
-    Ok(Json(json!({ "success": true, "data": role })).into_response())
+    Ok(Json(ApiResponse::ok(role)).into_response())
 }
 
 pub async fn create_role(
@@ -57,7 +57,10 @@ pub async fn create_role(
     let role_id = role_service::create_role(&pool, payload).await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "success": true, "data": { "id": role_id }, "message": "สร้างบทบาทสำเร็จ" })),
+        Json(ApiResponse::with_message(
+            IdData::new(role_id),
+            "สร้างบทบาทสำเร็จ",
+        )),
     )
         .into_response())
 }
@@ -79,7 +82,7 @@ pub async fn update_role(
     state.permission_cache.clear_all();
     state.notify_all_permissions_changed();
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตบทบาทสำเร็จ" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("อัปเดตบทบาทสำเร็จ")).into_response())
 }
 
 // ============================================
@@ -96,7 +99,7 @@ pub async fn list_departments(
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let departments = department_service::list_departments(&pool).await?;
-    Ok(Json(json!({ "success": true, "data": departments })).into_response())
+    Ok(Json(ApiResponse::ok(departments)).into_response())
 }
 
 pub async fn get_department(
@@ -110,7 +113,7 @@ pub async fn get_department(
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
     let department = department_service::get_department(&pool, dept_id).await?;
-    Ok(Json(json!({ "success": true, "data": department })).into_response())
+    Ok(Json(ApiResponse::ok(department)).into_response())
 }
 
 pub async fn create_department(
@@ -126,7 +129,10 @@ pub async fn create_department(
     let dept_id = department_service::create_department(&pool, payload).await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "success": true, "data": { "id": dept_id }, "message": "สร้างฝ่ายสำเร็จ" })),
+        Json(ApiResponse::with_message(
+            IdData::new(dept_id),
+            "สร้างฝ่ายสำเร็จ",
+        )),
     )
         .into_response())
 }
@@ -143,5 +149,5 @@ pub async fn update_department(
     actor.require_permission(codes::ROLES_UPDATE_ALL)?;
 
     department_service::update_department(&pool, dept_id, payload).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "อัปเดตฝ่ายสำเร็จ" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("อัปเดตฝ่ายสำเร็จ")).into_response())
 }

@@ -1,3 +1,4 @@
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::staff::models::UpdateDepartmentPermissionsRequest;
 use crate::modules::staff::services::department_permission_service;
@@ -9,7 +10,6 @@ use axum::{
     http::HeaderMap,
     response::{IntoResponse, Json},
 };
-use serde_json::json;
 use uuid::Uuid;
 
 // GET /api/departments/{id}/permissions
@@ -23,7 +23,7 @@ pub async fn get_department_permissions(
     let permission_ids =
         department_permission_service::list_department_permission_ids(&pool, department_id).await?;
 
-    Ok(Json(json!({ "success": true, "data": permission_ids })))
+    Ok(Json(ApiResponse::ok(permission_ids)))
 }
 
 // PUT /api/departments/{id}/permissions
@@ -46,7 +46,7 @@ pub async fn update_department_permissions(
     state.permission_cache.clear_all();
     state.notify_all_permissions_changed();
 
-    Ok(Json(
-        json!({ "success": true, "data": {}, "message": "Update department permissions successfully" }),
-    ))
+    Ok(Json(ApiResponse::empty_with_message(
+        "Update department permissions successfully",
+    )))
 }

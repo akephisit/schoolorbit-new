@@ -41,6 +41,17 @@ impl ApiResponse<EmptyData> {
 }
 
 #[derive(Debug, Serialize)]
+pub struct IdData<T> {
+    pub id: T,
+}
+
+impl<T> IdData<T> {
+    pub fn new(id: T) -> Self {
+        Self { id }
+    }
+}
+
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiErrorResponse {
     pub success: bool,

@@ -6,9 +6,9 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use uuid::Uuid;
 
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::staff::services::delegation_service;
 use crate::permissions::registry::codes;
@@ -38,6 +38,11 @@ pub struct CreateDelegationRequest {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Serialize)]
+struct DelegationIdData {
+    delegation_id: Uuid,
+}
+
 pub async fn list_delegatable_permissions(
     State(state): State<AppState>,
     Path(department_id): Path<Uuid>,
@@ -48,15 +53,11 @@ pub async fn list_delegatable_permissions(
     let actor = context.actor;
     let can_approve_department_work = actor.has_permission(codes::DEPT_WORK_APPROVE);
     if !can_approve_department_work {
-        return Ok((
-            StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": "ไม่มีสิทธิ์" })),
-        )
-            .into_response());
+        return Ok((StatusCode::FORBIDDEN, Json(ApiErrorResponse::new("ไม่มีสิทธิ์"))).into_response());
     }
 
     let perms = delegation_service::list_delegatable_permissions(&pool, department_id).await?;
-    Ok(Json(json!({ "success": true, "data": perms })).into_response())
+    Ok(Json(ApiResponse::ok(perms)).into_response())
 }
 
 pub async fn list_delegations(
@@ -71,13 +72,13 @@ pub async fn list_delegations(
     if !can_approve_department_work {
         return Ok((
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": "ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้" })),
+            Json(ApiErrorResponse::new("ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้")),
         )
             .into_response());
     }
 
     let delegations = delegation_service::list_delegations(&pool, department_id).await?;
-    Ok(Json(json!({ "success": true, "data": delegations })).into_response())
+    Ok(Json(ApiResponse::ok(delegations)).into_response())
 }
 
 pub async fn create_delegation(
@@ -93,20 +94,25 @@ pub async fn create_delegation(
     if !can_approve_department_work {
         return Ok((
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": "ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้" })),
+            Json(ApiErrorResponse::new("ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้")),
         )
             .into_response());
     }
 
     if !delegation_service::is_department_head(&pool, actor.user_id, department_id).await? {
-        return Ok((StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": "เฉพาะหัวหน้าหรือรองหัวหน้ากลุ่มเท่านั้นที่สามารถมอบหมายสิทธิ์ได้" }))).into_response());
+        return Ok((
+            StatusCode::FORBIDDEN,
+            Json(ApiErrorResponse::new(
+                "เฉพาะหัวหน้าหรือรองหัวหน้ากลุ่มเท่านั้นที่สามารถมอบหมายสิทธิ์ได้",
+            )),
+        )
+            .into_response());
     }
 
     if !delegation_service::is_department_member(&pool, body.to_user_id, department_id).await? {
         return Ok((
             StatusCode::BAD_REQUEST,
-            Json(json!({ "success": false, "error": "ผู้รับมอบหมายต้องเป็นสมาชิกของกลุ่มนี้" })),
+            Json(ApiErrorResponse::new("ผู้รับมอบหมายต้องเป็นสมาชิกของกลุ่มนี้")),
         )
             .into_response());
     }
@@ -125,7 +131,7 @@ pub async fn create_delegation(
     state.permission_cache.invalidate(&body.to_user_id);
     state.notify_permission_changed(body.to_user_id);
 
-    Ok(Json(json!({ "success": true, "data": { "delegation_id": id } })).into_response())
+    Ok(Json(ApiResponse::ok(DelegationIdData { delegation_id: id })).into_response())
 }
 
 pub async fn revoke_delegation(
@@ -143,7 +149,7 @@ pub async fn revoke_delegation(
             None => {
                 return Ok((
                     StatusCode::NOT_FOUND,
-                    Json(json!({ "success": false, "error": "ไม่พบการมอบหมายสิทธิ์นี้" })),
+                    Json(ApiErrorResponse::new("ไม่พบการมอบหมายสิทธิ์นี้")),
                 )
                     .into_response())
             }
@@ -153,7 +159,7 @@ pub async fn revoke_delegation(
     if !can_revoke {
         return Ok((
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "error": "ไม่มีสิทธิ์ยกเลิกการมอบหมายนี้" })),
+            Json(ApiErrorResponse::new("ไม่มีสิทธิ์ยกเลิกการมอบหมายนี้")),
         )
             .into_response());
     }
@@ -162,5 +168,5 @@ pub async fn revoke_delegation(
     state.permission_cache.invalidate(&to_user_id);
     state.notify_permission_changed(to_user_id);
 
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }

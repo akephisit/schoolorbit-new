@@ -1,14 +1,14 @@
 use axum::{
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use uuid::Uuid;
 
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::staff::services::department_member_service;
 use crate::permissions::registry::codes;
@@ -62,7 +62,7 @@ pub async fn list_members(
         query.include_children.unwrap_or(false),
     )
     .await?;
-    Ok(Json(json!({ "success": true, "data": members })).into_response())
+    Ok(Json(ApiResponse::ok(members)).into_response())
 }
 
 pub async fn add_member(
@@ -77,10 +77,11 @@ pub async fn add_member(
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
 
     if department_member_service::already_member(&pool, body.user_id, department_id).await? {
-        return Ok(
-            Json(json!({ "success": false, "error": "บุคลากรนี้เป็นสมาชิกของกลุ่มนี้อยู่แล้ว" }))
-                .into_response(),
-        );
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(ApiErrorResponse::new("บุคลากรนี้เป็นสมาชิกของกลุ่มนี้อยู่แล้ว")),
+        )
+            .into_response());
     }
 
     department_member_service::add_member(
@@ -95,7 +96,7 @@ pub async fn add_member(
 
     state.permission_cache.invalidate(&body.user_id);
     state.notify_permission_changed(body.user_id);
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn update_member(
@@ -122,12 +123,16 @@ pub async fn update_member(
     .await?;
 
     if updated == 0 {
-        return Ok(Json(json!({ "success": false, "error": "ไม่พบสมาชิกนี้ในกลุ่ม" })).into_response());
+        return Ok((
+            StatusCode::NOT_FOUND,
+            Json(ApiErrorResponse::new("ไม่พบสมาชิกนี้ในกลุ่ม")),
+        )
+            .into_response());
     }
 
     state.permission_cache.invalidate(&user_id);
     state.notify_permission_changed(user_id);
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn remove_member(
@@ -142,5 +147,5 @@ pub async fn remove_member(
     department_member_service::remove_member(&pool, department_id, user_id).await?;
     state.permission_cache.invalidate(&user_id);
     state.notify_permission_changed(user_id);
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }

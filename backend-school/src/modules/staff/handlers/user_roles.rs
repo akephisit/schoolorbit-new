@@ -4,9 +4,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
+use crate::api_response::{ApiErrorResponse, ApiResponse, IdData};
 use crate::error::AppError;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::user_role_service::{self, AssignRoleOutcome};
@@ -25,11 +25,7 @@ pub async fn get_user_roles(
     actor.require_permission(codes::ROLES_READ_ALL)?;
     Ok(
         match user_role_service::get_user_roles(&pool, user_id).await {
-            Ok(roles) => (
-                StatusCode::OK,
-                Json(json!({ "success": true, "data": roles })),
-            )
-                .into_response(),
+            Ok(roles) => (StatusCode::OK, Json(ApiResponse::ok(roles))).into_response(),
             Err(e) => return Err(e),
         },
     )
@@ -51,29 +47,36 @@ pub async fn assign_user_role(
             Ok(AssignRoleOutcome::Created(id)) => {
                 state.permission_cache.invalidate(&user_id);
                 state.notify_permission_changed(user_id);
-                (StatusCode::CREATED, Json(json!({ "success": true, "data": { "id": id }, "message": "มอบหมายบทบาทสำเร็จ" }))).into_response()
+                (
+                    StatusCode::CREATED,
+                    Json(ApiResponse::with_message(
+                        IdData::new(id),
+                        "มอบหมายบทบาทสำเร็จ",
+                    )),
+                )
+                    .into_response()
             }
             Ok(AssignRoleOutcome::UserNotFound) => (
                 StatusCode::NOT_FOUND,
-                Json(json!({ "success": false, "error": "ไม่พบผู้ใช้" })),
+                Json(ApiErrorResponse::new("ไม่พบผู้ใช้")),
             )
                 .into_response(),
             Ok(AssignRoleOutcome::RoleNotFound) => (
                 StatusCode::NOT_FOUND,
-                Json(json!({ "success": false, "error": "ไม่พบบทบาทหรือบทบาทไม่ active" })),
+                Json(ApiErrorResponse::new("ไม่พบบทบาทหรือบทบาทไม่ active")),
             )
                 .into_response(),
             Ok(AssignRoleOutcome::UserTypeMismatch(role_user_type)) => (
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "success": false, "error": format!(
+                Json(ApiErrorResponse::new(format!(
                     "ไม่สามารถมอบหมายบทบาทนี้ได้: บทบาทนี้สำหรับ {} เท่านั้น",
                     match role_user_type.as_str() {
                         "staff" => "บุคลากร",
                         "student" => "นักเรียน",
                         "parent" => "ผู้ปกครอง",
-                        _ => "ผู้ใช้อื่น"
+                        _ => "ผู้ใช้อื่น",
                     }
-                ) })),
+                ))),
             )
                 .into_response(),
             Err(e) => return Err(e),
@@ -98,13 +101,13 @@ pub async fn remove_user_role(
                 state.notify_permission_changed(user_id);
                 (
                     StatusCode::OK,
-                    Json(json!({ "success": true, "data": {}, "message": "ลบบทบาทสำเร็จ" })),
+                    Json(ApiResponse::empty_with_message("ลบบทบาทสำเร็จ")),
                 )
                     .into_response()
             }
             Ok(false) => (
                 StatusCode::NOT_FOUND,
-                Json(json!({ "success": false, "error": "ไม่พบการมอบหมายบทบาท" })),
+                Json(ApiErrorResponse::new("ไม่พบการมอบหมายบทบาท")),
             )
                 .into_response(),
             Err(e) => return Err(e),
@@ -123,11 +126,7 @@ pub async fn get_user_permissions(
     actor.require_permission(codes::ROLES_READ_ALL)?;
     Ok(
         match user_role_service::get_user_permissions(&pool, user_id).await {
-            Ok(perms) => (
-                StatusCode::OK,
-                Json(json!({ "success": true, "data": perms })),
-            )
-                .into_response(),
+            Ok(perms) => (StatusCode::OK, Json(ApiResponse::ok(perms))).into_response(),
             Err(e) => return Err(e),
         },
     )

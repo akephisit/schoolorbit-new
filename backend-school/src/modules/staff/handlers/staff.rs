@@ -1,3 +1,4 @@
+use crate::api_response::{ApiResponse, IdData};
 use crate::error::AppError;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::staff_service;
@@ -12,8 +13,17 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
+use serde::Serialize;
 use uuid::Uuid;
+
+#[derive(Debug, Serialize)]
+struct StaffListData {
+    items: Vec<StaffListItem>,
+    total: i64,
+    page: i64,
+    page_size: i64,
+    total_pages: i64,
+}
 
 // ============================================
 // Handlers
@@ -35,15 +45,12 @@ pub async fn list_staff(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "data": {
-                "items": items,
-                "total": total,
-                "page": page,
-                "page_size": page_size,
-                "total_pages": total_pages
-            }
+        Json(ApiResponse::ok(StaffListData {
+            items,
+            total,
+            page,
+            page_size,
+            total_pages,
         })),
     )
         .into_response())
@@ -60,11 +67,7 @@ pub async fn get_staff_profile(
     actor.require_permission(codes::STAFF_READ_ALL)?;
 
     let profile = staff_service::get_staff_profile(&pool, staff_id).await?;
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": profile })),
-    )
-        .into_response())
+    Ok((StatusCode::OK, Json(ApiResponse::ok(profile))).into_response())
 }
 
 pub async fn create_staff(
@@ -80,7 +83,10 @@ pub async fn create_staff(
     let user_id = staff_service::create_staff(&pool, payload).await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "success": true, "data": { "id": user_id }, "message": "สร้างบุคลากรสำเร็จ" })),
+        Json(ApiResponse::with_message(
+            IdData::new(user_id),
+            "สร้างบุคลากรสำเร็จ",
+        )),
     )
         .into_response())
 }
@@ -104,7 +110,7 @@ pub async fn update_staff(
 
     Ok((
         StatusCode::OK,
-        Json(json!({ "success": true, "data": {}, "message": "อัปเดตข้อมูลสำเร็จ" })),
+        Json(ApiResponse::empty_with_message("อัปเดตข้อมูลสำเร็จ")),
     )
         .into_response())
 }
@@ -122,7 +128,7 @@ pub async fn delete_staff(
     staff_service::soft_delete_staff(&pool, staff_id).await?;
     Ok((
         StatusCode::OK,
-        Json(json!({ "success": true, "data": {}, "message": "ลบบุคลากรสำเร็จ" })),
+        Json(ApiResponse::empty_with_message("ลบบุคลากรสำเร็จ")),
     )
         .into_response())
 }
@@ -137,9 +143,5 @@ pub async fn get_public_staff_profile(
     let pool = context.tenant.pool;
 
     let data = staff_service::get_public_staff_profile(&pool, staff_id).await?;
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": data })),
-    )
-        .into_response())
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))).into_response())
 }

@@ -1,3 +1,4 @@
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::staff::services::permission_service;
 use crate::permissions::registry::codes;
@@ -9,7 +10,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 
 // ===================================================================
 // List All Permissions
@@ -26,11 +26,7 @@ pub async fn list_permissions(
 
     let permissions = permission_service::list_permissions(&pool).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": permissions })),
-    )
-        .into_response())
+    Ok((StatusCode::OK, Json(ApiResponse::ok(permissions))).into_response())
 }
 
 // ===================================================================
@@ -48,9 +44,5 @@ pub async fn list_permissions_by_module(
 
     let grouped = permission_service::list_permissions_by_module(&pool).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": grouped })),
-    )
-        .into_response())
+    Ok((StatusCode::OK, Json(ApiResponse::ok(grouped))).into_response())
 }
