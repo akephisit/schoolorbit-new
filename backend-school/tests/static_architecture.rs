@@ -237,6 +237,27 @@ fn module_handlers_use_central_api_response_envelope() {
 }
 
 #[test]
+fn module_handlers_use_typed_api_dtos_instead_of_raw_json_values() {
+    let raw_json_patterns = ["serde_json::Value", "use serde_json::Value"];
+    let mut violations = Vec::new();
+
+    for file in module_handler_files() {
+        let source = strip_comments(&read_source(&file));
+
+        for pattern in raw_json_patterns {
+            if source.contains(pattern) {
+                violations.push(format!(
+                    "{}: use typed request/response DTOs in handlers instead of {pattern}",
+                    relative(&file)
+                ));
+            }
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
 fn migrated_utility_handlers_use_shared_request_context() {
     let direct_context_patterns = [
         "resolve_tenant_pool",

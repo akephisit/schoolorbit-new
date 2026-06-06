@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
+use crate::modules::academic::models::scheduling::TimeSlot;
 use crate::modules::academic::services::scheduling_config_service;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context;
@@ -16,9 +17,9 @@ use crate::AppState;
 
 #[derive(Deserialize)]
 pub struct UpdateInstructorConstraintRequest {
-    pub hard_unavailable_slots: Option<serde_json::Value>,
+    pub hard_unavailable_slots: Option<Vec<TimeSlot>>,
     pub max_periods_per_day: Option<i32>,
-    pub preferred_slots: Option<serde_json::Value>,
+    pub preferred_slots: Option<Vec<TimeSlot>>,
     pub assigned_room_id: Option<Uuid>,
     pub clear_assigned_room: Option<bool>,
     pub priority: Option<i32>,
@@ -44,15 +45,15 @@ pub struct UpdateSubjectConstraintRequest {
     pub min_consecutive_periods: Option<i32>,
     pub max_consecutive_periods: Option<i32>,
     pub allow_single_period: Option<bool>,
-    pub allowed_period_ids: Option<serde_json::Value>,
-    pub allowed_days: Option<serde_json::Value>,
+    pub allowed_period_ids: Option<Vec<Uuid>>,
+    pub allowed_days: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
 pub struct UpdateClassroomCourseConstraintRequest {
-    pub consecutive_pattern: Option<serde_json::Value>,
+    pub consecutive_pattern: Option<Vec<i32>>,
     pub same_day_unique: Option<bool>,
-    pub hard_unavailable_slots: Option<serde_json::Value>,
+    pub hard_unavailable_slots: Option<Vec<TimeSlot>>,
 }
 
 #[derive(Deserialize)]
@@ -107,8 +108,8 @@ pub async fn update_classroom_course_constraints(
         payload.hard_unavailable_slots,
     )
     .await?;
-    Ok(Json(ApiResponse::ok(
-        "Updated classroom course constraints".to_string(),
+    Ok(Json(ApiResponse::empty_with_message(
+        "Updated classroom course constraints",
     ))
     .into_response())
 }
@@ -142,7 +143,11 @@ pub async fn set_cc_preferred_rooms(
         .map(|r| (r.room_id, r.rank, r.is_required.unwrap_or(false)))
         .collect();
     let count = scheduling_config_service::set_cc_preferred_rooms(&pool, cc_id, rooms).await?;
-    Ok(Json(ApiResponse::ok(format!("Updated {} rooms", count))).into_response())
+    Ok(Json(ApiResponse::empty_with_message(format!(
+        "Updated {} rooms",
+        count
+    )))
+    .into_response())
 }
 
 pub async fn list_all_rooms(
@@ -185,7 +190,7 @@ pub async fn reorder_instructor_priority(
     } else {
         format!("Reordered {} instructors", n)
     };
-    Ok(Json(ApiResponse::ok(msg)).into_response())
+    Ok(Json(ApiResponse::empty_with_message(msg)).into_response())
 }
 
 pub async fn get_scheduler_settings(
@@ -214,7 +219,10 @@ pub async fn update_scheduler_settings(
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     scheduling_config_service::update_scheduler_settings(&pool, payload.default_max_consecutive)
         .await?;
-    Ok(Json(ApiResponse::ok("Updated scheduler settings".to_string())).into_response())
+    Ok(Json(ApiResponse::empty_with_message(
+        "Updated scheduler settings",
+    ))
+    .into_response())
 }
 
 pub async fn update_instructor_constraints(
@@ -240,8 +248,8 @@ pub async fn update_instructor_constraints(
         },
     )
     .await?;
-    Ok(Json(ApiResponse::ok(
-        "Updated instructor constraints".to_string(),
+    Ok(Json(ApiResponse::empty_with_message(
+        "Updated instructor constraints",
     ))
     .into_response())
 }
@@ -278,5 +286,8 @@ pub async fn update_subject_constraints(
         payload.allowed_days,
     )
     .await?;
-    Ok(Json(ApiResponse::ok("Updated subject constraints".to_string())).into_response())
+    Ok(Json(ApiResponse::empty_with_message(
+        "Updated subject constraints",
+    ))
+    .into_response())
 }

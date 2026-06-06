@@ -1,14 +1,30 @@
 use crate::error::AppError;
-use serde::Serialize;
+use crate::modules::academic::models::scheduling::TimeSlot;
+use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Serialize, sqlx::FromRow)]
+struct InstructorConstraintRow {
+    pub id: Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    pub hard_unavailable_slots: Option<Value>,
+    pub max_periods_per_day: Option<i32>,
+    pub min_periods_per_day: Option<i32>,
+    pub assigned_room_id: Option<Uuid>,
+    pub assigned_room_name: Option<String>,
+    pub priority: i32,
+    pub primary_course_count: i64,
+}
+
+#[derive(Serialize)]
 pub struct InstructorConstraintView {
     pub id: Uuid,
     pub first_name: String,
     pub last_name: String,
-    pub hard_unavailable_slots: Option<serde_json::Value>,
+    pub hard_unavailable_slots: Option<Vec<TimeSlot>>,
     pub max_periods_per_day: Option<i32>,
     pub min_periods_per_day: Option<i32>,
     pub assigned_room_id: Option<Uuid>,
@@ -18,6 +34,19 @@ pub struct InstructorConstraintView {
 }
 
 #[derive(Serialize, sqlx::FromRow)]
+struct SubjectConstraintRow {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub min_consecutive_periods: i32,
+    pub max_consecutive_periods: Option<i32>,
+    pub allow_single_period: Option<bool>,
+    pub periods_per_week: Option<i32>,
+    pub allowed_period_ids: Option<Value>,
+    pub allowed_days: Option<Value>,
+}
+
+#[derive(Serialize)]
 pub struct SubjectConstraintView {
     pub id: Uuid,
     pub code: String,
@@ -26,11 +55,28 @@ pub struct SubjectConstraintView {
     pub max_consecutive_periods: Option<i32>,
     pub allow_single_period: Option<bool>,
     pub periods_per_week: Option<i32>,
-    pub allowed_period_ids: Option<serde_json::Value>,
-    pub allowed_days: Option<serde_json::Value>,
+    pub allowed_period_ids: Option<Vec<Uuid>>,
+    pub allowed_days: Option<Vec<String>>,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
+struct ClassroomCourseConstraintRow {
+    pub id: Uuid,
+    pub classroom_id: Uuid,
+    pub classroom_name: String,
+    pub subject_id: Uuid,
+    pub subject_code: String,
+    pub subject_name: String,
+    pub periods_per_week: Option<i32>,
+    pub primary_instructor_id: Option<Uuid>,
+    pub primary_instructor_name: Option<String>,
+    pub consecutive_pattern: Option<Value>,
+    pub same_day_unique: bool,
+    pub hard_unavailable_slots: Value,
+    pub team_unavailable_slots: Value,
+}
+
+#[derive(Serialize)]
 pub struct ClassroomCourseConstraintView {
     pub id: Uuid,
     pub classroom_id: Uuid,
@@ -41,10 +87,10 @@ pub struct ClassroomCourseConstraintView {
     pub periods_per_week: Option<i32>,
     pub primary_instructor_id: Option<Uuid>,
     pub primary_instructor_name: Option<String>,
-    pub consecutive_pattern: Option<serde_json::Value>,
+    pub consecutive_pattern: Option<Vec<i32>>,
     pub same_day_unique: bool,
-    pub hard_unavailable_slots: serde_json::Value,
-    pub team_unavailable_slots: serde_json::Value,
+    pub hard_unavailable_slots: Vec<TimeSlot>,
+    pub team_unavailable_slots: Vec<TimeSlot>,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -64,6 +110,112 @@ pub struct RoomView {
     pub code: String,
     pub name_th: String,
     pub room_type: Option<String>,
+}
+
+fn json_value_option<T: Serialize>(
+    value: Option<T>,
+    field_name: &'static str,
+) -> Result<Option<Value>, AppError> {
+    value
+        .map(|value| {
+            serde_json::to_value(value).map_err(|error| {
+                AppError::InternalServerError(format!("failed to serialize {field_name}: {error}"))
+            })
+        })
+        .transpose()
+}
+
+fn parse_optional_json_array<T: DeserializeOwned>(
+    value: Option<Value>,
+    field_name: &'static str,
+) -> Result<Option<Vec<T>>, AppError> {
+    match value {
+        Some(Value::Null) | None => Ok(None),
+        Some(value) => serde_json::from_value(value).map(Some).map_err(|error| {
+            AppError::InternalServerError(format!("invalid {field_name} data: {error}"))
+        }),
+    }
+}
+
+fn parse_json_array_or_empty<T: DeserializeOwned>(
+    value: Value,
+    field_name: &'static str,
+) -> Result<Vec<T>, AppError> {
+    if value.is_null() {
+        return Ok(Vec::new());
+    }
+
+    serde_json::from_value(value).map_err(|error| {
+        AppError::InternalServerError(format!("invalid {field_name} data: {error}"))
+    })
+}
+
+fn instructor_constraint_view_from_row(
+    row: InstructorConstraintRow,
+) -> Result<InstructorConstraintView, AppError> {
+    Ok(InstructorConstraintView {
+        id: row.id,
+        first_name: row.first_name,
+        last_name: row.last_name,
+        hard_unavailable_slots: parse_optional_json_array(
+            row.hard_unavailable_slots,
+            "hard_unavailable_slots",
+        )?,
+        max_periods_per_day: row.max_periods_per_day,
+        min_periods_per_day: row.min_periods_per_day,
+        assigned_room_id: row.assigned_room_id,
+        assigned_room_name: row.assigned_room_name,
+        priority: row.priority,
+        primary_course_count: row.primary_course_count,
+    })
+}
+
+fn subject_constraint_view_from_row(
+    row: SubjectConstraintRow,
+) -> Result<SubjectConstraintView, AppError> {
+    Ok(SubjectConstraintView {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        min_consecutive_periods: row.min_consecutive_periods,
+        max_consecutive_periods: row.max_consecutive_periods,
+        allow_single_period: row.allow_single_period,
+        periods_per_week: row.periods_per_week,
+        allowed_period_ids: parse_optional_json_array(
+            row.allowed_period_ids,
+            "allowed_period_ids",
+        )?,
+        allowed_days: parse_optional_json_array(row.allowed_days, "allowed_days")?,
+    })
+}
+
+fn classroom_course_constraint_view_from_row(
+    row: ClassroomCourseConstraintRow,
+) -> Result<ClassroomCourseConstraintView, AppError> {
+    Ok(ClassroomCourseConstraintView {
+        id: row.id,
+        classroom_id: row.classroom_id,
+        classroom_name: row.classroom_name,
+        subject_id: row.subject_id,
+        subject_code: row.subject_code,
+        subject_name: row.subject_name,
+        periods_per_week: row.periods_per_week,
+        primary_instructor_id: row.primary_instructor_id,
+        primary_instructor_name: row.primary_instructor_name,
+        consecutive_pattern: parse_optional_json_array(
+            row.consecutive_pattern,
+            "consecutive_pattern",
+        )?,
+        same_day_unique: row.same_day_unique,
+        hard_unavailable_slots: parse_json_array_or_empty(
+            row.hard_unavailable_slots,
+            "hard_unavailable_slots",
+        )?,
+        team_unavailable_slots: parse_json_array_or_empty(
+            row.team_unavailable_slots,
+            "team_unavailable_slots",
+        )?,
+    })
 }
 
 pub async fn get_active_year_id(pool: &PgPool) -> Result<Uuid, AppError> {
@@ -135,19 +287,22 @@ pub async fn list_classroom_course_constraints(
     }
     sql.push_str(" ORDER BY cls.name, s.code");
 
-    let q = sqlx::query_as::<_, ClassroomCourseConstraintView>(&sql).bind(year_id);
+    let q = sqlx::query_as::<_, ClassroomCourseConstraintRow>(&sql).bind(year_id);
     let result = if let Some(iid) = instructor_id {
         q.bind(iid).fetch_all(pool).await
     } else {
         q.fetch_all(pool).await
     };
-    result.map_err(|e| AppError::InternalServerError(e.to_string()))
+    let rows = result.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    rows.into_iter()
+        .map(classroom_course_constraint_view_from_row)
+        .collect()
 }
 
 pub async fn validate_consecutive_pattern(
     pool: &PgPool,
     cc_id: Uuid,
-    pattern: &serde_json::Value,
+    pattern: &[i32],
 ) -> Result<(), AppError> {
     let sum = consecutive_pattern_sum(pattern)?;
 
@@ -164,10 +319,14 @@ pub async fn validate_consecutive_pattern(
 pub async fn update_classroom_course_constraints(
     pool: &PgPool,
     cc_id: Uuid,
-    consecutive_pattern: Option<serde_json::Value>,
+    consecutive_pattern: Option<Vec<i32>>,
     same_day_unique: Option<bool>,
-    hard_unavailable_slots: Option<serde_json::Value>,
+    hard_unavailable_slots: Option<Vec<TimeSlot>>,
 ) -> Result<(), AppError> {
+    let consecutive_pattern = json_value_option(consecutive_pattern, "consecutive_pattern")?;
+    let hard_unavailable_slots =
+        json_value_option(hard_unavailable_slots, "hard_unavailable_slots")?;
+
     sqlx::query(
         r#"UPDATE classroom_courses SET
             consecutive_pattern = COALESCE($2, consecutive_pattern),
@@ -256,7 +415,7 @@ pub async fn list_instructor_constraints(
     pool: &PgPool,
 ) -> Result<Vec<InstructorConstraintView>, AppError> {
     let year_id = get_active_year_id(pool).await?;
-    sqlx::query_as::<_, InstructorConstraintView>(
+    let rows = sqlx::query_as::<_, InstructorConstraintRow>(
         r#"WITH primary_counts AS (
             SELECT cci.instructor_id, COUNT(*)::bigint AS cnt
             FROM classroom_course_instructors cci
@@ -279,7 +438,10 @@ pub async fn list_instructor_constraints(
         ORDER BY COALESCE(ip.priority, 100), u.first_name"#
     )
     .bind(year_id).fetch_all(pool).await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    rows.into_iter()
+        .map(instructor_constraint_view_from_row)
+        .collect()
 }
 
 pub async fn reorder_instructor_priority(
@@ -340,9 +502,9 @@ pub async fn update_scheduler_settings(
 }
 
 pub struct InstructorConstraintUpdate {
-    pub hard_unavailable_slots: Option<serde_json::Value>,
+    pub hard_unavailable_slots: Option<Vec<TimeSlot>>,
     pub max_periods_per_day: Option<i32>,
-    pub preferred_slots: Option<serde_json::Value>,
+    pub preferred_slots: Option<Vec<TimeSlot>>,
     pub priority: Option<i32>,
     pub assigned_room_id: Option<Uuid>,
     pub clear_assigned_room: bool,
@@ -358,6 +520,9 @@ pub async fn update_instructor_constraints(
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     let year_id = get_active_year_id_tx(&mut tx).await?;
+    let hard_unavailable_slots =
+        json_value_option(update.hard_unavailable_slots, "hard_unavailable_slots")?;
+    let preferred_slots = json_value_option(update.preferred_slots, "preferred_slots")?;
 
     sqlx::query(
         r#"INSERT INTO instructor_preferences (
@@ -377,9 +542,9 @@ pub async fn update_instructor_constraints(
     )
     .bind(instructor_id)
     .bind(year_id)
-    .bind(update.hard_unavailable_slots)
+    .bind(hard_unavailable_slots)
     .bind(update.max_periods_per_day)
-    .bind(update.preferred_slots)
+    .bind(preferred_slots)
     .bind(update.priority)
     .execute(&mut *tx)
     .await
@@ -412,7 +577,7 @@ pub async fn update_instructor_constraints(
 pub async fn list_subject_constraints(
     pool: &PgPool,
 ) -> Result<Vec<SubjectConstraintView>, AppError> {
-    sqlx::query_as::<_, SubjectConstraintView>(
+    let rows = sqlx::query_as::<_, SubjectConstraintRow>(
         r#"SELECT id, code, name_th as name,
                   COALESCE(min_consecutive_periods, 1) as min_consecutive_periods,
                   max_consecutive_periods, allow_single_period, periods_per_week,
@@ -421,7 +586,10 @@ pub async fn list_subject_constraints(
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    rows.into_iter()
+        .map(subject_constraint_view_from_row)
+        .collect()
 }
 
 pub async fn update_subject_constraints(
@@ -430,9 +598,12 @@ pub async fn update_subject_constraints(
     min_consecutive_periods: Option<i32>,
     max_consecutive_periods: Option<i32>,
     allow_single_period: Option<bool>,
-    allowed_period_ids: Option<serde_json::Value>,
-    allowed_days: Option<serde_json::Value>,
+    allowed_period_ids: Option<Vec<Uuid>>,
+    allowed_days: Option<Vec<String>>,
 ) -> Result<(), AppError> {
+    let allowed_period_ids = json_value_option(allowed_period_ids, "allowed_period_ids")?;
+    let allowed_days = json_value_option(allowed_days, "allowed_days")?;
+
     sqlx::query(
         r#"UPDATE subjects SET
             min_consecutive_periods = COALESCE($2, min_consecutive_periods),
@@ -455,21 +626,15 @@ pub async fn update_subject_constraints(
     Ok(())
 }
 
-fn consecutive_pattern_sum(pattern: &serde_json::Value) -> Result<i64, AppError> {
-    let arr = pattern
-        .as_array()
-        .ok_or_else(|| AppError::BadRequest("consecutive_pattern ต้องเป็น array".to_string()))?;
+fn consecutive_pattern_sum(pattern: &[i32]) -> Result<i64, AppError> {
     let mut sum: i64 = 0;
-    for value in arr {
-        let number = value
-            .as_i64()
-            .ok_or_else(|| AppError::BadRequest("consecutive_pattern มีค่าที่ไม่ใช่ตัวเลข".to_string()))?;
-        if !(1..=20).contains(&number) {
+    for number in pattern {
+        if !(1..=20).contains(number) {
             return Err(AppError::BadRequest(
                 "consecutive_pattern แต่ละค่าต้องอยู่ระหว่าง 1-20".to_string(),
             ));
         }
-        sum += number;
+        sum += i64::from(*number);
     }
     Ok(sum)
 }
@@ -507,24 +672,22 @@ mod tests {
 
     #[test]
     fn consecutive_pattern_sum_accepts_integer_array() {
-        let pattern = serde_json::json!([2, 1, 2]);
-
-        assert_eq!(consecutive_pattern_sum(&pattern).unwrap(), 5);
-    }
-
-    #[test]
-    fn consecutive_pattern_sum_rejects_non_array_values() {
-        assert!(matches!(
-            consecutive_pattern_sum(&serde_json::json!({"days": [1]})),
-            Err(AppError::BadRequest(message)) if message == "consecutive_pattern ต้องเป็น array"
-        ));
+        assert_eq!(consecutive_pattern_sum(&[2, 1, 2]).unwrap(), 5);
     }
 
     #[test]
     fn consecutive_pattern_sum_rejects_out_of_range_items() {
         assert!(matches!(
-            consecutive_pattern_sum(&serde_json::json!([0, 2])),
+            consecutive_pattern_sum(&[0, 2]),
             Err(AppError::BadRequest(message)) if message == "consecutive_pattern แต่ละค่าต้องอยู่ระหว่าง 1-20"
+        ));
+    }
+
+    #[test]
+    fn parse_json_array_or_empty_rejects_malformed_storage_data() {
+        assert!(matches!(
+            parse_json_array_or_empty::<i32>(serde_json::json!({"days": [1]}), "test_field"),
+            Err(AppError::InternalServerError(message)) if message.contains("invalid test_field data")
         ));
     }
 

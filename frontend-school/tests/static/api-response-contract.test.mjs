@@ -60,7 +60,9 @@ test('user role assignment API contract stays aligned across backend and fronten
 	const delegationService = await readRepoFile(
 		'backend-school/src/modules/staff/services/delegation_service.rs'
 	);
-	const staffService = await readRepoFile('backend-school/src/modules/staff/services/staff_service.rs');
+	const staffService = await readRepoFile(
+		'backend-school/src/modules/staff/services/staff_service.rs'
+	);
 	const frontendApi = await readRepoFile('frontend-school/src/lib/api/roles.ts');
 	const frontendStaffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
 	const frontendComponent = await readRepoFile(
@@ -82,7 +84,10 @@ test('user role assignment API contract stays aligned across backend and fronten
 
 	assert.match(frontendApi, /interface\s+UserRoleAssignment/);
 	assert.match(frontendApi, /role:\s+Role/);
-	assert.match(frontendApi, /getUserRoles\(userId:\s*string\):\s*Promise<ApiResponse<UserRoleAssignment\[\]>>/);
+	assert.match(
+		frontendApi,
+		/getUserRoles\(userId:\s*string\):\s*Promise<ApiResponse<UserRoleAssignment\[\]>>/
+	);
 	assert.doesNotMatch(frontendApi, /interface\s+UserRole\s*\{/);
 	assert.match(frontendStaffApi, /permissions:\s*string\[\]/);
 	assert.doesNotMatch(frontendStaffApi, /permissions:\s*Record<string,\s*unknown>/);
@@ -91,9 +96,15 @@ test('user role assignment API contract stays aligned across backend and fronten
 	assert.doesNotMatch(delegationService, /Result<Vec<serde_json::Value>,\s*AppError>/);
 	assert.match(staffService, /struct\s+PublicStaffProfile/);
 	assert.match(staffService, /Result<PublicStaffProfile,\s*AppError>/);
-	assert.doesNotMatch(staffService, /get_public_staff_profile[\s\S]*?Result<serde_json::Value,\s*AppError>/);
+	assert.doesNotMatch(
+		staffService,
+		/get_public_staff_profile[\s\S]*?Result<serde_json::Value,\s*AppError>/
+	);
 	assert.match(frontendStaffApi, /interface\s+PublicStaffProfileResponse/);
-	assert.match(frontendStaffApi, /getPublicStaffProfile[\s\S]*ApiResponse<PublicStaffProfileResponse>/);
+	assert.match(
+		frontendStaffApi,
+		/getPublicStaffProfile[\s\S]*ApiResponse<PublicStaffProfileResponse>/
+	);
 
 	assert.match(frontendComponent, /type\s+UserRoleAssignment/);
 	assert.match(frontendComponent, /userRole\.role/);
@@ -122,17 +133,32 @@ test('admission application detail contract returns application and documents in
 		'frontend-school/src/routes/(public)/apply/status/+page.svelte'
 	);
 
-	assert.match(backendHandler, /struct\s+ApplicationWithDocumentsData\s*\{[\s\S]*application:\s*AdmissionApplication,[\s\S]*documents:\s*Vec<ApplicationDocument>,[\s\S]*\}/);
-	assert.match(backendHandler, /ApiResponse::ok\(ApplicationWithDocumentsData\s*\{[\s\S]*application,[\s\S]*documents,[\s\S]*\}\)/);
-	assert.doesNotMatch(backendHandler, /"data":\s*\{\s*"items": application,\s*"documents": documents\s*\}/);
+	assert.match(
+		backendHandler,
+		/struct\s+ApplicationWithDocumentsData\s*\{[\s\S]*application:\s*AdmissionApplication,[\s\S]*documents:\s*Vec<ApplicationDocument>,[\s\S]*\}/
+	);
+	assert.match(
+		backendHandler,
+		/ApiResponse::ok\(ApplicationWithDocumentsData\s*\{[\s\S]*application,[\s\S]*documents,[\s\S]*\}\)/
+	);
+	assert.doesNotMatch(
+		backendHandler,
+		/"data":\s*\{\s*"items": application,\s*"documents": documents\s*\}/
+	);
 
 	assert.match(frontendApi, /interface\s+ApplicationDetailResponse/);
 	assert.match(frontendApi, /application:\s*AdmissionApplication/);
 	assert.match(frontendApi, /documents:\s*ApplicationDocument\[\]/);
 	assert.match(frontendApi, /apiClient\.get<ApplicationDetailResponse>/);
-	assert.doesNotMatch(frontendApi, /ApiResponse<AdmissionApplication>[\s\S]*documents\?: ApplicationDocument\[\]/);
+	assert.doesNotMatch(
+		frontendApi,
+		/ApiResponse<AdmissionApplication>[\s\S]*documents\?: ApplicationDocument\[\]/
+	);
 
-	assert.match(backendHandler, /#\[serde\(rename_all = "camelCase"\)\][\s\S]*struct\s+SubmitApplicationData\s*\{[\s\S]*application_number:\s*String,/);
+	assert.match(
+		backendHandler,
+		/#\[serde\(rename_all = "camelCase"\)\][\s\S]*struct\s+SubmitApplicationData\s*\{[\s\S]*application_number:\s*String,/
+	);
 	assert.doesNotMatch(backendHandler, /"application_number": application_number/);
 	assert.match(frontendApi, /apiClient\.post<\{\s*applicationNumber:\s*string\s*\}>/);
 	assert.match(frontendApi, /interface\s+PortalStatusResult/);
@@ -140,23 +166,38 @@ test('admission application detail contract returns application and documents in
 	assert.match(frontendApi, /assignment:\s*RoomAssignment \| null/);
 	assert.match(frontendApi, /scores:\s*ExamScore\[\] \| null/);
 	assert.match(frontendApi, /enrollmentForm:\s*EnrollmentForm \| null/);
-	assert.match(frontendApi, /portalGetStatus[\s\S]*requireApiData\(res,\s*'ไม่สามารถโหลดสถานะใบสมัครได้'\)/);
+	assert.match(
+		frontendApi,
+		/portalGetStatus[\s\S]*requireApiData\(res,\s*'ไม่สามารถโหลดสถานะใบสมัครได้'\)/
+	);
 	assert.match(portalStatusPage, /PortalStatusResult/);
 
-	assert.match(backendHandler, /#\[serde\(rename_all = "camelCase"\)\][\s\S]*struct\s+CompleteEnrollmentData\s*\{[\s\S]*user_id:\s*Uuid,[\s\S]*student_code:\s*String,/);
+	assert.match(
+		backendHandler,
+		/#\[serde\(rename_all = "camelCase"\)\][\s\S]*struct\s+CompleteEnrollmentData\s*\{[\s\S]*user_id:\s*Uuid,[\s\S]*student_code:\s*String,/
+	);
 	assert.match(backendHandler, /user_id:\s*result\.user_id/);
 	assert.match(backendHandler, /student_code:\s*result\.student_code/);
 	assert.doesNotMatch(backendHandler, /"user_id": result\.user_id/);
 	assert.doesNotMatch(backendHandler, /"student_code": result\.student_code/);
 	assert.match(frontendApi, /interface\s+CompleteEnrollmentResponse/);
 	assert.match(frontendApi, /apiClient\.post<CompleteEnrollmentResponse>/);
-	assert.match(frontendApi, /copyExamRoomsFromRound[\s\S]*res\.message \?\? 'copy ห้องสอบเรียบร้อย'/);
-	assert.match(frontendApi, /assignExamSeats[\s\S]*message: res\.message \?\? 'จัดที่นั่งสอบเรียบร้อย'/);
+	assert.match(
+		frontendApi,
+		/copyExamRoomsFromRound[\s\S]*res\.message \?\? 'copy ห้องสอบเรียบร้อย'/
+	);
+	assert.match(
+		frontendApi,
+		/assignExamSeats[\s\S]*message: res\.message \?\? 'จัดที่นั่งสอบเรียบร้อย'/
+	);
 	assert.match(frontendApi, /apiClient\.post<\{\s*updated:\s*number\s*\}>/);
 	assert.match(frontendApi, /sortRoomStudents[\s\S]*res\.data\?\.updated \?\? 0/);
 	assert.match(frontendApi, /apiClient\.post<\{\s*assigned:\s*number\s*\}>/);
 	assert.match(frontendApi, /autoAssignStudentIds[\s\S]*res\.data\?\.assigned \?\? 0/);
-	assert.match(frontendApi, /apiClient\.post<ExamSeatDetail \| null>\('\/api\/admission\/portal\/exam-seat'/);
+	assert.match(
+		frontendApi,
+		/apiClient\.post<ExamSeatDetail \| null>\('\/api\/admission\/portal\/exam-seat'/
+	);
 	assert.match(frontendApi, /apiClient\.get<ExamRoomsResponse>/);
 	assert.match(frontendApi, /interface\s+RoundRankingResult/);
 	assert.match(frontendApi, /apiClient\.get<RoundRankingResult\[\]>/);
@@ -172,24 +213,45 @@ test('admission application detail contract returns application and documents in
 	assert.match(examRoomService, /struct\s+AssignSeatsRoomSummary/);
 	assert.match(examRoomService, /Result<ExamConfigResponse,\s*AppError>/);
 	assert.match(examRoomService, /pub\s+rooms:\s+Vec<AssignSeatsRoomSummary>/);
-	assert.doesNotMatch(examRoomService, /get_exam_config[\s\S]*?Result<serde_json::Value,\s*AppError>/);
+	assert.doesNotMatch(
+		examRoomService,
+		/get_exam_config[\s\S]*?Result<serde_json::Value,\s*AppError>/
+	);
 	assert.doesNotMatch(examRoomService, /config\["exam_id_type"\]/);
 	assert.doesNotMatch(examRoomService, /json!\(\{\s*"roomName"/);
 
 	assert.match(selectionService, /struct\s+RoundRankingResult/);
 	assert.match(selectionService, /struct\s+TrackRankingResult/);
 	assert.match(selectionService, /struct\s+GlobalRankingResult/);
-	assert.match(selectionService, /get_round_ranking[\s\S]*?Result<Vec<RoundRankingResult>,\s*AppError>/);
+	assert.match(
+		selectionService,
+		/get_round_ranking[\s\S]*?Result<Vec<RoundRankingResult>,\s*AppError>/
+	);
 	assert.match(selectionService, /get_track_ranking[\s\S]*?Result<TrackRankingResult,\s*AppError>/);
-	assert.match(selectionService, /get_global_ranking[\s\S]*?Result<GlobalRankingResult,\s*AppError>/);
-	assert.doesNotMatch(selectionService, /get_round_ranking[\s\S]*?Result<Vec<serde_json::Value>,\s*AppError>/);
-	assert.doesNotMatch(selectionService, /get_track_ranking[\s\S]*?Result<serde_json::Value,\s*AppError>/);
-	assert.doesNotMatch(selectionService, /get_global_ranking[\s\S]*?Result<serde_json::Value,\s*AppError>/);
+	assert.match(
+		selectionService,
+		/get_global_ranking[\s\S]*?Result<GlobalRankingResult,\s*AppError>/
+	);
+	assert.doesNotMatch(
+		selectionService,
+		/get_round_ranking[\s\S]*?Result<Vec<serde_json::Value>,\s*AppError>/
+	);
+	assert.doesNotMatch(
+		selectionService,
+		/get_track_ranking[\s\S]*?Result<serde_json::Value,\s*AppError>/
+	);
+	assert.doesNotMatch(
+		selectionService,
+		/get_global_ranking[\s\S]*?Result<serde_json::Value,\s*AppError>/
+	);
 	assert.match(portalService, /struct\s+PortalStatusResult/);
 	assert.match(portalService, /get_status[\s\S]*?Result<PortalStatusResult,\s*AppError>/);
 	assert.doesNotMatch(portalService, /get_status[\s\S]*?Result<serde_json::Value,\s*AppError>/);
 	assert.match(applicationService, /struct\s+DocumentUploadResponse/);
-	assert.match(applicationService, /document_upload_response[\s\S]*?Result<DocumentUploadResponse,\s*AppError>/);
+	assert.match(
+		applicationService,
+		/document_upload_response[\s\S]*?Result<DocumentUploadResponse,\s*AppError>/
+	);
 	assert.doesNotMatch(applicationService, /document_upload_response_json/);
 });
 
@@ -205,7 +267,10 @@ test('parent self-service API uses typed student and timetable responses', async
 	assert.match(parentsApi, /import type \{ Student \} from '\.\/students'/);
 	assert.match(parentsApi, /getChildProfile[\s\S]*Promise<LoadedApiResponse<Student>>/);
 	assert.match(parentsApi, /apiClient\.get<Student>/);
-	assert.match(parentsApi, /getChildTimetable[\s\S]*Promise<LoadedApiResponse<TimetableEntry\[\]>>/);
+	assert.match(
+		parentsApi,
+		/getChildTimetable[\s\S]*Promise<LoadedApiResponse<TimetableEntry\[\]>>/
+	);
 	assert.doesNotMatch(parentsApi, /apiClient\.get<unknown>/);
 	assert.doesNotMatch(parentsApi, /return response as/);
 
@@ -229,13 +294,38 @@ test('school settings API consumes typed envelope data without casts', async () 
 test('scheduling API uses backend envelope data types without response casts', async () => {
 	const schedulingApi = await readRepoFile('frontend-school/src/lib/api/scheduling.ts');
 
-	assert.match(schedulingApi, /updateInstructorConstraints[\s\S]*apiClient\.put<string>/);
-	assert.match(schedulingApi, /updateSubjectConstraints[\s\S]*apiClient\.put<string>/);
-	assert.match(schedulingApi, /updateTimetableTemplate[\s\S]*apiClient\.put<Record<string, never>>/);
-	assert.match(schedulingApi, /deleteTimetableTemplate[\s\S]*apiClient\.delete<Record<string, never>>/);
+	assert.match(
+		schedulingApi,
+		/updateInstructorConstraints[\s\S]*apiClient\.put<Record<string, never>>/
+	);
+	assert.match(
+		schedulingApi,
+		/reorderInstructorPriority[\s\S]*apiClient\.put<Record<string, never>>/
+	);
+	assert.match(schedulingApi, /updateSchoolSettings[\s\S]*apiClient\.put<Record<string, never>>/);
+	assert.match(
+		schedulingApi,
+		/updateSubjectConstraints[\s\S]*apiClient\.put<Record<string, never>>/
+	);
+	assert.match(
+		schedulingApi,
+		/updateClassroomCourseConstraints[\s\S]*apiClient\.put<Record<string, never>>/
+	);
+	assert.match(schedulingApi, /setCcPreferredRooms[\s\S]*apiClient\.put<Record<string, never>>/);
+	assert.match(
+		schedulingApi,
+		/updateTimetableTemplate[\s\S]*apiClient\.put<Record<string, never>>/
+	);
+	assert.match(
+		schedulingApi,
+		/deleteTimetableTemplate[\s\S]*apiClient\.delete<Record<string, never>>/
+	);
 	assert.match(schedulingApi, /apiClient\.deleteWithBody<\{\s*deleted:\s*number\s*\}>/);
 	assert.doesNotMatch(schedulingApi, /apiClient\.(put|delete)<unknown>/);
-	assert.doesNotMatch(schedulingApi, /return response as \{ success: boolean; data: \{ deleted: number \} \}/);
+	assert.doesNotMatch(
+		schedulingApi,
+		/return response as \{ success: boolean; data: \{ deleted: number \} \}/
+	);
 });
 
 test('facility API returns typed loaded envelope data without helper casts', async () => {
@@ -243,7 +333,10 @@ test('facility API returns typed loaded envelope data without helper casts', asy
 
 	assert.match(facilityApi, /type\s+LoadedApiResponse<T>/);
 	assert.match(facilityApi, /Promise<LoadedApiResponse<T>>/);
-	assert.match(facilityApi, /return \{ success: true, data: response\.data, message: response\.message \}/);
+	assert.match(
+		facilityApi,
+		/return \{ success: true, data: response\.data, message: response\.message \}/
+	);
 	assert.match(facilityApi, /fetchApi<Building\[\]>/);
 	assert.match(facilityApi, /fetchApi<Room\[\]>/);
 	assert.match(facilityApi, /fetchApi<Record<string, never>>/);
@@ -274,8 +367,14 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(timetableApi, /response\.data as/);
 	assert.match(timetableService, /struct\s+MyActivityForEntry/);
-	assert.match(timetableService, /get_my_activity_for_entry[\s\S]*?Result<Option<MyActivityForEntry>,\s*AppError>/);
-	assert.doesNotMatch(timetableService, /get_my_activity_for_entry[\s\S]*?Result<serde_json::Value,\s*AppError>/);
+	assert.match(
+		timetableService,
+		/get_my_activity_for_entry[\s\S]*?Result<Option<MyActivityForEntry>,\s*AppError>/
+	);
+	assert.doesNotMatch(
+		timetableService,
+		/get_my_activity_for_entry[\s\S]*?Result<serde_json::Value,\s*AppError>/
+	);
 	assert.match(timetableService, /struct\s+BatchSkippedCell/);
 	assert.match(timetableService, /pub\s+skipped:\s+Vec<BatchSkippedCell>/);
 	assert.match(timetableService, /pub\s+blocked:\s+Vec<BatchBlockedCell>/);
@@ -288,7 +387,10 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 
 	assert.doesNotMatch(timetablePage, /await createTimetableEntry\([^)]*\)\) as/);
 	assert.doesNotMatch(timetablePage, /await updateTimetableEntry\([^)]*\)\) as/);
-	assert.doesNotMatch(timetablePage, /res as \{ success\?: boolean; conflicts\?: ConflictInfo\[\] \}/);
+	assert.doesNotMatch(
+		timetablePage,
+		/res as \{ success\?: boolean; conflicts\?: ConflictInfo\[\] \}/
+	);
 });
 
 test('academic API uses typed loaded responses and unwraps generate-plan payloads', async () => {
@@ -302,7 +404,10 @@ test('academic API uses typed loaded responses and unwraps generate-plan payload
 
 	assert.match(academicApi, /type\s+LoadedApiResponse<T>/);
 	assert.match(academicApi, /Promise<LoadedApiResponse<T>>/);
-	assert.match(academicApi, /return \{ success: true, data: response\.data, message: response\.message \}/);
+	assert.match(
+		academicApi,
+		/return \{ success: true, data: response\.data, message: response\.message \}/
+	);
 	assert.match(academicApi, /fetchApi<AcademicStructureData>/);
 	assert.match(academicApi, /fetchApi<ClassroomCourse\[\]>/);
 	assert.match(academicApi, /fetchApi<StudyPlan\[\]>/);

@@ -209,11 +209,11 @@ export async function updateInstructorConstraints(
 	id: UUID,
 	req: UpdateInstructorConstraintRequest
 ) {
-	return apiClient.put<string>(`/api/academic/scheduling/instructors/${id}`, req);
+	return apiClient.put<Record<string, never>>(`/api/academic/scheduling/instructors/${id}`, req);
 }
 
 export async function reorderInstructorPriority(instructor_ids: UUID[]) {
-	return apiClient.put<string>('/api/academic/scheduling/instructors/order', {
+	return apiClient.put<Record<string, never>>('/api/academic/scheduling/instructors/order', {
 		instructor_ids
 	});
 }
@@ -223,7 +223,7 @@ export async function getSchoolSettings() {
 }
 
 export async function updateSchoolSettings(req: UpdateSchoolSettingsRequest) {
-	return apiClient.put<string>('/api/academic/scheduling/settings', req);
+	return apiClient.put<Record<string, never>>('/api/academic/scheduling/settings', req);
 }
 
 export async function listSubjectConstraints() {
@@ -231,7 +231,7 @@ export async function listSubjectConstraints() {
 }
 
 export async function updateSubjectConstraints(id: UUID, req: UpdateSubjectConstraintRequest) {
-	return apiClient.put<string>(`/api/academic/scheduling/subjects/${id}`, req);
+	return apiClient.put<Record<string, never>>(`/api/academic/scheduling/subjects/${id}`, req);
 }
 
 // Phase B: Classroom Course Constraints
@@ -268,7 +268,10 @@ export async function updateClassroomCourseConstraints(
 	id: UUID,
 	req: UpdateClassroomCourseConstraintRequest
 ) {
-	return apiClient.put<string>(`/api/academic/scheduling/classroom-courses/${id}`, req);
+	return apiClient.put<Record<string, never>>(
+		`/api/academic/scheduling/classroom-courses/${id}`,
+		req
+	);
 }
 
 // Phase D: Room Assignment
@@ -300,7 +303,7 @@ export async function listCcPreferredRooms(ccId: UUID) {
 }
 
 export async function setCcPreferredRooms(ccId: UUID, req: SetCcRoomsRequest) {
-	return apiClient.put<string>(
+	return apiClient.put<Record<string, never>>(
 		`/api/academic/scheduling/classroom-courses/${ccId}/rooms`,
 		req
 	);
@@ -363,17 +366,11 @@ export async function createTemplateFromCurrent(req: {
 	description?: string;
 	entry_types?: string[];
 }) {
-	return apiClient.post<{ id: UUID }>(
-		'/api/academic/timetable-templates/from-current',
-		req
-	);
+	return apiClient.post<{ id: UUID }>('/api/academic/timetable-templates/from-current', req);
 }
 
 export async function applyTimetableTemplate(id: UUID, req: { semester_id: UUID }) {
-	return apiClient.post<{ applied: number }>(
-		`/api/academic/timetable-templates/${id}/apply`,
-		req
-	);
+	return apiClient.post<{ applied: number }>(`/api/academic/timetable-templates/${id}/apply`, req);
 }
 
 export async function clearTimetable(req: { semester_id: UUID; entry_types?: string[] }) {
@@ -405,10 +402,7 @@ export async function getSchedulingJob(jobId: UUID) {
 }
 
 export async function undoSchedulingJob(jobId: UUID) {
-	return apiClient.post<{ deleted: number }>(
-		`/api/academic/scheduling/jobs/${jobId}/undo`,
-		{}
-	);
+	return apiClient.post<{ deleted: number }>(`/api/academic/scheduling/jobs/${jobId}/undo`, {});
 }
 
 export async function listSchedulingJobs(params?: { semester_id?: UUID; limit?: number }) {
