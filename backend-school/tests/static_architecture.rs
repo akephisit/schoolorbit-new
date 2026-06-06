@@ -240,6 +240,35 @@ fn organization_baseline_migration_defines_canonical_school_structure() {
 }
 
 #[test]
+fn organization_permission_grant_baseline_is_deterministic() {
+    let migration_path = manifest_dir()
+        .join("migrations")
+        .join("124_normalize_organization_permission_grants.sql");
+    let source = read_source(&migration_path);
+
+    for required_fragment in [
+        "ORG-GRANTS-BASELINE-V1",
+        "DELETE FROM organization_permission_grants",
+        "academic_curriculum.manage.organization_unit",
+        "organization_work.approve.organization_unit",
+        "staff_profile.read.organization_tree",
+        "staff_profile.read.school",
+        "staff_pii.read.school",
+        "SUBJ-%",
+        "SCHOOL",
+        "director",
+        "deputy_director",
+        "deputy_head",
+    ] {
+        assert!(
+            source.contains(required_fragment),
+            "{} must contain `{required_fragment}`",
+            repo_relative(&migration_path)
+        );
+    }
+}
+
+#[test]
 fn lookup_models_expose_reference_data_only() {
     let lookup_models = strip_comments(&read_source(
         manifest_dir().join("src/modules/lookup/models.rs"),
