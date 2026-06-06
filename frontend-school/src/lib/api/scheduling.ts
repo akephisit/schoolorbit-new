@@ -456,7 +456,7 @@ export async function listInstructorRoomAssignments(params?: {
 }
 
 export async function deleteInstructorRoomAssignment(id: UUID) {
-	return apiClient.delete(`/api/academic/instructor-rooms/${id}`);
+	return apiClient.delete<Record<string, never>>(`/api/academic/instructor-rooms/${id}`);
 }
 
 // Locked Slots
@@ -470,5 +470,5 @@ export async function listLockedSlots(params?: { semester_id?: UUID }) {
 }
 
 export async function deleteLockedSlot(id: UUID) {
-	return apiClient.delete(`/api/academic/timetable/locked-slots/${id}`);
+	return apiClient.delete<Record<string, never>>(`/api/academic/timetable/locked-slots/${id}`);
 }

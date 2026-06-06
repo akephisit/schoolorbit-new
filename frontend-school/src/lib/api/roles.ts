@@ -49,12 +49,12 @@ export interface PermissionsByModule {
 export const roleAPI = {
 	// List all roles
 	async listRoles(): Promise<ApiResponse<Role[]>> {
-		return apiClient.get('/api/roles');
+		return apiClient.get<Role[]>('/api/roles');
 	},
 
 	// Get single role
 	async getRole(roleId: string): Promise<ApiResponse<Role>> {
-		return apiClient.get(`/api/roles/${roleId}`);
+		return apiClient.get<Role>(`/api/roles/${roleId}`);
 	},
 
 	// Create role
@@ -67,7 +67,7 @@ export const roleAPI = {
 		level?: number;
 		permissions?: string[];
 	}): Promise<ApiResponse<{ id: string }>> {
-		return apiClient.post('/api/roles', data);
+		return apiClient.post<{ id: string }>('/api/roles', data);
 	},
 
 	// Update role
@@ -82,13 +82,13 @@ export const roleAPI = {
 			permissions?: string[];
 			is_active?: boolean;
 		}
-	): Promise<ApiResponse<void>> {
-		return apiClient.put(`/api/roles/${roleId}`, data);
+	): Promise<ApiResponse<Record<string, never>>> {
+		return apiClient.put<Record<string, never>>(`/api/roles/${roleId}`, data);
 	},
 
 	// Delete role
-	async deleteRole(roleId: string): Promise<ApiResponse<void>> {
-		return apiClient.delete(`/api/roles/${roleId}`);
+	async deleteRole(roleId: string): Promise<ApiResponse<Record<string, never>>> {
+		return apiClient.delete<Record<string, never>>(`/api/roles/${roleId}`);
 	}
 };
 
@@ -96,12 +96,12 @@ export const roleAPI = {
 export const permissionAPI = {
 	// List all permissions
 	async listPermissions(): Promise<ApiResponse<Permission[]>> {
-		return apiClient.get('/api/permissions');
+		return apiClient.get<Permission[]>('/api/permissions');
 	},
 
 	// List permissions grouped by module
 	async listPermissionsByModule(): Promise<ApiResponse<PermissionsByModule>> {
-		return apiClient.get('/api/permissions/modules');
+		return apiClient.get<PermissionsByModule>('/api/permissions/modules');
 	}
 };
 
@@ -109,7 +109,7 @@ export const permissionAPI = {
 export const userRoleAPI = {
 	// Get user's roles
 	async getUserRoles(userId: string): Promise<ApiResponse<UserRoleAssignment[]>> {
-		return apiClient.get(`/api/users/${userId}/roles`);
+		return apiClient.get<UserRoleAssignment[]>(`/api/users/${userId}/roles`);
 	},
 
 	// Assign role to user
@@ -121,16 +121,16 @@ export const userRoleAPI = {
 			started_at?: string;
 		}
 	): Promise<ApiResponse<{ id: string }>> {
-		return apiClient.post(`/api/users/${userId}/roles`, data);
+		return apiClient.post<{ id: string }>(`/api/users/${userId}/roles`, data);
 	},
 
 	// Remove role from user
-	async removeRole(userId: string, roleId: string): Promise<ApiResponse<void>> {
-		return apiClient.delete(`/api/users/${userId}/roles/${roleId}`);
+	async removeRole(userId: string, roleId: string): Promise<ApiResponse<Record<string, never>>> {
+		return apiClient.delete<Record<string, never>>(`/api/users/${userId}/roles/${roleId}`);
 	},
 
 	// Get user's effective permissions
 	async getUserPermissions(userId: string): Promise<ApiResponse<string[]>> {
-		return apiClient.get(`/api/users/${userId}/permissions`);
+		return apiClient.get<string[]>(`/api/users/${userId}/permissions`);
 	}
 };

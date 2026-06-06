@@ -578,6 +578,9 @@ test('frontend API contract avoids unknown endpoint generics and blind envelope 
 		if (/\b(?:response|res)\.data\s+as\b/.test(source)) {
 			violations.push(`${rel}: API helpers must not cast envelope data in endpoint wrappers`);
 		}
+		if (/apiClient\.(?:get|post|put|patch|delete|deleteWithBody|postMultipart)\s*\(/.test(source)) {
+			violations.push(`${rel}: endpoint wrappers must call apiClient with a concrete generic`);
+		}
 	}
 
 	assert.deepEqual(violations, []);

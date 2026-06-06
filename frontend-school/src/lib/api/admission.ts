@@ -305,6 +305,20 @@ export interface EnrollmentForm {
 	completedAt?: string;
 }
 
+export interface EnrollmentPending {
+	id: string;
+	applicationNumber?: string;
+	nationalId: string;
+	fullName: string;
+	trackName?: string;
+	roomName?: string;
+	status: string;
+	studentConfirmed?: boolean;
+	preSubmitted: boolean;
+	assignedStudentId?: string;
+	formData?: Record<string, unknown>;
+}
+
 export interface CompleteEnrollmentResponse {
 	userId: string;
 	username: string;
@@ -351,19 +365,24 @@ export async function updateRound(id: string, data: Partial<AdmissionRound>) {
 }
 
 export async function updateRoundStatus(id: string, status: AdmissionRound['status']) {
-	const res = await apiClient.put(`/api/admission/rounds/${id}/status`, { status });
+	const res = await apiClient.put<Record<string, never>>(`/api/admission/rounds/${id}/status`, {
+		status
+	});
 	if (!res.success) throw new Error(res.error || 'ไม่สามารถอัปเดตสถานะได้');
 	return res;
 }
 
 export async function updateRoundVisibility(id: string, isVisible: boolean) {
-	const res = await apiClient.patch(`/api/admission/rounds/${id}/visibility`, { isVisible });
+	const res = await apiClient.patch<{ isVisible: boolean }>(
+		`/api/admission/rounds/${id}/visibility`,
+		{ isVisible }
+	);
 	if (!res.success) throw new Error(res.error || 'ไม่สามารถอัปเดตการแสดงผลได้');
 	return res;
 }
 
 export async function deleteRound(id: string) {
-	const res = await apiClient.delete(`/api/admission/rounds/${id}`);
+	const res = await apiClient.delete<Record<string, never>>(`/api/admission/rounds/${id}`);
 	if (!res.success) throw new Error(res.error || 'ไม่สามารถลบรอบได้');
 }
 
@@ -400,7 +419,7 @@ export async function updateTrack(id: string, data: Partial<AdmissionTrack>) {
 }
 
 export async function deleteTrack(id: string) {
-	const res = await apiClient.delete(`/api/admission/tracks/${id}`);
+	const res = await apiClient.delete<Record<string, never>>(`/api/admission/tracks/${id}`);
 	if (!res.success) throw new Error(res.error);
 }
 
@@ -449,7 +468,7 @@ export async function updateSubject(id: string, data: Partial<AdmissionExamSubje
 }
 
 export async function deleteSubject(id: string) {
-	const res = await apiClient.delete(`/api/admission/subjects/${id}`);
+	const res = await apiClient.delete<Record<string, never>>(`/api/admission/subjects/${id}`);
 	if (!res.success) throw new Error(res.error);
 }
 
@@ -479,27 +498,36 @@ export async function getApplication(
 }
 
 export async function verifyApplication(id: string) {
-	const res = await apiClient.put(`/api/admission/applications/${id}/verify`, {});
+	const res = await apiClient.put<Record<string, never>>(
+		`/api/admission/applications/${id}/verify`,
+		{}
+	);
 	if (!res.success) throw new Error(res.error);
 }
 
 export async function rejectApplication(id: string, rejectionReason: string) {
-	const res = await apiClient.put(`/api/admission/applications/${id}/reject`, { rejectionReason });
+	const res = await apiClient.put<Record<string, never>>(
+		`/api/admission/applications/${id}/reject`,
+		{ rejectionReason }
+	);
 	if (!res.success) throw new Error(res.error);
 }
 
 export async function deleteApplication(id: string) {
-	const res = await apiClient.delete(`/api/admission/applications/${id}`);
+	const res = await apiClient.delete<Record<string, never>>(`/api/admission/applications/${id}`);
 	if (!res.success) throw new Error(res.error);
 }
 
 export async function updateApplicationByStaff(id: string, data: Partial<AdmissionApplication>) {
-	const res = await apiClient.put(`/api/admission/applications/${id}`, data);
+	const res = await apiClient.put<Record<string, never>>(`/api/admission/applications/${id}`, data);
 	if (!res.success) throw new Error(res.error);
 }
 
 export async function unverifyApplication(id: string) {
-	const res = await apiClient.put(`/api/admission/applications/${id}/unverify`, {});
+	const res = await apiClient.put<Record<string, never>>(
+		`/api/admission/applications/${id}/unverify`,
+		{}
+	);
 	if (!res.success) throw new Error(res.error);
 }
 
@@ -523,7 +551,10 @@ export async function updateScores(
 	id: string,
 	scores: { examSubjectId: string; score?: number }[]
 ) {
-	const res = await apiClient.put(`/api/admission/applications/${id}/scores`, { scores });
+	const res = await apiClient.put<Record<string, never>>(
+		`/api/admission/applications/${id}/scores`,
+		{ scores }
+	);
 	if (!res.success) throw new Error(res.error);
 }
 
@@ -531,7 +562,10 @@ export async function bulkUpdateScores(
 	roundId: string,
 	entries: { applicationId: string; scores: { examSubjectId: string; score?: number }[] }[]
 ) {
-	const res = await apiClient.put(`/api/admission/rounds/${roundId}/scores/bulk`, { entries });
+	const res = await apiClient.put<Record<string, never>>(
+		`/api/admission/rounds/${roundId}/scores/bulk`,
+		{ entries }
+	);
 	if (!res.success) throw new Error(res.error);
 }
 
@@ -570,25 +604,31 @@ export async function assignRooms(
 	selectionSubjectIds?: string[],
 	roomAssignmentMethod?: string
 ) {
-	const res = await apiClient.post(`/api/admission/rounds/${roundId}/assign-rooms`, {
-		trackId,
-		selectionSubjectIds:
-			selectionSubjectIds && selectionSubjectIds.length > 0 ? selectionSubjectIds : undefined,
-		roomAssignmentMethod: roomAssignmentMethod ?? 'sequential'
-	});
+	const res = await apiClient.post<{ assigned_count: number }>(
+		`/api/admission/rounds/${roundId}/assign-rooms`,
+		{
+			trackId,
+			selectionSubjectIds:
+				selectionSubjectIds && selectionSubjectIds.length > 0 ? selectionSubjectIds : undefined,
+			roomAssignmentMethod: roomAssignmentMethod ?? 'sequential'
+		}
+	);
 	if (!res.success) throw new Error(res.error);
 	return res;
 }
 
 export async function changeApplicationTrack(applicationId: string, trackId: string | null) {
-	const res = await apiClient.patch(`/api/admission/applications/${applicationId}/track`, {
-		trackId
-	});
+	const res = await apiClient.patch<Record<string, never>>(
+		`/api/admission/applications/${applicationId}/track`,
+		{
+			trackId
+		}
+	);
 	if (!res.success) throw new Error(res.error);
 }
 
 export async function updateAdmissionTrack(applicationId: string, trackId: string) {
-	const res = await apiClient.patch(
+	const res = await apiClient.patch<Record<string, never>>(
 		`/api/admission/applications/${applicationId}/admission-track`,
 		{ trackId }
 	);
@@ -596,21 +636,29 @@ export async function updateAdmissionTrack(applicationId: string, trackId: strin
 }
 
 export async function markAbsent(applicationId: string, absent: boolean) {
-	const res = await apiClient.put(`/api/admission/applications/${applicationId}/absent`, {
-		absent
-	});
+	const res = await apiClient.put<Record<string, never>>(
+		`/api/admission/applications/${applicationId}/absent`,
+		{
+			absent
+		}
+	);
 	if (!res.success) throw new Error(res.error);
 }
 
 export async function moveApplicationRoom(applicationId: string, roomId: string) {
-	const res = await apiClient.patch(`/api/admission/applications/${applicationId}/room`, {
-		roomId
-	});
+	const res = await apiClient.patch<Record<string, never>>(
+		`/api/admission/applications/${applicationId}/room`,
+		{
+			roomId
+		}
+	);
 	if (!res.success) throw new Error(res.error);
 }
 
 export async function resetAllRoomAssignments(roundId: string) {
-	const res = await apiClient.delete(`/api/admission/rounds/${roundId}/room-assignments`);
+	const res = await apiClient.delete<{ deleted: number }>(
+		`/api/admission/rounds/${roundId}/room-assignments`
+	);
 	if (!res.success) throw new Error(res.error);
 }
 
@@ -635,10 +683,13 @@ export async function getRoomsForRound(roundId: string): Promise<RoomBasic[]> {
 }
 
 export async function assignRoomsGlobal(roundId: string, method?: string, roomOrder?: string[]) {
-	const res = await apiClient.post(`/api/admission/rounds/${roundId}/assign-rooms-global`, {
-		roomAssignmentMethod: method ?? 'sequential',
-		...(roomOrder && roomOrder.length > 0 ? { roomOrder } : {})
-	});
+	const res = await apiClient.post<{ assigned_count: number }>(
+		`/api/admission/rounds/${roundId}/assign-rooms-global`,
+		{
+			roomAssignmentMethod: method ?? 'sequential',
+			...(roomOrder && roomOrder.length > 0 ? { roomOrder } : {})
+		}
+	);
 	if (!res.success) throw new Error(res.error);
 	return res;
 }
@@ -670,7 +721,7 @@ export async function updateSelectionSettings(
 		showScores?: boolean;
 	}
 ) {
-	const res = await apiClient.patch(
+	const res = await apiClient.patch<Record<string, never>>(
 		`/api/admission/rounds/${roundId}/selection-settings`,
 		settings
 	);
@@ -682,7 +733,9 @@ export async function updateSelectionSettings(
 // ==========================================
 
 export async function listEnrollmentPending(roundId: string) {
-	const res = await apiClient.get(`/api/admission/rounds/${roundId}/enrollment`);
+	const res = await apiClient.get<EnrollmentPending[]>(
+		`/api/admission/rounds/${roundId}/enrollment`
+	);
 	if (!res.success) throw new Error(res.error);
 	return res.data;
 }
@@ -707,8 +760,19 @@ export async function completeEnrollment(
 // Portal API (Stateless — ส่ง credentials ทุก request)
 // ==========================================
 
+export interface PortalCheckStatus {
+	id: string;
+	applicationNumber?: string;
+	firstName: string;
+	lastName: string;
+	status: string;
+	trackName?: string;
+	roundName?: string;
+	roundStatus?: string;
+}
+
 export async function portalCheck(nationalId: string, dateOfBirth: string) {
-	const res = await apiClient.post('/api/admission/portal/check', {
+	const res = await apiClient.post<PortalCheckStatus>('/api/admission/portal/check', {
 		nationalId,
 		dateOfBirth
 	});
@@ -757,7 +821,7 @@ export async function portalGetExamSeat(
 }
 
 export async function portalConfirm(nationalId: string, dateOfBirth: string) {
-	const res = await apiClient.post('/api/admission/portal/confirm', {
+	const res = await apiClient.post<Record<string, never>>('/api/admission/portal/confirm', {
 		nationalId,
 		dateOfBirth
 	});
@@ -766,7 +830,7 @@ export async function portalConfirm(nationalId: string, dateOfBirth: string) {
 }
 
 export async function portalGetForm(nationalId: string, dateOfBirth: string) {
-	const res = await apiClient.post('/api/admission/portal/form', {
+	const res = await apiClient.post<EnrollmentForm | null>('/api/admission/portal/form', {
 		nationalId,
 		dateOfBirth
 	});
@@ -779,7 +843,7 @@ export async function portalSubmitForm(
 	dateOfBirth: string,
 	formData: Record<string, unknown>
 ) {
-	const res = await apiClient.put('/api/admission/portal/form', {
+	const res = await apiClient.put<Record<string, never>>('/api/admission/portal/form', {
 		nationalId,
 		dateOfBirth,
 		formData
@@ -793,7 +857,7 @@ export async function updateApplication(
 	authDateOfBirth: string,
 	data: Partial<SubmitApplicationData>
 ) {
-	const res = await apiClient.put('/api/admission/portal/application', {
+	const res = await apiClient.put<Record<string, never>>('/api/admission/portal/application', {
 		authNationalId,
 		authDateOfBirth,
 		...data
@@ -948,8 +1012,10 @@ export async function staffUploadDocument(
 }
 
 export async function staffDeleteDocument(appId: string, docType: string): Promise<void> {
-	const res = await apiClient.delete(`/api/admission/applications/${appId}/documents/${docType}`);
-	if (!res.success) throw new Error((res as { error?: string }).error || 'ไม่สามารถลบเอกสารได้');
+	const res = await apiClient.delete<Record<string, never>>(
+		`/api/admission/applications/${appId}/documents/${docType}`
+	);
+	if (!res.success) throw new Error(res.error || 'ไม่สามารถลบเอกสารได้');
 }
 
 export async function portalDeleteDocument(
@@ -958,8 +1024,10 @@ export async function portalDeleteDocument(
 	docType: string
 ): Promise<void> {
 	const params = new URLSearchParams({ national_id: nationalId, date_of_birth: dateOfBirth });
-	const res = await apiClient.delete(`/api/admission/portal/documents/${docType}?${params}`);
-	if (!res.success) throw new Error((res as { error?: string }).error || 'ไม่สามารถลบเอกสารได้');
+	const res = await apiClient.delete<Record<string, never>>(
+		`/api/admission/portal/documents/${docType}?${params}`
+	);
+	if (!res.success) throw new Error(res.error || 'ไม่สามารถลบเอกสารได้');
 }
 
 // ==========================================
@@ -1083,7 +1151,10 @@ export async function addExamRoom(
 		displayOrder?: number;
 	}
 ) {
-	const res = await apiClient.post(`/api/admission/rounds/${roundId}/exam-rooms`, data);
+	const res = await apiClient.post<Record<string, never>>(
+		`/api/admission/rounds/${roundId}/exam-rooms`,
+		data
+	);
 	return res.data;
 }
 
@@ -1096,17 +1167,22 @@ export async function updateExamRoom(
 		customName?: string;
 	}
 ) {
-	const res = await apiClient.put(`/api/admission/rounds/${roundId}/exam-rooms/${roomId}`, data);
+	const res = await apiClient.put<Record<string, never>>(
+		`/api/admission/rounds/${roundId}/exam-rooms/${roomId}`,
+		data
+	);
 	return res.data;
 }
 
 export async function removeExamRoom(roundId: string, roomId: string) {
-	const res = await apiClient.delete(`/api/admission/rounds/${roundId}/exam-rooms/${roomId}`);
+	const res = await apiClient.delete<Record<string, never>>(
+		`/api/admission/rounds/${roundId}/exam-rooms/${roomId}`
+	);
 	return res.data;
 }
 
 export async function copyExamRoomsFromRound(roundId: string, fromRoundId: string) {
-	const res = await apiClient.post(
+	const res = await apiClient.post<Record<string, never>>(
 		`/api/admission/rounds/${roundId}/exam-rooms/copy-from/${fromRoundId}`
 	);
 	if (!res.success) throw new Error(res.error);
@@ -1120,7 +1196,10 @@ export async function getExamConfig(roundId: string) {
 }
 
 export async function updateExamConfig(roundId: string, config: ExamConfig) {
-	const res = await apiClient.put(`/api/admission/rounds/${roundId}/exam-config`, config);
+	const res = await apiClient.put<Record<string, never>>(
+		`/api/admission/rounds/${roundId}/exam-config`,
+		config
+	);
 	return res.data;
 }
 

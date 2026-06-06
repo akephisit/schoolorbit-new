@@ -117,10 +117,7 @@ pub async fn logout(cookies: Cookies) -> Result<impl IntoResponse, AppError> {
 
     Ok((
         StatusCode::OK,
-        Json(ApiResponse::with_message(
-            serde_json::json!({}),
-            "ออกจากระบบสำเร็จ",
-        )),
+        Json(ApiResponse::empty_with_message("ออกจากระบบสำเร็จ")),
     ))
 }
 
@@ -244,9 +241,6 @@ pub async fn change_password(
 
     Ok((
         StatusCode::OK,
-        Json(ApiResponse::with_message(
-            serde_json::json!({}),
-            "เปลี่ยนรหัสผ่านสำเร็จ",
-        )),
+        Json(ApiResponse::empty_with_message("เปลี่ยนรหัสผ่านสำเร็จ")),
     ))
 }

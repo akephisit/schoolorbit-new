@@ -127,6 +127,35 @@ fn module_handler_files() -> Vec<PathBuf> {
     })
 }
 
+fn module_service_files() -> Vec<PathBuf> {
+    let modules_dir = manifest_dir().join("src/modules");
+    list_files(&modules_dir, |path| {
+        if path.extension().is_none_or(|ext| ext != "rs") {
+            return false;
+        }
+
+        let Ok(relative_path) = path.strip_prefix(&modules_dir) else {
+            return false;
+        };
+        let path_text = relative_path.to_string_lossy().replace('\\', "/");
+
+        path_text.ends_with("/services.rs") || path_text.contains("/services/")
+    })
+}
+
+fn is_reexport_only_service_file(source: &str) -> bool {
+    strip_comments(source)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .all(|line| {
+            line.starts_with("pub mod ")
+                || line.starts_with("pub use ")
+                || line.starts_with("#[")
+                || line == ";"
+        })
+}
+
 #[test]
 fn rust_module_roots_use_rust_2018_style() {
     let legacy_module_roots = list_files(manifest_dir().join("src"), |path| {
@@ -215,6 +244,10 @@ fn module_handlers_use_central_api_response_envelope() {
         "JsonResponse(serde_json::json!({ \"success\"",
         "json!({ \"success\"",
         "serde_json::json!({ \"success\"",
+        "ApiResponse::ok(serde_json::json!",
+        "ApiResponse::ok(json!",
+        "ApiResponse::with_message(serde_json::json!",
+        "ApiResponse::with_message(json!",
         "struct ApiResponse",
         "ApiResponse::success(",
     ];
@@ -227,6 +260,52 @@ fn module_handlers_use_central_api_response_envelope() {
             if source.contains(pattern) {
                 violations.push(format!(
                     "{}: use crate::api_response::ApiResponse instead of local/ad-hoc envelopes ({pattern})",
+                    relative(&file)
+                ));
+            }
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
+fn module_service_logic_has_focused_unit_tests() {
+    let mut violations = Vec::new();
+
+    for file in module_service_files() {
+        let source = read_source(&file);
+        if is_reexport_only_service_file(&source) {
+            continue;
+        }
+
+        if !source.contains("#[cfg(test)]") {
+            violations.push(format!(
+                "{}: service logic files must include focused #[cfg(test)] coverage",
+                relative(&file)
+            ));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
+fn module_services_do_not_return_raw_json_values_for_api_contracts() {
+    let raw_json_result_patterns = [
+        Regex::new(r"Result\s*<\s*serde_json::Value\s*,\s*AppError\s*>").expect("valid regex"),
+        Regex::new(r"Result\s*<\s*Vec\s*<\s*serde_json::Value\s*>\s*,\s*AppError\s*>")
+            .expect("valid regex"),
+    ];
+    let mut violations = Vec::new();
+
+    for file in module_service_files() {
+        let source = strip_comments(&read_source(&file));
+
+        for pattern in &raw_json_result_patterns {
+            if pattern.is_match(&source) {
+                violations.push(format!(
+                    "{}: return a typed DTO/outcome instead of raw serde_json::Value",
                     relative(&file)
                 ));
             }
