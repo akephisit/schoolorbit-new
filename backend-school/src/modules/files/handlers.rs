@@ -3,16 +3,28 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
 };
-use serde_json::json;
+use serde::Serialize;
 use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    error::AppError, modules::auth::models::Claims,
+    api_response::ApiResponse, error::AppError, modules::auth::models::Claims,
     utils::request_context::current_user_tenant_context_from_claims, AppState,
 };
 
+use super::models::FileResponse;
 use super::services as file_service;
+
+#[derive(Debug, Serialize)]
+struct UploadFileData {
+    file: FileResponse,
+}
+
+#[derive(Debug, Serialize)]
+struct UserFilesData {
+    files: Vec<FileResponse>,
+    total: i64,
+}
 
 /// Upload a file
 ///
@@ -36,7 +48,9 @@ pub async fn upload_file(
 
     Ok((
         StatusCode::OK,
-        Json(json!({ "success": true, "data": { "file": file_response } })),
+        Json(ApiResponse::ok(UploadFileData {
+            file: file_response,
+        })),
     ))
 }
 
@@ -56,11 +70,7 @@ pub async fn delete_file(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "data": {},
-            "message": "File deleted successfully"
-        })),
+        Json(ApiResponse::empty_with_message("File deleted successfully")),
     ))
 }
 
@@ -77,12 +87,9 @@ pub async fn list_user_files(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "success": true,
-            "data": {
-                "files": response.files,
-                "total": response.total
-            }
+        Json(ApiResponse::ok(UserFilesData {
+            files: response.files,
+            total: response.total,
         })),
     ))
 }
