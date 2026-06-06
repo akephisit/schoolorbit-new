@@ -209,6 +209,35 @@ fn backend_permission_contracts_use_organization_units_not_department_names() {
 }
 
 #[test]
+fn organization_baseline_migration_defines_canonical_school_structure() {
+    let migration_path = manifest_dir()
+        .join("migrations")
+        .join("123_reset_organization_unit_baseline.sql");
+    let source = read_source(&migration_path);
+
+    for required_fragment in [
+        "ORG-BASELINE-V1",
+        "DIR-01",
+        "ACAD-01",
+        "PER-01",
+        "BUD-01",
+        "GEN-01",
+        "SUBJ-OC",
+        "FROM subject_groups sg",
+        "ou.code = 'SUBJ-' || sg.code",
+        "DELETE FROM organization_units",
+        "code = 'SUBJ-OT'",
+        "Legacy organization unit code SUBJ-OT remains",
+    ] {
+        assert!(
+            source.contains(required_fragment),
+            "{} must contain `{required_fragment}`",
+            repo_relative(&migration_path)
+        );
+    }
+}
+
+#[test]
 fn lookup_models_expose_reference_data_only() {
     let lookup_models = strip_comments(&read_source(
         manifest_dir().join("src/modules/lookup/models.rs"),
