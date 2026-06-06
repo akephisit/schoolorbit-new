@@ -226,6 +226,8 @@ fn organization_baseline_migration_defines_canonical_school_structure() {
         "FROM subject_groups sg",
         "ou.code = 'SUBJ-' || sg.code",
         "DELETE FROM organization_units",
+        "to_regclass('public.department_menu_access')",
+        "tmp_org_baseline_menu_refs",
         "code = 'SUBJ-OT'",
         "Legacy organization unit code SUBJ-OT remains",
     ] {

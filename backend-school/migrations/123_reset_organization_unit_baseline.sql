@@ -200,6 +200,24 @@ FROM subject_groups sg
 WHERE ou.code = 'SUBJ-' || sg.code
   AND ou.is_active = true;
 
+CREATE TEMP TABLE IF NOT EXISTS tmp_org_baseline_menu_refs (
+    organization_unit_id UUID PRIMARY KEY
+);
+
+TRUNCATE tmp_org_baseline_menu_refs;
+
+DO $$
+BEGIN
+    IF to_regclass('public.department_menu_access') IS NOT NULL THEN
+        EXECUTE '
+            INSERT INTO tmp_org_baseline_menu_refs (organization_unit_id)
+            SELECT DISTINCT department_id
+            FROM department_menu_access
+            ON CONFLICT (organization_unit_id) DO NOTHING
+        ';
+    END IF;
+END $$;
+
 WITH baseline (code) AS (
     VALUES
         ('SCHOOL'), ('DIR-01'), ('DIR-SEC'),
@@ -236,8 +254,8 @@ unreferenced_non_baseline_units AS (
       )
       AND NOT EXISTS (
           SELECT 1
-          FROM department_menu_access dma
-          WHERE dma.department_id = ou.id
+          FROM tmp_org_baseline_menu_refs menu_refs
+          WHERE menu_refs.organization_unit_id = ou.id
       )
 )
 UPDATE organization_units child
@@ -285,8 +303,8 @@ unreferenced_non_baseline_units AS (
       )
       AND NOT EXISTS (
           SELECT 1
-          FROM department_menu_access dma
-          WHERE dma.department_id = ou.id
+          FROM tmp_org_baseline_menu_refs menu_refs
+          WHERE menu_refs.organization_unit_id = ou.id
       )
 )
 DELETE FROM organization_units ou
