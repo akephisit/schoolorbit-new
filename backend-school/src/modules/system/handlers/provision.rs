@@ -1,7 +1,15 @@
+use serde::Serialize;
+
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::system::models::ProvisionRequest;
 use crate::modules::system::services::provision_service;
 use axum::{http::StatusCode, response::IntoResponse, Json};
+
+#[derive(Debug, Serialize)]
+struct ProvisionTenantData {
+    school_id: String,
+}
 
 /// Handler for provisioning a new school tenant database
 ///
@@ -17,12 +25,14 @@ pub async fn provision_tenant(
 
     Ok((
         StatusCode::OK,
-        Json(serde_json::json!({
-            "success": true,
-            "data": {
-                "school_id": outcome.school_id,
+        Json(ApiResponse::with_message(
+            ProvisionTenantData {
+                school_id: outcome.school_id,
             },
-            "message": format!("Tenant database provisioned successfully. Admin Username: {}", outcome.admin_username),
-        })),
+            format!(
+                "Tenant database provisioned successfully. Admin Username: {}",
+                outcome.admin_username
+            ),
+        )),
     ))
 }
