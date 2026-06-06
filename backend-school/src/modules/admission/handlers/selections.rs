@@ -4,9 +4,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
+use serde::Serialize;
 use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::admission::models::applications::{
     AssignRoomsGlobalRequest, AssignRoomsRequest,
@@ -23,6 +24,16 @@ pub struct RankingQuery {
     pub room_assignment_method: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct AssignedCountData<T> {
+    assigned_count: T,
+}
+
+#[derive(Debug, Serialize)]
+struct DeletedData<T> {
+    deleted: T,
+}
+
 pub async fn get_ranking(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -33,7 +44,7 @@ pub async fn get_ranking(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     let data = selection_service::get_round_ranking(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": data })).into_response())
+    Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
 pub async fn get_track_ranking(
@@ -53,7 +64,7 @@ pub async fn get_track_ranking(
         params.room_assignment_method,
     )
     .await?;
-    Ok(Json(json!({ "success": true, "data": data })).into_response())
+    Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
 pub async fn assign_rooms(
@@ -68,7 +79,11 @@ pub async fn assign_rooms(
     actor.require_permission(codes::ADMISSION_SCORES)?;
     let user_id = actor.user_id;
     let assigned_count = selection_service::assign_rooms(&pool, round_id, payload, user_id).await?;
-    Ok(Json(json!({ "success": true, "data": { "assigned_count": assigned_count }, "message": format!("จัดห้องสำเร็จ {} คน", assigned_count) })).into_response())
+    Ok(Json(ApiResponse::with_message(
+        AssignedCountData { assigned_count },
+        format!("จัดห้องสำเร็จ {} คน", assigned_count),
+    ))
+    .into_response())
 }
 
 pub async fn reset_all_room_assignments(
@@ -81,7 +96,7 @@ pub async fn reset_all_room_assignments(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     let deleted = selection_service::reset_all_room_assignments(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": { "deleted": deleted } })).into_response())
+    Ok(Json(ApiResponse::ok(DeletedData { deleted })).into_response())
 }
 
 pub async fn assign_rooms_global(
@@ -97,7 +112,11 @@ pub async fn assign_rooms_global(
     let user_id = actor.user_id;
     let assigned_count =
         selection_service::assign_rooms_global(&pool, round_id, payload, user_id).await?;
-    Ok(Json(json!({ "success": true, "data": { "assigned_count": assigned_count }, "message": format!("จัดห้องรวมสำเร็จ {} คน", assigned_count) })).into_response())
+    Ok(Json(ApiResponse::with_message(
+        AssignedCountData { assigned_count },
+        format!("จัดห้องรวมสำเร็จ {} คน", assigned_count),
+    ))
+    .into_response())
 }
 
 pub async fn get_global_ranking(
@@ -110,7 +129,7 @@ pub async fn get_global_ranking(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     let data = selection_service::get_global_ranking(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": data })).into_response())
+    Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
 pub async fn get_round_rooms(
@@ -123,7 +142,7 @@ pub async fn get_round_rooms(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     let rooms = selection_service::get_round_rooms(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": rooms })).into_response())
+    Ok(Json(ApiResponse::ok(rooms)).into_response())
 }
 
 pub async fn update_selection_settings(
@@ -137,5 +156,5 @@ pub async fn update_selection_settings(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     selection_service::update_selection_settings(&pool, round_id, payload).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }

@@ -4,14 +4,26 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
+use serde::Serialize;
+use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::portal_service;
 use crate::services::r2_client::R2Client;
 use crate::utils::request_context::{tenant_context, tenant_pool};
 use crate::AppState;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PortalUploadDocumentData {
+    file_id: Uuid,
+    original_filename: String,
+    file_size: i64,
+    doc_type: String,
+    file_url: String,
+}
 
 pub async fn check_application(
     State(state): State<AppState>,
@@ -20,7 +32,7 @@ pub async fn check_application(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = tenant_pool(&state, &headers).await?;
     let info = portal_service::check_application(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "data": info, "message": "ตรวจสอบสำเร็จ" })).into_response())
+    Ok(Json(ApiResponse::with_message(info, "ตรวจสอบสำเร็จ")).into_response())
 }
 
 pub async fn get_status(
@@ -30,7 +42,7 @@ pub async fn get_status(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = tenant_pool(&state, &headers).await?;
     let data = portal_service::get_status(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "data": data })).into_response())
+    Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
 pub async fn confirm_enrollment(
@@ -40,7 +52,10 @@ pub async fn confirm_enrollment(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = tenant_pool(&state, &headers).await?;
     portal_service::confirm_enrollment(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัวด้านล่าง" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message(
+        "ยืนยันเข้าเรียนแล้ว กรุณากรอกแบบฟอร์มมอบตัวด้านล่าง",
+    ))
+    .into_response())
 }
 
 pub async fn get_enrollment_form(
@@ -50,7 +65,7 @@ pub async fn get_enrollment_form(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = tenant_pool(&state, &headers).await?;
     let form = portal_service::get_enrollment_form(&pool, payload).await?;
-    Ok(Json(json!({ "success": true, "data": form })).into_response())
+    Ok(Json(ApiResponse::ok(form)).into_response())
 }
 
 pub async fn submit_enrollment_form(
@@ -60,10 +75,7 @@ pub async fn submit_enrollment_form(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = tenant_pool(&state, &headers).await?;
     portal_service::submit_enrollment_form(&pool, payload).await?;
-    Ok(
-        Json(json!({ "success": true, "data": {}, "message": "ยืนยันมอบตัวและบันทึกข้อมูลแล้ว" }))
-            .into_response(),
-    )
+    Ok(Json(ApiResponse::empty_with_message("ยืนยันมอบตัวและบันทึกข้อมูลแล้ว")).into_response())
 }
 
 pub async fn update_application(
@@ -73,10 +85,10 @@ pub async fn update_application(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = tenant_pool(&state, &headers).await?;
     portal_service::update_application(&pool, payload).await?;
-    Ok(
-        Json(json!({ "success": true, "data": {}, "message": "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว" }))
-            .into_response(),
-    )
+    Ok(Json(ApiResponse::empty_with_message(
+        "แก้ไขและอัปเดตใบสมัครเรียบร้อยแล้ว",
+    ))
+    .into_response())
 }
 
 pub async fn portal_upload_document(
@@ -192,13 +204,13 @@ pub async fn portal_upload_document(
     }
 
     let file_url = portal_service::build_file_url_full(&result.storage_path)?;
-    Ok(Json(json!({ "success": true, "data": {
-            "fileId": result.file_id,
-            "originalFilename": original_filename,
-            "fileSize": result.file_size,
-            "docType": doc_type,
-            "fileUrl": file_url,
-        } }))
+    Ok(Json(ApiResponse::ok(PortalUploadDocumentData {
+        file_id: result.file_id,
+        original_filename,
+        file_size: result.file_size,
+        doc_type,
+        file_url,
+    }))
     .into_response())
 }
 
@@ -224,10 +236,7 @@ pub async fn portal_delete_document(
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
     r2_client.delete_file(&storage_path).await.ok();
 
-    Ok(
-        Json(json!({ "success": true, "data": {}, "message": "ลบเอกสารเรียบร้อยแล้ว" }))
-            .into_response(),
-    )
+    Ok(Json(ApiResponse::empty_with_message("ลบเอกสารเรียบร้อยแล้ว")).into_response())
 }
 
 pub async fn portal_get_exam_seat(
@@ -238,5 +247,5 @@ pub async fn portal_get_exam_seat(
     let pool = tenant_pool(&state, &headers).await?;
     let seat =
         portal_service::get_exam_seat(&pool, &payload.national_id, &payload.date_of_birth).await?;
-    Ok(Json(json!({ "success": true, "data": seat })).into_response())
+    Ok(Json(ApiResponse::ok(seat)).into_response())
 }

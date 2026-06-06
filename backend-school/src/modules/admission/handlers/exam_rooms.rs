@@ -4,10 +4,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Deserialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::admission::services::exam_room_service;
 use crate::permissions::registry::codes;
@@ -48,6 +48,21 @@ pub struct UpdateExamRoomRequest {
     custom_name: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ListExamRoomsData {
+    rooms: Vec<exam_room_service::ExamRoomRow>,
+    total_capacity: i64,
+    total_assigned: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssignExamSeatsData {
+    assigned_count: usize,
+    rooms: Vec<exam_room_service::AssignSeatsRoomSummary>,
+}
+
 pub async fn list_exam_rooms(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -58,11 +73,11 @@ pub async fn list_exam_rooms(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let result = exam_room_service::list_exam_rooms(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": {
-            "rooms": result.rooms,
-            "totalCapacity": result.total_capacity,
-            "totalAssigned": result.total_assigned,
-        } }))
+    Ok(Json(ApiResponse::ok(ListExamRoomsData {
+        rooms: result.rooms,
+        total_capacity: result.total_capacity,
+        total_assigned: result.total_assigned,
+    }))
     .into_response())
 }
 
@@ -85,7 +100,7 @@ pub async fn add_exam_room(
         payload.display_order,
     )
     .await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn update_exam_room(
@@ -107,7 +122,7 @@ pub async fn update_exam_room(
         payload.custom_name,
     )
     .await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn remove_exam_room(
@@ -120,7 +135,7 @@ pub async fn remove_exam_room(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     exam_room_service::remove_exam_room(&pool, round_id, room_id).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn copy_exam_rooms_from_round(
@@ -133,9 +148,10 @@ pub async fn copy_exam_rooms_from_round(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let n = exam_room_service::copy_exam_rooms_from_round(&pool, round_id, from_round_id).await?;
-    Ok(Json(
-        json!({ "success": true, "data": {}, "message": format!("copy ห้องสอบ {} ห้องเรียบร้อย", n) }),
-    )
+    Ok(Json(ApiResponse::empty_with_message(format!(
+        "copy ห้องสอบ {} ห้องเรียบร้อย",
+        n
+    )))
     .into_response())
 }
 
@@ -157,7 +173,7 @@ pub async fn update_exam_config(
         payload.sort_order,
     )
     .await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn get_exam_config(
@@ -170,7 +186,7 @@ pub async fn get_exam_config(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let config = exam_room_service::get_exam_config(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": config })).into_response())
+    Ok(Json(ApiResponse::ok(config)).into_response())
 }
 
 pub async fn assign_exam_seats(
@@ -194,7 +210,14 @@ pub async fn assign_exam_seats(
         payload.mode,
     )
     .await?;
-    Ok(Json(json!({ "success": true, "data": { "assignedCount": result.assigned_count, "rooms": result.rooms }, "message": result.message })).into_response())
+    Ok(Json(ApiResponse::with_message(
+        AssignExamSeatsData {
+            assigned_count: result.assigned_count,
+            rooms: result.rooms,
+        },
+        result.message,
+    ))
+    .into_response())
 }
 
 pub async fn get_exam_seats(
@@ -207,7 +230,7 @@ pub async fn get_exam_seats(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let groups = exam_room_service::get_exam_seats(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": groups })).into_response())
+    Ok(Json(ApiResponse::ok(groups)).into_response())
 }
 
 pub async fn get_application_exam_seat(
@@ -220,5 +243,5 @@ pub async fn get_application_exam_seat(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
     let seat = exam_room_service::get_application_exam_seat(&pool, application_id).await?;
-    Ok(Json(json!({ "success": true, "data": seat })).into_response())
+    Ok(Json(ApiResponse::ok(seat)).into_response())
 }

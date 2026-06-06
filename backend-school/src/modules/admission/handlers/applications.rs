@@ -4,9 +4,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
+use serde::Serialize;
 use uuid::Uuid;
 
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::application_service;
@@ -15,6 +16,37 @@ use crate::services::r2_client::R2Client;
 use crate::utils::request_context::{actor_tenant_context, tenant_pool};
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SubmitApplicationData {
+    application_number: String,
+    application: AdmissionApplication,
+}
+
+#[derive(Debug, Serialize)]
+struct ApplicationWithDocumentsData {
+    application: AdmissionApplication,
+    documents: Vec<ApplicationDocument>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompleteEnrollmentData {
+    user_id: Uuid,
+    username: String,
+    student_code: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdatedData<T> {
+    updated: T,
+}
+
+#[derive(Debug, Serialize)]
+struct AssignedData<T> {
+    assigned: T,
+}
 
 // ==========================================
 // Public submit
@@ -31,10 +63,13 @@ pub async fn submit_application(
         application_service::submit_application(&pool, round_id, payload).await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "success": true, "data": {
-            "applicationNumber": application_number,
-            "application": application,
-        }, "message": "ยื่นใบสมัครสำเร็จ" })),
+        Json(ApiResponse::with_message(
+            SubmitApplicationData {
+                application_number,
+                application,
+            },
+            "ยื่นใบสมัครสำเร็จ",
+        )),
     )
         .into_response())
 }
@@ -54,7 +89,7 @@ pub async fn list_applications(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
     let applications = application_service::list_applications(&pool, round_id, filter).await?;
-    Ok(Json(json!({ "success": true, "data": applications })).into_response())
+    Ok(Json(ApiResponse::ok(applications)).into_response())
 }
 
 pub async fn get_application(
@@ -68,9 +103,10 @@ pub async fn get_application(
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
     let (application, documents) =
         application_service::get_application_with_documents(&pool, id).await?;
-    Ok(Json(
-        json!({ "success": true, "data": { "application": application, "documents": documents } }),
-    )
+    Ok(Json(ApiResponse::ok(ApplicationWithDocumentsData {
+        application,
+        documents,
+    }))
     .into_response())
 }
 
@@ -89,7 +125,7 @@ pub async fn verify_application(
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     let verifier_id = actor.user_id;
     application_service::verify_application(&pool, id, verifier_id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ยืนยันใบสมัครแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ยืนยันใบสมัครแล้ว")).into_response())
 }
 
 pub async fn reject_application(
@@ -103,7 +139,7 @@ pub async fn reject_application(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     application_service::reject_application(&pool, id, &payload.rejection_reason).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ปฏิเสธใบสมัครแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ปฏิเสธใบสมัครแล้ว")).into_response())
 }
 
 pub async fn mark_absent(
@@ -122,7 +158,7 @@ pub async fn mark_absent(
     } else {
         "ยกเลิกขาดสอบแล้ว"
     };
-    Ok(Json(json!({ "success": true, "data": {}, "message": msg })).into_response())
+    Ok(Json(ApiResponse::empty_with_message(msg)).into_response())
 }
 
 pub async fn update_application(
@@ -136,7 +172,7 @@ pub async fn update_application(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     application_service::update_application(&pool, id, payload).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "แก้ไขใบสมัครแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("แก้ไขใบสมัครแล้ว")).into_response())
 }
 
 pub async fn unverify_application(
@@ -149,7 +185,7 @@ pub async fn unverify_application(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     application_service::unverify_application(&pool, id).await?;
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ยกเลิกการอนุมัติแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ยกเลิกการอนุมัติแล้ว")).into_response())
 }
 
 pub async fn delete_application(
@@ -174,7 +210,7 @@ pub async fn delete_application(
         }
     }
 
-    Ok(Json(json!({ "success": true, "data": {}, "message": "ลบใบสมัครแล้ว" })).into_response())
+    Ok(Json(ApiResponse::empty_with_message("ลบใบสมัครแล้ว")).into_response())
 }
 
 // ==========================================
@@ -191,7 +227,7 @@ pub async fn list_enrollment_pending(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_ENROLL)?;
     let list = application_service::list_enrollment_pending(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": list })).into_response())
+    Ok(Json(ApiResponse::ok(list)).into_response())
 }
 
 pub async fn complete_enrollment(
@@ -207,11 +243,14 @@ pub async fn complete_enrollment(
     let enroller_id = actor.user_id;
 
     let result = application_service::complete_enrollment(&pool, id, payload, enroller_id).await?;
-    Ok(Json(json!({ "success": true, "data": {
-            "userId": result.user_id,
-            "username": result.username,
-            "studentCode": result.student_code,
-        }, "message": "มอบตัวสำเร็จ สร้าง account แล้ว" }))
+    Ok(Json(ApiResponse::with_message(
+        CompleteEnrollmentData {
+            user_id: result.user_id,
+            username: result.username,
+            student_code: result.student_code,
+        },
+        "มอบตัวสำเร็จ สร้าง account แล้ว",
+    ))
     .into_response())
 }
 
@@ -226,7 +265,7 @@ pub async fn change_application_track(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     application_service::change_application_track(&pool, application_id, payload.track_id).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn update_admission_track(
@@ -240,7 +279,7 @@ pub async fn update_admission_track(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY)?;
     application_service::update_admission_track(&pool, application_id, payload.track_id).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 // ==========================================
@@ -366,7 +405,7 @@ pub async fn staff_upload_document(
     }
 
     let response = application_service::document_upload_response(&result, &doc_type)?;
-    Ok(Json(json!({ "success": true, "data": response })).into_response())
+    Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
 pub async fn staff_delete_document(
@@ -394,7 +433,7 @@ pub async fn staff_delete_document(
         .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
     r2_client.delete_file(&storage_path).await.ok();
 
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 // ==========================================
@@ -411,7 +450,7 @@ pub async fn sort_room_students(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let updated = application_service::sort_room_students(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": { "updated": updated } })).into_response())
+    Ok(Json(ApiResponse::ok(UpdatedData { updated })).into_response())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -432,7 +471,7 @@ pub async fn auto_assign_student_ids(
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let assigned =
         application_service::auto_assign_student_ids(&pool, round_id, payload.start_number).await?;
-    Ok(Json(json!({ "success": true, "data": { "assigned": assigned } })).into_response())
+    Ok(Json(ApiResponse::ok(AssignedData { assigned })).into_response())
 }
 
 pub async fn list_student_ids(
@@ -445,7 +484,7 @@ pub async fn list_student_ids(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let rows = application_service::list_student_ids(&pool, round_id).await?;
-    Ok(Json(json!({ "success": true, "data": rows })).into_response())
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn move_application_room(
@@ -459,7 +498,7 @@ pub async fn move_application_room(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES)?;
     application_service::move_application_room(&pool, id, payload.room_id).await?;
-    Ok(Json(json!({ "success": true, "data": {} })).into_response())
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 pub async fn batch_update_student_ids(
@@ -473,5 +512,5 @@ pub async fn batch_update_student_ids(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
     let updated = application_service::batch_update_student_ids(&pool, round_id, payload).await?;
-    Ok(Json(json!({ "success": true, "data": { "updated": updated } })).into_response())
+    Ok(Json(ApiResponse::ok(UpdatedData { updated })).into_response())
 }
