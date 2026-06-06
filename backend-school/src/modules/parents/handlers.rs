@@ -1,3 +1,4 @@
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::parents::services as parent_service;
 use crate::utils::request_context::actor_tenant_context;
@@ -8,7 +9,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 use uuid::Uuid;
 
 /// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
@@ -21,10 +21,7 @@ pub async fn get_own_parent_profile(
     let actor = context.actor;
     let profile = parent_service::get_own_parent_profile(&pool, actor.user_id).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": profile })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(profile))))
 }
 
 /// GET /api/parent/students/:student_id - ผู้ปกครองดูรายละเอียดบุตรหลาน
@@ -38,10 +35,7 @@ pub async fn get_child_profile(
     let actor = context.actor;
     let student = parent_service::get_child_profile(&pool, actor.user_id, student_id).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": student })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -68,8 +62,5 @@ pub async fn get_child_timetable(
     )
     .await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "success": true, "data": entries })),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::ok(entries))))
 }
