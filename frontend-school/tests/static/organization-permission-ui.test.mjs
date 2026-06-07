@@ -80,3 +80,17 @@ test('organization delegation tab follows backend school-wide authorization poli
 	assert.match(source, /if\s*\(\s*canManageDelegations\s*\)/);
 	assert.match(source, /if\s*\(\s*!loading\s*&&\s*canManageDelegations\s*&&\s*deptId\s*\)/);
 });
+
+test('organization overview uses focused navigation with selected-unit details', async () => {
+	const source = await readProjectFile('src/routes/(app)/staff/organization/+page.svelte');
+
+	assert.match(source, /organizationStats/);
+	assert.match(source, /unitTypeFilters/);
+	assert.match(source, /activeUnitTypeFilter/);
+	assert.match(source, /selectedUnit/);
+	assert.match(source, /selectedMembers/);
+	assert.match(source, /visibleTreeRoots/);
+	assert.match(source, /handleSelectUnit/);
+	assert.match(source, /เปิดรายละเอียด/);
+	assert.doesNotMatch(source, /grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6/);
+});
