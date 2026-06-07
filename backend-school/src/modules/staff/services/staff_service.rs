@@ -1,9 +1,10 @@
 use crate::error::AppError;
 use crate::modules::staff::models::*;
+use crate::policies::resource_access_policy::UserResourceListAccess;
 use crate::utils::field_encryption;
 use chrono::NaiveDate;
 use serde::Serialize;
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 // Helper structs for query results
@@ -124,60 +125,44 @@ struct AdvisorClassroomRow {
 pub async fn list_staff(
     pool: &PgPool,
     filter: StaffListFilter,
+    access: UserResourceListAccess,
 ) -> Result<(Vec<StaffListItem>, i64, i64, i64), AppError> {
     let page_params = staff_page_params(&filter);
 
-    let mut query = String::from(
+    let search_pattern = staff_search_pattern(filter.search.clone());
+    let mut query = QueryBuilder::<Postgres>::new(
         "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status
          FROM users u
          WHERE u.user_type = 'staff'",
     );
+    push_staff_list_filters(&mut query, &filter, search_pattern.as_deref(), access);
+    query
+        .push(" ORDER BY u.first_name LIMIT ")
+        .push_bind(page_params.page_size)
+        .push(" OFFSET ")
+        .push_bind(page_params.offset);
 
-    let mut idx = 0u32;
+    let staff_rows = query
+        .build_query_as::<(Uuid, String, Option<String>, String, String, String)>()
+        .fetch_all(pool)
+        .await
+        .map_err(|e| {
+            eprintln!("❌ Database error: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+        })?;
 
-    if filter.status.is_some() {
-        idx += 1;
-        query.push_str(&format!(" AND u.status = ${idx}"));
-    } else {
-        query.push_str(" AND u.status = 'active'");
-    }
-
-    let search_pattern = staff_search_pattern(filter.search.clone());
-    if search_pattern.is_some() {
-        idx += 1;
-        query.push_str(&format!(
-            " AND (u.first_name ILIKE ${idx} OR u.last_name ILIKE ${idx} OR u.username ILIKE ${idx})"
-        ));
-    }
-
-    idx += 1;
-    let limit_idx = idx;
-    idx += 1;
-    let offset_idx = idx;
-    query.push_str(&format!(
-        " ORDER BY u.first_name LIMIT ${limit_idx} OFFSET ${offset_idx}"
-    ));
-
-    let mut q = sqlx::query_as::<_, (Uuid, String, Option<String>, String, String, String)>(&query);
-    if let Some(ref status) = filter.status {
-        q = q.bind(status);
-    }
-    if let Some(ref pattern) = search_pattern {
-        q = q.bind(pattern);
-    }
-    q = q.bind(page_params.page_size);
-    q = q.bind(page_params.offset);
-
-    let staff_rows = q.fetch_all(pool).await.map_err(|e| {
-        eprintln!("❌ Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
-    })?;
-
-    let count_query = "SELECT COUNT(DISTINCT u.id) FROM users u WHERE u.user_type = 'staff'";
-    let total: i64 = sqlx::query_scalar(count_query)
+    let mut count_query = QueryBuilder::<Postgres>::new(
+        "SELECT COUNT(DISTINCT u.id) FROM users u WHERE u.user_type = 'staff'",
+    );
+    push_staff_list_filters(&mut count_query, &filter, search_pattern.as_deref(), access);
+    let total: i64 = count_query
+        .build_query_scalar()
         .fetch_one(pool)
         .await
-        .unwrap_or(0);
+        .map_err(|e| {
+            eprintln!("❌ Database error: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการนับข้อมูล".to_string())
+        })?;
 
     let items: Vec<StaffListItem> = staff_rows
         .into_iter()
@@ -196,6 +181,100 @@ pub async fn list_staff(
         .collect();
 
     Ok((items, total, page_params.page, page_params.page_size))
+}
+
+fn push_staff_list_filters<'args>(
+    query: &mut QueryBuilder<'args, Postgres>,
+    filter: &'args StaffListFilter,
+    search_pattern: Option<&'args str>,
+    access: UserResourceListAccess,
+) {
+    match &filter.status {
+        Some(status) => {
+            query.push(" AND u.status = ").push_bind(status);
+        }
+        None => {
+            query.push(" AND u.status = 'active'");
+        }
+    }
+
+    if let Some(pattern) = search_pattern {
+        query
+            .push(" AND (u.first_name ILIKE ")
+            .push_bind(pattern)
+            .push(" OR u.last_name ILIKE ")
+            .push_bind(pattern)
+            .push(" OR u.username ILIKE ")
+            .push_bind(pattern)
+            .push(")");
+    }
+
+    push_staff_list_access_filter(query, access);
+}
+
+fn push_staff_list_access_filter(
+    query: &mut QueryBuilder<'_, Postgres>,
+    access: UserResourceListAccess,
+) {
+    match access {
+        UserResourceListAccess::School => {}
+        UserResourceListAccess::Own(actor_user_id)
+        | UserResourceListAccess::Assigned(actor_user_id) => {
+            query.push(" AND u.id = ").push_bind(actor_user_id);
+        }
+        UserResourceListAccess::OrganizationUnit(actor_user_id) => {
+            query
+                .push(
+                    r#" AND EXISTS (
+                        SELECT 1
+                        FROM organization_members actor_member
+                        JOIN organization_members target_member
+                          ON target_member.organization_unit_id = actor_member.organization_unit_id
+                        WHERE actor_member.user_id = "#,
+                )
+                .push_bind(actor_user_id)
+                .push(
+                    r#" AND target_member.user_id = u.id
+                        AND (actor_member.ended_at IS NULL OR actor_member.ended_at > CURRENT_DATE)
+                        AND (target_member.ended_at IS NULL OR target_member.ended_at > CURRENT_DATE)
+                    )"#,
+                );
+        }
+        UserResourceListAccess::OrganizationTree(actor_user_id) => {
+            query
+                .push(
+                    r#" AND EXISTS (
+                        WITH RECURSIVE actor_roots AS (
+                            SELECT organization_unit_id
+                            FROM organization_members
+                            WHERE user_id = "#,
+                )
+                .push_bind(actor_user_id)
+                .push(
+                    r#"
+                              AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+                        ),
+                        organization_tree AS (
+                            SELECT organization_unit_id
+                            FROM actor_roots
+                            UNION
+                            SELECT child.id
+                            FROM organization_units child
+                            JOIN organization_tree parent_tree
+                              ON child.parent_unit_id = parent_tree.organization_unit_id
+                            WHERE child.is_active = true
+                        )
+                        SELECT 1
+                        FROM organization_members target_member
+                        WHERE target_member.user_id = u.id
+                          AND target_member.organization_unit_id IN (
+                              SELECT organization_unit_id FROM organization_tree
+                          )
+                          AND (target_member.ended_at IS NULL OR target_member.ended_at > CURRENT_DATE)
+                    )"#,
+                );
+        }
+    }
 }
 
 /// Get staff full profile with parallel queries

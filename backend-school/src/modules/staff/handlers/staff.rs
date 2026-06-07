@@ -38,15 +38,9 @@ pub async fn list_staff(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    // staff_profile.read.school OR legacy staff.read.all OR achievement.create.all
-    // (achievement.create.all is used by achievement flows that need a teacher picker)
-    actor.require_any_permission(&[
-        codes::STAFF_PROFILE_READ_SCHOOL,
-        codes::STAFF_READ_ALL,
-        codes::ACHIEVEMENT_CREATE_ALL,
-    ])?;
+    let access = staff_access_policy::resolve_staff_profile_list_access(&actor)?;
 
-    let (items, total, page, page_size) = staff_service::list_staff(&pool, filter).await?;
+    let (items, total, page, page_size) = staff_service::list_staff(&pool, filter, access).await?;
     let total_pages = (total as f64 / page_size as f64).ceil() as i64;
 
     Ok((

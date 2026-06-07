@@ -18,6 +18,15 @@ pub struct ResourceAccessGrant {
     pub scope: ResourceAccessScope,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UserResourceListAccess {
+    Own(Uuid),
+    Assigned(Uuid),
+    OrganizationUnit(Uuid),
+    OrganizationTree(Uuid),
+    School,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ResourceAccessPermissions {
     pub own: Option<&'static str>,
@@ -74,6 +83,33 @@ pub fn can_access_direct_resource(
         return Some(ResourceAccessGrant {
             scope: ResourceAccessScope::Assigned,
         });
+    }
+
+    None
+}
+
+pub fn resolve_user_resource_list_access(
+    actor: &ActorContext,
+    permissions: ResourceAccessPermissions,
+) -> Option<UserResourceListAccess> {
+    if has_optional_permission(actor, permissions.school) {
+        return Some(UserResourceListAccess::School);
+    }
+
+    if has_optional_permission(actor, permissions.organization_tree) {
+        return Some(UserResourceListAccess::OrganizationTree(actor.user_id));
+    }
+
+    if has_optional_permission(actor, permissions.organization_unit) {
+        return Some(UserResourceListAccess::OrganizationUnit(actor.user_id));
+    }
+
+    if has_optional_permission(actor, permissions.assigned) {
+        return Some(UserResourceListAccess::Assigned(actor.user_id));
+    }
+
+    if has_optional_permission(actor, permissions.own) {
+        return Some(UserResourceListAccess::Own(actor.user_id));
     }
 
     None
@@ -309,5 +345,34 @@ mod tests {
 
         assert_eq!(assigned_grant.scope, ResourceAccessScope::Assigned);
         assert!(unassigned_grant.is_none());
+    }
+
+    #[test]
+    fn list_access_uses_the_broadest_available_scope() {
+        let actor = actor(
+            Uuid::new_v4(),
+            &[
+                codes::STAFF_PROFILE_READ_OWN,
+                codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+                codes::STAFF_PROFILE_READ_ORGANIZATION_TREE,
+            ],
+        );
+
+        let access = resolve_user_resource_list_access(&actor, profile_permissions())
+            .expect("tree permission should produce list access");
+
+        assert_eq!(
+            access,
+            UserResourceListAccess::OrganizationTree(actor.user_id)
+        );
+    }
+
+    #[test]
+    fn list_access_returns_none_without_list_scope_permissions() {
+        let actor = actor(Uuid::new_v4(), &[]);
+
+        let access = resolve_user_resource_list_access(&actor, profile_permissions());
+
+        assert!(access.is_none());
     }
 }

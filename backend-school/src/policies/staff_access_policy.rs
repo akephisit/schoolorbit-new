@@ -40,6 +40,17 @@ pub async fn can_read_staff_profile(
     .map(|_| ())
 }
 
+pub fn resolve_staff_profile_list_access(
+    actor: &ActorContext,
+) -> Result<resource_access_policy::UserResourceListAccess, AppError> {
+    if actor.has_any_permission(&[codes::STAFF_READ_ALL, codes::ACHIEVEMENT_CREATE_ALL]) {
+        return Ok(resource_access_policy::UserResourceListAccess::School);
+    }
+
+    resource_access_policy::resolve_user_resource_list_access(actor, STAFF_PROFILE_ACCESS)
+        .ok_or_else(|| AppError::Forbidden("ไม่มีสิทธิ์ดูรายชื่อบุคลากร".to_string()))
+}
+
 pub fn can_read_staff_pii(actor: &ActorContext, target_user_id: Uuid) -> bool {
     let target = resource_access_policy::ResourceAccessTarget::owned_by(target_user_id);
     resource_access_policy::can_access_direct_resource(actor, STAFF_PII_ACCESS, &target).is_some()

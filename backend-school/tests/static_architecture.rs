@@ -339,6 +339,22 @@ fn staff_profile_handler_uses_scoped_access_policy_and_pii_flag() {
 }
 
 #[test]
+fn staff_list_uses_resource_aware_access_scope() {
+    let staff_handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/staff/handlers/staff.rs"),
+    ));
+    let staff_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/staff/services/staff_service.rs"),
+    ));
+
+    assert!(staff_handler.contains("staff_access_policy::resolve_staff_profile_list_access"));
+    assert!(staff_handler.contains("staff_service::list_staff(&pool, filter, access)"));
+    assert!(!staff_handler.contains("actor.require_any_permission(&["));
+    assert!(staff_service.contains("UserResourceListAccess"));
+    assert!(staff_service.contains("push_staff_list_access_filter"));
+}
+
+#[test]
 fn staff_access_policy_uses_resource_access_foundation() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let staff_policy = strip_comments(&read_source(
