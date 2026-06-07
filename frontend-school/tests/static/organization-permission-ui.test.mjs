@@ -78,7 +78,8 @@ test('organization delegation tab follows backend school-wide authorization poli
 	assert.match(source, /PERMISSIONS\.ROLES_ASSIGN_ALL/);
 	assert.match(source, /PERMISSIONS\.ROLES_UPDATE_ALL/);
 	assert.match(source, /if\s*\(\s*canManageDelegations\s*\)/);
-	assert.match(source, /if\s*\(\s*!loading\s*&&\s*canManageDelegations\s*&&\s*deptId\s*\)/);
+	assert.match(source, /if\s*\(\s*!loading\s*&&\s*canManageDelegations\s*&&\s*currentDeptId\s*\)/);
+	assert.match(source, /loadDelegations\(currentDeptId\)/);
 });
 
 test('organization overview uses focused navigation with selected-unit details', async () => {
@@ -108,4 +109,16 @@ test('organization detail uses focused unit workspace layout', async () => {
 	assert.match(source, /งานหลักของหน่วยงาน/);
 	assert.match(source, /activeTab = \$state<DetailTab>\('members'\)/);
 	assert.doesNotMatch(source, /activeTab = \$state<DetailTab>\('overview'\)/);
+});
+
+test('organization detail reloads when the route id changes without remounting', async () => {
+	const source = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.svelte');
+
+	assert.doesNotMatch(source, /import\s+\{\s*onMount\s*\}\s+from\s+['"]svelte['"]/);
+	assert.match(source, /\$effect\(\(\)\s*=>\s*\{\s*const currentDeptId = deptId;/);
+	assert.match(source, /loadData\(currentDeptId\)/);
+	assert.match(source, /async function loadData\(currentDeptId: string\)/);
+	assert.match(source, /if\s*\(\s*currentDeptId !== deptId\s*\)\s*return/);
+	assert.match(source, /listOrganizationMembers\(currentDeptId\)/);
+	assert.match(source, /parent_unit_id === currentDeptId/);
 });

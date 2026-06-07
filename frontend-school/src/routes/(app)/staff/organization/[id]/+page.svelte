@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
@@ -171,16 +170,18 @@
 		return member.responsibilities || positionLabel(member.position_code, member.position_title);
 	}
 
-	async function loadData() {
-		if (!deptId) return;
+	async function loadData(currentDeptId: string) {
 		try {
 			loading = true;
 			error = '';
+			delegations = [];
+			delegatablePerms = [];
 			const [deptRes, membersRes, allDeptsRes] = await Promise.all([
-				getOrganizationUnit(deptId),
-				listOrganizationMembers(deptId),
+				getOrganizationUnit(currentDeptId),
+				listOrganizationMembers(currentDeptId),
 				listOrganizationUnits()
 			]);
+			if (currentDeptId !== deptId) return;
 			if (deptRes.success && deptRes.data) {
 				department = deptRes.data;
 			} else {
@@ -192,24 +193,32 @@
 			if (allDeptsRes.success && allDeptsRes.data) {
 				allDepartments = allDeptsRes.data;
 				childDepts = allDeptsRes.data
-					.filter((unit) => unit.parent_unit_id === deptId)
+					.filter((unit) => unit.parent_unit_id === currentDeptId)
 					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 			}
 		} catch (e: unknown) {
+			if (currentDeptId !== deptId) return;
 			error = (e instanceof Error ? e.message : String(e)) || 'Error loading data';
 		} finally {
-			loading = false;
+			if (currentDeptId === deptId) {
+				loading = false;
+			}
 		}
 	}
 
-	async function loadDelegations() {
-		if (!deptId) return;
+	async function loadDelegations(currentDeptId: string) {
 		const [delRes, permRes] = await Promise.all([
-			listDelegations(deptId),
-			listDelegatablePermissions(deptId)
+			listDelegations(currentDeptId),
+			listDelegatablePermissions(currentDeptId)
 		]);
+		if (currentDeptId !== deptId) return;
 		if (delRes.success && delRes.data) delegations = delRes.data;
 		if (permRes.success && permRes.data) delegatablePerms = permRes.data;
+	}
+
+	function refreshCurrentUnit() {
+		if (!deptId) return;
+		loadData(deptId);
 	}
 
 	function goToChildDept(id: string) {
@@ -224,7 +233,8 @@
 	}
 
 	async function handleDelegate() {
-		if (!deptId || !delegateForm.to_user_id || !delegateForm.permission_id) return;
+		const currentDeptId = deptId;
+		if (!currentDeptId || !delegateForm.to_user_id || !delegateForm.permission_id) return;
 		delegateSubmitting = true;
 		delegateError = '';
 		try {
@@ -236,11 +246,11 @@
 			if (delegateForm.expires_at)
 				body.expires_at = new Date(delegateForm.expires_at).toISOString();
 
-			const res = await createDelegation(deptId, body);
+			const res = await createDelegation(currentDeptId, body);
 			if (res.success) {
 				showDelegateDialog = false;
 				delegateForm = { to_user_id: '', permission_id: '', reason: '', expires_at: '' };
-				await loadDelegations();
+				await loadDelegations(currentDeptId);
 			} else {
 				delegateError = res.error || 'เกิดข้อผิดพลาด';
 			}
@@ -249,13 +259,17 @@
 		}
 	}
 
-	onMount(() => {
-		loadData();
+	$effect(() => {
+		const currentDeptId = deptId;
+		if (!currentDeptId) return;
+		activeTab = 'members';
+		loadData(currentDeptId);
 	});
 
 	$effect(() => {
-		if (!loading && canManageDelegations && deptId) {
-			loadDelegations();
+		const currentDeptId = deptId;
+		if (!loading && canManageDelegations && currentDeptId) {
+			loadDelegations(currentDeptId);
 		}
 	});
 </script>
@@ -376,7 +390,7 @@
 						<OrganizationMembersSection
 							organizationUnitId={deptId}
 							childUnits={childDepts}
-							onChanged={loadData}
+							onChanged={refreshCurrentUnit}
 						/>
 					{:else if activeTab === 'permissions'}
 						<section class="space-y-4 rounded-lg border bg-card p-5">
@@ -633,7 +647,7 @@
 	bind:open={showEditDialog}
 	organizationUnitToEdit={department}
 	organizationUnits={allDepartments}
-	onSuccess={loadData}
+	onSuccess={refreshCurrentUnit}
 />
 
 <OrganizationUnitDialog
@@ -641,13 +655,13 @@
 	organizationUnits={allDepartments}
 	forcedParentId={deptId}
 	forcedCategory={department?.category}
-	onSuccess={loadData}
+	onSuccess={refreshCurrentUnit}
 />
 
 <OrganizationPermissionDialog
 	bind:open={showPermissionDialog}
 	organizationUnit={department}
-	onSuccess={loadData}
+	onSuccess={refreshCurrentUnit}
 />
 
 {#if showDelegateDialog}
