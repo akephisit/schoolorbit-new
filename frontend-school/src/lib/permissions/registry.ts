@@ -14,9 +14,10 @@ export const PERMISSIONS = {
 	ACADEMIC_CLASSROOM_READ_ALL: 'academic_classroom.read.all',
 	ACADEMIC_COURSE_PLAN_MANAGE_ALL: 'academic_course_plan.manage.all',
 	ACADEMIC_COURSE_PLAN_READ_ALL: 'academic_course_plan.read.all',
-	ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT:
-		'academic_curriculum.manage.organization_unit',
+	ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT: 'academic_curriculum.manage.organization_unit',
+	ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE: 'academic_curriculum.manage.organization_tree',
 	ACADEMIC_CURRICULUM_READ_ALL: 'academic_curriculum.read.all',
+	ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE: 'academic_curriculum.read.organization_tree',
 	ACADEMIC_ENROLLMENT_READ_ALL: 'academic_enrollment.read.all',
 	ACADEMIC_STRUCTURE_MANAGE_ALL: 'academic_structure.manage.all',
 	ACADEMIC_STRUCTURE_READ_ALL: 'academic_structure.read.all',

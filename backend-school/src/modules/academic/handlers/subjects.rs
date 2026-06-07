@@ -24,10 +24,10 @@ pub async fn list_subject_groups(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    if !actor.has_any_permission(&[
-        codes::ACADEMIC_CURRICULUM_READ_ALL,
-        codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
-    ]) {
+    if subject_service::resolve_subject_read_access(&actor, &pool)
+        .await?
+        .is_none()
+    {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -50,10 +50,7 @@ pub async fn list_subjects(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_READ_ALL);
-    let has_organization_unit =
-        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
-    if !has_all && !has_organization_unit {
+    let Some(access) = subject_service::resolve_subject_read_access(&actor, &pool).await? else {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -62,25 +59,9 @@ pub async fn list_subjects(
             ))),
         )
             .into_response());
-    }
-
-    let organization_unit_group_id: Option<Uuid> = if !has_all && has_organization_unit {
-        match subject_service::get_user_subject_group_id(actor.user_id, &pool).await {
-            Some(gid) => Some(gid),
-            None => {
-                return Ok((
-                    StatusCode::FORBIDDEN,
-                    Json(ApiErrorResponse::new("ไม่พบกลุ่มสาระที่สังกัด")),
-                )
-                    .into_response());
-            }
-        }
-    } else {
-        None
     };
 
-    let subjects =
-        subject_service::list_subjects(&pool, filter, organization_unit_group_id).await?;
+    let subjects = subject_service::list_subjects(&pool, filter, access).await?;
     Ok(Json(ApiResponse::ok(subjects)).into_response())
 }
 
@@ -92,10 +73,13 @@ pub async fn create_subject(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_CREATE_ALL);
-    let has_organization_unit =
-        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
-    if !has_all && !has_organization_unit {
+    let Some(access) = subject_service::resolve_subject_manage_access(
+        &actor,
+        &pool,
+        codes::ACADEMIC_CURRICULUM_CREATE_ALL,
+    )
+    .await?
+    else {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -104,17 +88,12 @@ pub async fn create_subject(
             ))),
         )
             .into_response());
-    }
+    };
 
-    if !has_all && has_organization_unit {
-        let teacher_group = subject_service::get_user_subject_group_id(actor.user_id, &pool)
-            .await
-            .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
-        if payload.group_id != Some(teacher_group) {
-            return Err(AppError::BadRequest(
-                "ไม่สามารถเพิ่มวิชาในกลุ่มสาระอื่นได้".to_string(),
-            ));
-        }
+    if !subject_service::subject_group_access_allows(&access, payload.group_id) {
+        return Err(AppError::BadRequest(
+            "ไม่สามารถเพิ่มวิชาในกลุ่มสาระอื่นได้".to_string(),
+        ));
     }
 
     let subject = subject_service::create_subject(&pool, payload).await?;
@@ -130,10 +109,13 @@ pub async fn update_subject(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_UPDATE_ALL);
-    let has_organization_unit =
-        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
-    if !has_all && !has_organization_unit {
+    let Some(access) = subject_service::resolve_subject_manage_access(
+        &actor,
+        &pool,
+        codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
+    )
+    .await?
+    else {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -142,18 +124,17 @@ pub async fn update_subject(
             ))),
         )
             .into_response());
-    }
+    };
 
-    if !has_all && has_organization_unit {
-        let teacher_group = subject_service::get_user_subject_group_id(actor.user_id, &pool)
-            .await
-            .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
-        let subject_group = subject_service::get_subject_group_id(&pool, id).await?;
-        if subject_group != Some(teacher_group) {
-            return Err(AppError::BadRequest(
-                "ไม่สามารถแก้ไขวิชาในกลุ่มสาระอื่นได้".to_string(),
-            ));
-        }
+    let subject_group = subject_service::get_subject_group_id(&pool, id).await?;
+    if !subject_service::subject_group_access_allows(&access, subject_group)
+        || payload.group_id.is_some_and(|group_id| {
+            !subject_service::subject_group_access_allows(&access, Some(group_id))
+        })
+    {
+        return Err(AppError::BadRequest(
+            "ไม่สามารถแก้ไขวิชาในกลุ่มสาระอื่นได้".to_string(),
+        ));
     }
 
     let subject = subject_service::update_subject(&pool, id, payload).await?;
@@ -168,10 +149,13 @@ pub async fn delete_subject(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let has_all = actor.has_permission(codes::ACADEMIC_CURRICULUM_DELETE_ALL);
-    let has_organization_unit =
-        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
-    if !has_all && !has_organization_unit {
+    let Some(access) = subject_service::resolve_subject_manage_access(
+        &actor,
+        &pool,
+        codes::ACADEMIC_CURRICULUM_DELETE_ALL,
+    )
+    .await?
+    else {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -180,18 +164,13 @@ pub async fn delete_subject(
             ))),
         )
             .into_response());
-    }
+    };
 
-    if !has_all && has_organization_unit {
-        let teacher_group = subject_service::get_user_subject_group_id(actor.user_id, &pool)
-            .await
-            .ok_or_else(|| AppError::BadRequest("ไม่พบกลุ่มสาระที่สังกัด".to_string()))?;
-        let subject_group = subject_service::get_subject_group_id(&pool, id).await?;
-        if subject_group != Some(teacher_group) {
-            return Err(AppError::BadRequest(
-                "ไม่สามารถลบวิชาในกลุ่มสาระอื่นได้".to_string(),
-            ));
-        }
+    let subject_group = subject_service::get_subject_group_id(&pool, id).await?;
+    if !subject_service::subject_group_access_allows(&access, subject_group) {
+        return Err(AppError::BadRequest(
+            "ไม่สามารถลบวิชาในกลุ่มสาระอื่นได้".to_string(),
+        ));
     }
 
     subject_service::delete_subject(&pool, id).await?;
@@ -299,10 +278,7 @@ pub async fn batch_list_subject_default_instructors(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    if !actor.has_any_permission(&[
-        codes::ACADEMIC_CURRICULUM_READ_ALL,
-        codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
-    ]) {
+    let Some(access) = subject_service::resolve_subject_read_access(&actor, &pool).await? else {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -311,7 +287,7 @@ pub async fn batch_list_subject_default_instructors(
             ))),
         )
             .into_response());
-    }
+    };
 
     let ids: Vec<Uuid> = query
         .subject_ids
@@ -319,6 +295,7 @@ pub async fn batch_list_subject_default_instructors(
         .filter_map(|s| s.trim().parse::<Uuid>().ok())
         .collect();
 
-    let grouped = subject_service::batch_list_subject_default_instructors(&pool, ids).await?;
+    let grouped =
+        subject_service::batch_list_subject_default_instructors(&pool, ids, &access).await?;
     Ok(Json(ApiResponse::ok(grouped)).into_response())
 }

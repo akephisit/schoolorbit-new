@@ -269,6 +269,49 @@ fn organization_permission_grant_baseline_is_deterministic() {
 }
 
 #[test]
+fn effective_permissions_do_not_inherit_child_organization_grants() {
+    let permission_middleware = read_source(manifest_dir().join("src/middleware/permission.rs"));
+
+    assert!(
+        !permission_middleware.contains("Parent-leader inheritance"),
+        "effective permissions must come from explicit role, membership grant, or delegation only"
+    );
+    assert!(
+        !permission_middleware.contains("JOIN organization_units child"),
+        "parent organization leaders must not implicitly inherit child organization grants"
+    );
+    assert!(
+        !permission_middleware.contains("child.parent_unit_id = om.organization_unit_id"),
+        "use explicit organization_tree policies instead of hidden child-grant inheritance"
+    );
+}
+
+#[test]
+fn academic_curriculum_tree_scope_is_explicitly_registered() {
+    let backend_registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let frontend_registry = read_source(
+        repo_root()
+            .join("frontend-school")
+            .join("src/lib/permissions/registry.ts"),
+    );
+    let migration_path = manifest_dir()
+        .join("migrations")
+        .join("125_curriculum_organization_tree_permissions.sql");
+    let migration = read_source(&migration_path);
+
+    for source in [&backend_registry, &frontend_registry, &migration] {
+        assert!(
+            source.contains("academic_curriculum.read.organization_tree"),
+            "curriculum tree read permission must be registered across backend/frontend/migration"
+        );
+        assert!(
+            source.contains("academic_curriculum.manage.organization_tree"),
+            "curriculum tree manage permission must be registered across backend/frontend/migration"
+        );
+    }
+}
+
+#[test]
 fn lookup_models_expose_reference_data_only() {
     let lookup_models = strip_comments(&read_source(
         manifest_dir().join("src/modules/lookup/models.rs"),

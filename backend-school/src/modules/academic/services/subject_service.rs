@@ -8,7 +8,16 @@ use crate::permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-pub async fn get_user_subject_group_id(user_id: Uuid, pool: &PgPool) -> Option<Uuid> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubjectGroupAccess {
+    All,
+    Groups(Vec<Uuid>),
+}
+
+pub async fn get_user_subject_group_ids(
+    user_id: Uuid,
+    pool: &PgPool,
+) -> Result<Vec<Uuid>, AppError> {
     sqlx::query_scalar(
         r#"SELECT ou.subject_group_id
            FROM organization_members om
@@ -16,14 +25,106 @@ pub async fn get_user_subject_group_id(user_id: Uuid, pool: &PgPool) -> Option<U
            WHERE om.user_id = $1
              AND ou.subject_group_id IS NOT NULL
              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
-           ORDER BY om.is_primary DESC NULLS LAST
-           LIMIT 1"#,
+           ORDER BY om.is_primary DESC NULLS LAST"#,
     )
     .bind(user_id)
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await
-    .ok()
-    .flatten()
+    .map_err(|error| {
+        tracing::error!("Failed to fetch user subject groups: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบกลุ่มสาระได้".to_string())
+    })
+}
+
+pub async fn get_user_subject_group_ids_in_organization_tree(
+    user_id: Uuid,
+    pool: &PgPool,
+) -> Result<Vec<Uuid>, AppError> {
+    sqlx::query_scalar(
+        r#"
+        WITH RECURSIVE actor_roots AS (
+            SELECT organization_unit_id
+            FROM organization_members
+            WHERE user_id = $1
+              AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+        ),
+        organization_tree AS (
+            SELECT organization_unit_id
+            FROM actor_roots
+            UNION
+            SELECT child.id
+            FROM organization_units child
+            JOIN organization_tree parent_tree
+              ON child.parent_unit_id = parent_tree.organization_unit_id
+            WHERE child.is_active = true
+        )
+        SELECT DISTINCT ou.subject_group_id
+        FROM organization_tree
+        JOIN organization_units ou ON ou.id = organization_tree.organization_unit_id
+        WHERE ou.subject_group_id IS NOT NULL
+          AND ou.is_active = true
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!(
+            "Failed to fetch user subject groups in organization tree: {}",
+            error
+        );
+        AppError::InternalServerError("ไม่สามารถตรวจสอบสายงานกลุ่มสาระได้".to_string())
+    })
+}
+
+pub async fn resolve_subject_read_access(
+    actor: &ActorContext,
+    pool: &PgPool,
+) -> Result<Option<SubjectGroupAccess>, AppError> {
+    if actor.has_permission(codes::ACADEMIC_CURRICULUM_READ_ALL) {
+        return Ok(Some(SubjectGroupAccess::All));
+    }
+
+    if actor.has_any_permission(&[
+        codes::ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE,
+        codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE,
+    ]) {
+        return Ok(Some(SubjectGroupAccess::Groups(
+            get_user_subject_group_ids_in_organization_tree(actor.user_id, pool).await?,
+        )));
+    }
+
+    if actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT) {
+        return Ok(Some(SubjectGroupAccess::Groups(
+            get_user_subject_group_ids(actor.user_id, pool).await?,
+        )));
+    }
+
+    Ok(None)
+}
+
+pub async fn resolve_subject_manage_access(
+    actor: &ActorContext,
+    pool: &PgPool,
+    all_permission: &str,
+) -> Result<Option<SubjectGroupAccess>, AppError> {
+    if actor.has_permission(all_permission) {
+        return Ok(Some(SubjectGroupAccess::All));
+    }
+
+    if actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE) {
+        return Ok(Some(SubjectGroupAccess::Groups(
+            get_user_subject_group_ids_in_organization_tree(actor.user_id, pool).await?,
+        )));
+    }
+
+    if actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT) {
+        return Ok(Some(SubjectGroupAccess::Groups(
+            get_user_subject_group_ids(actor.user_id, pool).await?,
+        )));
+    }
+
+    Ok(None)
 }
 
 pub async fn ensure_subject_manage(
@@ -33,30 +134,20 @@ pub async fn ensure_subject_manage(
     manage_code: &str,
     read_only: bool,
 ) -> Result<(), AppError> {
-    let has_all = actor.has_permission(manage_code)
-        || (read_only
-            && actor.has_any_permission(&[
-                codes::ACADEMIC_CURRICULUM_READ_ALL,
-                codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
-                manage_code,
-            ]));
-    let has_organization_unit =
-        actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT);
-    if !has_all && !has_organization_unit {
+    let access = if read_only && !actor.has_permission(manage_code) {
+        resolve_subject_read_access(actor, pool).await?
+    } else {
+        resolve_subject_manage_access(actor, pool, manage_code).await?
+    };
+    let Some(access) = access else {
         return Err(AppError::Forbidden(format!("ไม่มีสิทธิ์ {}", manage_code)));
-    }
+    };
 
-    if !has_all && has_organization_unit {
-        let teacher_group = match get_user_subject_group_id(actor.user_id, pool).await {
-            Some(group_id) => group_id,
-            None => return Err(AppError::Forbidden("ไม่พบกลุ่มสาระที่สังกัด".to_string())),
-        };
-        let subject_group = get_subject_group_id(pool, subject_id).await.ok().flatten();
-        if subject_group != Some(teacher_group) {
-            return Err(AppError::Forbidden(
-                "ไม่สามารถจัดการวิชาในกลุ่มสาระอื่นได้".to_string(),
-            ));
-        }
+    let subject_group = get_subject_group_id(pool, subject_id).await.ok().flatten();
+    if !subject_group_access_allows(&access, subject_group) {
+        return Err(AppError::Forbidden(
+            "ไม่สามารถจัดการวิชาในกลุ่มสาระอื่นได้".to_string(),
+        ));
     }
 
     Ok(())
@@ -77,7 +168,7 @@ pub async fn list_subject_groups(pool: &PgPool) -> Result<Vec<SubjectGroup>, App
 pub async fn list_subjects(
     pool: &PgPool,
     filter: SubjectFilter,
-    dept_group_id: Option<Uuid>,
+    access: SubjectGroupAccess,
 ) -> Result<Vec<Subject>, AppError> {
     let mut query = String::from(
         r#"SELECT s.*, sg.name_th as group_name_th,
@@ -98,10 +189,10 @@ pub async fn list_subjects(
         }
     }
 
-    let effective_group_id = effective_subject_group_filter(filter.group_id, dept_group_id);
-    if effective_group_id.is_some() {
+    let effective_group_ids = effective_subject_group_filter(filter.group_id, &access)?;
+    if effective_group_ids.is_some() {
         idx += 1;
-        query.push_str(&format!(" AND s.group_id = ${idx}"));
+        query.push_str(&format!(" AND s.group_id = ANY(${idx})"));
     }
     if filter.subject_type.is_some() {
         idx += 1;
@@ -150,8 +241,8 @@ pub async fn list_subjects(
     query.push_str(" ORDER BY s.code ASC");
 
     let mut q = sqlx::query_as::<_, Subject>(&query);
-    if let Some(gid) = effective_group_id {
-        q = q.bind(gid);
+    if let Some(group_ids) = effective_group_ids {
+        q = q.bind(group_ids);
     }
     if let Some(ref stype) = filter.subject_type {
         q = q.bind(stype);
@@ -487,21 +578,39 @@ pub async fn update_subject_default_instructor_role(
 pub async fn batch_list_subject_default_instructors(
     pool: &PgPool,
     subject_ids: Vec<Uuid>,
+    access: &SubjectGroupAccess,
 ) -> Result<std::collections::HashMap<Uuid, Vec<SubjectDefaultInstructor>>, AppError> {
     if subject_ids.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
-    let rows: Vec<SubjectDefaultInstructor> = sqlx::query_as(
+
+    if matches!(access, SubjectGroupAccess::Groups(group_ids) if group_ids.is_empty()) {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let mut query = String::from(
         r#"SELECT sdi.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
            FROM subject_default_instructors sdi
+           JOIN subjects s ON s.id = sdi.subject_id
            JOIN users u ON u.id = sdi.instructor_id
-           WHERE sdi.subject_id = ANY($1)
-           ORDER BY sdi.subject_id, sdi.role, sdi.created_at"#,
-    )
-    .bind(&subject_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+           WHERE sdi.subject_id = ANY($1)"#,
+    );
+
+    if matches!(access, SubjectGroupAccess::Groups(_)) {
+        query.push_str(" AND s.group_id = ANY($2)");
+    }
+
+    query.push_str(" ORDER BY sdi.subject_id, sdi.role, sdi.created_at");
+
+    let mut rows_query = sqlx::query_as::<_, SubjectDefaultInstructor>(&query).bind(&subject_ids);
+    if let SubjectGroupAccess::Groups(group_ids) = access {
+        rows_query = rows_query.bind(group_ids);
+    }
+
+    let rows: Vec<SubjectDefaultInstructor> = rows_query
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let mut grouped: std::collections::HashMap<Uuid, Vec<SubjectDefaultInstructor>> =
         std::collections::HashMap::new();
@@ -513,9 +622,28 @@ pub async fn batch_list_subject_default_instructors(
 
 fn effective_subject_group_filter(
     requested_group_id: Option<Uuid>,
-    organization_group_id: Option<Uuid>,
-) -> Option<Uuid> {
-    organization_group_id.or(requested_group_id)
+    access: &SubjectGroupAccess,
+) -> Result<Option<Vec<Uuid>>, AppError> {
+    Ok(match access {
+        SubjectGroupAccess::All => requested_group_id.map(|group_id| vec![group_id]),
+        SubjectGroupAccess::Groups(group_ids) => match requested_group_id {
+            Some(group_id) if group_ids.contains(&group_id) => Some(vec![group_id]),
+            Some(_) => Some(Vec::new()),
+            None => Some(group_ids.clone()),
+        },
+    })
+}
+
+pub fn subject_group_access_allows(
+    access: &SubjectGroupAccess,
+    target_group_id: Option<Uuid>,
+) -> bool {
+    match access {
+        SubjectGroupAccess::All => true,
+        SubjectGroupAccess::Groups(group_ids) => target_group_id
+            .map(|group_id| group_ids.contains(&group_id))
+            .unwrap_or(false),
+    }
 }
 
 fn subject_search_pattern(search: Option<String>) -> Option<String> {
@@ -543,17 +671,73 @@ mod tests {
     use super::*;
 
     #[test]
-    fn effective_subject_group_filter_prefers_organization_scope() {
-        let organization_group_id = Uuid::new_v4();
+    fn effective_subject_group_filter_limits_requested_group_to_scope() {
+        let allowed_group_a = Uuid::new_v4();
+        let allowed_group_b = Uuid::new_v4();
         let requested_group_id = Uuid::new_v4();
 
         assert_eq!(
-            effective_subject_group_filter(Some(requested_group_id), Some(organization_group_id)),
-            Some(organization_group_id)
+            effective_subject_group_filter(
+                Some(allowed_group_a),
+                &SubjectGroupAccess::Groups(vec![allowed_group_a, allowed_group_b])
+            )
+            .expect("filter should be valid"),
+            Some(vec![allowed_group_a])
         );
         assert_eq!(
-            effective_subject_group_filter(Some(requested_group_id), None),
-            Some(requested_group_id)
+            effective_subject_group_filter(
+                None,
+                &SubjectGroupAccess::Groups(vec![allowed_group_a, allowed_group_b])
+            )
+            .expect("filter should include allowed groups"),
+            Some(vec![allowed_group_a, allowed_group_b])
+        );
+        assert_eq!(
+            effective_subject_group_filter(
+                Some(requested_group_id),
+                &SubjectGroupAccess::Groups(vec![allowed_group_a, allowed_group_b])
+            )
+            .expect("out-of-scope filter should produce empty result"),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn subject_group_access_requires_target_group_for_limited_access() {
+        let allowed_group_id = Uuid::new_v4();
+        let other_group_id = Uuid::new_v4();
+
+        assert!(subject_group_access_allows(
+            &SubjectGroupAccess::All,
+            Some(other_group_id)
+        ));
+        assert!(subject_group_access_allows(
+            &SubjectGroupAccess::Groups(vec![allowed_group_id]),
+            Some(allowed_group_id)
+        ));
+        assert!(!subject_group_access_allows(
+            &SubjectGroupAccess::Groups(vec![allowed_group_id]),
+            Some(other_group_id)
+        ));
+        assert!(!subject_group_access_allows(
+            &SubjectGroupAccess::Groups(vec![allowed_group_id]),
+            None
+        ));
+    }
+
+    #[test]
+    fn effective_subject_group_filter_keeps_all_scope_unrestricted() {
+        let requested_group_id = Uuid::new_v4();
+
+        assert_eq!(
+            effective_subject_group_filter(None, &SubjectGroupAccess::All)
+                .expect("all scope without a requested group is unrestricted"),
+            None
+        );
+        assert_eq!(
+            effective_subject_group_filter(Some(requested_group_id), &SubjectGroupAccess::All)
+                .expect("all scope should allow requested group filter"),
+            Some(vec![requested_group_id])
         );
     }
 

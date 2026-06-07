@@ -93,12 +93,16 @@ pub mod codes {
 
     // Academic Curriculum (Subjects)
     pub const ACADEMIC_CURRICULUM_READ_ALL: &str = "academic_curriculum.read.all";
+    pub const ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE: &str =
+        "academic_curriculum.read.organization_tree";
     pub const ACADEMIC_CURRICULUM_CREATE_ALL: &str = "academic_curriculum.create.all";
     pub const ACADEMIC_CURRICULUM_UPDATE_ALL: &str = "academic_curriculum.update.all";
     pub const ACADEMIC_CURRICULUM_DELETE_ALL: &str = "academic_curriculum.delete.all";
     // Organization-unit scoped: manage subjects only within own กลุ่มสาระ
     pub const ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT: &str =
         "academic_curriculum.manage.organization_unit";
+    pub const ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE: &str =
+        "academic_curriculum.manage.organization_tree";
 
     // Course Planning (Assigning subjects to classrooms)
     pub const ACADEMIC_COURSE_PLAN_READ_ALL: &str = "academic_course_plan.read.all";
@@ -558,12 +562,28 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "ดูข้อมูลรายวิชาและหลักสูตรทั้งหมด",
     },
     PermissionDef {
+        code: codes::ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE,
+        name: "ดูหลักสูตร/รายวิชาในสายงาน",
+        module: "academic_curriculum",
+        action: "read",
+        scope: "organization_tree",
+        description: "ดูข้อมูลรายวิชาในหน่วยงานของตนเองและหน่วยงานย่อย",
+    },
+    PermissionDef {
         code: codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
         name: "จัดการรายวิชากลุ่มสาระตัวเอง",
         module: "academic_curriculum",
         action: "manage",
         scope: "organization_unit",
         description: "เพิ่ม/แก้ไข/ลบ รายวิชาเฉพาะกลุ่มสาระที่ตัวเองสังกัด",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE,
+        name: "จัดการรายวิชาในสายงาน",
+        module: "academic_curriculum",
+        action: "manage",
+        scope: "organization_tree",
+        description: "เพิ่ม/แก้ไข/ลบ รายวิชาในหน่วยงานของตนเองและหน่วยงานย่อย",
     },
     PermissionDef {
         code: codes::ACADEMIC_CURRICULUM_CREATE_ALL,
