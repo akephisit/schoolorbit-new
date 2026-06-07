@@ -339,6 +339,37 @@ fn staff_profile_handler_uses_scoped_access_policy_and_pii_flag() {
 }
 
 #[test]
+fn staff_access_policy_uses_resource_access_foundation() {
+    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let staff_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/staff_access_policy.rs"),
+    ));
+    let resource_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/resource_access_policy.rs"),
+    ));
+
+    assert!(policies_root.contains("pub mod resource_access_policy;"));
+    assert!(staff_policy.contains("resource_access_policy::ResourceAccessPermissions"));
+    assert!(staff_policy.contains("resource_access_policy::require_user_resource_access"));
+    assert!(staff_policy.contains("resource_access_policy::can_access_direct_resource"));
+    assert!(!staff_policy.contains("WITH RECURSIVE"));
+    assert!(!staff_policy.contains("FROM organization_members"));
+
+    for required_type in [
+        "pub enum ResourceAccessScope",
+        "pub struct ResourceAccessPermissions",
+        "pub struct ResourceAccessTarget",
+        "pub async fn require_user_resource_access",
+        "pub fn can_access_direct_resource",
+    ] {
+        assert!(
+            resource_policy.contains(required_type),
+            "resource access foundation must define `{required_type}`"
+        );
+    }
+}
+
+#[test]
 fn foundation_handlers_delegate_database_work_to_services() {
     let direct_database_patterns = [
         "sqlx::query",

@@ -108,16 +108,17 @@ pub async fn add_member(
     Ok(())
 }
 
-pub async fn update_member(
-    pool: &PgPool,
-    organization_unit_id: Uuid,
-    user_id: Uuid,
-    position_code: &str,
-    position_title: Option<String>,
-    is_primary: bool,
-    responsibilities: Option<String>,
-    new_organization_unit_id: Uuid,
-) -> Result<u64, AppError> {
+pub struct UpdateMemberInput {
+    pub organization_unit_id: Uuid,
+    pub user_id: Uuid,
+    pub position_code: String,
+    pub position_title: Option<String>,
+    pub is_primary: bool,
+    pub responsibilities: Option<String>,
+    pub new_organization_unit_id: Uuid,
+}
+
+pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u64, AppError> {
     let result = sqlx::query(
         r#"UPDATE organization_members
            SET position_code = $1,
@@ -128,13 +129,13 @@ pub async fn update_member(
            WHERE user_id = $6 AND organization_unit_id = $7
              AND (ended_at IS NULL OR ended_at > CURRENT_DATE)"#,
     )
-    .bind(position_code)
-    .bind(position_title)
-    .bind(is_primary)
-    .bind(responsibilities)
-    .bind(new_organization_unit_id)
-    .bind(user_id)
-    .bind(organization_unit_id)
+    .bind(input.position_code)
+    .bind(input.position_title)
+    .bind(input.is_primary)
+    .bind(input.responsibilities)
+    .bind(input.new_organization_unit_id)
+    .bind(input.user_id)
+    .bind(input.organization_unit_id)
     .execute(pool)
     .await?;
     Ok(result.rows_affected())

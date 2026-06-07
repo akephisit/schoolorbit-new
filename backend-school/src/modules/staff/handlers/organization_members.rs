@@ -121,13 +121,15 @@ pub async fn update_member(
         .unwrap_or(organization_unit_id);
     let updated = organization_member_service::update_member(
         &pool,
-        organization_unit_id,
-        user_id,
-        &body.position_code,
-        body.position_title,
-        body.is_primary.unwrap_or(false),
-        body.responsibilities,
-        target_unit,
+        organization_member_service::UpdateMemberInput {
+            organization_unit_id,
+            user_id,
+            position_code: body.position_code,
+            position_title: body.position_title,
+            is_primary: body.is_primary.unwrap_or(false),
+            responsibilities: body.responsibilities,
+            new_organization_unit_id: target_unit,
+        },
     )
     .await?;
 
