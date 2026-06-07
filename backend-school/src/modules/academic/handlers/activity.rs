@@ -12,6 +12,7 @@ use crate::error::AppError;
 use crate::modules::academic::models::activity::*;
 use crate::modules::academic::services::activity_service;
 use crate::permissions::registry::codes;
+use crate::policies::activity_access_policy;
 use crate::utils::request_context::{
     actor_tenant_context, current_user_tenant_context_from_headers,
 };
@@ -59,8 +60,8 @@ pub async fn list_activity_slots(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_READ_ALL)?;
-    let slots = activity_service::list_slots(&pool, filter).await?;
+    let access = activity_access_policy::resolve_activity_list_access(&actor)?;
+    let slots = activity_service::list_slots(&pool, filter, access).await?;
     Ok(Json(ApiResponse::ok(slots)).into_response())
 }
 
@@ -103,8 +104,8 @@ pub async fn list_activity_groups(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_READ_ALL)?;
-    let groups = activity_service::list_groups(&pool, filter).await?;
+    let access = activity_access_policy::resolve_activity_list_access(&actor)?;
+    let groups = activity_service::list_groups(&pool, filter, access).await?;
     Ok(Json(ApiResponse::ok(groups)).into_response())
 }
 
@@ -116,13 +117,7 @@ pub async fn create_activity_group(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let has_manage_all = actor.has_permission(codes::ACTIVITY_MANAGE_ALL);
-    let has_manage_own = actor.has_permission(codes::ACTIVITY_MANAGE_OWN);
-    if !has_manage_all && !has_manage_own {
-        return Err(AppError::Forbidden("ไม่มีสิทธิ์".to_string()));
-    }
-
-    let outcome = activity_service::create_group(&pool, body, has_manage_all).await?;
+    let outcome = activity_service::create_group(&pool, &actor, body).await?;
     match outcome {
         activity_service::CreateGroupOutcome::Created(row) => {
             Ok(Json(ApiResponse::ok(*row)).into_response())
@@ -145,8 +140,7 @@ pub async fn update_activity_group(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_any_permission(&[codes::ACTIVITY_MANAGE_ALL, codes::ACTIVITY_MANAGE_OWN])?;
-    let row = activity_service::update_group(&pool, id, body).await?;
+    let row = activity_service::update_group(&pool, &actor, id, body).await?;
     Ok(Json(ApiResponse::ok(row)).into_response())
 }
 
@@ -175,7 +169,7 @@ pub async fn list_members(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_READ_ALL)?;
+    activity_access_policy::can_read_activity_group(&pool, &actor, group_id).await?;
     let members = activity_service::list_members(&pool, group_id).await?;
     Ok(Json(ApiResponse::ok(members)).into_response())
 }
@@ -299,7 +293,7 @@ pub async fn list_instructors(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_READ_ALL)?;
+    activity_access_policy::can_read_activity_group(&pool, &actor, group_id).await?;
     let rows = activity_service::list_group_instructors(&pool, group_id).await?;
     Ok(Json(ApiResponse::ok(rows)).into_response())
 }
@@ -313,9 +307,9 @@ pub async fn add_instructor(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_any_permission(&[codes::ACTIVITY_MANAGE_ALL, codes::ACTIVITY_MANAGE_OWN])?;
     let role = body.role.unwrap_or_else(|| "assistant".to_string());
-    activity_service::add_group_instructor(&pool, group_id, body.instructor_id, &role).await?;
+    activity_service::add_group_instructor(&pool, &actor, group_id, body.instructor_id, &role)
+        .await?;
     Ok(Json(ApiResponse::empty_with_message("เพิ่มครูแล้ว")).into_response())
 }
 
@@ -327,8 +321,7 @@ pub async fn remove_instructor(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_any_permission(&[codes::ACTIVITY_MANAGE_ALL, codes::ACTIVITY_MANAGE_OWN])?;
-    activity_service::remove_group_instructor(&pool, group_id, instructor_id).await?;
+    activity_service::remove_group_instructor(&pool, &actor, group_id, instructor_id).await?;
     Ok(Json(ApiResponse::empty_with_message("ลบครูแล้ว")).into_response())
 }
 

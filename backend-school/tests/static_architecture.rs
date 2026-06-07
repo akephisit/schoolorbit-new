@@ -420,6 +420,32 @@ fn achievement_access_uses_resource_policy_and_no_plain_stderr_logging() {
 }
 
 #[test]
+fn activity_manage_own_uses_resource_policy_for_group_access() {
+    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let activity_handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/activity.rs"),
+    ));
+    let activity_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/activity_service.rs"),
+    ));
+
+    assert!(policies_root.contains("pub mod activity_access_policy;"));
+    assert!(activity_handler.contains("activity_access_policy::resolve_activity_list_access"));
+    assert!(activity_handler.contains("activity_service::list_slots(&pool, filter, access)"));
+    assert!(activity_handler.contains("activity_service::list_groups(&pool, filter, access)"));
+    assert!(activity_handler.contains("activity_service::create_group(&pool, &actor, body)"));
+    assert!(activity_handler.contains("activity_service::update_group(&pool, &actor, id, body)"));
+    assert!(activity_handler.contains("activity_service::add_group_instructor"));
+    assert!(activity_handler.contains("activity_service::remove_group_instructor"));
+    assert!(!activity_handler.contains("actor.has_permission(codes::ACTIVITY_MANAGE"));
+
+    assert!(activity_service.contains("activity_access_policy::can_manage_activity_group"));
+    assert!(activity_service.contains("activity_access_policy::can_create_activity_group_for"));
+    assert!(activity_service.contains("UserResourceListAccess"));
+    assert!(!activity_service.contains("actor.has_permission(codes::ACTIVITY_MANAGE"));
+}
+
+#[test]
 fn staff_access_policy_uses_resource_access_foundation() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let staff_policy = strip_comments(&read_source(

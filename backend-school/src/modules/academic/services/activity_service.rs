@@ -1,5 +1,8 @@
 use crate::error::AppError;
+use crate::middleware::permission::ActorContext;
 use crate::modules::academic::models::activity::*;
+use crate::policies::activity_access_policy;
+use crate::policies::resource_access_policy::UserResourceListAccess;
 use chrono::{DateTime, Utc};
 use sqlx::{types::Json, FromRow, PgPool};
 use uuid::Uuid;
@@ -12,6 +15,16 @@ fn activity_datetime_from_rfc3339(value: Option<&str>) -> Option<chrono::DateTim
 
 fn optional_uuid_list_json(ids: Option<&[Uuid]>) -> Option<Json<Vec<Uuid>>> {
     ids.map(|ids| Json(ids.to_vec()))
+}
+
+fn activity_actor_scope_filter(access: UserResourceListAccess) -> Option<Uuid> {
+    match access {
+        UserResourceListAccess::School => None,
+        UserResourceListAccess::Own(actor_user_id)
+        | UserResourceListAccess::Assigned(actor_user_id)
+        | UserResourceListAccess::OrganizationUnit(actor_user_id)
+        | UserResourceListAccess::OrganizationTree(actor_user_id) => Some(actor_user_id),
+    }
 }
 
 #[derive(Debug, FromRow)]
@@ -121,6 +134,7 @@ impl From<ActivityGroupRow> for ActivityGroup {
 pub async fn list_slots(
     pool: &PgPool,
     filter: ActivitySlotFilter,
+    access: UserResourceListAccess,
 ) -> Result<Vec<ActivitySlot>, AppError> {
     let mut sql = String::from(
         r#"SELECT
@@ -163,6 +177,36 @@ pub async fn list_slots(
         idx += 1;
         sql.push_str(&format!(" AND s.student_reg_open = ${idx}"));
     }
+    let scoped_actor_user_id = activity_actor_scope_filter(access);
+    if scoped_actor_user_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(
+            r#" AND (
+                s.teacher_reg_open = true
+                OR EXISTS (
+                    SELECT 1
+                    FROM activity_slot_instructors asi_scope
+                    WHERE asi_scope.slot_id = s.id
+                      AND asi_scope.user_id = ${idx}
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM activity_groups ag_scope
+                    WHERE ag_scope.slot_id = s.id
+                      AND ag_scope.is_active = true
+                      AND (
+                          ag_scope.instructor_id = ${idx}
+                          OR EXISTS (
+                              SELECT 1
+                              FROM activity_group_instructors agi_scope
+                              WHERE agi_scope.activity_group_id = ag_scope.id
+                                AND agi_scope.instructor_id = ${idx}
+                          )
+                      )
+                )
+            )"#
+        ));
+    }
 
     sql.push_str(" GROUP BY s.id, ac.id, sem.name ORDER BY ac.activity_type, ac.name");
 
@@ -179,9 +223,12 @@ pub async fn list_slots(
     if let Some(v) = filter.student_reg_open {
         q = q.bind(v);
     }
+    if let Some(actor_user_id) = scoped_actor_user_id {
+        q = q.bind(actor_user_id);
+    }
 
     let rows = q.fetch_all(pool).await.map_err(|e| {
-        eprintln!("list_activity_slots error: {e}");
+        tracing::error!("list_activity_slots error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -233,7 +280,7 @@ pub async fn update_slot(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("update_activity_slot error: {e}");
+        tracing::error!("update_activity_slot error: {e}");
         AppError::NotFound("ไม่พบช่องกิจกรรม".to_string())
     })
     .map(ActivitySlot::from)
@@ -245,7 +292,7 @@ pub async fn delete_slot(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("delete_activity_slot error: {e}");
+            tracing::error!("delete_activity_slot error: {e}");
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
     Ok(())
@@ -258,6 +305,7 @@ pub async fn delete_slot(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
 pub async fn list_groups(
     pool: &PgPool,
     filter: ActivityGroupFilter,
+    access: UserResourceListAccess,
 ) -> Result<Vec<ActivityGroup>, AppError> {
     let mut sql = String::from(
         r#"SELECT
@@ -303,6 +351,21 @@ pub async fn list_groups(
             sql.push_str(&format!(" AND ag.name ILIKE ${idx}"));
         }
     }
+    let scoped_actor_user_id = activity_actor_scope_filter(access);
+    if scoped_actor_user_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(
+            r#" AND (
+                ag.instructor_id = ${idx}
+                OR EXISTS (
+                    SELECT 1
+                    FROM activity_group_instructors agi_scope
+                    WHERE agi_scope.activity_group_id = ag.id
+                      AND agi_scope.instructor_id = ${idx}
+                )
+            )"#
+        ));
+    }
 
     sql.push_str(" GROUP BY ag.id, u.first_name, u.last_name, ac.name, ac.activity_type, sem.name ORDER BY ac.activity_type, ag.name");
 
@@ -327,9 +390,12 @@ pub async fn list_groups(
             q = q.bind(format!("%{search}%"));
         }
     }
+    if let Some(actor_user_id) = scoped_actor_user_id {
+        q = q.bind(actor_user_id);
+    }
 
     let rows = q.fetch_all(pool).await.map_err(|e| {
-        eprintln!("list_activity_groups error: {e}");
+        tracing::error!("list_activity_groups error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -345,9 +411,22 @@ pub enum CreateGroupOutcome {
 
 pub async fn create_group(
     pool: &PgPool,
+    actor: &ActorContext,
     body: CreateActivityGroupRequest,
-    has_manage_all: bool,
 ) -> Result<CreateGroupOutcome, AppError> {
+    let has_manage_all = activity_access_policy::can_manage_all_activity(actor);
+    let effective_instructor_id = if has_manage_all {
+        body.instructor_id
+    } else {
+        Some(body.instructor_id.unwrap_or(actor.user_id))
+    };
+
+    if let Some(instructor_id) = effective_instructor_id {
+        activity_access_policy::can_create_activity_group_for(actor, instructor_id)?;
+    } else if !has_manage_all {
+        return Err(AppError::Forbidden("ไม่มีสิทธิ์สร้างกิจกรรมนี้".to_string()));
+    }
+
     // Check slot is open
     let slot_open: Option<(bool,)> = sqlx::query_as(
         "SELECT teacher_reg_open FROM activity_slots WHERE id = $1 AND is_active = true",
@@ -364,7 +443,7 @@ pub async fn create_group(
     }
 
     // Instructor must be in slot (ยกเว้น admin)
-    if let Some(instructor_id) = body.instructor_id {
+    if let Some(instructor_id) = effective_instructor_id {
         if !has_manage_all {
             let in_slot: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM activity_slot_instructors WHERE slot_id = $1 AND user_id = $2)",
@@ -392,13 +471,13 @@ pub async fn create_group(
     .bind(body.slot_id)
     .bind(&body.name)
     .bind(&body.description)
-    .bind(body.instructor_id)
+    .bind(effective_instructor_id)
     .bind(body.max_capacity)
     .bind(&allowed)
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("create_activity_group error: {e}");
+        tracing::error!("create_activity_group error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -409,9 +488,17 @@ pub async fn create_group(
 
 pub async fn update_group(
     pool: &PgPool,
+    actor: &ActorContext,
     id: Uuid,
     body: UpdateActivityGroupRequest,
 ) -> Result<ActivityGroup, AppError> {
+    activity_access_policy::can_manage_activity_group(pool, actor, id).await?;
+    if !activity_access_policy::can_manage_all_activity(actor) {
+        if let Some(instructor_id) = body.instructor_id {
+            activity_access_policy::can_create_activity_group_for(actor, instructor_id)?;
+        }
+    }
+
     let allowed = optional_uuid_list_json(body.allowed_classroom_ids.as_deref());
 
     sqlx::query_as::<_, ActivityGroupRow>(
@@ -439,7 +526,7 @@ pub async fn update_group(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("update_activity_group error: {e}");
+        tracing::error!("update_activity_group error: {e}");
         AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string())
     })
     .map(ActivityGroup::from)
@@ -451,7 +538,7 @@ pub async fn delete_group(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("delete_activity_group error: {e}");
+            tracing::error!("delete_activity_group error: {e}");
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
     Ok(())
@@ -490,7 +577,7 @@ pub async fn list_members(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("list_members error: {e}");
+        tracing::error!("list_members error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })
 }
@@ -732,10 +819,13 @@ pub async fn list_group_instructors(
 
 pub async fn add_group_instructor(
     pool: &PgPool,
+    actor: &ActorContext,
     group_id: Uuid,
     instructor_id: Uuid,
     role: &str,
 ) -> Result<(), AppError> {
+    activity_access_policy::can_manage_activity_group(pool, actor, group_id).await?;
+
     sqlx::query(
         "INSERT INTO activity_group_instructors (activity_group_id, instructor_id, role)
          VALUES ($1, $2, $3) ON CONFLICT (activity_group_id, instructor_id) DO UPDATE SET role = $3",
@@ -751,9 +841,12 @@ pub async fn add_group_instructor(
 
 pub async fn remove_group_instructor(
     pool: &PgPool,
+    actor: &ActorContext,
     group_id: Uuid,
     instructor_id: Uuid,
 ) -> Result<(), AppError> {
+    activity_access_policy::can_manage_activity_group(pool, actor, group_id).await?;
+
     sqlx::query(
         "DELETE FROM activity_group_instructors WHERE activity_group_id = $1 AND instructor_id = $2",
     )
@@ -998,7 +1091,7 @@ pub async fn list_slot_classroom_assignments(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("list_slot_classroom_assignments error: {e}");
+        tracing::error!("list_slot_classroom_assignments error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })
 }
@@ -1026,7 +1119,7 @@ pub async fn batch_upsert_slot_classroom_assignments(
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("upsert_slot_classroom_assignment error: {e}");
+            tracing::error!("upsert_slot_classroom_assignment error: {e}");
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -1159,6 +1252,24 @@ mod tests {
         assert_eq!(
             optional_uuid_list_json(Some(&[id])).map(|Json(ids)| ids),
             Some(vec![id])
+        );
+    }
+
+    #[test]
+    fn activity_actor_scope_filter_leaves_school_scope_unfiltered() {
+        assert_eq!(
+            activity_actor_scope_filter(UserResourceListAccess::School),
+            None
+        );
+    }
+
+    #[test]
+    fn activity_actor_scope_filter_uses_actor_for_own_scope() {
+        let actor_user_id = Uuid::new_v4();
+
+        assert_eq!(
+            activity_actor_scope_filter(UserResourceListAccess::Own(actor_user_id)),
+            Some(actor_user_id)
         );
     }
 }
