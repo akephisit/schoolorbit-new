@@ -67,3 +67,16 @@ test('organization members section exposes full school position set', async () =
 	assert.match(source, /groupedMembers/);
 	assert.match(source, /activeMemberCount/);
 });
+
+test('organization delegation tab follows backend school-wide authorization policy', async () => {
+	const source = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.svelte');
+	const registry = await readProjectFile('src/lib/permissions/registry.ts');
+
+	assert.match(registry, /ROLES_UPDATE_ALL:\s*['"]roles\.update\.all['"]/);
+	assert.match(source, /canManageDelegations/);
+	assert.match(source, /PERMISSIONS\.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT/);
+	assert.match(source, /PERMISSIONS\.ROLES_ASSIGN_ALL/);
+	assert.match(source, /PERMISSIONS\.ROLES_UPDATE_ALL/);
+	assert.match(source, /if\s*\(\s*canManageDelegations\s*\)/);
+	assert.match(source, /if\s*\(\s*!loading\s*&&\s*canManageDelegations\s*&&\s*deptId\s*\)/);
+});

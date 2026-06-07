@@ -39,6 +39,7 @@ export const PERMISSIONS = {
 	ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT: 'organization_work.approve.organization_unit',
 	FACILITY_READ_ALL: 'facility.read.all',
 	ROLES_ASSIGN_ALL: 'roles.assign.all',
+	ROLES_UPDATE_ALL: 'roles.update.all',
 	SETTINGS_UPDATE: 'settings.update',
 	STAFF_PII_READ_OWN: 'staff_pii.read.own',
 	STAFF_PII_READ_SCHOOL: 'staff_pii.read.school',

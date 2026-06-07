@@ -87,6 +87,16 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[tokio::test]
+    async fn approve_policy_allows_role_update_admin_without_unit_leader_lookup() {
+        let pool = disconnected_pool();
+        let actor = actor(Uuid::new_v4(), &[codes::ROLES_UPDATE_ALL]);
+
+        let result = can_approve_organization_work(&pool, &actor, Uuid::new_v4()).await;
+
+        assert!(result.is_ok());
+    }
+
     #[test]
     fn revoke_policy_allows_delegation_creator() {
         let user_id = Uuid::new_v4();

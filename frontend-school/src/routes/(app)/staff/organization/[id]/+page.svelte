@@ -68,6 +68,12 @@
 			['director', 'deputy_director', 'head'].includes(member.position_code)
 		).length
 	);
+	let canManageDelegations = $derived.by(
+		() =>
+			$can.has(PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT) ||
+			$can.has(PERMISSIONS.ROLES_ASSIGN_ALL) ||
+			$can.has(PERMISSIONS.ROLES_UPDATE_ALL)
+	);
 
 	let unitTypeText = $derived.by(() => {
 		if (!department) return '-';
@@ -99,7 +105,7 @@
 			{ id: 'children', label: 'หน่วยงานย่อย', count: childDepts.length }
 		];
 
-		if ($can.has(PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT)) {
+		if (canManageDelegations) {
 			tabs.push({ id: 'delegations', label: 'มอบหมาย', count: delegations.length });
 		}
 
@@ -188,7 +194,7 @@
 	});
 
 	$effect(() => {
-		if (!loading && $can.has(PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT) && deptId) {
+		if (!loading && canManageDelegations && deptId) {
 			loadDelegations();
 		}
 	});
