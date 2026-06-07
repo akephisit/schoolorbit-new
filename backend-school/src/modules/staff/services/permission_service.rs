@@ -44,6 +44,7 @@ mod tests {
             name: code.to_string(),
             module: module.to_string(),
             action: "read".to_string(),
+            scope: "all".to_string(),
             description: None,
             created_at: chrono::Utc::now(),
         }

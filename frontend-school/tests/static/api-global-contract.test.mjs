@@ -540,6 +540,11 @@ test('tenant routing uses Origin by default with explicit X-School-Subdomain ove
 		path.join(repoRoot, 'frontend-school/src/lib/api/client.ts'),
 		'utf8'
 	);
+	const nginxConfig = await readFile(
+		path.join(repoRoot, 'nginx-configs/school-api.schoolorbit.app.conf'),
+		'utf8'
+	);
+	const smokeTest = await readFile(path.join(repoRoot, 'scripts/smoke_test.sh'), 'utf8');
 
 	assert.match(subdomainResolver, /SCHOOL_SUBDOMAIN_HEADER/);
 	assert.match(subdomainResolver, /normalize_subdomain/);
@@ -552,6 +557,10 @@ test('tenant routing uses Origin by default with explicit X-School-Subdomain ove
 	assert.match(apiClient, /PUBLIC_SCHOOL_SUBDOMAIN/);
 	assert.equal(apiClient.includes('window.location.hostname'), false);
 	assert.match(apiClient, /applyTenantHeader\(headers\)/);
+
+	assert.match(nginxConfig, /Access-Control-Allow-Headers[\s\S]*X-School-Subdomain/);
+	assert.match(smokeTest, /expect_header_contains_ci/);
+	assert.match(smokeTest, /access-control-allow-headers[\s\S]*x-school-subdomain/);
 });
 
 test('frontend application code routes backend API calls through apiClient', async () => {

@@ -137,6 +137,26 @@ expect_header() {
     fi
 }
 
+expect_header_contains_ci() {
+    local name="$1"
+    local headers_file="$2"
+    local header_name="$3"
+    local expected_fragment="$4"
+    local actual
+    local actual_lower
+    local expected_lower
+
+    actual="$(header_value "$headers_file" "$header_name")"
+    actual_lower="${actual,,}"
+    expected_lower="${expected_fragment,,}"
+
+    if [[ "$actual_lower" == *"$expected_lower"* ]]; then
+        pass "$name $header_name contains $expected_fragment"
+    else
+        fail "$name expected $header_name to contain $expected_fragment, got ${actual:-<missing>}"
+    fi
+}
+
 expect_body_contains() {
     local name="$1"
     local body_file="$2"
@@ -219,6 +239,7 @@ status="$(request "login preflight" OPTIONS "$SMOKE_API_URL/api/auth/login" "$pr
     -H "Access-Control-Request-Headers: content-type,authorization,x-school-subdomain")"
 expect_status "login preflight" "$status" "204"
 expect_header "login preflight" "$preflight_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+expect_header_contains_ci "login preflight" "$preflight_headers" "access-control-allow-headers" "x-school-subdomain"
 
 if [[ -z "$SMOKE_USERNAME" || -z "$SMOKE_PASSWORD" ]]; then
     login_validation_headers="$tmp_dir/login-validation.headers"

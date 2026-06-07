@@ -5,6 +5,11 @@
 	import { resolve } from '$app/paths';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { roleAPI, permissionAPI, type Role, type PermissionsByModule } from '$lib/api/roles';
+	import {
+		permissionActionLabel,
+		permissionScopeMeta,
+		permissionScopeToneClass
+	} from '$lib/permissions/registry';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -347,6 +352,7 @@
 
 									<div class="grid grid-cols-2 gap-2 ml-6">
 										{#each permissions as permission (permission.code)}
+											{@const scopeMeta = permissionScopeMeta(permission.scope)}
 											<label
 												class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer"
 											>
@@ -355,10 +361,24 @@
 													onCheckedChange={() => togglePermission(permission.code)}
 												/>
 												<div class="flex-1 min-w-0">
-													<p class="text-sm font-medium text-foreground truncate">
-														{permission.name}
-													</p>
+													<div class="flex flex-wrap items-center gap-1.5">
+														<p class="text-sm font-medium text-foreground truncate">
+															{permission.name}
+														</p>
+														<Badge variant="outline" class="text-[11px]">
+															{permissionActionLabel(permission.action)}
+														</Badge>
+														<Badge
+															variant="outline"
+															class={`text-[11px] ${permissionScopeToneClass(scopeMeta.tone)}`}
+														>
+															{scopeMeta.label}
+														</Badge>
+													</div>
 													<p class="text-xs text-muted-foreground truncate">{permission.code}</p>
+													<p class="text-xs text-muted-foreground line-clamp-2">
+														{scopeMeta.description}
+													</p>
 												</div>
 											</label>
 										{/each}

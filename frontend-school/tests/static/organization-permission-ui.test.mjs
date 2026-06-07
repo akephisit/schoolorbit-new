@@ -48,6 +48,27 @@ test('organization permission matrix keeps header and row checkboxes aligned', a
 	assert.match(source, /flex justify-center/);
 });
 
+test('permission assignment UI explains action and resource scope', async () => {
+	const registry = await readProjectFile('src/lib/permissions/registry.ts');
+	const rolesApi = await readProjectFile('src/lib/api/roles.ts');
+	const organizationDialog = await readProjectFile(
+		'src/lib/components/staff/OrganizationPermissionDialog.svelte'
+	);
+	const roleEditor = await readProjectFile('src/routes/(app)/staff/roles/[id]/+page.svelte');
+
+	assert.match(rolesApi, /scope:\s*string/);
+	assert.match(registry, /permissionScopeMeta/);
+	assert.match(registry, /permissionActionLabel/);
+	assert.match(registry, /permissionScopeToneClass/);
+
+	for (const source of [organizationDialog, roleEditor]) {
+		assert.match(source, /permissionScopeMeta\(permission\.scope\)/);
+		assert.match(source, /permissionActionLabel\(permission\.action\)/);
+		assert.match(source, /permissionScopeToneClass\(scopeMeta\.tone\)/);
+		assert.match(source, /scopeMeta\.description/);
+	}
+});
+
 test('organization members section exposes full school position set', async () => {
 	const source = await readProjectFile(
 		'src/lib/components/staff/OrganizationMembersSection.svelte'

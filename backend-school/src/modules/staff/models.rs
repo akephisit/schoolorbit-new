@@ -341,6 +341,7 @@ pub struct Permission {
     pub name: String,
     pub module: String,
     pub action: String,
+    pub scope: String,
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
 }

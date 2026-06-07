@@ -1,8 +1,14 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { permissionAPI, type PermissionsByModule } from '$lib/api/roles';
+	import {
+		permissionActionLabel,
+		permissionScopeMeta,
+		permissionScopeToneClass
+	} from '$lib/permissions/registry';
 	import {
 		getOrganizationPermissions,
 		updateOrganizationPermissions,
@@ -287,9 +293,21 @@
 									</thead>
 									<tbody>
 										{#each permissionModules[module] as permission (permission.id)}
+											{@const scopeMeta = permissionScopeMeta(permission.scope)}
 											<tr class="border-b last:border-b-0 hover:bg-muted/20">
 												<td class="px-4 py-3 align-top">
 													<div class="space-y-1">
+														<div class="flex flex-wrap items-center gap-2">
+															<p class="text-sm font-medium text-foreground">
+																{permission.name}
+															</p>
+															<Badge variant="outline" class="text-[11px]">
+																{permissionActionLabel(permission.action)}
+															</Badge>
+															<Badge variant="outline" class={`text-[11px] ${permissionScopeToneClass(scopeMeta.tone)}`}>
+																{scopeMeta.label}
+															</Badge>
+														</div>
 														<p class="break-all font-mono text-xs font-medium text-foreground">
 															{permission.code}
 														</p>
@@ -298,6 +316,9 @@
 																{permission.description}
 															</p>
 														{/if}
+														<p class="line-clamp-2 text-xs text-muted-foreground">
+															{scopeMeta.description}
+														</p>
 													</div>
 												</td>
 												{#each permissionPositionColumns as column (column.value)}

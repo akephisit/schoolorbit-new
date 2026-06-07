@@ -23,6 +23,7 @@ export interface Permission {
 	name: string;
 	module: string;
 	action: string;
+	scope: string;
 	description?: string;
 	created_at: string;
 }
