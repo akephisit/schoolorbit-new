@@ -57,11 +57,15 @@ pub mod codes {
 
     // Student permissions
     pub const STUDENT_READ_OWN: &str = "student.read.own";
+    pub const STUDENT_READ_ASSIGNED: &str = "student.read.assigned";
     pub const STUDENT_UPDATE_OWN: &str = "student.update.own";
-    pub const STUDENT_READ_ALL: &str = "student.read.all";
+    pub const STUDENT_READ_SCHOOL: &str = "student.read.school";
     pub const STUDENT_CREATE: &str = "student.create";
     pub const STUDENT_UPDATE_ALL: &str = "student.update.all";
     pub const STUDENT_DELETE: &str = "student.delete";
+    pub const STUDENT_PII_READ_OWN: &str = "student_pii.read.own";
+    pub const STUDENT_PII_READ_ASSIGNED: &str = "student_pii.read.assigned";
+    pub const STUDENT_PII_READ_SCHOOL: &str = "student_pii.read.school";
 
     // Achievement permissions
     pub const ACHIEVEMENT_READ_OWN: &str = "achievement.read.own";
@@ -364,6 +368,14 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "นักเรียนดูข้อมูลตนเอง",
     },
     PermissionDef {
+        code: codes::STUDENT_READ_ASSIGNED,
+        name: "ดูนักเรียนที่รับผิดชอบ",
+        module: "student",
+        action: "read",
+        scope: "assigned",
+        description: "ดูข้อมูลนักเรียนที่อยู่ในห้อง/งานที่ได้รับมอบหมาย",
+    },
+    PermissionDef {
         code: codes::STUDENT_UPDATE_OWN,
         name: "แก้ไขข้อมูลตนเอง",
         module: "student",
@@ -372,12 +384,12 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "นักเรียนแก้ไขข้อมูลตนเอง (จำกัดฟิลด์)",
     },
     PermissionDef {
-        code: codes::STUDENT_READ_ALL,
-        name: "ดูนักเรียนทั้งหมด",
+        code: codes::STUDENT_READ_SCHOOL,
+        name: "ดูนักเรียนทั้งโรงเรียน",
         module: "student",
         action: "read",
-        scope: "all",
-        description: "ดูข้อมูลนักเรียนทั้งหมด",
+        scope: "school",
+        description: "ดูข้อมูลนักเรียนทั้งโรงเรียน",
     },
     PermissionDef {
         code: codes::STUDENT_CREATE,
@@ -402,6 +414,30 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "delete",
         scope: "all",
         description: "ลบนักเรียน",
+    },
+    PermissionDef {
+        code: codes::STUDENT_PII_READ_OWN,
+        name: "ดูข้อมูลอ่อนไหวนักเรียนของตนเอง",
+        module: "student_pii",
+        action: "read",
+        scope: "own",
+        description: "ดูข้อมูลอ่อนไหวของนักเรียนเฉพาะของตนเอง",
+    },
+    PermissionDef {
+        code: codes::STUDENT_PII_READ_ASSIGNED,
+        name: "ดูข้อมูลอ่อนไหวนักเรียนที่รับผิดชอบ",
+        module: "student_pii",
+        action: "read",
+        scope: "assigned",
+        description: "ดูข้อมูลอ่อนไหวของนักเรียนที่อยู่ในห้อง/งานที่ได้รับมอบหมาย",
+    },
+    PermissionDef {
+        code: codes::STUDENT_PII_READ_SCHOOL,
+        name: "ดูข้อมูลอ่อนไหวนักเรียนทั้งโรงเรียน",
+        module: "student_pii",
+        action: "read",
+        scope: "school",
+        description: "ดูข้อมูลอ่อนไหวของนักเรียนทั้งโรงเรียน",
     },
     // Achievement permissions
     PermissionDef {

@@ -4,6 +4,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::policies::resource_access_policy::UserResourceListAccess;
 use crate::utils::field_encryption;
 
 use super::models::{
@@ -12,7 +13,11 @@ use super::models::{
     UpdateStudentRequest,
 };
 
-pub async fn get_own_profile(pool: &PgPool, user_id: Uuid) -> Result<StudentProfile, AppError> {
+pub async fn get_own_profile(
+    pool: &PgPool,
+    user_id: Uuid,
+    include_pii: bool,
+) -> Result<StudentProfile, AppError> {
     ensure_student_user(pool, user_id).await?;
 
     let mut student_row = sqlx::query_as::<_, StudentDbRow>(
@@ -55,7 +60,7 @@ pub async fn get_own_profile(pool: &PgPool, user_id: Uuid) -> Result<StudentProf
     })?
     .ok_or(AppError::NotFound("Student not found".to_string()))?;
 
-    decrypt_student_row_fields(&mut student_row);
+    apply_student_pii_visibility(&mut student_row, include_pii);
     let parents = list_student_parents(pool, user_id).await?;
 
     Ok(StudentProfile {
@@ -99,6 +104,7 @@ pub async fn update_own_profile(
 pub async fn list_students(
     pool: &PgPool,
     filter: ListStudentsQuery,
+    access: UserResourceListAccess,
 ) -> Result<StudentListResponse, AppError> {
     let page = filter.page.unwrap_or(1);
     let page_size = filter.page_size.unwrap_or(20).min(100);
@@ -141,6 +147,8 @@ pub async fn list_students(
         query.push_str(&format!(" AND (u.first_name ILIKE ${idx} OR u.last_name ILIKE ${idx} OR s.student_id ILIKE ${idx} OR u.username ILIKE ${idx})"));
     }
 
+    push_student_list_access_filter(&mut query, &mut idx, access);
+
     idx += 1;
     let limit_idx = idx;
     idx += 1;
@@ -157,6 +165,7 @@ pub async fn list_students(
             q = q.bind(format!("%{search}%"));
         }
     }
+    q = bind_student_list_access_filter(q, access);
     q = q.bind(page_size);
     q = q.bind(offset);
 
@@ -170,6 +179,64 @@ pub async fn list_students(
         page,
         page_size,
     })
+}
+
+fn push_student_list_access_filter(
+    query: &mut String,
+    idx: &mut u32,
+    access: UserResourceListAccess,
+) {
+    match access {
+        UserResourceListAccess::School => {}
+        UserResourceListAccess::Own(actor_user_id)
+        | UserResourceListAccess::Assigned(actor_user_id) => {
+            *idx += 1;
+            let bind_index = *idx;
+            match access {
+                UserResourceListAccess::Own(_) => {
+                    query.push_str(&format!(" AND u.id = ${bind_index}"));
+                }
+                UserResourceListAccess::Assigned(_) => {
+                    query.push_str(&format!(
+                        r#" AND EXISTS (
+                            SELECT 1
+                            FROM student_class_enrollments scope_sce
+                            JOIN classroom_advisors scope_ca
+                              ON scope_ca.classroom_id = scope_sce.class_room_id
+                            WHERE scope_sce.student_id = u.id
+                              AND scope_sce.status = 'active'
+                              AND scope_ca.user_id = ${bind_index}
+                        )"#
+                    ));
+                }
+                _ => unreachable!("matched own or assigned access only"),
+            }
+            let _ = actor_user_id;
+        }
+        UserResourceListAccess::OrganizationUnit(_)
+        | UserResourceListAccess::OrganizationTree(_) => {
+            query.push_str(" AND false");
+        }
+    }
+}
+
+fn bind_student_list_access_filter<'q>(
+    query: sqlx::query::QueryAs<
+        'q,
+        Postgres,
+        StudentListItem,
+        <Postgres as sqlx::Database>::Arguments<'q>,
+    >,
+    access: UserResourceListAccess,
+) -> sqlx::query::QueryAs<'q, Postgres, StudentListItem, <Postgres as sqlx::Database>::Arguments<'q>>
+{
+    match access {
+        UserResourceListAccess::School
+        | UserResourceListAccess::OrganizationUnit(_)
+        | UserResourceListAccess::OrganizationTree(_) => query,
+        UserResourceListAccess::Own(actor_user_id)
+        | UserResourceListAccess::Assigned(actor_user_id) => query.bind(actor_user_id),
+    }
 }
 
 pub async fn create_student(
@@ -233,7 +300,11 @@ pub async fn create_student(
     })
 }
 
-pub async fn get_student(pool: &PgPool, student_id: Uuid) -> Result<StudentProfile, AppError> {
+pub async fn get_student(
+    pool: &PgPool,
+    student_id: Uuid,
+    include_pii: bool,
+) -> Result<StudentProfile, AppError> {
     let mut student_row = sqlx::query_as::<_, StudentDbRow>(
         r#"
         SELECT
@@ -267,7 +338,7 @@ pub async fn get_student(pool: &PgPool, student_id: Uuid) -> Result<StudentProfi
     })?
     .ok_or(AppError::NotFound("Student not found".to_string()))?;
 
-    decrypt_student_row_fields(&mut student_row);
+    apply_student_pii_visibility(&mut student_row, include_pii);
     let parents = list_student_parents(pool, student_id).await?;
 
     Ok(StudentProfile {
@@ -467,7 +538,12 @@ async fn list_student_parents(pool: &PgPool, student_id: Uuid) -> Result<Vec<Par
     })
 }
 
-fn decrypt_student_row_fields(row: &mut StudentDbRow) {
+fn apply_student_pii_visibility(row: &mut StudentDbRow, include_pii: bool) {
+    if !include_pii {
+        hide_student_pii_fields(row);
+        return;
+    }
+
     if let Some(national_id) = row.national_id.clone() {
         match field_encryption::decrypt(&national_id) {
             Ok(decrypted) => row.national_id = Some(decrypted),
@@ -481,6 +557,13 @@ fn decrypt_student_row_fields(row: &mut StudentDbRow) {
             Err(error) => eprintln!("Failed to decrypt student medical_conditions: {}", error),
         }
     }
+}
+
+fn hide_student_pii_fields(row: &mut StudentDbRow) {
+    row.national_id = None;
+    row.blood_type = None;
+    row.allergies = None;
+    row.medical_conditions = None;
 }
 
 fn parse_optional_date(value: Option<&str>) -> Result<Option<NaiveDate>, AppError> {
@@ -817,5 +900,40 @@ mod tests {
             parse_optional_date(Some("06/06/2026")),
             Err(AppError::BadRequest(message)) if message.contains("YYYY-MM-DD")
         ));
+    }
+
+    #[test]
+    fn hide_student_pii_fields_removes_sensitive_profile_values() {
+        let mut row = StudentDbRow {
+            id: Uuid::new_v4(),
+            username: "s001".to_string(),
+            national_id: Some("ciphertext".to_string()),
+            email: Some("student@example.com".to_string()),
+            first_name: "สมชาย".to_string(),
+            last_name: "ใจดี".to_string(),
+            title: Some("เด็กชาย".to_string()),
+            nickname: Some("ชาย".to_string()),
+            phone: Some("0800000000".to_string()),
+            date_of_birth: None,
+            gender: None,
+            address: Some("address".to_string()),
+            profile_image_url: None,
+            student_id: Some("S001".to_string()),
+            student_number: Some(1),
+            blood_type: Some("O".to_string()),
+            allergies: Some("ถั่ว".to_string()),
+            medical_conditions: Some("ciphertext-medical".to_string()),
+            status: Some("active".to_string()),
+            grade_level: Some("ม.1".to_string()),
+            class_room: Some("1/1".to_string()),
+        };
+
+        hide_student_pii_fields(&mut row);
+
+        assert_eq!(row.national_id, None);
+        assert_eq!(row.blood_type, None);
+        assert_eq!(row.allergies, None);
+        assert_eq!(row.medical_conditions, None);
+        assert_eq!(row.first_name, "สมชาย");
     }
 }

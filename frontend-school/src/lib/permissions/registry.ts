@@ -7,7 +7,9 @@ export const PERMISSION_MODULES = {
 	SETTINGS: 'settings',
 	STAFF: 'staff',
 	STAFF_PII: 'staff_pii',
-	STAFF_PROFILE: 'staff_profile'
+	STAFF_PROFILE: 'staff_profile',
+	STUDENT: 'student',
+	STUDENT_PII: 'student_pii'
 } as const;
 
 export const PERMISSIONS = {
@@ -36,7 +38,12 @@ export const PERMISSIONS = {
 	STAFF_PROFILE_READ_ORGANIZATION_TREE: 'staff_profile.read.organization_tree',
 	STAFF_PROFILE_READ_ORGANIZATION_UNIT: 'staff_profile.read.organization_unit',
 	STAFF_PROFILE_READ_SCHOOL: 'staff_profile.read.school',
-	STUDENT_READ_ALL: 'student.read.all'
+	STUDENT_PII_READ_ASSIGNED: 'student_pii.read.assigned',
+	STUDENT_PII_READ_OWN: 'student_pii.read.own',
+	STUDENT_PII_READ_SCHOOL: 'student_pii.read.school',
+	STUDENT_READ_ASSIGNED: 'student.read.assigned',
+	STUDENT_READ_OWN: 'student.read.own',
+	STUDENT_READ_SCHOOL: 'student.read.school'
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

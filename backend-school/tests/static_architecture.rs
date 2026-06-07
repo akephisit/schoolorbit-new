@@ -367,6 +367,40 @@ fn academic_curriculum_access_uses_resource_policy_tree_resolution() {
 }
 
 #[test]
+fn student_profile_access_uses_resource_policy_and_separate_pii_scope() {
+    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let student_handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/students/handlers.rs"),
+    ));
+    let student_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/students/services.rs"),
+    ));
+    let backend_registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let frontend_registry = read_source(
+        repo_root()
+            .join("frontend-school")
+            .join("src/lib/permissions/registry.ts"),
+    );
+
+    assert!(policies_root.contains("pub mod student_access_policy;"));
+    assert!(student_handler.contains("student_access_policy::can_read_student_profile"));
+    assert!(student_handler.contains("student_access_policy::can_read_student_pii"));
+    assert!(student_handler.contains("student_access_policy::resolve_student_list_access"));
+    assert!(!student_handler.contains("actor.require_permission(codes::STUDENT_READ"));
+    assert!(student_service.contains("UserResourceListAccess"));
+    assert!(student_service.contains("include_pii: bool"));
+    assert!(student_service.contains("hide_student_pii_fields"));
+
+    for source in [&backend_registry, &frontend_registry] {
+        assert!(source.contains("student.read.school"));
+        assert!(source.contains("student.read.assigned"));
+        assert!(source.contains("student_pii.read.own"));
+        assert!(source.contains("student_pii.read.assigned"));
+        assert!(source.contains("student_pii.read.school"));
+    }
+}
+
+#[test]
 fn staff_access_policy_uses_resource_access_foundation() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let staff_policy = strip_comments(&read_source(

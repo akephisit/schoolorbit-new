@@ -13,6 +13,7 @@ use super::services as student_service;
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::permissions::registry::codes;
+use crate::policies::student_access_policy;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
@@ -24,7 +25,10 @@ pub async fn get_own_profile(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let student = student_service::get_own_profile(&pool, actor.user_id).await?;
+    student_access_policy::can_read_student_profile(&pool, &actor, actor.user_id).await?;
+    let include_pii =
+        student_access_policy::can_read_student_pii(&pool, &actor, actor.user_id).await?;
+    let student = student_service::get_own_profile(&pool, actor.user_id, include_pii).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }
@@ -55,9 +59,9 @@ pub async fn list_students(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::STUDENT_READ_ALL)?;
+    let access = student_access_policy::resolve_student_list_access(&actor)?;
 
-    let students = student_service::list_students(&pool, filter).await?;
+    let students = student_service::list_students(&pool, filter, access).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(students))))
 }
@@ -90,9 +94,11 @@ pub async fn get_student(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::STUDENT_READ_ALL)?;
+    student_access_policy::can_read_student_profile(&pool, &actor, student_id).await?;
+    let include_pii =
+        student_access_policy::can_read_student_pii(&pool, &actor, student_id).await?;
 
-    let student = student_service::get_student(&pool, student_id).await?;
+    let student = student_service::get_student(&pool, student_id, include_pii).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }

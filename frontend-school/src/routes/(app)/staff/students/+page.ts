@@ -2,7 +2,7 @@
  * Student Management Page (Staff)
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -11,7 +11,7 @@ export const _meta = {
 		group: 'academic',
 		order: 5, // Top priority in academic
 		user_type: 'staff',
-		permission: PERMISSIONS.STUDENT_READ_ALL
+		permission: PERMISSION_MODULES.STUDENT
 	}
 };
 
