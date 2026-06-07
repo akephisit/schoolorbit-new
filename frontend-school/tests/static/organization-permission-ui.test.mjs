@@ -94,3 +94,18 @@ test('organization overview uses focused navigation with selected-unit details',
 	assert.match(source, /เปิดรายละเอียด/);
 	assert.doesNotMatch(source, /grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6/);
 });
+
+test('organization detail uses focused unit workspace layout', async () => {
+	const source = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.svelte');
+
+	assert.match(source, /detailStats/);
+	assert.match(source, /primaryMembers/);
+	assert.match(source, /contactItems/);
+	assert.match(source, /contextPanel/);
+	assert.match(source, /canUpdateOrganizationUnit/);
+	assert.match(source, /PERMISSIONS\.ROLES_UPDATE_ALL/);
+	assert.match(source, /แก้ไขหน่วยงาน/);
+	assert.match(source, /งานหลักของหน่วยงาน/);
+	assert.match(source, /activeTab = \$state<DetailTab>\('members'\)/);
+	assert.doesNotMatch(source, /activeTab = \$state<DetailTab>\('overview'\)/);
+});

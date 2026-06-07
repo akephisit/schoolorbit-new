@@ -25,6 +25,7 @@
 	import OrganizationMembersSection from '$lib/components/staff/OrganizationMembersSection.svelte';
 	import {
 		ArrowLeft,
+		ArrowRight,
 		Phone,
 		Mail,
 		MapPin,
@@ -35,12 +36,14 @@
 		Trash2,
 		KeyRound,
 		Network,
-		Info
+		Info,
+		Pencil,
+		Users
 	} from 'lucide-svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 
 	const { params }: PageProps = $props();
-	type DetailTab = 'overview' | 'members' | 'permissions' | 'children' | 'delegations';
+	type DetailTab = 'members' | 'permissions' | 'children' | 'delegations';
 
 	let deptId = $derived(params.id);
 	let department: OrganizationUnit | null = $state(null);
@@ -48,16 +51,15 @@
 	let childDepts: OrganizationUnit[] = $state([]);
 	let deptMembers: OrganizationMemberItem[] = $state([]);
 	let delegations: DelegationItem[] = $state([]);
-	let activeTab = $state<DetailTab>('overview');
+	let activeTab = $state<DetailTab>('members');
+	let showEditDialog = $state(false);
 	let showPermissionDialog = $state(false);
 
-	// Child dept dialog
 	let showAddChildDialog = $state(false);
 	let delegatablePerms: DelegatablePermission[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
 
-	// Delegation form state
 	let showDelegateDialog = $state(false);
 	let delegateForm = $state({ to_user_id: '', permission_id: '', reason: '', expires_at: '' });
 	let delegateSubmitting = $state(false);
@@ -68,12 +70,56 @@
 			['director', 'deputy_director', 'head'].includes(member.position_code)
 		).length
 	);
+
+	let primaryMembers = $derived(
+		deptMembers.filter((member) =>
+			['director', 'deputy_director', 'head', 'deputy_head', 'coordinator'].includes(
+				member.position_code
+			)
+		)
+	);
+
 	let canManageDelegations = $derived.by(
 		() =>
 			$can.has(PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT) ||
 			$can.has(PERMISSIONS.ROLES_ASSIGN_ALL) ||
 			$can.has(PERMISSIONS.ROLES_UPDATE_ALL)
 	);
+	let canUpdateOrganizationUnit = $derived.by(() => $can.has(PERMISSIONS.ROLES_UPDATE_ALL));
+
+	let parentUnit = $derived.by(() => {
+		const currentDepartment = department;
+		if (!currentDepartment?.parent_unit_id) return null;
+		return allDepartments.find((unit) => unit.id === currentDepartment.parent_unit_id) ?? null;
+	});
+
+	let contextPanel = $derived.by(() => ({
+		parentName:
+			parentUnit?.name ?? (department?.unit_type === 'school' ? 'ระดับโรงเรียน' : 'ไม่มีข้อมูล'),
+		parentCode: parentUnit?.code ?? '',
+		childCount: childDepts.length,
+		memberCount: deptMembers.length
+	}));
+
+	let detailStats = $derived.by(() => {
+		const stats = [
+			{ label: 'สมาชิก', value: deptMembers.length, helper: 'คนในหน่วยงานนี้' },
+			{ label: 'งานหลัก', value: primaryMembers.length, helper: 'หัวหน้าและผู้รับผิดชอบ' },
+			{ label: 'หน่วยงานย่อย', value: childDepts.length, helper: 'ใต้โครงสร้างนี้' }
+		];
+
+		if (canManageDelegations) {
+			stats.push({ label: 'มอบหมายสิทธิ์', value: delegations.length, helper: 'รายการที่ใช้งาน' });
+		}
+
+		return stats;
+	});
+
+	let contactItems = $derived.by(() => [
+		{ key: 'phone', label: 'โทรศัพท์', value: department?.phone || '-' },
+		{ key: 'email', label: 'อีเมล', value: department?.email || '-' },
+		{ key: 'location', label: 'สถานที่', value: department?.location || '-' }
+	]);
 
 	let unitTypeText = $derived.by(() => {
 		if (!department) return '-';
@@ -99,23 +145,37 @@
 
 	let detailTabs = $derived.by(() => {
 		const tabs: { id: DetailTab; label: string; count?: number }[] = [
-			{ id: 'overview', label: 'ภาพรวม' },
 			{ id: 'members', label: 'สมาชิก', count: deptMembers.length },
-			{ id: 'permissions', label: 'สิทธิ์' },
+			{ id: 'permissions', label: 'สิทธิ์ตามตำแหน่ง' },
 			{ id: 'children', label: 'หน่วยงานย่อย', count: childDepts.length }
 		];
 
 		if (canManageDelegations) {
-			tabs.push({ id: 'delegations', label: 'มอบหมาย', count: delegations.length });
+			tabs.push({ id: 'delegations', label: 'มอบหมายสิทธิ์', count: delegations.length });
 		}
 
 		return tabs;
 	});
 
+	function positionLabel(positionCode: string, positionTitle?: string | null): string {
+		if (positionTitle) return positionTitle;
+		if (positionCode === 'director') return 'ผู้อำนวยการ';
+		if (positionCode === 'deputy_director') return 'รองผู้อำนวยการ';
+		if (positionCode === 'head') return 'หัวหน้า';
+		if (positionCode === 'deputy_head') return 'รองหัวหน้า';
+		if (positionCode === 'coordinator') return 'ผู้ประสานงาน';
+		return 'สมาชิก';
+	}
+
+	function memberWorkText(member: OrganizationMemberItem): string {
+		return member.responsibilities || positionLabel(member.position_code, member.position_title);
+	}
+
 	async function loadData() {
 		if (!deptId) return;
 		try {
 			loading = true;
+			error = '';
 			const [deptRes, membersRes, allDeptsRes] = await Promise.all([
 				getOrganizationUnit(deptId),
 				listOrganizationMembers(deptId),
@@ -132,7 +192,7 @@
 			if (allDeptsRes.success && allDeptsRes.data) {
 				allDepartments = allDeptsRes.data;
 				childDepts = allDeptsRes.data
-					.filter((d) => d.parent_unit_id === deptId)
+					.filter((unit) => unit.parent_unit_id === deptId)
 					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 			}
 		} catch (e: unknown) {
@@ -159,7 +219,7 @@
 	async function handleRevoke(delegationId: string) {
 		const res = await revokeDelegation(delegationId);
 		if (res.success) {
-			delegations = delegations.filter((d) => d.id !== delegationId);
+			delegations = delegations.filter((delegation) => delegation.id !== delegationId);
 		}
 	}
 
@@ -204,42 +264,25 @@
 	<title>{department ? department.name : 'รายละเอียดหน่วยงาน'} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header / Back -->
-	<div class="flex items-center gap-4">
-		<Button href="/staff/organization" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4" />
+<div class="space-y-5">
+	<div class="flex items-center gap-3">
+		<Button href="/staff/organization" variant="ghost" size="sm" class="gap-2">
+			<ArrowLeft class="h-4 w-4" />
+			โครงสร้าง
 		</Button>
-		<div class="flex-1">
-			<h1 class="text-2xl font-bold text-foreground flex items-center gap-2">
-				{#if loading}
-					กำลังโหลด...
-				{:else if department}
-					{#if department.category === 'academic'}
-						<GraduationCap class="w-8 h-8 text-orange-500" />
-					{:else}
-						<Briefcase class="w-8 h-8 text-blue-500" />
-					{/if}
-					{department.name}
-				{:else}
-					ไม่พบข้อมูล
-				{/if}
-			</h1>
-			{#if department?.name_en}
-				<p class="text-muted-foreground ml-10">{department.name_en}</p>
-			{/if}
-		</div>
 	</div>
 
 	{#if loading}
-		<div class="p-12 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
+		<div class="rounded-lg border bg-card p-12 text-center text-sm text-muted-foreground">
+			กำลังโหลดข้อมูล...
+		</div>
 	{:else if error}
-		<div class="p-6 bg-destructive/10 text-destructive rounded-lg">{error}</div>
+		<div class="rounded-lg bg-destructive/10 p-6 text-sm text-destructive">{error}</div>
 	{:else if department}
 		<div class="space-y-5">
-			<div class="rounded-lg border bg-card p-5">
-				<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-					<div class="min-w-0 space-y-3">
+			<section class="rounded-lg border bg-card p-5">
+				<div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+					<div class="min-w-0 space-y-4">
 						<div class="flex flex-wrap items-center gap-2">
 							<Badge variant="outline">{department.code}</Badge>
 							<Badge variant="secondary">{categoryText}</Badge>
@@ -247,228 +290,351 @@
 								{unitTypeText}
 							</Badge>
 						</div>
-						<p class="max-w-3xl text-sm text-muted-foreground">
-							{department.description || 'ยังไม่มีรายละเอียด'}
-						</p>
+
+						<div class="flex items-start gap-3">
+							<div
+								class="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+							>
+								{#if department.category === 'academic'}
+									<GraduationCap class="h-6 w-6" />
+								{:else}
+									<Briefcase class="h-6 w-6" />
+								{/if}
+							</div>
+							<div class="min-w-0">
+								<h1 class="break-words text-2xl font-bold text-foreground">{department.name}</h1>
+								{#if department.name_en}
+									<p class="mt-1 text-sm text-muted-foreground">{department.name_en}</p>
+								{/if}
+								<p class="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+									{department.description || 'ยังไม่มีรายละเอียดหน่วยงาน'}
+								</p>
+							</div>
+						</div>
 					</div>
 
 					<div class="flex flex-wrap gap-2">
-						{#if $can.hasModule(PERMISSION_MODULES.ROLES)}
-							<Button variant="outline" onclick={() => (showPermissionDialog = true)}>
-								<KeyRound class="mr-2 h-4 w-4" />
+						{#if canUpdateOrganizationUnit}
+							<Button variant="outline" class="gap-2" onclick={() => (showEditDialog = true)}>
+								<Pencil class="h-4 w-4" />
+								แก้ไขหน่วยงาน
+							</Button>
+						{/if}
+						{#if $can.hasModule(PERMISSION_MODULES.ROLES) && canUpdateOrganizationUnit}
+							<Button variant="outline" class="gap-2" onclick={() => (showPermissionDialog = true)}>
+								<KeyRound class="h-4 w-4" />
 								สิทธิ์ตามตำแหน่ง
 							</Button>
 						{/if}
 						{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
-							<Button variant="outline" onclick={() => (showAddChildDialog = true)}>
-								<Plus class="mr-2 h-4 w-4" />
-								เพิ่มหน่วยงาน
+							<Button class="gap-2" onclick={() => (showAddChildDialog = true)}>
+								<Plus class="h-4 w-4" />
+								เพิ่มหน่วยงานย่อย
 							</Button>
 						{/if}
 					</div>
 				</div>
 
-				<div class="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-					<div class="rounded-md border bg-muted/20 p-3">
-						<p class="text-xs text-muted-foreground">สมาชิก</p>
-						<p class="text-xl font-semibold">{deptMembers.length}</p>
-					</div>
-					<div class="rounded-md border bg-muted/20 p-3">
-						<p class="text-xs text-muted-foreground">ผู้บริหาร/หัวหน้า</p>
-						<p class="text-xl font-semibold">{leaderCount}</p>
-					</div>
-					<div class="rounded-md border bg-muted/20 p-3">
-						<p class="text-xs text-muted-foreground">หน่วยงานย่อย</p>
-						<p class="text-xl font-semibold">{childDepts.length}</p>
-					</div>
-					<div class="rounded-md border bg-muted/20 p-3">
-						<p class="text-xs text-muted-foreground">มอบหมายสิทธิ์</p>
-						<p class="text-xl font-semibold">{delegations.length}</p>
-					</div>
+				<div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+					{#each detailStats as stat (stat.label)}
+						<div class="rounded-lg border bg-muted/20 p-4">
+							<p class="text-xs font-medium text-muted-foreground">{stat.label}</p>
+							<div class="mt-2 flex items-end justify-between gap-3">
+								<p class="text-2xl font-semibold leading-none">{stat.value}</p>
+								<p class="text-right text-xs text-muted-foreground">{stat.helper}</p>
+							</div>
+						</div>
+					{/each}
 				</div>
-			</div>
+			</section>
 
-			<div class="flex gap-2 overflow-x-auto rounded-lg border bg-card p-1">
-				{#each detailTabs as tab (tab.id)}
-					<button
-						type="button"
-						class="flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors {activeTab ===
-						tab.id
-							? 'bg-primary text-primary-foreground'
-							: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
-						onclick={() => (activeTab = tab.id)}
-					>
-						<span>{tab.label}</span>
-						{#if tab.count !== undefined}
-							<span
-								class="rounded-full px-1.5 text-xs {activeTab === tab.id
-									? 'bg-primary-foreground/20'
-									: 'bg-muted'}">{tab.count}</span
+			<div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+				<main class="min-w-0 space-y-4">
+					<div class="flex gap-2 overflow-x-auto rounded-lg border bg-card p-1">
+						{#each detailTabs as tab (tab.id)}
+							<button
+								type="button"
+								class="flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors {activeTab ===
+								tab.id
+									? 'bg-primary text-primary-foreground'
+									: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+								onclick={() => (activeTab = tab.id)}
 							>
-						{/if}
-					</button>
-				{/each}
-			</div>
-
-			{#if activeTab === 'overview'}
-				<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-					<div class="rounded-lg border bg-card p-5 space-y-4">
-						<h2 class="flex items-center gap-2 text-lg font-semibold">
-							<Info class="h-5 w-5" />
-							ข้อมูลทั่วไป
-						</h2>
-						<div class="grid gap-4 sm:grid-cols-2">
-							<div>
-								<span class="text-sm text-muted-foreground">รหัสหน่วยงาน</span>
-								<p class="font-medium">{department.code}</p>
-							</div>
-							<div>
-								<span class="text-sm text-muted-foreground">ประเภท</span>
-								<p class="font-medium">{categoryText} · {unitTypeText}</p>
-							</div>
-							<div class="sm:col-span-2">
-								<span class="text-sm text-muted-foreground">รายละเอียด</span>
-								<p class="mt-1">{department.description || '-'}</p>
-							</div>
-						</div>
-					</div>
-
-					<div class="rounded-lg border bg-card p-5 space-y-4">
-						<h2 class="flex items-center gap-2 text-lg font-semibold">
-							<Phone class="h-5 w-5" />
-							การติดต่อ
-						</h2>
-						<div class="grid gap-3">
-							<div class="flex items-center gap-3">
-								<Phone class="h-4 w-4 text-muted-foreground" />
-								<span class="text-sm">{department.phone || '-'}</span>
-							</div>
-							<div class="flex items-center gap-3">
-								<Mail class="h-4 w-4 text-muted-foreground" />
-								<span class="text-sm">{department.email || '-'}</span>
-							</div>
-							<div class="flex items-center gap-3">
-								<MapPin class="h-4 w-4 text-muted-foreground" />
-								<span class="text-sm">{department.location || '-'}</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			{:else if activeTab === 'members'}
-				<OrganizationMembersSection
-					organizationUnitId={deptId}
-					childUnits={childDepts}
-					onChanged={loadData}
-				/>
-			{:else if activeTab === 'permissions'}
-				<div class="rounded-lg border bg-card p-6">
-					<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-						<div class="space-y-1">
-							<h2 class="flex items-center gap-2 text-lg font-semibold">
-								<KeyRound class="h-5 w-5" />
-								สิทธิ์ตามตำแหน่ง
-							</h2>
-							<p class="text-sm text-muted-foreground">
-								{department.name}
-							</p>
-						</div>
-						<Button onclick={() => (showPermissionDialog = true)}>
-							<KeyRound class="mr-2 h-4 w-4" />
-							เปิดตารางสิทธิ์
-						</Button>
-					</div>
-				</div>
-			{:else if activeTab === 'children'}
-				<div class="rounded-lg border bg-card p-6 space-y-4">
-					<div class="flex items-center justify-between">
-						<h2 class="flex items-center gap-2 text-lg font-semibold">
-							<Network class="h-5 w-5" />
-							หน่วยงานย่อย
-						</h2>
-						{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
-							<Button size="sm" onclick={() => (showAddChildDialog = true)}>
-								<Plus class="mr-1 h-4 w-4" />
-								เพิ่มหน่วยงาน
-							</Button>
-						{/if}
-					</div>
-					{#if childDepts.length === 0}
-						<div
-							class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
-						>
-							ยังไม่มีหน่วยงานย่อย
-						</div>
-					{:else}
-						<div class="grid gap-3 md:grid-cols-2">
-							{#each childDepts as child (child.id)}
-								<button
-									onclick={() => goToChildDept(child.id)}
-									class="flex w-full items-center justify-between rounded-md border px-4 py-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30"
-								>
-									<div class="min-w-0">
-										<p class="truncate text-sm font-medium">{child.name}</p>
-										<p class="font-mono text-xs text-muted-foreground">{child.code}</p>
-									</div>
-									<Briefcase class="h-4 w-4 text-muted-foreground" />
-								</button>
-							{/each}
-						</div>
-					{/if}
-				</div>
-			{:else if activeTab === 'delegations'}
-				<div class="rounded-lg border bg-card p-6 space-y-4">
-					<div class="flex items-center justify-between">
-						<h2 class="flex items-center gap-2 text-lg font-semibold">
-							<Shield class="h-5 w-5" />
-							การมอบหมายสิทธิ์
-						</h2>
-						<Button size="sm" onclick={() => (showDelegateDialog = true)}>
-							<Plus class="mr-1 h-4 w-4" />
-							มอบหมายสิทธิ์
-						</Button>
-					</div>
-
-					{#if delegations.length === 0}
-						<div
-							class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
-						>
-							ยังไม่มีการมอบหมายสิทธิ์
-						</div>
-					{:else}
-						<div class="divide-y divide-border">
-							{#each delegations as d (d.id)}
-								<div class="flex items-start justify-between gap-4 py-3">
-									<div class="space-y-0.5">
-										<p class="text-sm font-medium">{d.to_user_name}</p>
-										<p class="text-xs text-muted-foreground">
-											{d.permission_name} <span class="font-mono">({d.permission_code})</span>
-										</p>
-										{#if d.reason}
-											<p class="text-xs text-muted-foreground">เหตุผล: {d.reason}</p>
-										{/if}
-										{#if d.expires_at}
-											<p class="text-xs text-muted-foreground">
-												หมดอายุ: {new Date(d.expires_at).toLocaleDateString('th-TH')}
-											</p>
-										{/if}
-									</div>
-									<Button
-										variant="ghost"
-										size="sm"
-										onclick={() => handleRevoke(d.id)}
-										class="shrink-0 text-destructive hover:text-destructive"
+								<span>{tab.label}</span>
+								{#if tab.count !== undefined}
+									<span
+										class="rounded-full px-1.5 text-xs {activeTab === tab.id
+											? 'bg-primary-foreground/20'
+											: 'bg-muted'}">{tab.count}</span
 									>
-										<Trash2 class="h-4 w-4" />
+								{/if}
+							</button>
+						{/each}
+					</div>
+
+					{#if activeTab === 'members'}
+						<OrganizationMembersSection
+							organizationUnitId={deptId}
+							childUnits={childDepts}
+							onChanged={loadData}
+						/>
+					{:else if activeTab === 'permissions'}
+						<section class="space-y-4 rounded-lg border bg-card p-5">
+							<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+								<div class="space-y-1">
+									<h2 class="flex items-center gap-2 text-lg font-semibold">
+										<KeyRound class="h-5 w-5 text-primary" />
+										สิทธิ์ตามตำแหน่ง
+									</h2>
+									<p class="max-w-2xl text-sm text-muted-foreground">
+										กำหนดสิทธิ์ตามตำแหน่งในหน่วยงานนี้ เช่น ผู้อำนวยการ หัวหน้า รองหัวหน้า และสมาชิก
+									</p>
+								</div>
+								<Button class="gap-2" onclick={() => (showPermissionDialog = true)}>
+									<KeyRound class="h-4 w-4" />
+									เปิดตารางสิทธิ์
+								</Button>
+							</div>
+							<div class="grid gap-3 sm:grid-cols-3">
+								<div class="rounded-lg border bg-muted/20 p-3">
+									<p class="text-xs text-muted-foreground">หน่วยงาน</p>
+									<p class="mt-1 truncate text-sm font-medium">{department.name}</p>
+								</div>
+								<div class="rounded-lg border bg-muted/20 p-3">
+									<p class="text-xs text-muted-foreground">รหัส</p>
+									<p class="mt-1 font-mono text-sm font-medium">{department.code}</p>
+								</div>
+								<div class="rounded-lg border bg-muted/20 p-3">
+									<p class="text-xs text-muted-foreground">ตำแหน่งหลัก</p>
+									<p class="mt-1 text-sm font-medium">{leaderCount} รายการ</p>
+								</div>
+							</div>
+						</section>
+					{:else if activeTab === 'children'}
+						<section class="space-y-4 rounded-lg border bg-card p-5">
+							<div class="flex items-center justify-between gap-3">
+								<div class="space-y-1">
+									<h2 class="flex items-center gap-2 text-lg font-semibold">
+										<Network class="h-5 w-5 text-primary" />
+										หน่วยงานย่อย
+									</h2>
+									<p class="text-sm text-muted-foreground">
+										หน่วยงานที่อยู่ภายใต้ {department.name}
+									</p>
+								</div>
+								{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
+									<Button size="sm" class="gap-2" onclick={() => (showAddChildDialog = true)}>
+										<Plus class="h-4 w-4" />
+										เพิ่ม
 									</Button>
+								{/if}
+							</div>
+							{#if childDepts.length === 0}
+								<div
+									class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
+								>
+									ยังไม่มีหน่วยงานย่อย
+								</div>
+							{:else}
+								<div class="grid gap-3 md:grid-cols-2">
+									{#each childDepts as child (child.id)}
+										<button
+											type="button"
+											onclick={() => goToChildDept(child.id)}
+											class="flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30"
+										>
+											<div class="min-w-0">
+												<p class="truncate text-sm font-medium">{child.name}</p>
+												<p class="mt-1 font-mono text-xs text-muted-foreground">{child.code}</p>
+											</div>
+											<ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
+										</button>
+									{/each}
+								</div>
+							{/if}
+						</section>
+					{:else if activeTab === 'delegations' && canManageDelegations}
+						<section class="space-y-4 rounded-lg border bg-card p-5">
+							<div class="flex items-center justify-between gap-3">
+								<div class="space-y-1">
+									<h2 class="flex items-center gap-2 text-lg font-semibold">
+										<Shield class="h-5 w-5 text-primary" />
+										การมอบหมายสิทธิ์
+									</h2>
+									<p class="text-sm text-muted-foreground">
+										มอบหมายสิทธิ์ชั่วคราวให้สมาชิกในหน่วยงานนี้
+									</p>
+								</div>
+								<Button size="sm" class="gap-2" onclick={() => (showDelegateDialog = true)}>
+									<Plus class="h-4 w-4" />
+									มอบหมาย
+								</Button>
+							</div>
+
+							{#if delegations.length === 0}
+								<div
+									class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
+								>
+									ยังไม่มีการมอบหมายสิทธิ์
+								</div>
+							{:else}
+								<div class="divide-y rounded-lg border">
+									{#each delegations as delegation (delegation.id)}
+										<div class="flex items-start justify-between gap-4 px-4 py-3">
+											<div class="min-w-0 space-y-0.5">
+												<p class="truncate text-sm font-medium">{delegation.to_user_name}</p>
+												<p class="text-xs text-muted-foreground">
+													{delegation.permission_name}
+													<span class="font-mono">({delegation.permission_code})</span>
+												</p>
+												{#if delegation.reason}
+													<p class="text-xs text-muted-foreground">เหตุผล: {delegation.reason}</p>
+												{/if}
+												{#if delegation.expires_at}
+													<p class="text-xs text-muted-foreground">
+														หมดอายุ: {new Date(delegation.expires_at).toLocaleDateString('th-TH')}
+													</p>
+												{/if}
+											</div>
+											<Button
+												variant="ghost"
+												size="sm"
+												onclick={() => handleRevoke(delegation.id)}
+												class="shrink-0 text-destructive hover:text-destructive"
+											>
+												<Trash2 class="h-4 w-4" />
+											</Button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</section>
+					{/if}
+				</main>
+
+				<aside class="space-y-4">
+					<section class="rounded-lg border bg-card p-5">
+						<div class="flex items-center gap-2">
+							<Info class="h-5 w-5 text-primary" />
+							<h2 class="font-semibold">ข้อมูลหน่วยงาน</h2>
+						</div>
+						<div class="mt-4 space-y-3 text-sm">
+							<div class="rounded-lg border bg-muted/20 p-3">
+								<p class="text-xs text-muted-foreground">สังกัดภายใต้</p>
+								<p class="mt-1 font-medium">{contextPanel.parentName}</p>
+								{#if contextPanel.parentCode}
+									<p class="mt-1 font-mono text-xs text-muted-foreground">
+										{contextPanel.parentCode}
+									</p>
+								{/if}
+							</div>
+							{#each contactItems as item (item.key)}
+								<div class="flex items-start gap-3 rounded-lg border px-3 py-2">
+									{#if item.key === 'phone'}
+										<Phone class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+									{:else if item.key === 'email'}
+										<Mail class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+									{:else}
+										<MapPin class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+									{/if}
+									<div class="min-w-0">
+										<p class="text-xs text-muted-foreground">{item.label}</p>
+										<p class="break-words font-medium">{item.value}</p>
+									</div>
 								</div>
 							{/each}
 						</div>
-					{/if}
-				</div>
-			{/if}
+					</section>
+
+					<section class="rounded-lg border bg-card p-5">
+						<div class="flex items-center justify-between gap-3">
+							<div class="flex items-center gap-2">
+								<Users class="h-5 w-5 text-primary" />
+								<h2 class="font-semibold">งานหลักของหน่วยงาน</h2>
+							</div>
+							<Badge variant="outline">{contextPanel.memberCount} คน</Badge>
+						</div>
+
+						{#if primaryMembers.length === 0}
+							<div
+								class="mt-4 rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground"
+							>
+								ยังไม่มีผู้รับผิดชอบหลัก
+							</div>
+						{:else}
+							<div class="mt-4 divide-y rounded-lg border">
+								{#each primaryMembers.slice(0, 5) as member (member.user_id + '-' + member.organization_unit_id + '-' + member.position_code)}
+									<div class="space-y-1 px-3 py-3">
+										<div class="flex items-start justify-between gap-3">
+											<div class="min-w-0">
+												<p class="truncate text-sm font-medium">{member.name}</p>
+												<p class="text-xs text-muted-foreground">
+													{positionLabel(member.position_code, member.position_title)}
+												</p>
+											</div>
+											{#if member.is_primary}
+												<Badge variant="outline" class="shrink-0 text-[10px]">หลัก</Badge>
+											{/if}
+										</div>
+										<p class="line-clamp-2 text-xs text-muted-foreground">
+											{memberWorkText(member)}
+										</p>
+									</div>
+								{/each}
+							</div>
+							{#if primaryMembers.length > 5}
+								<p class="mt-2 text-xs text-muted-foreground">
+									และอีก {primaryMembers.length - 5} คนในรายชื่อสมาชิก
+								</p>
+							{/if}
+						{/if}
+					</section>
+
+					<section class="rounded-lg border bg-card p-5">
+						<div class="flex items-center justify-between gap-3">
+							<div class="flex items-center gap-2">
+								<Network class="h-5 w-5 text-primary" />
+								<h2 class="font-semibold">หน่วยงานย่อย</h2>
+							</div>
+							<Badge variant="outline">{contextPanel.childCount}</Badge>
+						</div>
+						{#if childDepts.length === 0}
+							<p class="mt-4 text-sm text-muted-foreground">ยังไม่มีหน่วยงานย่อย</p>
+						{:else}
+							<div class="mt-4 space-y-2">
+								{#each childDepts.slice(0, 4) as child (child.id)}
+									<button
+										type="button"
+										onclick={() => goToChildDept(child.id)}
+										class="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:border-primary/50 hover:bg-muted/30"
+									>
+										<div class="min-w-0">
+											<p class="truncate font-medium">{child.name}</p>
+											<p class="font-mono text-xs text-muted-foreground">{child.code}</p>
+										</div>
+										<ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
+									</button>
+								{/each}
+							</div>
+							{#if childDepts.length > 4}
+								<p class="mt-2 text-xs text-muted-foreground">
+									และอีก {childDepts.length - 4} หน่วยงานในแท็บหน่วยงานย่อย
+								</p>
+							{/if}
+						{/if}
+					</section>
+				</aside>
+			</div>
 		</div>
 	{/if}
 </div>
+
+<OrganizationUnitDialog
+	bind:open={showEditDialog}
+	organizationUnitToEdit={department}
+	organizationUnits={allDepartments}
+	onSuccess={loadData}
+/>
 
 <OrganizationUnitDialog
 	bind:open={showAddChildDialog}
@@ -484,16 +650,13 @@
 	onSuccess={loadData}
 />
 
-<!-- Delegate Permission Dialog -->
 {#if showDelegateDialog}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-		<div
-			class="bg-background border border-border rounded-xl shadow-lg w-full max-w-md p-6 space-y-4"
-		>
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+		<div class="w-full max-w-md space-y-4 rounded-lg border bg-background p-6 shadow-lg">
 			<h3 class="text-lg font-semibold">มอบหมายสิทธิ์</h3>
 
 			{#if delegateError}
-				<div class="text-sm text-destructive bg-destructive/10 rounded p-3">{delegateError}</div>
+				<div class="rounded bg-destructive/10 p-3 text-sm text-destructive">{delegateError}</div>
 			{/if}
 
 			<div class="space-y-3">
@@ -505,8 +668,8 @@
 						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 					>
 						<option value="">-- เลือกสมาชิก --</option>
-						{#each deptMembers as m (m.user_id + '-' + m.organization_unit_id)}
-							<option value={m.user_id}>{m.name}</option>
+						{#each deptMembers as member (member.user_id + '-' + member.organization_unit_id)}
+							<option value={member.user_id}>{member.name}</option>
 						{/each}
 					</select>
 				</div>
@@ -519,16 +682,16 @@
 						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 					>
 						<option value="">-- เลือกสิทธิ์ --</option>
-						{#each delegatablePerms as p (p.id)}
-							<option value={p.id}>{p.name} ({p.code})</option>
+						{#each delegatablePerms as permission (permission.id)}
+							<option value={permission.id}>{permission.name} ({permission.code})</option>
 						{/each}
 					</select>
 				</div>
 
 				<div class="space-y-1">
-					<label for="delegate-reason" class="text-sm font-medium"
-						>เหตุผล <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label
-					>
+					<label for="delegate-reason" class="text-sm font-medium">
+						เหตุผล <span class="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+					</label>
 					<input
 						id="delegate-reason"
 						type="text"
@@ -539,9 +702,9 @@
 				</div>
 
 				<div class="space-y-1">
-					<label for="delegate-expires" class="text-sm font-medium"
-						>วันหมดอายุ <span class="text-muted-foreground font-normal">(ไม่บังคับ)</span></label
-					>
+					<label for="delegate-expires" class="text-sm font-medium">
+						วันหมดอายุ <span class="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+					</label>
 					<input
 						id="delegate-expires"
 						type="date"
