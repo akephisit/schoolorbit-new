@@ -626,10 +626,13 @@ export const addSubjectsToVersion = async (
 		display_order?: number;
 	}[]
 ) => {
-	return await fetchApi<{ count: number }>(`/api/academic/study-plan-versions/${versionId}/subjects`, {
-		method: 'POST',
-		body: JSON.stringify({ subjects })
-	});
+	return await fetchApi<{ count: number }>(
+		`/api/academic/study-plan-versions/${versionId}/subjects`,
+		{
+			method: 'POST',
+			body: JSON.stringify({ subjects })
+		}
+	);
 };
 
 export const deleteStudyPlanSubject = async (id: string) => {
@@ -773,10 +776,13 @@ export const addSlotInstructor = async (slotId: string, userId: string) => {
 };
 
 export const addSlotInstructorsBatch = async (slotId: string, userIds: string[]) => {
-	return await fetchApi<{ added: number }>(`/api/academic/activity-slots/${slotId}/instructors/batch`, {
-		method: 'POST',
-		body: JSON.stringify({ user_ids: userIds })
-	});
+	return await fetchApi<{ added: number }>(
+		`/api/academic/activity-slots/${slotId}/instructors/batch`,
+		{
+			method: 'POST',
+			body: JSON.stringify({ user_ids: userIds })
+		}
+	);
 };
 
 export const removeSlotInstructor = async (slotId: string, userId: string) => {
@@ -786,21 +792,30 @@ export const removeSlotInstructor = async (slotId: string, userId: string) => {
 };
 
 export const removeAllSlotInstructors = async (slotId: string) => {
-	return await fetchApi<{ deleted_count: number }>(`/api/academic/activity-slots/${slotId}/instructors/all`, {
-		method: 'DELETE'
-	});
+	return await fetchApi<{ deleted_count: number }>(
+		`/api/academic/activity-slots/${slotId}/instructors/all`,
+		{
+			method: 'DELETE'
+		}
+	);
 };
 
 export const deleteAllSlotGroups = async (slotId: string) => {
-	return await fetchApi<{ deleted_count: number }>(`/api/academic/activity-slots/${slotId}/groups`, {
-		method: 'DELETE'
-	});
+	return await fetchApi<{ deleted_count: number }>(
+		`/api/academic/activity-slots/${slotId}/groups`,
+		{
+			method: 'DELETE'
+		}
+	);
 };
 
 export const deleteSlotTimetableEntries = async (slotId: string) => {
-	return await fetchApi<{ deleted_count: number }>(`/api/academic/activity-slots/${slotId}/timetable-entries`, {
-		method: 'DELETE'
-	});
+	return await fetchApi<{ deleted_count: number }>(
+		`/api/academic/activity-slots/${slotId}/timetable-entries`,
+		{
+			method: 'DELETE'
+		}
+	);
 };
 
 // ==========================================
@@ -828,10 +843,13 @@ export const batchUpsertSlotClassroomAssignments = async (
 	slotId: string,
 	assignments: { classroom_id: string; instructor_id: string }[]
 ) => {
-	return await fetchApi<{ count: number }>(`/api/academic/activity-slots/${slotId}/classroom-assignments`, {
-		method: 'POST',
-		body: JSON.stringify({ assignments })
-	});
+	return await fetchApi<{ count: number }>(
+		`/api/academic/activity-slots/${slotId}/classroom-assignments`,
+		{
+			method: 'POST',
+			body: JSON.stringify({ assignments })
+		}
+	);
 };
 
 export const deleteSlotClassroomAssignment = async (slotId: string, assignmentId: string) => {
@@ -1013,7 +1031,9 @@ export interface CourseInstructor {
 export const listCourseInstructors = async (
 	courseId: string
 ): Promise<{ data: CourseInstructor[] }> => {
-	return await fetchApi<CourseInstructor[]>(`/api/academic/planning/courses/${courseId}/instructors`);
+	return await fetchApi<CourseInstructor[]>(
+		`/api/academic/planning/courses/${courseId}/instructors`
+	);
 };
 
 export const batchListCourseInstructors = async (

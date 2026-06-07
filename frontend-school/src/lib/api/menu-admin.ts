@@ -137,9 +137,7 @@ export async function reorderMenuGroups(groups: ReorderItem[]): Promise<void> {
 // ==================== Menu Items ====================
 
 export async function listMenuItems(groupId?: string): Promise<MenuItem[]> {
-	const endpoint = groupId
-		? `/api/admin/menu/items?group_id=${groupId}`
-		: '/api/admin/menu/items';
+	const endpoint = groupId ? `/api/admin/menu/items?group_id=${groupId}` : '/api/admin/menu/items';
 	const response = await apiClient.get<MenuItem[]>(endpoint);
 	return requireApiData(response, 'Failed to fetch menu items');
 }

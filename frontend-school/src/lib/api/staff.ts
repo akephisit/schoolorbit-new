@@ -341,9 +341,7 @@ export async function getOrganizationUnitLookup(
 	return apiClient.get<OrganizationUnit>(`/api/lookup/organization-units/${id}`);
 }
 
-export async function getOrganizationUnit(
-	unitId: string
-): Promise<ApiResponse<OrganizationUnit>> {
+export async function getOrganizationUnit(unitId: string): Promise<ApiResponse<OrganizationUnit>> {
 	return apiClient.get<OrganizationUnit>(`/api/organization/units/${unitId}`);
 }
 

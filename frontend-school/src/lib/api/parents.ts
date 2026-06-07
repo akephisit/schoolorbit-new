@@ -41,9 +41,7 @@ export async function getOwnParentProfile(): Promise<LoadedApiResponse<ParentPro
 /**
  * Get detailed profile of a child linked to the current parent
  */
-export async function getChildProfile(
-	studentId: string
-): Promise<LoadedApiResponse<Student>> {
+export async function getChildProfile(studentId: string): Promise<LoadedApiResponse<Student>> {
 	const response = await apiClient.get<Student>(`/api/parent/students/${studentId}`);
 	if (!response.success || response.data === undefined) {
 		throw new Error(response.error || 'Failed to get student profile');

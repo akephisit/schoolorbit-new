@@ -7,17 +7,11 @@ export function hasPermission(permissions: string[], requiredPermission: string)
 	return permissions.includes('*') || permissions.includes(requiredPermission);
 }
 
-export function hasAnyPermission(
-	permissions: string[],
-	requiredPermissions: string[]
-): boolean {
+export function hasAnyPermission(permissions: string[], requiredPermissions: string[]): boolean {
 	return requiredPermissions.some((permission) => hasPermission(permissions, permission));
 }
 
-export function hasAllPermissions(
-	permissions: string[],
-	requiredPermissions: string[]
-): boolean {
+export function hasAllPermissions(permissions: string[], requiredPermissions: string[]): boolean {
 	return requiredPermissions.every((permission) => hasPermission(permissions, permission));
 }
 

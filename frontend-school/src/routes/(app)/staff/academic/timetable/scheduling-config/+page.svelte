@@ -24,17 +24,36 @@
 		type TimeSlot,
 		type SchedulingJobResponse
 	} from '$lib/api/scheduling';
-	import { getAcademicStructure, getSchoolDays, type AcademicYear, listClassrooms, type Semester } from '$lib/api/academic';
+	import {
+		getAcademicStructure,
+		getSchoolDays,
+		type AcademicYear,
+		listClassrooms,
+		type Semester
+	} from '$lib/api/academic';
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
-	import { GripVertical, ChevronDown, ChevronRight, Sparkles, Save, LoaderCircle, Zap, TriangleAlert, Undo2, History, ArrowLeft } from 'lucide-svelte';
+	import {
+		GripVertical,
+		ChevronDown,
+		ChevronRight,
+		Sparkles,
+		Save,
+		LoaderCircle,
+		Zap,
+		TriangleAlert,
+		Undo2,
+		History,
+		ArrowLeft
+	} from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 	let { data } = $props();
 
@@ -47,26 +66,26 @@
 	let activeYear = $state<AcademicYear | null>(null);
 
 	// Per-row UI state
-	let expandedIds = $state(new Set<string>());
-	let expandedCcIds = $state(new Set<string>()); // เปิดดู cc แต่ละตัว
+	let expandedIds = new SvelteSet<string>();
+	let expandedCcIds = new SvelteSet<string>(); // เปิดดู cc แต่ละตัว
 	// Local edits — keyed by instructor_id, only flushed on Save
-	let unavailableEdits = $state(new Map<string, TimeSlot[]>());
+	let unavailableEdits = new SvelteMap<string, TimeSlot[]>();
 	// Per-instructor room (assigned_room_id) — server snapshot + local edit
 	// '' = not assigned (clear), uuid = set
-	let instructorRoomEdits = $state(new Map<string, string>());
+	let instructorRoomEdits = new SvelteMap<string, string>();
 
 	// Phase B: cc constraints — load lazily ต่อครู
-	let ccByInstructor = $state(new Map<string, ClassroomCourseConstraintView[]>());
-	let ccLoadingIds = $state(new Set<string>());
+	let ccByInstructor = new SvelteMap<string, ClassroomCourseConstraintView[]>();
+	let ccLoadingIds = new SvelteSet<string>();
 	// Local edits ของ cc — keyed by cc.id
-	let ccUnavailableEdits = $state(new Map<string, TimeSlot[]>());
-	let ccPatternEdits = $state(new Map<string, number[] | null>());
-	let ccSameDayUniqueEdits = $state(new Map<string, boolean>());
+	let ccUnavailableEdits = new SvelteMap<string, TimeSlot[]>();
+	let ccPatternEdits = new SvelteMap<string, number[] | null>();
+	let ccSameDayUniqueEdits = new SvelteMap<string, boolean>();
 
 	// Phase D: cc rooms — server state + local edits
 	let allRooms = $state<RoomView[]>([]);
-	let ccRoomsServer = $state(new Map<string, CcPreferredRoom[]>()); // server snapshot
-	let ccRoomsEdits = $state(new Map<string, CcPreferredRoom[]>()); // local edits
+	let ccRoomsServer = new SvelteMap<string, CcPreferredRoom[]>(); // server snapshot
+	let ccRoomsEdits = new SvelteMap<string, CcPreferredRoom[]>(); // local edits
 
 	// Phase E: auto-schedule
 	let semesters = $state<Semester[]>([]);
@@ -93,12 +112,9 @@
 	function toggleUnavailable(instructorId: string, day: string, periodId: string) {
 		const current = unavailableEdits.get(instructorId) ?? [];
 		const idx = current.findIndex((s) => s.day === day && s.period_id === periodId);
-		const next = idx >= 0
-			? current.filter((_, i) => i !== idx)
-			: [...current, { day, period_id: periodId }];
-		const newMap = new Map(unavailableEdits);
-		newMap.set(instructorId, next);
-		unavailableEdits = newMap;
+		const next =
+			idx >= 0 ? current.filter((_, i) => i !== idx) : [...current, { day, period_id: periodId }];
+		unavailableEdits.set(instructorId, next);
 	}
 
 	async function loadAll() {
@@ -114,7 +130,9 @@
 			schoolDays = getSchoolDays(activeYear.school_days);
 
 			// Phase E: load semesters เพื่อให้เลือก scope auto-schedule
-			semesters = (struct.data.semesters ?? []).filter((s) => s.academic_year_id === activeYear!.id);
+			semesters = (struct.data.semesters ?? []).filter(
+				(s) => s.academic_year_id === activeYear!.id
+			);
 			const activeSem = semesters.find((s) => s.is_active) ?? semesters[0];
 			if (activeSem) selectedSemesterId = activeSem.id;
 
@@ -130,14 +148,12 @@
 			allRooms = roomsRes.data ?? [];
 
 			// Initialize edits from server state
-			const init = new Map<string, TimeSlot[]>();
-			const roomInit = new Map<string, string>();
+			unavailableEdits.clear();
+			instructorRoomEdits.clear();
 			for (const i of instructors) {
-				init.set(i.id, (i.hard_unavailable_slots ?? []) as TimeSlot[]);
-				roomInit.set(i.id, i.assigned_room_id ?? '');
+				unavailableEdits.set(i.id, (i.hard_unavailable_slots ?? []) as TimeSlot[]);
+				instructorRoomEdits.set(i.id, i.assigned_room_id ?? '');
 			}
-			unavailableEdits = init;
-			instructorRoomEdits = roomInit;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
 		} finally {
@@ -230,11 +246,13 @@
 
 					if (!unavailChanged && !patternChanged && !sduChanged) continue;
 
-					ops.push(updateClassroomCourseConstraints(cc.id, {
-						hard_unavailable_slots: unavailChanged ? localUnavail : undefined,
-						consecutive_pattern: patternChanged ? localPattern : undefined,
-						same_day_unique: sduChanged ? localSdu : undefined
-					}));
+					ops.push(
+						updateClassroomCourseConstraints(cc.id, {
+							hard_unavailable_slots: unavailChanged ? localUnavail : undefined,
+							consecutive_pattern: patternChanged ? localPattern : undefined,
+							same_day_unique: sduChanged ? localSdu : undefined
+						})
+					);
 				}
 			}
 
@@ -242,13 +260,15 @@
 			for (const [ccId, _] of ccRoomsEdits.entries()) {
 				if (!ccRoomsChanged(ccId)) continue;
 				const local = ccRoomsEdits.get(ccId) ?? [];
-				ops.push(setCcPreferredRooms(ccId, {
-					rooms: local.map((r) => ({
-						room_id: r.room_id,
-						rank: r.rank,
-						is_required: r.is_required
-					}))
-				}));
+				ops.push(
+					setCcPreferredRooms(ccId, {
+						rooms: local.map((r) => ({
+							room_id: r.room_id,
+							rank: r.rank,
+							is_required: r.is_required
+						}))
+					})
+				);
 			}
 
 			await Promise.all(ops);
@@ -264,81 +284,61 @@
 
 	function slotsEqual(a: TimeSlot[], b: TimeSlot[]): boolean {
 		if (a.length !== b.length) return false;
-		const setA = new Set(a.map((s) => slotKey(s.day, s.period_id)));
+		const setA = new SvelteSet(a.map((s) => slotKey(s.day, s.period_id)));
 		for (const s of b) if (!setA.has(slotKey(s.day, s.period_id))) return false;
 		return true;
 	}
 
 	function toggleExpand(id: string) {
-		const next = new Set(expandedIds);
-		if (next.has(id)) {
-			next.delete(id);
+		if (expandedIds.has(id)) {
+			expandedIds.delete(id);
 		} else {
-			next.add(id);
+			expandedIds.add(id);
 			// Load cc list lazily ครั้งแรก
 			if (!ccByInstructor.has(id)) {
 				loadCcForInstructor(id);
 			}
 		}
-		expandedIds = next;
 	}
 
 	async function loadCcForInstructor(instructorId: string) {
-		const loading = new Set(ccLoadingIds);
-		loading.add(instructorId);
-		ccLoadingIds = loading;
+		ccLoadingIds.add(instructorId);
 		try {
 			const res = await listClassroomCourseConstraints(instructorId);
 			const list = res.data ?? [];
-			const newMap = new Map(ccByInstructor);
-			newMap.set(instructorId, list);
-			ccByInstructor = newMap;
+			ccByInstructor.set(instructorId, list);
 
 			// Init local edits จาก server state
-			const unavail = new Map(ccUnavailableEdits);
-			const pattern = new Map(ccPatternEdits);
-			const sdu = new Map(ccSameDayUniqueEdits);
 			for (const cc of list) {
-				unavail.set(cc.id, cc.hard_unavailable_slots ?? []);
-				pattern.set(cc.id, cc.consecutive_pattern ?? null);
-				sdu.set(cc.id, cc.same_day_unique);
+				ccUnavailableEdits.set(cc.id, cc.hard_unavailable_slots ?? []);
+				ccPatternEdits.set(cc.id, cc.consecutive_pattern ?? null);
+				ccSameDayUniqueEdits.set(cc.id, cc.same_day_unique);
 			}
-			ccUnavailableEdits = unavail;
-			ccPatternEdits = pattern;
-			ccSameDayUniqueEdits = sdu;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลด classroom courses ไม่สำเร็จ');
 		} finally {
-			const stop = new Set(ccLoadingIds);
-			stop.delete(instructorId);
-			ccLoadingIds = stop;
+			ccLoadingIds.delete(instructorId);
 		}
 	}
 
 	function toggleCcExpand(ccId: string) {
-		const next = new Set(expandedCcIds);
-		if (next.has(ccId)) {
-			next.delete(ccId);
+		if (expandedCcIds.has(ccId)) {
+			expandedCcIds.delete(ccId);
 		} else {
-			next.add(ccId);
+			expandedCcIds.add(ccId);
 			// Lazy load rooms ครั้งแรก
 			if (!ccRoomsServer.has(ccId)) {
 				loadCcRooms(ccId);
 			}
 		}
-		expandedCcIds = next;
 	}
 
 	async function loadCcRooms(ccId: string) {
 		try {
 			const res = await listCcPreferredRooms(ccId);
 			const list = res.data ?? [];
-			const newServer = new Map(ccRoomsServer);
-			const newEdits = new Map(ccRoomsEdits);
-			newServer.set(ccId, list);
-			newEdits.set(ccId, [...list]); // copy → editable
-			ccRoomsServer = newServer;
-			ccRoomsEdits = newEdits;
+			ccRoomsServer.set(ccId, list);
+			ccRoomsEdits.set(ccId, [...list]); // copy → editable
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดห้องไม่สำเร็จ');
 		}
@@ -365,18 +365,14 @@
 				is_required: false
 			}
 		];
-		const map = new Map(ccRoomsEdits);
-		map.set(ccId, next);
-		ccRoomsEdits = map;
+		ccRoomsEdits.set(ccId, next);
 	}
 
 	function removeCcRoom(ccId: string, roomId: string) {
 		const current = ccRooms(ccId).filter((r) => r.room_id !== roomId);
 		// Recompute ranks
 		current.forEach((r, i) => (r.rank = i + 1));
-		const map = new Map(ccRoomsEdits);
-		map.set(ccId, current);
-		ccRoomsEdits = map;
+		ccRoomsEdits.set(ccId, current);
 	}
 
 	function moveCcRoom(ccId: string, roomId: string, direction: -1 | 1) {
@@ -388,9 +384,7 @@
 		const [moved] = next.splice(idx, 1);
 		next.splice(newIdx, 0, moved);
 		next.forEach((r, i) => (r.rank = i + 1));
-		const map = new Map(ccRoomsEdits);
-		map.set(ccId, next);
-		ccRoomsEdits = map;
+		ccRoomsEdits.set(ccId, next);
 	}
 
 	function toggleCcRoomRequired(ccId: string, roomId: string) {
@@ -398,9 +392,7 @@
 		const next = current.map((r) =>
 			r.room_id === roomId ? { ...r, is_required: !r.is_required } : r
 		);
-		const map = new Map(ccRoomsEdits);
-		map.set(ccId, next);
-		ccRoomsEdits = map;
+		ccRoomsEdits.set(ccId, next);
 	}
 
 	function ccRoomsChanged(ccId: string): boolean {
@@ -418,7 +410,11 @@
 	}
 
 	// CC unavailable helpers — รวม union ของ team + local edits
-	function ccIsUnavailable(cc: ClassroomCourseConstraintView, day: string, periodId: string): boolean {
+	function ccIsUnavailable(
+		cc: ClassroomCourseConstraintView,
+		day: string,
+		periodId: string
+	): boolean {
 		// Inherited จากครูใน team → readonly true
 		if ((cc.team_unavailable_slots ?? []).some((s) => s.day === day && s.period_id === periodId)) {
 			return true;
@@ -432,9 +428,7 @@
 		day: string,
 		periodId: string
 	): boolean {
-		return (cc.team_unavailable_slots ?? []).some(
-			(s) => s.day === day && s.period_id === periodId
-		);
+		return (cc.team_unavailable_slots ?? []).some((s) => s.day === day && s.period_id === periodId);
 	}
 
 	function toggleCcUnavailable(cc: ClassroomCourseConstraintView, day: string, periodId: string) {
@@ -442,24 +436,17 @@
 		if (ccIsInheritedUnavailable(cc, day, periodId)) return;
 		const current = ccUnavailableEdits.get(cc.id) ?? [];
 		const idx = current.findIndex((s) => s.day === day && s.period_id === periodId);
-		const next = idx >= 0
-			? current.filter((_, i) => i !== idx)
-			: [...current, { day, period_id: periodId }];
-		const newMap = new Map(ccUnavailableEdits);
-		newMap.set(cc.id, next);
-		ccUnavailableEdits = newMap;
+		const next =
+			idx >= 0 ? current.filter((_, i) => i !== idx) : [...current, { day, period_id: periodId }];
+		ccUnavailableEdits.set(cc.id, next);
 	}
 
 	function setCcPattern(ccId: string, pattern: number[] | null) {
-		const next = new Map(ccPatternEdits);
-		next.set(ccId, pattern);
-		ccPatternEdits = next;
+		ccPatternEdits.set(ccId, pattern);
 	}
 
 	function setCcSameDayUnique(ccId: string, value: boolean) {
-		const next = new Map(ccSameDayUniqueEdits);
-		next.set(ccId, value);
-		ccSameDayUniqueEdits = next;
+		ccSameDayUniqueEdits.set(ccId, value);
 	}
 
 	// Generate UNIQUE pattern options (partitions ของ periods_per_week, descending)
@@ -644,7 +631,10 @@
 				{/if}
 				บันทึก
 			</Button>
-			<Button onclick={runAutoSchedule} disabled={saving || loading || autoScheduling || !selectedSemesterId}>
+			<Button
+				onclick={runAutoSchedule}
+				disabled={saving || loading || autoScheduling || !selectedSemesterId}
+			>
 				{#if autoScheduling}
 					<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
 				{:else}
@@ -697,8 +687,8 @@
 			<div class="mb-3">
 				<h2 class="font-semibold">ลำดับครู (ลากเพื่อจัดเรียง)</h2>
 				<p class="text-sm text-muted-foreground">
-					ครูที่อยู่บนสุด จะถูกจัดตารางก่อน — แสดงเฉพาะครูที่เป็น primary ของวิชา
-					({instructors.length} คน)
+					ครูที่อยู่บนสุด จะถูกจัดตารางก่อน — แสดงเฉพาะครูที่เป็น primary ของวิชา ({instructors.length}
+					คน)
 				</p>
 			</div>
 
@@ -716,7 +706,9 @@
 							ondragenter={(e) => onDragEnter(e, instr.id)}
 							ondragend={onDragEnd}
 							role="listitem"
-							class="border rounded-md bg-card transition-shadow {draggedId === instr.id ? 'opacity-40' : ''}"
+							class="border rounded-md bg-card transition-shadow {draggedId === instr.id
+								? 'opacity-40'
+								: ''}"
 						>
 							<!-- Header row -->
 							<div class="flex items-center gap-2 p-2">
@@ -755,9 +747,7 @@
 											class="text-sm border rounded px-2 py-1 bg-background w-full mt-1"
 											value={instructorRoomEdits.get(instr.id) ?? ''}
 											onchange={(e) => {
-												const next = new Map(instructorRoomEdits);
-												next.set(instr.id, e.currentTarget.value);
-												instructorRoomEdits = next;
+												instructorRoomEdits.set(instr.id, e.currentTarget.value);
 											}}
 										>
 											<option value="">— ไม่กำหนด —</option>
@@ -846,7 +836,8 @@
 													{@const ccPpw = cc.periods_per_week ?? 1}
 													{@const opts = patternOptions(ccPpw)}
 													{@const currentPattern = ccPatternEdits.get(cc.id) ?? null}
-													{@const currentSdu = ccSameDayUniqueEdits.get(cc.id) ?? cc.same_day_unique}
+													{@const currentSdu =
+														ccSameDayUniqueEdits.get(cc.id) ?? cc.same_day_unique}
 													<div class="border rounded-md bg-card">
 														<button
 															onclick={() => toggleCcExpand(cc.id)}
@@ -873,7 +864,8 @@
 																	<div class="flex flex-wrap gap-1 mt-1">
 																		<button
 																			onclick={() => setCcPattern(cc.id, null)}
-																			class="text-xs px-2 py-1 rounded border {currentPattern === null
+																			class="text-xs px-2 py-1 rounded border {currentPattern ===
+																			null
 																				? 'bg-primary text-primary-foreground'
 																				: 'bg-background hover:bg-accent'}"
 																		>
@@ -882,7 +874,10 @@
 																		{#each opts as opt (patternLabel(opt))}
 																			<button
 																				onclick={() => setCcPattern(cc.id, opt)}
-																				class="text-xs px-2 py-1 rounded border {patternEquals(currentPattern, opt)
+																				class="text-xs px-2 py-1 rounded border {patternEquals(
+																					currentPattern,
+																					opt
+																				)
 																					? 'bg-primary text-primary-foreground'
 																					: 'bg-background hover:bg-accent'}"
 																			>
@@ -897,7 +892,8 @@
 																	<input
 																		type="checkbox"
 																		checked={currentSdu}
-																		onchange={(e) => setCcSameDayUnique(cc.id, e.currentTarget.checked)}
+																		onchange={(e) =>
+																			setCcSameDayUnique(cc.id, e.currentTarget.checked)}
 																	/>
 																	<span>ห้ามวันเดียวกันมีรหัสวิชาซ้ำ</span>
 																</label>
@@ -907,11 +903,17 @@
 																	<Label class="text-xs">ห้องที่ใช้สอน (เรียงตามลำดับ)</Label>
 																	<div class="space-y-1 mt-1">
 																		{#each ccRooms(cc.id) as r (r.room_id)}
-																			<div class="flex items-center gap-2 border rounded px-2 py-1 bg-card">
-																				<span class="text-xs text-muted-foreground w-5">{r.rank}.</span>
+																			<div
+																				class="flex items-center gap-2 border rounded px-2 py-1 bg-card"
+																			>
+																				<span class="text-xs text-muted-foreground w-5"
+																					>{r.rank}.</span
+																				>
 																				<span class="text-xs flex-1">
 																					<span class="font-medium">{r.room_code}</span>
-																					<span class="text-muted-foreground"> — {r.room_name}</span>
+																					<span class="text-muted-foreground">
+																						— {r.room_name}</span
+																					>
 																				</span>
 																				<label class="text-xs flex items-center gap-1">
 																					<input
@@ -962,7 +964,8 @@
 																		</select>
 																	</div>
 																	<p class="text-xs text-muted-foreground mt-1">
-																		scheduler ลองห้องตามลำดับ — "บังคับ" = ถ้าห้องเต็มจะ fail ไม่ลองห้องอื่น
+																		scheduler ลองห้องตามลำดับ — "บังคับ" = ถ้าห้องเต็มจะ fail
+																		ไม่ลองห้องอื่น
 																	</p>
 																</div>
 
@@ -976,11 +979,15 @@
 																				<span>ว่าง</span>
 																			</div>
 																			<div class="flex items-center gap-1">
-																				<div class="w-3 h-3 bg-red-100 border border-red-200 rounded"></div>
+																				<div
+																					class="w-3 h-3 bg-red-100 border border-red-200 rounded"
+																				></div>
 																				<span>ห้าม (cc)</span>
 																			</div>
 																			<div class="flex items-center gap-1">
-																				<div class="w-3 h-3 bg-muted-foreground/30 border rounded"></div>
+																				<div
+																					class="w-3 h-3 bg-muted-foreground/30 border rounded"
+																				></div>
 																				<span>🔒 ครูใน team</span>
 																			</div>
 																		</div>
@@ -995,7 +1002,9 @@
 																			>
 																				<div class="font-bold text-xs text-center p-2">วัน</div>
 																				{#each periods as p (p.id)}
-																					<div class="font-bold text-xs text-center p-2 bg-muted rounded">
+																					<div
+																						class="font-bold text-xs text-center p-2 bg-muted rounded"
+																					>
 																						{p.name || `P${p.order_index}`}
 																					</div>
 																				{/each}
@@ -1013,15 +1022,21 @@
 																						{day.shortLabel}
 																					</div>
 																					{#each periods as p (p.id)}
-																						{@const inherited = ccIsInheritedUnavailable(cc, day.value, p.id)}
-																						{@const busy = ccIsUnavailable(cc, day.value, p.id) || inherited}
+																						{@const inherited = ccIsInheritedUnavailable(
+																							cc,
+																							day.value,
+																							p.id
+																						)}
+																						{@const busy =
+																							ccIsUnavailable(cc, day.value, p.id) || inherited}
 																						<button
 																							class="h-8 rounded border transition-colors text-xs flex items-center justify-center {inherited
 																								? 'bg-muted-foreground/30 border-muted-foreground/40 cursor-not-allowed'
 																								: busy
 																									? 'bg-red-100 border-red-200 text-red-700 hover:bg-red-200'
 																									: 'bg-white hover:bg-slate-50'}"
-																							onclick={() => toggleCcUnavailable(cc, day.value, p.id)}
+																							onclick={() =>
+																								toggleCcUnavailable(cc, day.value, p.id)}
 																							disabled={inherited}
 																							title={inherited ? 'ครูในทีมไม่ว่าง' : ''}
 																						>
@@ -1085,7 +1100,8 @@
 							{#each currentJob.failed_courses as fc (fc.course_id)}
 								<div class="border rounded p-2 bg-card text-sm">
 									<div class="font-medium">
-										{fc.subject_code} {fc.subject_name}
+										{fc.subject_code}
+										{fc.subject_name}
 									</div>
 									<div class="text-xs text-muted-foreground">{fc.classroom}</div>
 									<div class="text-xs mt-1 text-destructive">{fc.reason}</div>

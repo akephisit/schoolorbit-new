@@ -273,7 +273,9 @@
 	}
 
 	function removeOrganizationUnit(index: number) {
-		formData.organization_assignments = formData.organization_assignments.filter((_, i) => i !== index);
+		formData.organization_assignments = formData.organization_assignments.filter(
+			(_, i) => i !== index
+		);
 	}
 
 	function setPrimaryOrganizationUnit(index: number) {
@@ -314,7 +316,9 @@
 				},
 				role_ids: formData.role_ids,
 				primary_role_id: formData.primary_role_id || formData.role_ids[0],
-				organization_assignments: formData.organization_assignments.filter((d) => d.organization_unit_id)
+				organization_assignments: formData.organization_assignments.filter(
+					(d) => d.organization_unit_id
+				)
 			};
 
 			const result = await updateStaff(staffId, payload);
@@ -841,8 +845,8 @@
 												<Select.Root type="single" bind:value={dept.organization_unit_id}>
 													<Select.Trigger>
 														{#if dept.organization_unit_id}
-															{organizationUnits.find((d) => d.id === dept.organization_unit_id)?.name ||
-																'เลือกหน่วยงาน'}
+															{organizationUnits.find((d) => d.id === dept.organization_unit_id)
+																?.name || 'เลือกหน่วยงาน'}
 														{:else}
 															เลือกหน่วยงาน
 														{/if}
@@ -937,7 +941,12 @@
 									</div>
 								{/each}
 
-								<Button type="button" onclick={addOrganizationUnit} variant="outline" class="w-full">
+								<Button
+									type="button"
+									onclick={addOrganizationUnit}
+									variant="outline"
+									class="w-full"
+								>
 									+ เพิ่มหน่วยงาน
 								</Button>
 							</div>

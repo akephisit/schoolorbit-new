@@ -110,12 +110,7 @@
 	<div class="space-y-6">
 		<div class="flex items-center justify-between flex-wrap gap-3">
 			<div class="flex items-center gap-2">
-				<Button
-					variant="ghost"
-					size="icon"
-					onclick={() => goToSchedulingJobs()}
-					aria-label="กลับ"
-				>
+				<Button variant="ghost" size="icon" onclick={() => goToSchedulingJobs()} aria-label="กลับ">
 					<ArrowLeft class="h-5 w-5" />
 				</Button>
 				<div class="flex flex-col gap-1">

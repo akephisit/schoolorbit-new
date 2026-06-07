@@ -235,9 +235,11 @@ async function triggerReconcile(semesterId: string) {
 	reconcileInFlight = true;
 	try {
 		const response = await apiClient
-			.get<{ events?: SeqEvent[]; current_seq?: number; needs_refetch?: boolean }>(
-				`/api/academic/timetable/replay?semester_id=${semesterId}&after_seq=${lastSeq}`
-			)
+			.get<{
+				events?: SeqEvent[];
+				current_seq?: number;
+				needs_refetch?: boolean;
+			}>(`/api/academic/timetable/replay?semester_id=${semesterId}&after_seq=${lastSeq}`)
 			.catch(() => null);
 		if (!response?.success || !response.data) {
 			// ล้มเหลว → fallback full-fetch ผ่าน refreshTrigger

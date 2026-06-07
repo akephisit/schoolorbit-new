@@ -1416,7 +1416,11 @@
 					</div>
 					<div class="space-y-2">
 						<Label>กลุ่มสาระฯ <span class="text-destructive">*</span></Label>
-						<Select.Root type="single" bind:value={currentSubject.group_id} disabled={isOrganizationUnitScope}>
+						<Select.Root
+							type="single"
+							bind:value={currentSubject.group_id}
+							disabled={isOrganizationUnitScope}
+						>
 							<Select.Trigger class="truncate">
 								{groups.find((g) => g.id === currentSubject.group_id)?.name_th || 'เลือกกลุ่มสาระ'}
 							</Select.Trigger>

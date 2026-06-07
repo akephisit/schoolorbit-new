@@ -6,7 +6,7 @@ import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
-			title: 'โครงสร้างโรงเรียน',
+		title: 'โครงสร้างโรงเรียน',
 		icon: 'Building2',
 		group: 'personnel',
 		order: 20,
@@ -17,6 +17,6 @@ export const _meta = {
 
 export const load = async () => {
 	return {
-			title: 'โครงสร้างโรงเรียน'
+		title: 'โครงสร้างโรงเรียน'
 	};
 };

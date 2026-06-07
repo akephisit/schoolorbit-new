@@ -112,7 +112,8 @@
 	<Dialog.Content class="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
 		<Dialog.Header>
 			<Dialog.Title>{organizationUnitToEdit ? 'แก้ไขหน่วยงาน' : 'สร้างหน่วยงานใหม่'}</Dialog.Title>
-			<Dialog.Description>กรอกข้อมูลรายละเอียดของหน่วยงาน กลุ่มงาน หรือกลุ่มสาระ</Dialog.Description>
+			<Dialog.Description>กรอกข้อมูลรายละเอียดของหน่วยงาน กลุ่มงาน หรือกลุ่มสาระ</Dialog.Description
+			>
 		</Dialog.Header>
 
 		<form onsubmit={handleSubmit} class="space-y-4 py-4">
@@ -162,7 +163,7 @@
 										? 'บุคลากร (Personnel)'
 										: formData.category === 'budget'
 											? 'งบประมาณ (Budget)'
-									: formData.category}
+											: formData.category}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="general">ทั่วไป (General)</Select.Item>
@@ -185,7 +186,7 @@
 										? 'กลุ่มสาระ'
 										: formData.unit_type === 'team'
 											? 'ทีม'
-									: formData.unit_type}
+											: formData.unit_type}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="management_group">กลุ่มบริหาร</Select.Item>
@@ -200,14 +201,10 @@
 
 			<div class="space-y-2">
 				<Label>สังกัดภายใต้</Label>
-				<Select.Root
-					type="single"
-					bind:value={formData.parent_unit_id}
-					disabled={!!forcedParentId}
-				>
+				<Select.Root type="single" bind:value={formData.parent_unit_id} disabled={!!forcedParentId}>
 					<Select.Trigger>
-						{organizationUnits.find((d: OrganizationUnit) => d.id === formData.parent_unit_id)?.name ||
-							'ไม่มี (ระดับสูงสุด)'}
+						{organizationUnits.find((d: OrganizationUnit) => d.id === formData.parent_unit_id)
+							?.name || 'ไม่มี (ระดับสูงสุด)'}
 					</Select.Trigger>
 					<Select.Content class="max-h-[200px] overflow-y-auto">
 						<Select.Item value="none">ไม่มี (ระดับสูงสุด)</Select.Item>

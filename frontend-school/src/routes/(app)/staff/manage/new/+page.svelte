@@ -248,7 +248,9 @@
 	}
 
 	function removeOrganizationUnit(index: number) {
-		formData.organization_assignments = formData.organization_assignments.filter((_, i) => i !== index);
+		formData.organization_assignments = formData.organization_assignments.filter(
+			(_, i) => i !== index
+		);
 	}
 
 	function setPrimaryOrganizationUnit(index: number) {
@@ -288,7 +290,9 @@
 				hired_date: payloadData.hired_date || undefined,
 				role_ids: formData.role_ids,
 				primary_role_id: formData.primary_role_id || formData.role_ids[0],
-				organization_assignments: formData.organization_assignments.filter((d) => d.organization_unit_id)
+				organization_assignments: formData.organization_assignments.filter(
+					(d) => d.organization_unit_id
+				)
 			};
 
 			const result = await createStaff(payload);
@@ -733,7 +737,9 @@
 					</div>
 				{:else}
 					<div class="space-y-4">
-						<p class="text-sm text-muted-foreground">ระบุหน่วยงาน/กลุ่มที่บุคลากรสังกัดและตำแหน่งในหน่วยงาน</p>
+						<p class="text-sm text-muted-foreground">
+							ระบุหน่วยงาน/กลุ่มที่บุคลากรสังกัดและตำแหน่งในหน่วยงาน
+						</p>
 
 						{#if errors.organization_units}
 							<p class="text-sm text-destructive">{errors.organization_units}</p>
@@ -762,8 +768,8 @@
 										<Select.Root type="single" bind:value={dept.organization_unit_id}>
 											<Select.Trigger>
 												{#if dept.organization_unit_id}
-													{organizationUnits.find((d) => d.id === dept.organization_unit_id)?.name ||
-														'เลือกหน่วยงาน'}
+													{organizationUnits.find((d) => d.id === dept.organization_unit_id)
+														?.name || 'เลือกหน่วยงาน'}
 												{:else}
 													เลือกหน่วยงาน
 												{/if}

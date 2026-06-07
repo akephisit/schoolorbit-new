@@ -192,7 +192,11 @@
 					{/each}
 				</Select.Content>
 			</Select.Root>
-			<Button variant="outline" onclick={() => (showClearDialog = true)} disabled={!selectedSemesterId}>
+			<Button
+				variant="outline"
+				onclick={() => (showClearDialog = true)}
+				disabled={!selectedSemesterId}
+			>
 				<Eraser class="w-4 h-4 mr-2" />
 				เคลียร์ตาราง
 			</Button>
@@ -205,14 +209,13 @@
 
 	<Card.Root class="p-3 bg-muted/30 space-y-1">
 		<p class="text-sm text-muted-foreground">
-			💡 <strong>Workflow:</strong> 1) Batch fixed slots ที่หน้าตาราง →
-			2) สร้าง template → 3) ถ้าจัดอัตโนมัติไม่ถูกใจ → เคลียร์ → apply template → จัดใหม่
+			💡 <strong>Workflow:</strong> 1) Batch fixed slots ที่หน้าตาราง → 2) สร้าง template → 3) ถ้าจัดอัตโนมัติไม่ถูกใจ
+			→ เคลียร์ → apply template → จัดใหม่
 		</p>
 		<p class="text-xs text-muted-foreground">
 			📌 Template เก็บเฉพาะกิจกรรมแบบ <strong>ระบุชื่อเอง</strong>
-			(พักเที่ยง / โฮมรูม / ประชุม) ทั้งแบบผูกห้องและแบบเฉพาะครู
-			— กิจกรรมจาก slot (ชุมนุม sync/independent) ไม่ถูกเก็บเพราะมีการจัดการ
-			ที่หน้า Activities — apply ใหม่ผ่าน batch ของหน้าตารางได้ทันที
+			(พักเที่ยง / โฮมรูม / ประชุม) ทั้งแบบผูกห้องและแบบเฉพาะครู — กิจกรรมจาก slot (ชุมนุม sync/independent)
+			ไม่ถูกเก็บเพราะมีการจัดการ ที่หน้า Activities — apply ใหม่ผ่าน batch ของหน้าตารางได้ทันที
 		</p>
 	</Card.Root>
 
@@ -312,8 +315,8 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<p class="text-sm text-muted-foreground py-2">
-			Entries ที่ทับกับของเดิมจะถูกข้าม (ON CONFLICT DO NOTHING)
-			— ถ้าต้องการเริ่มใหม่ทั้งหมด กดเคลียร์ก่อน
+			Entries ที่ทับกับของเดิมจะถูกข้าม (ON CONFLICT DO NOTHING) — ถ้าต้องการเริ่มใหม่ทั้งหมด
+			กดเคลียร์ก่อน
 		</p>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (showApplyDialog = false)}>ยกเลิก</Button>
@@ -333,7 +336,9 @@
 		<Dialog.Header>
 			<Dialog.Title>เคลียร์ตาราง</Dialog.Title>
 			<Dialog.Description>
-				ลบ entries ใน <strong>{semesters.find((s) => s.id === selectedSemesterId)?.name || ''}</strong>
+				ลบ entries ใน <strong
+					>{semesters.find((s) => s.id === selectedSemesterId)?.name || ''}</strong
+				>
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="space-y-2 py-2">

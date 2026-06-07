@@ -114,7 +114,15 @@ export const createOrganizationUnitSchema = z.object({
 	parent_unit_id: z.string().uuid().optional().nullable(),
 	category: z.enum(['academic', 'personnel', 'budget', 'general', 'other']).optional(),
 	unit_type: z
-		.enum(['school', 'management_group', 'division', 'subject_group', 'committee', 'team', 'custom'])
+		.enum([
+			'school',
+			'management_group',
+			'division',
+			'subject_group',
+			'committee',
+			'team',
+			'custom'
+		])
 		.optional(),
 	subject_group_id: z.string().uuid().optional().nullable()
 });

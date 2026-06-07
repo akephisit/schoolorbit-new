@@ -32,7 +32,7 @@
 
 	async function redirectToForbidden() {
 		authStatus = 'redirecting';
-		await goto(`${resolve('/403')}?from=${encodeURIComponent(currentPath())}`, {
+		await goto(resolve(`/403?from=${encodeURIComponent(currentPath())}`), {
 			replaceState: true
 		});
 		authStatus = 'authenticated';
@@ -75,12 +75,12 @@
 	});
 
 	$effect(() => {
-		page.route.id;
-		$userPermissions;
-		$authStore.user;
+		const routeId = page.route.id;
+		const permissions = $userPermissions;
+		const user = $authStore.user;
 
 		if (authStatus !== 'authenticated') return;
-		if (canAccessCurrentRoute()) return;
+		if (userCanAccessRoute(user, permissions, routeId)) return;
 
 		void redirectToForbidden();
 	});

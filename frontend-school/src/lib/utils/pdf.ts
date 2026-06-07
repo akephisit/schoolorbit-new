@@ -184,9 +184,7 @@ function wrapSection(text: string, maxWidthPt: number, fontSizePt: number): stri
 		const Ctor = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
 		if (!Ctor) return text;
 		const wordSeg = new Ctor('th', { granularity: 'word' });
-		const words = Array.from(wordSeg.segment(text), (s) => s.segment).filter(
-			(s) => s.length > 0
-		);
+		const words = Array.from(wordSeg.segment(text), (s) => s.segment).filter((s) => s.length > 0);
 
 		// ถ้า word ใดกว้างกว่า cell → ลอง syllable split (ตัดก่อน leading vowel)
 		// fallback ถ้า syllable split ไม่ได้ → grapheme cluster
@@ -296,25 +294,10 @@ async function fetchImageDataUrl(url: string): Promise<string | null> {
 	}
 }
 
-/** อ่าน natural width/height ของรูป (data URL หรือ URL) ผ่าน Image element
- *  ใช้สำหรับคำนวณขนาด rendered (pdfmake's fit) แบบ exact → centering แม่นยำ */
-async function getImageDimensions(
-	dataUrl: string
-): Promise<{ w: number; h: number } | null> {
-	if (typeof Image === 'undefined') return null;
-	return await new Promise((resolve) => {
-		const img = new Image();
-		img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
-		img.onerror = () => resolve(null);
-		img.src = dataUrl;
-	});
-}
-
 function buildPageContent(
 	page: TimetablePage,
 	isFirst: boolean,
-	logoDataUrl: string | null,
-	logoDims: { w: number; h: number } | null
+	logoDataUrl: string | null
 ): Content[] {
 	const { title, subTitle, periods, timetableEntries, viewMode = 'CLASSROOM', roomNames } = page;
 	const tableBody: TableCell[][] = [];
@@ -360,9 +343,7 @@ function buildPageContent(
 					body: [
 						[
 							{
-								stack: [
-									{ image: logoDataUrl, fit: [FIT_W, FIT_H], alignment: 'center' }
-								],
+								stack: [{ image: logoDataUrl, fit: [FIT_W, FIT_H], alignment: 'center' }],
 								verticalAlignment: 'middle',
 								alignment: 'center',
 								border: [false, false, false, false]
@@ -512,8 +493,7 @@ function buildPageContent(
 				// SLOT-sync activity: ห้อง+ครูไม่ได้ผูกกัน 1-to-1 (sync = ทุกห้องร่วมกัน,
 				// ครูหลายคน) — ซ่อน meta side ที่ไม่ตรงกับ view เพื่อกัน confusion
 				const isSlotSync =
-					entry.entry_type === 'ACTIVITY' &&
-					entry.activity_scheduling_mode === 'synchronized';
+					entry.entry_type === 'ACTIVITY' && entry.activity_scheduling_mode === 'synchronized';
 
 				if (viewMode === 'CLASSROOM') {
 					// Student PDF — แสดงชื่อครู (ยกเว้น sync activity เพราะมีหลายครู)
@@ -678,9 +658,7 @@ function buildMiniTable(
 					body: [
 						[
 							{
-								stack: [
-									{ image: logoDataUrl, fit: [FIT_W_MINI, FIT_H_MINI], alignment: 'center' }
-								],
+								stack: [{ image: logoDataUrl, fit: [FIT_W_MINI, FIT_H_MINI], alignment: 'center' }],
 								verticalAlignment: 'middle',
 								alignment: 'center',
 								border: [false, false, false, false]
@@ -899,23 +877,21 @@ function buildPortraitPageContent(
 	const isInstructor = chunk[0]?.viewMode === 'INSTRUCTOR';
 	const showQr = isInstructor && typeof window !== 'undefined';
 	const qrUrl = showQr ? window.location.origin + '/staff/timetable' : '';
-	const qrCornerBlock = (
-		showQr
-			? {
-					width: 70,
-					stack: [
-						{ qr: qrUrl, fit: 65, alignment: 'center' },
-						{
-							text: 'สแกนดูตาราง',
-							fontSize: 6,
-							color: '#6b7280',
-							alignment: 'center',
-							margin: [0, 1, 0, 0]
-						}
-					]
-				}
-			: { text: '', width: 40 }
-	) as unknown as Content;
+	const qrCornerBlock = (showQr
+		? {
+				width: 70,
+				stack: [
+					{ qr: qrUrl, fit: 65, alignment: 'center' },
+					{
+						text: 'สแกนดูตาราง',
+						fontSize: 6,
+						color: '#6b7280',
+						alignment: 'center',
+						margin: [0, 1, 0, 0]
+					}
+				]
+			}
+		: { text: '', width: 40 }) as unknown as Content;
 
 	// Page header: logo อยู่ใน mini-table แต่ละอันแล้ว → header แค่ title + subtitle + QR
 	// ใช้ 3 คอลัม [spacer ซ้าย, title (*), QR ขวา] → title อยู่กลางหน้ากระดาษจริง
@@ -1010,17 +986,12 @@ export const generateTimetablePDF = async (
 		}
 	};
 
-	// Fetch โลโก้โรงเรียน (ถ้ามี) เป็น base64 data URL + อ่าน natural dimensions
-	// dimensions ใช้คำนวณ rendered height ของ logo เพื่อ auto-center แนวตั้งใน rowSpan cell
+	// Fetch โลโก้โรงเรียน (ถ้ามี) เป็น base64 data URL
 	let logoDataUrl: string | null = null;
-	let logoDims: { w: number; h: number } | null = null;
 	try {
 		const settings = await getSchoolSettings();
 		if (settings.logoUrl) {
 			logoDataUrl = await fetchImageDataUrl(settings.logoUrl);
-			if (logoDataUrl) {
-				logoDims = await getImageDimensions(logoDataUrl);
-			}
 		}
 	} catch {
 		/* ไม่มี logo ก็ไม่เป็นไร */
@@ -1041,7 +1012,7 @@ export const generateTimetablePDF = async (
 			buildPortraitPageContent(chunk, i === 0, logoDataUrl, pageHeaderTitle, pageHeaderSubTitle)
 		);
 	} else {
-		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl, logoDims));
+		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl));
 	}
 
 	const docDefinition: TDocumentDefinitions = {

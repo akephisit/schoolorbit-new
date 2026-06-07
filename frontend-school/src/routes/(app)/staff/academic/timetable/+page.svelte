@@ -105,7 +105,6 @@
 		type TimetablePatch
 	} from '$lib/stores/timetable-socket';
 	import type {
-		ConflictInfo,
 		CreateTimetableEntryRequest,
 		UpdateTimetableEntryRequest
 	} from '$lib/api/timetable';
@@ -219,7 +218,21 @@
 	let entryPopoverSaving = $state('');
 	let entryPopoverSavingRoom = $state(false);
 	let entryPopoverRoomPickerOpen = $state(false);
-	let entryPopoverUnavailableRooms = $state<Set<string>>(new Set());
+	let entryPopoverUnavailableRooms = new SvelteSet<string>();
+
+	function replaceSvelteMap<K, V>(target: SvelteMap<K, V>, source: Iterable<[K, V]>) {
+		target.clear();
+		for (const [key, value] of source) {
+			target.set(key, value);
+		}
+	}
+
+	function replaceSvelteSet<T>(target: SvelteSet<T>, source: Iterable<T>) {
+		target.clear();
+		for (const value of source) {
+			target.add(value);
+		}
+	}
 
 	// INSTRUCTOR view: toggle "แสดงคาบในทีม" (ghost cells)
 	let showTeamGhosts = $state(false);
@@ -361,16 +374,16 @@
 
 	async function loadCourseTeams(courseIds: string[]) {
 		if (courseIds.length === 0) {
-			courseTeamsMap = new Map();
+			courseTeamsMap.clear();
 			return;
 		}
 		try {
 			const res = await batchListCourseInstructors(courseIds);
-			const map = new Map<string, CourseInstructor[]>();
+			const map = new SvelteMap<string, CourseInstructor[]>();
 			for (const [cid, team] of Object.entries(res.data ?? {})) {
 				map.set(cid, team);
 			}
-			courseTeamsMap = map;
+			replaceSvelteMap(courseTeamsMap, map);
 		} catch {
 			// ถ้า fetch ไม่สำเร็จ → buildTempEntry fallback กลับไปใช้ primary instructor (เหมือนเดิม)
 		}
@@ -404,8 +417,8 @@
 			!!deleteBatchTarget?.activity_slot_id &&
 			(sidebarActivitySlots.find((s) => s.id === deleteBatchTarget?.activity_slot_id)
 				?.scheduling_mode === 'synchronized' ||
-				instructorActivityItems.find((i) => i.slot.id === deleteBatchTarget?.activity_slot_id)
-					?.slot?.scheduling_mode === 'synchronized')
+				instructorActivityItems.find((i) => i.slot.id === deleteBatchTarget?.activity_slot_id)?.slot
+					?.scheduling_mode === 'synchronized')
 	);
 
 	async function loadSidebarActivitySlots() {
@@ -427,7 +440,7 @@
 				const independentSlots = sidebarActivitySlots.filter(
 					(s) => s.scheduling_mode === 'independent'
 				);
-				const newMap = new Map<string, { id: string; name: string }>();
+				const newMap = new SvelteMap<string, { id: string; name: string }>();
 				await Promise.all(
 					independentSlots.map(async (slot) => {
 						try {
@@ -443,7 +456,7 @@
 						}
 					})
 				);
-				activityInstructorMap = newMap;
+				replaceSvelteMap(activityInstructorMap, newMap);
 			} catch (e) {
 				console.error('Failed to load activity slots for sidebar', e);
 			}
@@ -472,7 +485,7 @@
 				// → buildTempEntry แสดงครูถูกตอน drop ใน INSTRUCTOR view
 				const indepSlots = allSlots.filter((s) => s.scheduling_mode === 'independent');
 				const items: typeof instructorActivityItems = [];
-				const newInstrMap = new Map<string, { id: string; name: string }>();
+				const newInstrMap = new SvelteMap<string, { id: string; name: string }>();
 				for (const slot of indepSlots) {
 					try {
 						const assignRes = await listSlotClassroomAssignments(slot.id);
@@ -496,7 +509,7 @@
 
 				sidebarActivitySlots = relevantSyncSlots;
 				instructorActivityItems = items;
-				activityInstructorMap = newInstrMap;
+				replaceSvelteMap(activityInstructorMap, newInstrMap);
 			} catch (e) {
 				console.error('Failed to load activity slots for sidebar', e);
 			}
@@ -633,9 +646,9 @@
 			: null;
 		// INSTRUCTOR view: independent slots อยู่ใน instructorActivityItems ไม่ใช่ sidebarActivitySlots
 		const activitySlot = args.activitySlotId
-			? sidebarActivitySlots.find((s) => s.id === args.activitySlotId) ??
+			? (sidebarActivitySlots.find((s) => s.id === args.activitySlotId) ??
 				instructorActivityItems.find((i) => i.slot.id === args.activitySlotId)?.slot ??
-				null
+				null)
 			: null;
 		// instructor lookup — Phase 2 Fix 3: ใช้ทีมเต็มจาก courseTeamsMap ถ้ามี, fallback primary
 		// สำหรับ activity (independent): ใช้ activityInstructorMap[slot|classroom]
@@ -782,9 +795,10 @@
 	}
 
 	function snapshotPosition(entryId: string) {
-		const e = timetableEntries.find((x) => x.id === entryId)
-			?? rawTeamEntries.find((x) => x.id === entryId)
-			?? occupancyEntries.find((x) => x.id === entryId);
+		const e =
+			timetableEntries.find((x) => x.id === entryId) ??
+			rawTeamEntries.find((x) => x.id === entryId) ??
+			occupancyEntries.find((x) => x.id === entryId);
 		if (!e) return null;
 		return {
 			day_of_week: e.day_of_week,
@@ -799,8 +813,9 @@
 		entryId: string,
 		fields: Partial<TimetableEntry>
 	): Partial<TimetableEntry> | null {
-		const current = timetableEntries.find((e) => e.id === entryId)
-			?? rawTeamEntries.find((e) => e.id === entryId);
+		const current =
+			timetableEntries.find((e) => e.id === entryId) ??
+			rawTeamEntries.find((e) => e.id === entryId);
 		if (!current) return null;
 
 		// Build snapshot of fields about to change (so rollback is precise)
@@ -830,13 +845,13 @@
 
 	/** Compute MoveValidityCell map locally — replaces POST /validate-moves
 	 *  Logic mirrors backend handler: pairwise swap validation vs empty-cell direct fit. */
-	function computeValidMoves(entryId: string): Map<string, MoveValidityCell> {
-		const result = new Map<string, MoveValidityCell>();
+	function computeValidMoves(entryId: string): SvelteMap<string, MoveValidityCell> {
+		const result = new SvelteMap<string, MoveValidityCell>();
 		const source = occupancyEntries.find((e) => e.id === entryId);
 		if (!source) return result;
 
 		// Index entries by cell key once → O(1) lookup per cell
-		const cellIndex = new Map<string, OccupancyEntry[]>();
+		const cellIndex = new SvelteMap<string, OccupancyEntry[]>();
 		for (const e of occupancyEntries) {
 			const k = `${e.day_of_week}|${e.period_id}`;
 			const arr = cellIndex.get(k);
@@ -844,7 +859,7 @@
 			else cellIndex.set(k, [e]);
 		}
 
-		const srcInstructorSet = new Set(source.instructor_ids);
+		const srcInstructorSet = new SvelteSet(source.instructor_ids);
 		const srcCellKey = `${source.day_of_week}|${source.period_id}`;
 
 		for (const day of DAYS) {
@@ -881,7 +896,7 @@
 
 				// Occupied — try swap with first other entry (matches backend behavior)
 				const target = others[0];
-				const targetInstructorSet = new Set(target.instructor_ids);
+				const targetInstructorSet = new SvelteSet(target.instructor_ids);
 
 				// Other entries at source's pos (excluding source itself, excluding target if it's there)
 				const srcPosOthers = (cellIndex.get(srcCellKey) ?? []).filter(
@@ -894,7 +909,10 @@
 				let reason = '';
 
 				// Classroom: source's classroom mustn't have a 3rd entry at target's pos
-				if (source.classroom_id && tgtPosOthers.some((e) => e.classroom_id === source.classroom_id)) {
+				if (
+					source.classroom_id &&
+					tgtPosOthers.some((e) => e.classroom_id === source.classroom_id)
+				) {
 					valid = false;
 					reason = 'ห้องของต้นทางถูกใช้ที่คาบนี้';
 				}
@@ -968,7 +986,7 @@
 		}
 		entryPopoverTarget = entry;
 		entryPopoverTeam = [];
-		entryPopoverUnavailableRooms = new Set();
+		entryPopoverUnavailableRooms.clear();
 		entryPopoverOpen = true;
 		entryPopoverLoading = true;
 		try {
@@ -999,15 +1017,15 @@
 				day_of_week: entry.day_of_week,
 				academic_semester_id: selectedSemesterId
 			});
-			const busy = new Set<string>();
+			const busy = new SvelteSet<string>();
 			res.data.forEach((e) => {
 				if (e.period_id === entry.period_id && e.room_id && e.id !== entry.id) {
 					busy.add(e.room_id);
 				}
 			});
-			entryPopoverUnavailableRooms = busy;
+			replaceSvelteSet(entryPopoverUnavailableRooms, busy);
 		} catch {
-			entryPopoverUnavailableRooms = new Set();
+			entryPopoverUnavailableRooms.clear();
 		}
 	}
 
@@ -1245,11 +1263,7 @@
 		if (!target?.batch_id) return;
 		try {
 			// INSTRUCTOR view + sync activity → ซ่อนครูคนนี้จากทั้ง slot (ไม่ลบ entry จริง)
-			if (
-				viewMode === 'INSTRUCTOR' &&
-				target.activity_slot_id &&
-				selectedInstructorId
-			) {
+			if (viewMode === 'INSTRUCTOR' && target.activity_slot_id && selectedInstructorId) {
 				const slot =
 					sidebarActivitySlots.find((s) => s.id === target.activity_slot_id) ||
 					instructorActivityItems.find((i) => i.slot.id === target.activity_slot_id)?.slot;
@@ -1280,11 +1294,7 @@
 		try {
 			// INSTRUCTOR view + sync activity → ซ่อนครูคนนี้จาก slot+day+period (ทุกห้อง)
 			// ไม่ใช่ลบ entry เพราะจะลบแค่ห้องเดียว — INSTRUCTOR view ทำ dedupe → cell ยังโผล่
-			if (
-				viewMode === 'INSTRUCTOR' &&
-				target.activity_slot_id &&
-				selectedInstructorId
-			) {
+			if (viewMode === 'INSTRUCTOR' && target.activity_slot_id && selectedInstructorId) {
 				const slot =
 					sidebarActivitySlots.find((s) => s.id === target.activity_slot_id) ||
 					instructorActivityItems.find((i) => i.slot.id === target.activity_slot_id)?.slot;
@@ -1403,7 +1413,7 @@
 
 	// Drag validity map: key "DAY|PERIODID" → cell state (computed locally from occupancyEntries)
 	// Populated on drag start for MOVE type; cleared on drag end.
-	let moveValidityMap = $state<Map<string, MoveValidityCell>>(new Map());
+	let moveValidityMap = new SvelteMap<string, MoveValidityCell>();
 
 	// Lightweight semester-wide entry summary for client-side conflict checks.
 	// โหลดครั้งเดียวต่อ semester + sync ตาม WS events → drag validity คำนวณใน JS (0ms lag)
@@ -1411,25 +1421,25 @@
 
 	// Phase 2 Fix 3: pre-fetched course teams (full instructor list per course)
 	// → buildTempEntry render ครูครบทีมตอน CREATE optimistic (ไม่ใช่แค่ primary)
-	let courseTeamsMap = $state<Map<string, CourseInstructor[]>>(new Map());
+	let courseTeamsMap = new SvelteMap<string, CourseInstructor[]>();
 
 	// Pre-fetched independent activity instructor per (slot, classroom) — สำหรับ CREATE optimistic
 	// key: `${slotId}|${classroomId}` → { id, name }
-	let activityInstructorMap = $state<Map<string, { id: string; name: string }>>(new Map());
+	let activityInstructorMap = new SvelteMap<string, { id: string; name: string }>();
 
 	// Phase 2: entry IDs ที่อยู่ในสถานะ pending (รอ DB confirm) — UI แสดง spinner
-	let pendingEntryIds = $state<SvelteSet<string>>(new SvelteSet());
+	let pendingEntryIds = new SvelteSet<string>();
 
 	// Phase 2: snapshot table — สำหรับ rollback ตอน DropRejected (ทั้ง self + others)
 	// เฉพาะ entry ที่มี optimistic mutation ที่ยังไม่ confirm
-	let optimisticSnapshots = new Map<
+	let optimisticSnapshots = new SvelteMap<
 		string,
 		{ day_of_week: string; period_id: string; room_id: string | null }
 	>();
 
 	// Phase 2 Fix 1: timeout per pending entry — ถ้าครบ 15s ยังไม่ confirm → auto rollback
 	// ป้องกัน UI ค้างถาวรเมื่อ server crash หรือ WS drop ระหว่าง pending
-	let pendingTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+	let pendingTimeouts = new SvelteMap<string, ReturnType<typeof setTimeout>>();
 	const PENDING_TIMEOUT_MS = 15000;
 
 	function getSlotKey(day: string, periodId: string) {
@@ -1691,7 +1701,7 @@
 		// Precompute drop validity for MOVE drags (colorize cells 🟢🔵🔴)
 		// Local computation — no API call, 0ms lag
 		if (type === 'MOVE' && draggedEntryId) {
-			moveValidityMap = computeValidMoves(draggedEntryId);
+			replaceSvelteMap(moveValidityMap, computeValidMoves(draggedEntryId));
 		}
 
 		if (event.dataTransfer) {
@@ -1746,7 +1756,7 @@
 		draggedEntryId = null;
 		slotConflicts.clear();
 		hoverDragCell = null;
-		moveValidityMap = new Map();
+		moveValidityMap.clear();
 	}
 
 	function handleDragOver(event: DragEvent, day?: string, periodId?: string) {
@@ -1930,14 +1940,16 @@
 			});
 			const snapshot = applyEntryMutation(existingEntry.id, newFields);
 			// Mirror occupancy ครบ (instructor_ids เปลี่ยน → ต้อง upsert)
-			const updatedEntry = timetableEntries.find((e) => e.id === existingEntry.id)
-				?? rawTeamEntries.find((e) => e.id === existingEntry.id);
+			const updatedEntry =
+				timetableEntries.find((e) => e.id === existingEntry.id) ??
+				rawTeamEntries.find((e) => e.id === existingEntry.id);
 			if (updatedEntry) upsertOccupancy(updatedEntry);
-			if (snapshot) optimisticSnapshots.set(existingEntry.id, {
-				day_of_week: existingEntry.day_of_week,
-				period_id: existingEntry.period_id,
-				room_id: existingEntry.room_id ?? null
-			});
+			if (snapshot)
+				optimisticSnapshots.set(existingEntry.id, {
+					day_of_week: existingEntry.day_of_week,
+					period_id: existingEntry.period_id,
+					room_id: existingEntry.room_id ?? null
+				});
 			markPending(existingEntry.id);
 
 			// Broadcast intent → คนอื่น lookup local courses → overwrite
@@ -1958,8 +1970,9 @@
 				if (result.success === false) {
 					// Rollback content
 					if (snapshot) applyEntryMutation(existingEntry.id, snapshot);
-					const restored = timetableEntries.find((e) => e.id === existingEntry.id)
-						?? rawTeamEntries.find((e) => e.id === existingEntry.id);
+					const restored =
+						timetableEntries.find((e) => e.id === existingEntry.id) ??
+						rawTeamEntries.find((e) => e.id === existingEntry.id);
 					if (restored) upsertOccupancy(restored);
 					clearPending(existingEntry.id);
 					const msgs = (result.conflicts ?? []).map((c) => c.message).filter(Boolean);
@@ -1971,8 +1984,9 @@
 				}
 			} catch (e: unknown) {
 				if (snapshot) applyEntryMutation(existingEntry.id, snapshot);
-				const restored = timetableEntries.find((x) => x.id === existingEntry.id)
-					?? rawTeamEntries.find((x) => x.id === existingEntry.id);
+				const restored =
+					timetableEntries.find((x) => x.id === existingEntry.id) ??
+					rawTeamEntries.find((x) => x.id === existingEntry.id);
 				if (restored) upsertOccupancy(restored);
 				clearPending(existingEntry.id);
 				toast.error((e instanceof Error ? e.message : String(e)) || 'แทนที่ไม่สำเร็จ');
@@ -2013,7 +2027,7 @@
 		updateUnavailableRooms(day, periodId);
 	}
 
-	let unavailableRooms = $state<Set<string>>(new Set());
+	let unavailableRooms = new SvelteSet<string>();
 
 	// Activity dialog: lookup ครูจาก activityInstructorMap (ตอน drop independent activity)
 	let draggedActivityInstructor = $derived.by(() => {
@@ -2026,7 +2040,7 @@
 	});
 
 	async function updateUnavailableRooms(day: string, periodId: string) {
-		unavailableRooms = new Set();
+		unavailableRooms.clear();
 		try {
 			const res = await listTimetableEntries({
 				day_of_week: day,
@@ -2040,7 +2054,7 @@
 					busyRooms.add(entry.room_id);
 				}
 			});
-			unavailableRooms = busyRooms;
+			replaceSvelteSet(unavailableRooms, busyRooms);
 		} catch (e) {
 			console.error(e);
 		}
@@ -2162,8 +2176,7 @@
 						// API success = confirm. Swap temp → real (id เปลี่ยน, joined fields เก็บที่คำนวณไว้)
 						const realId = res.data.id;
 						if (realId) {
-							const swap = (e: TimetableEntry) =>
-								e.id === tempId ? { ...e, id: realId } : e;
+							const swap = (e: TimetableEntry) => (e.id === tempId ? { ...e, id: realId } : e);
 							timetableEntries = timetableEntries.map(swap);
 							rawTeamEntries = rawTeamEntries.map(swap);
 							removeOccupancy(tempId);
@@ -2492,10 +2505,7 @@
 		const slotCounts = new SvelteMap<string, number>();
 		timetableEntries.forEach((entry) => {
 			if (entry.activity_slot_id) {
-				slotCounts.set(
-					entry.activity_slot_id,
-					(slotCounts.get(entry.activity_slot_id) || 0) + 1
-				);
+				slotCounts.set(entry.activity_slot_id, (slotCounts.get(entry.activity_slot_id) || 0) + 1);
 			}
 		});
 
@@ -2587,7 +2597,6 @@
 	// Batch summary dialog (after backend response — show inserted/skipped/blocked/deleted)
 	let showBatchSummary = $state(false);
 	let batchSummary = $state<BatchSummary | null>(null);
-	let batchSummaryForce = $state(false); // remember if user submitted with force
 	let batchClassrooms = $state<string[]>([]);
 	let batchInstructors = $state<string[]>([]);
 	let batchDays = $state<string[]>(['MON']);
@@ -2758,10 +2767,12 @@
 			// New API: summary returned even on success (skipped/blocked/deleted/excluded)
 			if (res.success && res.summary) {
 				batchSummary = res.summary;
-				batchSummaryForce = batchForce;
 				const s = res.summary;
-				const hasAnyConflict = s.skipped.length > 0 || s.blocked.length > 0
-					|| s.deleted.length > 0 || s.excluded_instructors.length > 0;
+				const hasAnyConflict =
+					s.skipped.length > 0 ||
+					s.blocked.length > 0 ||
+					s.deleted.length > 0 ||
+					s.excluded_instructors.length > 0;
 				if (hasAnyConflict) {
 					showBatchSummary = true;
 				} else {
@@ -2900,8 +2911,7 @@
 				if (patch.client_temp_id) {
 					const tempId = patch.client_temp_id;
 					clearPending(tempId);
-					const swapTempToReal = (e: TimetableEntry) =>
-						e.id === tempId ? created : e;
+					const swapTempToReal = (e: TimetableEntry) => (e.id === tempId ? created : e);
 					if (timetableEntries.some((e) => e.id === tempId)) {
 						timetableEntries = timetableEntries.map(swapTempToReal);
 					}
@@ -2970,9 +2980,7 @@
 				const targetId = patch.entry_id;
 				const newIid = patch.instructor_id;
 				occupancyEntries = occupancyEntries.map((e) =>
-					e.id === targetId
-						? { ...e, instructor_ids: [...e.instructor_ids, newIid] }
-						: e
+					e.id === targetId ? { ...e, instructor_ids: [...e.instructor_ids, newIid] } : e
 				);
 				updateEntries((arr) =>
 					arr.map((e) => {
@@ -3032,8 +3040,9 @@
 						newClassroomId: patch.new_classroom_id ?? undefined
 					});
 					applyEntryMutation(patch.entry_id, newFields);
-					const updated = timetableEntries.find((e) => e.id === patch.entry_id)
-						?? rawTeamEntries.find((e) => e.id === patch.entry_id);
+					const updated =
+						timetableEntries.find((e) => e.id === patch.entry_id) ??
+						rawTeamEntries.find((e) => e.id === patch.entry_id);
 					if (updated) upsertOccupancy(updated);
 				} else {
 					// move/swap: เปลี่ยน day/period/room
@@ -4273,58 +4282,58 @@
 
 				<!-- ห้องเรียน — เปลี่ยนเฉพาะคาบนี้ได้ (ทุก view; INSTRUCTOR ghost = ไม่ใช่ entry ของเรา → ซ่อน) -->
 				{#if !entryPopoverIsGhost}
-				<div class="space-y-2 border-t pt-3">
-					<div class="text-sm font-medium">ห้องเรียน</div>
-					<Popover.Root bind:open={entryPopoverRoomPickerOpen}>
-						<Popover.Trigger class="w-full">
-							<Button
-								variant="outline"
-								role="combobox"
-								aria-expanded={entryPopoverRoomPickerOpen}
-								class="w-full justify-between font-normal"
-								disabled={entryPopoverSavingRoom}
-							>
-								<span class="truncate flex items-center gap-1.5">
-									{#if entryPopoverSavingRoom}
-										<Loader2 class="h-3.5 w-3.5 animate-spin" />
-									{:else}
-										<MapPin class="h-3.5 w-3.5 shrink-0 opacity-70" />
-									{/if}
-									{#if entryPopoverTarget?.room_id}
-										{@const r = rooms.find((x) => x.id === entryPopoverTarget?.room_id)}
-										{r ? `${r.name_th}${r.building_name ? ` (${r.building_name})` : ''}` : 'ห้องไม่พบ'}
-									{:else}
-										ไม่ระบุห้อง
-									{/if}
-								</span>
-								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-							</Button>
-						</Popover.Trigger>
-						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-							<Command.Root>
-								<Command.Input placeholder="ค้นหาห้อง..." />
-								<Command.Empty>ไม่พบห้อง</Command.Empty>
-								<Command.Group class="max-h-[280px] overflow-y-auto">
-									{#each rooms as room (room.id)}
-										{@const isBusy = entryPopoverUnavailableRooms.has(room.id)}
-										{@const isSelected = entryPopoverTarget?.room_id === room.id}
-										{#if !isBusy || isSelected}
-											<Command.Item
-												value={`${room.name_th} ${room.building_name ?? ''}`}
-												onSelect={() => handlePopoverChangeRoom(room.id)}
-											>
-												<Check
-													class="mr-2 h-4 w-4 {isSelected ? 'opacity-100' : 'opacity-0'}"
-												/>
-												{room.name_th}{room.building_name ? ` (${room.building_name})` : ''}
-											</Command.Item>
+					<div class="space-y-2 border-t pt-3">
+						<div class="text-sm font-medium">ห้องเรียน</div>
+						<Popover.Root bind:open={entryPopoverRoomPickerOpen}>
+							<Popover.Trigger class="w-full">
+								<Button
+									variant="outline"
+									role="combobox"
+									aria-expanded={entryPopoverRoomPickerOpen}
+									class="w-full justify-between font-normal"
+									disabled={entryPopoverSavingRoom}
+								>
+									<span class="truncate flex items-center gap-1.5">
+										{#if entryPopoverSavingRoom}
+											<Loader2 class="h-3.5 w-3.5 animate-spin" />
+										{:else}
+											<MapPin class="h-3.5 w-3.5 shrink-0 opacity-70" />
 										{/if}
-									{/each}
-								</Command.Group>
-							</Command.Root>
-						</Popover.Content>
-					</Popover.Root>
-				</div>
+										{#if entryPopoverTarget?.room_id}
+											{@const r = rooms.find((x) => x.id === entryPopoverTarget?.room_id)}
+											{r
+												? `${r.name_th}${r.building_name ? ` (${r.building_name})` : ''}`
+												: 'ห้องไม่พบ'}
+										{:else}
+											ไม่ระบุห้อง
+										{/if}
+									</span>
+									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+								</Button>
+							</Popover.Trigger>
+							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+								<Command.Root>
+									<Command.Input placeholder="ค้นหาห้อง..." />
+									<Command.Empty>ไม่พบห้อง</Command.Empty>
+									<Command.Group class="max-h-[280px] overflow-y-auto">
+										{#each rooms as room (room.id)}
+											{@const isBusy = entryPopoverUnavailableRooms.has(room.id)}
+											{@const isSelected = entryPopoverTarget?.room_id === room.id}
+											{#if !isBusy || isSelected}
+												<Command.Item
+													value={`${room.name_th} ${room.building_name ?? ''}`}
+													onSelect={() => handlePopoverChangeRoom(room.id)}
+												>
+													<Check class="mr-2 h-4 w-4 {isSelected ? 'opacity-100' : 'opacity-0'}" />
+													{room.name_th}{room.building_name ? ` (${room.building_name})` : ''}
+												</Command.Item>
+											{/if}
+										{/each}
+									</Command.Group>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
+					</div>
 				{/if}
 			{/if}
 		</div>
@@ -4350,9 +4359,7 @@
 						{#if viewMode === 'CLASSROOM'}
 							<span class="flex items-center gap-1"
 								><Users class="w-3 h-3" />
-								{draggedActivityInstructor?.name ||
-									draggedCourse?.instructor_name ||
-									'-'}</span
+								{draggedActivityInstructor?.name || draggedCourse?.instructor_name || '-'}</span
 							>
 							<span class="flex items-center gap-1"
 								><School class="w-3 h-3" />
@@ -5122,11 +5129,11 @@
 						🔄 เขียนทับ {batchSummary.deleted.length} รายการ
 					</div>
 					<ul class="text-xs space-y-1 text-foreground/80">
-						{#each batchSummary.deleted as d}
+						{#each batchSummary.deleted as d (d.id)}
 							<li>
 								<span class="font-medium">{d.classroom_name ?? '?'}</span>
-								· {d.day_of_week} {d.period_name ?? ''} —
-								ลบ "<span class="font-medium">{d.title}</span>"
+								· {d.day_of_week}
+								{d.period_name ?? ''} — ลบ "<span class="font-medium">{d.title}</span>"
 								{#if d.instructor_names.length > 0}
 									<span class="text-muted-foreground">({d.instructor_names.join(', ')})</span>
 								{/if}
@@ -5142,7 +5149,7 @@
 						⚠️ ข้าม {batchSummary.skipped.length} รายการ
 					</div>
 					<ul class="text-xs space-y-1 text-foreground/80">
-						{#each batchSummary.skipped as s}
+						{#each batchSummary.skipped as s (`${s.classroom_id ?? 'all'}-${s.day_of_week}-${s.period_id}-${s.message}`)}
 							<li>{s.message}</li>
 						{/each}
 					</ul>
@@ -5155,7 +5162,7 @@
 						🚫 ลงไม่ได้ {batchSummary.blocked.length} รายการ
 					</div>
 					<ul class="text-xs space-y-1 text-foreground/80">
-						{#each batchSummary.blocked as b}
+						{#each batchSummary.blocked as b (`${b.classroom_id}-${b.day_of_week}-${b.period_id}-${b.message}`)}
 							<li>{b.message}</li>
 						{/each}
 					</ul>
@@ -5168,10 +5175,10 @@
 						👤 ซ่อนครู {batchSummary.excluded_instructors.length} คน (ครูติดสอนคาบนี้)
 					</div>
 					<ul class="text-xs space-y-1 text-foreground/80">
-						{#each batchSummary.excluded_instructors as ex}
+						{#each batchSummary.excluded_instructors as ex (ex.instructor_id)}
 							<li>
-								<span class="font-medium">{ex.instructor_name}</span> —
-								ไม่ได้ attach กับ entries ใหม่
+								<span class="font-medium">{ex.instructor_name}</span> — ไม่ได้ attach กับ entries
+								ใหม่
 								{#if ex.conflicting_at.length > 0}
 									<div class="ml-3 text-muted-foreground">
 										ติดที่: {ex.conflicting_at
@@ -5185,10 +5192,7 @@
 				</div>
 			{/if}
 
-			{#if batchSummary && batchSummary.inserted_count === 0
-				&& batchSummary.skipped.length === 0
-				&& batchSummary.blocked.length === 0
-				&& batchSummary.deleted.length === 0}
+			{#if batchSummary && batchSummary.inserted_count === 0 && batchSummary.skipped.length === 0 && batchSummary.blocked.length === 0 && batchSummary.deleted.length === 0}
 				<p class="text-sm text-muted-foreground text-center py-4">ไม่มี cell ที่จะลง</p>
 			{/if}
 		</div>
