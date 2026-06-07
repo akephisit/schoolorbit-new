@@ -928,6 +928,20 @@ mod tests {
     }
 
     #[test]
+    fn sort_students_for_numbering_orders_by_name() {
+        let students = vec![
+            student("S003", "วิชัย", Some("นาย")),
+            student("S001", "กมล", Some("เด็กชาย")),
+            student("S002", "สมหญิง", Some("เด็กหญิง")),
+        ];
+
+        let sorted = sort_students_for_numbering(students, "name").unwrap();
+
+        let names: Vec<_> = sorted.iter().map(|row| row.first_name.as_str()).collect();
+        assert_eq!(names, vec!["กมล", "วิชัย", "สมหญิง"]);
+    }
+
+    #[test]
     fn sort_students_for_numbering_places_male_titles_before_other_titles_then_name() {
         let students = vec![
             student("S001", "มาลี", Some("เด็กหญิง")),
@@ -949,5 +963,14 @@ mod tests {
         assert!(
             matches!(result, Err(AppError::BadRequest(message)) if message == "Invalid sort_by parameter")
         );
+    }
+
+    #[test]
+    fn is_male_title_accepts_only_supported_male_titles() {
+        assert!(is_male_title(&Some("เด็กชาย".to_string())));
+        assert!(is_male_title(&Some("นาย".to_string())));
+        assert!(!is_male_title(&Some("เด็กหญิง".to_string())));
+        assert!(!is_male_title(&Some("นางสาว".to_string())));
+        assert!(!is_male_title(&None));
     }
 }

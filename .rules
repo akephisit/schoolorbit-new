@@ -145,6 +145,7 @@ If adding "User Profile Edit" feature:
   cargo test modules::admission::services::pii::tests --bin backend-school
   cargo check
   ```
+* **Backend DB tests:** Database-backed backend tests must use `TEST_DATABASE_URL`, not `DATABASE_URL`, and isolate state in a test schema. For Neon, use the direct endpoint for test migrations; do not run schema/search-path based migration tests through the `-pooler` host because transaction pooling can expose `public._sqlx_migrations` and cause checksum mismatches.
 * **Static Guard Ownership:**
   * Backend-only architecture rules belong in `backend-school/tests/static_architecture.rs` or a repository-level script, not in `frontend-school` static tests. Examples: no `mod.rs`, service-layer handler boundaries, legacy permission helper bans, tenant resolver rules, internal auth rules, and backend permission-cache/SSE invalidation rules.
   * Frontend static tests should cover frontend behavior or cross-stack API contracts. Examples: backend/frontend permission registry alignment, route metadata/menu alignment, API response envelopes consumed by the frontend, CSR/auth flow, and frontend API-client usage.

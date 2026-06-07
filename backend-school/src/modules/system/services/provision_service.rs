@@ -29,17 +29,12 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
             AppError::InternalServerError(format!("Database connection failed: {}", error))
         })?;
 
-    sqlx::migrate!("./migrations")
-        .run(&pool)
+    crate::db::migration::run_tenant_migrations(&pool)
         .await
         .map_err(|error| {
             tracing::error!("Tenant migration failed: {}", error);
             AppError::InternalServerError(format!("Migration failed: {}", error))
         })?;
-
-    if let Err(error) = crate::utils::permission_sync::sync_permissions(&pool).await {
-        tracing::warn!("Failed to sync permissions during provisioning: {}", error);
-    }
 
     let admin_role_id = sqlx::query_scalar::<_, uuid::Uuid>(
         r#"

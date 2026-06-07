@@ -1180,4 +1180,42 @@ mod tests {
 
         assert_eq!(value, serde_json::json!({ "showScores": true }));
     }
+
+    #[test]
+    fn selection_settings_patch_serializes_typed_track_maps_and_method_key() {
+        let track_id = Uuid::new_v4();
+        let subject_id = Uuid::new_v4();
+        let mut subjects_by_track = std::collections::BTreeMap::new();
+        subjects_by_track.insert(track_id, vec![subject_id]);
+        let mut method_by_track = std::collections::BTreeMap::new();
+        method_by_track.insert(track_id, "round_robin".to_string());
+
+        let patch = SelectionSettingsPatch::from(UpdateSelectionSettingsRequest {
+            subjects_by_track: Some(subjects_by_track),
+            method_by_track: Some(method_by_track),
+            room_assignment_method: Some("sequential".to_string()),
+            assignment_mode: Some("per_track".to_string()),
+            show_scores: Some(false),
+        });
+
+        let value = serde_json::to_value(&patch).unwrap();
+        let mut expected_subjects = serde_json::Map::new();
+        expected_subjects.insert(
+            track_id.to_string(),
+            serde_json::json!([subject_id.to_string()]),
+        );
+        let mut expected_methods = serde_json::Map::new();
+        expected_methods.insert(track_id.to_string(), serde_json::json!("round_robin"));
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "subjectsByTrack": expected_subjects,
+                "methodByTrack": expected_methods,
+                "method": "sequential",
+                "assignmentMode": "per_track",
+                "showScores": false
+            })
+        );
+    }
 }

@@ -655,6 +655,30 @@ mod tests {
     }
 
     #[test]
+    fn subject_constraint_view_from_row_preserves_typed_optional_arrays() {
+        let allowed_period_id = Uuid::new_v4();
+        let row = SubjectConstraintRow {
+            id: Uuid::new_v4(),
+            code: "MATH".to_string(),
+            name: "คณิตศาสตร์".to_string(),
+            min_consecutive_periods: 1,
+            max_consecutive_periods: Some(2),
+            allow_single_period: Some(true),
+            periods_per_week: Some(5),
+            allowed_period_ids: Some(Json(vec![allowed_period_id])),
+            allowed_days: Some(Json(vec!["MON".to_string(), "TUE".to_string()])),
+        };
+
+        let view = subject_constraint_view_from_row(row).unwrap();
+
+        assert_eq!(view.allowed_period_ids, Some(vec![allowed_period_id]));
+        assert_eq!(
+            view.allowed_days,
+            Some(vec!["MON".to_string(), "TUE".to_string()])
+        );
+    }
+
+    #[test]
     fn scheduler_setting_value_defaults_to_four_when_missing() {
         assert_eq!(scheduler_default_max_consecutive(Some(6)), 6);
         assert_eq!(scheduler_default_max_consecutive(None), 4);

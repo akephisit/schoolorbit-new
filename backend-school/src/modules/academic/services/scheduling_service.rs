@@ -664,4 +664,61 @@ mod tests {
             crate::modules::academic::services::scheduler::types::SchedulingAlgorithm::Greedy
         );
     }
+
+    #[test]
+    fn locked_slot_from_row_handles_all_school_scope_without_scope_ids() {
+        let period_id = Uuid::new_v4();
+        let row = TimetableLockedSlotRow {
+            id: Uuid::new_v4(),
+            academic_semester_id: Uuid::new_v4(),
+            scope_type: "ALL_SCHOOL".to_string(),
+            scope_ids: None,
+            subject_id: Uuid::new_v4(),
+            day_of_week: "MON".to_string(),
+            period_ids: Some(Json(vec![period_id])),
+            room_id: None,
+            instructor_id: None,
+            reason: Some("policy".to_string()),
+            locked_by: Some(Uuid::new_v4()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let slot = locked_slot_from_row(row).unwrap();
+
+        assert_eq!(slot.scope_ids, None);
+        assert_eq!(slot.period_ids, vec![period_id]);
+    }
+
+    #[test]
+    fn scheduling_job_from_row_defaults_missing_jsonb_shapes() {
+        let row = TimetableSchedulingJobRow {
+            id: Uuid::new_v4(),
+            academic_semester_id: Uuid::new_v4(),
+            classroom_ids: None,
+            algorithm: "BACKTRACKING".to_string(),
+            config: None,
+            status: "PENDING".to_string(),
+            progress: None,
+            quality_score: None,
+            scheduled_courses: None,
+            total_courses: None,
+            failed_courses: None,
+            started_at: None,
+            completed_at: None,
+            duration_seconds: None,
+            error_message: None,
+            created_by: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let job = scheduling_job_from_row(row).unwrap();
+
+        assert!(job.classroom_ids.is_empty());
+        assert_eq!(job.config.timeout_seconds, Some(300));
+        assert_eq!(job.config.min_quality_score, Some(70.0));
+        assert_eq!(job.config.allow_partial, Some(false));
+        assert!(job.failed_courses.is_empty());
+    }
 }

@@ -1653,11 +1653,31 @@ mod tests {
     }
 
     #[test]
+    fn occupied_student_numbers_trims_and_deduplicates_existing_codes() {
+        assert_eq!(
+            occupied_student_numbers(&[
+                " 1001 ".to_string(),
+                "1001".to_string(),
+                "01002".to_string(),
+                "".to_string(),
+            ]),
+            HashSet::from([1001, 1002])
+        );
+    }
+
+    #[test]
     fn next_available_student_number_skips_occupied_numbers() {
         let occupied = HashSet::from([1001, 1002, 1004]);
 
         assert_eq!(next_available_student_number(&occupied, 1001), 1003);
         assert_eq!(next_available_student_number(&occupied, 1005), 1005);
+    }
+
+    #[test]
+    fn next_available_student_number_skips_contiguous_occupied_run() {
+        let occupied = HashSet::from([7, 8, 9, 11]);
+
+        assert_eq!(next_available_student_number(&occupied, 7), 10);
     }
 }
 
