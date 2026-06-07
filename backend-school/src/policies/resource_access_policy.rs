@@ -126,6 +126,27 @@ pub async fn require_user_resource_access(
     require_resource_access(pool, actor, permissions, &target, forbidden_message).await
 }
 
+pub async fn accessible_organization_unit_ids(
+    pool: &PgPool,
+    access: UserResourceListAccess,
+) -> Result<Option<Vec<Uuid>>, AppError> {
+    match access {
+        UserResourceListAccess::School => Ok(None),
+        UserResourceListAccess::Own(actor_user_id)
+        | UserResourceListAccess::Assigned(actor_user_id)
+        | UserResourceListAccess::OrganizationUnit(actor_user_id) => {
+            actor_active_organization_unit_ids(pool, actor_user_id)
+                .await
+                .map(Some)
+        }
+        UserResourceListAccess::OrganizationTree(actor_user_id) => {
+            actor_organization_tree_unit_ids(pool, actor_user_id)
+                .await
+                .map(Some)
+        }
+    }
+}
+
 pub async fn require_resource_access(
     pool: &PgPool,
     actor: &ActorContext,
@@ -162,6 +183,62 @@ pub async fn require_resource_access(
     }
 
     Err(AppError::Forbidden(forbidden_message.to_string()))
+}
+
+async fn actor_active_organization_unit_ids(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT organization_unit_id
+        FROM organization_members
+        WHERE user_id = $1
+          AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+        "#,
+    )
+    .bind(actor_user_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to load actor organization units: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานของผู้ใช้ได้".to_string())
+    })
+}
+
+async fn actor_organization_tree_unit_ids(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    sqlx::query_scalar(
+        r#"
+        WITH RECURSIVE actor_roots AS (
+            SELECT organization_unit_id
+            FROM organization_members
+            WHERE user_id = $1
+              AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+        ),
+        organization_tree AS (
+            SELECT organization_unit_id
+            FROM actor_roots
+            UNION
+            SELECT child.id
+            FROM organization_units child
+            JOIN organization_tree parent_tree
+              ON child.parent_unit_id = parent_tree.organization_unit_id
+            WHERE child.is_active = true
+        )
+        SELECT organization_unit_id
+        FROM organization_tree
+        "#,
+    )
+    .bind(actor_user_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to load actor organization tree units: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบสายงานของผู้ใช้ได้".to_string())
+    })
 }
 
 async fn user_resource_target(

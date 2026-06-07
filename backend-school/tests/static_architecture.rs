@@ -355,6 +355,18 @@ fn staff_list_uses_resource_aware_access_scope() {
 }
 
 #[test]
+fn academic_curriculum_access_uses_resource_policy_tree_resolution() {
+    let subject_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/subject_service.rs"),
+    ));
+
+    assert!(subject_service.contains("resource_access_policy::accessible_organization_unit_ids"));
+    assert!(subject_service.contains("resource_access_policy::resolve_user_resource_list_access"));
+    assert!(!subject_service.contains("WITH RECURSIVE"));
+    assert!(!subject_service.contains("JOIN organization_tree parent_tree"));
+}
+
+#[test]
 fn staff_access_policy_uses_resource_access_foundation() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let staff_policy = strip_comments(&read_source(

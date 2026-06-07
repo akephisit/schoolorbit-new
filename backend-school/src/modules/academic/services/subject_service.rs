@@ -5,6 +5,9 @@ use crate::modules::academic::models::curriculum::{
     SubjectFilter, SubjectGroup, UpdateSubjectRequest,
 };
 use crate::permissions::registry::codes;
+use crate::policies::resource_access_policy::{
+    self, ResourceAccessPermissions, UserResourceListAccess,
+};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -14,66 +17,31 @@ pub enum SubjectGroupAccess {
     Groups(Vec<Uuid>),
 }
 
-pub async fn get_user_subject_group_ids(
-    user_id: Uuid,
+async fn get_subject_group_ids_for_organization_units(
     pool: &PgPool,
+    organization_unit_ids: &[Uuid],
 ) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar(
-        r#"SELECT ou.subject_group_id
-           FROM organization_members om
-           JOIN organization_units ou ON ou.id = om.organization_unit_id
-           WHERE om.user_id = $1
-             AND ou.subject_group_id IS NOT NULL
-             AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
-           ORDER BY om.is_primary DESC NULLS LAST"#,
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to fetch user subject groups: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบกลุ่มสาระได้".to_string())
-    })
-}
+    if organization_unit_ids.is_empty() {
+        return Ok(Vec::new());
+    }
 
-pub async fn get_user_subject_group_ids_in_organization_tree(
-    user_id: Uuid,
-    pool: &PgPool,
-) -> Result<Vec<Uuid>, AppError> {
     sqlx::query_scalar(
-        r#"
-        WITH RECURSIVE actor_roots AS (
-            SELECT organization_unit_id
-            FROM organization_members
-            WHERE user_id = $1
-              AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
-        ),
-        organization_tree AS (
-            SELECT organization_unit_id
-            FROM actor_roots
-            UNION
-            SELECT child.id
-            FROM organization_units child
-            JOIN organization_tree parent_tree
-              ON child.parent_unit_id = parent_tree.organization_unit_id
-            WHERE child.is_active = true
-        )
-        SELECT DISTINCT ou.subject_group_id
-        FROM organization_tree
-        JOIN organization_units ou ON ou.id = organization_tree.organization_unit_id
-        WHERE ou.subject_group_id IS NOT NULL
-          AND ou.is_active = true
+        r#"SELECT DISTINCT subject_group_id
+        FROM organization_units
+        WHERE id = ANY($1)
+          AND subject_group_id IS NOT NULL
+          AND is_active = true
         "#,
     )
-    .bind(user_id)
+    .bind(organization_unit_ids)
     .fetch_all(pool)
     .await
     .map_err(|error| {
         tracing::error!(
-            "Failed to fetch user subject groups in organization tree: {}",
+            "Failed to fetch subject groups for organization units: {}",
             error
         );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบสายงานกลุ่มสาระได้".to_string())
+        AppError::InternalServerError("ไม่สามารถตรวจสอบกลุ่มสาระได้".to_string())
     })
 }
 
@@ -81,57 +49,82 @@ pub async fn resolve_subject_read_access(
     actor: &ActorContext,
     pool: &PgPool,
 ) -> Result<Option<SubjectGroupAccess>, AppError> {
-    if actor.has_permission(codes::ACADEMIC_CURRICULUM_READ_ALL) {
-        return Ok(Some(SubjectGroupAccess::All));
-    }
+    let Some(access) = resource_access_policy::resolve_user_resource_list_access(
+        actor,
+        curriculum_read_permissions(actor),
+    ) else {
+        return Ok(None);
+    };
 
-    if actor.has_any_permission(&[
-        codes::ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE,
-        codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE,
-    ]) {
-        return Ok(Some(SubjectGroupAccess::Groups(
-            get_user_subject_group_ids_in_organization_tree(actor.user_id, pool).await?,
-        )));
-    }
-
-    if actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT) {
-        return Ok(Some(SubjectGroupAccess::Groups(
-            get_user_subject_group_ids(actor.user_id, pool).await?,
-        )));
-    }
-
-    Ok(None)
+    subject_group_access_from_list_access(pool, access)
+        .await
+        .map(Some)
 }
 
 pub async fn resolve_subject_manage_access(
     actor: &ActorContext,
     pool: &PgPool,
-    all_permission: &str,
+    all_permission: &'static str,
 ) -> Result<Option<SubjectGroupAccess>, AppError> {
-    if actor.has_permission(all_permission) {
-        return Ok(Some(SubjectGroupAccess::All));
-    }
+    let Some(access) = resource_access_policy::resolve_user_resource_list_access(
+        actor,
+        curriculum_manage_permissions(all_permission),
+    ) else {
+        return Ok(None);
+    };
 
-    if actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE) {
-        return Ok(Some(SubjectGroupAccess::Groups(
-            get_user_subject_group_ids_in_organization_tree(actor.user_id, pool).await?,
-        )));
-    }
+    subject_group_access_from_list_access(pool, access)
+        .await
+        .map(Some)
+}
 
-    if actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT) {
-        return Ok(Some(SubjectGroupAccess::Groups(
-            get_user_subject_group_ids(actor.user_id, pool).await?,
-        )));
-    }
+fn curriculum_read_permissions(actor: &ActorContext) -> ResourceAccessPermissions {
+    let tree_permission =
+        if actor.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE) {
+            codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE
+        } else {
+            codes::ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE
+        };
 
-    Ok(None)
+    ResourceAccessPermissions {
+        own: None,
+        assigned: None,
+        organization_unit: Some(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT),
+        organization_tree: Some(tree_permission),
+        school: Some(codes::ACADEMIC_CURRICULUM_READ_ALL),
+    }
+}
+
+fn curriculum_manage_permissions(all_permission: &'static str) -> ResourceAccessPermissions {
+    ResourceAccessPermissions {
+        own: None,
+        assigned: None,
+        organization_unit: Some(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT),
+        organization_tree: Some(codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE),
+        school: Some(all_permission),
+    }
+}
+
+async fn subject_group_access_from_list_access(
+    pool: &PgPool,
+    access: UserResourceListAccess,
+) -> Result<SubjectGroupAccess, AppError> {
+    let Some(organization_unit_ids) =
+        resource_access_policy::accessible_organization_unit_ids(pool, access).await?
+    else {
+        return Ok(SubjectGroupAccess::All);
+    };
+
+    Ok(SubjectGroupAccess::Groups(
+        get_subject_group_ids_for_organization_units(pool, &organization_unit_ids).await?,
+    ))
 }
 
 pub async fn ensure_subject_manage(
     actor: &ActorContext,
     pool: &PgPool,
     subject_id: Uuid,
-    manage_code: &str,
+    manage_code: &'static str,
     read_only: bool,
 ) -> Result<(), AppError> {
     let access = if read_only && !actor.has_permission(manage_code) {
