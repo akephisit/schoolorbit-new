@@ -14,6 +14,7 @@ use crate::modules::academic::models::curriculum::{
 };
 use crate::modules::academic::services::subject_service;
 use crate::permissions::registry::codes;
+use crate::policies::curriculum_access_policy;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
@@ -24,7 +25,7 @@ pub async fn list_subject_groups(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    if subject_service::resolve_subject_read_access(&actor, &pool)
+    if curriculum_access_policy::resolve_subject_read_access(&actor, &pool)
         .await?
         .is_none()
     {
@@ -50,7 +51,8 @@ pub async fn list_subjects(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let Some(access) = subject_service::resolve_subject_read_access(&actor, &pool).await? else {
+    let Some(access) = curriculum_access_policy::resolve_subject_read_access(&actor, &pool).await?
+    else {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(
@@ -73,7 +75,7 @@ pub async fn create_subject(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let Some(access) = subject_service::resolve_subject_manage_access(
+    let Some(access) = curriculum_access_policy::resolve_subject_manage_access(
         &actor,
         &pool,
         codes::ACADEMIC_CURRICULUM_CREATE_ALL,
@@ -109,7 +111,7 @@ pub async fn update_subject(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let Some(access) = subject_service::resolve_subject_manage_access(
+    let Some(access) = curriculum_access_policy::resolve_subject_manage_access(
         &actor,
         &pool,
         codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
@@ -149,7 +151,7 @@ pub async fn delete_subject(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let Some(access) = subject_service::resolve_subject_manage_access(
+    let Some(access) = curriculum_access_policy::resolve_subject_manage_access(
         &actor,
         &pool,
         codes::ACADEMIC_CURRICULUM_DELETE_ALL,
@@ -185,7 +187,7 @@ pub async fn list_subject_default_instructors(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    subject_service::ensure_subject_manage(
+    curriculum_access_policy::ensure_subject_manage(
         &actor,
         &pool,
         subject_id,
@@ -206,7 +208,7 @@ pub async fn add_subject_default_instructor(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    subject_service::ensure_subject_manage(
+    curriculum_access_policy::ensure_subject_manage(
         &actor,
         &pool,
         subject_id,
@@ -226,7 +228,7 @@ pub async fn remove_subject_default_instructor(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    subject_service::ensure_subject_manage(
+    curriculum_access_policy::ensure_subject_manage(
         &actor,
         &pool,
         subject_id,
@@ -247,7 +249,7 @@ pub async fn update_subject_default_instructor_role(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    subject_service::ensure_subject_manage(
+    curriculum_access_policy::ensure_subject_manage(
         &actor,
         &pool,
         subject_id,
@@ -278,7 +280,8 @@ pub async fn batch_list_subject_default_instructors(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let Some(access) = subject_service::resolve_subject_read_access(&actor, &pool).await? else {
+    let Some(access) = curriculum_access_policy::resolve_subject_read_access(&actor, &pool).await?
+    else {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new(format!(

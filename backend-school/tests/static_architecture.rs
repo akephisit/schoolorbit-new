@@ -356,14 +356,38 @@ fn staff_list_uses_resource_aware_access_scope() {
 
 #[test]
 fn academic_curriculum_access_uses_resource_policy_tree_resolution() {
+    let curriculum_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/curriculum_access_policy.rs"),
+    ));
+
+    assert!(curriculum_policy.contains("resource_access_policy::accessible_organization_unit_ids"));
+    assert!(curriculum_policy.contains("resource_access_policy::resolve_user_resource_list_access"));
+    assert!(!curriculum_policy.contains("WITH RECURSIVE"));
+    assert!(!curriculum_policy.contains("JOIN organization_tree parent_tree"));
+}
+
+#[test]
+fn academic_curriculum_permission_decisions_live_in_policy_layer() {
+    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let curriculum_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/curriculum_access_policy.rs"),
+    ));
+    let subject_handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/subjects.rs"),
+    ));
     let subject_service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/subject_service.rs"),
     ));
 
-    assert!(subject_service.contains("resource_access_policy::accessible_organization_unit_ids"));
-    assert!(subject_service.contains("resource_access_policy::resolve_user_resource_list_access"));
-    assert!(!subject_service.contains("WITH RECURSIVE"));
-    assert!(!subject_service.contains("JOIN organization_tree parent_tree"));
+    assert!(policies_root.contains("pub mod curriculum_access_policy;"));
+    assert!(curriculum_policy.contains("resource_access_policy::accessible_organization_unit_ids"));
+    assert!(curriculum_policy.contains("resource_access_policy::resolve_user_resource_list_access"));
+    assert!(subject_handler.contains("curriculum_access_policy::resolve_subject_read_access"));
+    assert!(subject_handler.contains("curriculum_access_policy::resolve_subject_manage_access"));
+    assert!(subject_handler.contains("curriculum_access_policy::ensure_subject_manage"));
+    assert!(!subject_service.contains("actor.has_permission("));
+    assert!(!subject_service.contains("ResourceAccessPermissions"));
+    assert!(!subject_service.contains("resource_access_policy::"));
 }
 
 #[test]
