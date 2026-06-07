@@ -21,6 +21,7 @@
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { DatePicker } from '$lib/components/ui/date-picker';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -737,10 +738,10 @@
 			</div>
 
 			<div class="space-y-2">
-				<Label for="delegate-expires">
+				<Label>
 					วันหมดอายุ <span class="font-normal text-muted-foreground">(ไม่บังคับ)</span>
 				</Label>
-				<Input id="delegate-expires" type="date" bind:value={delegateForm.expires_at} />
+				<DatePicker bind:value={delegateForm.expires_at} placeholder="เลือกวันหมดอายุ" />
 			</div>
 		</div>
 

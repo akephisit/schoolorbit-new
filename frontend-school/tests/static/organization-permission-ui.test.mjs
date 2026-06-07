@@ -148,3 +148,12 @@ test('organization member and delegation dialogs use shadcn-svelte primitives', 
 	assert.match(members, /from '\$lib\/components\/ui\/checkbox'/);
 	assert.match(members, /<Checkbox/);
 });
+
+test('organization delegation expiry uses the shared date picker', async () => {
+	const source = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.svelte');
+
+	assert.match(source, /from '\$lib\/components\/ui\/date-picker'/);
+	assert.match(source, /<DatePicker\s+bind:value=\{delegateForm\.expires_at\}/);
+	assert.match(source, /placeholder="เลือกวันหมดอายุ"/);
+	assert.doesNotMatch(source, /type="date"\s+bind:value=\{delegateForm\.expires_at\}/);
+});
