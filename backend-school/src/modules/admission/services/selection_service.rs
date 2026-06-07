@@ -2,10 +2,12 @@ use crate::error::AppError;
 use crate::modules::admission::models::applications::{
     AssignRoomsGlobalRequest, AssignRoomsRequest,
 };
-use crate::modules::admission::models::rounds::UpdateSelectionSettingsRequest;
+use crate::modules::admission::models::rounds::{
+    SelectionSettingsPatch, UpdateSelectionSettingsRequest,
+};
 use crate::modules::admission::services::pii;
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 /// Compute (room_idx, rank_in_room) for each student given room capacities + method.
@@ -1119,22 +1121,15 @@ pub async fn update_selection_settings(
     round_id: Uuid,
     payload: UpdateSelectionSettingsRequest,
 ) -> Result<(), AppError> {
-    let mut settings = serde_json::json!({
-        "subjectsByTrack": payload.subjects_by_track.unwrap_or(serde_json::json!({})),
-        "methodByTrack": payload.method_by_track.unwrap_or(serde_json::json!({})),
-        "method": payload.room_assignment_method.unwrap_or_else(|| "sequential".to_string()),
-    });
-    if let Some(mode) = payload.assignment_mode {
-        settings["assignmentMode"] = serde_json::json!(mode);
-    }
-    if let Some(show) = payload.show_scores {
-        settings["showScores"] = serde_json::json!(show);
+    let settings = SelectionSettingsPatch::from(payload);
+    if settings.is_empty() {
+        return Ok(());
     }
 
     sqlx::query(
         "UPDATE admission_rounds SET selection_settings = COALESCE(selection_settings, '{}'::jsonb) || $1, updated_at = NOW() WHERE id = $2"
     )
-    .bind(&settings)
+    .bind(Json(settings))
     .bind(round_id)
     .execute(pool)
     .await
@@ -1169,5 +1164,20 @@ mod tests {
         let parsed = parse_subject_ids(&format!("{valid}, not-a-uuid"));
 
         assert_eq!(parsed, vec![valid]);
+    }
+
+    #[test]
+    fn selection_settings_patch_serializes_only_provided_fields() {
+        let patch = SelectionSettingsPatch::from(UpdateSelectionSettingsRequest {
+            subjects_by_track: None,
+            method_by_track: None,
+            room_assignment_method: None,
+            assignment_mode: None,
+            show_scores: Some(true),
+        });
+
+        let value = serde_json::to_value(&patch).unwrap();
+
+        assert_eq!(value, serde_json::json!({ "showScores": true }));
     }
 }

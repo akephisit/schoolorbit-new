@@ -4,7 +4,7 @@ use crate::modules::admission::services::pii;
 use crate::utils::file_url::FileUrlBuilder;
 use chrono::{Datelike, FixedOffset, Utc};
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::{types::Json, PgPool};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -272,7 +272,7 @@ pub async fn submit_application(
     .bind(&payload.previous_school_province)
     .bind(payload.father_income)
     .bind(payload.mother_income)
-    .bind(&payload.parent_status)
+    .bind(payload.parent_status.clone().map(Json))
     .bind(&payload.parent_status_other)
     .bind(&encrypted_pii.national_id_hash)
     .bind(&encrypted_pii.father_national_id_hash)
@@ -569,7 +569,7 @@ pub async fn update_application(
     .bind(&mother_national_id).bind(payload.mother_income)
     .bind(&payload.guardian_name).bind(&payload.guardian_phone).bind(&payload.guardian_relation)
     .bind(&guardian_national_id).bind(&payload.guardian_occupation).bind(payload.guardian_income)
-    .bind(&payload.guardian_is).bind(&payload.parent_status).bind(&payload.parent_status_other)
+    .bind(&payload.guardian_is).bind(payload.parent_status.clone().map(Json)).bind(&payload.parent_status_other)
     .bind(&father_national_id_hash).bind(&mother_national_id_hash).bind(&guardian_national_id_hash)
     .bind(id)
     .execute(pool)

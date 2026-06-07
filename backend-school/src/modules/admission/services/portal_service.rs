@@ -1,9 +1,10 @@
 use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
+use crate::modules::admission::models::rounds::SelectionSettings;
 use crate::modules::admission::services::pii;
 use crate::utils::file_url::FileUrlBuilder;
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 fn pii_error(context: &str, error: String) -> AppError {
@@ -136,21 +137,18 @@ pub async fn get_status(
         return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
     }
 
-    let selection_settings: Option<serde_json::Value> = sqlx::query_scalar(
+    let selection_settings: Option<Json<SelectionSettings>> = sqlx::query_scalar(
         "SELECT selection_settings FROM admission_rounds WHERE id = (SELECT admission_round_id FROM admission_applications WHERE id = $1)"
     ).bind(application_id).fetch_optional(pool).await.unwrap_or(None).flatten();
 
     let show_scores = selection_settings
         .as_ref()
-        .and_then(|s| s.get("showScores"))
-        .and_then(|v| v.as_bool())
+        .and_then(|Json(settings)| settings.show_scores)
         .unwrap_or(false);
     let assignment_mode = selection_settings
         .as_ref()
-        .and_then(|s| s.get("assignmentMode"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("per_track")
-        .to_string();
+        .and_then(|Json(settings)| settings.assignment_mode.clone())
+        .unwrap_or_else(|| "per_track".to_string());
     let show_assignment = ["announced", "enrolling", "closed"].contains(&round_status.as_str());
     let show_form = ["enrolling", "closed"].contains(&round_status.as_str());
 
@@ -423,7 +421,7 @@ pub async fn update_application(
     .bind(&payload.data.current_postal_code).bind(&payload.data.current_phone)
     .bind(&payload.data.previous_study_year).bind(&payload.data.previous_school_province)
     .bind(payload.data.father_income).bind(payload.data.mother_income)
-    .bind(&payload.data.parent_status).bind(&payload.data.parent_status_other)
+    .bind(payload.data.parent_status.clone().map(Json)).bind(&payload.data.parent_status_other)
     .bind(&encrypted_pii.national_id_hash)
     .bind(&encrypted_pii.father_national_id_hash)
     .bind(&encrypted_pii.mother_national_id_hash)

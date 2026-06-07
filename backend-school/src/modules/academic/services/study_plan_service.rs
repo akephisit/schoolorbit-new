@@ -8,21 +8,8 @@ fn grade_level_ids_json(ids: Option<&[Uuid]>) -> Option<Json<&[Uuid]>> {
     ids.map(Json)
 }
 
-fn grade_level_ids_from_jsonb(
-    value: Option<serde_json::Value>,
-    field_name: &str,
-) -> Result<Option<Vec<Uuid>>, AppError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-
-    if value.is_null() {
-        return Ok(None);
-    }
-
-    serde_json::from_value(value).map(Some).map_err(|error| {
-        AppError::InternalServerError(format!("Invalid {field_name} JSONB shape: {error}"))
-    })
+fn grade_level_ids_from_jsonb(value: Option<Json<Vec<Uuid>>>) -> Option<Vec<Uuid>> {
+    value.map(|Json(ids)| ids)
 }
 
 fn study_plan_subject_display_order(display_order: Option<i32>) -> i32 {
@@ -46,7 +33,7 @@ struct StudyPlanRow {
     name_th: String,
     name_en: Option<String>,
     description: Option<String>,
-    grade_level_ids: Option<serde_json::Value>,
+    grade_level_ids: Option<Json<Vec<Uuid>>>,
     is_active: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -75,7 +62,7 @@ struct StudyPlanVersionActivityRow {
     #[sqlx(default)]
     catalog_term: Option<String>,
     #[sqlx(default)]
-    catalog_grade_level_ids: Option<serde_json::Value>,
+    catalog_grade_level_ids: Option<Json<Vec<Uuid>>>,
 }
 
 #[derive(Debug, FromRow)]
@@ -89,7 +76,7 @@ struct ActivityCatalogRow {
     scheduling_mode: String,
     is_active: bool,
     term: Option<String>,
-    grade_level_ids: Option<serde_json::Value>,
+    grade_level_ids: Option<Json<Vec<Uuid>>>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -101,10 +88,7 @@ fn study_plan_from_row(row: StudyPlanRow) -> Result<StudyPlan, AppError> {
         name_th: row.name_th,
         name_en: row.name_en,
         description: row.description,
-        grade_level_ids: grade_level_ids_from_jsonb(
-            row.grade_level_ids,
-            "study_plans.grade_level_ids",
-        )?,
+        grade_level_ids: grade_level_ids_from_jsonb(row.grade_level_ids),
         is_active: row.is_active,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -129,10 +113,7 @@ fn plan_activity_from_row(
         catalog_periods_per_week: row.catalog_periods_per_week,
         catalog_scheduling_mode: row.catalog_scheduling_mode,
         catalog_term: row.catalog_term,
-        catalog_grade_level_ids: grade_level_ids_from_jsonb(
-            row.catalog_grade_level_ids,
-            "activity_catalog.grade_level_ids",
-        )?,
+        catalog_grade_level_ids: grade_level_ids_from_jsonb(row.catalog_grade_level_ids),
     })
 }
 
@@ -147,10 +128,7 @@ fn activity_catalog_from_row(row: ActivityCatalogRow) -> Result<ActivityCatalog,
         scheduling_mode: row.scheduling_mode,
         is_active: row.is_active,
         term: row.term,
-        grade_level_ids: grade_level_ids_from_jsonb(
-            row.grade_level_ids,
-            "activity_catalog.grade_level_ids",
-        )?,
+        grade_level_ids: grade_level_ids_from_jsonb(row.grade_level_ids),
         created_at: row.created_at,
         updated_at: row.updated_at,
     })
@@ -1199,11 +1177,10 @@ mod tests {
         let id = Uuid::new_v4();
 
         assert_eq!(
-            grade_level_ids_from_jsonb(Some(serde_json::json!([id])), "field").unwrap(),
+            grade_level_ids_from_jsonb(Some(Json(vec![id]))),
             Some(vec![id])
         );
-        assert_eq!(grade_level_ids_from_jsonb(None, "field").unwrap(), None);
-        assert!(grade_level_ids_from_jsonb(Some(serde_json::json!({})), "field").is_err());
+        assert_eq!(grade_level_ids_from_jsonb(None), None);
     }
 
     #[test]

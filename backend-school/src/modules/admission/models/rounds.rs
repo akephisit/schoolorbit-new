@@ -1,6 +1,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
 use sqlx::FromRow;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 // ==========================================
@@ -31,7 +33,7 @@ pub struct AdmissionRound {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub report_config: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub selection_settings: Option<serde_json::Value>,
+    pub selection_settings: Option<Json<SelectionSettings>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 
@@ -76,13 +78,81 @@ pub struct UpdateAdmissionRoundRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSelectionSettingsRequest {
-    pub subjects_by_track: Option<serde_json::Value>,
-    pub method_by_track: Option<serde_json::Value>,
+    pub subjects_by_track: Option<BTreeMap<Uuid, Vec<Uuid>>>,
+    pub method_by_track: Option<BTreeMap<Uuid, String>>,
     pub room_assignment_method: Option<String>,
     /// "per_track" (default) หรือ "global"
     pub assignment_mode: Option<String>,
     /// แสดงคะแนนบน portal ผู้สมัคร
     pub show_scores: Option<bool>,
+}
+
+fn default_room_assignment_method() -> String {
+    "sequential".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionSettings {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub subjects_by_track: BTreeMap<Uuid, Vec<Uuid>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub method_by_track: BTreeMap<Uuid, String>,
+    #[serde(default = "default_room_assignment_method")]
+    pub method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignment_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_scores: Option<bool>,
+}
+
+impl Default for SelectionSettings {
+    fn default() -> Self {
+        Self {
+            subjects_by_track: BTreeMap::new(),
+            method_by_track: BTreeMap::new(),
+            method: default_room_assignment_method(),
+            assignment_mode: None,
+            show_scores: None,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionSettingsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subjects_by_track: Option<BTreeMap<Uuid, Vec<Uuid>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method_by_track: Option<BTreeMap<Uuid, String>>,
+    #[serde(rename = "method", skip_serializing_if = "Option::is_none")]
+    pub room_assignment_method: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignment_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_scores: Option<bool>,
+}
+
+impl SelectionSettingsPatch {
+    pub fn is_empty(&self) -> bool {
+        self.subjects_by_track.is_none()
+            && self.method_by_track.is_none()
+            && self.room_assignment_method.is_none()
+            && self.assignment_mode.is_none()
+            && self.show_scores.is_none()
+    }
+}
+
+impl From<UpdateSelectionSettingsRequest> for SelectionSettingsPatch {
+    fn from(request: UpdateSelectionSettingsRequest) -> Self {
+        Self {
+            subjects_by_track: request.subjects_by_track,
+            method_by_track: request.method_by_track,
+            room_assignment_method: request.room_assignment_method,
+            assignment_mode: request.assignment_mode,
+            show_scores: request.show_scores,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

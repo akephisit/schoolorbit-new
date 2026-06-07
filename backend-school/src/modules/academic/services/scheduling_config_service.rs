@@ -1,8 +1,7 @@
 use crate::error::AppError;
 use crate::modules::academic::models::scheduling::TimeSlot;
-use serde::{de::DeserializeOwned, Serialize};
-use serde_json::Value;
-use sqlx::PgPool;
+use serde::Serialize;
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -10,7 +9,7 @@ struct InstructorConstraintRow {
     pub id: Uuid,
     pub first_name: String,
     pub last_name: String,
-    pub hard_unavailable_slots: Option<Value>,
+    pub hard_unavailable_slots: Option<Json<Vec<TimeSlot>>>,
     pub max_periods_per_day: Option<i32>,
     pub min_periods_per_day: Option<i32>,
     pub assigned_room_id: Option<Uuid>,
@@ -42,8 +41,8 @@ struct SubjectConstraintRow {
     pub max_consecutive_periods: Option<i32>,
     pub allow_single_period: Option<bool>,
     pub periods_per_week: Option<i32>,
-    pub allowed_period_ids: Option<Value>,
-    pub allowed_days: Option<Value>,
+    pub allowed_period_ids: Option<Json<Vec<Uuid>>>,
+    pub allowed_days: Option<Json<Vec<String>>>,
 }
 
 #[derive(Serialize)]
@@ -70,10 +69,10 @@ struct ClassroomCourseConstraintRow {
     pub periods_per_week: Option<i32>,
     pub primary_instructor_id: Option<Uuid>,
     pub primary_instructor_name: Option<String>,
-    pub consecutive_pattern: Option<Value>,
+    pub consecutive_pattern: Option<Json<Vec<i32>>>,
     pub same_day_unique: bool,
-    pub hard_unavailable_slots: Value,
-    pub team_unavailable_slots: Value,
+    pub hard_unavailable_slots: Option<Json<Vec<TimeSlot>>>,
+    pub team_unavailable_slots: Option<Json<Vec<TimeSlot>>>,
 }
 
 #[derive(Serialize)]
@@ -112,42 +111,12 @@ pub struct RoomView {
     pub room_type: Option<String>,
 }
 
-fn json_value_option<T: Serialize>(
-    value: Option<T>,
-    field_name: &'static str,
-) -> Result<Option<Value>, AppError> {
-    value
-        .map(|value| {
-            serde_json::to_value(value).map_err(|error| {
-                AppError::InternalServerError(format!("failed to serialize {field_name}: {error}"))
-            })
-        })
-        .transpose()
+fn json_option<T>(value: Option<T>) -> Option<Json<T>> {
+    value.map(Json)
 }
 
-fn parse_optional_json_array<T: DeserializeOwned>(
-    value: Option<Value>,
-    field_name: &'static str,
-) -> Result<Option<Vec<T>>, AppError> {
-    match value {
-        Some(Value::Null) | None => Ok(None),
-        Some(value) => serde_json::from_value(value).map(Some).map_err(|error| {
-            AppError::InternalServerError(format!("invalid {field_name} data: {error}"))
-        }),
-    }
-}
-
-fn parse_json_array_or_empty<T: DeserializeOwned>(
-    value: Value,
-    field_name: &'static str,
-) -> Result<Vec<T>, AppError> {
-    if value.is_null() {
-        return Ok(Vec::new());
-    }
-
-    serde_json::from_value(value).map_err(|error| {
-        AppError::InternalServerError(format!("invalid {field_name} data: {error}"))
-    })
+fn json_vec_or_default<T>(value: Option<Json<Vec<T>>>) -> Vec<T> {
+    value.map(|Json(values)| values).unwrap_or_default()
 }
 
 fn instructor_constraint_view_from_row(
@@ -157,10 +126,7 @@ fn instructor_constraint_view_from_row(
         id: row.id,
         first_name: row.first_name,
         last_name: row.last_name,
-        hard_unavailable_slots: parse_optional_json_array(
-            row.hard_unavailable_slots,
-            "hard_unavailable_slots",
-        )?,
+        hard_unavailable_slots: row.hard_unavailable_slots.map(|Json(values)| values),
         max_periods_per_day: row.max_periods_per_day,
         min_periods_per_day: row.min_periods_per_day,
         assigned_room_id: row.assigned_room_id,
@@ -181,11 +147,8 @@ fn subject_constraint_view_from_row(
         max_consecutive_periods: row.max_consecutive_periods,
         allow_single_period: row.allow_single_period,
         periods_per_week: row.periods_per_week,
-        allowed_period_ids: parse_optional_json_array(
-            row.allowed_period_ids,
-            "allowed_period_ids",
-        )?,
-        allowed_days: parse_optional_json_array(row.allowed_days, "allowed_days")?,
+        allowed_period_ids: row.allowed_period_ids.map(|Json(values)| values),
+        allowed_days: row.allowed_days.map(|Json(values)| values),
     })
 }
 
@@ -202,19 +165,10 @@ fn classroom_course_constraint_view_from_row(
         periods_per_week: row.periods_per_week,
         primary_instructor_id: row.primary_instructor_id,
         primary_instructor_name: row.primary_instructor_name,
-        consecutive_pattern: parse_optional_json_array(
-            row.consecutive_pattern,
-            "consecutive_pattern",
-        )?,
+        consecutive_pattern: row.consecutive_pattern.map(|Json(values)| values),
         same_day_unique: row.same_day_unique,
-        hard_unavailable_slots: parse_json_array_or_empty(
-            row.hard_unavailable_slots,
-            "hard_unavailable_slots",
-        )?,
-        team_unavailable_slots: parse_json_array_or_empty(
-            row.team_unavailable_slots,
-            "team_unavailable_slots",
-        )?,
+        hard_unavailable_slots: json_vec_or_default(row.hard_unavailable_slots),
+        team_unavailable_slots: json_vec_or_default(row.team_unavailable_slots),
     })
 }
 
@@ -323,9 +277,8 @@ pub async fn update_classroom_course_constraints(
     same_day_unique: Option<bool>,
     hard_unavailable_slots: Option<Vec<TimeSlot>>,
 ) -> Result<(), AppError> {
-    let consecutive_pattern = json_value_option(consecutive_pattern, "consecutive_pattern")?;
-    let hard_unavailable_slots =
-        json_value_option(hard_unavailable_slots, "hard_unavailable_slots")?;
+    let consecutive_pattern = json_option(consecutive_pattern);
+    let hard_unavailable_slots = json_option(hard_unavailable_slots);
 
     sqlx::query(
         r#"UPDATE classroom_courses SET
@@ -471,14 +424,16 @@ pub async fn reorder_instructor_priority(
 }
 
 pub async fn get_scheduler_settings(pool: &PgPool) -> Result<i32, AppError> {
-    let rows = sqlx::query_as::<_, (String, serde_json::Value)>(
-        "SELECT key, value FROM scheduler_settings",
+    let value: Option<Json<i32>> = sqlx::query_scalar(
+        "SELECT value FROM scheduler_settings WHERE key = 'default_max_consecutive'",
     )
-    .fetch_all(pool)
+    .fetch_optional(pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    Ok(scheduler_default_max_consecutive(rows))
+    Ok(scheduler_default_max_consecutive(
+        value.map(|Json(setting)| setting),
+    ))
 }
 
 pub async fn update_scheduler_settings(
@@ -495,7 +450,7 @@ pub async fn update_scheduler_settings(
             "INSERT INTO scheduler_settings (key, value) VALUES ('default_max_consecutive', $1::jsonb)
              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
         )
-        .bind(serde_json::Value::from(v)).execute(pool).await
+        .bind(Json(v)).execute(pool).await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
     Ok(())
@@ -520,9 +475,8 @@ pub async fn update_instructor_constraints(
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     let year_id = get_active_year_id_tx(&mut tx).await?;
-    let hard_unavailable_slots =
-        json_value_option(update.hard_unavailable_slots, "hard_unavailable_slots")?;
-    let preferred_slots = json_value_option(update.preferred_slots, "preferred_slots")?;
+    let hard_unavailable_slots = json_option(update.hard_unavailable_slots);
+    let preferred_slots = json_option(update.preferred_slots);
 
     sqlx::query(
         r#"INSERT INTO instructor_preferences (
@@ -601,8 +555,8 @@ pub async fn update_subject_constraints(
     allowed_period_ids: Option<Vec<Uuid>>,
     allowed_days: Option<Vec<String>>,
 ) -> Result<(), AppError> {
-    let allowed_period_ids = json_value_option(allowed_period_ids, "allowed_period_ids")?;
-    let allowed_days = json_value_option(allowed_days, "allowed_days")?;
+    let allowed_period_ids = json_option(allowed_period_ids);
+    let allowed_days = json_option(allowed_days);
 
     sqlx::query(
         r#"UPDATE subjects SET
@@ -654,16 +608,8 @@ fn validate_consecutive_sum_matches_periods_per_week(
     Ok(())
 }
 
-fn scheduler_default_max_consecutive(rows: Vec<(String, serde_json::Value)>) -> i32 {
-    rows.into_iter()
-        .find_map(|(key, value)| {
-            if key == "default_max_consecutive" {
-                value.as_i64().map(|value| value as i32)
-            } else {
-                None
-            }
-        })
-        .unwrap_or(4)
+fn scheduler_default_max_consecutive(value: Option<i32>) -> i32 {
+    value.unwrap_or(4)
 }
 
 #[cfg(test)]
@@ -684,14 +630,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_json_array_or_empty_rejects_malformed_storage_data() {
-        assert!(matches!(
-            parse_json_array_or_empty::<i32>(serde_json::json!({"days": [1]}), "test_field"),
-            Err(AppError::InternalServerError(message)) if message.contains("invalid test_field data")
-        ));
-    }
-
-    #[test]
     fn validate_consecutive_sum_matches_subject_periods_per_week() {
         assert!(validate_consecutive_sum_matches_periods_per_week(5, Some(5)).is_ok());
         assert!(matches!(
@@ -702,21 +640,23 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_setting_value_defaults_to_four_when_missing_or_invalid() {
+    fn json_vec_or_default_reads_typed_json_arrays() {
+        let period_id = Uuid::new_v4();
+        let slot = TimeSlot {
+            day: "MON".to_string(),
+            period_id,
+        };
+
         assert_eq!(
-            scheduler_default_max_consecutive(vec![(
-                "default_max_consecutive".to_string(),
-                serde_json::json!(6)
-            )]),
-            6
+            json_vec_or_default(Some(Json(vec![slot.clone()]))),
+            vec![slot]
         );
-        assert_eq!(scheduler_default_max_consecutive(Vec::new()), 4);
-        assert_eq!(
-            scheduler_default_max_consecutive(vec![(
-                "default_max_consecutive".to_string(),
-                serde_json::json!("bad")
-            )]),
-            4
-        );
+        assert!(json_vec_or_default::<TimeSlot>(None).is_empty());
+    }
+
+    #[test]
+    fn scheduler_setting_value_defaults_to_four_when_missing() {
+        assert_eq!(scheduler_default_max_consecutive(Some(6)), 6);
+        assert_eq!(scheduler_default_max_consecutive(None), 4);
     }
 }

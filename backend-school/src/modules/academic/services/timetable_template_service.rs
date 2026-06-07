@@ -1,17 +1,7 @@
 use crate::error::AppError;
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
-
-fn uuid_vec_from_jsonb(value: serde_json::Value, field_name: &str) -> Result<Vec<Uuid>, AppError> {
-    if value.is_null() {
-        return Ok(Vec::new());
-    }
-
-    serde_json::from_value(value).map_err(|error| {
-        AppError::InternalServerError(format!("Invalid {field_name} JSONB shape: {error}"))
-    })
-}
 
 fn merge_unique_classroom_ids(mut resolved: Vec<Uuid>, specific: Vec<Uuid>) -> Vec<Uuid> {
     for classroom_id in specific {
@@ -49,9 +39,9 @@ struct TimetableTemplateEntryRow {
     entry_type: String,
     title: Option<String>,
     activity_slot_id: Option<Uuid>,
-    grade_level_ids: serde_json::Value,
-    classroom_ids: serde_json::Value,
-    instructor_ids: serde_json::Value,
+    grade_level_ids: Json<Vec<Uuid>>,
+    classroom_ids: Json<Vec<Uuid>>,
+    instructor_ids: Json<Vec<Uuid>>,
     room_id: Option<Uuid>,
 }
 
@@ -81,18 +71,9 @@ fn template_entry_from_row(
         entry_type: row.entry_type,
         title: row.title,
         activity_slot_id: row.activity_slot_id,
-        grade_level_ids: uuid_vec_from_jsonb(
-            row.grade_level_ids,
-            "timetable_template_entries.grade_level_ids",
-        )?,
-        classroom_ids: uuid_vec_from_jsonb(
-            row.classroom_ids,
-            "timetable_template_entries.classroom_ids",
-        )?,
-        instructor_ids: uuid_vec_from_jsonb(
-            row.instructor_ids,
-            "timetable_template_entries.instructor_ids",
-        )?,
+        grade_level_ids: row.grade_level_ids.0,
+        classroom_ids: row.classroom_ids.0,
+        instructor_ids: row.instructor_ids.0,
         room_id: row.room_id,
     })
 }
@@ -399,18 +380,6 @@ pub async fn clear_timetable(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn uuid_vec_from_jsonb_decodes_uuid_arrays() {
-        let id = Uuid::new_v4();
-        let value = serde_json::json!([id.to_string()]);
-
-        assert_eq!(uuid_vec_from_jsonb(value, "field").unwrap(), vec![id]);
-        assert!(uuid_vec_from_jsonb(serde_json::Value::Null, "field")
-            .unwrap()
-            .is_empty());
-        assert!(uuid_vec_from_jsonb(serde_json::json!({}), "field").is_err());
-    }
 
     #[test]
     fn merge_unique_classroom_ids_appends_specific_ids_without_duplicates() {

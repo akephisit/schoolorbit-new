@@ -1,5 +1,6 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -197,12 +198,19 @@ pub struct Classroom {
     /// Advisors aggregated from classroom_advisors junction (1 primary + N secondary)
     #[sqlx(default)]
     #[serde(default)]
-    pub advisors: serde_json::Value,
+    pub advisors: Json<Vec<ClassroomAdvisor>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ClassroomQuery {
     pub year_id: Option<Uuid>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ClassroomAdvisor {
+    pub user_id: Uuid,
+    pub role: String,
+    pub name: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]

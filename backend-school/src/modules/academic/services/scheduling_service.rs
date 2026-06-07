@@ -3,37 +3,19 @@ use crate::modules::academic::models::scheduling::*;
 use crate::modules::academic::services::scheduler_data::SchedulerDataLoader;
 use crate::modules::academic::services::SchedulerBuilder;
 use chrono::{DateTime, Utc};
-use serde::de::DeserializeOwned;
 use sqlx::{types::Json, FromRow, PgPool};
 use uuid::Uuid;
 
-fn jsonb_or_default<T>(value: serde_json::Value, field_name: &str) -> Result<T, AppError>
-where
-    T: DeserializeOwned + Default,
-{
-    if value.is_null() {
-        return Ok(T::default());
-    }
-
-    serde_json::from_value(value).map_err(|error| {
-        AppError::InternalServerError(format!("Invalid {field_name} JSONB shape: {error}"))
-    })
+fn json_vec_or_default<T>(value: Option<Json<Vec<T>>>) -> Vec<T> {
+    value.map(|Json(values)| values).unwrap_or_default()
 }
 
-fn optional_jsonb_vec<T>(
-    value: serde_json::Value,
-    field_name: &str,
-) -> Result<Option<Vec<T>>, AppError>
-where
-    T: DeserializeOwned,
-{
-    if value.is_null() {
-        return Ok(None);
-    }
+fn json_vec_option<T>(value: Option<Json<Vec<T>>>) -> Option<Vec<T>> {
+    value.map(|Json(values)| values)
+}
 
-    serde_json::from_value(value).map(Some).map_err(|error| {
-        AppError::InternalServerError(format!("Invalid {field_name} JSONB shape: {error}"))
-    })
+fn json_value_or_default<T: Default>(value: Option<Json<T>>) -> T {
+    value.map(|Json(stored)| stored).unwrap_or_default()
 }
 
 #[derive(Debug, FromRow)]
@@ -41,12 +23,12 @@ struct InstructorPreferenceRow {
     id: Uuid,
     instructor_id: Uuid,
     academic_year_id: Uuid,
-    hard_unavailable_slots: serde_json::Value,
-    preferred_slots: serde_json::Value,
+    hard_unavailable_slots: Option<Json<Vec<TimeSlot>>>,
+    preferred_slots: Option<Json<Vec<TimeSlot>>>,
     max_periods_per_day: Option<i32>,
     min_periods_per_day: Option<i32>,
-    preferred_days: serde_json::Value,
-    avoid_days: serde_json::Value,
+    preferred_days: Option<Json<Vec<String>>>,
+    avoid_days: Option<Json<Vec<String>>>,
     notes: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -60,7 +42,7 @@ struct InstructorRoomAssignmentRow {
     academic_year_id: Uuid,
     is_preferred: Option<bool>,
     is_required: Option<bool>,
-    for_subjects: serde_json::Value,
+    for_subjects: Option<Json<Vec<String>>>,
     reason: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -71,10 +53,10 @@ struct TimetableLockedSlotRow {
     id: Uuid,
     academic_semester_id: Uuid,
     scope_type: String,
-    scope_ids: serde_json::Value,
+    scope_ids: Option<Json<Vec<Uuid>>>,
     subject_id: Uuid,
     day_of_week: String,
-    period_ids: serde_json::Value,
+    period_ids: Option<Json<Vec<Uuid>>>,
     room_id: Option<Uuid>,
     instructor_id: Option<Uuid>,
     reason: Option<String>,
@@ -87,15 +69,15 @@ struct TimetableLockedSlotRow {
 struct TimetableSchedulingJobRow {
     id: Uuid,
     academic_semester_id: Uuid,
-    classroom_ids: serde_json::Value,
+    classroom_ids: Option<Json<Vec<Uuid>>>,
     algorithm: String,
-    config: serde_json::Value,
+    config: Option<Json<SchedulingConfig>>,
     status: String,
     progress: Option<i32>,
     quality_score: Option<f32>,
     scheduled_courses: Option<i32>,
     total_courses: Option<i32>,
-    failed_courses: serde_json::Value,
+    failed_courses: Option<Json<Vec<FailedCourseInfo>>>,
     started_at: Option<DateTime<Utc>>,
     completed_at: Option<DateTime<Utc>>,
     duration_seconds: Option<i32>,
@@ -112,21 +94,12 @@ fn instructor_preference_from_row(
         id: row.id,
         instructor_id: row.instructor_id,
         academic_year_id: row.academic_year_id,
-        hard_unavailable_slots: jsonb_or_default(
-            row.hard_unavailable_slots,
-            "instructor_preferences.hard_unavailable_slots",
-        )?,
-        preferred_slots: jsonb_or_default(
-            row.preferred_slots,
-            "instructor_preferences.preferred_slots",
-        )?,
+        hard_unavailable_slots: json_vec_or_default(row.hard_unavailable_slots),
+        preferred_slots: json_vec_or_default(row.preferred_slots),
         max_periods_per_day: row.max_periods_per_day,
         min_periods_per_day: row.min_periods_per_day,
-        preferred_days: jsonb_or_default(
-            row.preferred_days,
-            "instructor_preferences.preferred_days",
-        )?,
-        avoid_days: jsonb_or_default(row.avoid_days, "instructor_preferences.avoid_days")?,
+        preferred_days: json_vec_or_default(row.preferred_days),
+        avoid_days: json_vec_or_default(row.avoid_days),
         notes: row.notes,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -143,10 +116,7 @@ fn instructor_room_assignment_from_row(
         academic_year_id: row.academic_year_id,
         is_preferred: row.is_preferred,
         is_required: row.is_required,
-        for_subjects: jsonb_or_default(
-            row.for_subjects,
-            "instructor_room_assignments.for_subjects",
-        )?,
+        for_subjects: json_vec_or_default(row.for_subjects),
         reason: row.reason,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -158,10 +128,10 @@ fn locked_slot_from_row(row: TimetableLockedSlotRow) -> Result<TimetableLockedSl
         id: row.id,
         academic_semester_id: row.academic_semester_id,
         scope_type: row.scope_type,
-        scope_ids: optional_jsonb_vec(row.scope_ids, "timetable_locked_slots.scope_ids")?,
+        scope_ids: json_vec_option(row.scope_ids),
         subject_id: row.subject_id,
         day_of_week: row.day_of_week,
-        period_ids: jsonb_or_default(row.period_ids, "timetable_locked_slots.period_ids")?,
+        period_ids: json_vec_or_default(row.period_ids),
         room_id: row.room_id,
         instructor_id: row.instructor_id,
         reason: row.reason,
@@ -177,21 +147,15 @@ fn scheduling_job_from_row(
     Ok(TimetableSchedulingJob {
         id: row.id,
         academic_semester_id: row.academic_semester_id,
-        classroom_ids: jsonb_or_default(
-            row.classroom_ids,
-            "timetable_scheduling_jobs.classroom_ids",
-        )?,
+        classroom_ids: json_vec_or_default(row.classroom_ids),
         algorithm: row.algorithm,
-        config: jsonb_or_default(row.config, "timetable_scheduling_jobs.config")?,
+        config: json_value_or_default(row.config),
         status: row.status,
         progress: row.progress,
         quality_score: row.quality_score,
         scheduled_courses: row.scheduled_courses,
         total_courses: row.total_courses,
-        failed_courses: jsonb_or_default(
-            row.failed_courses,
-            "timetable_scheduling_jobs.failed_courses",
-        )?,
+        failed_courses: json_vec_or_default(row.failed_courses),
         started_at: row.started_at,
         completed_at: row.completed_at,
         duration_seconds: row.duration_seconds,
@@ -419,7 +383,7 @@ pub async fn create_locked_slot(
     )
     .bind(payload.academic_semester_id)
     .bind(scope_type)
-    .bind(Json(payload.scope_ids))
+    .bind(payload.scope_ids.map(Json))
     .bind(payload.subject_id)
     .bind(payload.day_of_week)
     .bind(Json(payload.period_ids))

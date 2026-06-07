@@ -752,6 +752,98 @@ fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
             "src/modules/consent/models.rs",
             "data_categories: serde_json::Value",
         ),
+        (
+            "src/modules/academic/services/study_plan_service.rs",
+            "grade_level_ids: Option<serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/study_plan_service.rs",
+            "catalog_grade_level_ids: Option<serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/timetable_template_service.rs",
+            "grade_level_ids: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/timetable_template_service.rs",
+            "classroom_ids: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/timetable_template_service.rs",
+            "instructor_ids: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "hard_unavailable_slots: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "preferred_slots: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "preferred_days: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "avoid_days: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "for_subjects: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "scope_ids: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "period_ids: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "classroom_ids: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "config: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_service.rs",
+            "failed_courses: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduling_config_service.rs",
+            "use serde_json::Value",
+        ),
+        (
+            "src/modules/academic/services/scheduler_data.rs",
+            "Option<serde_json::Value>",
+        ),
+        (
+            "src/modules/academic/models.rs",
+            "advisors: serde_json::Value",
+        ),
+        (
+            "src/modules/admission/models/rounds.rs",
+            "selection_settings: Option<serde_json::Value",
+        ),
+        (
+            "src/modules/admission/models/rounds.rs",
+            "subjects_by_track: Option<serde_json::Value",
+        ),
+        (
+            "src/modules/admission/models/rounds.rs",
+            "method_by_track: Option<serde_json::Value",
+        ),
+        (
+            "src/modules/admission/services/portal_service.rs",
+            "selection_settings: Option<serde_json::Value",
+        ),
+        (
+            "src/modules/admission/models/applications.rs",
+            "parent_status: Option<serde_json::Value",
+        ),
     ];
     let legacy_value_helpers = Regex::new(
         r"fn\s+\w*(?:uuid|ids|categories)\w*_json\s*\([^)]*\)\s*->\s*(?:Option\s*<\s*)?serde_json::Value",

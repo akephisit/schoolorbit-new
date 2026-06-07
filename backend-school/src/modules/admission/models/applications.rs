@@ -1,5 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -141,7 +142,7 @@ pub struct AdmissionApplication {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mother_income: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_status: Option<serde_json::Value>,
+    pub parent_status: Option<Json<Vec<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_status_other: Option<String>,
 
@@ -257,7 +258,7 @@ pub struct SubmitApplicationRequest {
     // ครอบครัว เพิ่มเติม
     pub father_income: Option<f64>,
     pub mother_income: Option<f64>,
-    pub parent_status: Option<serde_json::Value>,
+    pub parent_status: Option<Vec<String>>,
     pub parent_status_other: Option<String>,
 }
 
@@ -508,7 +509,7 @@ pub struct UpdateApplicationRequest {
     pub guardian_occupation: Option<String>,
     pub guardian_income: Option<f64>,
     pub guardian_is: Option<String>,
-    pub parent_status: Option<serde_json::Value>,
+    pub parent_status: Option<Vec<String>>,
     pub parent_status_other: Option<String>,
 }
 
