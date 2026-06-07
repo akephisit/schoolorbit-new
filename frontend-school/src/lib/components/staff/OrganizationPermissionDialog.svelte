@@ -259,12 +259,18 @@
 							</div>
 
 							<div class="overflow-x-auto">
-								<table class="w-full min-w-[980px] text-sm">
+								<table class="w-full min-w-[1032px] table-fixed text-sm">
+									<colgroup>
+										<col class="w-[360px]" />
+										{#each permissionPositionColumns as column (column.value)}
+											<col class="w-[96px]" />
+										{/each}
+									</colgroup>
 									<thead>
 										<tr class="border-b bg-muted/10">
-											<th class="w-[360px] px-4 py-3 text-left font-medium">Permission</th>
+											<th class="px-4 py-3 text-left font-medium">Permission</th>
 											{#each permissionPositionColumns as column (column.value)}
-												<th class="px-2 py-3 text-center font-medium">
+												<th class="px-2 py-3 font-medium">
 													<div class="flex flex-col items-center gap-1">
 														<span>{column.shortLabel}</span>
 														<Checkbox
@@ -295,13 +301,15 @@
 													</div>
 												</td>
 												{#each permissionPositionColumns as column (column.value)}
-													<td class="px-2 py-3 text-center align-top">
-														<Checkbox
-															aria-label={`${permission.code} ${column.label}`}
-															checked={hasGrant(permission.id, column.value)}
-															onCheckedChange={(checked) =>
-																toggleGrant(permission.id, column.value, !!checked)}
-														/>
+													<td class="px-2 py-3 align-top">
+														<div class="flex justify-center">
+															<Checkbox
+																aria-label={`${permission.code} ${column.label}`}
+																checked={hasGrant(permission.id, column.value)}
+																onCheckedChange={(checked) =>
+																	toggleGrant(permission.id, column.value, !!checked)}
+															/>
+														</div>
 													</td>
 												{/each}
 											</tr>

@@ -36,6 +36,18 @@ test('organization permission dialog preserves position-scoped grants', async ()
 	}
 });
 
+test('organization permission matrix keeps header and row checkboxes aligned', async () => {
+	const source = await readProjectFile(
+		'src/lib/components/staff/OrganizationPermissionDialog.svelte'
+	);
+
+	assert.match(source, /table-fixed/);
+	assert.match(source, /<colgroup>/);
+	assert.match(source, /<col class="w-\[360px\]"/);
+	assert.match(source, /<col class="w-\[96px\]"/);
+	assert.match(source, /flex justify-center/);
+});
+
 test('organization members section exposes full school position set', async () => {
 	const source = await readProjectFile(
 		'src/lib/components/staff/OrganizationMembersSection.svelte'
