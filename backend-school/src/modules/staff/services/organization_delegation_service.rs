@@ -26,6 +26,7 @@ pub async fn list_delegatable_permissions(
          FROM organization_permission_grants opg
          JOIN permissions p ON p.id = opg.permission_id
          WHERE opg.organization_unit_id = $1
+         GROUP BY p.id, p.code, p.name, p.module
          ORDER BY p.module, p.code",
     )
     .bind(organization_unit_id)

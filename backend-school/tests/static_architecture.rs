@@ -492,6 +492,20 @@ fn organization_delegation_handlers_use_policy_layer_for_authorization() {
 }
 
 #[test]
+fn organization_delegatable_permissions_are_unique_across_position_grants() {
+    let delegation_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/staff/services/organization_delegation_service.rs"),
+    ));
+
+    assert!(
+        delegation_service.contains("GROUP BY p.id")
+            || delegation_service.contains("DISTINCT ON (p.id)")
+            || delegation_service.contains("SELECT DISTINCT p.id"),
+        "delegatable permissions must collapse position-scoped organization grants to one row per permission"
+    );
+}
+
+#[test]
 fn staff_access_policy_uses_resource_access_foundation() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let staff_policy = strip_comments(&read_source(
