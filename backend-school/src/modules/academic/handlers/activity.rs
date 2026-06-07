@@ -183,7 +183,7 @@ pub async fn add_members(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MEMBERS_MANAGE)?;
+    actor.require_permission(codes::ACTIVITY_MANAGE_MEMBERS_ALL)?;
     match activity_service::add_members(&pool, group_id, body.student_ids).await? {
         activity_service::AddMembersOutcome::Inserted(n) => {
             Ok(Json(ApiResponse::ok(InsertedData { inserted: n })).into_response())
@@ -256,7 +256,7 @@ pub async fn remove_member(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MEMBERS_MANAGE)?;
+    actor.require_permission(codes::ACTIVITY_MANAGE_MEMBERS_ALL)?;
     activity_service::remove_member(&pool, group_id, student_id).await?;
     Ok(Json(ApiResponse::empty_with_message("ลบสมาชิกแล้ว")).into_response())
 }
@@ -270,7 +270,7 @@ pub async fn update_member_result(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MEMBERS_MANAGE)?;
+    actor.require_permission(codes::ACTIVITY_MANAGE_MEMBERS_ALL)?;
     activity_service::update_member_result(&pool, member_id, &body.result).await?;
     Ok(Json(ApiResponse::empty_with_message("บันทึกผลแล้ว")).into_response())
 }

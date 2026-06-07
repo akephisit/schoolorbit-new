@@ -14,7 +14,9 @@ const GRANT_BASELINE_REQUIRED_PERMISSION_CODES: &[&str] = &[
     codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
     codes::ORGANIZATION_WORK_READ_OWN,
     codes::ORGANIZATION_WORK_READ_ORGANIZATION_UNIT,
-    codes::ORGANIZATION_WORK_CREATE,
+    // Migration 124 is immutable and still references the pre-127 code.
+    // Migration 127 canonicalizes this row to organization_work.create.own.
+    "organization_work.create",
     codes::ORGANIZATION_WORK_UPDATE_OWN,
     codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,
     codes::STAFF_PROFILE_READ_ORGANIZATION_TREE,
@@ -53,9 +55,16 @@ fn permission_def_for_code(code: &str) -> Option<&'static PermissionDef> {
         .find(|permission| permission.code == code)
 }
 
+fn permission_def_for_migration_code(code: &str) -> Option<&'static PermissionDef> {
+    match code {
+        "organization_work.create" => permission_def_for_code(codes::ORGANIZATION_WORK_CREATE_OWN),
+        _ => permission_def_for_code(code),
+    }
+}
+
 async fn sync_grant_baseline_prerequisite_permissions(pool: &PgPool) -> Result<(), String> {
     for code in GRANT_BASELINE_REQUIRED_PERMISSION_CODES {
-        let permission = permission_def_for_code(code)
+        let permission = permission_def_for_migration_code(code)
             .ok_or_else(|| format!("Required migration permission is not registered: {code}"))?;
 
         sqlx::query(
@@ -72,7 +81,7 @@ async fn sync_grant_baseline_prerequisite_permissions(pool: &PgPool) -> Result<(
                 updated_at = NOW()
             "#,
         )
-        .bind(permission.code)
+        .bind(*code)
         .bind(permission.name)
         .bind(permission.module)
         .bind(permission.action)
@@ -327,7 +336,7 @@ mod tests {
         for code in GRANT_BASELINE_REQUIRED_PERMISSION_CODES {
             assert!(seen.insert(code));
             assert!(
-                permission_def_for_code(code).is_some(),
+                permission_def_for_migration_code(code).is_some(),
                 "{code} must exist in the permission registry before migration 124"
             );
         }
@@ -337,5 +346,26 @@ mod tests {
     fn grant_baseline_checkpoint_includes_organization_work_approval_dependency() {
         assert!(GRANT_BASELINE_REQUIRED_PERMISSION_CODES
             .contains(&&codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT));
+    }
+
+    #[test]
+    fn grant_baseline_checkpoint_keeps_immutable_migration_124_code_until_canonicalized() {
+        assert!(GRANT_BASELINE_REQUIRED_PERMISSION_CODES.contains(&&"organization_work.create"));
+        assert_eq!(
+            permission_def_for_migration_code("organization_work.create").map(|permission| {
+                (
+                    permission.code,
+                    permission.module,
+                    permission.action,
+                    permission.scope,
+                )
+            }),
+            Some((
+                codes::ORGANIZATION_WORK_CREATE_OWN,
+                "organization_work",
+                "create",
+                "own",
+            ))
+        );
     }
 }

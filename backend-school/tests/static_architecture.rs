@@ -944,6 +944,129 @@ fn permission_checks_use_registry_constants() {
 }
 
 #[test]
+fn permission_registry_codes_match_declared_module_action_scope() {
+    let registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let permission_const_pattern =
+        Regex::new(r#"pub const (?P<constant>[A-Z0-9_]+):\s*&str\s*=\s*"(?P<code>[^"]+)";"#)
+            .expect("valid regex");
+    let permission_def_pattern = Regex::new(
+        r#"(?s)PermissionDef\s*\{\s*code:\s*codes::(?P<constant>[A-Z0-9_]+).*?module:\s*"(?P<module>[^"]+)".*?action:\s*"(?P<action>[^"]+)".*?scope:\s*"(?P<scope>[^"]+)""#,
+    )
+    .expect("valid regex");
+    let permission_codes = permission_const_pattern
+        .captures_iter(&registry)
+        .map(|captures| {
+            (
+                captures
+                    .name("constant")
+                    .expect("permission constant")
+                    .as_str()
+                    .to_string(),
+                captures
+                    .name("code")
+                    .expect("permission code")
+                    .as_str()
+                    .to_string(),
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut violations = Vec::new();
+
+    for captures in permission_def_pattern.captures_iter(&registry) {
+        let constant = captures
+            .name("constant")
+            .expect("permission constant")
+            .as_str();
+        let module = captures.name("module").expect("permission module").as_str();
+        let action = captures.name("action").expect("permission action").as_str();
+        let scope = captures.name("scope").expect("permission scope").as_str();
+
+        if constant == "WILDCARD" {
+            continue;
+        }
+
+        let expected_constant = format!(
+            "{}_{}_{}",
+            module.to_ascii_uppercase(),
+            action.to_ascii_uppercase(),
+            scope.to_ascii_uppercase()
+        );
+        let expected_code = format!("{module}.{action}.{scope}");
+
+        if constant != expected_constant {
+            violations.push(format!(
+                "codes::{constant} should be named codes::{expected_constant} for {module}.{action}.{scope}"
+            ));
+        }
+
+        if permission_codes.get(constant).map(String::as_str) != Some(expected_code.as_str()) {
+            violations.push(format!(
+                "codes::{constant} should be `{expected_code}` to match its PermissionDef fields"
+            ));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
+fn permission_registry_uses_canonical_action_and_scope_vocabulary() {
+    let registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let permission_def_pattern = Regex::new(
+        r#"(?s)PermissionDef\s*\{.*?code:\s*codes::(?P<constant>[A-Z0-9_]+).*?action:\s*"(?P<action>[^"]+)".*?scope:\s*"(?P<scope>[^"]+)""#,
+    )
+    .expect("valid regex");
+    let allowed_actions = [
+        "all",
+        "approve",
+        "assign",
+        "create",
+        "delete",
+        "enroll",
+        "execute",
+        "manage",
+        "manage_members",
+        "read",
+        "remove",
+        "scores",
+        "update",
+        "verify",
+    ];
+    let allowed_scopes = [
+        "all",
+        "assigned",
+        "global",
+        "organization_tree",
+        "organization_unit",
+        "own",
+        "school",
+    ];
+    let mut violations = Vec::new();
+
+    for captures in permission_def_pattern.captures_iter(&registry) {
+        let constant = captures
+            .name("constant")
+            .expect("permission constant")
+            .as_str();
+        let action = captures.name("action").expect("permission action").as_str();
+        let scope = captures.name("scope").expect("permission scope").as_str();
+
+        if !allowed_actions.contains(&action) {
+            violations.push(format!(
+                "codes::{constant} uses unsupported action `{action}`"
+            ));
+        }
+        if !allowed_scopes.contains(&scope) {
+            violations.push(format!(
+                "codes::{constant} uses unsupported scope `{scope}`"
+            ));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
 fn permission_handlers_use_actor_context_loader_apis_only() {
     let legacy_permission_helpers = Regex::new(
         r"\b(?:check_permission|check_any_permission|check_all_permissions|check_user_permission|get_actor_context|get_actor_context_or_error)\b",

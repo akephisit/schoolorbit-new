@@ -122,7 +122,7 @@ pub async fn verify_application(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_VERIFY)?;
+    actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
     let verifier_id = actor.user_id;
     application_service::verify_application(&pool, id, verifier_id).await?;
     Ok(Json(ApiResponse::empty_with_message("ยืนยันใบสมัครแล้ว")).into_response())
@@ -137,7 +137,7 @@ pub async fn reject_application(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_VERIFY)?;
+    actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
     application_service::reject_application(&pool, id, &payload.rejection_reason).await?;
     Ok(Json(ApiResponse::empty_with_message("ปฏิเสธใบสมัครแล้ว")).into_response())
 }
@@ -151,7 +151,7 @@ pub async fn mark_absent(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     application_service::mark_absent(&pool, id, payload.absent).await?;
     let msg = if payload.absent {
         "ทำเครื่องหมายขาดสอบแล้ว"
@@ -170,7 +170,7 @@ pub async fn update_application(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_VERIFY)?;
+    actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
     application_service::update_application(&pool, id, payload).await?;
     Ok(Json(ApiResponse::empty_with_message("แก้ไขใบสมัครแล้ว")).into_response())
 }
@@ -183,7 +183,7 @@ pub async fn unverify_application(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_VERIFY)?;
+    actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
     application_service::unverify_application(&pool, id).await?;
     Ok(Json(ApiResponse::empty_with_message("ยกเลิกการอนุมัติแล้ว")).into_response())
 }
@@ -225,7 +225,7 @@ pub async fn list_enrollment_pending(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_ENROLL)?;
+    actor.require_permission(codes::ADMISSION_ENROLL_ALL)?;
     let list = application_service::list_enrollment_pending(&pool, round_id).await?;
     Ok(Json(ApiResponse::ok(list)).into_response())
 }
@@ -239,7 +239,7 @@ pub async fn complete_enrollment(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_ENROLL)?;
+    actor.require_permission(codes::ADMISSION_ENROLL_ALL)?;
     let enroller_id = actor.user_id;
 
     let result = application_service::complete_enrollment(&pool, id, payload, enroller_id).await?;
@@ -263,7 +263,7 @@ pub async fn change_application_track(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     application_service::change_application_track(&pool, application_id, payload.track_id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }
@@ -277,7 +277,7 @@ pub async fn update_admission_track(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_VERIFY)?;
+    actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
     application_service::update_admission_track(&pool, application_id, payload.track_id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }
@@ -297,7 +297,7 @@ pub async fn staff_upload_document(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_VERIFY)?;
+    actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
 
     // Parse multipart in handler (Multipart can't cross service boundary)
     let mut doc_type: Option<String> = None;
@@ -416,7 +416,7 @@ pub async fn staff_delete_document(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_VERIFY)?;
+    actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
 
     if !application_service::VALID_DOC_TYPES.contains(&doc_type.as_str()) {
         return Err(AppError::BadRequest(format!(
@@ -496,7 +496,7 @@ pub async fn move_application_room(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     application_service::move_application_room(&pool, id, payload.room_id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }

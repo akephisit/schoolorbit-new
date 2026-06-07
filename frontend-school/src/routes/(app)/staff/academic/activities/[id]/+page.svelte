@@ -222,7 +222,7 @@
 						<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
 						<Input class="pl-8 w-56" placeholder="ค้นหา..." bind:value={memberSearch} />
 					</div>
-					{#if $can.has(PERMISSIONS.ACTIVITY_MEMBERS_MANAGE)}
+					{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}
 						<Button onclick={openAddStudentDialog}
 							><UserPlus class="mr-1 h-4 w-4" />เพิ่มสมาชิก</Button
 						>
@@ -241,7 +241,7 @@
 								<Table.Head>ห้องเรียน</Table.Head>
 								<Table.Head>ระดับชั้น</Table.Head>
 								<Table.Head class="text-center">ผล</Table.Head>
-								{#if $can.has(PERMISSIONS.ACTIVITY_MEMBERS_MANAGE)}<Table.Head></Table.Head>{/if}
+								{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}<Table.Head></Table.Head>{/if}
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
@@ -254,7 +254,7 @@
 									<Table.Cell class="text-sm">{m.classroom_name ?? '—'}</Table.Cell>
 									<Table.Cell class="text-sm">{m.grade_level_name ?? '—'}</Table.Cell>
 									<Table.Cell class="text-center">
-										{#if $can.has(PERMISSIONS.ACTIVITY_MEMBERS_MANAGE)}
+										{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}
 											<select
 												class="h-7 rounded border px-1 text-xs bg-background"
 												value={m.result ?? ''}
@@ -269,7 +269,7 @@
 											{m.result === 'pass' ? 'ผ' : m.result === 'fail' ? 'มผ' : '—'}
 										{/if}
 									</Table.Cell>
-									{#if $can.has(PERMISSIONS.ACTIVITY_MEMBERS_MANAGE)}
+									{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}
 										<Table.Cell>
 											<Button variant="ghost" size="icon" onclick={() => handleRemoveMember(m)}>
 												<Trash2 class="h-4 w-4 text-destructive" />

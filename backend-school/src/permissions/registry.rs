@@ -45,24 +45,24 @@ pub mod codes {
     pub const MENU_DELETE_ALL: &str = "menu.delete.all";
 
     // Settings permissions
-    pub const SETTINGS_READ: &str = "settings.read";
-    pub const SETTINGS_UPDATE: &str = "settings.update";
+    pub const SETTINGS_READ_ALL: &str = "settings.read.all";
+    pub const SETTINGS_UPDATE_ALL: &str = "settings.update.all";
 
     // Feature toggles permissions
     pub const FEATURES_READ_ALL: &str = "features.read.all";
     pub const FEATURES_UPDATE_ALL: &str = "features.update.all";
 
     // Dashboard permission
-    pub const DASHBOARD: &str = "dashboard";
+    pub const DASHBOARD_READ_OWN: &str = "dashboard.read.own";
 
     // Student permissions
     pub const STUDENT_READ_OWN: &str = "student.read.own";
     pub const STUDENT_READ_ASSIGNED: &str = "student.read.assigned";
     pub const STUDENT_UPDATE_OWN: &str = "student.update.own";
     pub const STUDENT_READ_SCHOOL: &str = "student.read.school";
-    pub const STUDENT_CREATE: &str = "student.create";
+    pub const STUDENT_CREATE_ALL: &str = "student.create.all";
     pub const STUDENT_UPDATE_ALL: &str = "student.update.all";
-    pub const STUDENT_DELETE: &str = "student.delete";
+    pub const STUDENT_DELETE_ALL: &str = "student.delete.all";
     pub const STUDENT_PII_READ_OWN: &str = "student_pii.read.own";
     pub const STUDENT_PII_READ_ASSIGNED: &str = "student_pii.read.assigned";
     pub const STUDENT_PII_READ_SCHOOL: &str = "student_pii.read.school";
@@ -122,7 +122,7 @@ pub mod codes {
     pub const ORGANIZATION_WORK_READ_OWN: &str = "organization_work.read.own";
     pub const ORGANIZATION_WORK_READ_ORGANIZATION_UNIT: &str =
         "organization_work.read.organization_unit";
-    pub const ORGANIZATION_WORK_CREATE: &str = "organization_work.create";
+    pub const ORGANIZATION_WORK_CREATE_OWN: &str = "organization_work.create.own";
     pub const ORGANIZATION_WORK_UPDATE_OWN: &str = "organization_work.update.own";
     pub const ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT: &str =
         "organization_work.approve.organization_unit";
@@ -131,14 +131,14 @@ pub mod codes {
     pub const ACTIVITY_READ_ALL: &str = "activity.read.all";
     pub const ACTIVITY_MANAGE_ALL: &str = "activity.manage.all"; // admin
     pub const ACTIVITY_MANAGE_OWN: &str = "activity.manage.own"; // ครูจัดการชุมนุมตัวเอง
-    pub const ACTIVITY_MEMBERS_MANAGE: &str = "activity.members.manage"; // จัดการสมาชิก
+    pub const ACTIVITY_MANAGE_MEMBERS_ALL: &str = "activity.manage_members.all"; // จัดการสมาชิก
 
     // Admission permissions
     pub const ADMISSION_READ_ALL: &str = "admission.read.all";
     pub const ADMISSION_MANAGE_ALL: &str = "admission.manage.all";
-    pub const ADMISSION_VERIFY: &str = "admission.verify";
-    pub const ADMISSION_SCORES: &str = "admission.scores";
-    pub const ADMISSION_ENROLL: &str = "admission.enroll";
+    pub const ADMISSION_VERIFY_ALL: &str = "admission.verify.all";
+    pub const ADMISSION_SCORES_ALL: &str = "admission.scores.all";
+    pub const ADMISSION_ENROLL_ALL: &str = "admission.enroll.all";
 }
 
 /// Complete list of all permissions in the system
@@ -317,7 +317,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     // Settings permissions
     PermissionDef {
-        code: codes::SETTINGS_READ,
+        code: codes::SETTINGS_READ_ALL,
         name: "ดูการตั้งค่า",
         module: "settings",
         action: "read",
@@ -325,7 +325,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "ดูการตั้งค่าระบบ",
     },
     PermissionDef {
-        code: codes::SETTINGS_UPDATE,
+        code: codes::SETTINGS_UPDATE_ALL,
         name: "แก้ไขการตั้งค่า",
         module: "settings",
         action: "update",
@@ -351,7 +351,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
     },
     // Dashboard permission
     PermissionDef {
-        code: codes::DASHBOARD,
+        code: codes::DASHBOARD_READ_OWN,
         name: "แดชบอร์ด",
         module: "dashboard",
         action: "read",
@@ -392,7 +392,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "ดูข้อมูลนักเรียนทั้งโรงเรียน",
     },
     PermissionDef {
-        code: codes::STUDENT_CREATE,
+        code: codes::STUDENT_CREATE_ALL,
         name: "เพิ่มนักเรียน",
         module: "student",
         action: "create",
@@ -408,7 +408,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "แก้ไขข้อมูลนักเรียนทั้งหมด",
     },
     PermissionDef {
-        code: codes::STUDENT_DELETE,
+        code: codes::STUDENT_DELETE_ALL,
         name: "ลบนักเรียน",
         module: "student",
         action: "delete",
@@ -713,7 +713,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "ดูรายการงานทั้งหมดในหน่วยงานที่สังกัด",
     },
     PermissionDef {
-        code: codes::ORGANIZATION_WORK_CREATE,
+        code: codes::ORGANIZATION_WORK_CREATE_OWN,
         name: "สร้าง/ส่งงาน",
         module: "organization_work",
         action: "create",
@@ -762,10 +762,10 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "ครูจัดการกิจกรรมพัฒนาผู้เรียนที่ตนเองรับผิดชอบ",
     },
     PermissionDef {
-        code: codes::ACTIVITY_MEMBERS_MANAGE,
+        code: codes::ACTIVITY_MANAGE_MEMBERS_ALL,
         name: "จัดการสมาชิกกิจกรรม",
         module: "activity",
-        action: "members_manage",
+        action: "manage_members",
         scope: "all",
         description: "จัดการสมาชิกในกิจกรรมพัฒนาผู้เรียน",
     },
@@ -787,7 +787,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "สร้าง/แก้ไข รอบรับสมัคร, สายการเรียน, วิชาสอบ",
     },
     PermissionDef {
-        code: codes::ADMISSION_VERIFY,
+        code: codes::ADMISSION_VERIFY_ALL,
         name: "ตรวจสอบใบสมัคร",
         module: "admission",
         action: "verify",
@@ -795,7 +795,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "ยืนยัน/ปฏิเสธใบสมัครของผู้สมัคร",
     },
     PermissionDef {
-        code: codes::ADMISSION_SCORES,
+        code: codes::ADMISSION_SCORES_ALL,
         name: "กรอกคะแนนและจัดห้อง",
         module: "admission",
         action: "scores",
@@ -803,7 +803,7 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         description: "กรอกคะแนนสอบ, เรียงคะแนน, จัดห้องเรียน",
     },
     PermissionDef {
-        code: codes::ADMISSION_ENROLL,
+        code: codes::ADMISSION_ENROLL_ALL,
         name: "รับมอบตัว",
         module: "admission",
         action: "enroll",

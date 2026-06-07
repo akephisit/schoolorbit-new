@@ -75,7 +75,7 @@ pub async fn create_student(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::STUDENT_CREATE)?;
+    actor.require_permission(codes::STUDENT_CREATE_ALL)?;
 
     let student = student_service::create_student(&pool, payload).await?;
 
@@ -132,7 +132,7 @@ pub async fn delete_student(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::STUDENT_DELETE)?;
+    actor.require_permission(codes::STUDENT_DELETE_ALL)?;
 
     student_service::delete_student(&pool, student_id).await?;
 

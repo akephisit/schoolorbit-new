@@ -22,7 +22,7 @@ pub async fn list_permissions(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::SETTINGS_READ)?;
+    actor.require_permission(codes::SETTINGS_READ_ALL)?;
 
     let permissions = permission_service::list_permissions(&pool).await?;
 
@@ -40,7 +40,7 @@ pub async fn list_permissions_by_module(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::SETTINGS_READ)?;
+    actor.require_permission(codes::SETTINGS_READ_ALL)?;
 
     let grouped = permission_service::list_permissions_by_module(&pool).await?;
 

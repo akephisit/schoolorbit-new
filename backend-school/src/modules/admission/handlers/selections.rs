@@ -42,7 +42,7 @@ pub async fn get_ranking(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let data = selection_service::get_round_ranking(&pool, round_id).await?;
     Ok(Json(ApiResponse::ok(data)).into_response())
 }
@@ -56,7 +56,7 @@ pub async fn get_track_ranking(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let data = selection_service::get_track_ranking(
         &pool,
         track_id,
@@ -76,7 +76,7 @@ pub async fn assign_rooms(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let user_id = actor.user_id;
     let assigned_count = selection_service::assign_rooms(&pool, round_id, payload, user_id).await?;
     Ok(Json(ApiResponse::with_message(
@@ -94,7 +94,7 @@ pub async fn reset_all_room_assignments(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let deleted = selection_service::reset_all_room_assignments(&pool, round_id).await?;
     Ok(Json(ApiResponse::ok(DeletedData { deleted })).into_response())
 }
@@ -108,7 +108,7 @@ pub async fn assign_rooms_global(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let user_id = actor.user_id;
     let assigned_count =
         selection_service::assign_rooms_global(&pool, round_id, payload, user_id).await?;
@@ -127,7 +127,7 @@ pub async fn get_global_ranking(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let data = selection_service::get_global_ranking(&pool, round_id).await?;
     Ok(Json(ApiResponse::ok(data)).into_response())
 }
@@ -140,7 +140,7 @@ pub async fn get_round_rooms(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let rooms = selection_service::get_round_rooms(&pool, round_id).await?;
     Ok(Json(ApiResponse::ok(rooms)).into_response())
 }
@@ -154,7 +154,7 @@ pub async fn update_selection_settings(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     selection_service::update_selection_settings(&pool, round_id, payload).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }

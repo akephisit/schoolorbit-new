@@ -7,7 +7,7 @@ export const _meta = {
 		group: 'settings',
 		order: 900,
 		user_type: 'staff',
-		permission: PERMISSIONS.SETTINGS_UPDATE
+		permission: PERMISSIONS.SETTINGS_UPDATE_ALL
 	}
 };
 

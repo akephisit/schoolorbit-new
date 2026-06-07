@@ -16,27 +16,29 @@ struct PublicSchoolInfoData {
     school_name: Option<String>,
 }
 
-/// GET /api/school/settings — staff only (SETTINGS_READ)
+/// GET /api/school/settings — staff only (SETTINGS_READ_ALL)
 pub async fn get_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    context.actor.require_permission(codes::SETTINGS_READ)?;
+    context.actor.require_permission(codes::SETTINGS_READ_ALL)?;
 
     let response = school_service::get_settings_response(&context.tenant.pool).await?;
 
     Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
-/// PATCH /api/school/settings — staff only (SETTINGS_UPDATE)
+/// PATCH /api/school/settings — staff only (SETTINGS_UPDATE_ALL)
 pub async fn update_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<UpdateSchoolSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    context.actor.require_permission(codes::SETTINGS_UPDATE)?;
+    context
+        .actor
+        .require_permission(codes::SETTINGS_UPDATE_ALL)?;
 
     school_service::update_settings(&context.tenant.pool, payload).await?;
 
@@ -67,14 +69,16 @@ pub async fn get_public_info(
     .into_response())
 }
 
-/// DELETE /api/school/settings/logo — staff only (SETTINGS_UPDATE)
+/// DELETE /api/school/settings/logo — staff only (SETTINGS_UPDATE_ALL)
 /// ลบ logo จาก R2 และล้าง logo_path/logo_file_id ใน school_settings
 pub async fn delete_logo(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    context.actor.require_permission(codes::SETTINGS_UPDATE)?;
+    context
+        .actor
+        .require_permission(codes::SETTINGS_UPDATE_ALL)?;
 
     school_service::delete_logo(&context.tenant.pool).await?;
 

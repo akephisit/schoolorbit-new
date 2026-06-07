@@ -28,7 +28,7 @@ pub async fn get_all_scores(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let scores = score_service::get_all_scores(&pool, round_id).await?;
     Ok(Json(ApiResponse::ok(scores)).into_response())
 }
@@ -41,7 +41,7 @@ pub async fn get_application_scores(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let scores = score_service::get_application_scores(&pool, id).await?;
     Ok(Json(ApiResponse::ok(scores)).into_response())
 }
@@ -55,7 +55,7 @@ pub async fn update_scores(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let user_id = actor.user_id;
     score_service::update_application_scores(&pool, id, user_id, &payload.scores).await?;
     Ok(Json(ApiResponse::empty_with_message("อัปเดตคะแนนแล้ว")).into_response())
@@ -70,7 +70,7 @@ pub async fn bulk_update_scores(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_SCORES)?;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let user_id = actor.user_id;
     let updated =
         score_service::bulk_update_scores(&pool, round_id, user_id, &payload.entries).await?;
