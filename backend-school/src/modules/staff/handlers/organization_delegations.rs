@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::staff::services::organization_delegation_service;
-use crate::permissions::registry::codes;
+use crate::policies::organization_access_policy;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
@@ -51,11 +51,8 @@ pub async fn list_delegatable_permissions(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let can_approve_organization_work =
-        actor.has_permission(codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT);
-    if !can_approve_organization_work {
-        return Ok((StatusCode::FORBIDDEN, Json(ApiErrorResponse::new("ไม่มีสิทธิ์"))).into_response());
-    }
+    organization_access_policy::can_approve_organization_work(&pool, &actor, organization_unit_id)
+        .await?;
 
     let perms =
         organization_delegation_service::list_delegatable_permissions(&pool, organization_unit_id)
@@ -71,15 +68,8 @@ pub async fn list_delegations(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let can_approve_organization_work =
-        actor.has_permission(codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT);
-    if !can_approve_organization_work {
-        return Ok((
-            StatusCode::FORBIDDEN,
-            Json(ApiErrorResponse::new("ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้")),
-        )
-            .into_response());
-    }
+    organization_access_policy::can_approve_organization_work(&pool, &actor, organization_unit_id)
+        .await?;
 
     let delegations =
         organization_delegation_service::list_delegations(&pool, organization_unit_id).await?;
@@ -95,31 +85,8 @@ pub async fn create_delegation(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let can_approve_organization_work =
-        actor.has_permission(codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT);
-    if !can_approve_organization_work {
-        return Ok((
-            StatusCode::FORBIDDEN,
-            Json(ApiErrorResponse::new("ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้")),
-        )
-            .into_response());
-    }
-
-    if !organization_delegation_service::is_organization_unit_leader(
-        &pool,
-        actor.user_id,
-        organization_unit_id,
-    )
-    .await?
-    {
-        return Ok((
-            StatusCode::FORBIDDEN,
-            Json(ApiErrorResponse::new(
-                "เฉพาะหัวหน้าหรือรองหัวหน้าหน่วยงานเท่านั้นที่สามารถมอบหมายสิทธิ์ได้",
-            )),
-        )
-            .into_response());
-    }
+    organization_access_policy::can_approve_organization_work(&pool, &actor, organization_unit_id)
+        .await?;
 
     if !organization_delegation_service::is_organization_member(
         &pool,
@@ -187,8 +154,7 @@ pub async fn revoke_delegation(
             }
         };
 
-    let can_revoke = actor.user_id == from_user_id || actor.has_permission(codes::WILDCARD);
-    if !can_revoke {
+    if !organization_access_policy::can_revoke_organization_delegation(&actor, from_user_id) {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(ApiErrorResponse::new("ไม่มีสิทธิ์ยกเลิกการมอบหมายนี้")),

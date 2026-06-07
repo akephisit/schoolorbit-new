@@ -470,6 +470,28 @@ fn activity_manage_own_uses_resource_policy_for_group_access() {
 }
 
 #[test]
+fn organization_delegation_handlers_use_policy_layer_for_authorization() {
+    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let organization_policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/organization_access_policy.rs"),
+    ));
+    let delegation_handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/staff/handlers/organization_delegations.rs"),
+    ));
+
+    assert!(policies_root.contains("pub mod organization_access_policy;"));
+    assert!(organization_policy.contains("ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT"));
+    assert!(organization_policy.contains("is_organization_unit_leader"));
+    assert!(organization_policy.contains("can_revoke_organization_delegation"));
+    assert!(
+        delegation_handler.contains("organization_access_policy::can_approve_organization_work")
+    );
+    assert!(delegation_handler
+        .contains("organization_access_policy::can_revoke_organization_delegation"));
+    assert!(!delegation_handler.contains("actor.has_permission("));
+}
+
+#[test]
 fn staff_access_policy_uses_resource_access_foundation() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let staff_policy = strip_comments(&read_source(
