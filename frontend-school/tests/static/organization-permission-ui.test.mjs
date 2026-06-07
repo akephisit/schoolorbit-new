@@ -122,3 +122,29 @@ test('organization detail reloads when the route id changes without remounting',
 	assert.match(source, /listOrganizationMembers\(currentDeptId\)/);
 	assert.match(source, /parent_unit_id === currentDeptId/);
 });
+
+test('organization member and delegation dialogs use shadcn-svelte primitives', async () => {
+	const members = await readProjectFile(
+		'src/lib/components/staff/OrganizationMembersSection.svelte'
+	);
+	const detail = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.svelte');
+
+	for (const source of [members, detail]) {
+		assert.doesNotMatch(source, /fixed inset-0/);
+		assert.doesNotMatch(source, /<select\b/);
+		assert.doesNotMatch(source, /<input\b/);
+		assert.match(source, /from '\$lib\/components\/ui\/dialog'/);
+		assert.match(source, /from '\$lib\/components\/ui\/input'/);
+		assert.match(source, /from '\$lib\/components\/ui\/label'/);
+		assert.match(source, /from '\$lib\/components\/ui\/select'/);
+		assert.match(source, /<Dialog\.Root/);
+		assert.match(source, /<Dialog\.Content/);
+		assert.match(source, /<Dialog\.Footer/);
+		assert.match(source, /<Select\.Root/);
+		assert.match(source, /<Select\.Trigger/);
+		assert.match(source, /<Select\.Item/);
+	}
+
+	assert.match(members, /from '\$lib\/components\/ui\/checkbox'/);
+	assert.match(members, /<Checkbox/);
+});

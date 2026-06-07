@@ -21,6 +21,10 @@
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import OrganizationMembersSection from '$lib/components/staff/OrganizationMembersSection.svelte';
 	import {
 		ArrowLeft,
@@ -232,6 +236,21 @@
 		}
 	}
 
+	function closeDelegateDialog() {
+		showDelegateDialog = false;
+		delegateError = '';
+	}
+
+	function delegateMemberLabel(userId: string) {
+		return deptMembers.find((member) => member.user_id === userId)?.name ?? 'เลือกสมาชิก';
+	}
+
+	function delegatePermissionLabel(permissionId: string) {
+		const permission = delegatablePerms.find((item) => item.id === permissionId);
+		if (!permission) return 'เลือกสิทธิ์';
+		return `${permission.name} (${permission.code})`;
+	}
+
 	async function handleDelegate() {
 		const currentDeptId = deptId;
 		if (!currentDeptId || !delegateForm.to_user_id || !delegateForm.permission_id) return;
@@ -248,7 +267,7 @@
 
 			const res = await createDelegation(currentDeptId, body);
 			if (res.success) {
-				showDelegateDialog = false;
+				closeDelegateDialog();
 				delegateForm = { to_user_id: '', permission_id: '', reason: '', expires_at: '' };
 				await loadDelegations(currentDeptId);
 			} else {
@@ -664,87 +683,75 @@
 	onSuccess={refreshCurrentUnit}
 />
 
-{#if showDelegateDialog}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-		<div class="w-full max-w-md space-y-4 rounded-lg border bg-background p-6 shadow-lg">
-			<h3 class="text-lg font-semibold">มอบหมายสิทธิ์</h3>
+<Dialog.Root bind:open={showDelegateDialog}>
+	<Dialog.Content class="sm:max-w-[520px]">
+		<Dialog.Header>
+			<Dialog.Title>มอบหมายสิทธิ์</Dialog.Title>
+			<Dialog.Description>มอบหมายสิทธิ์ชั่วคราวให้สมาชิกในหน่วยงานนี้</Dialog.Description>
+		</Dialog.Header>
 
+		<div class="space-y-4 py-2">
 			{#if delegateError}
 				<div class="rounded bg-destructive/10 p-3 text-sm text-destructive">{delegateError}</div>
 			{/if}
 
-			<div class="space-y-3">
-				<div class="space-y-1">
-					<label for="delegate-to" class="text-sm font-medium">สมาชิกที่จะมอบหมายให้ *</label>
-					<select
-						id="delegate-to"
-						bind:value={delegateForm.to_user_id}
-						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-					>
-						<option value="">-- เลือกสมาชิก --</option>
+			<div class="space-y-2">
+				<Label>สมาชิกที่จะมอบหมายให้ *</Label>
+				<Select.Root type="single" bind:value={delegateForm.to_user_id}>
+					<Select.Trigger class="w-full">
+						{delegateMemberLabel(delegateForm.to_user_id)}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="">เลือกสมาชิก</Select.Item>
 						{#each deptMembers as member (member.user_id + '-' + member.organization_unit_id)}
-							<option value={member.user_id}>{member.name}</option>
+							<Select.Item value={member.user_id}>{member.name}</Select.Item>
 						{/each}
-					</select>
-				</div>
-
-				<div class="space-y-1">
-					<label for="delegate-permission" class="text-sm font-medium">สิทธิ์ที่มอบหมาย *</label>
-					<select
-						id="delegate-permission"
-						bind:value={delegateForm.permission_id}
-						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-					>
-						<option value="">-- เลือกสิทธิ์ --</option>
-						{#each delegatablePerms as permission (permission.id)}
-							<option value={permission.id}>{permission.name} ({permission.code})</option>
-						{/each}
-					</select>
-				</div>
-
-				<div class="space-y-1">
-					<label for="delegate-reason" class="text-sm font-medium">
-						เหตุผล <span class="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-					</label>
-					<input
-						id="delegate-reason"
-						type="text"
-						bind:value={delegateForm.reason}
-						placeholder="เช่น ลาพักร้อน, รักษาการ"
-						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-					/>
-				</div>
-
-				<div class="space-y-1">
-					<label for="delegate-expires" class="text-sm font-medium">
-						วันหมดอายุ <span class="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-					</label>
-					<input
-						id="delegate-expires"
-						type="date"
-						bind:value={delegateForm.expires_at}
-						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-					/>
-				</div>
+					</Select.Content>
+				</Select.Root>
 			</div>
 
-			<div class="flex justify-end gap-2 pt-2">
-				<Button
-					variant="outline"
-					onclick={() => {
-						showDelegateDialog = false;
-						delegateError = '';
-					}}
-				>
-					ยกเลิก
-				</Button>
-				<Button
-					onclick={handleDelegate}
-					disabled={delegateSubmitting || !delegateForm.to_user_id || !delegateForm.permission_id}
-				>
-					{delegateSubmitting ? 'กำลังบันทึก...' : 'มอบหมาย'}
-				</Button>
+			<div class="space-y-2">
+				<Label>สิทธิ์ที่มอบหมาย *</Label>
+				<Select.Root type="single" bind:value={delegateForm.permission_id}>
+					<Select.Trigger class="w-full">
+						{delegatePermissionLabel(delegateForm.permission_id)}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="">เลือกสิทธิ์</Select.Item>
+						{#each delegatablePerms as permission (permission.id)}
+							<Select.Item value={permission.id}>{permission.name} ({permission.code})</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+
+			<div class="space-y-2">
+				<Label for="delegate-reason">
+					เหตุผล <span class="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+				</Label>
+				<Input
+					id="delegate-reason"
+					bind:value={delegateForm.reason}
+					placeholder="เช่น ลาพักร้อน, รักษาการ"
+				/>
+			</div>
+
+			<div class="space-y-2">
+				<Label for="delegate-expires">
+					วันหมดอายุ <span class="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+				</Label>
+				<Input id="delegate-expires" type="date" bind:value={delegateForm.expires_at} />
 			</div>
 		</div>
-	</div>
-{/if}
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={closeDelegateDialog}>ยกเลิก</Button>
+			<Button
+				onclick={handleDelegate}
+				disabled={delegateSubmitting || !delegateForm.to_user_id || !delegateForm.permission_id}
+			>
+				{delegateSubmitting ? 'กำลังบันทึก...' : 'มอบหมาย'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

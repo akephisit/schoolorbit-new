@@ -13,6 +13,11 @@
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { Users, Plus, Pencil, Trash2, Crown, UserCog, UserRound } from 'lucide-svelte';
 
 	interface Props {
@@ -230,6 +235,30 @@
 		showAddDialog = true;
 	}
 
+	function closeAddDialog() {
+		showAddDialog = false;
+		addError = '';
+	}
+
+	function closeEditDialog() {
+		showEditDialog = false;
+		editingMember = null;
+	}
+
+	function selectStaff(staff: StaffListItem) {
+		addForm.user_id = staff.id;
+		staffSearch = `${staff.title}${staff.first_name} ${staff.last_name}`;
+		staffResults = [];
+	}
+
+	function unitOptionLabel(unitId: string) {
+		return unitOptions.find((option) => option.id === unitId)?.name ?? 'เลือกหน่วยงาน';
+	}
+
+	function positionOptionLabel(positionCode: string) {
+		return positionLabels[positionCode as PositionCode] ?? 'เลือกตำแหน่ง';
+	}
+
 	let debounceTimer: ReturnType<typeof setTimeout>;
 	function onSearchInput() {
 		clearTimeout(debounceTimer);
@@ -342,154 +371,142 @@
 	</div>
 </section>
 
-{#if showAddDialog}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-		<div class="w-full max-w-md space-y-4 rounded-lg border bg-background p-6 shadow-lg">
-			<h3 class="text-lg font-semibold">เพิ่มสมาชิก</h3>
+<Dialog.Root bind:open={showAddDialog}>
+	<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-[520px]">
+		<Dialog.Header>
+			<Dialog.Title>เพิ่มสมาชิก</Dialog.Title>
+			<Dialog.Description>ค้นหาบุคลากรและกำหนดตำแหน่งในหน่วยงานนี้</Dialog.Description>
+		</Dialog.Header>
 
+		<div class="space-y-4 py-2">
 			{#if addError}
 				<div class="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{addError}</div>
 			{/if}
 
-			<div class="space-y-3">
-				<div class="space-y-1">
-					<label for="staff-search" class="text-sm font-medium">ค้นหาบุคลากร *</label>
-					<input
-						id="staff-search"
-						type="text"
-						bind:value={staffSearch}
-						oninput={onSearchInput}
-						placeholder="พิมพ์ชื่อหรือรหัส..."
-						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-					/>
-					{#if searchLoading}
-						<p class="text-xs text-muted-foreground">กำลังค้นหา...</p>
-					{:else if staffResults.length > 0}
-						<div class="max-h-48 overflow-y-auto rounded-md border">
-							{#each staffResults as staff (staff.id)}
-								<button
-									type="button"
-									class="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-muted {addForm.user_id ===
-									staff.id
-										? 'bg-primary/10 font-medium'
-										: ''}"
-									onclick={() => {
-										addForm.user_id = staff.id;
-										staffSearch = `${staff.title}${staff.first_name} ${staff.last_name}`;
-										staffResults = [];
-									}}
-								>
-									{staff.title}{staff.first_name}
-									{staff.last_name}
-								</button>
-							{/each}
-						</div>
-					{/if}
-				</div>
-
-				{#if includeChildren}
-					<div class="space-y-1">
-						<label for="add-target-unit" class="text-sm font-medium">หน่วยงานที่สังกัด</label>
-						<select
-							id="add-target-unit"
-							bind:value={addForm.target_unit_id}
-							class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-						>
-							{#each unitOptions as option (option.id)}
-								<option value={option.id}>{option.name}</option>
-							{/each}
-						</select>
+			<div class="space-y-2">
+				<Label for="staff-search">ค้นหาบุคลากร *</Label>
+				<Input
+					id="staff-search"
+					bind:value={staffSearch}
+					oninput={onSearchInput}
+					placeholder="พิมพ์ชื่อหรือรหัส..."
+				/>
+				{#if searchLoading}
+					<p class="text-xs text-muted-foreground">กำลังค้นหา...</p>
+				{:else if staffResults.length > 0}
+					<div class="max-h-48 overflow-y-auto rounded-md border">
+						{#each staffResults as staff (staff.id)}
+							<button
+								type="button"
+								class="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-muted {addForm.user_id ===
+								staff.id
+									? 'bg-primary/10 font-medium'
+									: ''}"
+								onclick={() => selectStaff(staff)}
+							>
+								{staff.title}{staff.first_name}
+								{staff.last_name}
+							</button>
+						{/each}
 					</div>
 				{/if}
+			</div>
 
-				<div class="space-y-1">
-					<label for="add-position" class="text-sm font-medium">ตำแหน่ง *</label>
-					<select
-						id="add-position"
-						bind:value={addForm.position_code}
-						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-					>
-						{#each positionOptions as position (position.value)}
-							<option value={position.value}>{position.label}</option>
-						{/each}
-					</select>
+			{#if includeChildren}
+				<div class="space-y-2">
+					<Label>หน่วยงานที่สังกัด</Label>
+					<Select.Root type="single" bind:value={addForm.target_unit_id}>
+						<Select.Trigger class="w-full">{unitOptionLabel(addForm.target_unit_id)}</Select.Trigger
+						>
+						<Select.Content>
+							{#each unitOptions as option (option.id)}
+								<Select.Item value={option.id}>{option.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
+			{/if}
 
-				<label class="flex cursor-pointer items-center gap-2 text-sm">
-					<input type="checkbox" bind:checked={addForm.is_primary} class="rounded" />
+			<div class="space-y-2">
+				<Label>ตำแหน่ง *</Label>
+				<Select.Root type="single" bind:value={addForm.position_code}>
+					<Select.Trigger class="w-full">
+						{positionOptionLabel(addForm.position_code)}
+					</Select.Trigger>
+					<Select.Content>
+						{#each positionOptions as position (position.value)}
+							<Select.Item value={position.value}>{position.label}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+
+			<div class="flex items-start gap-3 rounded-md border p-3">
+				<Checkbox id="add-primary" bind:checked={addForm.is_primary} class="mt-0.5" />
+				<Label for="add-primary" class="cursor-pointer leading-5">
 					เป็นสังกัดหลักของบุคลากรนี้
-				</label>
-			</div>
-
-			<div class="flex justify-end gap-2 pt-2">
-				<Button
-					variant="outline"
-					onclick={() => {
-						showAddDialog = false;
-						addError = '';
-					}}>ยกเลิก</Button
-				>
-				<Button onclick={handleAdd} disabled={addSubmitting || !addForm.user_id}>
-					{addSubmitting ? 'กำลังบันทึก...' : 'เพิ่ม'}
-				</Button>
+				</Label>
 			</div>
 		</div>
-	</div>
-{/if}
 
-{#if showEditDialog && editingMember}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-		<div class="w-full max-w-sm space-y-4 rounded-lg border bg-background p-6 shadow-lg">
-			<h3 class="text-lg font-semibold">แก้ไขสมาชิก</h3>
-			<p class="text-sm text-muted-foreground">{editingMember.name}</p>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={closeAddDialog}>ยกเลิก</Button>
+			<Button onclick={handleAdd} disabled={addSubmitting || !addForm.user_id}>
+				{addSubmitting ? 'กำลังบันทึก...' : 'เพิ่ม'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
-			<div class="space-y-3">
-				{#if includeChildren}
-					<div class="space-y-1">
-						<label for="edit-unit" class="text-sm font-medium">หน่วยงานที่สังกัด</label>
-						<select
-							id="edit-unit"
-							bind:value={editForm.new_organization_unit_id}
-							class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-						>
+<Dialog.Root bind:open={showEditDialog}>
+	<Dialog.Content class="sm:max-w-[420px]">
+		<Dialog.Header>
+			<Dialog.Title>แก้ไขสมาชิก</Dialog.Title>
+			<Dialog.Description>{editingMember?.name ?? 'สมาชิกในหน่วยงาน'}</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="space-y-4 py-2">
+			{#if includeChildren}
+				<div class="space-y-2">
+					<Label>หน่วยงานที่สังกัด</Label>
+					<Select.Root type="single" bind:value={editForm.new_organization_unit_id}>
+						<Select.Trigger class="w-full">
+							{unitOptionLabel(editForm.new_organization_unit_id)}
+						</Select.Trigger>
+						<Select.Content>
 							{#each unitOptions as option (option.id)}
-								<option value={option.id}>{option.name}</option>
+								<Select.Item value={option.id}>{option.name}</Select.Item>
 							{/each}
-						</select>
-					</div>
-				{/if}
-
-				<div class="space-y-1">
-					<label for="edit-position" class="text-sm font-medium">ตำแหน่ง</label>
-					<select
-						id="edit-position"
-						bind:value={editForm.position_code}
-						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-					>
-						{#each positionOptions as position (position.value)}
-							<option value={position.value}>{position.label}</option>
-						{/each}
-					</select>
+						</Select.Content>
+					</Select.Root>
 				</div>
+			{/if}
 
-				<label class="flex cursor-pointer items-center gap-2 text-sm">
-					<input type="checkbox" bind:checked={editForm.is_primary} class="rounded" />
-					เป็นสังกัดหลัก
-				</label>
+			<div class="space-y-2">
+				<Label>ตำแหน่ง</Label>
+				<Select.Root type="single" bind:value={editForm.position_code}>
+					<Select.Trigger class="w-full">
+						{positionOptionLabel(editForm.position_code)}
+					</Select.Trigger>
+					<Select.Content>
+						{#each positionOptions as position (position.value)}
+							<Select.Item value={position.value}>{position.label}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 
-			<div class="flex justify-end gap-2 pt-2">
-				<Button
-					variant="outline"
-					onclick={() => {
-						showEditDialog = false;
-						editingMember = null;
-					}}>ยกเลิก</Button
-				>
-				<Button onclick={handleEdit} disabled={editSubmitting}>
-					{editSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
-				</Button>
+			<div class="flex items-start gap-3 rounded-md border p-3">
+				<Checkbox id="edit-primary" bind:checked={editForm.is_primary} class="mt-0.5" />
+				<Label for="edit-primary" class="cursor-pointer leading-5">เป็นสังกัดหลัก</Label>
 			</div>
 		</div>
-	</div>
-{/if}
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={closeEditDialog}>ยกเลิก</Button>
+			<Button onclick={handleEdit} disabled={editSubmitting || !editingMember}>
+				{editSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
