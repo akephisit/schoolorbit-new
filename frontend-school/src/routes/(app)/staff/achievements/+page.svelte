@@ -39,6 +39,7 @@
 		updateAchievement,
 		deleteAchievement
 	} from '$lib/api/achievement';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import type { Achievement, AchievementListFilter } from '$lib/types/achievement';
 	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
 	import { toast } from 'svelte-sonner';
@@ -69,13 +70,13 @@
 	const permissions = $derived($can); // Use enhanced permission store
 
 	// Permission checks - much simpler now!
-	const canReadAll = $derived(permissions.has('achievement.read.all'));
-	const canCreateOwn = $derived(permissions.has('achievement.create.own'));
-	const canCreateAll = $derived(permissions.has('achievement.create.all'));
-	const canUpdateOwn = $derived(permissions.has('achievement.update.own'));
-	const canUpdateAll = $derived(permissions.has('achievement.update.all'));
-	const canDeleteOwn = $derived(permissions.has('achievement.delete.own'));
-	const canDeleteAll = $derived(permissions.has('achievement.delete.all'));
+	const canReadAll = $derived(permissions.has(PERMISSIONS.ACHIEVEMENT_READ_ALL));
+	const canCreateOwn = $derived(permissions.has(PERMISSIONS.ACHIEVEMENT_CREATE_OWN));
+	const canCreateAll = $derived(permissions.has(PERMISSIONS.ACHIEVEMENT_CREATE_ALL));
+	const canUpdateOwn = $derived(permissions.has(PERMISSIONS.ACHIEVEMENT_UPDATE_OWN));
+	const canUpdateAll = $derived(permissions.has(PERMISSIONS.ACHIEVEMENT_UPDATE_ALL));
+	const canDeleteOwn = $derived(permissions.has(PERMISSIONS.ACHIEVEMENT_DELETE_OWN));
+	const canDeleteAll = $derived(permissions.has(PERMISSIONS.ACHIEVEMENT_DELETE_ALL));
 
 	// Derived state for filtering
 	const filteredAchievements = $derived(

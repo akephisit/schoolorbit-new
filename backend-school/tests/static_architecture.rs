@@ -401,6 +401,25 @@ fn student_profile_access_uses_resource_policy_and_separate_pii_scope() {
 }
 
 #[test]
+fn achievement_access_uses_resource_policy_and_no_plain_stderr_logging() {
+    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let achievement_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/achievement/services.rs"),
+    ));
+
+    assert!(policies_root.contains("pub mod achievement_access_policy;"));
+    assert!(
+        achievement_service.contains("achievement_access_policy::resolve_achievement_list_access")
+    );
+    assert!(achievement_service.contains("achievement_access_policy::can_create_achievement_for"));
+    assert!(achievement_service.contains("achievement_access_policy::can_update_achievement"));
+    assert!(achievement_service.contains("achievement_access_policy::can_delete_achievement"));
+    assert!(achievement_service.contains("UserResourceListAccess"));
+    assert!(!achievement_service.contains("actor.has_permission(codes::ACHIEVEMENT"));
+    assert!(!achievement_service.contains("eprintln!"));
+}
+
+#[test]
 fn staff_access_policy_uses_resource_access_foundation() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let staff_policy = strip_comments(&read_source(
