@@ -492,6 +492,22 @@ fn organization_delegation_handlers_use_policy_layer_for_authorization() {
 }
 
 #[test]
+fn organization_delegation_authorizing_positions_are_explicit() {
+    let delegation_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/staff/services/organization_delegation_service.rs"),
+    ));
+
+    assert!(delegation_service
+        .contains("position_code IN ('director', 'deputy_director', 'head', 'deputy_head')"));
+    assert!(!delegation_service.contains(
+        "position_code IN ('director', 'deputy_director', 'head', 'deputy_head', 'coordinator'"
+    ));
+    assert!(!delegation_service.contains(
+        "position_code IN ('director', 'deputy_director', 'head', 'deputy_head', 'member'"
+    ));
+}
+
+#[test]
 fn organization_delegatable_permissions_are_unique_across_position_grants() {
     let delegation_service = strip_comments(&read_source(
         manifest_dir().join("src/modules/staff/services/organization_delegation_service.rs"),

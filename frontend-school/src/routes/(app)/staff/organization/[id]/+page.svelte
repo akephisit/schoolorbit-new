@@ -83,11 +83,12 @@
 		)
 	);
 
-	let canManageDelegations = $derived.by(
-		() =>
-			$can.has(PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT) ||
-			$can.has(PERMISSIONS.ROLES_ASSIGN_ALL) ||
-			$can.has(PERMISSIONS.ROLES_UPDATE_ALL)
+	let canManageDelegations = $derived.by(() =>
+		$can.hasAny(
+			PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,
+			PERMISSIONS.ROLES_ASSIGN_ALL,
+			PERMISSIONS.ROLES_UPDATE_ALL
+		)
 	);
 	let canUpdateOrganizationUnit = $derived.by(() => $can.has(PERMISSIONS.ROLES_UPDATE_ALL));
 

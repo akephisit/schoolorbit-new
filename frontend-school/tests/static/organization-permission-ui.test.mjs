@@ -74,9 +74,10 @@ test('organization delegation tab follows backend school-wide authorization poli
 
 	assert.match(registry, /ROLES_UPDATE_ALL:\s*['"]roles\.update\.all['"]/);
 	assert.match(source, /canManageDelegations/);
-	assert.match(source, /PERMISSIONS\.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT/);
-	assert.match(source, /PERMISSIONS\.ROLES_ASSIGN_ALL/);
-	assert.match(source, /PERMISSIONS\.ROLES_UPDATE_ALL/);
+	assert.match(
+		source,
+		/\$can\.hasAny\(\s*PERMISSIONS\.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,\s*PERMISSIONS\.ROLES_ASSIGN_ALL,\s*PERMISSIONS\.ROLES_UPDATE_ALL\s*\)/
+	);
 	assert.match(source, /if\s*\(\s*canManageDelegations\s*\)/);
 	assert.match(source, /if\s*\(\s*!loading\s*&&\s*canManageDelegations\s*&&\s*currentDeptId\s*\)/);
 	assert.match(source, /loadDelegations\(currentDeptId\)/);

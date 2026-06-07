@@ -21,9 +21,9 @@
 
 ระบบมีฐานที่ดีแล้วหลายส่วน:
 
-- `departments`, `department_members`, `department_permissions` รองรับโครงสร้างฝ่าย/กลุ่มสาระ
-- `subject_groups` แยกจาก `departments` และเชื่อมผ่าน `departments.subject_group_id`
-- permission resolver รองรับ role, department position, delegation และ cache
+- `organization_units`, `organization_members`, `organization_permission_grants` รองรับโครงสร้างโรงเรียน ฝ่าย/งาน กลุ่มบริหาร และกลุ่มสาระ
+- `subject_groups` แยกเป็นหมวดวิชาทางวิชาการ และเชื่อมกับหน่วยงานผ่าน `organization_units.subject_group_id`
+- permission resolver รองรับ role, organization position, delegation และ cache
 - มีกิจกรรม/ตารางสอน/หลักสูตร/รับสมัคร/ไฟล์/notification บางส่วนแล้ว
 - มี `audit_logs` และ `utils/audit.rs` แต่ยังไม่ได้ใช้เป็นมาตรฐานใน mutation สำคัญ
 - schema โตเร็วมาก มี migration จำนวนมาก จึงต้องมี policy ก่อนรื้อหรือเพิ่มตารางใหญ่
@@ -59,7 +59,7 @@
    - audit/log ต้องไม่บันทึก plaintext `national_id` หรือข้อมูลอ่อนไหว
 
 4. **School Organization Foundation**
-   - API/UI สำหรับ `departments`, `department_members`, position, subject group link และ delegation ต้องชัด
+   - API/UI สำหรับ `organization_units`, `organization_members`, position, subject group link และ delegation ต้องชัด
    - โครงสร้างองค์กรต้องเป็นฐานให้ permission, workflow, approval และงานกลุ่มสาระ/กลุ่มบริหาร
 
 5. **Resilience / Ops Foundation**
@@ -77,7 +77,7 @@
 ```text
 School / Tenant
   └─ Organization
-      ├─ Departments / Subject Groups
+      ├─ Organization Units / Subject Groups
       ├─ Members / Positions
       └─ Permission Templates / Delegations
 
@@ -85,7 +85,7 @@ Actor Context
   ├─ user_id
   ├─ subdomain
   ├─ effective permissions
-  ├─ departments / positions
+  ├─ organization units / positions
   └─ request metadata
 
 Operations
@@ -112,7 +112,7 @@ Operations
   - `load_actor_context`
 - ห้ามเขียน permission string ตรงใน handler ให้ใช้ `permissions::registry::codes`
 - เพิ่ม static test ตรวจว่า permission ที่ใช้ใน backend/frontend มีอยู่ใน registry
-- ทำให้ permission cache invalidation ครอบคลุม role, department member, department permission และ delegation ทุก mutation
+- ทำให้ permission cache invalidation ครอบคลุม role, organization member, organization permission grant และ delegation ทุก mutation
 
 สถานะล่าสุด:
 
@@ -133,7 +133,7 @@ Operations
 
 สิ่งที่ต้องทำ:
 
-- ทำหน้า/บริการจัดการ `departments` ให้ชัดว่าเป็น:
+- ทำหน้า/บริการจัดการ `organization_units` ให้ชัดว่าเป็น:
   - กลุ่มบริหาร
   - งาน/ฝ่าย
   - กลุ่มสาระ
@@ -141,7 +141,7 @@ Operations
   - เพิ่ม/ย้าย/สิ้นสุดสมาชิก
   - กำหนด position: `head`, `deputy_head`, `coordinator`, `member`
   - บันทึกช่วงวันที่เริ่ม/สิ้นสุด
-- ทำ permission template ต่อ department + position
+- ทำ permission template ต่อ organization unit + position
 - ทำ delegation ให้ใช้งานจริง:
   - หัวหน้ามอบหมายสิทธิ์บางอย่างให้สมาชิก
   - กำหนดวันหมดอายุ
@@ -149,7 +149,7 @@ Operations
   - audit ทุกครั้ง
 - แยกความหมายให้ชัด:
   - `subject_groups` = หมวดวิชา/กลุ่มสาระทางวิชาการ
-  - `departments` = หน่วยงาน/กลุ่มคน/สิทธิ์
+  - `organization_units` = หน่วยงาน/กลุ่มคน/สิทธิ์ เช่น โรงเรียน กลุ่มบริหาร ฝ่าย/งาน กลุ่มสาระ คณะกรรมการ หรือทีมเฉพาะกิจ
 
 ผลลัพธ์ที่ต้องได้:
 
@@ -164,8 +164,8 @@ Operations
 
 - `work_items`
   - งานหรือกิจกรรมที่ถูกประกาศ
-  - มี owner เป็น user หรือ department
-  - มี audience เป็น user, classroom, grade level, department หรือทั้งโรงเรียน
+  - มี owner เป็น user หรือ organization unit
+  - มี audience เป็น user, classroom, grade level, organization unit หรือทั้งโรงเรียน
   - มี `opens_at`, `closes_at`, `due_at`
   - มีสถานะ `draft`, `published`, `open`, `closed`, `archived`
 - `work_submissions`
@@ -205,7 +205,7 @@ Operations
 - ลด `println!` / `eprintln!` ใน code path ปกติ
 - ใช้ `audit_logs` กับ mutation สำคัญ:
   - login/logout ที่สำคัญ
-  - role/permission/department change
+  - role/permission/organization change
   - staff/student create/update/delete
   - admission status changes
   - file upload/delete
@@ -259,7 +259,7 @@ Operations
 
 - ทำ schema map/ERD ของ domain หลัก:
   - users/staff/students/parents
-  - departments/permissions
+  - organization_units/organization_members/permissions
   - academic curriculum
   - timetable
   - activities
@@ -329,7 +329,7 @@ Operations
   - งานส่งตัวอย่าง
 - เพิ่ม smoke tests:
   - login
-  - permission by role/department/position
+  - permission by role/organization unit/position
   - activity open/close enforcement
   - submission before/after deadline
   - audit log created
@@ -350,15 +350,15 @@ Operations
 
 ## ลำดับที่ควรทำจริง
 
-| ลำดับ | งาน | เหตุผล |
-|---|---|---|
-| 1 | Backend Handler / Request Context Foundation | ลด code ซ้ำใน handler และทำให้ audit/API/workflow ใช้ข้อมูล actor/tenant ชุดเดียวกัน |
-| 2 | API Contract Foundation | frontend CSR และ service ใหม่จะพัฒนาง่ายขึ้นเมื่อ response shape และ typed client คาดเดาได้ |
-| 3 | Audit / Logging Foundation | ใช้งานจริงต้องตรวจย้อนหลังได้ และต้องไม่ log ข้อมูลอ่อนไหว |
-| 4 | School Organization Foundation | department/position/subject group/delegation เป็นฐานของงานฝ่าย กลุ่มสาระ และ approval |
-| 5 | Resilience / Ops Foundation | ลดความเสี่ยงจาก external services, deployment, health และ migration operations |
-| 6 | Data Model / Migration Foundation | ลดความซับซ้อนระยะยาวโดยไม่รื้อ schema เสี่ยง |
-| 7 | Workflow / Notification Foundation | เริ่มหลังฐาน actor/API/audit/org ชัด เพื่อไม่สร้างระบบส่งงาน/แจ้งเตือนซ้ำในแต่ละ feature |
+| ลำดับ | งาน                                          | เหตุผล                                                                                       |
+| ----- | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 1     | Backend Handler / Request Context Foundation | ลด code ซ้ำใน handler และทำให้ audit/API/workflow ใช้ข้อมูล actor/tenant ชุดเดียวกัน         |
+| 2     | API Contract Foundation                      | frontend CSR และ service ใหม่จะพัฒนาง่ายขึ้นเมื่อ response shape และ typed client คาดเดาได้  |
+| 3     | Audit / Logging Foundation                   | ใช้งานจริงต้องตรวจย้อนหลังได้ และต้องไม่ log ข้อมูลอ่อนไหว                                   |
+| 4     | School Organization Foundation               | organization unit/position/subject group/delegation เป็นฐานของงานฝ่าย กลุ่มสาระ และ approval |
+| 5     | Resilience / Ops Foundation                  | ลดความเสี่ยงจาก external services, deployment, health และ migration operations               |
+| 6     | Data Model / Migration Foundation            | ลดความซับซ้อนระยะยาวโดยไม่รื้อ schema เสี่ยง                                                 |
+| 7     | Workflow / Notification Foundation           | เริ่มหลังฐาน actor/API/audit/org ชัด เพื่อไม่สร้างระบบส่งงาน/แจ้งเตือนซ้ำในแต่ละ feature     |
 
 ## สิ่งที่ไม่ควรทำก่อน
 
@@ -377,7 +377,7 @@ Operations
 - mutation สำคัญมี audit log
 - workflow เปิด/ปิด/ส่ง/ตรวจ ถูก enforce ที่ backend
 - notification เกิดจาก event/outbox ไม่กระจายใน handler
-- มี sandbox seed สำหรับ role/department/activity/submission flow
+- มี sandbox seed สำหรับ role/organization/activity/submission flow
 - มี smoke/E2E ครอบคลุม flow โรงเรียนหลัก
 
 ## ข้อสรุป

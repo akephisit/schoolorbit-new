@@ -43,7 +43,7 @@ fn has_school_wide_organization_authorization(actor: &ActorContext) -> bool {
 }
 
 pub fn can_revoke_organization_delegation(actor: &ActorContext, from_user_id: Uuid) -> bool {
-    actor.user_id == from_user_id || actor.has_permission(codes::WILDCARD)
+    actor.user_id == from_user_id || has_school_wide_organization_authorization(actor)
 }
 
 #[cfg(test)]
@@ -108,6 +108,20 @@ mod tests {
     #[test]
     fn revoke_policy_allows_wildcard_actor() {
         let actor = actor(Uuid::new_v4(), &[codes::WILDCARD]);
+
+        assert!(can_revoke_organization_delegation(&actor, Uuid::new_v4()));
+    }
+
+    #[test]
+    fn revoke_policy_allows_role_assignment_admin() {
+        let actor = actor(Uuid::new_v4(), &[codes::ROLES_ASSIGN_ALL]);
+
+        assert!(can_revoke_organization_delegation(&actor, Uuid::new_v4()));
+    }
+
+    #[test]
+    fn revoke_policy_allows_role_update_admin() {
+        let actor = actor(Uuid::new_v4(), &[codes::ROLES_UPDATE_ALL]);
 
         assert!(can_revoke_organization_delegation(&actor, Uuid::new_v4()));
     }
