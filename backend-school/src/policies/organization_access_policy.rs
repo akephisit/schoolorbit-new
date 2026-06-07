@@ -11,6 +11,10 @@ pub async fn can_approve_organization_work(
     actor: &ActorContext,
     organization_unit_id: Uuid,
 ) -> Result<(), AppError> {
+    if has_school_wide_organization_authorization(actor) {
+        return Ok(());
+    }
+
     if !actor.has_permission(codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT) {
         return Err(AppError::Forbidden("ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้".to_string()));
     }
@@ -30,6 +34,14 @@ pub async fn can_approve_organization_work(
     Ok(())
 }
 
+fn has_school_wide_organization_authorization(actor: &ActorContext) -> bool {
+    actor.has_any_permission(&[
+        codes::WILDCARD,
+        codes::ROLES_ASSIGN_ALL,
+        codes::ROLES_UPDATE_ALL,
+    ])
+}
+
 pub fn can_revoke_organization_delegation(actor: &ActorContext, from_user_id: Uuid) -> bool {
     actor.user_id == from_user_id || actor.has_permission(codes::WILDCARD)
 }
@@ -37,6 +49,7 @@ pub fn can_revoke_organization_delegation(actor: &ActorContext, from_user_id: Uu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::postgres::PgPoolOptions;
 
     fn actor(user_id: Uuid, permissions: &[&str]) -> ActorContext {
         ActorContext {
@@ -46,6 +59,32 @@ mod tests {
                 .map(|permission| permission.to_string())
                 .collect(),
         }
+    }
+
+    fn disconnected_pool() -> PgPool {
+        PgPoolOptions::new()
+            .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
+            .expect("lazy pool should be constructed without connecting")
+    }
+
+    #[tokio::test]
+    async fn approve_policy_allows_wildcard_without_unit_leader_lookup() {
+        let pool = disconnected_pool();
+        let actor = actor(Uuid::new_v4(), &[codes::WILDCARD]);
+
+        let result = can_approve_organization_work(&pool, &actor, Uuid::new_v4()).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn approve_policy_allows_role_assignment_admin_without_unit_leader_lookup() {
+        let pool = disconnected_pool();
+        let actor = actor(Uuid::new_v4(), &[codes::ROLES_ASSIGN_ALL]);
+
+        let result = can_approve_organization_work(&pool, &actor, Uuid::new_v4()).await;
+
+        assert!(result.is_ok());
     }
 
     #[test]
