@@ -137,6 +137,26 @@ Drop the temporary schema after checking `_sqlx_migrations`, permissions, and
 organization template rows. A clean schema should have exactly one applied
 SQLx migration row with version `1`.
 
+## Tenant Data Cutover Dry Run
+
+Before pointing an existing school at a clean-baseline database, run a data-only
+cutover dry run against `schoolorbit_test`. The script creates a temporary target
+schema, applies `001_baseline.sql`, truncates target application tables, copies
+source tenant data excluding `_sqlx_migrations`, runs permission sync, compares
+row counts across every application table, and drops the temporary schema unless
+`CUTOVER_KEEP_SCHEMA=1` is set.
+
+```bash
+CUTOVER_SOURCE_DATABASE_URL='postgresql://.../schoolorbit_snwsb?...' \
+CUTOVER_TARGET_DATABASE_URL='postgresql://.../schoolorbit_test?...' \
+  ./scripts/cutover_tenant_data.sh
+```
+
+For a real cutover, provision a new clean database first and apply the baseline.
+Only then run with `CUTOVER_MODE=apply`, explicit `CUTOVER_TARGET_SCHEMA`, and
+the required confirmation variables. Never copy source `_sqlx_migrations`; the
+target must keep exactly one successful migration row at version `1`.
+
 ## Environment Variables
 
 Optional overrides:

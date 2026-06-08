@@ -361,6 +361,37 @@ fn operational_bins_use_central_tenant_migration_runner() {
 }
 
 #[test]
+fn tenant_data_cutover_script_has_safety_guards() {
+    let script = read_source(repo_root().join("scripts/cutover_tenant_data.sh"));
+
+    for required_fragment in [
+        "CUTOVER_SOURCE_DATABASE_URL",
+        "CUTOVER_TARGET_DATABASE_URL",
+        "CUTOVER_ALLOW_NON_TEST_TARGET",
+        "CUTOVER_CONFIRM_TARGET_TRUNCATE",
+        "CUTOVER_KEEP_SCHEMA",
+        "migrate_tenant_schema",
+        "--exclude-table=public._sqlx_migrations",
+        "TRUNCATE TABLE",
+        "RESTART IDENTITY CASCADE",
+        "DEFERRABLE INITIALLY IMMEDIATE",
+        "DISABLE TRIGGER USER",
+        "ENABLE TRIGGER USER",
+        "SET LOCAL search_path",
+        "SET CONSTRAINTS ALL DEFERRED",
+        "NOT DEFERRABLE",
+        "set_config",
+        "query_to_xml",
+        "diff -u",
+    ] {
+        assert!(
+            script.contains(required_fragment),
+            "tenant data cutover script must contain safety/validation fragment `{required_fragment}`"
+        );
+    }
+}
+
+#[test]
 fn lookup_models_expose_reference_data_only() {
     let lookup_models = strip_comments(&read_source(
         manifest_dir().join("src/modules/lookup/models.rs"),
