@@ -112,12 +112,13 @@
 | **ที่ทำ** | ฝั่ง backend ยังรับ `X-School-Subdomain` เป็น first-class input: ถ้ามี header จะ validate และใช้ก่อน fallback ไป Origin/Referer; ฝั่ง frontend ส่ง header เฉพาะเมื่อกำหนด `PUBLIC_SCHOOL_SUBDOMAIN` ชัดเจน ส่วน production browser tenant ใช้ Origin/Referer เป็นหลัก, เพิ่ม smoke/preflight coverage และอัปเดต CORS docs ให้ allow header นี้ |
 | **ความยาก** | Small |
 
-### M-2. 51 migrations ไม่มี squash strategy
+### ✅ M-2. 123 migrations ไม่มี rebaseline strategy — clean cutover แล้ว
 | | |
 |---|---|
-| **ไฟล์** | `backend-school/migrations/` |
-| **ปัญหา** | provisioning ใหม่รัน migration ทั้ง 51 ไฟล์ ยิ่งนาน migration ยิ่งช้า |
-| **แก้ไข** | สร้าง squash migration หลังจาก tenant ทุกตัว migrate ครบ 051 และ document migration policy |
+| **ไฟล์** | `backend-school/migrations/`, `backend-school/migrations_legacy/`, `backend-school/src/db/migration.rs` |
+| **ปัญหา** | provisioning ใหม่รัน migration 123 ไฟล์ถึง version 127 ยิ่งนาน migration ยิ่งช้า และมี migration checkpoint เฉพาะทางที่ต้องคุมให้ถูกก่อน rebaseline |
+| **ที่ทำ** | ย้าย migration เก่าไป `backend-school/migrations_legacy/`, ให้ active runtime migration เหลือ `backend-school/migrations/001_baseline.sql` ไฟล์เดียว, ลบ fast path/checkpoint เฉพาะทางใน `run_tenant_migrations()`, ให้ `seed_sandbox` ใช้ runner กลาง และเพิ่ม guard ว่า active migration ต้องเป็น clean baseline เท่านั้น |
+| **ข้อจำกัด** | ห้าม deploy ชุด clean นี้ทับ tenant DB เดิมที่มี `_sqlx_migrations` 1-127 อยู่ ต้อง provision ฐานใหม่, apply `001_baseline.sql`, copy ข้อมูลที่ต้องใช้, validate แล้วค่อยสลับ database URL |
 | **ความยาก** | Medium |
 
 ### ✅ M-3. แยก backend-school ออกจาก admin DB (HTTP separation) — เสร็จแล้ว

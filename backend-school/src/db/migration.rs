@@ -1,4 +1,3 @@
-use crate::permissions::registry::{codes, PermissionDef, ALL_PERMISSIONS};
 use dashmap::DashMap;
 use sqlx::migrate::Migrator;
 use sqlx::PgPool;
@@ -7,37 +6,6 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
-
-pub const PERMISSION_SYNC_MIGRATION_CHECKPOINT_VERSION: i64 = 120;
-
-const GRANT_BASELINE_REQUIRED_PERMISSION_CODES: &[&str] = &[
-    codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
-    codes::ORGANIZATION_WORK_READ_OWN,
-    codes::ORGANIZATION_WORK_READ_ORGANIZATION_UNIT,
-    // Migration 124 is immutable and still references the pre-127 code.
-    // Migration 127 canonicalizes this row to organization_work.create.own.
-    "organization_work.create",
-    codes::ORGANIZATION_WORK_UPDATE_OWN,
-    codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,
-    codes::STAFF_PROFILE_READ_ORGANIZATION_TREE,
-    codes::STAFF_PROFILE_READ_SCHOOL,
-    codes::STAFF_PII_READ_SCHOOL,
-];
-
-fn migrator_through_version(max_version: i64) -> Migrator {
-    let base = sqlx::migrate!("./migrations");
-    Migrator {
-        migrations: Cow::Owned(
-            base.iter()
-                .filter(|migration| migration.version <= max_version)
-                .cloned()
-                .collect(),
-        ),
-        ignore_missing: true,
-        locking: false,
-        no_tx: base.no_tx,
-    }
-}
 
 fn all_migrations_without_db_lock() -> Migrator {
     let base = sqlx::migrate!("./migrations");
@@ -49,76 +17,7 @@ fn all_migrations_without_db_lock() -> Migrator {
     }
 }
 
-fn permission_def_for_code(code: &str) -> Option<&'static PermissionDef> {
-    ALL_PERMISSIONS
-        .iter()
-        .find(|permission| permission.code == code)
-}
-
-fn permission_def_for_migration_code(code: &str) -> Option<&'static PermissionDef> {
-    match code {
-        "organization_work.create" => permission_def_for_code(codes::ORGANIZATION_WORK_CREATE_OWN),
-        _ => permission_def_for_code(code),
-    }
-}
-
-async fn sync_grant_baseline_prerequisite_permissions(pool: &PgPool) -> Result<(), String> {
-    for code in GRANT_BASELINE_REQUIRED_PERMISSION_CODES {
-        let permission = permission_def_for_migration_code(code)
-            .ok_or_else(|| format!("Required migration permission is not registered: {code}"))?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO permissions (code, name, module, action, scope, description)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (code) DO UPDATE
-            SET
-                name = EXCLUDED.name,
-                module = EXCLUDED.module,
-                action = EXCLUDED.action,
-                scope = EXCLUDED.scope,
-                description = EXCLUDED.description,
-                updated_at = NOW()
-            "#,
-        )
-        .bind(*code)
-        .bind(permission.name)
-        .bind(permission.module)
-        .bind(permission.action)
-        .bind(permission.scope)
-        .bind(permission.description)
-        .execute(pool)
-        .await
-        .map_err(|error| {
-            format!("Failed to sync prerequisite migration permission {code}: {error}")
-        })?;
-    }
-
-    Ok(())
-}
-
 pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
-    migrator_through_version(PERMISSION_SYNC_MIGRATION_CHECKPOINT_VERSION)
-        .run(pool)
-        .await
-        .map_err(|error| {
-            format!(
-                "Migration checkpoint {} failed: {}",
-                PERMISSION_SYNC_MIGRATION_CHECKPOINT_VERSION, error
-            )
-        })?;
-
-    crate::utils::permission_sync::sync_permissions(pool)
-        .await
-        .map_err(|error| {
-            format!(
-                "Permission sync checkpoint {} failed: {}",
-                PERMISSION_SYNC_MIGRATION_CHECKPOINT_VERSION, error
-            )
-        })?;
-
-    sync_grant_baseline_prerequisite_permissions(pool).await?;
-
     all_migrations_without_db_lock()
         .run(pool)
         .await
@@ -306,66 +205,48 @@ mod tests {
     }
 
     #[test]
-    fn permission_sync_checkpoint_migrator_stops_before_grant_baseline() {
-        let migrator = migrator_through_version(PERMISSION_SYNC_MIGRATION_CHECKPOINT_VERSION);
+    fn clean_migrator_contains_only_the_baseline_migration() {
+        let migrator = all_migrations_without_db_lock();
         let versions = migrator
             .iter()
             .map(|migration| migration.version)
             .collect::<Vec<_>>();
 
-        assert!(versions.contains(&PERMISSION_SYNC_MIGRATION_CHECKPOINT_VERSION));
-        assert!(!versions.contains(&124));
         assert!(!migrator.locking);
-        assert!(versions
-            .iter()
-            .all(|version| *version <= PERMISSION_SYNC_MIGRATION_CHECKPOINT_VERSION));
+        assert_eq!(versions, vec![1]);
     }
 
     #[test]
-    fn full_migrator_disables_database_advisory_lock_for_pooler_safety() {
-        let migrator = all_migrations_without_db_lock();
+    fn active_baseline_sql_is_clean_application_schema() {
+        let baseline_sql = include_str!("../../migrations/001_baseline.sql");
 
-        assert!(!migrator.locking);
-        assert!(migrator.version_exists(124));
-    }
-
-    #[test]
-    fn grant_baseline_checkpoint_permissions_are_registered() {
-        let mut seen = std::collections::HashSet::new();
-
-        for code in GRANT_BASELINE_REQUIRED_PERMISSION_CODES {
-            assert!(seen.insert(code));
-            assert!(
-                permission_def_for_migration_code(code).is_some(),
-                "{code} must exist in the permission registry before migration 124"
-            );
-        }
-    }
-
-    #[test]
-    fn grant_baseline_checkpoint_includes_organization_work_approval_dependency() {
-        assert!(GRANT_BASELINE_REQUIRED_PERMISSION_CODES
-            .contains(&&codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT));
-    }
-
-    #[test]
-    fn grant_baseline_checkpoint_keeps_immutable_migration_124_code_until_canonicalized() {
-        assert!(GRANT_BASELINE_REQUIRED_PERMISSION_CODES.contains(&&"organization_work.create"));
-        assert_eq!(
-            permission_def_for_migration_code("organization_work.create").map(|permission| {
-                (
-                    permission.code,
-                    permission.module,
-                    permission.action,
-                    permission.scope,
-                )
-            }),
-            Some((
-                codes::ORGANIZATION_WORK_CREATE_OWN,
-                "organization_work",
-                "create",
-                "own",
-            ))
+        assert!(!baseline_sql.trim().is_empty());
+        assert!(
+            !baseline_sql.contains("_sqlx_migrations"),
+            "clean baseline SQL must not include SQLx migration history"
+        );
+        assert!(
+            !baseline_sql.contains("schoolorbit_baseline_"),
+            "baseline SQL must not contain a temporary generation schema name"
+        );
+        assert!(
+            !baseline_sql.contains("\\restrict") && !baseline_sql.contains("\\unrestrict"),
+            "baseline SQL must not contain pg_dump psql meta-commands because sqlx executes it directly"
+        );
+        assert!(
+            !baseline_sql.contains("set_config('search_path', '', false)"),
+            "baseline SQL must not clear search_path; it must honor the connection search_path for test schemas"
+        );
+        assert!(
+            baseline_sql.contains("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";")
+                && baseline_sql.contains("CREATE EXTENSION IF NOT EXISTS pg_trgm;"),
+            "baseline SQL must include database extensions before schema objects"
+        );
+        assert!(
+            baseline_sql.contains("organization_work.approve.organization_unit")
+                && baseline_sql.contains("academic_curriculum.manage.organization_tree")
+                && baseline_sql.contains("ORG-BASELINE-V1"),
+            "baseline SQL must include canonical permissions and organization template data"
         );
     }
 }

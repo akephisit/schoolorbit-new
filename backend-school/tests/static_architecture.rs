@@ -58,6 +58,10 @@ fn read_source(path: impl AsRef<Path>) -> String {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.as_ref().display()))
 }
 
+fn active_baseline_migration_path() -> PathBuf {
+    manifest_dir().join("migrations").join("001_baseline.sql")
+}
+
 fn strip_comments(source: &str) -> String {
     let mut stripped = String::with_capacity(source.len());
     let mut chars = source.chars().peekable();
@@ -209,27 +213,46 @@ fn backend_permission_contracts_use_organization_units_not_department_names() {
 }
 
 #[test]
+fn active_migrations_are_clean_single_baseline() {
+    let migrations_dir = manifest_dir().join("migrations");
+    let mut active_migrations = list_files(&migrations_dir, |path| {
+        path.extension().and_then(|extension| extension.to_str()) == Some("sql")
+    })
+    .into_iter()
+    .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
+    .collect::<Vec<_>>();
+    active_migrations.sort();
+
+    assert_eq!(active_migrations, vec!["001_baseline.sql"]);
+
+    let legacy_dir = manifest_dir().join("migrations_legacy");
+    assert!(
+        legacy_dir.join("001_create_users.sql").exists()
+            && legacy_dir
+                .join("127_canonical_permission_code_contracts.sql")
+                .exists(),
+        "historical migrations should be archived under {} and must not be runtime migrations",
+        repo_relative(&legacy_dir)
+    );
+}
+
+#[test]
 fn organization_baseline_migration_defines_canonical_school_structure() {
-    let migration_path = manifest_dir()
-        .join("migrations")
-        .join("123_reset_organization_unit_baseline.sql");
+    let migration_path = active_baseline_migration_path();
     let source = read_source(&migration_path);
 
     for required_fragment in [
         "ORG-BASELINE-V1",
+        "'SCHOOL'",
         "DIR-01",
         "ACAD-01",
+        "STU-01",
         "PER-01",
         "BUD-01",
         "GEN-01",
+        "GEN-DOC",
         "SUBJ-OC",
-        "FROM subject_groups sg",
-        "ou.code = 'SUBJ-' || sg.code",
-        "DELETE FROM organization_units",
-        "to_regclass('public.department_menu_access')",
-        "tmp_org_baseline_menu_refs",
-        "code = 'SUBJ-OT'",
-        "Legacy organization unit code SUBJ-OT remains",
+        "\"subject_group_id\"",
     ] {
         assert!(
             source.contains(required_fragment),
@@ -237,24 +260,27 @@ fn organization_baseline_migration_defines_canonical_school_structure() {
             repo_relative(&migration_path)
         );
     }
+
+    assert!(
+        !source.contains("SUBJ-OT") && !source.contains("department"),
+        "{} must be a clean organization-unit baseline without legacy department aliases",
+        repo_relative(&migration_path)
+    );
 }
 
 #[test]
 fn organization_permission_grant_baseline_is_deterministic() {
-    let migration_path = manifest_dir()
-        .join("migrations")
-        .join("124_normalize_organization_permission_grants.sql");
+    let migration_path = active_baseline_migration_path();
     let source = read_source(&migration_path);
 
     for required_fragment in [
-        "ORG-GRANTS-BASELINE-V1",
-        "DELETE FROM organization_permission_grants",
+        "CREATE TABLE \"organization_permission_grants\"",
         "academic_curriculum.manage.organization_unit",
+        "academic_curriculum.manage.organization_tree",
         "organization_work.approve.organization_unit",
         "staff_profile.read.organization_tree",
         "staff_profile.read.school",
         "staff_pii.read.school",
-        "SUBJ-%",
         "SCHOOL",
         "director",
         "deputy_director",
@@ -294,9 +320,7 @@ fn academic_curriculum_tree_scope_is_explicitly_registered() {
             .join("frontend-school")
             .join("src/lib/permissions/registry.ts"),
     );
-    let migration_path = manifest_dir()
-        .join("migrations")
-        .join("125_curriculum_organization_tree_permissions.sql");
+    let migration_path = active_baseline_migration_path();
     let migration = read_source(&migration_path);
 
     for source in [&backend_registry, &frontend_registry, &migration] {
@@ -309,6 +333,31 @@ fn academic_curriculum_tree_scope_is_explicitly_registered() {
             "curriculum tree manage permission must be registered across backend/frontend/migration"
         );
     }
+}
+
+#[test]
+fn operational_bins_use_central_tenant_migration_runner() {
+    let bin_files = list_files(manifest_dir().join("src/bin"), |path| {
+        path.extension().and_then(|extension| extension.to_str()) == Some("rs")
+    });
+    let direct_migrate_pattern =
+        Regex::new(r#"sqlx::migrate!\s*\(\s*"\./migrations"\s*\)\s*\.run\s*\("#)
+            .expect("valid regex");
+    let mut violations = Vec::new();
+
+    for file in bin_files {
+        let source = strip_comments(&read_source(&file));
+        if direct_migrate_pattern.is_match(&source) {
+            violations.push(relative(&file));
+        }
+    }
+
+    let seed_sandbox = read_source(manifest_dir().join("src/bin/seed_sandbox.rs"));
+    assert_eq!(violations, Vec::<String>::new());
+    assert!(
+        seed_sandbox.contains("migration::run_tenant_migrations(&pool)"),
+        "seed_sandbox must use the same migration runner as tenant runtime"
+    );
 }
 
 #[test]

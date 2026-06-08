@@ -99,6 +99,44 @@ Production tenant browser requests use `Origin` for tenant resolution by default
 
 If `SMOKE_USERNAME` or `SMOKE_PASSWORD` is omitted, authenticated login checks are skipped and the script only validates public endpoints, CORS, and login request validation.
 
+## Clean Migration Baseline
+
+Active tenant migrations are intentionally clean-cut to a single baseline:
+`backend-school/migrations/001_baseline.sql`. Historical migrations live in
+`backend-school/migrations_legacy/` for audit/reference and are not used by the
+runtime migrator.
+
+Check the active migration directory and a clean tenant database with:
+
+```bash
+./scripts/check_migration_rebaseline_ready.sh
+
+MIGRATION_AUDIT_DATABASE_URL='postgresql://...' \
+  ./scripts/check_migration_rebaseline_ready.sh
+```
+
+The database check is read-only. It verifies the tenant has applied the current
+active migration count/version, has no failed migration rows, and has no legacy
+permission codes from the pre-clean permission contract.
+
+Do not point this clean migration set at an existing tenant database that still
+has old `_sqlx_migrations` rows from the legacy 1-127 timeline. For production
+cutover, provision a clean database, apply `001_baseline.sql`, copy required
+tenant data, validate, then switch the tenant database URL.
+
+To verify the runtime baseline path without creating a real school, create a
+temporary schema in `schoolorbit_test` and run:
+
+```bash
+MIGRATION_SCHEMA_DATABASE_URL='postgresql://.../schoolorbit_test?...' \
+MIGRATION_SCHEMA_NAME='schoolorbit_runtime_baseline_check' \
+  cargo run --bin migrate_tenant_schema
+```
+
+Drop the temporary schema after checking `_sqlx_migrations`, permissions, and
+organization template rows. A clean schema should have exactly one applied
+SQLx migration row with version `1`.
+
 ## Environment Variables
 
 Optional overrides:

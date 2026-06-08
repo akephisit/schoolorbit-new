@@ -5,6 +5,23 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{env, error::Error, time::Duration};
 use uuid::Uuid;
 
+#[path = "../permissions/registry.rs"]
+pub mod permission_registry;
+
+pub mod permissions {
+    pub use crate::permission_registry as registry;
+}
+
+#[path = "../utils/permission_sync.rs"]
+pub mod permission_sync;
+
+pub mod utils {
+    pub use crate::permission_sync;
+}
+
+#[path = "../db/migration.rs"]
+pub mod migration;
+
 type SeedResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 #[derive(Debug)]
@@ -68,7 +85,7 @@ async fn main() -> SeedResult<()> {
 
     if config.run_migrations {
         println!("Running tenant migrations...");
-        sqlx::migrate!("./migrations").run(&pool).await?;
+        migration::run_tenant_migrations(&pool).await?;
     }
 
     let summary = seed_database(&pool, &config).await?;
