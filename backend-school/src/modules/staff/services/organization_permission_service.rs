@@ -129,4 +129,30 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn unique_permission_grants_keeps_same_permission_for_different_positions() {
+        let permission_id = Uuid::new_v4();
+
+        assert_eq!(
+            unique_permission_grants(vec![
+                OrganizationPermissionGrantInput {
+                    permission_id,
+                    position_code: Some("head".to_string()),
+                },
+                OrganizationPermissionGrantInput {
+                    permission_id,
+                    position_code: Some("member".to_string()),
+                },
+                OrganizationPermissionGrantInput {
+                    permission_id,
+                    position_code: None,
+                },
+            ])
+            .into_iter()
+            .map(|grant| grant.position_code)
+            .collect::<Vec<_>>(),
+            vec![Some("head".to_string()), Some("member".to_string()), None]
+        );
+    }
 }

@@ -205,3 +205,84 @@ pub async fn load_actor_context_or_error(
 ) -> Result<ActorContext, AppError> {
     load_actor_context(headers, pool, cache).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn actor(permissions: &[&str]) -> ActorContext {
+        ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: permissions
+                .iter()
+                .map(|permission| permission.to_string())
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn permission_matches_allows_exact_permission_and_wildcard() {
+        assert!(permission_matches(
+            &[codes::STAFF_READ_ALL.to_string()],
+            codes::STAFF_READ_ALL
+        ));
+        assert!(permission_matches(
+            &[codes::WILDCARD.to_string()],
+            codes::STAFF_READ_ALL
+        ));
+    }
+
+    #[test]
+    fn permission_matches_rejects_unrelated_permission() {
+        assert!(!permission_matches(
+            &[codes::STAFF_READ_ALL.to_string()],
+            codes::ROLES_ASSIGN_ALL
+        ));
+    }
+
+    #[test]
+    fn module_permission_matches_handles_empty_module_exact_module_and_prefix() {
+        assert!(module_permission_matches(&[], ""));
+        assert!(module_permission_matches(
+            &["academic".to_string()],
+            "academic"
+        ));
+        assert!(module_permission_matches(
+            &[codes::ACADEMIC_COURSE_PLAN_READ_ALL.to_string()],
+            "academic_course_plan"
+        ));
+        assert!(!module_permission_matches(
+            &[codes::ACADEMIC_COURSE_PLAN_READ_ALL.to_string()],
+            "academic"
+        ));
+    }
+
+    #[test]
+    fn module_permission_matches_allows_wildcard_and_global_action_permissions() {
+        assert!(module_permission_matches(
+            &[codes::WILDCARD.to_string()],
+            "academic_course_plan"
+        ));
+        assert!(module_permission_matches(
+            &["*.read.school".to_string()],
+            "academic_course_plan"
+        ));
+    }
+
+    #[test]
+    fn actor_context_require_helpers_return_forbidden_when_missing_permissions() {
+        let actor = actor(&[codes::STAFF_READ_ALL]);
+
+        assert!(actor.require_permission(codes::STAFF_READ_ALL).is_ok());
+        assert!(matches!(
+            actor.require_permission(codes::ROLES_ASSIGN_ALL),
+            Err(AppError::Forbidden(message)) if message.contains(codes::ROLES_ASSIGN_ALL)
+        ));
+        assert!(matches!(
+            actor.require_any_permission(&[codes::ROLES_ASSIGN_ALL, codes::ROLES_UPDATE_ALL]),
+            Err(AppError::Forbidden(message))
+                if message.contains(codes::ROLES_ASSIGN_ALL)
+                    && message.contains(codes::ROLES_UPDATE_ALL)
+        ));
+    }
+}

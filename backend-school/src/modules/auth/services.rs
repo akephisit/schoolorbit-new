@@ -211,11 +211,29 @@ mod tests {
     }
 
     #[test]
+    fn parse_profile_date_ignores_missing_or_empty_date() {
+        assert_eq!(parse_profile_date(None), None);
+        assert_eq!(parse_profile_date(Some("")), None);
+    }
+
+    #[test]
     fn decrypt_national_id_keeps_invalid_ciphertext_unchanged() {
         let mut user = user_with_national_id(Some("not-ciphertext"));
 
         decrypt_national_id(&mut user);
 
         assert_eq!(user.national_id.as_deref(), Some("not-ciphertext"));
+    }
+
+    #[test]
+    fn decrypt_national_id_decrypts_valid_ciphertext() {
+        let _guard = field_encryption::test_env_lock();
+        std::env::set_var("ENCRYPTION_KEY", "auth-service-test-key");
+        let encrypted = field_encryption::encrypt("1234567890123").expect("encrypt national id");
+        let mut user = user_with_national_id(Some(&encrypted));
+
+        decrypt_national_id(&mut user);
+
+        assert_eq!(user.national_id.as_deref(), Some("1234567890123"));
     }
 }
