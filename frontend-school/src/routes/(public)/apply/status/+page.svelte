@@ -4,6 +4,8 @@
 		portalGetStatus,
 		portalGetExamSeat,
 		portalSubmitForm,
+		type AdmissionEnrollmentFormData,
+		type AdmissionEnrollmentParentData,
 		type PortalStatusResult
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
@@ -122,7 +124,7 @@
 	};
 
 	// Enrollment form fields
-	interface ParentEntry {
+	interface ParentEntry extends AdmissionEnrollmentParentData {
 		title: string;
 		firstName: string;
 		lastName: string;
@@ -130,7 +132,13 @@
 		relationship: string;
 	}
 
-	let formFields = $state({
+	interface EnrollmentFormFields extends AdmissionEnrollmentFormData {
+		father: Omit<ParentEntry, 'relationship'>;
+		mother: Omit<ParentEntry, 'relationship'>;
+		guardians: ParentEntry[];
+	}
+
+	let formFields = $state<EnrollmentFormFields>({
 		bloodType: '',
 		medicalConditions: '',
 		allergies: '',
@@ -199,12 +207,12 @@
 			const app = portalData?.application;
 			if (portalData?.enrollmentForm?.formData) {
 				// โหลดข้อมูลจากฟอร์มที่บันทึกไว้
-				const fd = portalData.enrollmentForm.formData as Record<string, unknown>;
-				formFields.bloodType = (fd.bloodType as string) ?? '';
-				formFields.medicalConditions = (fd.medicalConditions as string) ?? '';
-				formFields.allergies = (fd.allergies as string) ?? '';
+				const fd = portalData.enrollmentForm.formData;
+				formFields.bloodType = fd.bloodType ?? '';
+				formFields.medicalConditions = fd.medicalConditions ?? '';
+				formFields.allergies = fd.allergies ?? '';
 				if (fd.father) {
-					const f = fd.father as Record<string, string>;
+					const f = fd.father;
 					formFields.father = {
 						title: f.title ?? 'นาย',
 						firstName: f.firstName ?? '',
@@ -213,7 +221,7 @@
 					};
 				}
 				if (fd.mother) {
-					const m = fd.mother as Record<string, string>;
+					const m = fd.mother;
 					formFields.mother = {
 						title: m.title ?? 'นาง',
 						firstName: m.firstName ?? '',
@@ -222,7 +230,7 @@
 					};
 				}
 				if (fd.guardians && Array.isArray(fd.guardians)) {
-					formFields.guardians = (fd.guardians as ParentEntry[]).map((g) => ({
+					formFields.guardians = fd.guardians.map((g) => ({
 						title: g.title ?? '',
 						firstName: g.firstName ?? '',
 						lastName: g.lastName ?? '',
@@ -291,7 +299,7 @@
 		}
 		savingForm = true;
 		try {
-			await portalSubmitForm(nationalId, dateOfBirth.trim(), formFields as Record<string, unknown>);
+			await portalSubmitForm(nationalId, dateOfBirth.trim(), formFields);
 			toast.success('ยืนยันมอบตัวและบันทึกข้อมูลสำเร็จ');
 			await loadStatus();
 		} catch (e) {

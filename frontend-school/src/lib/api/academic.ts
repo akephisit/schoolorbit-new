@@ -1,4 +1,5 @@
 import { apiClient, type ApiResponse } from '$lib/api/client';
+import type { JsonValue } from './types';
 
 type LoadedApiResponse<T> = ApiResponse<T> & { success: true; data: T };
 type EmptyResponseData = Record<string, never>;
@@ -395,7 +396,7 @@ export interface ClassroomCourse {
 	subject_id: string;
 	academic_semester_id: string;
 	primary_instructor_id?: string;
-	settings: Record<string, unknown>;
+	settings: ClassroomCourseSettings;
 	subject_code: string;
 	subject_name_th: string;
 	subject_name_en?: string;
@@ -404,6 +405,10 @@ export interface ClassroomCourse {
 	subject_type?: string;
 	instructor_name?: string;
 	classroom_name?: string;
+}
+
+export interface ClassroomCourseSettings {
+	[key: string]: JsonValue | undefined;
 }
 
 // Supports both old signature (string, string?) and new signature (object) for backward compatibility if needed,
@@ -452,7 +457,7 @@ export const updateCourse = async (
 	id: string,
 	data: {
 		primary_instructor_id?: string | null;
-		settings?: Record<string, unknown>;
+		settings?: ClassroomCourseSettings;
 	}
 ) => {
 	return await fetchApi(`/api/academic/planning/courses/${id}`, {

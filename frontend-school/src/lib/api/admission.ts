@@ -297,10 +297,31 @@ export interface GlobalRankingResult {
 	applications: GlobalRankingEntry[];
 }
 
+export interface AdmissionEnrollmentParentData {
+	title?: string;
+	firstName?: string;
+	lastName?: string;
+	phone?: string;
+	relationship?: string;
+}
+
+export interface AdmissionEnrollmentFormData {
+	bloodType?: string;
+	medicalConditions?: string;
+	allergies?: string;
+	father?: AdmissionEnrollmentParentData;
+	mother?: AdmissionEnrollmentParentData;
+	guardians?: AdmissionEnrollmentParentData[];
+	// Legacy portal fields kept readable for old saved enrollment forms.
+	emergencyContact?: string;
+	emergencyPhone?: string;
+	shirtSize?: string;
+}
+
 export interface EnrollmentForm {
 	id: string;
 	applicationId: string;
-	formData: Record<string, unknown>;
+	formData: AdmissionEnrollmentFormData;
 	preSubmittedAt?: string;
 	completedAt?: string;
 }
@@ -316,7 +337,7 @@ export interface EnrollmentPending {
 	studentConfirmed?: boolean;
 	preSubmitted: boolean;
 	assignedStudentId?: string;
-	formData?: Record<string, unknown>;
+	formData?: AdmissionEnrollmentFormData;
 }
 
 export interface CompleteEnrollmentResponse {
@@ -743,7 +764,7 @@ export async function listEnrollmentPending(roundId: string) {
 export async function completeEnrollment(
 	id: string,
 	studentCode?: string,
-	formData?: Record<string, unknown>
+	formData?: AdmissionEnrollmentFormData
 ): Promise<CompleteEnrollmentResponse> {
 	const res = await apiClient.post<CompleteEnrollmentResponse>(
 		`/api/admission/applications/${id}/enroll`,
@@ -841,7 +862,7 @@ export async function portalGetForm(nationalId: string, dateOfBirth: string) {
 export async function portalSubmitForm(
 	nationalId: string,
 	dateOfBirth: string,
-	formData: Record<string, unknown>
+	formData: AdmissionEnrollmentFormData
 ) {
 	const res = await apiClient.put<Record<string, never>>('/api/admission/portal/form', {
 		nationalId,

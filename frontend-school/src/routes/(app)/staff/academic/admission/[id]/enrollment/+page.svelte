@@ -1,7 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { PageProps } from './$types';
-	import { getRound, listEnrollmentPending, completeEnrollment } from '$lib/api/admission';
+	import {
+		getRound,
+		listEnrollmentPending,
+		completeEnrollment,
+		type AdmissionEnrollmentFormData,
+		type AdmissionEnrollmentParentData,
+		type EnrollmentPending
+	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -23,7 +30,7 @@
 		Copy
 	} from 'lucide-svelte';
 
-	interface ParentEntry {
+	interface ParentEntry extends AdmissionEnrollmentParentData {
 		title: string;
 		firstName: string;
 		lastName: string;
@@ -31,30 +38,13 @@
 		relationship: string;
 	}
 
-	interface EnrollRow {
-		id: string;
-		applicationNumber?: string;
-		nationalId: string;
-		fullName: string;
-		trackName?: string;
-		roomName?: string;
-		status: string;
-		studentConfirmed?: boolean;
-		preSubmitted: boolean;
-		assignedStudentId?: string;
-		formData?: {
-			bloodType?: string;
-			medicalConditions?: string;
-			allergies?: string;
-			father?: { title?: string; firstName?: string; lastName?: string; phone?: string };
-			mother?: { title?: string; firstName?: string; lastName?: string; phone?: string };
-			guardians?: ParentEntry[];
-			// legacy fields
-			emergencyContact?: string;
-			emergencyPhone?: string;
-			shirtSize?: string;
-		};
+	interface EnrollmentFormFields extends AdmissionEnrollmentFormData {
+		father: Omit<ParentEntry, 'relationship'>;
+		mother: Omit<ParentEntry, 'relationship'>;
+		guardians: ParentEntry[];
 	}
+
+	type EnrollRow = EnrollmentPending;
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
@@ -68,7 +58,7 @@
 	let studentCode = $state('');
 	let enrolling = $state(false);
 
-	let enrollFormData = $state({
+	let enrollFormData = $state<EnrollmentFormFields>({
 		bloodType: '',
 		medicalConditions: '',
 		allergies: '',
@@ -176,7 +166,7 @@
 		try {
 			const [r, l] = await Promise.all([getRound(id), listEnrollmentPending(id)]);
 			round = r;
-			list = (l as EnrollRow[]) ?? [];
+			list = l ?? [];
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'โหลดไม่สำเร็จ');
 		} finally {
@@ -190,11 +180,7 @@
 		try {
 			const fd = needsForm ? enrollFormData : undefined;
 
-			const res = await completeEnrollment(
-				enrollingApp.id,
-				studentCode || undefined,
-				fd as Record<string, unknown> | undefined
-			);
+			const res = await completeEnrollment(enrollingApp.id, studentCode || undefined, fd);
 			toast.success(`มอบตัวสำเร็จ! Username: ${res?.username}`);
 			showEnrollDialog = false;
 			resetDialog();

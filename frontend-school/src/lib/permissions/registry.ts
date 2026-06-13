@@ -129,11 +129,13 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 export function permissionScopeMeta(scope: string | undefined): PermissionMeta {
-	return SCOPE_META[scope ?? ''] ?? {
-		label: scope || 'ไม่ระบุขอบเขต',
-		description: 'ขอบเขตนี้ยังไม่มีคำอธิบายในระบบ',
-		tone: 'warning'
-	};
+	return (
+		SCOPE_META[scope ?? ''] ?? {
+			label: scope || 'ไม่ระบุขอบเขต',
+			description: 'ขอบเขตนี้ยังไม่มีคำอธิบายในระบบ',
+			tone: 'warning'
+		}
+	);
 }
 
 export function permissionActionLabel(action: string | undefined): string {

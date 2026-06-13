@@ -424,3 +424,23 @@ test('academic API uses typed loaded responses and unwraps generate-plan payload
 	assert.doesNotMatch(planningPage, /result\.data\.added_count/);
 	assert.match(activitiesPage, /res\.created/);
 });
+
+test('frontend API contracts use named dynamic JSON types instead of raw Record unknown', async () => {
+	const rules = await readRepoFile('.rules');
+	const checkedApiFiles = [
+		'frontend-school/src/lib/api/academic.ts',
+		'frontend-school/src/lib/api/admission.ts'
+	];
+
+	assert.match(rules, /named contract/);
+	assert.match(rules, /Record<string,\s*unknown>/);
+
+	for (const relativePath of checkedApiFiles) {
+		const source = await readRepoFile(relativePath);
+		assert.doesNotMatch(
+			source,
+			/Record<string,\s*unknown>/,
+			`${relativePath} should use a named dynamic JSON contract instead of Record<string, unknown>`
+		);
+	}
+});

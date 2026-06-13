@@ -304,7 +304,10 @@
 															<Badge variant="outline" class="text-[11px]">
 																{permissionActionLabel(permission.action)}
 															</Badge>
-															<Badge variant="outline" class={`text-[11px] ${permissionScopeToneClass(scopeMeta.tone)}`}>
+															<Badge
+																variant="outline"
+																class={`text-[11px] ${permissionScopeToneClass(scopeMeta.tone)}`}
+															>
 																{scopeMeta.label}
 															</Badge>
 														</div>

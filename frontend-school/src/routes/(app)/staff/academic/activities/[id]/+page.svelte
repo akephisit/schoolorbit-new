@@ -241,7 +241,9 @@
 								<Table.Head>ห้องเรียน</Table.Head>
 								<Table.Head>ระดับชั้น</Table.Head>
 								<Table.Head class="text-center">ผล</Table.Head>
-								{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}<Table.Head></Table.Head>{/if}
+								{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}
+									<Table.Head></Table.Head>
+								{/if}
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
