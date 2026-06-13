@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -9,6 +9,15 @@ const repoRoot = path.resolve(__dirname, '../../..');
 
 async function readRepoFile(relativePath) {
 	return readFile(path.join(repoRoot, relativePath), 'utf8');
+}
+
+async function listRepoFiles(relativeDir, predicate) {
+	const entries = await readdir(path.join(repoRoot, relativeDir), { withFileTypes: true });
+	return entries
+		.filter((entry) => entry.isFile())
+		.map((entry) => path.join(relativeDir, entry.name).replaceAll(path.sep, '/'))
+		.filter(predicate)
+		.sort();
 }
 
 test('project rules require a single JSON API response envelope', async () => {
@@ -427,20 +436,44 @@ test('academic API uses typed loaded responses and unwraps generate-plan payload
 
 test('frontend API contracts use named dynamic JSON types instead of raw Record unknown', async () => {
 	const rules = await readRepoFile('.rules');
-	const checkedApiFiles = [
-		'frontend-school/src/lib/api/academic.ts',
-		'frontend-school/src/lib/api/admission.ts'
+	const checkedApiFiles = await listRepoFiles(
+		'frontend-school/src/lib/api',
+		(relativePath) => relativePath.endsWith('.ts') && !relativePath.endsWith('/client.ts')
+	);
+	const forbiddenPatterns = [
+		[
+			/Record<string,\s*unknown>/,
+			'use a named dynamic JSON contract instead of Record<string, unknown>'
+		],
+		[/ApiResponse<unknown>/, 'use a concrete ApiResponse<T> contract'],
+		[
+			/apiClient\.(?:get|post|put|patch|delete)<unknown(?:\[\])?>/,
+			'use concrete apiClient<T> generics'
+		],
+		[/fetchApi<unknown(?:\[\])?>/, 'use concrete fetchApi<T> generics'],
+		[/\b(?:res|response)\.data\s+as\b/, 'type the API response instead of casting response.data'],
+		[/return\s+response\s+as\b/, 'return a typed envelope instead of casting the full response']
 	];
 
 	assert.match(rules, /named contract/);
 	assert.match(rules, /Record<string,\s*unknown>/);
+	assert.ok(
+		checkedApiFiles.includes('frontend-school/src/lib/api/academic.ts'),
+		'frontend API contract guard should scan academic.ts'
+	);
+	assert.ok(
+		checkedApiFiles.includes('frontend-school/src/lib/api/admission.ts'),
+		'frontend API contract guard should scan admission.ts'
+	);
+	assert.ok(
+		!checkedApiFiles.includes('frontend-school/src/lib/api/client.ts'),
+		'apiClient envelope parser is the only frontend API file allowed to inspect unknown JSON'
+	);
 
 	for (const relativePath of checkedApiFiles) {
 		const source = await readRepoFile(relativePath);
-		assert.doesNotMatch(
-			source,
-			/Record<string,\s*unknown>/,
-			`${relativePath} should use a named dynamic JSON contract instead of Record<string, unknown>`
-		);
+		for (const [pattern, message] of forbiddenPatterns) {
+			assert.doesNotMatch(source, pattern, `${relativePath}: ${message}`);
+		}
 	}
 });
